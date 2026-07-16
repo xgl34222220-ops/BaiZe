@@ -6,6 +6,7 @@ let state = {};
 let snackTimer;
 let monitoring = false;
 let formDirty = false;
+let lastRenderSignature = '';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -187,10 +188,22 @@ function fillState() {
   }
 }
 
+function updateRunningClock() {
+  if (!state.running) return;
+  const runningSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(state.run_started || 0));
+  $('#last-time').textContent = `已运行 ${runningSeconds} 秒 · 可切换页面`;
+}
+
 async function loadStatus(showError = true) {
   try {
-    state = JSON.parse(await command('status'));
-    fillState();
+    const nextState = JSON.parse(await command('status'));
+    const signature = JSON.stringify(nextState);
+    state = nextState;
+    if (signature !== lastRenderSignature) {
+      lastRenderSignature = signature;
+      fillState();
+    }
+    updateRunningClock();
     return state;
   } catch (error) {
     if (showError) message(error.message);
@@ -248,7 +261,7 @@ async function monitorRun() {
   monitoring = true;
   let seenRunning = false;
   try {
-    const maxPolls = Math.max(180, Math.ceil(((Number(state.max_run_minutes || 45) * 60) + 180) / 2));
+    const maxPolls = Math.max(90, Math.ceil(((Number(state.max_run_minutes || 45) * 60) + 180) / 4));
     for (let i = 0; i < maxPolls; i += 1) {
       const current = await loadStatus(false);
       if (!current) throw new Error('无法读取清理状态');
@@ -270,7 +283,7 @@ async function monitorRun() {
         message(current.last_result || '任务完成');
         return;
       }
-      await delay(2000);
+      await delay(4000);
     }
     throw new Error('任务运行时间过长，请查看日志');
   } catch (error) {
@@ -367,7 +380,7 @@ function openPage(name) {
     $('#whitelist').dataset.loaded = '1';
     loadWhitelist();
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo(0, 0);
 }
 
 $$('.dock button').forEach((button) => button.addEventListener('click', () => openPage(button.dataset.page)));
@@ -444,6 +457,9 @@ document.addEventListener('visibilitychange', () => {
 setInterval(() => {
   if (!document.hidden && !monitoring) loadStatus(false);
 }, 30000);
+setInterval(() => {
+  if (!document.hidden) updateRunningClock();
+}, 1000);
 
 loadStatus().then((current) => {
   if (current?.running) monitorRun();

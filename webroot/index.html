@@ -12,24 +12,20 @@
   <main class="shell">
     <section class="page active" id="page-home">
       <header class="topbar">
-        <div class="brand"><span class="brand-mark">白</span><div><p class="eyebrow">BAI ZE</p><h1>白泽</h1></div></div>
+        <div class="brand"><div><h1>白泽</h1><p>安全清理</p></div></div>
         <button class="icon-button" id="refresh" aria-label="刷新状态"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
       </header>
 
       <article class="hero surface">
-        <div class="hero-ring"><div><span id="last-size">0%</span><small id="last-kind">存储已用</small></div></div>
-        <div class="hero-copy">
-          <span class="device-line"><i class="status-dot"></i><span id="device">正在读取设备</span></span>
-          <h2 id="last-result">尚未运行</h2>
-          <p id="last-time">首屏不会自动扫描存储</p>
-          <div class="lifetime-line">累计释放 <strong id="lifetime-size">0 B</strong></div>
+        <div class="device-line"><i class="status-dot"></i><span id="device">正在读取设备</span></div>
+        <div class="hero-main">
+          <div class="hero-copy"><h2 id="last-result">尚未运行</h2><p id="last-time">首屏不会自动扫描存储</p></div>
+          <div class="usage-number"><strong id="last-size">0%</strong><small id="last-kind">存储已用</small></div>
         </div>
-      </article>
-
-      <article class="storage surface">
-        <div class="storage-head"><div><small>DATA STORAGE</small><strong id="storage-free">读取中</strong></div><span id="storage-percent">0%</span></div>
+        <div class="storage-head"><strong id="storage-free">读取中</strong><span id="storage-percent">0%</span></div>
         <div class="storage-track"><i id="storage-bar"></i></div>
         <div class="storage-foot"><span>已用 <b id="storage-used">—</b></span><span>总计 <b id="storage-total">—</b></span></div>
+        <div class="lifetime-line">累计释放 <strong id="lifetime-size">0 B</strong></div>
       </article>
 
       <div class="main-actions">
@@ -38,13 +34,13 @@
       </div>
       <button class="stop-strip" id="stop-run" hidden><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></svg><span><strong>停止当前任务</strong><small>不会把中断任务记为成功</small></span></button>
 
-      <div class="section-title"><div><small>SERVICE HEALTH</small><h3>运行状态</h3></div><span>自动更新</span></div>
-      <div class="health-grid">
-        <article class="health-card surface"><i class="health-dot" id="scheduler-dot"></i><div><strong id="scheduler-title">定时服务读取中</strong><small id="scheduler-detail">—</small></div></article>
-        <article class="health-card surface"><i class="health-dot" id="notify-dot"></i><div><strong id="notify-title">通知通道未测试</strong><small id="notify-detail">可在计划页发送测试</small></div></article>
-      </div>
+      <div class="section-title"><div><h3>运行状态</h3></div><span>自动更新</span></div>
+      <article class="health-list surface">
+        <div class="health-row"><i class="health-dot" id="scheduler-dot"></i><div><strong id="scheduler-title">定时服务读取中</strong><small id="scheduler-detail">—</small></div></div>
+        <div class="health-row"><i class="health-dot" id="notify-dot"></i><div><strong id="notify-title">通知通道未测试</strong><small id="notify-detail">可在计划页发送测试</small></div></div>
+      </article>
 
-      <div class="section-title"><div><small>LIFETIME STATS</small><h3>累计概览</h3></div><button class="text-button danger-text" id="reset-stats">重置</button></div>
+      <div class="section-title"><div><h3>累计概览</h3></div><button class="text-button danger-text" id="reset-stats">重置</button></div>
       <article class="metrics surface">
         <div><span id="metric-files">0</span><small>普通文件</small></div>
         <div><span id="metric-fragments">0</span><small>其中碎片</small></div>
@@ -56,16 +52,16 @@
     </section>
 
     <section class="page" id="page-clean">
-      <header class="topbar compact"><div class="page-heading"><p class="eyebrow">CLEANING TOOLS</p><h1>清理工具</h1></div><span class="header-note">按类别独立执行</span></header>
+      <header class="topbar compact"><div class="page-heading"><h1>清理</h1><p>按类别独立执行</p></div></header>
 
-      <div class="section-title first"><div><small>DAILY CLEAN</small><h3>日常项目</h3></div><span>低风险</span></div>
-      <div class="clean-grid">
-        <article class="clean-card surface"><span class="feature-icon blue">缓</span><div><strong>应用缓存</strong><small>内部缓存与 Android/data/cache</small></div><button id="cache-clean">清理</button></article>
-        <article class="clean-card surface"><span class="feature-icon cyan">空</span><div><strong>空文件目录</strong><small>保护公共目录和占位文件</small></div><button id="empty-clean">清理</button></article>
-        <article class="clean-card surface"><span class="feature-icon violet">规</span><div><strong>规则垃圾</strong><small>应用规则、隐藏垃圾与日志</small></div><button id="rules-clean">清理</button></article>
-      </div>
+      <div class="section-title first"><div><h3>日常项目</h3></div><span>低风险</span></div>
+      <article class="clean-list surface">
+        <div class="clean-row"><span class="feature-icon blue">缓</span><div><strong>应用缓存</strong><small>内部缓存与外部缓存</small></div><button id="cache-clean">清理</button></div>
+        <div class="clean-row"><span class="feature-icon cyan">空</span><div><strong>空文件与目录</strong><small>保护公共目录和占位文件</small></div><button id="empty-clean">清理</button></div>
+        <div class="clean-row"><span class="feature-icon violet">规</span><div><strong>规则垃圾</strong><small>应用残留、隐藏垃圾与日志</small></div><button id="rules-clean">清理</button></div>
+      </article>
 
-      <div class="section-title"><div><small>SPECIAL TOOLS</small><h3>专项工具</h3></div><span>先扫描更安心</span></div>
+      <div class="section-title"><div><h3>专项工具</h3></div><span>建议先扫描</span></div>
       <article class="special-list surface">
         <div class="special-row">
           <span class="tool-icon green"><svg viewBox="0 0 24 24"><path d="M4 6h6v6H4zM14 4h6v6h-6zM13 14h7v6h-7zM4 16h5v4H4z"/></svg></span>
@@ -87,9 +83,9 @@
     </section>
 
     <section class="page" id="page-rules">
-      <header class="topbar compact"><div class="page-heading"><p class="eyebrow">AUTOMATION</p><h1>计划与设置</h1></div><button class="pill-button" id="save-rules">保存</button></header>
+      <header class="topbar compact"><div class="page-heading"><h1>计划与设置</h1><p>定时、条件和保护项</p></div><button class="pill-button" id="save-rules">保存</button></header>
 
-      <div class="section-title first"><div><small>SCHEDULE</small><h3>执行计划</h3></div><span>固定时刻或独立间隔</span></div>
+      <div class="section-title first"><div><h3>执行计划</h3></div><span>固定时刻或独立间隔</span></div>
       <article class="panel surface">
         <label class="feature-row daily-feature"><span class="feature-icon blue">日</span><span><strong>每日固定时刻</strong><small>开启后替代独立间隔</small></span><input type="checkbox" data-key="daily_schedule_enabled"></label>
         <div class="time-row"><span>执行时间</span><div><input type="number" min="0" max="23" data-key="daily_schedule_hour"><em>时</em><input type="number" min="0" max="59" data-key="daily_schedule_minute"><em>分</em></div></div>
@@ -112,14 +108,14 @@
         </details>
       </article>
 
-      <div class="section-title"><div><small>CONDITIONS</small><h3>执行条件</h3></div><span>可组合启用</span></div>
+      <div class="section-title"><div><h3>执行条件</h3></div><span>可组合启用</span></div>
       <article class="compact-panel surface"><div class="condition-pills">
         <label><input type="checkbox" data-key="screen_off_only"><span><b>息屏</b><small>避免使用中清理</small></span></label>
         <label><input type="checkbox" data-key="charging_only"><span><b>充电</b><small>等待连接电源</small></span></label>
         <label><input type="checkbox" data-key="device_idle_only"><span><b>空闲</b><small>等待 Doze 状态</small></span></label>
       </div></article>
 
-      <div class="section-title"><div><small>CLEAN CONTENT</small><h3>日常清理内容</h3></div><span>常用项已合并</span></div>
+      <div class="section-title"><div><h3>日常清理内容</h3></div><span>常用项已合并</span></div>
       <article class="panel surface">
         <label class="feature-row"><span class="feature-icon blue">缓</span><span><strong>应用缓存</strong><small>内部与外部可再生缓存</small></span><input type="checkbox" data-group-toggle="app-cache"></label>
         <label class="feature-row"><span class="feature-icon cyan">空</span><span><strong>空文件与空目录</strong><small>保护公共媒体目录</small></span><input type="checkbox" data-group-toggle="empty-items"></label>
@@ -136,7 +132,7 @@
         </details>
       </article>
 
-      <div class="section-title"><div><small>NOTIFICATION</small><h3>完成通知</h3></div><button class="text-button" id="test-notification">发送测试</button></div>
+      <div class="section-title"><div><h3>完成通知</h3></div><button class="text-button" id="test-notification">发送测试</button></div>
       <article class="select-panel surface"><span><strong>通知方式</strong><small id="notify-diagnostic">尚未测试通知通道</small></span><select id="notification-mode"><option value="result">仅有结果时</option><option value="always">每次都通知</option><option value="off">不通知</option></select><div class="config-store" aria-hidden="true"><input type="checkbox" data-key="notify_on_complete"><input type="checkbox" data-key="notify_zero_result"></div></article>
 
       <details class="advanced-block surface"><summary><span><small>ADVANCED</small><strong>高级保护与保留策略</strong></span><span class="summary-meta">一般无需修改</span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary>
@@ -156,7 +152,7 @@
     </section>
 
     <section class="page" id="page-logs">
-      <header class="topbar compact"><div class="page-heading"><p class="eyebrow">ACTIVITY & AUDIT</p><h1>记录与审计</h1></div><button class="pill-button ghost" id="refresh-log">刷新</button></header>
+      <header class="topbar compact"><div class="page-heading"><h1>记录</h1><p>运行日志和扫描报告</p></div><button class="pill-button ghost" id="refresh-log">刷新</button></header>
       <article class="log-summary surface"><div><small>最近结果</small><strong id="log-result">暂无</strong></div><span id="log-size">0 B</span></article>
       <details class="log-block surface" open><summary><span>运行日志</span><small>最近 260 行</small><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary><div class="log-tools"><button data-copy="log">复制日志</button></div><pre class="log-view" id="log">暂无日志</pre></details>
       <details class="log-block surface"><summary><span>扫描审计报告</span><small><b id="report-count">0</b> 条记录</small><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></summary><div class="log-tools"><button data-copy="report">复制报告</button><button id="refresh-report">刷新</button></div><pre class="log-view report-view" id="report">暂无扫描报告</pre></details>

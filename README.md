@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v1.1.0--Beta1-1677ff)
+![Version](https://img.shields.io/badge/version-v1.1.0--Beta2-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -63,7 +63,7 @@ sh scripts/build.sh
 ## 文档
 
 - [详细使用说明](docs/README-detailed.md)
-- [v1.1.0-Beta1 更新日志](CHANGELOG-v1.1.0-Beta1.md)
+- [v1.1.0-Beta2 更新日志](CHANGELOG-v1.1.0-Beta2.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
 - [来源与致谢](NOTICE.md)

@@ -1,6 +1,6 @@
 id=safesweep
 name=白泽
-version=v1.1.0-Beta1
-versionCode=11001
+version=v1.1.0-Beta2
+versionCode=11002
 author=惜故里丶
 description=缓存、日志与存储垃圾清理，支持独立定时和累计统计。
