@@ -2,9 +2,6 @@
 name: Bootstrap BaiZe source
 
 on:
-  push:
-    paths:
-      - '.github/workflows/bootstrap.yml'
   pull_request:
     branches:
       - main
@@ -59,8 +56,13 @@ jobs:
           mkdir -p /tmp/baize-source
           tar -xJf /tmp/BaiZe-source.tar.xz -C /tmp/baize-source
 
-          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
-          cp -a /tmp/baize-source/baize_bootstrap_src/. .
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name .git \
+            ! -name .github \
+            ! -name .bootstrap \
+            -exec rm -rf -- {} +
+
+          rsync -a --exclude='.github/' /tmp/baize-source/baize_bootstrap_src/ ./
 
           chmod 0755 ./*.sh scripts/*.sh
           sh scripts/check.sh
@@ -91,3 +93,12 @@ jobs:
               --title '白泽 v1.0.2' \
               --notes-file RELEASE-v1.0.2.md
           fi
+
+      - name: Remove temporary bootstrap payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .bootstrap
+          git add -A
+          git commit -m 'Remove bootstrap payload'
+          git push origin HEAD:main
