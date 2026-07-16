@@ -1,0 +1,30 @@
+name: 问题反馈
+description: 报告清理、定时、通知或 WebUI 问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 白泽版本
+      placeholder: v1.0.2
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 设备环境
+      placeholder: Android 16 / KernelSU / ROM 名称
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述与复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志
+      description: 请删除个人路径、账号和隐私信息。
