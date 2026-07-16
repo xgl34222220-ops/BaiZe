@@ -5,6 +5,9 @@ on:
   push:
     paths:
       - '.github/workflows/bootstrap.yml'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
