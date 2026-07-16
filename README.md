@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v1.0.2-1677ff)
+![Version](https://img.shields.io/badge/version-v1.1.0--Beta1-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -25,6 +25,8 @@
 - 扫描快照、规则 SHA 校验、白名单与单文件上限保护
 - 实际删除后复核，通知和累计统计只记录真正释放的空间
 - WebUI 审计报告、任务历史、日志复制和原子配置保存
+- 一次共享存储遍历同时分类空项目、隐藏垃圾与碎片，减少重复扫描
+- 清理完成通知通道诊断、累计释放量和累计耗时展示
 
 ## 安全边界
 
@@ -61,7 +63,7 @@ sh scripts/build.sh
 ## 文档
 
 - [详细使用说明](docs/README-detailed.md)
-- [v1.0.2 更新日志](CHANGELOG-v1.0.2.md)
+- [v1.1.0-Beta1 更新日志](CHANGELOG-v1.1.0-Beta1.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
 - [来源与致谢](NOTICE.md)

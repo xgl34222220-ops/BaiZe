@@ -9,13 +9,23 @@ LATEST_ENV="$STATE_DIR/latest.env"
 [ -f "$CONFIG" ] || CONFIG="$MODDIR/config/default.conf"
 
 get_value() {
-  sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1
+  wanted=$1
+  found=
+  while IFS='=' read -r key value || [ -n "$key$value" ]; do
+    [ "$key" = "$wanted" ] && found=$value
+  done <"$CONFIG"
+  printf '%s\n' "$found"
 }
 
 env_value() {
-  key=$1
+  wanted=$1
   file=$2
-  sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1
+  [ -f "$file" ] || return 0
+  found=
+  while IFS='=' read -r key value || [ -n "$key$value" ]; do
+    [ "$key" = "$wanted" ] && found=$value
+  done <"$file"
+  printf '%s\n' "$found"
 }
 
 uint_or() {
@@ -96,6 +106,10 @@ scheduler_state=$(env_value state "$SCHEDULER_STATE"); [ -n "$scheduler_state" ]
 scheduler_group=$(env_value group "$SCHEDULER_STATE")
 scheduler_reason=$(env_value reason "$SCHEDULER_STATE"); [ -n "$scheduler_reason" ] || scheduler_reason=尚未收到定时服务状态
 scheduler_updated=$(uint_or "$(env_value updated "$SCHEDULER_STATE")" 0)
+notify_status=$(env_value status "$STATE_DIR/notify.env"); [ -n "$notify_status" ] || notify_status=untested
+notify_channel=$(env_value channel "$STATE_DIR/notify.env")
+notify_detail=$(env_value detail "$STATE_DIR/notify.env"); [ -n "$notify_detail" ] || notify_detail=尚未测试通知
+notify_epoch=$(uint_or "$(env_value epoch "$STATE_DIR/notify.env")" 0)
 
 RULE_AUDIT="$STATE_DIR/rule_audit.env"
 if [ ! -f "$RULE_AUDIT" ]; then
@@ -165,6 +179,10 @@ printf '"scheduler_state":"%s",' "$(json_escape "$scheduler_state")"
 printf '"scheduler_group":"%s",' "$(json_escape "$scheduler_group")"
 printf '"scheduler_reason":"%s",' "$(json_escape "$scheduler_reason")"
 printf '"scheduler_updated":%s,' "$scheduler_updated"
+printf '"notify_status":"%s",' "$(json_escape "$notify_status")"
+printf '"notify_channel":"%s",' "$(json_escape "$notify_channel")"
+printf '"notify_detail":"%s",' "$(json_escape "$notify_detail")"
+printf '"notify_epoch":%s,' "$notify_epoch"
 printf '"deep_rule_count":%s,' "$deep_rule_count"
 printf '"deep_rule_unique":%s,' "$deep_rule_unique"
 printf '"deep_rule_duplicates":%s,' "$deep_rule_duplicates"
@@ -179,8 +197,8 @@ printf '"report_lines":%s,' "$report_lines"
 for spec in \
   enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 max_run_minutes:45 \
   daily_schedule_enabled:0 daily_schedule_hour:3 daily_schedule_minute:30 daily_grace_minutes:240 \
-  schedule_cache_enabled:1 schedule_cache_hours:24 schedule_empty_enabled:1 schedule_empty_hours:24 \
-  schedule_rules_enabled:1 schedule_rules_hours:24 schedule_fragment_enabled:1 schedule_fragment_hours:24 \
+  schedule_cache_enabled:1 schedule_cache_hours:1 schedule_empty_enabled:1 schedule_empty_hours:1 \
+  schedule_rules_enabled:1 schedule_rules_hours:1 schedule_fragment_enabled:1 schedule_fragment_hours:1 \
   schedule_deep_enabled:0 schedule_deep_hours:168 clean_app_cache:1 clean_external_cache:1 clean_system_logs:1 \
   clean_oem_logs:0 clean_empty_files:1 clean_empty_dirs:1 clean_app_rules:1 clean_hidden_junk:1 clean_fragments:1 clean_custom_rules:0 \
   notify_on_complete:1 notify_zero_result:0 deep_high_risk_enabled:0 app_cache_days:0 external_cache_days:0 \

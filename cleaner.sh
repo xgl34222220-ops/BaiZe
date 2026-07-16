@@ -133,6 +133,7 @@ DEEP_RULE_SHA=""
 DEEP_COVER_TARGET=0
 DEEP_SCAN_MANIFEST_TMP="$TMP_DIR/deep-scan.targets"
 CORPSE_SCAN_MANIFEST_TMP="$TMP_DIR/corpse-scan.targets"
+SHARED_MANIFEST_READY=0
 REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
 set_phase "准备扫描"
@@ -1068,6 +1069,103 @@ package_list_for_user() {
   [ -s "$output" ]
 }
 
+# “立即清理/安全扫描”会同时需要空项目、隐藏垃圾和碎片候选。
+# 旧版会为这些类别分别遍历共享存储；这里先做一次候选遍历，再按类型分流。
+prepare_shared_manifests() {
+  [ -d /data/media ] || return 0
+  SHARED_EMPTY_FILES_MANIFEST="$TMP_DIR/manifest-empty-files.nul"
+  SHARED_EMPTY_DIRS_MANIFEST="$TMP_DIR/manifest-empty-dirs.nul"
+  SHARED_HIDDEN_DIRS_MANIFEST="$TMP_DIR/manifest-hidden-dirs"
+  SHARED_HIDDEN_FILES_MANIFEST="$TMP_DIR/manifest-hidden-files"
+  SHARED_FRAGMENT_MANIFEST="$TMP_DIR/manifest-fragments.nul"
+  candidates="$TMP_DIR/manifest-candidates.nul"
+  : >"$SHARED_EMPTY_FILES_MANIFEST"
+  : >"$SHARED_EMPTY_DIRS_MANIFEST"
+  : >"$SHARED_HIDDEN_DIRS_MANIFEST"
+  : >"$SHARED_HIDDEN_FILES_MANIFEST"
+  : >"$SHARED_FRAGMENT_MANIFEST"
+
+  find /data/media -mindepth 2 -maxdepth 6 \
+    \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
+       -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
+       -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
+       -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \
+       -o -path '/data/media/[0-9]*/Podcasts' -o -path '/data/media/[0-9]*/Audiobooks' \
+       -o -path '/data/media/[0-9]*/Recordings' -o -path '/data/media/[0-9]*/Fonts' \
+       -o -path '/data/media/[0-9]*/Ringtones' -o -path '/data/media/[0-9]*/Alarms' \
+       -o -path '/data/media/[0-9]*/Notifications' \) -prune -o \
+    \( -type d -name '.*' -print0 \) -prune -o \
+    \( -type f -size "-${MAX_FILE_BYTES}c" \
+       \( -size 0c -o -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' -o -name 'desktop.ini' -o -name '.directory' \
+          -o -iname '*.tmp' -o -iname '*.temp' -o -iname '*.tmf' -o -iname '*.log' \
+          -o -iname '*.xlog' -o -iname '*.tlog' -o -iname '*.ulog' -o -iname '*.plog' \
+          -o -iname '*.hprof' -o -iname '*.dmp' -o -iname '*.dump' -o -iname '*.trace' \
+          -o -iname '*.traces' -o -iname '*.stacktrace' -o -iname 'hs_err_pid*.log' \) \
+       -o -type d -empty \) -print0 2>/dev/null >"$candidates"
+
+  # 公共媒体树整体受保护，仅把明确可再生的缩略图目录加入隐藏垃圾候选。
+  for direct_hidden in /data/media/[0-9]*/DCIM/.thumbnails /data/media/[0-9]*/Pictures/.thumbnails; do
+    [ -d "$direct_hidden" ] && printf '%s\n' "$direct_hidden" >>"$SHARED_HIDDEN_DIRS_MANIFEST"
+  done
+  # Download 只收集中断下载后缀，不把普通临时文档纳入。
+  for userdir in /data/media/[0-9]*; do
+    [ -d "$userdir/Download" ] || continue
+    find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f -size "-${MAX_FILE_BYTES}c" \
+      \( -iname '*.part' -o -iname '*.partial' -o -iname '*.crdownload' \
+         -o -iname '*.filepart' -o -iname '*.download' -o -iname '*.opdownload' \) \
+      -print0 2>/dev/null >>"$SHARED_FRAGMENT_MANIFEST"
+  done
+
+  while IFS= read -r -d '' candidate; do
+    should_stop && { rm -f "$candidates"; return 9; }
+    name=${candidate##*/}
+    if [ -d "$candidate" ] && [ ! -L "$candidate" ]; then
+      case "$name" in
+        .*)
+          if hidden_dir_days "$name" >/dev/null 2>&1; then
+            printf '%s\n' "$candidate" >>"$SHARED_HIDDEN_DIRS_MANIFEST"
+          elif [ -z "$(ls -A "$candidate" 2>/dev/null)" ]; then
+            printf '%s\0' "$candidate" >>"$SHARED_EMPTY_DIRS_MANIFEST"
+          fi
+          ;;
+        *) printf '%s\0' "$candidate" >>"$SHARED_EMPTY_DIRS_MANIFEST" ;;
+      esac
+      continue
+    fi
+    [ -f "$candidate" ] && [ ! -L "$candidate" ] || continue
+    if [ ! -s "$candidate" ]; then
+      case "$name" in .nomedia|.keep|.gitkeep|.placeholder|*.lock) ;; *) printf '%s\0' "$candidate" >>"$SHARED_EMPTY_FILES_MANIFEST" ;; esac
+    else
+      case "$name" in
+        .DS_Store|._*|Thumbs.db|desktop.ini|.directory) printf '%s\n' "$candidate" >>"$SHARED_HIDDEN_FILES_MANIFEST" ;;
+        *) printf '%s\0' "$candidate" >>"$SHARED_FRAGMENT_MANIFEST" ;;
+      esac
+    fi
+  done <"$candidates"
+  rm -f "$candidates"
+
+  # 年龄过滤只作用于小型候选集合，不再重新遍历整个共享存储。
+  for age_spec in \
+    "$SHARED_EMPTY_FILES_MANIFEST:$EMPTY_DAYS" \
+    "$SHARED_FRAGMENT_MANIFEST:$FRAGMENT_DAYS"; do
+    age_file=${age_spec%:*}; age_days=${age_spec##*:}
+    [ "$age_days" -gt 0 ] && [ -s "$age_file" ] || continue
+    aged="$age_file.aged"
+    xargs -0 -n 120 sh -c 'days=$1; shift; find "$@" -maxdepth 0 -type f -mtime "+$days" -print0 2>/dev/null' sh "$age_days" <"$age_file" >"$aged"
+    mv -f "$aged" "$age_file"
+  done
+  if [ "$HIDDEN_DAYS" -gt 0 ] && [ -s "$SHARED_HIDDEN_FILES_MANIFEST" ]; then
+    hidden_nul="$TMP_DIR/manifest-hidden-files.nul"
+    hidden_aged="$TMP_DIR/manifest-hidden-files.aged.nul"
+    while IFS= read -r hidden_file || [ -n "$hidden_file" ]; do printf '%s\0' "$hidden_file"; done <"$SHARED_HIDDEN_FILES_MANIFEST" >"$hidden_nul"
+    xargs -0 -n 120 sh -c 'days=$1; shift; find "$@" -maxdepth 0 -type f -mtime "+$days" -print 2>/dev/null' sh "$HIDDEN_DAYS" <"$hidden_nul" >"$hidden_aged"
+    mv -f "$hidden_aged" "$SHARED_HIDDEN_FILES_MANIFEST"
+    rm -f "$hidden_nul"
+  fi
+  SHARED_MANIFEST_READY=1
+  return 0
+}
+
 corpse_process_target() {
   target=${1%/}
   [ -d "$target" ] || return 0
@@ -1189,14 +1287,18 @@ run_corpse_cleanup() {
 scan_shared_empty_files() {
   [ -d /data/media ] || return 0
   list="$TMP_DIR/shared-empty-files.nul"
-  find /data/media -mindepth 2 -maxdepth 6 \
-    \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
-       -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
-       -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
-       -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-    -type f -size 0c \
-    ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
-    -print0 2>/dev/null >"$list"
+  if [ "$SHARED_MANIFEST_READY" = "1" ]; then
+    cp -f "$SHARED_EMPTY_FILES_MANIFEST" "$list"
+  else
+    find /data/media -mindepth 2 -maxdepth 6 \
+      \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
+         -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
+         -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
+         -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
+      -type f -size 0c \
+      ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
+      -print0 2>/dev/null >"$list"
+  fi
   filter_whitelist_list "$list"
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
@@ -1224,21 +1326,25 @@ scan_shared_empty_files() {
 scan_shared_empty_dirs() {
   [ -d /data/media ] || return 0
   list="$TMP_DIR/shared-empty-dirs.nul"
-  find /data/media -mindepth 2 -maxdepth 6 \
-    \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
-       -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
-       -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
-       -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-    -type d -empty \
-    ! -path '/data/media/[0-9]*/DCIM' ! -path '/data/media/[0-9]*/Pictures' \
-    ! -path '/data/media/[0-9]*/Movies' ! -path '/data/media/[0-9]*/Music' \
-    ! -path '/data/media/[0-9]*/Download' ! -path '/data/media/[0-9]*/Documents' \
-    ! -path '/data/media/[0-9]*/Podcasts' ! -path '/data/media/[0-9]*/Ringtones' \
-    ! -path '/data/media/[0-9]*/Alarms' ! -path '/data/media/[0-9]*/Notifications' \
-    ! -path '/data/media/[0-9]*/Audiobooks' ! -path '/data/media/[0-9]*/Recordings' \
-    ! -path '/data/media/[0-9]*/MIUI' ! -path '/data/media/[0-9]*/ColorOS' \
-    ! -path '/data/media/[0-9]*/HeyTap' ! -path '/data/media/[0-9]*/oplus' \
-    -print0 2>/dev/null >"$list"
+  if [ "$SHARED_MANIFEST_READY" = "1" ]; then
+    cp -f "$SHARED_EMPTY_DIRS_MANIFEST" "$list"
+  else
+    find /data/media -mindepth 2 -maxdepth 6 \
+      \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
+         -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
+         -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
+         -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
+      -type d -empty \
+      ! -path '/data/media/[0-9]*/DCIM' ! -path '/data/media/[0-9]*/Pictures' \
+      ! -path '/data/media/[0-9]*/Movies' ! -path '/data/media/[0-9]*/Music' \
+      ! -path '/data/media/[0-9]*/Download' ! -path '/data/media/[0-9]*/Documents' \
+      ! -path '/data/media/[0-9]*/Podcasts' ! -path '/data/media/[0-9]*/Ringtones' \
+      ! -path '/data/media/[0-9]*/Alarms' ! -path '/data/media/[0-9]*/Notifications' \
+      ! -path '/data/media/[0-9]*/Audiobooks' ! -path '/data/media/[0-9]*/Recordings' \
+      ! -path '/data/media/[0-9]*/MIUI' ! -path '/data/media/[0-9]*/ColorOS' \
+      ! -path '/data/media/[0-9]*/HeyTap' ! -path '/data/media/[0-9]*/oplus' \
+      -print0 2>/dev/null >"$list"
+  fi
   filter_whitelist_list "$list"
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
@@ -1311,16 +1417,20 @@ run_hidden_junk() {
   [ -d /data/media ] && [ -f "$HIDDEN_RULES" ] || return 0
   HIDDEN_CONTEXT=1
   list="$TMP_DIR/hidden-dirs"
-  : >"$list"
-  for direct_hidden in /data/media/[0-9]*/DCIM/.thumbnails /data/media/[0-9]*/Pictures/.thumbnails; do
-    [ -d "$direct_hidden" ] && printf '%s\n' "$direct_hidden" >>"$list"
-  done
-  find /data/media -mindepth 2 -maxdepth 6 \
-    \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
-       -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
-       -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
-       -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-    -type d -name '.*' -print 2>/dev/null >>"$list"
+  if [ "$SHARED_MANIFEST_READY" = "1" ]; then
+    cp -f "$SHARED_HIDDEN_DIRS_MANIFEST" "$list"
+  else
+    : >"$list"
+    for direct_hidden in /data/media/[0-9]*/DCIM/.thumbnails /data/media/[0-9]*/Pictures/.thumbnails; do
+      [ -d "$direct_hidden" ] && printf '%s\n' "$direct_hidden" >>"$list"
+    done
+    find /data/media -mindepth 2 -maxdepth 6 \
+      \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
+         -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
+         -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
+         -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
+      -type d -name '.*' -print 2>/dev/null >>"$list"
+  fi
   while IFS= read -r hidden_dir || [ -n "$hidden_dir" ]; do
     [ -d "$hidden_dir" ] || continue
     [ -L "$hidden_dir" ] && continue
@@ -1352,7 +1462,9 @@ run_hidden_junk() {
   done <"$list"
 
   list="$TMP_DIR/hidden-files"
-  if [ "$HIDDEN_DAYS" -eq 0 ]; then
+  if [ "$SHARED_MANIFEST_READY" = "1" ]; then
+    cp -f "$SHARED_HIDDEN_FILES_MANIFEST" "$list"
+  elif [ "$HIDDEN_DAYS" -eq 0 ]; then
     find /data/media -mindepth 2 -maxdepth 6 \
       \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
          -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
@@ -1381,10 +1493,13 @@ run_hidden_junk() {
 run_fragment_cleanup() {
   [ -d /data/media ] || return 0
   list="$TMP_DIR/fragments.nul"
-  : >"$list"
+  if [ "$SHARED_MANIFEST_READY" = "1" ]; then
+    cp -f "$SHARED_FRAGMENT_MANIFEST" "$list"
+  else
+    : >"$list"
 
-  for userdir in /data/media/[0-9]*; do
-    [ -d "$userdir" ] || continue
+    for userdir in /data/media/[0-9]*; do
+      [ -d "$userdir" ] || continue
 
     # 非媒体公共区域：日志、崩溃转储与临时文件，至少保留指定天数。
     find "$userdir" -mindepth 1 -maxdepth 4 \
@@ -1401,14 +1516,15 @@ run_fragment_cleanup() {
       -print0 2>/dev/null >>"$list"
 
     # 下载目录只匹配明确的中断下载后缀，避免把普通日志或用户临时文档误删。
-    if [ -d "$userdir/Download" ]; then
-      find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f \
-        -size "-${MAX_FILE_BYTES}c" -mtime "+$FRAGMENT_DAYS" \
-        \( -iname '*.part' -o -iname '*.partial' -o -iname '*.crdownload' \
-           -o -iname '*.filepart' -o -iname '*.download' -o -iname '*.opdownload' \) \
-        -print0 2>/dev/null >>"$list"
-    fi
-  done
+      if [ -d "$userdir/Download" ]; then
+        find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f \
+          -size "-${MAX_FILE_BYTES}c" -mtime "+$FRAGMENT_DAYS" \
+          \( -iname '*.part' -o -iname '*.partial' -o -iname '*.crdownload' \
+             -o -iname '*.filepart' -o -iname '*.download' -o -iname '*.opdownload' \) \
+          -print0 2>/dev/null >>"$list"
+      fi
+    done
+  fi
 
   filter_whitelist_list "$list"
   count=$(count_nul "$list")
@@ -1489,6 +1605,8 @@ MAX_RUN_MINUTES=$(get_uint max_run_minutes 45 5 180)
 MAX_RUN_SECONDS=$((MAX_RUN_MINUTES * 60))
 CLEAN_EMPTY_FILES=$(get_bool clean_empty_files)
 CLEAN_EMPTY_DIRS=$(get_bool clean_empty_dirs)
+CLEAN_HIDDEN_JUNK=$(get_bool clean_hidden_junk)
+CLEAN_FRAGMENTS=$(get_bool clean_fragments)
 RUN_EMPTY=0
 RUN_CACHE=0
 RUN_RULES=0
@@ -1516,7 +1634,14 @@ log_line "单次任务上限: $MAX_RUN_MINUTES 分钟"
 log_line "----------------------------------------"
 
 STOPPED=0
-if [ "$RUN_EMPTY" = "1" ] && [ "$CLEAN_EMPTY_FILES" = "1" ]; then
+if [ "$PROFILE" = "all" ] && \
+   { { [ "$RUN_EMPTY" = "1" ] && { [ "$CLEAN_EMPTY_FILES" = "1" ] || [ "$CLEAN_EMPTY_DIRS" = "1" ]; }; } || \
+     { [ "$RUN_RULES" = "1" ] && [ "$CLEAN_HIDDEN_JUNK" = "1" ]; } || \
+     { [ "$RUN_FRAGMENT" = "1" ] && [ "$CLEAN_FRAGMENTS" = "1" ]; }; }; then
+  set_phase "一次扫描共享存储并分类"
+  prepare_shared_manifests || STOPPED=1
+fi
+if [ "$STOPPED" = "0" ] && [ "$RUN_EMPTY" = "1" ] && [ "$CLEAN_EMPTY_FILES" = "1" ]; then
   set_phase "清理共享存储空文件"
   scan_shared_empty_files || STOPPED=1
 fi
@@ -1564,12 +1689,12 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_oem_log
 fi
 
 
-if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_hidden_junk)" = "1" ]; then
+if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$CLEAN_HIDDEN_JUNK" = "1" ]; then
   set_phase "扫描隐藏垃圾"
   run_hidden_junk || STOPPED=1
 fi
 
-if [ "$STOPPED" = "0" ] && [ "$RUN_FRAGMENT" = "1" ] && [ "$(get_bool clean_fragments)" = "1" ]; then
+if [ "$STOPPED" = "0" ] && [ "$RUN_FRAGMENT" = "1" ] && [ "$CLEAN_FRAGMENTS" = "1" ]; then
   set_phase "扫描残留碎片（保留 ${FRAGMENT_DAYS} 天）"
   run_fragment_cleanup || STOPPED=1
 fi

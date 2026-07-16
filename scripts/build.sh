@@ -17,7 +17,7 @@ mkdir -p "$STAGE" "$OUT"
 for p in \
   action.sh cleaner.sh customize.sh job-runner.sh notify.sh service.sh status.sh uninstall.sh webctl.sh \
   module.prop skip_mount README.md \
-  CHANGELOG-v0.9.7.md CHANGELOG-v0.9.9.md CHANGELOG-v1.0.0.md CHANGELOG-v1.0.1.md CHANGELOG-v1.0.2.md \
+  CHANGELOG-v0.9.7.md CHANGELOG-v0.9.9.md CHANGELOG-v1.0.0.md CHANGELOG-v1.0.1.md CHANGELOG-v1.0.2.md CHANGELOG-v1.1.0-Beta1.md \
   config webroot; do
   cp -a "$p" "$STAGE/"
 done

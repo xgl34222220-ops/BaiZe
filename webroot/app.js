@@ -48,6 +48,15 @@ function formatStorageGB(kilobytes) {
   return n > 0 ? `${(n / 1048576).toFixed(2)} GB` : '—';
 }
 
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds || 0)));
+  if (total < 60) return `${total}秒`;
+  if (total < 3600) return `${Math.floor(total / 60)}分${total % 60}秒`;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${hours}时${minutes}分`;
+}
+
 function message(text) {
   const el = $('#snackbar');
   el.textContent = text;
@@ -74,6 +83,8 @@ async function command(args) {
 
 function fillState() {
   $('#device').textContent = `${state.brand || 'Android'} ${state.model || ''} · Android ${state.android || ''}`;
+  const percent = Math.max(0, Math.min(100, Number(state.data_percent || 0)));
+  $('.hero').style.setProperty('--ring-progress', `${percent}%`);
   if (state.running) {
     $('#last-size').textContent = '…';
     const runningLabels = {
@@ -84,8 +95,8 @@ function fillState() {
     };
     $('#last-kind').textContent = runningLabels[state.run_mode] || '处理中';
   } else {
-    $('#last-size').textContent = formatBytes(state.total_bytes);
-    $('#last-kind').textContent = Number(state.total_runs || 0) > 0 ? '累计已清理' : '等待清理';
+    $('#last-size').textContent = `${percent}%`;
+    $('#last-kind').textContent = '存储已用';
   }
   $('.hero').classList.toggle('running', Boolean(state.running));
   $('#last-result').textContent = state.running ? (state.run_phase || '正在处理') : (state.last_result || '尚未运行');
@@ -98,10 +109,10 @@ function fillState() {
   $('#metric-empty-files').textContent = Number(state.total_empty_files || 0).toLocaleString();
   $('#metric-empty').textContent = Number(state.total_empty_dirs || 0).toLocaleString();
   $('#metric-period').textContent = `${Number(state.total_runs || 0)}次`;
-  $('#metric-hidden').textContent = Number(state.total_hidden_items || 0).toLocaleString();
+  $('#metric-duration').textContent = formatDuration(state.total_elapsed);
+  $('#lifetime-size').textContent = formatBytes(state.total_bytes);
   $('#log-result').textContent = state.last_result || '暂无';
   $('#log-size').textContent = formatBytes(state.last_bytes);
-  const percent = Math.max(0, Math.min(100, Number(state.data_percent || 0)));
   $('#storage-free').textContent = `剩余 ${formatStorageGB(state.data_free_kb)}`;
   $('#storage-percent').textContent = `${percent}%`;
   $('#storage-bar').style.width = `${percent}%`;
@@ -113,7 +124,27 @@ function fillState() {
   const groupNames = { daily: '每日定时', cache: '缓存', empty: '空文件', rules: '规则垃圾', fragment: '残留碎片', deep: '深度安全项', multiple: '多个任务' };
   const schedulerWhen = Number(state.scheduler_updated || 0) > 0 ? ` · 更新于 ${new Date(Number(state.scheduler_updated) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
   $('#scheduler-detail').textContent = `${state.scheduler_group ? `${groupNames[state.scheduler_group] || state.scheduler_group}：` : ''}${state.scheduler_reason || '—'}${schedulerWhen}`;
-  $('#scheduler-dot').className = `scheduler-dot ${schedulerState}`;
+  $('#scheduler-dot').className = `health-dot ${schedulerState}`;
+
+  const notifyState = state.notify_status || 'untested';
+  const notifyLabels = {
+    ok: '通知通道可用', failed: '通知发送失败', unavailable: '通知能力不可用', untested: '通知通道未测试'
+  };
+  const notifyChannel = {
+    'shell-bigtext': '系统 Shell 通知', 'root-bigtext': 'Root 通知（长文本）', 'root-basic': 'Root 基础通知'
+  };
+  $('#notify-title').textContent = notifyLabels[notifyState] || '通知状态未知';
+  const notifyWhen = Number(state.notify_epoch || 0) > 0
+    ? ` · ${new Date(Number(state.notify_epoch) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  const notifyDetail = notifyState === 'ok'
+    ? (notifyChannel[state.notify_channel] || state.notify_channel || '已成功发送')
+    : (state.notify_detail || '可在计划页发送测试');
+  $('#notify-detail').textContent = `${notifyDetail}${notifyWhen}`;
+  $('#notify-diagnostic').textContent = notifyState === 'ok'
+    ? `当前使用：${notifyChannel[state.notify_channel] || state.notify_channel}`
+    : (state.notify_detail || '尚未测试通知通道');
+  $('#notify-dot').className = `health-dot ${notifyState}`;
 
   $('#scan').disabled = Boolean(state.running);
   $('#clean').disabled = Boolean(state.running);
@@ -123,6 +154,9 @@ function fillState() {
   $('#stop-run small').textContent = state.stop_requested ? '解除停止标记并恢复定时' : '不会把中断任务记为成功';
   $('#fragment-scan').disabled = Boolean(state.running);
   $('#fragment-clean').disabled = Boolean(state.running);
+  $('#cache-clean').disabled = Boolean(state.running);
+  $('#empty-clean').disabled = Boolean(state.running);
+  $('#rules-clean').disabled = Boolean(state.running);
   $('#deep-action').disabled = Boolean(state.running);
   $('#corpse-action').disabled = Boolean(state.running);
   $('#deep-rule-summary').textContent = `${Number(state.deep_rule_count || 0).toLocaleString()} 条规则 · 去重 ${Number(state.deep_rule_unique || 0).toLocaleString()} · 全部保留`;
@@ -188,6 +222,8 @@ async function loadHistory() {
 async function run(mode) {
   if (monitoring) return;
   const launchLabels = {
+    'cache-clean': '正在启动缓存清理', 'empty-clean': '正在启动空文件清理',
+    'rules-clean': '正在启动规则清理',
     'deep-scan': '正在启动深度扫描', 'deep-clean': '正在启动深度清理',
     'fragment-scan': '正在启动碎片扫描', 'fragment-clean': '正在启动碎片清理',
     'corpse-scan': '正在启动卸载残留扫描', 'corpse-clean': '正在启动卸载残留清理',
@@ -338,6 +374,9 @@ $$('.dock button').forEach((button) => button.addEventListener('click', () => op
 $('#refresh').addEventListener('click', () => loadStatus());
 $('#scan').addEventListener('click', () => run('scan'));
 $('#clean').addEventListener('click', () => run('clean'));
+$('#cache-clean').addEventListener('click', () => run('cache-clean'));
+$('#empty-clean').addEventListener('click', () => run('empty-clean'));
+$('#rules-clean').addEventListener('click', () => run('rules-clean'));
 $('#fragment-scan').addEventListener('click', () => run('fragment-scan'));
 $('#fragment-clean').addEventListener('click', () => run('fragment-clean'));
 $('#deep-action').addEventListener('click', () => {
@@ -391,7 +430,7 @@ $('#reset-stats').addEventListener('click', async () => {
   } catch (error) { message(error.message); }
 });
 $('#test-notification').addEventListener('click', async () => {
-  try { message(await command('notify-test')); }
+  try { message(await command('notify-test')); await loadStatus(false); }
   catch (error) { message(error.message); }
 });
 $$('[data-copy]').forEach((button) => button.addEventListener('click', () => copyText(button.dataset.copy)));
