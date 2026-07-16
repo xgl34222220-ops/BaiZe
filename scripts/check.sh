@@ -91,6 +91,9 @@ for key in ('schedule_cache_hours', 'schedule_empty_hours', 'schedule_rules_hour
     assert f'min="1" max="720" data-key="{key}"' in html, f'{key} WebUI 范围必须保持 1..720'
 
 assert css.count('{') == css.count('}'), 'CSS 花括号不平衡'
+assert 'background-attachment: fixed' not in css, '禁止固定背景触发滚动重绘'
+assert not re.search(r'\.surface\s*\{[^}]*backdrop-filter', css), '列表卡片禁止开启实时毛玻璃'
+assert css.count('will-change:') <= 1, 'GPU 常驻提升层数量超过预算'
 version = re.search(r'^version=(.+)$', (root / 'module.prop').read_text(encoding='utf-8'), re.M).group(1)
 changelog = root / f'CHANGELOG-{version}.md'
 assert changelog.is_file(), f'缺少当前版本更新日志: {changelog}'

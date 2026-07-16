@@ -1,6 +1,6 @@
 #!/system/bin/sh
 
-ui_print "- 白泽 v1.1.0-Beta2"
+ui_print "- 白泽 v1.1.0-Beta3"
 ui_print "- 深度安全项修复、扫描快照绑定与定时稳定性优化"
 
 [ "$API" -lt 26 ] && abort "! 仅支持 Android 8.0 及以上系统"

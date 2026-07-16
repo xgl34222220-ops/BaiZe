@@ -8,13 +8,19 @@ LATEST_ENV="$STATE_DIR/latest.env"
 
 [ -f "$CONFIG" ] || CONFIG="$MODDIR/config/default.conf"
 
+# 配置经过 webctl 严格限制为小写键和无符号整数；启动时一次载入，
+# 避免 WebUI 每次轮询状态都为几十个字段反复读取配置文件。
+while IFS='=' read -r key value extra || [ -n "$key$value$extra" ]; do
+  case "$key" in ''|[0-9]*|*[!a-z0-9_]*) continue ;; esac
+  case "$value" in ''|*[!0-9]*) continue ;; esac
+  [ -z "$extra" ] || continue
+  eval "cfg_$key=\$value"
+done <"$CONFIG"
+
 get_value() {
   wanted=$1
-  found=
-  while IFS='=' read -r key value || [ -n "$key$value" ]; do
-    [ "$key" = "$wanted" ] && found=$value
-  done <"$CONFIG"
-  printf '%s\n' "$found"
+  case "$wanted" in ''|[0-9]*|*[!a-z0-9_]*) return 0 ;; esac
+  eval "printf '%s\\n' \"\${cfg_$wanted-}\""
 }
 
 env_value() {

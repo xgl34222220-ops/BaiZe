@@ -15,8 +15,23 @@ sleep 120
 mkdir -p "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
 
+SERVICE_CONFIG_KEYS=""
+load_config_cache() {
+  for cached_key in $SERVICE_CONFIG_KEYS; do eval "unset service_cfg_$cached_key"; done
+  SERVICE_CONFIG_KEYS=""
+  while IFS='=' read -r key value extra || [ -n "$key$value$extra" ]; do
+    case "$key" in ''|[0-9]*|*[!a-z0-9_]*) continue ;; esac
+    case "$value" in ''|*[!0-9]*) continue ;; esac
+    [ -z "$extra" ] || continue
+    eval "service_cfg_$key=\$value"
+    SERVICE_CONFIG_KEYS="$SERVICE_CONFIG_KEYS $key"
+  done <"$CONFIG"
+}
+
 config_value() {
-  sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1
+  wanted=$1
+  case "$wanted" in ''|[0-9]*|*[!a-z0-9_]*) return 0 ;; esac
+  eval "printf '%s\\n' \"\${service_cfg_$wanted-}\""
 }
 
 bool_value() {
@@ -47,10 +62,17 @@ write_scheduler_state() {
   group=${2:-}
   reason=${3:-}
   now=$(date +%s)
-  old_state=$(sed -n 's/^state=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_group=$(sed -n 's/^group=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_reason=$(sed -n 's/^reason=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  old_state=""; old_group=""; old_reason=""; old_updated=0
+  if [ -f "$SCHEDULER_STATE" ]; then
+    while IFS='=' read -r old_key old_value || [ -n "$old_key$old_value" ]; do
+      case "$old_key" in
+        state) old_state=$old_value ;;
+        group) old_group=$old_value ;;
+        reason) old_reason=$old_value ;;
+        updated) old_updated=$old_value ;;
+      esac
+    done <"$SCHEDULER_STATE"
+  fi
   case "$old_updated" in ''|*[!0-9]*) old_updated=0 ;; esac
   case "$state" in
     running|completed|failed|interrupted) ;;
@@ -287,10 +309,10 @@ try_scheduled_clean() {
 
   failed_groups=""
   for interval_spec in \
-    "cache schedule_cache_enabled schedule_cache_hours 24 cache-clean" \
-    "empty schedule_empty_enabled schedule_empty_hours 24 empty-clean" \
-    "rules schedule_rules_enabled schedule_rules_hours 24 rules-clean" \
-    "fragment schedule_fragment_enabled schedule_fragment_hours 24 fragment-clean" \
+    "cache schedule_cache_enabled schedule_cache_hours 1 cache-clean" \
+    "empty schedule_empty_enabled schedule_empty_hours 1 empty-clean" \
+    "rules schedule_rules_enabled schedule_rules_hours 1 rules-clean" \
+    "fragment schedule_fragment_enabled schedule_fragment_hours 1 fragment-clean" \
     "deep schedule_deep_enabled schedule_deep_hours 168 deep-clean"; do
     set -- $interval_spec
     group_name=$1
@@ -309,6 +331,7 @@ try_scheduled_clean() {
 }
 
 while true; do
+  load_config_cache
   try_scheduled_clean
   sleep "$POLL_SECONDS"
 done

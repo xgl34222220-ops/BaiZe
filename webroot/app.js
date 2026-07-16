@@ -8,6 +8,10 @@ let monitoring = false;
 let formDirty = false;
 let lastRenderSignature = '';
 
+const reducedEffects = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  || (Number(navigator.hardwareConcurrency || 8) <= 4);
+document.documentElement.classList.toggle('lite-effects', reducedEffects);
+
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
@@ -100,6 +104,7 @@ function fillState() {
     $('#last-kind').textContent = '存储已用';
   }
   $('.hero').classList.toggle('running', Boolean(state.running));
+  document.documentElement.classList.toggle('task-running', Boolean(state.running));
   $('#last-result').textContent = state.running ? (state.run_phase || '正在处理') : (state.last_result || '尚未运行');
   const runningSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(state.run_started || 0));
   $('#last-time').textContent = state.running
@@ -369,11 +374,15 @@ async function copyText(id) {
 }
 
 function openPage(name) {
+  const liquidShapes = ['21px 25px 20px 24px', '25px 20px 24px 21px', '20px 24px 21px 25px', '24px 21px 25px 20px'];
   $$('.page').forEach((page) => page.classList.toggle('active', page.id === `page-${name}`));
   $$('.dock button').forEach((button, index) => {
     const active = button.dataset.page === name;
     button.classList.toggle('active', active);
-    if (active) $('.dock-indicator').style.transform = `translateX(${index * 100}%)`;
+    if (active) {
+      $('.dock-indicator').style.transform = `translateX(${index * 100}%)`;
+      $('.dock-indicator').style.borderRadius = liquidShapes[index];
+    }
   });
   if (name === 'logs') { loadLog(); loadReport(); loadHistory(); }
   if (name === 'rules' && !$('#whitelist').dataset.loaded) {
