@@ -1,0 +1,24 @@
+# 受控隐藏垃圾规则。格式：类型|名称|保留天数
+# dir 只允许完全匹配目录名；file 允许这里列出的安全文件模式。
+dir|.cache|0
+dir|.thumbnails|0
+dir|.thumbnail|0
+dir|.thumb|0
+dir|.tmp|0
+dir|.temp|0
+dir|.xlDownload|0
+dir|.logs|7
+dir|.log|7
+dir|.debug|7
+dir|.crash|7
+dir|.trash|30
+dir|.Trash|30
+dir|.Trashes|30
+dir|.recycle|30
+dir|.recyclebin|30
+dir|.RecycleBin|30
+file|.DS_Store|0
+file|._*|0
+file|Thumbs.db|0
+file|desktop.ini|0
+file|.directory|0

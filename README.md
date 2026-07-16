@@ -14,13 +14,6 @@
 
 白泽以准确统计、分级保护和可审计清理为核心。项目保留完整深度规则库，但把规则存在与删除权限分离：低、中风险内容可参与安全定时，高风险与关键风险内容默认只扫描，完整深度清理必须由用户手动确认。
 
-## 界面预览
-
-<p align="center">
-  <img src="docs/images/home.png" width="46%" alt="白泽首页">
-  <img src="docs/images/rules.png" width="46%" alt="白泽规则页">
-</p>
-
 ## 核心功能
 
 - 应用内部缓存、`code_cache` 与 `Android/data` 外部缓存清理

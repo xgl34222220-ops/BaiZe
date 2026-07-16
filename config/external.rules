@@ -1,0 +1,48 @@
+# 来源参考 CZero 等项目，并经过白泽二次筛选。
+# 格式：包名|Android/data/<包名> 下的相对路径|保留天数
+# 只收录日志、崩溃记录、广告缓存与明确可再生的临时资源；不含下载、草稿和媒体。
+com.tencent.mobileqq|Tencent/log|0
+com.tencent.mobileqq|files/tencent/msflogs/com/tencent/mobileqq|0
+com.coolapk.market|files/log|0
+com.coolapk.market|files/logs|0
+com.coolapk.market|files/event|0
+com.coolapk.market|files/eventUploading|0
+com.coolapk.market|files/papm|0
+com.coolapk.market|files/papm4sdk|0
+com.coolapk.market|files/qCrash|0
+com.coolapk.market|files/TTCache|0
+com.coolapk.market|files/tbslog|0
+com.coolapk.market|files/tencent/tbs_common_log|0
+com.coolapk.market|files/cachett_ad|0
+com.youku.phone|files/logs|0
+com.youku.phone|files/ad|0
+com.youku.phone|files/onepcache|0
+com.youku.phone|files/tnetlogs|0
+com.jiongji.andriod.card|files/log|0
+com.sohu.inputmethod.sogou.xiaomi|files/sogou/corelog|0
+com.ss.android.ugc.aweme|files/perf|0
+com.ss.android.ugc.aweme|files/MiPushLog|0
+com.zhihu.android|files/TTCache|0
+com.zhihu.android|files/perfUploading|0
+com.zhihu.android|files/tencent/TPush|0
+com.sina.weibo|files/sina/weibo/storage/statistic_wlog|0
+com.sina.weibo|files/sina/weibo/storage/video_play_cache|0
+com.netease.cloudmusic|files/xcrash|0
+com.xiaomi.market|files/cmsVideo|0
+com.xiaomi.market|files/MiPushLog|0
+com.miui.gallery|files/gallery_disk_cache|0
+com.miui.player|files/image_cache|0
+com.miui.player|files/Tencent/wns/Logs|0
+com.autonavi.minimap|files/autonavi/data/navi/compile_v2|0
+
+# v0.9.9：外部存储中仅限明确的诊断与日志目录
+com.tencent.mm|MicroMsg/xlog|0
+com.tencent.mm|MicroMsg/crash|0
+com.tencent.mobileqq|files/tencent/QQ/log|0
+com.tencent.mobileqq|files/tencent/QQ/crash|0
+com.ss.android.ugc.aweme|files/log|0
+com.ss.android.ugc.aweme|files/xlog|0
+com.smile.gifmaker|files/log|0
+com.smile.gifmaker|files/xlog|0
+com.baidu.searchbox|files/log|0
+com.tencent.news|files/log|0
