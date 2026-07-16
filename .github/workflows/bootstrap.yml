@@ -1,0 +1,89 @@
+name: Bootstrap BaiZe source
+
+on:
+  push:
+    paths:
+      - '.github/workflows/bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore and validate source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat \
+            .bootstrap/source.b64.part-001 \
+            .bootstrap/source.b64.part-002 \
+            .bootstrap/source.b64.part-003 \
+            .bootstrap/source.b64.part-004 \
+            .bootstrap/source.b64.part-005 \
+            .bootstrap/source.b64.part-006 \
+            .bootstrap/source.b64.part-007 \
+            .bootstrap/source.b64.part-008 \
+            .bootstrap/source.b64.part-009a \
+            .bootstrap/source.b64.part-009b \
+            .bootstrap/source.b64.part-009c \
+            .bootstrap/source.b64.part-010 \
+            .bootstrap/source.b64.part-0110 \
+            .bootstrap/source.b64.part-0111 \
+            .bootstrap/source.b64.part-0112 \
+            .bootstrap/source.b64.part-0120 \
+            .bootstrap/source.b64.part-01210 \
+            .bootstrap/source.b64.part-01211 \
+            .bootstrap/source.b64.part-01212 \
+            .bootstrap/source.b64.part-01213 \
+            .bootstrap/source.b64.part-0122 \
+            .bootstrap/source.b64.part-013 \
+            | base64 --decode > /tmp/BaiZe-source.tar.xz
+
+          echo '5acd7d53ce8924b4f8e0a8609a4371ebe7f320a142c4b55113a76c68b4fcb09b  /tmp/BaiZe-source.tar.xz' | sha256sum --check --strict
+
+          rm -rf /tmp/baize-source
+          mkdir -p /tmp/baize-source
+          tar -xJf /tmp/BaiZe-source.tar.xz -C /tmp/baize-source
+
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+          cp -a /tmp/baize-source/baize_bootstrap_src/. .
+
+          chmod 0755 ./*.sh scripts/*.sh
+          sh scripts/check.sh
+          sh scripts/build.sh
+
+      - name: Publish source to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Publish BaiZe v1.0.2 source'
+          git push origin HEAD:main
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Publish v1.0.2 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v1.0.2 >/dev/null 2>&1; then
+            gh release upload v1.0.2 dist/* --clobber
+          else
+            gh release create v1.0.2 dist/* \
+              --target "$SOURCE_COMMIT" \
+              --title '白泽 v1.0.2' \
+              --notes-file RELEASE-v1.0.2.md
+          fi
