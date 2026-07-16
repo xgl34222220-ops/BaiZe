@@ -1,0 +1,21 @@
+name: 功能建议
+description: 建议清理规则、调度或界面改进
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: 使用场景
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: 数据安全与兼容性影响
