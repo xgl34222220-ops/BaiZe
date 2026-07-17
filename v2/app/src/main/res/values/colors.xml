@@ -1,21 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="baize_primary">#58A9FF</color>
-    <color name="baize_primary_container">#173B5F</color>
-    <color name="baize_secondary">#53D4C6</color>
-    <color name="baize_background">#0F1218</color>
-    <color name="baize_surface">#171C24</color>
-    <color name="baize_surface_high">#202631</color>
-    <color name="baize_glass">#F2171C24</color>
-    <color name="baize_glass_soft">#E6202631</color>
-    <color name="baize_glass_stroke">#12FFFFFF</color>
-    <color name="baize_text_primary">#F4F7FB</color>
-    <color name="baize_text_secondary">#98A3B3</color>
-    <color name="baize_success">#55C894</color>
-    <color name="baize_warning">#E8AE55</color>
-    <color name="baize_error">#ED7276</color>
-    <color name="baize_violet">#8B80EE</color>
-    <color name="baize_nav_active">#EAF4FF</color>
-    <color name="baize_nav_inactive">#758091</color>
+    <color name="baize_primary">#68B7FF</color>
+    <color name="baize_primary_container">#17334D</color>
+    <color name="baize_secondary">#5BDEC9</color>
+    <color name="baize_background">#0B1118</color>
+    <color name="baize_surface">#141B24</color>
+    <color name="baize_surface_high">#1B2734</color>
+    <color name="baize_glass">#E817202B</color>
+    <color name="baize_glass_soft">#D9232E3C</color>
+    <color name="baize_glass_stroke">#42FFFFFF</color>
+    <color name="baize_glass_highlight">#26FFFFFF</color>
+    <color name="baize_text_primary">#F7FAFF</color>
+    <color name="baize_text_secondary">#C1CCDA</color>
+    <color name="baize_text_tertiary">#929FB0</color>
+    <color name="baize_success">#5DD49D</color>
+    <color name="baize_warning">#F1B963</color>
+    <color name="baize_error">#F07A80</color>
+    <color name="baize_violet">#9187F6</color>
+    <color name="baize_nav_active">#FFFFFF</color>
+    <color name="baize_nav_inactive">#C7D2E0</color>
+    <color name="baize_nav_indicator">#38FFFFFF</color>
+    <color name="baize_nav_ripple">#24FFFFFF</color>
     <color name="transparent">#00000000</color>
 </resources>
