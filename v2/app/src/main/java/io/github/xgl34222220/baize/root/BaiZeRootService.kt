@@ -800,7 +800,7 @@ class BaiZeRootService : RootService() {
             Files.createDirectories(directory)
             val target = directory.resolve("last-clean-report.json")
             val temporary = directory.resolve("last-clean-report.json.tmp")
-            Files.writeString(temporary, report)
+            Files.write(temporary, report.toByteArray(Charsets.UTF_8))
             try {
                 Files.move(
                     temporary,
