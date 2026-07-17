@@ -1,0 +1,168 @@
+name: Patch Alpha 5 native profile engine
+
+on:
+  push:
+    branches: [v2-alpha5]
+    paths:
+      - '.github/workflows/patch-alpha5-native-engine.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha5
+          fetch-depth: 0
+
+      - name: Integrate native profile engine
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt')
+          text = root.read_text()
+          marker = '    private val measureLock = Any()\n'
+          insert = marker + '    private val profileEngine by lazy { NativeProfileEngine(this, cancelled) }\n'
+          if 'private val profileEngine by lazy' not in text:
+              if marker not in text:
+                  raise SystemExit('profile engine field marker not found')
+              text = text.replace(marker, insert, 1)
+
+          marker = '    private val binder = object : IBaiZeRootService.Stub() {\n        override fun ping(): String = JSONObject()\n'
+          methods = '''    private val binder = object : IBaiZeRootService.Stub() {
+        override fun getProfileCatalog(): String = profileEngine.catalog()
+
+        override fun scanProfile(profile: String?, optionsJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busyResult("profile-scan")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                profileEngine.scan(profile.orEmpty(), optionsJson.orEmpty()) { state ->
+                    updateTaskState(
+                        true,
+                        "profile-scan",
+                        state.phase,
+                        state.current,
+                        state.total,
+                        "",
+                        state.path,
+                        state.bytes,
+                        state.files,
+                        state.failures,
+                        started
+                    )
+                }
+            } catch (error: Throwable) {
+                JSONObject().put("error", "profile_scan_failed")
+                    .put("message", error.message ?: error.javaClass.simpleName).toString()
+            } finally {
+                taskRunning.set(false)
+                updateTaskState(false, "idle", "等待任务", 0, 0, "", "", 0, 0, 0, started)
+            }
+        }
+
+        override fun getProfilePage(snapshotId: String?, offset: Int, limit: Int): String {
+            if (taskRunning.get()) return busyPage()
+            cancelled.set(false)
+            return profileEngine.page(snapshotId.orEmpty(), offset, limit)
+        }
+
+        override fun cleanProfileSelected(snapshotId: String?, selectionJson: String?, optionsJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busyResult("profile-clean")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                profileEngine.clean(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { state ->
+                    updateTaskState(
+                        true,
+                        "profile-clean",
+                        state.phase,
+                        state.current,
+                        state.total,
+                        "",
+                        state.path,
+                        state.bytes,
+                        state.files,
+                        state.failures,
+                        started
+                    )
+                }
+            } catch (error: Throwable) {
+                JSONObject().put("error", "profile_clean_failed")
+                    .put("message", error.message ?: error.javaClass.simpleName).toString()
+            } finally {
+                taskRunning.set(false)
+                updateTaskState(false, "idle", "等待任务", 0, 0, "", "", 0, 0, 0, started)
+            }
+        }
+
+        override fun ping(): String = JSONObject()
+'''
+          if 'override fun getProfileCatalog()' not in text:
+              if marker not in text:
+                  raise SystemExit('binder marker not found')
+              text = text.replace(marker, methods, 1)
+          text = text.replace('kotlin-nio-snapshot-safe-delete-v3', 'kotlin-nio-native-profiles-v5')
+          root.write_text(text)
+
+          gradle = Path('v2/app/build.gradle.kts')
+          text = gradle.read_text().replace('versionCode = 20004', 'versionCode = 20005').replace('versionName = "2.0.0-alpha04"', 'versionName = "2.0.0-alpha05"')
+          gradle.write_text(text)
+
+          prop = Path('v2/module/module.prop')
+          text = prop.read_text().replace('version=v2.0.0-alpha04', 'version=v2.0.0-alpha05').replace('versionCode=20004', 'versionCode=20005')
+          text = text.replace('description=白泽 v2 一体化原生清理模块：内置并自动安装 App，提供 Root 扫描、安全清理、后台服务与模块管理器启动入口。', 'description=白泽 v2 Alpha 5：一体化 App 与模块，迁移完整原生清理引擎、深度规则、审计与后台任务。')
+          prop.write_text(text)
+
+          package = Path('v2/scripts/package-module.sh')
+          package.write_text('''#!/usr/bin/env sh
+set -eu
+
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+REPO=$(CDPATH= cd -- "$ROOT/.." && pwd)
+OUT="$ROOT/dist"
+MODULE="$ROOT/module"
+STAGE="$ROOT/build/module-stage"
+APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+OUTPUT="$OUT/BaiZe-v2-Alpha5-Module.zip"
+
+[ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
+rm -rf "$STAGE"
+mkdir -p "$OUT" "$STAGE/app"
+cp -a "$MODULE/." "$STAGE/"
+cp -a "$REPO/config" "$STAGE/config"
+cp -f "$APK" "$STAGE/app/baize.apk"
+chmod 0644 "$STAGE/app/baize.apk"
+sha256sum "$STAGE/app/baize.apk" | awk '{print $1}' > "$STAGE/app/baize.apk.sha256"
+chmod 0644 "$STAGE/app/baize.apk.sha256"
+rm -f "$OUTPUT"
+(
+  cd "$STAGE"
+  zip -qr "$OUTPUT" .
+)
+unzip -tq "$OUTPUT" >/dev/null
+unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
+unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
+echo "已生成内置 App 与完整规则库的一体化模块：$OUTPUT"
+''')
+
+          workflow = Path('.github/workflows/v2-alpha.yml')
+          text = workflow.read_text()
+          text = text.replace('branches: [v2-alpha4]', 'branches: [v2-alpha5]')
+          text = text.replace('build-alpha4.log', 'build-alpha5.log')
+          text = text.replace('BaiZe-v2-Alpha4', 'BaiZe-v2-Alpha5')
+          text = text.replace('v2/dist/BaiZe-v2-Alpha4-Module.zip', 'v2/dist/BaiZe-v2-Alpha5-Module.zip')
+          workflow.write_text(text)
+          PY
+
+      - name: Commit integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app v2/module/module.prop v2/scripts/package-module.sh .github/workflows/v2-alpha.yml
+          git commit -m 'Integrate Alpha 5 native multi-profile engine and complete rules'
+          git push origin HEAD:v2-alpha5
