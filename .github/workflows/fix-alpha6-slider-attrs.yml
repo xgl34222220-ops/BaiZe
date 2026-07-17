@@ -1,0 +1,40 @@
+name: Fix Alpha 6 slider attributes
+
+on:
+  push:
+    branches: [v2-alpha6]
+    paths:
+      - '.github/workflows/fix-alpha6-slider-attrs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha6
+          fetch-depth: 0
+
+      - name: Correct Material Slider XML namespace
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/app/src/main/res/layout/activity_dashboard.xml')
+          text = path.read_text()
+          text = text.replace('app:stepSize=', 'android:stepSize=')
+          text = text.replace('app:valueFrom=', 'android:valueFrom=')
+          text = text.replace('app:valueTo=', 'android:valueTo=')
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/fix-alpha6-slider-attrs.yml
+
+      - name: Commit correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/res/layout/activity_dashboard.xml .github/workflows/fix-alpha6-slider-attrs.yml
+          git commit -m 'Fix Alpha 6 Material Slider attributes'
+          git push origin HEAD:v2-alpha6
