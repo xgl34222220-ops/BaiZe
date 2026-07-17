@@ -8,9 +8,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -19,14 +17,12 @@ import com.google.android.material.progressindicator.CircularProgressIndicator
 import io.github.xgl34222220.baize.ui.LiquidBackdropDrawable
 import io.github.xgl34222220.baize.ui.LiquidGlassDrawable
 
-/** Runtime visual pass for the Alpha 9 MIUI X redesign. */
+/** Stable runtime visual pass for the Alpha 10 MIUI X redesign. */
 object Alpha7UiPolish {
-    private const val THEME_CARD_TAG = "baize-alpha9-theme-card"
-
     fun install(application: Application) {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                activity.window.decorView.post { polish(activity) }
+                activity.window.decorView.post { runCatching { polish(activity) } }
             }
             override fun onActivityStarted(activity: Activity) = Unit
             override fun onActivityResumed(activity: Activity) = Unit
@@ -40,12 +36,31 @@ object Alpha7UiPolish {
     private fun polish(activity: Activity) {
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         content?.getChildAt(0)?.background = LiquidBackdropDrawable(activity)
+
+        if (activity is DashboardActivity) markDashboardSurfaces(activity)
         applyGlassTree(activity.window.decorView, activity)
+
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
             is CacheActivity, is ProfileActivity, is SmartScanActivity -> polishDetail(activity)
         }
+    }
+
+    private fun markDashboardSurfaces(activity: Activity) {
+        markCard(activity, R.id.freeSpaceText, "glass:hero")
+        markCard(activity, R.id.serviceStatusText, "glass:strip")
+        markCard(activity, R.id.schedulerStatusText, "glass:strip")
+        markCard(activity, R.id.scheduleSwitch, "glass:hero")
+        markCard(activity, R.id.taskStatusText, "glass:card")
+        markCard(activity, R.id.recordSummaryText, "glass:card")
+        markCard(activity, R.id.settingsStatusText, "glass:card")
+    }
+
+    private fun markCard(activity: Activity, childId: Int, tag: String) {
+        var node: View? = activity.findViewById(childId)
+        while (node != null && node !is MaterialCardView) node = node.parent as? View
+        (node as? MaterialCardView)?.tag = tag
     }
 
     private fun applyGlassTree(view: View, activity: Activity) {
@@ -66,17 +81,24 @@ object Alpha7UiPolish {
         }
         if (view is MaterialButton) {
             view.stateListAnimator = null
-            view.elevation = if (view.id == R.id.cleanNowButton || view.id == R.id.cleanAllButton) dp(activity, 10).toFloat() else dp(activity, 2).toFloat()
+            view.elevation = if (
+                view.id == R.id.cleanNowButton ||
+                view.id == R.id.cleanAllButton ||
+                view.id == R.id.savePlanButton
+            ) dp(activity, 10).toFloat() else dp(activity, 2).toFloat()
         }
-        if (view is ViewGroup) for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
+        }
     }
 
     private fun polishDashboard(activity: Activity) {
         val primary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, Color.rgb(90, 168, 255))
         val secondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSecondary, Color.rgb(81, 214, 198))
         val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
+
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 9"
+            text = "Alpha 10"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)
@@ -89,15 +111,35 @@ object Alpha7UiPolish {
             setTextColor(primary)
             strokeColor = ColorStateList.valueOf(alpha(primary, 170))
         }
-        styleTool(activity, R.id.advancedAuditButton, R.drawable.ic_clean_detail, primary,
-            "清理明细\n查看缓存、空项目、规则垃圾与碎片")
-        styleTool(activity, R.id.corpsesToolButton, R.drawable.ic_uninstall_residue, secondary,
-            "卸载残留\n扫描后可一键清理 data / obb 残留")
-        styleTool(activity, R.id.deepToolButton, R.drawable.ic_deep_clean, tertiary,
-            "深度清理\n4,746 条规则扫描，安全项一键清理")
+        activity.findViewById<MaterialButton>(R.id.savePlanButton)?.apply {
+            background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.BUTTON)
+            backgroundTintList = null
+            setTextColor(Color.WHITE)
+        }
+
+        styleTool(
+            activity,
+            R.id.advancedAuditButton,
+            R.drawable.ic_clean_detail,
+            primary,
+            "清理明细\n查看缓存、空项目、规则垃圾与碎片"
+        )
+        styleTool(
+            activity,
+            R.id.corpsesToolButton,
+            R.drawable.ic_uninstall_residue,
+            secondary,
+            "卸载残留\n扫描后可一键清理 data / obb 残留"
+        )
+        styleTool(
+            activity,
+            R.id.deepToolButton,
+            R.drawable.ic_deep_clean,
+            tertiary,
+            "深度清理\n4,746 条规则扫描，安全项一键清理"
+        )
         activity.findViewById<TextView>(R.id.recentTaskText)?.visibility = View.GONE
         activity.findViewById<TextView>(R.id.taskStatusText)?.setLineSpacing(dp(activity, 3).toFloat(), 1f)
-        installThemeSelector(activity)
     }
 
     private fun styleTool(activity: Activity, id: Int, iconRes: Int, color: Int, label: String) {
@@ -117,79 +159,6 @@ object Alpha7UiPolish {
         }
     }
 
-    private fun installThemeSelector(activity: Activity) {
-        val scroll = activity.findViewById<ViewGroup>(R.id.settingsPage) ?: return
-        val container = scroll.getChildAt(0) as? LinearLayout ?: return
-        if (container.findViewWithTag<View>(THEME_CARD_TAG) != null) return
-
-        val primary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, Color.rgb(90, 168, 255))
-        val onSurface = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnSurface, Color.WHITE)
-        val secondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.LTGRAY)
-        val selected = ThemeManager.currentPalette(activity)
-        val card = MaterialCardView(activity).apply {
-            tag = THEME_CARD_TAG
-            setCardBackgroundColor(Color.TRANSPARENT)
-            strokeWidth = 0
-            radius = dp(activity, 26).toFloat()
-            background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.CARD)
-            isClickable = true
-            isFocusable = true
-            elevation = dp(activity, 10).toFloat()
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(activity, 14)
-                bottomMargin = dp(activity, 2)
-            }
-            setContentPadding(dp(activity, 17), dp(activity, 16), dp(activity, 15), dp(activity, 16))
-        }
-        val row = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val column = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        column.addView(TextView(activity).apply {
-            text = "主题与取色"
-            textSize = 15f
-            setTextColor(onSurface)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        })
-        column.addView(TextView(activity).apply {
-            text = "${selected.label} · ${selected.description}"
-            textSize = 11f
-            setTextColor(secondary)
-            setPadding(0, dp(activity, 5), 0, 0)
-        })
-        row.addView(column)
-        row.addView(TextView(activity).apply {
-            text = "切换  ›"
-            textSize = 12f
-            setTextColor(primary)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        })
-        card.addView(row)
-        card.setOnClickListener { showThemeDialog(activity) }
-        container.addView(card, 1.coerceAtMost(container.childCount))
-    }
-
-    private fun showThemeDialog(activity: Activity) {
-        val current = ThemeManager.currentId(activity)
-        val labels = ThemeManager.palettes.map { palette ->
-            if (palette.monet) "${palette.label}\n${palette.description}（Android 12+）" else "${palette.label}\n${palette.description}"
-        }.toTypedArray()
-        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
-        AlertDialog.Builder(activity)
-            .setTitle("主题与取色")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setPalette(activity, ThemeManager.palettes[which].id)
-                dialog.dismiss()
-                activity.recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
     private fun polishCleanCenter(activity: Activity) {
         replaceText(activity.window.decorView, "清理中心", "清理明细")
         replaceText(activity.window.decorView, "完整功能，不再只有应用缓存", "分类明细仅供查看；安全项可以直接一键清理")
@@ -204,9 +173,18 @@ object Alpha7UiPolish {
 
     private fun replaceText(view: View, from: String, to: String) {
         if (view is TextView && view.text.toString() == from) view.text = to
-        if (view is ViewGroup) for (index in 0 until view.childCount) replaceText(view.getChildAt(index), from, to)
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) replaceText(view.getChildAt(index), from, to)
+        }
     }
 
-    private fun alpha(color: Int, value: Int): Int = Color.argb(value.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color))
-    private fun dp(activity: Activity, value: Int): Int = (value * activity.resources.displayMetrics.density + 0.5f).toInt()
+    private fun alpha(color: Int, value: Int): Int = Color.argb(
+        value.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
+
+    private fun dp(activity: Activity, value: Int): Int =
+        (value * activity.resources.displayMetrics.density + 0.5f).toInt()
 }
