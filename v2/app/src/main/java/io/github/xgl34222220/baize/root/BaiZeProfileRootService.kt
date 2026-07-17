@@ -7,9 +7,17 @@ import android.os.SystemClock
 import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Persistent root process for non-cache cleaning profiles. */
+/**
+ * Persistent root service for the Alpha 6 automatic module path and advanced native audits.
+ *
+ * Ordinary users call [runModuleTask] with `clean` or `scan`. The complete v1 cleaner performs
+ * discovery and cleaning in one task, so the UI never asks the user to open every category and
+ * tick hundreds of cache entries. Native profile snapshots remain available only for advanced
+ * audit/detail screens and higher-risk tools.
+ */
 class BaiZeProfileRootService : RootService() {
     private val cancelled = AtomicBoolean(false)
     private val taskRunning = AtomicBoolean(false)
@@ -22,9 +30,11 @@ class BaiZeProfileRootService : RootService() {
         override fun ping(): String = JSONObject()
             .put("uid", Process.myUid())
             .put("root", Process.myUid() == 0)
-            .put("module", File("/data/adb/modules/baize_v2/module.prop").isFile)
-            .put("deepRules", File("/data/adb/modules/baize_v2/config/deep.rules").isFile)
-            .put("engine", "native-profile-engine-v5")
+            .put("module", File(MODULE_DIR, "module.prop").isFile)
+            .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
+            .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
+            .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
+            .put("engine", "module-auto-cleaner-v6+native-audit")
             .toString()
 
         override fun getProfileCatalog(): String = engine.catalog()
@@ -38,13 +48,10 @@ class BaiZeProfileRootService : RootService() {
                     updateState("profile-scan", progress, started)
                 }
             } catch (error: Throwable) {
-                JSONObject()
-                    .put("error", "profile_scan_failed")
-                    .put("message", error.message ?: error.javaClass.simpleName)
-                    .toString()
+                failure("profile_scan_failed", error)
             } finally {
                 taskRunning.set(false)
-                this@BaiZeProfileRootService.taskStateJson = idleState()
+                taskStateJson = idleState()
             }
         }
 
@@ -63,28 +70,229 @@ class BaiZeProfileRootService : RootService() {
                     updateState("profile-clean", progress, started)
                 }
             } catch (error: Throwable) {
-                JSONObject()
-                    .put("error", "profile_clean_failed")
-                    .put("message", error.message ?: error.javaClass.simpleName)
-                    .toString()
+                failure("profile_clean_failed", error)
             } finally {
                 taskRunning.set(false)
-                this@BaiZeProfileRootService.taskStateJson = idleState()
+                taskStateJson = idleState()
             }
         }
 
-        override fun getTaskState(): String = runCatching {
-            JSONObject(this@BaiZeProfileRootService.taskStateJson)
-                .put("cancelRequested", cancelled.get())
+        override fun runModuleTask(mode: String?): String {
+            val normalized = mode.orEmpty().trim().lowercase()
+            if (normalized !in MODULE_TASKS) {
+                return JSONObject().put("error", "unsupported_mode").put("mode", normalized).toString()
+            }
+            if (!taskRunning.compareAndSet(false, true)) return busy("module-$normalized")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            taskStateJson = JSONObject()
+                .put("running", true)
+                .put("operation", "module-$normalized")
+                .put("phase", if (normalized == "scan") "正在执行安全扫描" else "正在执行一键清理")
+                .put("elapsedMs", 0)
                 .toString()
-        }.getOrDefault(this@BaiZeProfileRootService.taskStateJson)
+            return try {
+                executeModuleTask(normalized, started)
+            } catch (error: Throwable) {
+                failure("module_task_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun getModuleState(): String = moduleState()
+
+        override fun getSchedulerConfig(): String = configJson()
+
+        override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
+
+        override fun getTaskState(): String {
+            val running = readEnv(File(STATE_DIR, "running.env"))
+            if (running.length() > 0) {
+                running.put("running", true)
+                running.put("operation", running.optString("mode", "module-task"))
+                running.put("cancelRequested", cancelled.get())
+                return running.toString()
+            }
+            return runCatching {
+                JSONObject(taskStateJson).put("cancelRequested", cancelled.get()).toString()
+            }.getOrDefault(taskStateJson)
+        }
 
         override fun cancelCurrentTask() {
             cancelled.set(true)
+            runCatching {
+                File(STATE_DIR).mkdirs()
+                File(STATE_DIR, "stop").writeText("1\n")
+            }
         }
     }
 
     override fun onBind(intent: Intent): IBinder = binder
+
+    private fun executeModuleTask(mode: String, started: Long): String {
+        val cleaner = File(MODULE_DIR, "cleaner.sh")
+        if (!cleaner.isFile) {
+            return JSONObject()
+                .put("error", "cleaner_missing")
+                .put("message", "模块清理引擎缺失，请重新刷入完整模块")
+                .toString()
+        }
+
+        val stateDir = File(STATE_DIR).apply { mkdirs() }
+        File(stateDir, "stop").delete()
+        val logDir = File(stateDir, "logs").apply { mkdirs() }
+        val log = File(logDir, "app-${mode}-${System.currentTimeMillis()}.log")
+        val process = ProcessBuilder("/system/bin/sh", cleaner.absolutePath, mode, "app")
+            .redirectErrorStream(true)
+            .redirectOutput(log)
+            .start()
+
+        while (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
+            if (cancelled.get()) {
+                runCatching { File(stateDir, "stop").writeText("1\n") }
+            }
+            val running = readEnv(File(stateDir, "running.env"))
+            val phase = running.optString("phase").ifBlank {
+                if (mode == "scan") "正在执行安全扫描" else "正在自动扫描并清理"
+            }
+            taskStateJson = running
+                .put("running", true)
+                .put("operation", "module-$mode")
+                .put("phase", phase)
+                .put("elapsedMs", SystemClock.elapsedRealtime() - started)
+                .toString()
+        }
+
+        val code = process.exitValue()
+        val elapsed = SystemClock.elapsedRealtime() - started
+        val totals = readEnv(File(stateDir, "totals.env"))
+        val latestReport = File(stateDir, "reports/latest.tsv")
+        val output = tailText(log, 12_000)
+        return JSONObject()
+            .put("success", code == 0)
+            .put("mode", mode)
+            .put("exitCode", code)
+            .put("cancelled", code == 9 || cancelled.get())
+            .put("elapsedMs", elapsed)
+            .put("output", output)
+            .put("totals", totals)
+            .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
+            .put("message", when (code) {
+                0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
+                3 -> "已有其他任务正在运行"
+                9 -> "任务已停止"
+                else -> "任务失败（代码 $code）"
+            })
+            .toString()
+    }
+
+    private fun moduleState(): String {
+        val stateDir = File(STATE_DIR)
+        val scheduler = readEnv(File(stateDir, "scheduler.env"))
+        val module = readEnv(File(stateDir, "module.env"))
+        val totals = readEnv(File(stateDir, "totals.env"))
+        val running = readEnv(File(stateDir, "running.env"))
+        return JSONObject()
+            .put("moduleInstalled", File(MODULE_DIR, "module.prop").isFile)
+            .put("cleanerReady", File(MODULE_DIR, "cleaner.sh").isFile)
+            .put("rulesReady", File(MODULE_DIR, "config/deep.rules").isFile)
+            .put("scheduler", scheduler)
+            .put("module", module)
+            .put("totals", totals)
+            .put("running", running)
+            .put("config", configJsonObject())
+            .toString()
+    }
+
+    private fun configJson(): String = configJsonObject().toString()
+
+    private fun configJsonObject(): JSONObject {
+        ensureConfig()
+        val result = JSONObject()
+        File(CONFIG_FILE).takeIf { it.isFile }?.forEachLine { raw ->
+            val line = raw.trim()
+            if (line.isBlank() || line.startsWith("#") || !line.contains('=')) return@forEachLine
+            val key = line.substringBefore('=').trim()
+            val value = line.substringAfter('=').trim()
+            if (key in ALLOWED_CONFIG) result.put(key, value.toIntOrNull() ?: value)
+        }
+        return result
+    }
+
+    private fun saveConfig(raw: String): String {
+        val input = runCatching { JSONObject(raw) }.getOrElse {
+            return JSONObject().put("error", "invalid_json").put("message", "计划配置格式无效").toString()
+        }
+        ensureConfig()
+        val updates = LinkedHashMap<String, String>()
+        val keys = input.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val range = ALLOWED_CONFIG[key] ?: continue
+            val value = input.optInt(key, Int.MIN_VALUE)
+            if (value == Int.MIN_VALUE || value !in range) {
+                return JSONObject().put("error", "invalid_value").put("key", key).toString()
+            }
+            updates[key] = value.toString()
+        }
+        if (updates.isEmpty()) return JSONObject().put("error", "empty_config").toString()
+
+        val file = File(CONFIG_FILE)
+        val lines = if (file.isFile) file.readLines().toMutableList() else mutableListOf()
+        val written = HashSet<String>()
+        for (index in lines.indices) {
+            val line = lines[index]
+            val key = line.substringBefore('=', "").trim()
+            val replacement = updates[key]
+            if (replacement != null && !line.trimStart().startsWith("#")) {
+                lines[index] = "$key=$replacement"
+                written += key
+            }
+        }
+        for ((key, value) in updates) if (key !in written) lines += "$key=$value"
+
+        val temporary = File("$CONFIG_FILE.tmp.${Process.myPid()}")
+        temporary.parentFile?.mkdirs()
+        temporary.writeText(lines.joinToString("\n", postfix = "\n"))
+        temporary.setReadable(true, true)
+        temporary.setWritable(true, true)
+        if (!temporary.renameTo(file)) {
+            temporary.copyTo(file, overwrite = true)
+            temporary.delete()
+        }
+        return JSONObject().put("success", true).put("config", configJsonObject()).toString()
+    }
+
+    private fun ensureConfig() {
+        val file = File(CONFIG_FILE)
+        if (file.isFile) return
+        file.parentFile?.mkdirs()
+        val defaults = File(MODULE_DIR, "config/default.conf")
+        if (defaults.isFile) defaults.copyTo(file, overwrite = false)
+    }
+
+    private fun readEnv(file: File): JSONObject {
+        val result = JSONObject()
+        if (!file.isFile) return result
+        runCatching {
+            file.forEachLine { raw ->
+                val line = raw.trim()
+                if (line.isBlank() || line.startsWith("#") || !line.contains('=')) return@forEachLine
+                val key = line.substringBefore('=').trim()
+                val value = line.substringAfter('=').trim()
+                result.put(key, value.toLongOrNull() ?: value)
+            }
+        }
+        return result
+    }
+
+    private fun tailText(file: File, maxChars: Int): String = runCatching {
+        if (!file.isFile) return@runCatching ""
+        val text = file.readText()
+        if (text.length <= maxChars) text else text.takeLast(maxChars)
+    }.getOrDefault("")
 
     private fun updateState(operation: String, progress: NativeProfileEngine.Progress, started: Long) {
         taskStateJson = JSONObject()
@@ -101,6 +309,11 @@ class BaiZeProfileRootService : RootService() {
             .toString()
     }
 
+    private fun failure(code: String, error: Throwable): String = JSONObject()
+        .put("error", code)
+        .put("message", error.message ?: error.javaClass.simpleName)
+        .toString()
+
     private fun busy(operation: String): String = JSONObject()
         .put("success", false)
         .put("error", "busy")
@@ -113,4 +326,60 @@ class BaiZeProfileRootService : RootService() {
         .put("operation", "idle")
         .put("phase", "等待任务")
         .toString()
+
+    companion object {
+        private const val MODULE_DIR = "/data/adb/modules/baize_v2"
+        private const val STATE_DIR = "/data/adb/baize-v2"
+        private const val CONFIG_FILE = "$STATE_DIR/config.conf"
+
+        private val MODULE_TASKS = setOf(
+            "scan", "clean", "cache-clean", "empty-clean", "rules-clean", "fragment-scan",
+            "fragment-clean", "deep-scan", "deep-clean", "corpse-scan", "corpse-clean"
+        )
+
+        private val ALLOWED_CONFIG: Map<String, IntRange> = mapOf(
+            "enabled" to 0..1,
+            "screen_off_only" to 0..1,
+            "charging_only" to 0..1,
+            "device_idle_only" to 0..1,
+            "min_battery" to 0..100,
+            "max_battery_temp" to 30..60,
+            "max_run_minutes" to 5..180,
+            "schedule_cache_enabled" to 0..1,
+            "schedule_cache_hours" to 1..720,
+            "schedule_empty_enabled" to 0..1,
+            "schedule_empty_hours" to 1..720,
+            "schedule_rules_enabled" to 0..1,
+            "schedule_rules_hours" to 1..720,
+            "schedule_fragment_enabled" to 0..1,
+            "schedule_fragment_hours" to 1..720,
+            "schedule_deep_enabled" to 0..1,
+            "schedule_deep_hours" to 1..720,
+            "daily_schedule_enabled" to 0..1,
+            "daily_schedule_hour" to 0..23,
+            "daily_schedule_minute" to 0..59,
+            "daily_grace_minutes" to 15..720,
+            "clean_app_cache" to 0..1,
+            "clean_external_cache" to 0..1,
+            "clean_system_logs" to 0..1,
+            "clean_oem_logs" to 0..1,
+            "clean_empty_files" to 0..1,
+            "clean_empty_dirs" to 0..1,
+            "clean_app_rules" to 0..1,
+            "clean_hidden_junk" to 0..1,
+            "clean_fragments" to 0..1,
+            "clean_custom_rules" to 0..1,
+            "notify_on_complete" to 0..1,
+            "notify_zero_result" to 0..1,
+            "deep_high_risk_enabled" to 0..1,
+            "app_cache_days" to 0..365,
+            "external_cache_days" to 0..365,
+            "system_logs_days" to 0..365,
+            "oem_logs_days" to 0..365,
+            "empty_file_days" to 0..365,
+            "hidden_junk_days" to 0..365,
+            "fragment_days" to 1..365,
+            "max_file_mb" to 16..16_384
+        )
+    }
 }
