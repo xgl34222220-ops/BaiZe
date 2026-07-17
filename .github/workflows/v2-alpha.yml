@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha9]
+    branches: [v2-alpha10]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
@@ -22,19 +22,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Alpha 9 branch
+      - name: Checkout Alpha 10 branch
         uses: actions/checkout@v4
         with:
-          ref: v2-alpha9
+          ref: v2-alpha10
           fetch-depth: 0
 
-      - name: Apply pending Alpha 9 source patch
-        if: ${{ hashFiles('v2/scripts/alpha9-source-patch.py') != '' }}
-        run: python3 v2/scripts/alpha9-source-patch.py
-
-      - name: Apply final Alpha 9 interaction patch
-        if: ${{ hashFiles('v2/scripts/alpha9-final-patch.py') != '' }}
-        run: python3 v2/scripts/alpha9-final-patch.py
+      - name: Apply Alpha 10 stability and rule patch
+        if: ${{ hashFiles('v2/scripts/alpha10-source-patch.py') != '' }}
+        run: python3 v2/scripts/alpha10-source-patch.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -59,54 +55,57 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha9.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha10.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify MIUI X glass UI snapshot cleaning scheduler App and rules
+      - name: Verify settings stability UI cleaner scheduler and hardened rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha9-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha10-Module.zip
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha09'
-          grep -q 'class FloatingGlassDock' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
-          grep -q 'class LiquidGlassDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidGlassDrawable.kt
-          grep -q 'class LiquidBackdropDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidBackdropDrawable.kt
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha10'
+          unzip -p "$ZIP" customize.sh | grep -q 'rm -rf "$OLD_MOD" "$OLD_UPDATE" "$OLD_STATE"'
+          ! unzip -p "$ZIP" uninstall.sh | grep -q 'OLD_MOD'
+          grep -q 'themeButton' app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'setupThemePicker' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          ! grep -q 'installThemeSelector(activity)' app/src/main/java/io/github/xgl34222220/baize/Alpha7UiPolish.kt
+          grep -q 'safeRuleSyntax' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+          grep -q 'fragmentNameMatches' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+          ! grep -q '/data/adb/modules/safesweep/config' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           grep -q '__all_safe__' app/src/main/java/io/github/xgl34222220/baize/SmartScanActivity.kt
-          grep -q 'selection\["__all_safe__"\]' app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
-          grep -q 'selectAllSafe' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
-          grep -q 'SmartScanActivity::class.java' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'class FloatingGlassDock' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
           grep -q 'Theme.BaiZe.Monet' app/src/main/res/values/themes.xml
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-      - name: Commit verified Alpha 9 sources
-        if: steps.app_build.outcome == 'success' && (hashFiles('v2/scripts/alpha9-source-patch.py') != '' || hashFiles('v2/scripts/alpha9-final-patch.py') != '')
+      - name: Commit verified Alpha 10 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha10-source-patch.py') != ''
         run: |
-          rm -f v2/scripts/alpha9-source-patch.py v2/scripts/alpha9-final-patch.py
+          rm -f v2/scripts/alpha10-source-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Alpha 9 MIUI X glass UI and direct snapshot cleaning'
-          git push origin HEAD:v2-alpha9
+          git commit -m 'Finalize Alpha 10 settings stability UI and rule hardening'
+          git push origin HEAD:v2-alpha10
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha9
+          name: BaiZe-v2-Alpha10
           if-no-files-found: warn
           path: |
-            v2/build-alpha9.log
-            v2/dist/BaiZe-v2-Alpha9-Module.zip
+            v2/build-alpha10.log
+            v2/dist/BaiZe-v2-Alpha10-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
