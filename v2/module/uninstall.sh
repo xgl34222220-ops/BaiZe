@@ -2,15 +2,8 @@
 
 APP_ID="io.github.xgl34222220.baize"
 STATE_DIR="/data/adb/baize-v2"
-OLD_MOD="/data/adb/modules/safesweep"
-MIGRATION_MARKER="$STATE_DIR/legacy-v1-disabled-by-alpha6"
 
 pm uninstall "$APP_ID" >/dev/null 2>&1 || true
-
-# Only remove the legacy disable flag when Alpha 6 created it. A v1 module that was already disabled
-# by the user remains disabled.
-if [ -f "$MIGRATION_MARKER" ] && [ -f "$OLD_MOD/module.prop" ]; then
-  rm -f "$OLD_MOD/disable"
-fi
-
+pkill -f '/data/adb/modules/baize_v2' >/dev/null 2>&1 || true
+pkill -f '/data/adb/baize-v2' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR"
