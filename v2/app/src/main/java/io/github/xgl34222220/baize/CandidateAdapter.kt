@@ -11,10 +11,17 @@ class CandidateAdapter(
     private val onWhitelist: (ScanCandidate) -> Unit
 ) : RecyclerView.Adapter<CandidateAdapter.ViewHolder>() {
     private val items = mutableListOf<ScanCandidate>()
+    private var interactionEnabled = true
 
     fun submitPage(newItems: List<ScanCandidate>) {
         items.clear()
         items.addAll(newItems)
+        notifyDataSetChanged()
+    }
+
+    fun setInteractionEnabled(enabled: Boolean) {
+        if (interactionEnabled == enabled) return
+        interactionEnabled = enabled
         notifyDataSetChanged()
     }
 
@@ -42,7 +49,7 @@ class CandidateAdapter(
     inner class ViewHolder(private val binding: ItemCandidateBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: ScanCandidate) {
             binding.selectCheck.setOnCheckedChangeListener(null)
-            binding.selectCheck.isEnabled = !item.whitelisted
+            binding.selectCheck.isEnabled = interactionEnabled && !item.whitelisted
             binding.selectCheck.isChecked = item.selected && !item.whitelisted
             binding.selectCheck.text = item.appName
 
@@ -69,17 +76,20 @@ class CandidateAdapter(
                 if (!item.readable) append(" · 部分内容不可读")
                 if (item.whitelisted) append(" · 已加入白名单")
             }
-            binding.whitelistButton.isEnabled = !item.whitelisted
+            binding.whitelistButton.isEnabled = interactionEnabled && !item.whitelisted
             binding.whitelistButton.text = if (item.whitelisted) "已白名单" else "加入白名单"
 
             binding.selectCheck.setOnCheckedChangeListener { _, checked ->
+                if (!interactionEnabled) return@setOnCheckedChangeListener
                 val index = bindingAdapterPosition
                 if (index == RecyclerView.NO_POSITION) return@setOnCheckedChangeListener
                 val current = items[index]
                 items[index] = current.copy(selected = checked)
                 onSelectionChanged(items[index], checked)
             }
-            binding.whitelistButton.setOnClickListener { onWhitelist(item) }
+            binding.whitelistButton.setOnClickListener {
+                if (interactionEnabled) onWhitelist(item)
+            }
         }
     }
 }
