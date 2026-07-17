@@ -64,6 +64,7 @@ class DashboardActivity : AppCompatActivity() {
         setupNavigation()
         setupActions()
         setupSettings()
+        setupThemePicker()
         updateStorage()
         refreshSavedReport()
         connectService()
@@ -73,6 +74,8 @@ class DashboardActivity : AppCompatActivity() {
         super.onResume()
         updateStorage()
         refreshSavedReport()
+        refreshWhitelist()
+        renderThemeSummary()
         if (profileService != null) {
             readServiceStatus()
             refreshModuleState()
@@ -95,10 +98,10 @@ class DashboardActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_settings -> {
-                    // Settings stays inside the already stable dashboard process. No new Activity,
-                    // no second RootService binding and no second glass lifecycle pass are created.
+                    // Keep settings in the existing DashboardActivity: no second Activity,
+                    // no duplicate RootService binding and no extra glass lifecycle.
                     showSettingsMenu()
-                    false
+                    true
                 }
                 else -> false
             }
@@ -107,7 +110,7 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun show(page: View) {
-        val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage)
+        val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage, binding.settingsPage)
         pages.forEach { candidate ->
             candidate.animate().cancel()
             candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
@@ -148,38 +151,32 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun showSettingsMenu() {
+        runCatching {
+            refreshWhitelist()
+            renderThemeSummary()
+            show(binding.settingsPage)
+        }.onFailure { error ->
+            Toast.makeText(
+                this,
+                "设置页打开失败：${error.message ?: error.javaClass.simpleName}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun setupThemePicker() {
+        renderThemeSummary()
+        binding.themeButton.setOnClickListener { showThemeDialog() }
+    }
+
+    private fun renderThemeSummary() {
         val palette = ThemeManager.currentPalette(this)
-        val notification = binding.notificationSwitch.isChecked
-        val maxFileMb = binding.largeFileSlider.value.toInt()
-        val packageCount = preferences.getStringSet("package_whitelist", emptySet()).orEmpty().size
-        val pathCount = preferences.getStringSet("path_whitelist", emptySet()).orEmpty().size
-        val serviceState = if (profileService != null) "已连接" else "未连接"
-        val entries = arrayOf(
-            "主题与取色\n${palette.label} · ${palette.description}",
-            "任务完成通知\n${if (notification) "已开启" else "已关闭"}",
-            "单文件保护上限\n${maxFileMb} MB",
-            "白名单保护\n$packageCount 个应用 · $pathCount 条路径",
-            "Root 清理服务\n$serviceState",
-            "崩溃诊断\n${CrashRecorder.summary(this)}"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("设置")
-            .setItems(entries) { _, which ->
-                when (which) {
-                    0 -> showThemeDialog()
-                    1 -> {
-                        val enabled = !notification
-                        binding.notificationSwitch.isChecked = enabled
-                        saveSettingsPatch(notification = enabled)
-                    }
-                    2 -> showLargeFileDialog(maxFileMb)
-                    3 -> showWhitelistDialog(packageCount, pathCount)
-                    4 -> reconnectProfileService()
-                    5 -> showCrashDialog()
-                }
+        binding.themeSummaryText.text = buildString {
+            append(palette.label).append(" · ").append(palette.description)
+            if (palette.monet && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+                append("（当前系统回退为白泽蓝）")
             }
-            .setNegativeButton("关闭", null)
-            .show()
+        }
     }
 
     private fun showThemeDialog() {
@@ -529,8 +526,37 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun refreshWhitelist() {
-        val count = preferences.getStringSet("package_whitelist", emptySet()).orEmpty().size
-        binding.whitelistText.text = "白名单：$count 个应用"
+        val packageCount = readStringSetCompat("package_whitelist").size
+        val pathCount = readStringSetCompat("path_whitelist").size
+        binding.whitelistText.text = if (pathCount > 0) {
+            "白名单：$packageCount 个应用 · $pathCount 条路径"
+        } else {
+            "白名单：$packageCount 个应用"
+        }
+    }
+
+    private fun readStringSetCompat(key: String): Set<String> {
+        runCatching {
+            return preferences.getStringSet(key, emptySet()).orEmpty().toSet()
+        }
+
+        val migrated = when (val legacy = preferences.all[key]) {
+            is String -> legacy
+                .trim()
+                .removePrefix("[")
+                .removeSuffix("]")
+                .split('\n', ',', ';')
+                .asSequence()
+                .map { it.trim().trim('\"') }
+                .filter { it.isNotBlank() }
+                .toSet()
+            is Collection<*> -> legacy.filterIsInstance<String>().filter { it.isNotBlank() }.toSet()
+            else -> emptySet()
+        }
+
+        preferences.edit().remove(key).apply()
+        if (migrated.isNotEmpty()) preferences.edit().putStringSet(key, migrated).apply()
+        return migrated
     }
 
     private fun connectService() {
@@ -598,6 +624,7 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun renderServiceState(text: String, ready: Boolean) {
         binding.serviceStatusText.text = text
+        binding.settingsStatusText.text = text
         binding.serviceDot.alpha = if (ready) 1f else 0.35f
     }
 
