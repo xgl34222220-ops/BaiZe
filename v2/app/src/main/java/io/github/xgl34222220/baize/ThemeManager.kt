@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import androidx.annotation.StyleRes
@@ -60,23 +61,23 @@ object ThemeManager {
 
     fun currentId(application: Application): String {
         val fallback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "monet" else "blue"
-        val stored = application.getSharedPreferences(PREFS, Application.MODE_PRIVATE)
+        val stored = application.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_PALETTE, fallback)
             .orEmpty()
         return palettes.firstOrNull { it.id == stored }?.id ?: fallback
     }
 
-    fun currentPalette(activity: Activity): Palette = paletteFor(activity, currentId(activity))
+    fun currentPalette(activity: Activity): Palette = paletteFor(currentId(activity))
 
     fun setPalette(activity: Activity, id: String) {
         val normalized = palettes.firstOrNull { it.id == id }?.id ?: "blue"
-        activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE)
+        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_PALETTE, normalized)
             .apply()
     }
 
-    fun paletteFor(activity: Activity, id: String): Palette {
+    private fun paletteFor(id: String): Palette {
         val selected = palettes.firstOrNull { it.id == id } ?: palettes.first { it.id == "blue" }
         return if (selected.monet && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             palettes.first { it.id == "blue" }
