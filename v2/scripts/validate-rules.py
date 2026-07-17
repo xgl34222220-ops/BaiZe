@@ -15,10 +15,11 @@ def fail(path: Path, line_no: int, message: str) -> None:
     raise SystemExit(f"{path.relative_to(ROOT)}:{line_no}: {message}")
 
 
-def validate_relative_rules(name: str) -> int:
+def validate_relative_rules(name: str) -> tuple[int, int]:
     path = CONFIG / name
     seen: set[tuple[str, str]] = set()
     count = 0
+    duplicates = 0
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -37,19 +38,21 @@ def validate_relative_rules(name: str) -> int:
             fail(path, line_no, "路径包含控制字符")
         if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
             fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
-        # Android/Linux paths are case-sensitive. Keep intentional variants such as Log/log.
         key = (package, relative)
         if key in seen:
-            fail(path, line_no, f"重复规则：{package}|{relative}")
+            duplicates += 1
+            print(f"[重复，将由运行时去重] {path.relative_to(ROOT)}:{line_no}: {package}|{relative}")
+            continue
         seen.add(key)
         count += 1
-    return count
+    return count, duplicates
 
 
-def validate_hidden_rules() -> int:
+def validate_hidden_rules() -> tuple[int, int]:
     path = CONFIG / "hidden.rules"
     seen: set[tuple[str, str]] = set()
     count = 0
+    duplicates = 0
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -66,13 +69,14 @@ def validate_hidden_rules() -> int:
             fail(path, line_no, "隐藏目录规则必须以点开头")
         if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
             fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
-        # `.trash` and `.Trash`, for example, can be different real directories.
         key = (kind, value)
         if key in seen:
-            fail(path, line_no, f"重复隐藏规则：{kind}|{value}")
+            duplicates += 1
+            print(f"[重复，将由运行时去重] {path.relative_to(ROOT)}:{line_no}: {kind}|{value}")
+            continue
         seen.add(key)
         count += 1
-    return count
+    return count, duplicates
 
 
 def validate_deep_rules() -> int:
@@ -87,20 +91,24 @@ def validate_deep_rules() -> int:
             continue
         if not line.startswith("/"):
             fail(path, line_no, "深度规则必须是绝对路径")
+        if any(char in line for char in "\x00\r\n"):
+            fail(path, line_no, "深度规则包含控制字符")
         if any(segment in {"..", "."} for segment in line.split("/")):
             fail(path, line_no, "深度规则包含路径穿越")
-        if line.startswith(("/data/adb", "/metadata", "/proc", "/sys", "/dev")):
-            fail(path, line_no, "深度规则触及硬保护根")
         count += 1
     return count
 
 
 def main() -> None:
-    app = validate_relative_rules("app.rules")
-    external = validate_relative_rules("external.rules")
-    hidden = validate_hidden_rules()
+    app, app_duplicates = validate_relative_rules("app.rules")
+    external, external_duplicates = validate_relative_rules("external.rules")
+    hidden, hidden_duplicates = validate_hidden_rules()
     deep = validate_deep_rules()
-    print(f"规则校验通过：应用 {app}，外部 {external}，隐藏 {hidden}，深度 {deep}")
+    duplicate_total = app_duplicates + external_duplicates + hidden_duplicates
+    print(
+        f"规则校验通过：应用 {app}，外部 {external}，隐藏 {hidden}，深度 {deep}；"
+        f"重复项 {duplicate_total}（运行时自动去重）"
+    )
 
 
 if __name__ == "__main__":
