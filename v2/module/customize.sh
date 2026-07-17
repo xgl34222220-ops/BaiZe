@@ -33,8 +33,10 @@ if [ -f "$OLD_MOD/module.prop" ]; then
     touch "$OLD_MOD/disable"
     touch "$MIGRATION_MARKER"
     ui_print "- 已迁移旧版配置并暂停 v1 调度器，避免双重自动清理"
-  else
-    ui_print "- 检测到旧版 v1 已处于禁用状态"
+  elif [ ! -f "$MIGRATION_MARKER" ]; then
+    # The user or another manager disabled v1 before BaiZe v2 was installed. Keep that state and
+    # report it once; do not claim ownership so uninstalling v2 will not re-enable it.
+    ui_print "- 检测到 v1 原本已禁用，保持现状"
   fi
 fi
 
