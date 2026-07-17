@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
-import android.text.format.Formatter
 import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -31,7 +30,6 @@ class ProfileActivity : AppCompatActivity() {
 
     private val profile by lazy { intent.getStringExtra(EXTRA_PROFILE).orEmpty() }
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
-    private val selection = LinkedHashMap<String, Boolean>()
 
     private var service: IProfileRootService? = null
     private var bindingRequested = false
@@ -39,6 +37,7 @@ class ProfileActivity : AppCompatActivity() {
     private var snapshotId = ""
     private var total = 0
     private var page = 0
+    private var quickCleanReady = false
     private var pollJob: Job? = null
 
     private val connection = object : ServiceConnection {
@@ -46,6 +45,7 @@ class ProfileActivity : AppCompatActivity() {
             service = IProfileRootService.Stub.asInterface(binder)
             bindingRequested = true
             renderConnected()
+            renderActionState()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -53,7 +53,8 @@ class ProfileActivity : AppCompatActivity() {
             bindingRequested = false
             taskRunning = false
             pollJob?.cancel()
-            renderDisconnected("Root 服务已断开")
+            binding.statusText.text = "Root 服务已断开"
+            renderActionState()
         }
     }
 
@@ -63,30 +64,34 @@ class ProfileActivity : AppCompatActivity() {
             finish()
             return
         }
+
         binding = ActivityProfileBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        adapter = ProfileCandidateAdapter { item, checked ->
-            selection[item.id] = checked
-            renderSelection()
-        }
+        adapter = ProfileCandidateAdapter { _, _ -> }
+        adapter.setInteractionEnabled(false)
         binding.resultsList.layoutManager = LinearLayoutManager(this)
         binding.resultsList.adapter = adapter
 
         binding.titleText.text = profileTitle(profile)
         binding.subtitleText.text = profileSubtitle(profile)
+        binding.resultTitleText.text = "${profileTitle(profile)}明细"
         binding.safetyText.text = safetyDescription(profile)
+        binding.scanButton.text = if (requiresModuleAuthorization()) "开始安全扫描" else "扫描清理明细"
+        binding.cleanButton.text = "扫描后可一键清理"
+
         binding.backButton.setOnClickListener { finish() }
         binding.scanButton.setOnClickListener { scan() }
         binding.cancelButton.setOnClickListener {
             service?.cancelCurrentTask()
-            binding.summaryText.text = "正在请求安全停止…"
+            binding.summaryText.text = "正在安全停止当前任务…"
         }
-        binding.cleanButton.setOnClickListener { confirmClean() }
+        binding.cleanButton.setOnClickListener { confirmQuickClean() }
         binding.previousButton.setOnClickListener { loadPage(page - 1) }
         binding.nextButton.setOnClickListener { loadPage(page + 1) }
 
-        renderDisconnected("正在连接 Root 服务…")
+        binding.statusText.text = "正在连接 Root 原生清理引擎"
+        renderActionState()
         connect()
     }
 
@@ -94,20 +99,15 @@ class ProfileActivity : AppCompatActivity() {
         .addCategory(RootService.CATEGORY_DAEMON_MODE)
 
     private fun connect() {
-        if (service != null) {
-            renderConnected()
-            return
-        }
-        binding.statusText.text = "正在请求 Root 权限并启动原生引擎"
-        binding.scanButton.isEnabled = false
         runCatching {
             RootService.bind(rootIntent(), connection)
             bindingRequested = true
-        }.onFailure { renderDisconnected(it.message ?: "Root 服务启动失败") }
+        }.onFailure {
+            binding.statusText.text = it.message ?: "Root 服务启动失败"
+        }
     }
 
     private fun renderConnected() {
-        binding.scanButton.isEnabled = true
         lifecycleScope.launch {
             val raw = runCatching { withContext(Dispatchers.IO) { service?.ping().orEmpty() } }.getOrNull()
             val json = raw?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -115,28 +115,85 @@ class ProfileActivity : AppCompatActivity() {
             val rules = json?.optBoolean("deepRules") == true
             binding.statusText.text = when {
                 !root -> "服务已连接，但未获得完整 Root"
-                profile == "deep" && !rules -> "Root 已连接，但模块规则库缺失"
-                else -> "Root 原生引擎已连接"
+                profile == "deep" && !rules -> "Root 已连接，但完整规则库缺失"
+                else -> "Root 扫描与一键清理引擎已连接"
+            }
+            renderActionState()
+        }
+    }
+
+    private fun scan() {
+        if (taskRunning || service == null) return
+        if (requiresModuleAuthorization()) runAuthorizedModuleScan() else runNativeDetailScan()
+    }
+
+    private fun runAuthorizedModuleScan() {
+        val root = service ?: return
+        taskRunning = true
+        quickCleanReady = false
+        snapshotId = ""
+        total = 0
+        adapter.submitPage(emptyList())
+        binding.resultSection.visibility = View.GONE
+        setTaskUi(true)
+        binding.summaryText.text = "正在扫描${profileTitle(profile)}并生成安全授权…"
+        startPolling()
+
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { root.runModuleTask(scanMode(profile)) }
+            }
+            taskRunning = false
+            pollJob?.cancel()
+            setTaskUi(false)
+            result.onSuccess { raw ->
+                val json = JSONObject(raw)
+                val output = json.optString("output").lineSequence().filter { it.isNotBlank() }.takeLast(6).joinToString("\n")
+                val success = json.optBoolean("success")
+                quickCleanReady = success && !json.optBoolean("cancelled")
+                binding.summaryText.text = buildString {
+                    append(
+                        when {
+                            json.optBoolean("cancelled") -> "扫描已停止"
+                            success -> "${profileTitle(profile)}扫描完成"
+                            else -> json.optString("message", "扫描失败")
+                        }
+                    )
+                    append(" · ${json.optLong("elapsedMs")}ms")
+                    if (output.isNotBlank()) append("\n").append(output)
+                    if (quickCleanReady) append("\n已完成安全校验，可直接一键清理。")
+                }
+                binding.resultSection.visibility = if (quickCleanReady) View.VISIBLE else View.GONE
+                binding.resultsList.visibility = View.GONE
+                binding.pageText.visibility = View.GONE
+                binding.previousButton.visibility = View.GONE
+                binding.nextButton.visibility = View.GONE
+                binding.selectionText.text = when (profile) {
+                    "deep" -> "低风险与允许的中风险规则已准备；关键风险永远只审计。"
+                    "corpses" -> "已核对当前安装包列表，确认的卸载残留可一键清理。"
+                    else -> "安全扫描已完成。"
+                }
+                binding.cleanButton.text = quickCleanLabel(profile)
+                renderActionState()
+            }.onFailure {
+                binding.summaryText.text = "扫描失败：${it.message ?: it.javaClass.simpleName}"
             }
         }
     }
 
-    private fun renderDisconnected(message: String) {
-        binding.statusText.text = message
-        binding.scanButton.isEnabled = false
-        binding.cleanButton.isEnabled = false
-        binding.cancelButton.isEnabled = false
-    }
-
-    private fun scan() {
+    private fun runNativeDetailScan() {
         val root = service ?: return
-        if (taskRunning) return
         taskRunning = true
+        quickCleanReady = false
         snapshotId = ""
         total = 0
         page = 0
-        selection.clear()
         adapter.submitPage(emptyList())
+        adapter.setInteractionEnabled(false)
+        binding.resultsList.visibility = View.VISIBLE
+        binding.pageText.visibility = View.VISIBLE
+        binding.previousButton.visibility = View.VISIBLE
+        binding.nextButton.visibility = View.VISIBLE
         binding.resultSection.visibility = View.GONE
         setTaskUi(true)
         binding.summaryText.text = "正在扫描${profileTitle(profile)}…"
@@ -161,22 +218,21 @@ class ProfileActivity : AppCompatActivity() {
                 }
                 snapshotId = json.optString("snapshotId")
                 total = json.optInt("totalCandidates")
-                val summary = buildString {
+                quickCleanReady = total > 0
+                binding.summaryText.text = buildString {
                     append("扫描完成 · ${json.optLong("elapsedMs")}ms\n")
-                    append("共 $total 项")
+                    append("发现 $total 项可处理内容")
                     val low = json.optInt("low")
                     val medium = json.optInt("medium")
-                    val high = json.optInt("high")
-                    val critical = json.optInt("critical")
                     if (low > 0) append(" · 低风险 $low")
                     if (medium > 0) append(" · 中风险 $medium")
-                    if (high > 0) append(" · 高风险 $high")
-                    if (critical > 0) append(" · 关键审计 $critical")
-                    append("\n快照有效期 30 分钟，默认不勾选任何项目。")
+                    append("\n已自动选择全部安全项，无需逐项勾选。")
                 }
-                binding.summaryText.text = summary
+                binding.cleanButton.text = quickCleanLabel(profile, total)
+                binding.selectionText.text = "全部安全项已自动纳入本次清理；列表仅用于查看路径与大小。"
                 binding.resultSection.visibility = if (total > 0) View.VISIBLE else View.GONE
                 if (total > 0) loadPage(0)
+                renderActionState()
             }.onFailure {
                 binding.summaryText.text = "扫描失败：${it.message ?: it.javaClass.simpleName}"
             }
@@ -191,7 +247,7 @@ class ProfileActivity : AppCompatActivity() {
         binding.progressIndicator.visibility = View.VISIBLE
         binding.previousButton.isEnabled = false
         binding.nextButton.isEnabled = false
-        binding.cleanButton.isEnabled = false
+
         lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) { root.getProfilePage(snapshotId, targetPage * PAGE_SIZE, PAGE_SIZE) }
@@ -207,107 +263,86 @@ class ProfileActivity : AppCompatActivity() {
                 val values = ArrayList<ProfileCandidate>(array.length())
                 for (index in 0 until array.length()) {
                     val item = array.getJSONObject(index)
-                    val id = item.optString("id")
+                    val risk = item.optString("risk", "low")
                     values.add(
                         ProfileCandidate(
-                            id = id,
+                            id = item.optString("id"),
                             appName = item.optString("appName", item.optString("categoryLabel")),
                             packageName = item.optString("packageName"),
                             categoryLabel = item.optString("categoryLabel", "清理项目"),
-                            risk = item.optString("risk", "low"),
+                            risk = risk,
                             path = item.optString("path"),
                             bytes = item.optLong("bytes", -1L),
                             files = item.optLong("files", -1L),
                             directories = item.optLong("directories", -1L),
                             measured = item.optBoolean("measured"),
                             complete = item.optBoolean("complete"),
-                            note = item.optString("note"),
-                            selected = selection[id] == true
+                            note = if (risk == "critical") "仅审计" else "已自动选择",
+                            selected = risk != "critical"
                         )
                     )
                 }
                 page = targetPage
                 adapter.submitPage(values)
+                adapter.setInteractionEnabled(false)
                 binding.pageText.text = "${page + 1} / $pages"
                 binding.previousButton.isEnabled = page > 0
                 binding.nextButton.isEnabled = page + 1 < pages
-                renderSelection()
+                binding.selectionText.text = "共 $total 项 · 当前页 ${values.size} 项 · 安全项已自动选择"
+                renderActionState()
             }.onFailure {
                 binding.selectionText.text = "读取结果失败：${it.message}"
             }
         }
     }
 
-    private fun renderSelection() {
-        val selected = selection.values.count { it }
-        binding.selectionText.text = "共 $total 项 · 当前页已选 ${adapter.selectedOnPage()} 项 · 全部分页已选 $selected 项"
-        binding.cleanButton.isEnabled = selected > 0 && snapshotId.isNotBlank() && !taskRunning
-    }
-
-    private fun confirmClean() {
-        val selected = selection.values.count { it }
-        if (selected <= 0 || snapshotId.isBlank()) return
-        val highRisk = profile == "deep" || profile == "corpses"
+    private fun confirmQuickClean() {
+        if (!quickCleanReady || service == null || taskRunning) return
         AlertDialog.Builder(this)
-            .setTitle("清理已选项目")
-            .setMessage(buildString {
-                append("本次只处理你明确勾选的 $selected 项。\n\n")
-                append("服务端会重新验证扫描快照、路径、风险、白名单、软链接、挂载点和大文件限制，并按实际删除前后差值计算释放空间。")
-                if (highRisk) append("\n\n此分类含高风险项目，确认后仅对已勾选且通过二次校验的项目临时授权。​")
-            })
+            .setTitle(quickCleanLabel(profile))
+            .setMessage(confirmMessage(profile))
             .setNegativeButton("取消", null)
-            .setPositiveButton("确认清理") { _, _ -> clean(highRisk) }
+            .setPositiveButton("立即清理") { _, _ -> quickClean() }
             .show()
     }
 
-    private fun clean(allowHighRisk: Boolean) {
+    private fun quickClean() {
         val root = service ?: return
-        val currentSnapshot = snapshotId
-        if (currentSnapshot.isBlank() || taskRunning) return
+        if (taskRunning) return
         taskRunning = true
-        adapter.setInteractionEnabled(false)
         setTaskUi(true)
-        binding.summaryText.text = "正在提交安全清理任务…"
+        binding.summaryText.text = "正在一键清理${profileTitle(profile)}…"
         startPolling()
-        val selectedJson = JSONObject().apply {
-            selection.forEach { (id, checked) -> put(id, checked) }
-        }.toString()
 
         lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    root.cleanProfileSelected(currentSnapshot, selectedJson, optionsJson(allowHighRisk))
-                }
+                withContext(Dispatchers.IO) { root.runModuleTask(cleanMode(profile)) }
             }
             taskRunning = false
             pollJob?.cancel()
-            adapter.setInteractionEnabled(true)
             setTaskUi(false)
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
-                if (!json.optBoolean("success")) {
-                    binding.summaryText.text = json.optString("message", "清理任务未执行")
-                    return@onSuccess
-                }
-                val bytes = json.optLong("deletedBytes")
+                val output = json.optString("output").lineSequence().filter { it.isNotBlank() }.takeLast(6).joinToString("\n")
                 val report = buildString {
-                    append(if (json.optBoolean("cancelled")) "清理已停止" else if (json.optBoolean("timedOut")) "清理达到时间预算" else "清理完成")
-                    append(" · ${json.optLong("elapsedMs")}ms\n")
-                    append("实际释放 ${Formatter.formatFileSize(this@ProfileActivity, bytes)}")
-                    append(" · 文件 ${json.optLong("deletedFiles")}")
-                    append(" · 目录 ${json.optLong("deletedDirectories")}\n")
-                    append("完成 ${json.optInt("cleanedCandidates")} · 跳过 ${json.optInt("skippedCandidates")} · 失败 ${json.optInt("failures")}")
+                    append(
+                        when {
+                            json.optBoolean("cancelled") -> "任务已停止"
+                            json.optBoolean("success") -> "${profileTitle(profile)}一键清理完成"
+                            else -> json.optString("message", "清理失败")
+                        }
+                    )
+                    append(" · ${json.optLong("elapsedMs")}ms")
+                    if (output.isNotBlank()) append("\n").append(output)
                 }
                 binding.summaryText.text = report
-                preferences.edit()
-                    .putString("last_report_text", report)
-                    .putLong("last_clean_bytes", bytes)
-                    .apply()
+                preferences.edit().putString("last_report_text", report).apply()
+                quickCleanReady = false
                 snapshotId = ""
                 total = 0
-                selection.clear()
                 adapter.submitPage(emptyList())
                 binding.resultSection.visibility = View.GONE
+                binding.cleanButton.text = "扫描后可一键清理"
             }.onFailure {
                 binding.summaryText.text = "清理失败：${it.message ?: it.javaClass.simpleName}"
             }
@@ -324,12 +359,11 @@ class ProfileActivity : AppCompatActivity() {
                     if (json != null && json.optBoolean("running")) {
                         binding.summaryText.text = buildString {
                             append(json.optString("phase", "正在执行"))
-                            val current = json.optInt("current")
-                            val totalState = json.optInt("total")
+                            val current = json.optInt("progress_current", json.optInt("current"))
+                            val totalState = json.optInt("progress_total", json.optInt("total"))
                             if (totalState > 0) append(" · $current/$totalState")
-                            if (json.optLong("deletedBytes") > 0) append("\n已释放 ${Formatter.formatFileSize(this@ProfileActivity, json.optLong("deletedBytes"))}")
-                            val path = json.optString("currentPath")
-                            if (path.isNotBlank()) append("\n$path")
+                            val path = json.optString("current_path", json.optString("currentPath"))
+                            if (path.isNotBlank()) append("\n").append(path.takeLast(92))
                             if (json.optBoolean("cancelRequested")) append("\n正在安全停止…")
                         }
                     }
@@ -357,9 +391,50 @@ class ProfileActivity : AppCompatActivity() {
         binding.progressIndicator.visibility = if (running) View.VISIBLE else View.GONE
         binding.scanButton.isEnabled = !running && service != null
         binding.cancelButton.isEnabled = running
-        binding.cleanButton.isEnabled = !running && selection.values.any { it } && snapshotId.isNotBlank()
+        binding.cleanButton.isEnabled = !running && quickCleanReady && service != null
         binding.previousButton.isEnabled = !running && page > 0
         binding.nextButton.isEnabled = !running && page + 1 < pageCount()
+        adapter.setInteractionEnabled(false)
+    }
+
+    private fun renderActionState() {
+        binding.scanButton.isEnabled = !taskRunning && service != null
+        binding.cleanButton.isEnabled = !taskRunning && quickCleanReady && service != null
+    }
+
+    private fun requiresModuleAuthorization(): Boolean = profile == "deep" || profile == "corpses"
+
+    private fun scanMode(profile: String): String = when (profile) {
+        "deep" -> "deep-scan"
+        "corpses" -> "corpse-scan"
+        else -> "scan"
+    }
+
+    private fun cleanMode(profile: String): String = when (profile) {
+        "empty" -> "empty-clean"
+        "rules" -> "rules-clean"
+        "fragments" -> "fragment-clean"
+        "deep" -> "deep-clean"
+        "corpses" -> "corpse-clean"
+        else -> "clean"
+    }
+
+    private fun quickCleanLabel(profile: String, count: Int = 0): String {
+        val suffix = if (count > 0) "（$count 项）" else ""
+        return when (profile) {
+            "empty" -> "一键清理全部空项目$suffix"
+            "rules" -> "一键清理全部安全规则$suffix"
+            "fragments" -> "一键清理全部过期碎片$suffix"
+            "deep" -> "一键清理深度安全项"
+            "corpses" -> "一键清理确认的卸载残留"
+            else -> "一键清理全部安全项$suffix"
+        }
+    }
+
+    private fun confirmMessage(profile: String): String = when (profile) {
+        "deep" -> "将清理最近一次深度扫描中通过授权的低风险与允许的中风险项目。关键风险永远只审计，规则变化后授权会立即失效。"
+        "corpses" -> "将清理最近一次扫描确认的 Android/data 与 Android/obb 卸载残留。删除前会再次查询安装包列表，已重新安装的应用会自动跳过。"
+        else -> "将自动清理本分类中全部通过二次校验的安全项，不需要逐项勾选。白名单、软链接、挂载点、异常路径与大文件限制仍会自动保护。"
     }
 
     private fun pageCount(): Int = ceil(total / PAGE_SIZE.toDouble()).toInt().coerceAtLeast(1)
@@ -379,24 +454,24 @@ class ProfileActivity : AppCompatActivity() {
             "empty" -> "空项目"
             "rules" -> "规则垃圾"
             "fragments" -> "残留碎片"
-            "deep" -> "深度规则"
+            "deep" -> "深度清理"
             "corpses" -> "卸载残留"
             else -> "清理项目"
         }
 
         fun profileSubtitle(profile: String): String = when (profile) {
-            "empty" -> "空文件与空目录，自动保护占位文件和常用媒体目录"
-            "rules" -> "隐藏垃圾、系统/OEM 日志和扩展规则路径"
-            "fragments" -> "默认只处理至少保留 7 天的临时文件、旋转日志和崩溃转储"
-            "deep" -> "完整规则库分级扫描；关键风险只审计，不执行删除"
-            "corpses" -> "识别已卸载应用在 Android/data 与 Android/obb 中的残留"
+            "empty" -> "扫描空文件与空目录，自动保护占位文件和常用媒体目录"
+            "rules" -> "清理隐藏垃圾、系统/OEM 日志与扩展规则路径"
+            "fragments" -> "清理超过保留期的临时文件、旋转日志和中断下载"
+            "deep" -> "使用 4,746 条规则扫描，安全项目可一键清理"
+            "corpses" -> "清理已卸载应用留在 Android/data 与 Android/obb 的目录"
             else -> ""
         }
 
         private fun safetyDescription(profile: String): String = when (profile) {
-            "deep" -> "默认不选择；关键风险只允许审计，高风险必须在清理确认中单次授权。规则 SHA 变化后快照立即失效。"
-            "corpses" -> "默认不选择；删除前再次查询安装包列表，应用重新安装后会自动跳过。"
-            else -> "默认不选择；清理前会重新验证路径、风险、白名单、软链接、挂载点和大文件限制。"
+            "deep" -> "只需扫描一次，随后可一键清理安全规则；关键风险永远只审计，高风险不会混入普通自动清理。"
+            "corpses" -> "只需扫描一次，随后可一键清理全部确认残留；应用重新安装后会在删除前自动跳过。"
+            else -> "扫描后会自动选择全部安全项，无需逐项勾选；列表只用于查看明细，删除前仍会进行完整安全校验。"
         }
     }
 }
