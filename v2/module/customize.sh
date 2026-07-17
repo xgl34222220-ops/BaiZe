@@ -2,6 +2,9 @@
 
 APP_ID="io.github.xgl34222220.baize"
 STATE_DIR="/data/adb/baize-v2"
+OLD_MOD="/data/adb/modules/safesweep"
+OLD_STATE="/data/adb/safesweep"
+MIGRATION_MARKER="$STATE_DIR/legacy-v1-disabled-by-alpha6"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 
@@ -17,6 +20,25 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
+# v1 uses another module ID, so leaving it enabled would start two independent schedulers after
+# reboot. Preserve user configuration first, then suspend only the legacy module. A marker lets the
+# Alpha 6 uninstaller restore v1 when the user removes v2 later.
+if [ -f "$OLD_MOD/module.prop" ]; then
+  for name in config.conf whitelist.conf custom.rules; do
+    if [ ! -f "$STATE_DIR/$name" ] && [ -f "$OLD_STATE/$name" ]; then
+      cp -f "$OLD_STATE/$name" "$STATE_DIR/$name"
+    fi
+  done
+  if [ ! -f "$OLD_MOD/disable" ]; then
+    touch "$OLD_MOD/disable"
+    touch "$MIGRATION_MARKER"
+    ui_print "- 已迁移旧版配置并暂停 v1 调度器，避免双重自动清理"
+  else
+    ui_print "- 检测到旧版 v1 已处于禁用状态"
+  fi
+fi
+
+chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" 2>/dev/null
 
