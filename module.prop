@@ -1,6 +1,6 @@
 id=safesweep
 name=白泽
-version=v1.0.2
-versionCode=1002
+version=v1.0.3
+versionCode=1003
 author=惜故里丶
-description=深度安全项优化、扫描快照、稳定定时与准确统计。
+description=深度扫描加速、慢目录保护、实时进度与准确清理统计。

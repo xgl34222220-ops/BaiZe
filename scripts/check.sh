@@ -10,7 +10,7 @@ for f in action.sh cleaner.sh customize.sh job-runner.sh notify.sh service.sh st
   sh -n "$f"
 done
 
-for f in module.prop README.md config/default.conf config/deep.rules webroot/index.html webroot/app.js webroot/style.css; do
+for f in module.prop README.md CHANGELOG-v1.0.3.md config/default.conf config/deep.rules webroot/index.html webroot/app.js webroot/style.css; do
   [ -f "$f" ] || { echo "缺少文件: $f" >&2; exit 1; }
 done
 
@@ -25,4 +25,13 @@ if command -v sha256sum >/dev/null 2>&1; then
   }
 fi
 
-echo "基础检查通过，深度规则: $RULES 条"
+if command -v node >/dev/null 2>&1; then
+  node --check webroot/app.js
+fi
+
+grep -q '深度受保护:.*未递归统计' cleaner.sh || { echo "缺少高风险快速保护" >&2; exit 1; }
+grep -q 'DEEP_DIR_TIMEOUT_SECONDS=12' cleaner.sh || { echo "缺少深度目录时限" >&2; exit 1; }
+grep -q 'run_progress_current' status.sh || { echo "缺少实时进度状态" >&2; exit 1; }
+grep -q 'cache_parent_pattern' cleaner.sh || { echo "缺少缓存规则合并" >&2; exit 1; }
+
+echo "基础检查通过，深度规则: $RULES 条，WebUI 与性能保护正常"

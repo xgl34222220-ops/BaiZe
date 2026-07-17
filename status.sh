@@ -48,6 +48,9 @@ running=0
 run_mode=""
 run_phase=""
 run_started=0
+run_progress_current=0
+run_progress_total=0
+run_current_path=""
 for lock in "$STATE_DIR/run.lock" "$STATE_DIR/launch.lock"; do
   [ -d "$lock" ] || continue
   lock_pid=$(uint_or "$(sed -n '1p' "$lock/pid" 2>/dev/null)" 0)
@@ -61,6 +64,9 @@ if [ "$running" = "1" ] && [ -f "$STATE_DIR/running.env" ]; then
   run_mode=$(env_value mode "$STATE_DIR/running.env")
   run_phase=$(env_value phase "$STATE_DIR/running.env")
   run_started=$(uint_or "$(env_value started "$STATE_DIR/running.env")" 0)
+  run_progress_current=$(uint_or "$(env_value progress_current "$STATE_DIR/running.env")" 0)
+  run_progress_total=$(uint_or "$(env_value progress_total "$STATE_DIR/running.env")" 0)
+  run_current_path=$(env_value current_path "$STATE_DIR/running.env")
 fi
 
 job_exit=$(uint_or "$(sed -n '1p' "$STATE_DIR/last_exit" 2>/dev/null)" 0)
@@ -119,6 +125,11 @@ fi
 deep_scan_epoch=$(uint_or "$(env_value epoch "$STATE_DIR/deep_scan.env")" 0)
 deep_scan_bytes=$(uint_or "$(env_value bytes "$STATE_DIR/deep_scan.env")" 0)
 deep_scan_items=$(uint_or "$(env_value items "$STATE_DIR/deep_scan.env")" 0)
+deep_scan_slow_items=$(uint_or "$(env_value slow_items "$STATE_DIR/deep_scan.env")" 0)
+deep_scan_mount_items=$(uint_or "$(env_value mount_items "$STATE_DIR/deep_scan.env")" 0)
+deep_scan_truncated=$(uint_or "$(env_value truncated "$STATE_DIR/deep_scan.env")" 0)
+deep_scan_processed=$(uint_or "$(env_value processed "$STATE_DIR/deep_scan.env")" 0)
+deep_scan_targets=$(uint_or "$(env_value targets "$STATE_DIR/deep_scan.env")" 0)
 [ -f "$STATE_DIR/deep_scan.targets" ] || deep_scan_epoch=0
 corpse_scan_epoch=$(uint_or "$(env_value epoch "$STATE_DIR/corpse_scan.env")" 0)
 corpse_scan_bytes=$(uint_or "$(env_value bytes "$STATE_DIR/corpse_scan.env")" 0)
@@ -147,6 +158,9 @@ printf '"stop_requested":%s,' "$( [ -f "$STATE_DIR/stop" ] && echo true || echo 
 printf '"run_mode":"%s",' "$(json_escape "$run_mode")"
 printf '"run_phase":"%s",' "$(json_escape "$run_phase")"
 printf '"run_started":%s,' "$run_started"
+printf '"run_progress_current":%s,' "$run_progress_current"
+printf '"run_progress_total":%s,' "$run_progress_total"
+printf '"run_current_path":"%s",' "$(json_escape "$run_current_path")"
 printf '"job_exit":%s,' "$job_exit"
 printf '"data_total_kb":%s,' "$data_total_kb"
 printf '"data_used_kb":%s,' "$data_used_kb"
@@ -171,6 +185,11 @@ printf '"deep_rule_duplicates":%s,' "$deep_rule_duplicates"
 printf '"deep_scan_epoch":%s,' "$deep_scan_epoch"
 printf '"deep_scan_bytes":%s,' "$deep_scan_bytes"
 printf '"deep_scan_items":%s,' "$deep_scan_items"
+printf '"deep_scan_slow_items":%s,' "$deep_scan_slow_items"
+printf '"deep_scan_mount_items":%s,' "$deep_scan_mount_items"
+printf '"deep_scan_truncated":%s,' "$deep_scan_truncated"
+printf '"deep_scan_processed":%s,' "$deep_scan_processed"
+printf '"deep_scan_targets":%s,' "$deep_scan_targets"
 printf '"corpse_scan_epoch":%s,' "$corpse_scan_epoch"
 printf '"corpse_scan_bytes":%s,' "$corpse_scan_bytes"
 printf '"corpse_scan_items":%s,' "$corpse_scan_items"

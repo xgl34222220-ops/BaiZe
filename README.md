@@ -6,13 +6,20 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v1.0.2-1677ff)
+![Version](https://img.shields.io/badge/version-v1.0.3-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
 </div>
 
 白泽以准确统计、分级保护和可审计清理为核心。项目保留完整深度规则库，但把规则存在与删除权限分离：低、中风险内容可参与安全定时，高风险与关键风险内容默认只扫描，完整深度清理必须由用户手动确认。
+
+## 界面预览
+
+<p align="center">
+  <img src="docs/images/home.png" width="46%" alt="白泽首页">
+  <img src="docs/images/rules.png" width="46%" alt="白泽规则页">
+</p>
 
 ## 核心功能
 
@@ -25,6 +32,7 @@
 - 扫描快照、规则 SHA 校验、白名单与单文件上限保护
 - 实际删除后复核，通知和累计统计只记录真正释放的空间
 - WebUI 审计报告、任务历史、日志复制和原子配置保存
+- 深度扫描实时进度、慢目录限时保护与缓存根目录合并扫描
 
 ## 安全边界
 
@@ -61,6 +69,7 @@ sh scripts/build.sh
 ## 文档
 
 - [详细使用说明](docs/README-detailed.md)
+- [v1.0.3 更新日志](CHANGELOG-v1.0.3.md)
 - [v1.0.2 更新日志](CHANGELOG-v1.0.2.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
