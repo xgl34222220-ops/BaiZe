@@ -19,5 +19,11 @@ for old, new in replacements.items():
         raise SystemExit(f"missing broken Kotlin string: {old!r}")
     text = text.replace(old, new)
 
+if "import androidx.appcompat.app.AlertDialog" not in text:
+    marker = "import android.widget.Toast\n"
+    if marker not in text:
+        raise SystemExit("missing Toast import marker")
+    text = text.replace(marker, marker + "import androidx.appcompat.app.AlertDialog\n", 1)
+
 path.write_text(text)
-print("Alpha 12 Kotlin string escapes corrected")
+print("Alpha 12 Kotlin strings and AlertDialog import corrected")
