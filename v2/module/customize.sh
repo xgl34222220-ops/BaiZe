@@ -21,6 +21,15 @@ chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
+
+  # Alpha 调试包的签名可能随 CI 构建变化。覆盖失败时自动移除旧 Alpha App 再安装，
+  # 避免用户还需要另外卸载 APK；正式版启用固定签名后不会进入此分支。
+  if pm path "$APP_ID" >/dev/null 2>&1; then
+    ui_print "- 旧 Alpha App 签名不兼容，正在自动替换"
+    pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
+  fi
+  pm install -d --user 0 "$APK" >/dev/null 2>&1 && return 0
+  pm install -d "$APK" >/dev/null 2>&1 && return 0
   return 1
 }
 
