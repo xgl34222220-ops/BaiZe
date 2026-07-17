@@ -8,9 +8,9 @@ MIGRATION_MARKER="$STATE_DIR/legacy-v1-disabled-by-alpha6"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 
-ui_print "- 安装白泽 v2 Alpha 6"
-ui_print "- 单一模块包内置原生 App、完整清理引擎、真实调度器与规则库"
-ui_print "- 首页一键自动清理；高级审计、深度规则与卸载残留独立处理"
+ui_print "- 安装白泽 v2 Alpha 7"
+ui_print "- 内置精致液态玻璃原生 App、完整清理引擎、真实调度器与规则库"
+ui_print "- 扫描后自动选择安全项，可直接一键清理；高级风险继续独立保护"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
@@ -21,8 +21,8 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
 # v1 uses another module ID, so leaving it enabled would start two independent schedulers after
-# reboot. Preserve user configuration first, then suspend only the legacy module. A marker lets the
-# Alpha 6 uninstaller restore v1 when the user removes v2 later.
+# reboot. Preserve user configuration first, then suspend only the legacy module. The marker lets
+# the v2 uninstaller restore v1 when the user removes v2 later.
 if [ -f "$OLD_MOD/module.prop" ]; then
   for name in config.conf whitelist.conf custom.rules; do
     if [ ! -f "$STATE_DIR/$name" ] && [ -f "$OLD_STATE/$name" ]; then
