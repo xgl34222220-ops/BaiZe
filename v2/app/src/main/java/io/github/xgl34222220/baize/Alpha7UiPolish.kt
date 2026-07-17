@@ -3,17 +3,26 @@ package io.github.xgl34222220.baize
 import android.app.Activity
 import android.app.Application
 import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.OvershootInterpolator
+import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.progressindicator.CircularProgressIndicator
 
 object Alpha7UiPolish {
+    private const val THEME_CARD_TAG = "baize-alpha8-theme-card"
+
     fun install(application: Application) {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
@@ -38,8 +47,22 @@ object Alpha7UiPolish {
     }
 
     private fun polishDashboard(activity: Activity) {
-        activity.findViewById<TextView>(R.id.versionText)?.text = "Alpha 7"
+        val primary = resolveColor(activity, androidx.appcompat.R.attr.colorPrimary)
+        val onSurfaceVariant = resolveColor(activity, com.google.android.material.R.attr.colorOnSurfaceVariant)
+
+        activity.findViewById<TextView>(R.id.versionText)?.apply {
+            text = "Alpha 8"
+            setTextColor(primary)
+            ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(withAlpha(primary, 44)))
+        }
         replaceText(activity.window.decorView, "专项工具", "更多清理")
+
+        activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)
+        activity.findViewById<MaterialButton>(R.id.cleanNowButton)?.backgroundTintList = ColorStateList.valueOf(primary)
+        activity.findViewById<MaterialButton>(R.id.scanOnlyButton)?.apply {
+            setTextColor(primary)
+            strokeColor = ColorStateList.valueOf(withAlpha(primary, 132))
+        }
 
         activity.findViewById<MaterialButton>(R.id.advancedAuditButton)?.apply {
             text = "清理明细\n查看缓存、空项目、规则垃圾与碎片"
@@ -71,18 +94,29 @@ object Alpha7UiPolish {
 
         activity.findViewById<BottomNavigationView>(R.id.bottomNavigation)?.apply {
             setBackgroundResource(R.drawable.bg_bottom_nav)
-            elevation = dp(activity, 18).toFloat()
+            elevation = dp(activity, 24).toFloat()
             setItemTextAppearanceActive(R.style.TextAppearance_BaiZe_Nav_Active)
             setItemTextAppearanceInactive(R.style.TextAppearance_BaiZe_Nav_Inactive)
-            setItemIconSize(dp(activity, 23))
-            itemIconTintList = ContextCompat.getColorStateList(activity, R.color.nav_item_color)
-            itemTextColor = ContextCompat.getColorStateList(activity, R.color.nav_item_color)
-            itemRippleColor = ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.baize_nav_ripple))
+            setItemIconSize(dp(activity, 24))
+            val itemColors = ColorStateList(
+                arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                intArrayOf(primary, onSurfaceVariant)
+            )
+            itemIconTintList = itemColors
+            itemTextColor = itemColors
+            itemRippleColor = ColorStateList.valueOf(withAlpha(primary, 36))
             setItemActiveIndicatorEnabled(true)
-            setItemActiveIndicatorColor(ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.baize_nav_indicator)))
-            setItemActiveIndicatorWidth(dp(activity, 82))
-            setItemActiveIndicatorHeight(dp(activity, 48))
+            setItemActiveIndicatorColor(ColorStateList.valueOf(withAlpha(primary, 66)))
+            setItemActiveIndicatorWidth(dp(activity, 86))
+            setItemActiveIndicatorHeight(dp(activity, 50))
             setItemActiveIndicatorMarginHorizontal(dp(activity, 3))
+            (layoutParams as? ViewGroup.MarginLayoutParams)?.let { params ->
+                params.height = dp(activity, 72)
+                params.leftMargin = dp(activity, 20)
+                params.rightMargin = dp(activity, 20)
+                params.bottomMargin = dp(activity, 18)
+                layoutParams = params
+            }
             translationY = dp(activity, 10).toFloat()
             animate()
                 .translationY(0f)
@@ -90,6 +124,91 @@ object Alpha7UiPolish {
                 .setInterpolator(OvershootInterpolator(0.72f))
                 .start()
         }
+
+        installThemeSelector(activity)
+    }
+
+    private fun installThemeSelector(activity: Activity) {
+        val scroll = activity.findViewById<ViewGroup>(R.id.settingsPage) ?: return
+        val container = scroll.getChildAt(0) as? LinearLayout ?: return
+        if (container.findViewWithTag<View>(THEME_CARD_TAG) != null) return
+
+        val primary = resolveColor(activity, androidx.appcompat.R.attr.colorPrimary)
+        val surface = resolveColor(activity, com.google.android.material.R.attr.colorSurfaceVariant)
+        val outline = resolveColor(activity, com.google.android.material.R.attr.colorOutline)
+        val onSurface = resolveColor(activity, com.google.android.material.R.attr.colorOnSurface)
+        val secondary = resolveColor(activity, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        val selected = ThemeManager.currentPalette(activity)
+
+        val card = MaterialCardView(activity).apply {
+            tag = THEME_CARD_TAG
+            radius = dp(activity, 24).toFloat()
+            strokeWidth = dp(activity, 1)
+            strokeColor = withAlpha(outline, 128)
+            setCardBackgroundColor(surface)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(activity, 14)
+                bottomMargin = dp(activity, 2)
+            }
+            setContentPadding(dp(activity, 16), dp(activity, 15), dp(activity, 14), dp(activity, 15))
+        }
+
+        val row = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val textColumn = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        textColumn.addView(TextView(activity).apply {
+            text = "主题与取色"
+            textSize = 15f
+            setTextColor(onSurface)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+        textColumn.addView(TextView(activity).apply {
+            text = "${selected.label} · ${selected.description}"
+            textSize = 11f
+            setTextColor(secondary)
+            setPadding(0, dp(activity, 4), 0, 0)
+        })
+        row.addView(textColumn)
+        row.addView(TextView(activity).apply {
+            text = "切换  ›"
+            textSize = 12f
+            setTextColor(primary)
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        })
+        card.addView(row)
+        card.setOnClickListener { showThemeDialog(activity) }
+
+        container.addView(card, 1.coerceAtMost(container.childCount))
+    }
+
+    private fun showThemeDialog(activity: Activity) {
+        val current = ThemeManager.currentId(activity)
+        val labels = ThemeManager.palettes.map { palette ->
+            if (palette.monet) "${palette.label}\n${palette.description}（Android 12+）"
+            else "${palette.label}\n${palette.description}"
+        }.toTypedArray()
+        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
+
+        AlertDialog.Builder(activity)
+            .setTitle("主题与取色")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                val palette = ThemeManager.palettes[which]
+                ThemeManager.setPalette(activity, palette.id)
+                dialog.dismiss()
+                activity.recreate()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun polishCleanCenter(activity: Activity) {
@@ -101,7 +220,7 @@ object Alpha7UiPolish {
 
     private fun polishProfile(activity: Activity) {
         activity.findViewById<TextView>(R.id.safetyText)?.apply {
-            setTextColor(ContextCompat.getColor(activity, R.color.baize_text_secondary))
+            setTextColor(resolveColor(activity, com.google.android.material.R.attr.colorOnSurfaceVariant))
             textSize = 11f
             setLineSpacing(dp(activity, 2).toFloat(), 1f)
         }
@@ -117,6 +236,19 @@ object Alpha7UiPolish {
             for (index in 0 until view.childCount) replaceText(view.getChildAt(index), from, to)
         }
     }
+
+    private fun resolveColor(activity: Activity, attr: Int): Int {
+        val value = TypedValue()
+        if (!activity.theme.resolveAttribute(attr, value, true)) return Color.WHITE
+        return if (value.resourceId != 0) ContextCompat.getColor(activity, value.resourceId) else value.data
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
 
     private fun dp(activity: Activity, value: Int): Int =
         (value * activity.resources.displayMetrics.density + 0.5f).toInt()
