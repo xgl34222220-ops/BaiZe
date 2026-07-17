@@ -38,24 +38,24 @@ object Alpha7UiPolish {
     }
 
     private fun polishDashboard(activity: Activity) {
-        activity.findViewById<TextView?>(R.id.versionText)?.text = "Alpha 7"
+        activity.findViewById<TextView>(R.id.versionText)?.text = "Alpha 7"
         replaceText(activity.window.decorView, "专项工具", "更多清理")
 
-        activity.findViewById<MaterialButton?>(R.id.advancedAuditButton)?.apply {
+        activity.findViewById<MaterialButton>(R.id.advancedAuditButton)?.apply {
             text = "清理明细\n查看缓存、空项目、规则垃圾与碎片"
             textSize = 13f
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setLineSpacing(dp(activity, 2).toFloat(), 1f)
             maxLines = 2
         }
-        activity.findViewById<MaterialButton?>(R.id.corpsesToolButton)?.apply {
+        activity.findViewById<MaterialButton>(R.id.corpsesToolButton)?.apply {
             text = "卸载残留\n扫描后可一键清理 data / obb 残留"
             textSize = 13f
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setLineSpacing(dp(activity, 2).toFloat(), 1f)
             maxLines = 2
         }
-        activity.findViewById<MaterialButton?>(R.id.deepToolButton)?.apply {
+        activity.findViewById<MaterialButton>(R.id.deepToolButton)?.apply {
             text = "深度清理\n4,746 条规则扫描，安全项一键清理"
             textSize = 13f
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
@@ -63,13 +63,13 @@ object Alpha7UiPolish {
             maxLines = 2
         }
 
-        activity.findViewById<TextView?>(R.id.recentTaskText)?.visibility = View.GONE
-        activity.findViewById<TextView?>(R.id.taskStatusText)?.apply {
+        activity.findViewById<TextView>(R.id.recentTaskText)?.visibility = View.GONE
+        activity.findViewById<TextView>(R.id.taskStatusText)?.apply {
             textSize = 14f
             setLineSpacing(dp(activity, 3).toFloat(), 1f)
         }
 
-        activity.findViewById<BottomNavigationView?>(R.id.bottomNavigation)?.apply {
+        activity.findViewById<BottomNavigationView>(R.id.bottomNavigation)?.apply {
             setBackgroundResource(R.drawable.bg_bottom_nav)
             elevation = dp(activity, 18).toFloat()
             setItemTextAppearanceActive(R.style.TextAppearance_BaiZe_Nav_Active)
@@ -78,11 +78,11 @@ object Alpha7UiPolish {
             itemIconTintList = ContextCompat.getColorStateList(activity, R.color.nav_item_color)
             itemTextColor = ContextCompat.getColorStateList(activity, R.color.nav_item_color)
             itemRippleColor = ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.baize_nav_ripple))
-            isItemActiveIndicatorEnabled = true
-            itemActiveIndicatorColor = ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.baize_nav_indicator))
-            itemActiveIndicatorWidth = dp(activity, 82)
-            itemActiveIndicatorHeight = dp(activity, 48)
-            itemActiveIndicatorMarginHorizontal = dp(activity, 3)
+            setItemActiveIndicatorEnabled(true)
+            setItemActiveIndicatorColor(ColorStateList.valueOf(ContextCompat.getColor(activity, R.color.baize_nav_indicator)))
+            setItemActiveIndicatorWidth(dp(activity, 82))
+            setItemActiveIndicatorHeight(dp(activity, 48))
+            setItemActiveIndicatorMarginHorizontal(dp(activity, 3))
             translationY = dp(activity, 10).toFloat()
             animate()
                 .translationY(0f)
@@ -100,12 +100,12 @@ object Alpha7UiPolish {
     }
 
     private fun polishProfile(activity: Activity) {
-        activity.findViewById<TextView?>(R.id.safetyText)?.apply {
+        activity.findViewById<TextView>(R.id.safetyText)?.apply {
             setTextColor(ContextCompat.getColor(activity, R.color.baize_text_secondary))
             textSize = 11f
             setLineSpacing(dp(activity, 2).toFloat(), 1f)
         }
-        activity.findViewById<MaterialButton?>(R.id.cleanButton)?.apply {
+        activity.findViewById<MaterialButton>(R.id.cleanButton)?.apply {
             textSize = 14f
             minHeight = dp(activity, 54)
         }
