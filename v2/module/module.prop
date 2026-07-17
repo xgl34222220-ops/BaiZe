@@ -3,4 +3,4 @@ name=白泽 v2
 version=v2.0.0-alpha05
 versionCode=20005
 author=惜故里丶
-description=白泽 v2 Alpha 5：一体化 App 与模块，迁移完整原生清理引擎、深度规则、审计与后台任务。
+description=白泽 v2 Alpha 5：一体化安装，提供应用缓存、空项目、规则垃圾、残留碎片、深度规则和卸载残留的原生扫描与安全清理。
