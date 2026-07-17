@@ -43,7 +43,7 @@ object Alpha7UiPolish {
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
-            is CacheActivity, is ProfileActivity, is SmartScanActivity -> polishDetail(activity)
+            is CacheActivity, is ProfileActivity, is SmartScanActivity, is SettingsActivity -> polishDetail(activity)
         }
     }
 
@@ -107,11 +107,7 @@ object Alpha7UiPolish {
             backgroundTintList = null
             setTextColor(Color.WHITE)
         }
-        activity.findViewById<MaterialButton>(R.id.scanOnlyButton)?.apply {
-            setTextColor(primary)
-            strokeColor = ColorStateList.valueOf(alpha(primary, 170))
-        }
-        activity.findViewById<MaterialButton>(R.id.savePlanButton)?.apply {
+                activity.findViewById<MaterialButton>(R.id.savePlanButton)?.apply {
             background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.BUTTON)
             backgroundTintList = null
             setTextColor(Color.WHITE)

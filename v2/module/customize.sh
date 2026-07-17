@@ -8,7 +8,7 @@ OLD_STATE="/data/adb/safesweep"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 
-ui_print "- 安装白泽 v2 Alpha 10"
+ui_print "- 安装白泽 v2 Alpha 11"
 ui_print "- 内置原生 App、完整清理引擎、真实调度器与规则库"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 

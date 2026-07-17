@@ -8,7 +8,6 @@ import android.os.IBinder
 import android.os.StatFs
 import android.text.format.Formatter
 import android.view.View
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
@@ -59,11 +58,10 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 10"
+        binding.versionText.text = "Alpha 11"
         setupNavigation()
         setupActions()
         setupSettings()
-        setupThemePicker()
         updateStorage()
         refreshSavedReport()
         connectService()
@@ -73,8 +71,6 @@ class DashboardActivity : AppCompatActivity() {
         super.onResume()
         updateStorage()
         refreshSavedReport()
-        refreshWhitelist()
-        renderThemeSummary()
         if (profileService != null) {
             readServiceStatus()
             refreshModuleState()
@@ -83,42 +79,49 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun setupNavigation() {
         binding.bottomNavigation.setOnItemSelectedListener { item ->
-            runCatching {
-                when (item.itemId) {
-                    R.id.nav_home -> show(binding.homePage)
-                    R.id.nav_plan -> show(binding.planPage)
-                    R.id.nav_records -> show(binding.recordsPage)
-                    R.id.nav_settings -> show(binding.settingsPage)
-                    else -> return@setOnItemSelectedListener false
+            when (item.itemId) {
+                R.id.nav_home -> {
+                    show(binding.homePage)
+                    true
                 }
-                true
-            }.getOrElse {
-                show(binding.homePage)
-                false
+                R.id.nav_plan -> {
+                    show(binding.planPage)
+                    true
+                }
+                R.id.nav_records -> {
+                    show(binding.recordsPage)
+                    true
+                }
+                R.id.nav_settings -> {
+                    // Settings owns a separate Activity and ViewBinding tree. It never exposes the
+                    // dashboard's hidden-page state or recreates a running cleaning screen.
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    false
+                }
+                else -> false
             }
         }
         binding.bottomNavigation.selectedItemId = R.id.nav_home
     }
 
     private fun show(page: View) {
-        val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage, binding.settingsPage)
+        val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage)
         pages.forEach { candidate ->
             candidate.animate().cancel()
             candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
         }
         page.alpha = 0f
-        page.translationY = dp(8).toFloat()
+        page.translationY = dp(6).toFloat()
         page.animate()
             .alpha(1f)
             .translationY(0f)
-            .setDuration(220L)
+            .setDuration(190L)
             .start()
         page.post { page.scrollTo(0, 0) }
     }
 
     private fun setupActions() {
         binding.cleanNowButton.setOnClickListener { runModuleTask("clean") }
-        binding.scanOnlyButton.setOnClickListener { startActivity(Intent(this, SmartScanActivity::class.java)) }
         binding.stopTaskButton.setOnClickListener {
             profileService?.cancelCurrentTask()
             binding.taskStatusText.text = "正在安全停止当前任务…"
@@ -140,42 +143,6 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun openProfile(profile: String) {
         startActivity(Intent(this, ProfileActivity::class.java).putExtra(ProfileActivity.EXTRA_PROFILE, profile))
-    }
-
-    private fun setupThemePicker() {
-        renderThemeSummary()
-        binding.themeButton.setOnClickListener { showThemeDialog() }
-    }
-
-    private fun renderThemeSummary() {
-        val palette = ThemeManager.currentPalette(this)
-        binding.themeSummaryText.text = buildString {
-            append(palette.label).append(" · ").append(palette.description)
-            if (palette.monet && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
-                append("（当前系统回退为白泽蓝）")
-            }
-        }
-    }
-
-    private fun showThemeDialog() {
-        val current = ThemeManager.currentId(this)
-        val labels = ThemeManager.palettes.map { palette ->
-            if (palette.monet) {
-                "${palette.label}\n${palette.description}（Android 12+）"
-            } else {
-                "${palette.label}\n${palette.description}"
-            }
-        }.toTypedArray()
-        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("主题与取色")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setPalette(this, ThemeManager.palettes[which].id)
-                dialog.dismiss()
-                recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
     }
 
     private fun setupSettings() {
@@ -292,16 +259,15 @@ class DashboardActivity : AppCompatActivity() {
         binding.recentTaskText.text = summary
         binding.recordSummaryText.text = summary
         val latestBytes = json.optJSONObject("latest")?.optLong("bytes", 0L) ?: 0L
-        preferences.edit().apply {
-            putString("last_report_text", summary)
-            if (latestBytes > 0L) putLong("last_clean_bytes", latestBytes)
-        }.apply()
-        if (latestBytes > 0L) binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes)
+        preferences.edit()
+            .putString("last_report_text", summary)
+            .putLong("last_clean_bytes", latestBytes.coerceAtLeast(0L))
+            .apply()
+        binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes.coerceAtLeast(0L))
     }
 
     private fun renderTaskButtons(running: Boolean) {
         binding.cleanNowButton.isEnabled = !running && profileService != null
-        binding.scanOnlyButton.isEnabled = !running && profileService != null
         binding.stopTaskButton.visibility = if (running) View.VISIBLE else View.GONE
     }
 
@@ -427,8 +393,8 @@ class DashboardActivity : AppCompatActivity() {
         val report = preferences.getString("last_report_text", null) ?: "暂无清理记录"
         binding.recentTaskText.text = report
         binding.recordSummaryText.text = report
-        val bytes = preferences.getLong("last_clean_bytes", 0L)
-        binding.lastFreedText.text = if (bytes > 0L) Formatter.formatFileSize(this, bytes) else "--"
+        val bytes = preferences.getLong("last_clean_bytes", -1L)
+        binding.lastFreedText.text = if (bytes >= 0L) Formatter.formatFileSize(this, bytes) else "暂无"
     }
 
     private fun refreshWhitelist() {
@@ -478,8 +444,9 @@ class DashboardActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val raw = runCatching { withContext(Dispatchers.IO) { service.getModuleState() } }.getOrNull() ?: return@launch
             val json = runCatching { JSONObject(raw) }.getOrNull() ?: return@launch
-            val latestBytes = json.optJSONObject("latest")?.optLong("bytes", 0L) ?: 0L
-            if (latestBytes > 0L) {
+            val latest = json.optJSONObject("latest")
+            if (latest != null && latest.length() > 0) {
+                val latestBytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
                 preferences.edit().putLong("last_clean_bytes", latestBytes).apply()
                 binding.lastFreedText.text = Formatter.formatFileSize(this@DashboardActivity, latestBytes)
             }
@@ -500,7 +467,6 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun renderServiceState(text: String, ready: Boolean) {
         binding.serviceStatusText.text = text
-        binding.settingsStatusText.text = text
         binding.serviceDot.alpha = if (ready) 1f else 0.35f
     }
 

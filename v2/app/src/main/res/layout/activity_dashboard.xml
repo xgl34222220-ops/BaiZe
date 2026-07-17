@@ -155,7 +155,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="5dp"
                                 android:gravity="center"
-                                android:text="--"
+                                android:text="暂无"
                                 android:textColor="?attr/colorPrimary"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
@@ -163,31 +163,14 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <LinearLayout
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/cleanNowButton"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/cleanNowButton"
-                        android:layout_width="0dp"
-                        android:layout_height="62dp"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1.45"
-                        android:text="立即清理"
-                        android:textSize="16sp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/scanOnlyButton"
-                        style="@style/Widget.BaiZe.Button.Outlined"
-                        android:layout_width="0dp"
-                        android:layout_height="62dp"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:text="仅扫描"
-                        android:textSize="14sp" />
-                </LinearLayout>
+                    android:layout_height="64dp"
+                    android:layout_marginTop="13dp"
+                    android:text="立即智能清理"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/stopTaskButton"
@@ -794,9 +777,9 @@
     <io.github.xgl34222220.baize.ui.FloatingGlassDock
         android:id="@+id/bottomNavigation"
         android:layout_width="match_parent"
-        android:layout_height="84dp"
+        android:layout_height="92dp"
         android:layout_gravity="bottom"
-        android:layout_marginStart="20dp"
-        android:layout_marginEnd="20dp"
-        android:layout_marginBottom="22dp" />
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="24dp" />
 </FrameLayout>
