@@ -1,6 +1,6 @@
 from pathlib import Path
 
-path = Path("app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt")
+path = Path("v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt")
 text = path.read_text(encoding="utf-8")
 
 
