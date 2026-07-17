@@ -2,7 +2,7 @@
 <resources>
     <style name="Theme.BaiZe" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">@color/baize_primary</item>
-        <item name="colorOnPrimary">#171A2B</item>
+        <item name="colorOnPrimary">#07111B</item>
         <item name="colorPrimaryContainer">@color/baize_primary_container</item>
         <item name="colorOnPrimaryContainer">@color/baize_text_primary</item>
         <item name="colorSecondary">@color/baize_secondary</item>
@@ -22,34 +22,36 @@
 
     <style name="Widget.BaiZe.GlassCard" parent="Widget.Material3.CardView.Filled">
         <item name="cardBackgroundColor">@color/baize_glass</item>
-        <item name="cardCornerRadius">26dp</item>
-        <item name="cardElevation">0dp</item>
-        <item name="strokeColor">@color/baize_glass_stroke</item>
-        <item name="strokeWidth">1dp</item>
+        <item name="cardCornerRadius">24dp</item>
+        <item name="cardElevation">5dp</item>
+        <item name="strokeColor">@color/transparent</item>
+        <item name="strokeWidth">0dp</item>
     </style>
 
     <style name="Widget.BaiZe.Button" parent="Widget.Material3.Button">
-        <item name="cornerRadius">18dp</item>
+        <item name="cornerRadius">17dp</item>
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
+        <item name="android:textStyle">bold</item>
     </style>
 
     <style name="Widget.BaiZe.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="cornerRadius">18dp</item>
+        <item name="cornerRadius">17dp</item>
         <item name="android:minHeight">50dp</item>
         <item name="android:textAllCaps">false</item>
-        <item name="strokeColor">@color/baize_glass_stroke</item>
+        <item name="strokeColor">#22FFFFFF</item>
+        <item name="strokeWidth">1dp</item>
     </style>
 
     <style name="TextAppearance.BaiZe.PageTitle" parent="TextAppearance.Material3.HeadlineLarge">
         <item name="android:textColor">@color/baize_text_primary</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:textSize">32sp</item>
+        <item name="android:textSize">30sp</item>
     </style>
 
     <style name="TextAppearance.BaiZe.SectionTitle" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textColor">@color/baize_text_primary</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:textSize">20sp</item>
+        <item name="android:textSize">19sp</item>
     </style>
 </resources>
