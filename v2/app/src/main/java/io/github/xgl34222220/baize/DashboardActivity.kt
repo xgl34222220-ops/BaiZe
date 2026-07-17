@@ -100,7 +100,7 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun setupActions() {
         binding.cleanNowButton.setOnClickListener { runModuleTask("clean") }
-        binding.scanOnlyButton.setOnClickListener { runModuleTask("scan") }
+        binding.scanOnlyButton.setOnClickListener { startActivity(Intent(this, SmartScanActivity::class.java)) }
         binding.stopTaskButton.setOnClickListener {
             profileService?.cancelCurrentTask()
             binding.taskStatusText.text = "正在安全停止当前任务…"
