@@ -43,7 +43,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/v2-source.b64.part* | base64 --decode > /tmp/BaiZe-v2-Alpha1-Source.zip
+          cat \
+            .bootstrap/v2-source.b64.part00 \
+            .bootstrap/v2-source.b64.part01 \
+            .bootstrap/v2-source.b64.part02 \
+            .bootstrap/v2-source.b64.part03 \
+            .bootstrap/v2-source.b64.part04 \
+            .bootstrap/v2-source.b64.part05a \
+            .bootstrap/v2-source.b64.part05b \
+            .bootstrap/v2-source.b64.part06 \
+            | base64 --decode > /tmp/BaiZe-v2-Alpha1-Source.zip
           echo '1769511e896b8cff6450b1ead138637652eb841ddd9308d0f67cf141b7f0d460  /tmp/BaiZe-v2-Alpha1-Source.zip' | sha256sum -c -
           rm -rf /tmp/baize-v2 v2
           mkdir -p /tmp/baize-v2 v2
