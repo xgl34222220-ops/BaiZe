@@ -8,6 +8,12 @@ install_app() {
   [ -f "$APK" ] || return 1
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
+
+  if pm path "$APP_ID" >/dev/null 2>&1; then
+    pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
+  fi
+  pm install -d --user 0 "$APK" >/dev/null 2>&1 && return 0
+  pm install -d "$APK" >/dev/null 2>&1 && return 0
   return 1
 }
 
