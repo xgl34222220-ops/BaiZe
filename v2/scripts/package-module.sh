@@ -7,7 +7,7 @@ OUT="$ROOT/dist"
 MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-OUTPUT="$OUT/BaiZe-v2-Alpha6-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha7-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 
@@ -43,4 +43,4 @@ unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成一键清理、真实调度器、内置 App 与完整规则库的一体化模块：$OUTPUT"
+echo "已生成液态玻璃 UI、一键清理、真实调度器、内置 App 与完整规则库的一体化模块：$OUTPUT"
