@@ -40,7 +40,11 @@ class ProfileCandidateAdapter(
             binding.selectCheck.setOnCheckedChangeListener(null)
             binding.selectCheck.text = item.appName.ifBlank { item.categoryLabel }
             binding.selectCheck.isChecked = item.selected
-            binding.selectCheck.isEnabled = interactionEnabled && item.risk != "critical"
+            binding.selectCheck.isEnabled = item.risk != "critical"
+            binding.selectCheck.isClickable = interactionEnabled && item.risk != "critical"
+            binding.selectCheck.isFocusable = interactionEnabled && item.risk != "critical"
+            binding.selectCheck.alpha = 1f
+
             binding.categoryText.text = buildString {
                 append(item.categoryLabel)
                 if (item.packageName.isNotBlank()) append(" · ${item.packageName}")
@@ -48,7 +52,7 @@ class ProfileCandidateAdapter(
             }
             binding.pathText.text = item.path
             binding.riskText.text = when (item.risk) {
-                "critical" -> "关键"
+                "critical" -> "仅审计"
                 "high" -> "高风险"
                 "medium" -> "中风险"
                 else -> "低风险"
@@ -67,14 +71,19 @@ class ProfileCandidateAdapter(
                     if (!item.complete) append(" · 统计受限")
                 }
             } else {
-                "进入当前页后按需统计大小"
+                "当前页按需统计大小"
             }
-            binding.selectCheck.setOnCheckedChangeListener { _, checked ->
-                item.selected = checked
-                onSelectionChanged(item, checked)
+
+            if (interactionEnabled && item.risk != "critical") {
+                binding.selectCheck.setOnCheckedChangeListener { _, checked ->
+                    item.selected = checked
+                    onSelectionChanged(item, checked)
+                }
             }
             binding.root.setOnClickListener {
-                if (binding.selectCheck.isEnabled) binding.selectCheck.isChecked = !binding.selectCheck.isChecked
+                if (interactionEnabled && item.risk != "critical") {
+                    binding.selectCheck.isChecked = !binding.selectCheck.isChecked
+                }
             }
         }
     }
