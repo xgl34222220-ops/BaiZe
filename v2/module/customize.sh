@@ -8,7 +8,7 @@ MIGRATION_MARKER="$STATE_DIR/legacy-v1-disabled-by-alpha6"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 
-ui_print "- 安装白泽 v2 Alpha 7"
+ui_print "- 安装白泽 v2 Alpha 8"
 ui_print "- 内置精致液态玻璃原生 App、完整清理引擎、真实调度器与规则库"
 ui_print "- 扫描后自动选择安全项，可直接一键清理；高级风险继续独立保护"
 

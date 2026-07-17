@@ -58,7 +58,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 6"
+        binding.versionText.text = "Alpha 8"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -140,7 +140,7 @@ class DashboardActivity : AppCompatActivity() {
             binding.largeFileText.text = "单文件上限 ${value.toInt()} MB"
         }
         binding.fragmentDaysSlider.addOnChangeListener { _, value, _ ->
-            binding.fragmentDaysText.text = "碎片至少保留 ${value.toInt()} 天"
+            binding.fragmentDaysText.text = fragmentRetentionLabel(value.toInt())
         }
 
         val previewSwitches = listOf(
@@ -237,7 +237,12 @@ class DashboardActivity : AppCompatActivity() {
         binding.taskStatusText.text = summary
         binding.recentTaskText.text = summary
         binding.recordSummaryText.text = summary
-        preferences.edit().putString("last_report_text", summary).apply()
+        val latestBytes = json.optJSONObject("latest")?.optLong("bytes", 0L) ?: 0L
+        preferences.edit().apply {
+            putString("last_report_text", summary)
+            if (latestBytes > 0L) putLong("last_clean_bytes", latestBytes)
+        }.apply()
+        if (latestBytes > 0L) binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes)
     }
 
     private fun renderTaskButtons(running: Boolean) {
@@ -267,13 +272,13 @@ class DashboardActivity : AppCompatActivity() {
             binding.minBatterySlider.value = json.optInt("min_battery", 25).coerceIn(0, 100).toFloat()
             binding.notificationSwitch.isChecked = json.optInt("notify_on_complete", 1) == 1
             binding.largeFileSlider.value = json.optInt("max_file_mb", 256).coerceIn(16, 2048).toFloat()
-            binding.fragmentDaysSlider.value = json.optInt("fragment_days", 7).coerceIn(1, 30).toFloat()
+            binding.fragmentDaysSlider.value = json.optInt("fragment_days", 7).coerceIn(0, 30).toFloat()
             loadingConfig = false
             binding.intervalText.text = "每 ${binding.intervalSlider.value.toInt()} 小时"
             binding.dailyHourText.text = String.format("每日 %02d:00", binding.dailyHourSlider.value.toInt())
             binding.minBatteryText.text = "最低电量 ${binding.minBatterySlider.value.toInt()}%"
             binding.largeFileText.text = "单文件上限 ${binding.largeFileSlider.value.toInt()} MB"
-            binding.fragmentDaysText.text = "碎片至少保留 ${binding.fragmentDaysSlider.value.toInt()} 天"
+            binding.fragmentDaysText.text = fragmentRetentionLabel(binding.fragmentDaysSlider.value.toInt())
             updatePlanPreview()
         }
     }
@@ -340,6 +345,9 @@ class DashboardActivity : AppCompatActivity() {
         }
     }
 
+    private fun fragmentRetentionLabel(days: Int): String =
+        if (days <= 0) "碎片立即清理" else "碎片保留 $days 天"
+
     private fun flag(value: Boolean): Int = if (value) 1 else 0
 
     private fun updateStorage() {
@@ -363,7 +371,7 @@ class DashboardActivity : AppCompatActivity() {
         binding.recentTaskText.text = report
         binding.recordSummaryText.text = report
         val bytes = preferences.getLong("last_clean_bytes", 0L)
-        binding.lastFreedText.text = if (bytes > 0L) "最近释放 ${Formatter.formatFileSize(this, bytes)}" else "最近释放 --"
+        binding.lastFreedText.text = if (bytes > 0L) Formatter.formatFileSize(this, bytes) else "--"
     }
 
     private fun refreshWhitelist() {
@@ -413,6 +421,11 @@ class DashboardActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val raw = runCatching { withContext(Dispatchers.IO) { service.getModuleState() } }.getOrNull() ?: return@launch
             val json = runCatching { JSONObject(raw) }.getOrNull() ?: return@launch
+            val latestBytes = json.optJSONObject("latest")?.optLong("bytes", 0L) ?: 0L
+            if (latestBytes > 0L) {
+                preferences.edit().putLong("last_clean_bytes", latestBytes).apply()
+                binding.lastFreedText.text = Formatter.formatFileSize(this@DashboardActivity, latestBytes)
+            }
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
             val state = scheduler.optString("state", "waiting")
             val reason = scheduler.optString("reason", "等待调度器首次轮询")

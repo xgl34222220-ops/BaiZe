@@ -1762,7 +1762,7 @@ run_fragment_cleanup() {
          -o -path "$userdir/Download" -o -path "$userdir/Podcasts" -o -path "$userdir/Audiobooks" \
          -o -path "$userdir/Recordings" -o -path "$userdir/Fonts" -o -path "$userdir/Ringtones" \
          -o -path "$userdir/Alarms" -o -path "$userdir/Notifications" \) -prune -o \
-      -type f -size "-${MAX_FILE_BYTES}c" -mtime "+$FRAGMENT_DAYS" \
+      -type f -size "-${MAX_FILE_BYTES}c" $FRAGMENT_MTIME_ARGS \
       \( -iname '*.tmp' -o -iname '*.temp' -o -iname '*.tmf' \
          -o -iname '*.log' -o -iname '*.xlog' -o -iname '*.tlog' -o -iname '*.ulog' -o -iname '*.plog' \
          -o -iname '*.hprof' -o -iname '*.dmp' -o -iname '*.dump' -o -iname '*.trace' \
@@ -1772,7 +1772,7 @@ run_fragment_cleanup() {
     # 下载目录只匹配明确的中断下载后缀，避免把普通日志或用户临时文档误删。
     if [ -d "$userdir/Download" ]; then
       find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f \
-        -size "-${MAX_FILE_BYTES}c" -mtime "+$FRAGMENT_DAYS" \
+        -size "-${MAX_FILE_BYTES}c" $FRAGMENT_MTIME_ARGS \
         \( -iname '*.part' -o -iname '*.partial' -o -iname '*.crdownload' \
            -o -iname '*.filepart' -o -iname '*.download' -o -iname '*.opdownload' \) \
         -print0 2>/dev/null >>"$list"
@@ -1805,15 +1805,15 @@ run_fragment_cleanup() {
     actual_count=$((count - remaining_count))
     actual_bytes=$(awk -v a="$estimated" -v b="$remaining_bytes" 'BEGIN {v=a-b; if (v < 0) v=0; printf "%.0f", v}')
     [ "$remaining_count" -gt 0 ] && ERRORS=$((ERRORS + remaining_count))
-    log_line "[批量清理][残留碎片] $actual_count 个文件，约 $actual_bytes bytes，保留 ${FRAGMENT_DAYS} 天，未清理 $remaining_count 个"
-    report_line cleaned low 残留碎片 "$actual_count" "$actual_bytes" "保留 ${FRAGMENT_DAYS} 天"
+    log_line "[批量清理][残留碎片] $actual_count 个文件，约 $actual_bytes bytes，${FRAGMENT_POLICY}，未清理 $remaining_count 个"
+    report_line cleaned low 残留碎片 "$actual_count" "$actual_bytes" "${FRAGMENT_POLICY}"
     [ "$remaining_count" -gt 0 ] && report_line failed low 残留碎片 "$remaining_count" "$remaining_bytes" "仍存在的碎片文件"
     rm -f "$remaining"
   else
     actual_count=$count
     actual_bytes=$estimated
-    log_line "[批量扫描][残留碎片] $count 个文件，约 $estimated bytes，保留 ${FRAGMENT_DAYS} 天"
-    report_line candidate low 残留碎片 "$count" "$estimated" "保留 ${FRAGMENT_DAYS} 天"
+    log_line "[批量扫描][残留碎片] $count 个文件，约 $estimated bytes，${FRAGMENT_POLICY}"
+    report_line candidate low 残留碎片 "$count" "$estimated" "${FRAGMENT_POLICY}"
   fi
   FILES=$((FILES + actual_count))
   FRAGMENT_FILES=$((FRAGMENT_FILES + actual_count))
@@ -1853,7 +1853,14 @@ SYS_DAYS=$(get_uint system_logs_days 7 0 365)
 OEM_DAYS=$(get_uint oem_logs_days 7 0 365)
 EMPTY_DAYS=$(get_uint empty_file_days 0 0 365)
 HIDDEN_DAYS=$(get_uint hidden_junk_days 0 0 365)
-FRAGMENT_DAYS=$(get_uint fragment_days 7 1 365)
+FRAGMENT_DAYS=$(get_uint fragment_days 7 0 365)
+if [ "$FRAGMENT_DAYS" -eq 0 ]; then
+  FRAGMENT_POLICY="立即清理"
+  FRAGMENT_MTIME_ARGS=""
+else
+  FRAGMENT_POLICY="保留 ${FRAGMENT_DAYS} 天"
+  FRAGMENT_MTIME_ARGS="-mtime +$FRAGMENT_DAYS"
+fi
 MAX_RUN_MINUTES=$(get_uint max_run_minutes 45 5 180)
 MAX_RUN_SECONDS=$((MAX_RUN_MINUTES * 60))
 CLEAN_EMPTY_FILES=$(get_bool clean_empty_files)

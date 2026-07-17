@@ -34,7 +34,7 @@ class BaiZeProfileRootService : RootService() {
             .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
-            .put("engine", "module-auto-cleaner-v6+native-audit")
+            .put("engine", "module-auto-cleaner-v8+native-audit")
             .toString()
 
         override fun getProfileCatalog(): String = engine.catalog()
@@ -168,6 +168,7 @@ class BaiZeProfileRootService : RootService() {
         val code = process.exitValue()
         val elapsed = SystemClock.elapsedRealtime() - started
         val totals = readEnv(File(stateDir, "totals.env"))
+        val latest = readEnv(File(stateDir, "latest.env"))
         val latestReport = File(stateDir, "reports/latest.tsv")
         val output = tailText(log, 12_000)
         return JSONObject()
@@ -178,6 +179,7 @@ class BaiZeProfileRootService : RootService() {
             .put("elapsedMs", elapsed)
             .put("output", output)
             .put("totals", totals)
+            .put("latest", latest)
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
@@ -193,6 +195,7 @@ class BaiZeProfileRootService : RootService() {
         val scheduler = readEnv(File(stateDir, "scheduler.env"))
         val module = readEnv(File(stateDir, "module.env"))
         val totals = readEnv(File(stateDir, "totals.env"))
+        val latest = readEnv(File(stateDir, "latest.env"))
         val running = readEnv(File(stateDir, "running.env"))
         return JSONObject()
             .put("moduleInstalled", File(MODULE_DIR, "module.prop").isFile)
@@ -201,6 +204,7 @@ class BaiZeProfileRootService : RootService() {
             .put("scheduler", scheduler)
             .put("module", module)
             .put("totals", totals)
+            .put("latest", latest)
             .put("running", running)
             .put("config", configJsonObject())
             .toString()
@@ -378,7 +382,7 @@ class BaiZeProfileRootService : RootService() {
             "oem_logs_days" to 0..365,
             "empty_file_days" to 0..365,
             "hidden_junk_days" to 0..365,
-            "fragment_days" to 1..365,
+            "fragment_days" to 0..365,
             "max_file_mb" to 16..16_384
         )
     }
