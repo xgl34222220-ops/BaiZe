@@ -1,6 +1,6 @@
-id=baize_v2_alpha
-name=白泽 v2 Alpha Bridge
-version=v2.0.0-alpha03
-versionCode=20003
+id=baize_v2
+name=白泽 v2
+version=v2.0.0-alpha04
+versionCode=20004
 author=惜故里丶
-description=白泽 v2 原生 App 桥接模块，支持扫描快照、安全缓存清理、任务取消与报告保存。
+description=白泽 v2 一体化原生清理模块：内置并自动安装 App，提供 Root 扫描、安全清理、后台服务与模块管理器启动入口。
