@@ -18,7 +18,6 @@
         <activity android:name=".CacheActivity" android:exported="false" />
         <activity android:name=".SmartScanActivity" android:exported="false" />
         <activity android:name=".CleanCenterActivity" android:exported="false" />
-        <activity android:name=".SettingsActivity" android:exported="false" />
 
         <activity
             android:name=".DashboardActivity"

@@ -7,7 +7,7 @@ OUT="$ROOT/dist"
 MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-OUTPUT="$OUT/BaiZe-v2-Alpha11-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha12-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 
