@@ -25,4 +25,4 @@ if ! pm path "$APP_ID" >/dev/null 2>&1; then
 fi
 
 am force-stop "$APP_ID" >/dev/null 2>&1
-am start -n "$APP_ID/.MainActivity" >/dev/null 2>&1
+am start -n "$APP_ID/.DashboardActivity" >/dev/null 2>&1
