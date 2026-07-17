@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha1]
+    branches: [v2-alpha2]
     paths:
       - 'v2/**'
       - '.github/workflows/v2-alpha.yml'
@@ -48,7 +48,7 @@ jobs:
       - name: Upload Alpha artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha1
+          name: BaiZe-v2-Alpha2
           path: |
             v2/app/build/outputs/apk/debug/app-debug.apk
-            v2/dist/BaiZe-v2-Alpha1-Bridge.zip
+            v2/dist/BaiZe-v2-Alpha2-Bridge.zip
