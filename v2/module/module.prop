@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha05
-versionCode=20005
+version=v2.0.0-alpha06
+versionCode=20006
 author=惜故里丶
-description=白泽 v2 Alpha 5：一体化安装，提供应用缓存、空项目、规则垃圾、残留碎片、深度规则和卸载残留的原生扫描与安全清理。
+description=白泽 v2 Alpha 6：一键自动清理、真实后台定时、完整规则库与旧版 WebUI 信息层级的原生 App。
