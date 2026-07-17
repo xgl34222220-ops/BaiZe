@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
@@ -64,13 +65,13 @@ object Alpha7UiPolish {
             view.stateListAnimator = null
             view.elevation = if (view.id == R.id.cleanNowButton || view.id == R.id.cleanAllButton) dp(activity, 10).toFloat() else dp(activity, 2).toFloat()
         }
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
-        }
+        if (view is ViewGroup) for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
     }
 
     private fun polishDashboard(activity: Activity) {
         val primary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, Color.rgb(90, 168, 255))
+        val secondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSecondary, Color.rgb(81, 214, 198))
+        val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
         activity.findViewById<TextView>(R.id.versionText)?.apply {
             text = "Alpha 9"
             setTextColor(primary)
@@ -85,9 +86,32 @@ object Alpha7UiPolish {
             setTextColor(primary)
             strokeColor = ColorStateList.valueOf(alpha(primary, 170))
         }
+        styleTool(activity, R.id.advancedAuditButton, R.drawable.ic_clean_detail, primary,
+            "清理明细\n查看缓存、空项目、规则垃圾与碎片")
+        styleTool(activity, R.id.corpsesToolButton, R.drawable.ic_uninstall_residue, secondary,
+            "卸载残留\n扫描后可一键清理 data / obb 残留")
+        styleTool(activity, R.id.deepToolButton, R.drawable.ic_deep_clean, tertiary,
+            "深度清理\n4,746 条规则扫描，安全项一键清理")
         activity.findViewById<TextView>(R.id.recentTaskText)?.visibility = View.GONE
         activity.findViewById<TextView>(R.id.taskStatusText)?.setLineSpacing(dp(activity, 3).toFloat(), 1f)
         installThemeSelector(activity)
+    }
+
+    private fun styleTool(activity: Activity, id: Int, iconRes: Int, color: Int, label: String) {
+        activity.findViewById<MaterialButton>(id)?.apply {
+            text = label
+            textSize = 13f
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setLineSpacing(dp(activity, 3).toFloat(), 1f)
+            maxLines = 2
+            icon = AppCompatResources.getDrawable(activity, iconRes)
+            iconTint = ColorStateList.valueOf(color)
+            iconSize = dp(activity, 27)
+            iconPadding = dp(activity, 17)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            insetTop = 0
+            insetBottom = 0
+        }
     }
 
     private fun installThemeSelector(activity: Activity) {
