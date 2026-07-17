@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -28,7 +28,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="20dp"
             app:cardCornerRadius="20dp"
             app:strokeWidth="1dp">
 
@@ -56,7 +56,7 @@
                     android:id="@+id/connectButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
+                    android:layout_marginTop="14dp"
                     android:text="连接 Root 服务" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
@@ -64,7 +64,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="14dp"
             app:cardCornerRadius="20dp"
             app:strokeWidth="1dp">
 
@@ -77,7 +77,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="原生扫描链验证"
+                    android:text="真实缓存扫描"
                     android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
                     android:textStyle="bold" />
 
@@ -85,7 +85,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="只枚举应用缓存目录，不递归读取文件，不执行删除。"
+                    android:text="发现阶段只验证真实且非空的目录；大小和文件数在当前页按需统计。"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -102,7 +102,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="16dp"
                     android:enabled="false"
-                    android:text="开始基础扫描" />
+                    android:text="开始真实扫描" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/cancelButton"
@@ -111,26 +111,100 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:enabled="false"
-                    android:text="停止扫描" />
+                    android:text="停止当前任务" />
 
                 <TextView
                     android:id="@+id/resultText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="3dp"
-                    android:text="等待测试"
-                    android:textIsSelectable="true" />
+                    android:layout_marginTop="16dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="等待扫描" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout
+            android:id="@+id/resultsSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/resultsTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="扫描结果"
+                    android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/clearWhitelistButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="清空白名单" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/selectionText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/resultsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:nestedScrollingEnabled="false" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/previousPageButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="上一页" />
+
+                <TextView
+                    android:id="@+id/pageText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="14dp"
+                    android:text="1 / 1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/nextPageButton"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="下一页" />
+            </LinearLayout>
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:gravity="center"
-            android:text="Alpha 1：先验证架构，不碰用户文件"
+            android:text="Alpha 2：验证真实结果、分页和白名单，不执行删除"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
-</ScrollView>
+</androidx.core.widget.NestedScrollView>
