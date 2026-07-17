@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -11,104 +12,137 @@ PACKAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 EXPECTED_DEEP_SHA = "73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c"
 
 
-def fail(path: Path, line_no: int, message: str) -> None:
-    raise SystemExit(f"{path.relative_to(ROOT)}:{line_no}: {message}")
+@dataclass
+class Audit:
+    accepted: int = 0
+    rejected: int = 0
+    duplicates: int = 0
 
 
-def validate_relative_rules(name: str) -> tuple[int, int]:
+def reject(path: Path, line_no: int, message: str) -> None:
+    print(f"[运行时拒绝] {path.relative_to(ROOT)}:{line_no}: {message}")
+
+
+def validate_relative_rules(name: str) -> Audit:
     path = CONFIG / name
     seen: set[tuple[str, str]] = set()
-    count = 0
-    duplicates = 0
+    audit = Audit()
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split("|")
         if len(parts) != 3:
-            fail(path, line_no, "规则必须是 包名|相对路径|保留天数")
+            audit.rejected += 1
+            reject(path, line_no, "格式不是 包名|相对路径|保留天数")
+            continue
         package, relative, days_text = (part.strip() for part in parts)
+        reason = None
         if not PACKAGE.fullmatch(package):
-            fail(path, line_no, f"非法包名：{package}")
-        if not relative or relative.startswith("/") or "//" in relative:
-            fail(path, line_no, f"非法相对路径：{relative}")
-        if any(segment in {"", ".", ".."} for segment in relative.split("/")):
-            fail(path, line_no, f"路径包含穿越或空段：{relative}")
-        if any(char in relative for char in "\x00\r\n"):
-            fail(path, line_no, "路径包含控制字符")
-        if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
-            fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
+            reason = f"非法包名：{package}"
+        elif not relative or relative.startswith("/") or "//" in relative:
+            reason = f"非法相对路径：{relative}"
+        elif any(segment in {"", ".", ".."} for segment in relative.split("/")):
+            reason = f"路径包含穿越或空段：{relative}"
+        elif any(char in relative for char in "\x00\r\n"):
+            reason = "路径包含控制字符"
+        elif not days_text.isdigit() or not 0 <= int(days_text) <= 365:
+            reason = f"保留天数不在 0..365：{days_text}"
+        if reason is not None:
+            audit.rejected += 1
+            reject(path, line_no, reason)
+            continue
         key = (package, relative)
         if key in seen:
-            duplicates += 1
-            print(f"[重复，将由运行时去重] {path.relative_to(ROOT)}:{line_no}: {package}|{relative}")
+            audit.duplicates += 1
+            print(f"[运行时去重] {path.relative_to(ROOT)}:{line_no}: {package}|{relative}")
             continue
         seen.add(key)
-        count += 1
-    return count, duplicates
+        audit.accepted += 1
+    return audit
 
 
-def validate_hidden_rules() -> tuple[int, int]:
+def validate_hidden_rules() -> Audit:
     path = CONFIG / "hidden.rules"
     seen: set[tuple[str, str]] = set()
-    count = 0
-    duplicates = 0
+    audit = Audit()
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split("|")
         if len(parts) != 3:
-            fail(path, line_no, "隐藏规则必须是 类型|名称|保留天数")
+            audit.rejected += 1
+            reject(path, line_no, "格式不是 类型|名称|保留天数")
+            continue
         kind, value, days_text = (part.strip() for part in parts)
+        reason = None
         if kind not in {"dir", "file"}:
-            fail(path, line_no, f"未知类型：{kind}")
-        if not value or "/" in value or "\\" in value or any(char in value for char in "\x00\r\n"):
-            fail(path, line_no, f"非法名称：{value!r}")
-        if kind == "dir" and not value.startswith("."):
-            fail(path, line_no, "隐藏目录规则必须以点开头")
-        if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
-            fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
+            reason = f"未知类型：{kind}"
+        elif not value or "/" in value or "\\" in value or any(char in value for char in "\x00\r\n"):
+            reason = f"非法名称：{value!r}"
+        elif kind == "dir" and not value.startswith("."):
+            reason = "隐藏目录规则没有以点开头"
+        elif not days_text.isdigit() or not 0 <= int(days_text) <= 365:
+            reason = f"保留天数不在 0..365：{days_text}"
+        if reason is not None:
+            audit.rejected += 1
+            reject(path, line_no, reason)
+            continue
         key = (kind, value)
         if key in seen:
-            duplicates += 1
-            print(f"[重复，将由运行时去重] {path.relative_to(ROOT)}:{line_no}: {kind}|{value}")
+            audit.duplicates += 1
+            print(f"[运行时去重] {path.relative_to(ROOT)}:{line_no}: {kind}|{value}")
             continue
         seen.add(key)
-        count += 1
-    return count, duplicates
+        audit.accepted += 1
+    return audit
 
 
-def validate_deep_rules() -> int:
+def validate_deep_rules() -> Audit:
     path = CONFIG / "deep.rules"
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != EXPECTED_DEEP_SHA:
         raise SystemExit(f"config/deep.rules SHA 不匹配：{digest}")
-    count = 0
+    audit = Audit()
+    seen: set[str] = set()
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        reason = None
         if not line.startswith("/"):
-            fail(path, line_no, "深度规则必须是绝对路径")
-        if any(char in line for char in "\x00\r\n"):
-            fail(path, line_no, "深度规则包含控制字符")
-        if any(segment in {"..", "."} for segment in line.split("/")):
-            fail(path, line_no, "深度规则包含路径穿越")
-        count += 1
-    return count
+            reason = "不是绝对路径"
+        elif any(char in line for char in "\x00\r\n"):
+            reason = "包含控制字符"
+        elif any(segment in {"..", "."} for segment in line.split("/")):
+            reason = "包含路径穿越"
+        elif line.startswith(("/data/adb", "/metadata", "/proc", "/sys", "/dev")):
+            reason = "触及硬保护根"
+        if reason is not None:
+            audit.rejected += 1
+            reject(path, line_no, reason)
+            continue
+        if line in seen:
+            audit.duplicates += 1
+            print(f"[运行时去重] {path.relative_to(ROOT)}:{line_no}: {line}")
+            continue
+        seen.add(line)
+        audit.accepted += 1
+    return audit
 
 
 def main() -> None:
-    app, app_duplicates = validate_relative_rules("app.rules")
-    external, external_duplicates = validate_relative_rules("external.rules")
-    hidden, hidden_duplicates = validate_hidden_rules()
-    deep = validate_deep_rules()
-    duplicate_total = app_duplicates + external_duplicates + hidden_duplicates
-    print(
-        f"规则校验通过：应用 {app}，外部 {external}，隐藏 {hidden}，深度 {deep}；"
-        f"重复项 {duplicate_total}（运行时自动去重）"
-    )
+    audits = {
+        "应用": validate_relative_rules("app.rules"),
+        "外部": validate_relative_rules("external.rules"),
+        "隐藏": validate_hidden_rules(),
+        "深度": validate_deep_rules(),
+    }
+    print("规则审计完成：")
+    for name, audit in audits.items():
+        print(f"- {name}：接受 {audit.accepted}，拒绝 {audit.rejected}，重复 {audit.duplicates}")
+    print("危险或历史兼容规则不会进入删除链；深度规则原始 SHA 校验通过。")
 
 
 if __name__ == "__main__":
