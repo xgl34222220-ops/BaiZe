@@ -19,10 +19,19 @@ wait_boot() {
   done
 }
 
+INSTALL_MODE="updated"
 install_app() {
   [ -f "$APK" ] || return 1
+  INSTALL_MODE="updated"
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
+
+  INSTALL_MODE="reinstalled"
+  if pm path "$APP_ID" >/dev/null 2>&1; then
+    pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
+  fi
+  pm install -d --user 0 "$APK" >/dev/null 2>&1 && return 0
+  pm install -d "$APK" >/dev/null 2>&1 && return 0
   return 1
 }
 
@@ -40,7 +49,7 @@ pm path "$APP_ID" >/dev/null 2>&1 || need_install=1
 install_result="unchanged"
 if [ "$need_install" = "1" ]; then
   if install_app; then
-    install_result="installed"
+    install_result="$INSTALL_MODE"
     [ -n "$bundle_hash" ] && printf '%s\n' "$bundle_hash" > "$INSTALLED_HASH"
     chmod 0600 "$INSTALLED_HASH"
   else
