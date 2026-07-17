@@ -37,7 +37,8 @@ def validate_relative_rules(name: str) -> int:
             fail(path, line_no, "路径包含控制字符")
         if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
             fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
-        key = (package, relative.casefold())
+        # Android/Linux paths are case-sensitive. Keep intentional variants such as Log/log.
+        key = (package, relative)
         if key in seen:
             fail(path, line_no, f"重复规则：{package}|{relative}")
         seen.add(key)
@@ -65,7 +66,8 @@ def validate_hidden_rules() -> int:
             fail(path, line_no, "隐藏目录规则必须以点开头")
         if not days_text.isdigit() or not 0 <= int(days_text) <= 365:
             fail(path, line_no, f"保留天数必须在 0..365：{days_text}")
-        key = (kind, value.casefold())
+        # `.trash` and `.Trash`, for example, can be different real directories.
+        key = (kind, value)
         if key in seen:
             fail(path, line_no, f"重复隐藏规则：{kind}|{value}")
         seen.add(key)
