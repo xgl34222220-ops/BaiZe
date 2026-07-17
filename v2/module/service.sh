@@ -7,9 +7,12 @@ STATE="$STATE_DIR/module.env"
 APK="$MODDIR/app/baize.apk"
 HASH_FILE="$MODDIR/app/baize.apk.sha256"
 INSTALLED_HASH="$STATE_DIR/installed-app.sha256"
+CONFIG="$STATE_DIR/config.conf"
 
-mkdir -p "$STATE_DIR"
+mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
 chmod 0700 "$STATE_DIR"
+[ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null
+chmod 0600 "$CONFIG" 2>/dev/null
 
 wait_boot() {
   count=0
@@ -62,6 +65,10 @@ pm path "$APP_ID" >/dev/null 2>&1 && app_installed=1
 app_version=$(dumpsys package "$APP_ID" 2>/dev/null | sed -n 's/.*versionName=//p' | head -n 1)
 rules_ready=0
 [ -f "$MODDIR/config/deep.rules" ] && rules_ready=1
+cleaner_ready=0
+[ -x "$MODDIR/cleaner.sh" ] && cleaner_ready=1
+scheduler_ready=0
+[ -x "$MODDIR/scheduler.sh" ] && scheduler_ready=1
 
 {
   echo "boot_epoch=$(date +%s)"
@@ -69,7 +76,19 @@ rules_ready=0
   echo "app_install_result=$install_result"
   echo "app_version=$app_version"
   echo "rules_ready=$rules_ready"
-  echo "module_version=2.0.0-alpha05"
+  echo "cleaner_ready=$cleaner_ready"
+  echo "scheduler_ready=$scheduler_ready"
+  echo "module_version=2.0.0-alpha06"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"
+
+# The module process becomes the real recurring scheduler. It evaluates all saved power, screen,
+# charging, idle, battery, temperature, interval and daily-time gates before calling cleaner.sh.
+if [ "$scheduler_ready" = "1" ] && [ "$cleaner_ready" = "1" ]; then
+  exec sh "$MODDIR/scheduler.sh"
+fi
+
+while true; do
+  sleep 3600
+done
