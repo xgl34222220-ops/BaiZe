@@ -32,6 +32,10 @@ jobs:
         if: ${{ hashFiles('v2/scripts/alpha9-source-patch.py') != '' }}
         run: python3 v2/scripts/alpha9-source-patch.py
 
+      - name: Apply final Alpha 9 interaction patch
+        if: ${{ hashFiles('v2/scripts/alpha9-final-patch.py') != '' }}
+        run: python3 v2/scripts/alpha9-final-patch.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -76,16 +80,18 @@ jobs:
           unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha09'
           grep -q 'class FloatingGlassDock' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
           grep -q 'class LiquidGlassDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidGlassDrawable.kt
+          grep -q 'class LiquidBackdropDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidBackdropDrawable.kt
           grep -q '__all_safe__' app/src/main/java/io/github/xgl34222220/baize/SmartScanActivity.kt
           grep -q 'selection\["__all_safe__"\]' app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
           grep -q 'selectAllSafe' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+          grep -q 'SmartScanActivity::class.java' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           grep -q 'Theme.BaiZe.Monet' app/src/main/res/values/themes.xml
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
       - name: Commit verified Alpha 9 sources
-        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha9-source-patch.py') != ''
+        if: steps.app_build.outcome == 'success' && (hashFiles('v2/scripts/alpha9-source-patch.py') != '' || hashFiles('v2/scripts/alpha9-final-patch.py') != '')
         run: |
-          rm -f v2/scripts/alpha9-source-patch.py
+          rm -f v2/scripts/alpha9-source-patch.py v2/scripts/alpha9-final-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
