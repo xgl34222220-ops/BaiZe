@@ -16,7 +16,7 @@ class BaiZeProfileRootService : RootService() {
     private val engine by lazy { NativeProfileEngine(this, cancelled) }
 
     @Volatile
-    private var taskState: String = idleState()
+    private var taskStateJson: String = idleState()
 
     private val binder = object : IProfileRootService.Stub() {
         override fun ping(): String = JSONObject()
@@ -44,7 +44,7 @@ class BaiZeProfileRootService : RootService() {
                     .toString()
             } finally {
                 taskRunning.set(false)
-                taskState = idleState()
+                this@BaiZeProfileRootService.taskStateJson = idleState()
             }
         }
 
@@ -69,13 +69,15 @@ class BaiZeProfileRootService : RootService() {
                     .toString()
             } finally {
                 taskRunning.set(false)
-                taskState = idleState()
+                this@BaiZeProfileRootService.taskStateJson = idleState()
             }
         }
 
         override fun getTaskState(): String = runCatching {
-            JSONObject(taskState).put("cancelRequested", cancelled.get()).toString()
-        }.getOrDefault(taskState)
+            JSONObject(this@BaiZeProfileRootService.taskStateJson)
+                .put("cancelRequested", cancelled.get())
+                .toString()
+        }.getOrDefault(this@BaiZeProfileRootService.taskStateJson)
 
         override fun cancelCurrentTask() {
             cancelled.set(true)
@@ -85,7 +87,7 @@ class BaiZeProfileRootService : RootService() {
     override fun onBind(intent: Intent): IBinder = binder
 
     private fun updateState(operation: String, progress: NativeProfileEngine.Progress, started: Long) {
-        taskState = JSONObject()
+        taskStateJson = JSONObject()
             .put("running", true)
             .put("operation", operation)
             .put("phase", progress.phase)
