@@ -3,6 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
     android:background="@drawable/bg_app_gradient">
 
     <androidx.core.widget.NestedScrollView
@@ -14,10 +15,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="18dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="18dp"
-            android:paddingBottom="30dp">
+            android:paddingStart="16dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="28dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -28,16 +29,22 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/backButton"
                     style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:insetLeft="0dp"
+                    android:insetTop="0dp"
+                    android:insetRight="0dp"
+                    android:insetBottom="0dp"
                     android:contentDescription="返回"
+                    app:backgroundTint="@android:color/transparent"
                     app:icon="@drawable/ic_arrow_back"
+                    app:iconSize="20dp"
                     app:iconTint="@color/baize_text_primary" />
 
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:orientation="vertical">
 
@@ -46,15 +53,17 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="清理项目"
-                        android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
+                        android:textColor="@color/baize_text_primary"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/subtitleText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
+                        android:layout_marginTop="1dp"
                         android:textColor="@color/baize_text_secondary"
-                        android:textSize="13sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -62,13 +71,13 @@
                 style="@style/Widget.BaiZe.GlassCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp">
+                android:layout_marginTop="14dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="18dp">
+                    android:padding="16dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -78,26 +87,26 @@
 
                         <View
                             android:id="@+id/statusDot"
-                            android:layout_width="9dp"
-                            android:layout_height="9dp"
+                            android:layout_width="8dp"
+                            android:layout_height="8dp"
                             android:background="@drawable/bg_status_dot" />
 
                         <TextView
                             android:id="@+id/statusText"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="9dp"
+                            android:layout_marginStart="8dp"
                             android:layout_weight="1"
                             android:text="正在连接 Root 服务"
                             android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
+                            android:textSize="11sp" />
                     </LinearLayout>
 
                     <com.google.android.material.progressindicator.LinearProgressIndicator
                         android:id="@+id/progressIndicator"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="15dp"
+                        android:layout_marginTop="12dp"
                         android:indeterminate="true"
                         android:visibility="gone"
                         app:indicatorColor="@color/baize_primary"
@@ -107,21 +116,22 @@
                         android:id="@+id/summaryText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="13dp"
+                        android:layout_marginTop="11dp"
                         android:text="准备扫描"
                         android:textColor="@color/baize_text_primary"
-                        android:textSize="15sp" />
+                        android:textSize="13sp"
+                        android:lineSpacingExtra="2dp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="15dp"
+                        android:layout_marginTop="12dp"
                         android:orientation="horizontal">
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/scanButton"
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                            android:layout_height="50dp"
                             android:layout_weight="1"
                             android:enabled="false"
                             android:text="开始扫描" />
@@ -129,9 +139,9 @@
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/cancelButton"
                             style="@style/Widget.BaiZe.Button.Outlined"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="10dp"
+                            android:layout_width="86dp"
+                            android:layout_height="50dp"
+                            android:layout_marginStart="8dp"
                             android:enabled="false"
                             android:text="停止" />
                     </LinearLayout>
@@ -142,7 +152,7 @@
                 android:id="@+id/resultSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
+                android:layout_marginTop="18dp"
                 android:orientation="vertical"
                 android:visibility="gone">
 
@@ -166,22 +176,22 @@
                         android:layout_height="wrap_content"
                         android:text="1 / 1"
                         android:textColor="@color/baize_text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
 
                 <TextView
                     android:id="@+id/selectionText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="5dp"
+                    android:layout_marginTop="4dp"
                     android:textColor="@color/baize_text_secondary"
-                    android:textSize="13sp" />
+                    android:textSize="11sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/cleanButton"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_height="50dp"
+                    android:layout_marginTop="10dp"
                     android:enabled="false"
                     android:text="清理明确勾选的项目" />
 
@@ -189,16 +199,17 @@
                     android:id="@+id/safetyText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="7dp"
-                    android:text="默认不选择；清理前会重新验证路径、风险、白名单、软链接、挂载点和大文件限制。"
+                    android:layout_marginTop="6dp"
+                    android:text="此页仅用于高级审计；日常清理由首页一键自动完成。"
                     android:textColor="@color/baize_text_secondary"
-                    android:textSize="12sp" />
+                    android:textSize="10sp"
+                    android:lineSpacingExtra="2dp" />
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/resultsList"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="11dp"
                     android:nestedScrollingEnabled="false" />
 
                 <LinearLayout
@@ -211,7 +222,7 @@
                         android:id="@+id/previousButton"
                         style="@style/Widget.BaiZe.Button.Outlined"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="46dp"
                         android:layout_weight="1"
                         android:text="上一页" />
 
@@ -219,8 +230,8 @@
                         android:id="@+id/nextButton"
                         style="@style/Widget.BaiZe.Button.Outlined"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
+                        android:layout_height="46dp"
+                        android:layout_marginStart="8dp"
                         android:layout_weight="1"
                         android:text="下一页" />
                 </LinearLayout>
