@@ -60,13 +60,16 @@ fi
 app_installed=0
 pm path "$APP_ID" >/dev/null 2>&1 && app_installed=1
 app_version=$(dumpsys package "$APP_ID" 2>/dev/null | sed -n 's/.*versionName=//p' | head -n 1)
+rules_ready=0
+[ -f "$MODDIR/config/deep.rules" ] && rules_ready=1
 
 {
   echo "boot_epoch=$(date +%s)"
   echo "app_installed=$app_installed"
   echo "app_install_result=$install_result"
   echo "app_version=$app_version"
-  echo "module_version=2.0.0-alpha04"
+  echo "rules_ready=$rules_ready"
+  echo "module_version=2.0.0-alpha05"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"
