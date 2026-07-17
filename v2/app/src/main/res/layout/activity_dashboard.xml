@@ -408,9 +408,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:value="24"
-                            app:stepSize="1"
-                            app:valueFrom="1"
-                            app:valueTo="720" />
+                            android:stepSize="1"
+                            android:valueFrom="1"
+                            android:valueTo="720" />
 
                         <com.google.android.material.switchmaterial.SwitchMaterial
                             android:id="@+id/dailySwitch"
@@ -434,9 +434,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:value="3"
-                            app:stepSize="1"
-                            app:valueFrom="0"
-                            app:valueTo="23" />
+                            android:stepSize="1"
+                            android:valueFrom="0"
+                            android:valueTo="23" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -550,9 +550,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:value="25"
-                            app:stepSize="5"
-                            app:valueFrom="0"
-                            app:valueTo="100" />
+                            android:stepSize="5"
+                            android:valueFrom="0"
+                            android:valueTo="100" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -721,9 +721,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:value="256"
-                            app:stepSize="16"
-                            app:valueFrom="16"
-                            app:valueTo="2048" />
+                            android:stepSize="16"
+                            android:valueFrom="16"
+                            android:valueTo="2048" />
 
                         <TextView
                             android:id="@+id/fragmentDaysText"
@@ -739,9 +739,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:value="7"
-                            app:stepSize="1"
-                            app:valueFrom="1"
-                            app:valueTo="30" />
+                            android:stepSize="1"
+                            android:valueFrom="1"
+                            android:valueTo="30" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
