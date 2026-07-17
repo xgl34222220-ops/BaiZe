@@ -1,13 +1,63 @@
 #!/system/bin/sh
-STATE=/data/adb/baize-v2/module.env
-mkdir -p /data/adb/baize-v2
+
+MODDIR=${0%/*}
+APP_ID="io.github.xgl34222220.baize"
+STATE_DIR="/data/adb/baize-v2"
+STATE="$STATE_DIR/module.env"
+APK="$MODDIR/app/baize.apk"
+HASH_FILE="$MODDIR/app/baize.apk.sha256"
+INSTALLED_HASH="$STATE_DIR/installed-app.sha256"
+
+mkdir -p "$STATE_DIR"
+chmod 0700 "$STATE_DIR"
+
+wait_boot() {
+  count=0
+  while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$count" -lt 180 ]; do
+    sleep 1
+    count=$((count + 1))
+  done
+}
+
+install_app() {
+  [ -f "$APK" ] || return 1
+  pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
+  pm install -r -d "$APK" >/dev/null 2>&1 && return 0
+  return 1
+}
+
+bundle_hash=""
+[ -f "$HASH_FILE" ] && bundle_hash=$(tr -d '\r\n ' < "$HASH_FILE")
+installed_hash=""
+[ -f "$INSTALLED_HASH" ] && installed_hash=$(tr -d '\r\n ' < "$INSTALLED_HASH")
+
+wait_boot
+
+need_install=0
+pm path "$APP_ID" >/dev/null 2>&1 || need_install=1
+[ -n "$bundle_hash" ] && [ "$bundle_hash" != "$installed_hash" ] && need_install=1
+
+install_result="unchanged"
+if [ "$need_install" = "1" ]; then
+  if install_app; then
+    install_result="installed"
+    [ -n "$bundle_hash" ] && printf '%s\n' "$bundle_hash" > "$INSTALLED_HASH"
+    chmod 0600 "$INSTALLED_HASH"
+  else
+    install_result="failed"
+  fi
+fi
+
+app_installed=0
+pm path "$APP_ID" >/dev/null 2>&1 && app_installed=1
+app_version=$(dumpsys package "$APP_ID" 2>/dev/null | sed -n 's/.*versionName=//p' | head -n 1)
+
 {
   echo "boot_epoch=$(date +%s)"
-  if pm path io.github.xgl34222220.baize >/dev/null 2>&1; then
-    echo "app_installed=1"
-  else
-    echo "app_installed=0"
-  fi
+  echo "app_installed=$app_installed"
+  echo "app_install_result=$install_result"
+  echo "app_version=$app_version"
+  echo "module_version=2.0.0-alpha04"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"
