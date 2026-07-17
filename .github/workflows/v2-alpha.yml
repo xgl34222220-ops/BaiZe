@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha5]
+    branches: [v2-alpha6]
     paths:
       - 'v2/**'
       - '.github/workflows/v2-alpha.yml'
@@ -43,31 +43,36 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha5.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha6.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify module contains App and rules
+      - name: Verify automatic cleaner, scheduler, App and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          unzip -l dist/BaiZe-v2-Alpha5-Module.zip | grep -q 'app/baize.apk'
-          unzip -l dist/BaiZe-v2-Alpha5-Module.zip | grep -q 'app/baize.apk.sha256'
-          unzip -l dist/BaiZe-v2-Alpha5-Module.zip | grep -q 'config/deep.rules'
-          test "$(unzip -p dist/BaiZe-v2-Alpha5-Module.zip config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
+          ZIP=dist/BaiZe-v2-Alpha6-Module.zip
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'scheduler.sh'
+          unzip -l "$ZIP" | grep -q 'config/deep.rules'
+          unzip -p "$ZIP" cleaner.sh | grep -q '/data/adb/baize-v2'
+          unzip -p "$ZIP" scheduler.sh | grep -q '/data/adb/baize-v2'
+          test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha5
+          name: BaiZe-v2-Alpha6
           if-no-files-found: warn
           path: |
-            v2/build-alpha5.log
-            v2/dist/BaiZe-v2-Alpha5-Module.zip
+            v2/build-alpha6.log
+            v2/dist/BaiZe-v2-Alpha6-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
