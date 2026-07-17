@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha8]
+    branches: [v2-alpha9]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
@@ -22,15 +22,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Alpha 8 branch
+      - name: Checkout Alpha 9 branch
         uses: actions/checkout@v4
         with:
-          ref: v2-alpha8
+          ref: v2-alpha9
           fetch-depth: 0
 
-      - name: Apply pending Alpha 8 source patch
-        if: ${{ hashFiles('v2/scripts/alpha8-source-patch.py') != '' }}
-        run: python3 v2/scripts/alpha8-source-patch.py
+      - name: Apply pending Alpha 9 source patch
+        if: ${{ hashFiles('v2/scripts/alpha9-source-patch.py') != '' }}
+        run: python3 v2/scripts/alpha9-source-patch.py
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -55,52 +55,52 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha8.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha9.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify themed UI automatic cleaner scheduler App and rules
+      - name: Verify MIUI X glass UI snapshot cleaning scheduler App and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha8-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha9-Module.zip
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-          unzip -p "$ZIP" cleaner.sh | grep -q '/data/adb/baize-v2'
-          unzip -p "$ZIP" scheduler.sh | grep -q '/data/adb/baize-v2'
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha08'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha09'
+          grep -q 'class FloatingGlassDock' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
+          grep -q 'class LiquidGlassDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidGlassDrawable.kt
+          grep -q '__all_safe__' app/src/main/java/io/github/xgl34222220/baize/SmartScanActivity.kt
+          grep -q 'selection\["__all_safe__"\]' app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+          grep -q 'selectAllSafe' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           grep -q 'Theme.BaiZe.Monet' app/src/main/res/values/themes.xml
-          grep -q 'Monet 动态取色' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
-          grep -q 'fragment_days" to 0..365' app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-          grep -q 'FRAGMENT_DAYS.*0 365' ../cleaner.sh
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-      - name: Commit verified Alpha 8 sources
-        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha8-source-patch.py') != ''
+      - name: Commit verified Alpha 9 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha9-source-patch.py') != ''
         run: |
-          rm -f .github/workflows/alpha8-source-patch.yml v2/scripts/alpha8-source-patch.py
+          rm -f v2/scripts/alpha9-source-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Alpha 8 premium themed UI and cleaning policies'
-          git push origin HEAD:v2-alpha8
+          git commit -m 'Finalize Alpha 9 MIUI X glass UI and direct snapshot cleaning'
+          git push origin HEAD:v2-alpha9
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha8
+          name: BaiZe-v2-Alpha9
           if-no-files-found: warn
           path: |
-            v2/build-alpha8.log
-            v2/dist/BaiZe-v2-Alpha8-Module.zip
+            v2/build-alpha9.log
+            v2/dist/BaiZe-v2-Alpha9-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
