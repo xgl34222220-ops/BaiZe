@@ -1,0 +1,71 @@
+name: Fix Alpha 5 native path policy
+
+on:
+  push:
+    branches: [v2-alpha5]
+    paths:
+      - '.github/workflows/alpha5-path-policy-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha5
+      - name: Correct native path safety policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt')
+          text = path.read_text()
+          old = '''    private fun isHardProtected(path: String): Boolean {
+        val normalized = path.trimEnd('/')
+        if (normalized in HARD_PROTECTED) return true
+        return HARD_PROTECTED.any { normalized.startsWith("$it/") } ||
+            normalized.contains("/data/adb/") || normalized.contains("/.ssh/") || normalized.contains("/.gnupg/")
+    }
+'''
+          new = '''    private fun isHardProtected(path: String): Boolean {
+        val normalized = path.trimEnd('/').ifBlank { "/" }
+        if (normalized in HARD_PROTECTED_EXACT) return true
+        if (READ_ONLY_PROTECTED_PREFIXES.any { normalized == it || normalized.startsWith("$it/") }) return true
+        return normalized == "/data/adb" || normalized.startsWith("/data/adb/") ||
+            normalized.contains("/.ssh/") || normalized.contains("/.gnupg/")
+    }
+'''
+          if old not in text:
+              raise SystemExit('isHardProtected block not found')
+          text = text.replace(old, new, 1)
+          old = '''        val HARD_PROTECTED = setOf(
+            "/", "/system", "/vendor", "/product", "/odm", "/apex", "/proc", "/sys", "/dev", "/metadata",
+            "/data", "/data/adb", "/data/system", "/data/misc", "/storage", "/storage/emulated"
+        )
+'''
+          new = '''        private val HARD_PROTECTED_EXACT = setOf(
+            "/", "/data", "/data/adb", "/data/system", "/data/misc", "/storage", "/storage/emulated", "/sdcard"
+        )
+        private val READ_ONLY_PROTECTED_PREFIXES = setOf(
+            "/system", "/vendor", "/product", "/odm", "/apex", "/proc", "/sys", "/dev", "/metadata"
+        )
+'''
+          if old not in text:
+              # declaration may not contain an explicit private modifier in older generated content
+              old = old.replace('        val HARD_PROTECTED', '        private val HARD_PROTECTED')
+          if old not in text:
+              raise SystemExit('hard protected declaration not found')
+          text = text.replace(old, new, 1)
+          text = text.replace('it.name.all(Char::isDigit)', 'it.name.all { character -> character.isDigit() }')
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/alpha5-path-policy-fix.yml
+      - name: Commit correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt .github/workflows/alpha5-path-policy-fix.yml
+          git commit -m 'Correct Alpha 5 native path safety boundaries'
+          git push origin HEAD:v2-alpha5
