@@ -42,23 +42,10 @@ jobs:
             val started = SystemClock.elapsedRealtime()
             return try {
                 profileEngine.scan(profile.orEmpty(), optionsJson.orEmpty()) { state ->
-                    updateTaskState(
-                        true,
-                        "profile-scan",
-                        state.phase,
-                        state.current,
-                        state.total,
-                        "",
-                        state.path,
-                        state.bytes,
-                        state.files,
-                        state.failures,
-                        started
-                    )
+                    updateTaskState(true, "profile-scan", state.phase, state.current, state.total, "", state.path, state.bytes, state.files, state.failures, started)
                 }
             } catch (error: Throwable) {
-                JSONObject().put("error", "profile_scan_failed")
-                    .put("message", error.message ?: error.javaClass.simpleName).toString()
+                JSONObject().put("error", "profile_scan_failed").put("message", error.message ?: error.javaClass.simpleName).toString()
             } finally {
                 taskRunning.set(false)
                 updateTaskState(false, "idle", "等待任务", 0, 0, "", "", 0, 0, 0, started)
@@ -77,23 +64,10 @@ jobs:
             val started = SystemClock.elapsedRealtime()
             return try {
                 profileEngine.clean(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { state ->
-                    updateTaskState(
-                        true,
-                        "profile-clean",
-                        state.phase,
-                        state.current,
-                        state.total,
-                        "",
-                        state.path,
-                        state.bytes,
-                        state.files,
-                        state.failures,
-                        started
-                    )
+                    updateTaskState(true, "profile-clean", state.phase, state.current, state.total, "", state.path, state.bytes, state.files, state.failures, started)
                 }
             } catch (error: Throwable) {
-                JSONObject().put("error", "profile_clean_failed")
-                    .put("message", error.message ?: error.javaClass.simpleName).toString()
+                JSONObject().put("error", "profile_clean_failed").put("message", error.message ?: error.javaClass.simpleName).toString()
             } finally {
                 taskRunning.set(false)
                 updateTaskState(false, "idle", "等待任务", 0, 0, "", "", 0, 0, 0, started)
@@ -121,7 +95,6 @@ jobs:
           package = Path('v2/scripts/package-module.sh')
           package.write_text('''#!/usr/bin/env sh
 set -eu
-
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 REPO=$(CDPATH= cd -- "$ROOT/.." && pwd)
 OUT="$ROOT/dist"
@@ -129,7 +102,6 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 OUTPUT="$OUT/BaiZe-v2-Alpha5-Module.zip"
-
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app"
@@ -140,10 +112,7 @@ chmod 0644 "$STAGE/app/baize.apk"
 sha256sum "$STAGE/app/baize.apk" | awk '{print $1}' > "$STAGE/app/baize.apk.sha256"
 chmod 0644 "$STAGE/app/baize.apk.sha256"
 rm -f "$OUTPUT"
-(
-  cd "$STAGE"
-  zip -qr "$OUTPUT" .
-)
+(cd "$STAGE" && zip -qr "$OUTPUT" .)
 unzip -tq "$OUTPUT" >/dev/null
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
@@ -151,10 +120,8 @@ echo "已生成内置 App 与完整规则库的一体化模块：$OUTPUT"
 ''')
 
           workflow = Path('.github/workflows/v2-alpha.yml')
-          text = workflow.read_text()
-          text = text.replace('branches: [v2-alpha4]', 'branches: [v2-alpha5]')
-          text = text.replace('build-alpha4.log', 'build-alpha5.log')
-          text = text.replace('BaiZe-v2-Alpha4', 'BaiZe-v2-Alpha5')
+          text = workflow.read_text().replace('branches: [v2-alpha4]', 'branches: [v2-alpha5]')
+          text = text.replace('build-alpha4.log', 'build-alpha5.log').replace('BaiZe-v2-Alpha4', 'BaiZe-v2-Alpha5')
           text = text.replace('v2/dist/BaiZe-v2-Alpha4-Module.zip', 'v2/dist/BaiZe-v2-Alpha5-Module.zip')
           workflow.write_text(text)
           PY
