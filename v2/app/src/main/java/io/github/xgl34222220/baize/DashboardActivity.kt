@@ -58,7 +58,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 8"
+        binding.versionText.text = "Alpha 9"
         setupNavigation()
         setupActions()
         setupSettings()

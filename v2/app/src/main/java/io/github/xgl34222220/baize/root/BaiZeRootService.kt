@@ -196,7 +196,7 @@ class BaiZeRootService : RootService() {
                 val keys = json.keys()
                 while (keys.hasNext()) {
                     val path = keys.next()
-                    if (path.startsWith("/") && path.length <= 4096) {
+                    if ((path == "__all_safe__" || path.startsWith("/")) && path.length <= 4096) {
                         put(path, json.optBoolean(path, false))
                     }
                 }
@@ -487,7 +487,7 @@ class BaiZeRootService : RootService() {
         val selected = snapshot.filter { candidate ->
             !candidate.whitelisted &&
                 candidate.packageName !in whitelist &&
-                (selection[candidate.path] == true)
+                (selection["__all_safe__"] == true || selection[candidate.path] == true)
         }
         val mountPoints = loadMountPoints()
         val details = JSONArray()

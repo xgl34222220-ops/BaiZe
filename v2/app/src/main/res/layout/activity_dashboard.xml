@@ -72,11 +72,11 @@
                 </LinearLayout>
 
                 <com.google.android.material.card.MaterialCardView
+                    android:tag="glass:hero"
                     style="@style/Widget.BaiZe.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp"
-                    app:cardBackgroundColor="?attr/colorPrimaryContainer">
+                    android:layout_marginTop="18dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -751,19 +751,12 @@
         </androidx.core.widget.NestedScrollView>
     </FrameLayout>
 
-    <com.google.android.material.bottomnavigation.BottomNavigationView
+    <io.github.xgl34222220.baize.ui.FloatingGlassDock
         android:id="@+id/bottomNavigation"
         android:layout_width="match_parent"
-        android:layout_height="72dp"
+        android:layout_height="84dp"
         android:layout_gravity="bottom"
         android:layout_marginStart="20dp"
         android:layout_marginEnd="20dp"
-        android:layout_marginBottom="18dp"
-        android:background="@drawable/bg_bottom_nav"
-        android:elevation="24dp"
-        app:itemIconSize="24dp"
-        app:itemIconTint="@color/nav_item_color"
-        app:itemTextColor="@color/nav_item_color"
-        app:labelVisibilityMode="labeled"
-        app:menu="@menu/menu_bottom_nav" />
+        android:layout_marginBottom="22dp" />
 </FrameLayout>
