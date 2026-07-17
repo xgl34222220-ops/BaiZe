@@ -88,11 +88,24 @@ function fillState() {
     $('#last-kind').textContent = Number(state.total_runs || 0) > 0 ? '累计已清理' : '等待清理';
   }
   $('.hero').classList.toggle('running', Boolean(state.running));
+  const ringCurrent = Number(state.run_progress_current || 0);
+  const ringTotal = Number(state.run_progress_total || 0);
+  const ringProgress = state.running && ringTotal > 0 ? Math.max(4, Math.min(100, (ringCurrent / ringTotal) * 100)) : 72;
+  $('.hero-ring').style.setProperty('--ring-progress', `${ringProgress}%`);
   $('#last-result').textContent = state.running ? (state.run_phase || '正在处理') : (state.last_result || '尚未运行');
   const runningSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(state.run_started || 0));
-  $('#last-time').textContent = state.running
-    ? `已运行 ${runningSeconds} 秒 · 后台任务可随时切换页面`
-    : (state.last_time === '从未运行' ? '首屏不会自动扫描存储' : state.last_time);
+  if (state.running) {
+    const progressCurrent = Number(state.run_progress_current || 0);
+    const progressTotal = Number(state.run_progress_total || 0);
+    const progressText = progressTotal > 0 ? ` · ${progressCurrent}/${progressTotal}` : '';
+    const currentPath = String(state.run_current_path || '');
+    const shortPath = currentPath.length > 54 ? `…${currentPath.slice(-53)}` : currentPath;
+    $('#last-time').textContent = `已运行 ${runningSeconds} 秒${progressText}${shortPath ? ` · ${shortPath}` : ' · 后台任务可随时切换页面'}`;
+    $('#last-time').title = currentPath;
+  } else {
+    $('#last-time').textContent = state.last_time === '从未运行' ? '首屏不会自动扫描存储' : state.last_time;
+    $('#last-time').removeAttribute('title');
+  }
   $('#metric-files').textContent = Number(state.total_regular_files || 0).toLocaleString();
   $('#metric-fragments').textContent = Number(state.total_fragment_files || 0).toLocaleString();
   $('#metric-empty-files').textContent = Number(state.total_empty_files || 0).toLocaleString();
@@ -132,7 +145,13 @@ function fillState() {
   const deepRecent = deepAge >= 0 && deepAge <= 1800;
   const corpseRecent = corpseAge >= 0 && corpseAge <= 1800;
   $('#deep-action').textContent = deepRecent ? '确认清理' : '开始扫描';
-  $('#deep-status').textContent = deepRecent ? `${formatBytes(state.deep_scan_bytes)} · ${Math.max(1, Math.ceil((1800 - deepAge) / 60))} 分钟` : '需先扫描';
+  if (deepRecent) {
+    const deepWarnings = Number(state.deep_scan_slow_items || 0) + Number(state.deep_scan_mount_items || 0);
+    const partial = Number(state.deep_scan_truncated || 0) === 1;
+    $('#deep-status').textContent = `${formatBytes(state.deep_scan_bytes)} · ${Math.max(1, Math.ceil((1800 - deepAge) / 60))} 分钟${partial ? ' · 部分' : (deepWarnings > 0 ? ` · 跳过${deepWarnings}` : '')}`;
+  } else {
+    $('#deep-status').textContent = '需先扫描';
+  }
   $('#corpse-action').textContent = corpseRecent ? '确认清理' : '开始扫描';
   $('#corpse-status').textContent = corpseRecent ? `${Number(state.corpse_scan_items || 0).toLocaleString()} 项 · ${Math.max(1, Math.ceil((1800 - corpseAge) / 60))} 分钟` : '需先扫描';
   const highRiskEnabled = Boolean(Number(state.deep_high_risk_enabled || 0));

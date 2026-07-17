@@ -96,11 +96,18 @@ trap handle_signal INT TERM
 
 set_phase() {
   phase=$1
+  progress_current=${2:-0}
+  progress_total=${3:-0}
+  current_path=${4:-}
+  current_path=$(printf '%s' "$current_path" | tr '\r\n' '  ')
   tmp="$RUNNING_FILE.tmp.$$"
   {
-    echo "mode=$REQUEST_MODE"
-    echo "phase=$phase"
-    echo "started=$START_EPOCH"
+    printf 'mode=%s\n' "$REQUEST_MODE"
+    printf 'phase=%s\n' "$phase"
+    printf 'started=%s\n' "$START_EPOCH"
+    printf 'progress_current=%s\n' "$progress_current"
+    printf 'progress_total=%s\n' "$progress_total"
+    printf 'current_path=%s\n' "$current_path"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -131,6 +138,16 @@ STOP_REASON=""
 STOP_CHECK_TICKS=0
 DEEP_RULE_SHA=""
 DEEP_COVER_TARGET=0
+DEEP_COVER_MODE=""
+DEEP_SLOW_ITEMS=0
+DEEP_MOUNT_ITEMS=0
+DEEP_TRUNCATED=0
+CACHE_SLOW_DIRS=0
+CACHE_TRUNCATED=0
+COMMAND_TIMEOUT_MODE=""
+DEEP_PROGRESS_CURRENT=0
+DEEP_PROGRESS_TOTAL=0
+DEEP_CURRENT_PATH=""
 DEEP_SCAN_MANIFEST_TMP="$TMP_DIR/deep-scan.targets"
 CORPSE_SCAN_MANIFEST_TMP="$TMP_DIR/corpse-scan.targets"
 REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
@@ -392,6 +409,30 @@ handle_file() {
   fi
 }
 
+ensure_timeout_runtime() {
+  [ -n "$COMMAND_TIMEOUT_MODE" ] && return 0
+  COMMAND_TIMEOUT_MODE=none
+  if command -v timeout >/dev/null 2>&1; then
+    COMMAND_TIMEOUT_MODE=timeout
+  elif command -v toybox >/dev/null 2>&1 && toybox timeout 1 true >/dev/null 2>&1; then
+    COMMAND_TIMEOUT_MODE=toybox
+  elif command -v busybox >/dev/null 2>&1 && busybox timeout 1 true >/dev/null 2>&1; then
+    COMMAND_TIMEOUT_MODE=busybox
+  fi
+}
+
+run_limited_command() {
+  seconds=$1
+  shift
+  ensure_timeout_runtime
+  case "$COMMAND_TIMEOUT_MODE" in
+    timeout) timeout "$seconds" "$@" ;;
+    toybox) toybox timeout "$seconds" "$@" ;;
+    busybox) busybox timeout "$seconds" "$@" ;;
+    *) "$@" ;;
+  esac
+}
+
 count_nul() {
   tr -cd '\000' <"$1" | wc -c | tr -d ' '
 }
@@ -433,35 +474,121 @@ filter_whitelist_list() {
   mv -f "$filtered" "$source_list"
 }
 
-# 将全部缓存目录交给同一个 find。旧版会为每个应用单独启动 find，
-# 应用较多时会产生数百次进程创建，看起来像卡死。
+# 缓存目录按批次交给 find：正常设备只需少量进程，异常大目录则会被单独定位并限时跳过。
+run_cache_find() {
+  cache_seconds=$1
+  cache_days=$2
+  cache_output=$3
+  shift 3
+  if [ "$cache_days" -eq 0 ]; then
+    if [ "$CLEAN_EMPTY_FILES" = "1" ]; then
+      run_limited_command "$cache_seconds" find "$@" -mindepth 1 -type f -size "-${MAX_FILE_BYTES}c" \
+        ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
+        -print0 >"$cache_output" 2>/dev/null
+    else
+      run_limited_command "$cache_seconds" find "$@" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -print0 >"$cache_output" 2>/dev/null
+    fi
+  elif [ "$CLEAN_EMPTY_FILES" = "1" ]; then
+    run_limited_command "$cache_seconds" find "$@" -mindepth 1 -type f -size "-${MAX_FILE_BYTES}c" -mtime "+$cache_days" \
+      ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
+      -print0 >"$cache_output" 2>/dev/null
+  else
+    run_limited_command "$cache_seconds" find "$@" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -mtime "+$cache_days" -print0 >"$cache_output" 2>/dev/null
+  fi
+}
+
+process_cache_chunk() {
+  cache_chunk_file=$1
+  cache_days=$2
+  cache_target_list=$3
+  cache_category=$4
+  cache_done=$5
+  cache_total=$6
+  set --
+  while IFS= read -r cache_dir || [ -n "$cache_dir" ]; do
+    [ -d "$cache_dir" ] && [ ! -L "$cache_dir" ] && set -- "$@" "$cache_dir"
+  done <"$cache_chunk_file"
+  [ "$#" -gt 0 ] || return 0
+
+  LIST_SEQ=$((LIST_SEQ + 1))
+  cache_chunk_out="$TMP_DIR/cache-chunk.$LIST_SEQ.nul"
+  run_cache_find 25 "$cache_days" "$cache_chunk_out" "$@"
+  cache_code=$?
+  if [ "$cache_code" -eq 0 ]; then
+    cat "$cache_chunk_out" >>"$cache_target_list"
+  else
+    case "$cache_code" in
+      124|137|143) log_line "[缓存慢批次] $cache_category 第 ${cache_done}/${cache_total} 个目录附近超时，正在逐目录定位" ;;
+      *) log_line "[缓存批次异常] $cache_category（代码 $cache_code），正在逐目录重试" ;;
+    esac
+    cache_fallback_start=$(date +%s)
+    while IFS= read -r cache_dir || [ -n "$cache_dir" ]; do
+      [ -d "$cache_dir" ] || continue
+      cache_fallback_now=$(date +%s)
+      if [ $((cache_fallback_now - cache_fallback_start)) -ge 60 ]; then
+        CACHE_TRUNCATED=1
+        log_line "[缓存批次提前结束] $cache_category 的慢目录定位达到 60 秒上限"
+        report_line protected timeout "$cache_category" 1 0 "慢目录定位达到 60 秒上限"
+        break
+      fi
+      LIST_SEQ=$((LIST_SEQ + 1))
+      cache_one_out="$TMP_DIR/cache-one.$LIST_SEQ.nul"
+      run_cache_find 6 "$cache_days" "$cache_one_out" "$cache_dir"
+      cache_one_code=$?
+      if [ "$cache_one_code" -eq 0 ]; then
+        cat "$cache_one_out" >>"$cache_target_list"
+      else
+        CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
+        PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+        log_line "[缓存跳过:目录扫描超时] $cache_dir"
+        report_line protected slow "$cache_category" 1 0 "$cache_dir（扫描超时）"
+      fi
+      rm -f "$cache_one_out"
+    done <"$cache_chunk_file"
+  fi
+  rm -f "$cache_chunk_out"
+  set_phase "批量扫描${cache_category}（${cache_done}/${cache_total}个目录）" "$cache_done" "$cache_total" ""
+}
+
 collect_cache_candidates() {
   dir_list=$1
   days=$2
   target_list=$3
-  set --
-  while IFS= read -r dir || [ -n "$dir" ]; do
-    [ -d "$dir" ] || continue
-    [ -L "$dir" ] && continue
-    set -- "$@" "$dir"
-  done <"$dir_list"
-  [ "$#" -gt 0 ] || return 0
+  cache_category=$4
+  cache_total=$(wc -l <"$dir_list" 2>/dev/null | tr -d ' ')
+  case "$cache_total" in ''|*[!0-9]*) cache_total=0 ;; esac
+  [ "$cache_total" -gt 0 ] || return 0
 
-  if [ "$days" -eq 0 ]; then
-    if [ "$CLEAN_EMPTY_FILES" = "1" ]; then
-      find "$@" -mindepth 1 -type f -size "-${MAX_FILE_BYTES}c" \
-        ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
-        -print0 2>/dev/null >>"$target_list"
-    else
-      find "$@" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -print0 2>/dev/null >>"$target_list"
+  cache_chunk="$TMP_DIR/cache-dirs.chunk"
+  cache_stage_start=$(date +%s)
+  : >"$cache_chunk"
+  cache_chunk_count=0
+  cache_done=0
+  while IFS= read -r cache_dir || [ -n "$cache_dir" ]; do
+    [ -d "$cache_dir" ] || continue
+    [ -L "$cache_dir" ] && continue
+    printf '%s\n' "$cache_dir" >>"$cache_chunk"
+    cache_chunk_count=$((cache_chunk_count + 1))
+    cache_done=$((cache_done + 1))
+    if [ "$cache_chunk_count" -ge 64 ]; then
+      process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total"
+      : >"$cache_chunk"
+      cache_chunk_count=0
+      should_stop && { rm -f "$cache_chunk"; return 9; }
+      cache_stage_now=$(date +%s)
+      if [ $((cache_stage_now - cache_stage_start)) -ge 180 ]; then
+        CACHE_TRUNCATED=1
+        log_line "[缓存扫描提前结束] $cache_category 已达到 180 秒安全时限"
+        report_line protected timeout "$cache_category" 1 0 "缓存阶段达到 180 秒上限"
+        break
+      fi
     fi
-  elif [ "$CLEAN_EMPTY_FILES" = "1" ]; then
-    find "$@" -mindepth 1 -type f -size "-${MAX_FILE_BYTES}c" -mtime "+$days" \
-      ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
-      -print0 2>/dev/null >>"$target_list"
-  else
-    find "$@" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -mtime "+$days" -print0 2>/dev/null >>"$target_list"
+  done <"$dir_list"
+  if [ "$cache_chunk_count" -gt 0 ]; then
+    process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total"
   fi
+  rm -f "$cache_chunk"
+  return 0
 }
 
 process_cache_candidates() {
@@ -667,7 +794,7 @@ scan_cache_roots() {
   candidates="$TMP_DIR/cache-internal.nul"
   : >"$candidates"
   should_stop && return 9
-  collect_cache_candidates "$list" "$days" "$candidates"
+  collect_cache_candidates "$list" "$days" "$candidates" "$category" || return $?
   set_phase "统计并清理应用缓存"
   process_cache_candidates "$candidates" "$category"
 }
@@ -687,7 +814,7 @@ scan_external_cache() {
   candidates="$TMP_DIR/cache-external.nul"
   : >"$candidates"
   should_stop && return 9
-  collect_cache_candidates "$list" "$days" "$candidates"
+  collect_cache_candidates "$list" "$days" "$candidates" "外部应用缓存" || return $?
   set_phase "统计并清理外部缓存"
   process_cache_candidates "$candidates" "外部应用缓存"
 }
@@ -869,81 +996,258 @@ deep_risk_is_eligible() {
   return 1
 }
 
+prepare_deep_runtime() {
+  DEEP_DIR_TIMEOUT_SECONDS=12
+  DEEP_STAGE_LIMIT_SECONDS=300
+  ensure_timeout_runtime
+  DEEP_TIMEOUT_MODE=$COMMAND_TIMEOUT_MODE
+
+  DEEP_FIND_XDEV=0
+  if find /data -xdev -maxdepth 0 -print >/dev/null 2>&1; then
+    DEEP_FIND_XDEV=1
+  fi
+  DEEP_FIND_EXEC_PLUS=0
+  if find "$TMP_DIR" -maxdepth 0 -type d -exec stat -c %s -- {} + >/dev/null 2>&1; then
+    DEEP_FIND_EXEC_PLUS=1
+  fi
+
+  DEEP_MOUNT_INDEX="$TMP_DIR/deep-mounts"
+  if [ -r /proc/self/mountinfo ]; then
+    awk '{print $5}' /proc/self/mountinfo 2>/dev/null | \
+      sed 's/\\040/ /g; s/\\011/\t/g; s/\\134/\\/g' | sort -u >"$DEEP_MOUNT_INDEX"
+  else
+    : >"$DEEP_MOUNT_INDEX"
+  fi
+}
+
+run_deep_limited() {
+  seconds=$1
+  shift
+  case "$DEEP_TIMEOUT_MODE" in
+    timeout) timeout "$seconds" "$@" ;;
+    toybox) toybox timeout "$seconds" "$@" ;;
+    busybox) busybox timeout "$seconds" "$@" ;;
+    *) "$@" ;;
+  esac
+}
+
+deep_mount_conflict() {
+  target=${1%/}
+  [ -d "$target" ] || return 1
+  [ -s "$DEEP_MOUNT_INDEX" ] || return 1
+  awk -v t="$target" '$0 == t || index($0, t "/") == 1 { found=1; exit } END { exit !found }' "$DEEP_MOUNT_INDEX"
+}
+
 deep_target_stats() {
   target=$1
-  if [ -d "$target" ]; then
-    kb=$(du -sk "$target" 2>/dev/null | awk 'NR == 1 {print $1}')
-    case "$kb" in ''|*[!0-9]*) kb=0 ;; esac
-    DEEP_TARGET_SIZE=$(awk -v k="$kb" 'BEGIN {printf "%.0f", k * 1024}')
-    DEEP_TARGET_COUNT=$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ')
-    case "$DEEP_TARGET_COUNT" in ''|*[!0-9]*) DEEP_TARGET_COUNT=0 ;; esac
-    DEEP_TARGET_EMPTY=0
-    [ "$DEEP_TARGET_COUNT" -eq 0 ] && DEEP_TARGET_EMPTY=1
-  else
+  DEEP_TARGET_SIZE=0
+  DEEP_TARGET_COUNT=0
+  DEEP_TARGET_EMPTY=0
+  DEEP_REPORT_COUNT=1
+  DEEP_TARGET_OVERSIZED=0
+  DEEP_TARGET_STATUS=ok
+  DEEP_TARGET_ELAPSED=0
+
+  if [ -f "$target" ]; then
     DEEP_TARGET_SIZE=$(stat -c %s "$target" 2>/dev/null)
     case "$DEEP_TARGET_SIZE" in ''|*[!0-9]*) DEEP_TARGET_SIZE=0 ;; esac
     DEEP_TARGET_COUNT=1
-    DEEP_TARGET_EMPTY=0
+    [ "$DEEP_TARGET_SIZE" -gt "$MAX_FILE_BYTES" ] && DEEP_TARGET_OVERSIZED=1
+    return 0
   fi
+
+  [ -d "$target" ] || { DEEP_TARGET_STATUS=missing; return 2; }
+  if deep_mount_conflict "$target"; then
+    DEEP_TARGET_STATUS=mount
+    return 2
+  fi
+
+  LIST_SEQ=$((LIST_SEQ + 1))
+  file_list="$TMP_DIR/deep-files.$LIST_SEQ.nul"
+  stats_file="$TMP_DIR/deep-stats.$LIST_SEQ"
+  start_stats=$(date +%s)
+  if [ "$DEEP_FIND_XDEV" = "1" ]; then xdev_arg='-xdev'; else xdev_arg=''; fi
+  if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
+    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\'''
+  else
+    command_body='find "$1" $4 -type f -print0 >"$2" 2>/dev/null
+if [ -s "$2" ]; then
+  xargs -0 -n 128 stat -c %s -- <"$2" 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\''
+else
+  printf "0 0 0\\n"
+fi'
+  fi
+  run_deep_limited "$DEEP_DIR_TIMEOUT_SECONDS" sh -c "$command_body" sh "$target" "$file_list" "$MAX_FILE_BYTES" "$xdev_arg" >"$stats_file" 2>/dev/null
+  stats_code=$?
+  end_stats=$(date +%s)
+  DEEP_TARGET_ELAPSED=$((end_stats - start_stats))
+
+  if [ "$stats_code" -ne 0 ]; then
+    case "$stats_code" in 124|137|143) DEEP_TARGET_STATUS=timeout ;; *) DEEP_TARGET_STATUS=error ;; esac
+    rm -f "$file_list" "$stats_file"
+    return 2
+  fi
+
+  read -r DEEP_TARGET_COUNT DEEP_TARGET_SIZE DEEP_TARGET_OVERSIZED <"$stats_file"
+  case "$DEEP_TARGET_COUNT" in ''|*[!0-9]*) DEEP_TARGET_COUNT=0 ;; esac
+  case "$DEEP_TARGET_SIZE" in ''|*[!0-9]*) DEEP_TARGET_SIZE=0 ;; esac
+  case "$DEEP_TARGET_OVERSIZED" in 1) ;; *) DEEP_TARGET_OVERSIZED=0 ;; esac
+  [ "$DEEP_TARGET_COUNT" -eq 0 ] && DEEP_TARGET_EMPTY=1
   DEEP_REPORT_COUNT=$DEEP_TARGET_COUNT
   [ "$DEEP_REPORT_COUNT" -gt 0 ] || DEEP_REPORT_COUNT=1
+  rm -f "$file_list" "$stats_file"
+  return 0
+}
+
+deep_progress_update() {
+  current=$1
+  total=$2
+  target=$3
+  force=${4:-0}
+  if [ "$force" = "1" ] || [ "$current" -eq 1 ] || [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$total" ]; then
+    set_phase "执行深度规则（${current}/${total}）" "$current" "$total" "$target"
+  fi
+}
+
+deep_keep_root() {
+  case "${1%/}" in
+    */cache|*/code_cache) return 0 ;;
+  esac
+  return 1
 }
 
 deep_process_target() {
   target=${1%/}
+  risk=${2:-}
   DEEP_COVER_TARGET=0
+  DEEP_COVER_MODE=""
   [ -e "$target" ] || [ -L "$target" ] || return 0
-  [ -L "$target" ] && { log_line "[深度跳过:软链接] $target"; SKIPPED=$((SKIPPED + 1)); report_line skipped protected 深度规则 0 0 "$target"; return 0; }
-  is_deep_allowed "$target" || { log_line "[深度拒绝:系统边界] $target"; SKIPPED=$((SKIPPED + 1)); report_line rejected protected 深度规则 0 0 "$target"; return 0; }
-  is_protected_hidden_path "$target" && { log_line "[深度跳过:隐藏配置] $target"; SKIPPED=$((SKIPPED + 1)); report_line skipped protected 深度规则 0 0 "$target"; return 0; }
-  if is_whitelisted "$target" || deep_conflicts_whitelist "$target"; then
-    log_line "[深度跳过:白名单] $target"
+  if [ -L "$target" ]; then
+    log_line "[深度跳过:软链接] $target"
     SKIPPED=$((SKIPPED + 1))
     report_line skipped protected 深度规则 0 0 "$target"
     return 0
   fi
-
-  risk=$(deep_risk_level "$target")
-  count_risk "$risk"
-  if ! deep_risk_is_eligible "$risk"; then
-    # 定时任务只需要知道路径受保护，不再递归统计高风险大目录，减少无效 I/O。
-    if [ "$MODE" = "clean" ]; then
-      case "$TRIGGER" in scheduled:*|daily:*)
-        size=0; report_count=1
-        ;;
-        *)
-          deep_target_stats "$target"
-          size=$DEEP_TARGET_SIZE; report_count=$DEEP_REPORT_COUNT
-          ;;
-      esac
-    else
-      deep_target_stats "$target"
-      size=$DEEP_TARGET_SIZE; report_count=$DEEP_REPORT_COUNT
-    fi
-    PROTECTED_ITEMS=$((PROTECTED_ITEMS + report_count))
-    PROTECTED_BYTES=$(awk -v a="$PROTECTED_BYTES" -v b="$size" 'BEGIN {printf "%.0f", a+b}')
-    log_line "[深度受保护:$risk] $target（${report_count} 项，约 $size bytes）"
-    report_line protected "$risk" 深度规则 "$report_count" "$size" "$target"
+  if ! is_deep_allowed "$target"; then
+    log_line "[深度拒绝:系统边界] $target"
+    SKIPPED=$((SKIPPED + 1))
+    report_line rejected protected 深度规则 0 0 "$target"
+    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
+    return 0
+  fi
+  if is_protected_hidden_path "$target"; then
+    log_line "[深度跳过:隐藏配置] $target"
+    SKIPPED=$((SKIPPED + 1))
+    report_line skipped protected 深度规则 0 0 "$target"
+    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
+    return 0
+  fi
+  if is_whitelisted "$target" || deep_conflicts_whitelist "$target"; then
+    log_line "[深度跳过:白名单] $target"
+    SKIPPED=$((SKIPPED + 1))
+    report_line skipped protected 深度规则 0 0 "$target"
+    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
     return 0
   fi
 
-  deep_target_stats "$target"
+  [ -n "$risk" ] || risk=$(deep_risk_level "$target")
+  count_risk "$risk"
+  if ! deep_risk_is_eligible "$risk"; then
+    # 受保护的高风险与关键风险路径只确认存在，不再递归统计整个目录。
+    # 这避免聊天、浏览器等海量小文件目录在“只扫描”阶段被无意义读取多遍。
+    PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+    log_line "[深度受保护:$risk] $target（未递归统计）"
+    report_line protected "$risk" 深度规则 1 0 "$target（受保护，未递归统计）"
+    if [ -d "$target" ]; then
+      DEEP_COVER_TARGET=1
+      DEEP_COVER_MODE=protected
+    fi
+    return 0
+  fi
+
+  if ! deep_target_stats "$target"; then
+    case "$DEEP_TARGET_STATUS" in
+      timeout)
+        DEEP_SLOW_ITEMS=$((DEEP_SLOW_ITEMS + 1))
+        PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+        log_line "[深度跳过:目录统计超时] $target（超过 ${DEEP_DIR_TIMEOUT_SECONDS} 秒）"
+        report_line protected slow 深度规则 1 0 "$target（目录统计超时）"
+        ;;
+      mount)
+        DEEP_MOUNT_ITEMS=$((DEEP_MOUNT_ITEMS + 1))
+        PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+        log_line "[深度跳过:挂载点保护] $target"
+        report_line protected mount 深度规则 1 0 "$target（包含挂载点）"
+        ;;
+      missing) return 0 ;;
+      *)
+        ERRORS=$((ERRORS + 1))
+        log_line "[深度跳过:无法统计] $target"
+        report_line failed "$risk" 深度规则 1 0 "$target（无法统计）"
+        ;;
+    esac
+    if [ -d "$target" ]; then DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; fi
+    return 0
+  fi
+
   size=$DEEP_TARGET_SIZE
   count=$DEEP_TARGET_COUNT
   was_empty_dir=$DEEP_TARGET_EMPTY
   report_count=$DEEP_REPORT_COUNT
-
-  oversized=0
-  if [ -f "$target" ]; then
-    [ "$size" -gt "$MAX_FILE_BYTES" ] && oversized=1
-  elif [ -d "$target" ] && find "$target" -type f -size "+${MAX_FILE_BYTES}c" -print -quit 2>/dev/null | grep -q .; then
-    oversized=1
+  oversized=$DEEP_TARGET_OVERSIZED
+  keep_root=0
+  [ -d "$target" ] && deep_keep_root "$target" && keep_root=1
+  if [ "$keep_root" = "1" ] && [ "$count" -eq 0 ]; then
+    log_line "[深度跳过:缓存目录为空] $target"
+    return 0
   fi
+
+  if [ "$DEEP_TARGET_ELAPSED" -ge 3 ]; then
+    log_line "[深度慢目录] $target（统计 ${DEEP_TARGET_ELAPSED} 秒，${count} 个文件）"
+  fi
+
   if [ "$oversized" = "1" ]; then
     PROTECTED_ITEMS=$((PROTECTED_ITEMS + report_count))
     PROTECTED_BYTES=$(awk -v a="$PROTECTED_BYTES" -v b="$size" 'BEGIN {printf "%.0f", a+b}')
     log_line "[深度受保护:超过单文件上限] $target（上限 ${MAX_MB} MiB）"
     report_line protected "$risk" 深度规则 "$report_count" "$size" "$target（含超过 ${MAX_MB} MiB 的文件）"
+    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=protected; }
+    return 0
+  fi
+
+  if [ "$MODE" = "clean" ] && [ "$keep_root" = "1" ]; then
+    err_file="$TMP_DIR/deep-rm.err"
+    if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
+      run_deep_limited 30 find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>"$err_file"
+    else
+      run_deep_limited 30 find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} \; 2>"$err_file"
+    fi
+    remove_code=$?
+    if deep_target_stats "$target"; then
+      remaining_size=$DEEP_TARGET_SIZE
+      remaining_count=$DEEP_TARGET_COUNT
+    else
+      remaining_size=0
+      remaining_count=1
+    fi
+    actual_count=$((count - remaining_count)); [ "$actual_count" -lt 0 ] && actual_count=0
+    actual_size=$(awk -v a="$size" -v b="$remaining_size" 'BEGIN {v=a-b; if (v<0) v=0; printf "%.0f", v}')
+    [ "$actual_count" -gt 0 ] && FILES=$((FILES + actual_count))
+    [ "$actual_size" -gt 0 ] && add_bytes "$actual_size"
+    if [ "$remaining_count" -eq 0 ] && [ "$remove_code" -eq 0 ]; then
+      log_line "[深度已清理:$risk] $target（保留缓存根目录，清理 $actual_count 个文件）"
+      report_line cleaned "$risk" 深度规则 "$actual_count" "$actual_size" "$target（保留根目录）"
+    else
+      reason=$(tail -n 1 "$err_file" 2>/dev/null)
+      [ "$remaining_count" -gt 0 ] || remaining_count=1
+      ERRORS=$((ERRORS + remaining_count))
+      log_line "[深度部分未清理:$risk] $target | 已清理 $actual_count 个，剩余 $remaining_count 个 | ${reason:-清理达到时限或目标仍存在}"
+      [ "$actual_count" -gt 0 ] && report_line cleaned "$risk" 深度规则 "$actual_count" "$actual_size" "$target（保留根目录）"
+      report_line failed "$risk" 深度规则 "$remaining_count" "$remaining_size" "$target"
+    fi
+    rm -f "$err_file"
+    DEEP_COVER_TARGET=1
+    DEEP_COVER_MODE=all
     return 0
   fi
 
@@ -953,11 +1257,13 @@ deep_process_target() {
     if [ -e "$target" ] || [ -L "$target" ]; then
       reason=$(tail -n 1 "$err_file" 2>/dev/null)
       if [ -d "$target" ]; then
-        remaining_kb=$(du -sk "$target" 2>/dev/null | awk 'NR == 1 {print $1}')
-        case "$remaining_kb" in ''|*[!0-9]*) remaining_kb=0 ;; esac
-        remaining_size=$(awk -v k="$remaining_kb" 'BEGIN {printf "%.0f", k * 1024}')
-        remaining_count=$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ')
-        case "$remaining_count" in ''|*[!0-9]*) remaining_count=0 ;; esac
+        if deep_target_stats "$target"; then
+          remaining_size=$DEEP_TARGET_SIZE
+          remaining_count=$DEEP_TARGET_COUNT
+        else
+          remaining_size=0
+          remaining_count=1
+        fi
       else
         remaining_size=$(stat -c %s "$target" 2>/dev/null)
         case "$remaining_size" in ''|*[!0-9]*) remaining_size=0 ;; esac
@@ -980,19 +1286,21 @@ deep_process_target() {
     add_bytes "$size"
     log_line "[深度已清理:$risk] $target ($count 个文件，约 $size bytes)"
     report_line cleaned "$risk" 深度规则 "$report_count" "$size" "$target"
-    [ -d "$target" ] || DEEP_COVER_TARGET=1
+    DEEP_COVER_TARGET=1
+    DEEP_COVER_MODE=all
   else
     if [ "$was_empty_dir" = "1" ]; then EMPTY_DIRS=$((EMPTY_DIRS + 1)); else FILES=$((FILES + count)); fi
     add_bytes "$size"
     log_line "[深度可清理:$risk] $target ($count 个文件，约 $size bytes)"
     report_line candidate "$risk" 深度规则 "$report_count" "$size" "$target"
     printf '%s\t%s\n' "$target" "$risk" >>"$DEEP_SCAN_MANIFEST_TMP"
-    [ -d "$target" ] && DEEP_COVER_TARGET=1
+    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
   fi
 }
 
 run_deep_rules() {
   [ -f "$DEEP_RULES" ] || return 0
+  prepare_deep_runtime
   candidates="$TMP_DIR/deep-targets"
   sorted="$TMP_DIR/deep-targets.sorted"
   : >"$candidates"
@@ -1016,12 +1324,28 @@ run_deep_rules() {
     old_ifs=$IFS
     IFS='
 '
+    rule_index=0
     while IFS= read -r pattern || [ -n "$pattern" ]; do
       should_stop && { IFS=$old_ifs; return 9; }
       case "$pattern" in /*) ;; *) continue ;; esac
+      rule_index=$((rule_index + 1))
+      if [ "$rule_index" -eq 1 ] || [ $((rule_index % 256)) -eq 0 ]; then
+        set_phase "解析深度规则（${rule_index}/${DEEP_RULE_COUNT:-4746}）" "$rule_index" "${DEEP_RULE_COUNT:-4746}" "$pattern"
+      fi
       case "$pattern" in
         /storage/emulated/0*) pattern="/data/media/0${pattern#/storage/emulated/0}" ;;
         /sdcard*) pattern="/data/media/0${pattern#/sdcard}" ;;
+      esac
+      case "$pattern" in
+        */cache/'*'|*/code_cache/'*')
+          cache_parent_pattern=${pattern%/*}
+          for target in $cache_parent_pattern; do
+            [ -d "$target" ] || continue
+            [ -L "$target" ] && continue
+            printf '%s\n' "${target%/}" >>"$candidates"
+          done
+          continue
+          ;;
       esac
       case "$pattern" in
         *'*'*|*'?'*|*'['*)
@@ -1040,18 +1364,63 @@ run_deep_rules() {
   fi
 
   if sort -u "$candidates" >"$sorted" 2>/dev/null; then mv -f "$sorted" "$candidates"; else rm -f "$sorted"; fi
-  covered_by=""
+  DEEP_PROGRESS_TOTAL=$(wc -l <"$candidates" 2>/dev/null | tr -d ' ')
+  case "$DEEP_PROGRESS_TOTAL" in ''|*[!0-9]*) DEEP_PROGRESS_TOTAL=0 ;; esac
+  DEEP_PROGRESS_CURRENT=0
+  deep_stage_start=$(date +%s)
+  covered_all=""
+  covered_protected=""
+
   while IFS= read -r target || [ -n "$target" ]; do
     should_stop && return 9
-    if [ -n "$covered_by" ]; then
+    DEEP_PROGRESS_CURRENT=$((DEEP_PROGRESS_CURRENT + 1))
+    risk=$(deep_risk_level "$target")
+    deep_progress_update "$DEEP_PROGRESS_CURRENT" "$DEEP_PROGRESS_TOTAL" "$target"
+
+    if [ -n "$covered_all" ]; then
       case "$target" in
-        "$covered_by"/*) log_line "[深度去重:已处理父目录覆盖] $target"; continue ;;
-        *) covered_by="" ;;
+        "$covered_all"/*)
+          log_line "[深度去重:父目录已完整处理] $target"
+          continue
+          ;;
+        *) covered_all="" ;;
       esac
     fi
-    deep_process_target "$target"
-    [ "$DEEP_COVER_TARGET" = "1" ] && covered_by=$target
+    if [ -n "$covered_protected" ]; then
+      case "$target" in
+        "$covered_protected"/*)
+          case "$risk" in
+            high|critical)
+              log_line "[深度去重:受保护父目录覆盖] $target"
+              continue
+              ;;
+          esac
+          ;;
+        *) covered_protected="" ;;
+      esac
+    fi
+
+    deep_process_target "$target" "$risk"
+    if [ "$DEEP_COVER_TARGET" = "1" ]; then
+      case "$DEEP_COVER_MODE" in
+        all) covered_all=$target; covered_protected="" ;;
+        protected) covered_protected=$target ;;
+      esac
+    fi
+
+    if [ $((DEEP_PROGRESS_CURRENT % 16)) -eq 0 ]; then
+      deep_now=$(date +%s)
+      if [ $((deep_now - deep_stage_start)) -ge "$DEEP_STAGE_LIMIT_SECONDS" ]; then
+        DEEP_TRUNCATED=1
+        log_line "[深度扫描提前结束] 已达到 ${DEEP_STAGE_LIMIT_SECONDS} 秒安全时限，剩余规则下次继续检查"
+        report_line protected timeout 深度规则 1 0 "深度阶段达到 ${DEEP_STAGE_LIMIT_SECONDS} 秒上限"
+        break
+      fi
+    fi
   done <"$candidates"
+
+  deep_progress_update "$DEEP_PROGRESS_CURRENT" "$DEEP_PROGRESS_TOTAL" "" 1
+  log_line "[深度引擎] 候选 $DEEP_PROGRESS_TOTAL，已处理 $DEEP_PROGRESS_CURRENT，慢目录跳过 $DEEP_SLOW_ITEMS，挂载保护 $DEEP_MOUNT_ITEMS，截断 $DEEP_TRUNCATED"
   return 0
 }
 
@@ -1619,14 +1988,23 @@ elif [ "$MODE" = "scan" ]; then
       deep_protected_summary="0 项"
     fi
     RESULT="深度扫描完成，可清理 $SPACE，受保护 $deep_protected_summary"
+    [ "$DEEP_SLOW_ITEMS" -gt 0 ] && RESULT="$RESULT，慢目录跳过 ${DEEP_SLOW_ITEMS} 项"
+    [ "$DEEP_MOUNT_ITEMS" -gt 0 ] && RESULT="$RESULT，挂载保护 ${DEEP_MOUNT_ITEMS} 项"
+    [ "$DEEP_TRUNCATED" = "1" ] && RESULT="$RESULT，已达到深度阶段时限"
   elif [ "$PROFILE" = "fragment" ]; then
     RESULT="碎片扫描完成，可清理 $SPACE"
   else
     if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
+    [ "$CACHE_SLOW_DIRS" -gt 0 ] && RESULT="$RESULT，慢缓存目录跳过 ${CACHE_SLOW_DIRS} 项"
+    [ "$CACHE_TRUNCATED" = "1" ] && RESULT="$RESULT，缓存阶段已到时限"
   fi
 else
   case "$PROFILE" in
-    cache) RESULT="缓存清理完成，释放 $SPACE" ;;
+    cache)
+      RESULT="缓存清理完成，释放 $SPACE"
+      [ "$CACHE_SLOW_DIRS" -gt 0 ] && RESULT="$RESULT，慢目录跳过 ${CACHE_SLOW_DIRS} 项"
+      [ "$CACHE_TRUNCATED" = "1" ] && RESULT="$RESULT，已到安全时限"
+      ;;
     empty) RESULT="空文件清理完成，释放 $SPACE" ;;
     rules) RESULT="规则清理完成，释放 $SPACE" ;;
     fragment) RESULT="碎片清理完成，释放 $SPACE" ;;
@@ -1639,6 +2017,9 @@ else
         deep_protected_summary="0 项"
       fi
       RESULT="深度清理完成，释放 $SPACE，受保护 $deep_protected_summary"
+      [ "$DEEP_SLOW_ITEMS" -gt 0 ] && RESULT="$RESULT，慢目录跳过 ${DEEP_SLOW_ITEMS} 项"
+      [ "$DEEP_MOUNT_ITEMS" -gt 0 ] && RESULT="$RESULT，挂载保护 ${DEEP_MOUNT_ITEMS} 项"
+      [ "$DEEP_TRUNCATED" = "1" ] && RESULT="$RESULT，已达到深度阶段时限"
       ;;
     corpse) RESULT="卸载残留清理完成，释放 $SPACE" ;;
     *) RESULT="清理完成，释放 $SPACE" ;;
@@ -1649,7 +2030,7 @@ fi
 log_line "----------------------------------------"
 log_line "$RESULT"
 TOTAL_FILES=$((FILES + EMPTY_FILES))
-log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMPTY_FILES，空目录: $EMPTY_DIRS，隐藏垃圾: $HIDDEN_ITEMS，受保护: $PROTECTED_ITEMS，跳过: $SKIPPED，未清理: $ERRORS，耗时: ${ELAPSED}s"
+log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMPTY_FILES，空目录: $EMPTY_DIRS，隐藏垃圾: $HIDDEN_ITEMS，受保护: $PROTECTED_ITEMS，深度慢目录: $DEEP_SLOW_ITEMS，缓存慢目录: $CACHE_SLOW_DIRS，缓存截断: $CACHE_TRUNCATED，挂载保护: $DEEP_MOUNT_ITEMS，跳过: $SKIPPED，未清理: $ERRORS，耗时: ${ELAPSED}s"
 
 {
   echo "mode=$REQUEST_MODE"
@@ -1669,6 +2050,13 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
   echo "risk_medium=$RISK_MEDIUM"
   echo "risk_high=$RISK_HIGH"
   echo "risk_critical=$RISK_CRITICAL"
+  echo "deep_slow_items=$DEEP_SLOW_ITEMS"
+  echo "deep_mount_items=$DEEP_MOUNT_ITEMS"
+  echo "deep_truncated=$DEEP_TRUNCATED"
+  echo "cache_slow_dirs=$CACHE_SLOW_DIRS"
+  echo "cache_truncated=$CACHE_TRUNCATED"
+  echo "deep_progress_current=$DEEP_PROGRESS_CURRENT"
+  echo "deep_progress_total=$DEEP_PROGRESS_TOTAL"
   echo "elapsed=$ELAPSED"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
@@ -1676,7 +2064,17 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
 if [ "$REQUEST_MODE" = "deep-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
   chmod 0600 "$DEEP_SCAN_MANIFEST_TMP" 2>/dev/null
   mv -f "$DEEP_SCAN_MANIFEST_TMP" "$DEEP_SCAN_TARGETS"
-  { echo "epoch=$(date +%s)"; echo "bytes=$BYTES"; echo "items=$((FILES + EMPTY_DIRS))"; echo "rules_sha=$DEEP_RULE_SHA"; } >"$DEEP_SCAN_STATE"
+  {
+    echo "epoch=$(date +%s)"
+    echo "bytes=$BYTES"
+    echo "items=$((FILES + EMPTY_DIRS))"
+    echo "rules_sha=$DEEP_RULE_SHA"
+    echo "slow_items=$DEEP_SLOW_ITEMS"
+    echo "mount_items=$DEEP_MOUNT_ITEMS"
+    echo "truncated=$DEEP_TRUNCATED"
+    echo "processed=$DEEP_PROGRESS_CURRENT"
+    echo "targets=$DEEP_PROGRESS_TOTAL"
+  } >"$DEEP_SCAN_STATE"
 fi
 if [ "$REQUEST_MODE" = "corpse-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
   chmod 0600 "$CORPSE_SCAN_MANIFEST_TMP" 2>/dev/null
