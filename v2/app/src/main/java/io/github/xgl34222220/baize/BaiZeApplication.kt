@@ -12,5 +12,6 @@ class BaiZeApplication : Application() {
                 .setFlags(Shell.FLAG_MOUNT_MASTER)
                 .setTimeout(15)
         )
+        Alpha7UiPolish.install(this)
     }
 }
