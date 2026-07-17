@@ -1,9 +1,10 @@
-name: Build and release
+name: Validate, build and release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,9 @@ jobs:
       - name: Validate
         run: sh scripts/check.sh
 
+      - name: Performance smoke test
+        run: sudo env PATH="$PATH" sh scripts/smoke-test.sh
+
       - name: Build module
         run: sh scripts/build.sh
 
@@ -33,4 +37,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: RELEASE-v1.0.3.md
