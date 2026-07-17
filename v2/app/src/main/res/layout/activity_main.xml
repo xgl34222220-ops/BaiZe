@@ -173,7 +173,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="默认选择全部非白名单结果；可翻页取消单项。删除前会再次执行服务端安全校验。"
+                android:text="默认不选择任何结果；只有手动勾选的项目才会清理。删除前会再次执行服务端安全校验。"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="12sp" />
 

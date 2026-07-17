@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity() {
 
         adapter = CandidateAdapter(
             onSelectionChanged = { item, checked ->
-                if (checked) selectionOverrides.remove(item.path) else selectionOverrides[item.path] = false
+                selectionOverrides[item.path] = checked
                 persistSelectionOverrides()
                 updateSelectionText()
             },
@@ -223,7 +223,7 @@ class MainActivity : AppCompatActivity() {
                         readable = item.optBoolean("readable", true),
                         measured = item.optBoolean("measured", false),
                         complete = item.optBoolean("complete", false),
-                        selected = selectionOverrides[path] ?: !whitelisted
+                        selected = selectionOverrides[path] == true && !whitelisted
                     )
                 }
                 currentPage = page
@@ -243,10 +243,10 @@ class MainActivity : AppCompatActivity() {
     private fun pageCount(): Int = ceil(totalResults / pageSize.toDouble()).toInt().coerceAtLeast(1)
 
     private fun updateSelectionText() {
-        val manuallyCancelled = selectionOverrides.values.count { !it }
+        val selectedTotal = selectionOverrides.values.count { it }
         binding.selectionText.text = buildString {
             append("共 $totalResults 项 · 本页已选 ${adapter.currentSelectedCount()} 项")
-            append(" · 手动取消 $manuallyCancelled 项")
+            append(" · 全部分页明确勾选 $selectedTotal 项")
             append(" · 白名单 ${whitelist.size} 个应用")
         }
     }
@@ -265,11 +265,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun confirmCleanup() {
         if (currentSnapshotId.isBlank() || totalResults <= 0 || cleanupRunning) return
-        val manuallyCancelled = selectionOverrides.values.count { !it }
+        val selectedTotal = selectionOverrides.values.count { it }
+        if (selectedTotal <= 0) {
+            binding.resultText.text = "请先勾选至少一个缓存项目。"
+            return
+        }
         AlertDialog.Builder(this)
             .setTitle("清理已选缓存")
             .setMessage(
-                "默认清理当前快照内全部非白名单缓存目录，已手动取消 $manuallyCancelled 项。\n\n" +
+                "本次只清理你明确勾选的 $selectedTotal 个缓存项目。\n\n" +
                     "清理前会重新校验包名、路径、目录类型和挂载点；只删除 cache/code_cache 内部内容，保留缓存根目录。"
             )
             .setNegativeButton("取消", null)
@@ -394,7 +398,7 @@ class MainActivity : AppCompatActivity() {
             val keys = json.keys()
             while (keys.hasNext()) {
                 val path = keys.next()
-                if (path.startsWith("/") && !json.optBoolean(path, true)) selectionOverrides[path] = false
+                if (path.startsWith("/")) selectionOverrides[path] = json.optBoolean(path, false)
             }
         }
     }

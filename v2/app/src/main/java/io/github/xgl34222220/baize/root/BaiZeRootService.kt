@@ -487,7 +487,7 @@ class BaiZeRootService : RootService() {
         val selected = snapshot.filter { candidate ->
             !candidate.whitelisted &&
                 candidate.packageName !in whitelist &&
-                (selection[candidate.path] ?: true)
+                (selection[candidate.path] == true)
         }
         val mountPoints = loadMountPoints()
         val details = JSONArray()
