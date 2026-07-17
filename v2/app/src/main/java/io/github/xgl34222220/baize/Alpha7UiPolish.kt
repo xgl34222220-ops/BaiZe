@@ -16,6 +16,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.CircularProgressIndicator
+import io.github.xgl34222220.baize.ui.LiquidBackdropDrawable
 import io.github.xgl34222220.baize.ui.LiquidGlassDrawable
 
 /** Runtime visual pass for the Alpha 9 MIUI X redesign. */
@@ -37,6 +38,8 @@ object Alpha7UiPolish {
     }
 
     private fun polish(activity: Activity) {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content)
+        content?.getChildAt(0)?.background = LiquidBackdropDrawable(activity)
         applyGlassTree(activity.window.decorView, activity)
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
