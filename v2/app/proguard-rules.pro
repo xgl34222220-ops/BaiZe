@@ -1,0 +1,2 @@
+-keep class io.github.xgl34222220.baize.root.** { *; }
+-keep class com.topjohnwu.superuser.ipc.** { *; }

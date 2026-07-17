@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.BaiZe" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/baize_primary</item>
+        <item name="colorSecondary">@color/baize_primary</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+        <item name="android:navigationBarColor">?attr/colorSurface</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

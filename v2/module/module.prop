@@ -1,0 +1,6 @@
+id=baize_v2_alpha
+name=白泽 v2 Alpha Bridge
+version=v2.0.0-alpha01
+versionCode=20001
+author=惜故里丶
+description=白泽 v2 原生 App 与 Root 服务桥接测试模块，不执行清理。
