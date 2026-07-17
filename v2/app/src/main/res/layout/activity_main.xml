@@ -77,7 +77,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="真实缓存扫描"
+                    android:text="扫描与安全清理"
                     android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
                     android:textStyle="bold" />
 
@@ -85,7 +85,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="发现阶段只验证真实且非空的目录；大小和文件数在当前页按需统计。"
+                    android:text="扫描生成短时快照；清理前重新验证路径、包名、符号链接与挂载点，只清空缓存内容并保留根目录。"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <com.google.android.material.progressindicator.LinearProgressIndicator
@@ -161,6 +161,22 @@
                 android:layout_marginTop="4dp"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/cleanSelectedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:enabled="false"
+                android:text="清理已选缓存" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="默认选择全部非白名单结果；可翻页取消单项。删除前会再次执行服务端安全校验。"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/resultsList"
                 android:layout_width="match_parent"
@@ -204,7 +220,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
             android:gravity="center"
-            android:text="Alpha 2：验证真实结果、分页和白名单，不执行删除"
+            android:text="Alpha 3：扫描快照、安全删除、任务取消与清理报告"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
