@@ -1,0 +1,43 @@
+name: Publish BaiZe v1.0.3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish-v103.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate
+        run: sh scripts/check.sh
+
+      - name: Performance smoke test
+        run: sudo env PATH="$PATH" sh scripts/smoke-test.sh
+
+      - name: Build module
+        run: sh scripts/build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v1.0.3 >/dev/null 2>&1; then
+            gh release upload v1.0.3 dist/* --clobber
+          else
+            gh release create v1.0.3 dist/* \
+              --target main \
+              --title '白泽 v1.0.3' \
+              --notes-file RELEASE-v1.0.3.md
+          fi
