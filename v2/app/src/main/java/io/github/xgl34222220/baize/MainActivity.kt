@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.text.format.Formatter
 import android.view.View
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -15,6 +16,9 @@ import io.github.xgl34222220.baize.databinding.ActivityMainBinding
 import io.github.xgl34222220.baize.root.BaiZeRootService
 import io.github.xgl34222220.baize.root.IBaiZeRootService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -28,6 +32,10 @@ class MainActivity : AppCompatActivity() {
     private var bindingRequested = false
     private var currentPage = 0
     private var totalResults = 0
+    private var scanWhitelisted = 0
+    private var currentSnapshotId = ""
+    private var cleanupRunning = false
+    private var taskPollJob: Job? = null
     private val pageSize = 30
     private val selectionOverrides = mutableMapOf<String, Boolean>()
 
@@ -45,6 +53,8 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             rootService = null
             bindingRequested = false
+            cleanupRunning = false
+            taskPollJob?.cancel()
             renderDisconnected("Root 服务已断开")
         }
     }
@@ -53,10 +63,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        restoreSelectionOverrides()
 
         adapter = CandidateAdapter(
             onSelectionChanged = { item, checked ->
-                selectionOverrides[item.path] = checked
+                if (checked) selectionOverrides.remove(item.path) else selectionOverrides[item.path] = false
+                persistSelectionOverrides()
                 updateSelectionText()
             },
             onWhitelist = { item -> addToWhitelist(item.packageName, item.appName) }
@@ -67,9 +79,10 @@ class MainActivity : AppCompatActivity() {
         binding.versionText.text = "v${BuildConfig.VERSION_NAME} · 原生 App / Root Binder"
         binding.connectButton.setOnClickListener { connectRootService() }
         binding.scanButton.setOnClickListener { runScan() }
+        binding.cleanSelectedButton.setOnClickListener { confirmCleanup() }
         binding.cancelButton.setOnClickListener {
             rootService?.cancelCurrentTask()
-            binding.resultText.text = "正在请求停止…"
+            binding.resultText.text = if (cleanupRunning) "正在请求停止清理…" else "正在请求停止任务…"
         }
         binding.previousPageButton.setOnClickListener { loadPage(currentPage - 1) }
         binding.nextPageButton.setOnClickListener { loadPage(currentPage + 1) }
@@ -116,42 +129,49 @@ class MainActivity : AppCompatActivity() {
         binding.statusText.text = message
         binding.connectButton.isEnabled = true
         binding.scanButton.isEnabled = false
+        binding.cleanSelectedButton.isEnabled = false
         binding.cancelButton.isEnabled = false
     }
 
     private fun runScan() {
         val service = rootService ?: return
-        binding.scanButton.isEnabled = false
-        binding.cancelButton.isEnabled = true
-        binding.progressIndicator.visibility = View.VISIBLE
+        if (cleanupRunning) return
+        setTaskUi(true, allowCancel = true)
         binding.resultsSection.visibility = View.GONE
         binding.resultText.text = "正在验证真实且非空的缓存目录…"
-        selectionOverrides.clear()
+        currentSnapshotId = ""
+        totalResults = 0
+        scanWhitelisted = 0
+        clearSelectionOverrides()
 
         val whitelistJson = JSONArray(whitelist.toList()).toString()
         lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) { service.scanCandidates(whitelistJson) }
             }
-            binding.progressIndicator.visibility = View.GONE
-            binding.scanButton.isEnabled = rootService != null
-            binding.cancelButton.isEnabled = false
+            setTaskUi(false, allowCancel = false)
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
+                if (json.optString("error") == "busy") {
+                    binding.resultText.text = json.optString("message", "已有任务正在运行")
+                    return@onSuccess
+                }
                 if (json.optBoolean("cancelled")) {
                     binding.resultText.text = "扫描已停止 · ${json.optLong("elapsedMs")}ms"
                     return@onSuccess
                 }
+                currentSnapshotId = json.optString("snapshotId")
                 totalResults = json.optInt("totalCandidates")
+                scanWhitelisted = json.optInt("whitelisted")
                 val elapsed = json.optLong("elapsedMs")
-                val white = json.optInt("whitelisted")
                 binding.resultText.text = buildString {
                     append("扫描完成 · ${elapsed}ms\n")
                     append("非空真实目录：$totalResults\n")
-                    append("白名单：$white\n")
-                    append("大小和文件数按页统计，单页最多等待 8 秒。")
+                    append("白名单保护：$scanWhitelisted\n")
+                    append("快照有效期 30 分钟；清理前会再次验证路径。")
                 }
                 binding.resultsSection.visibility = if (totalResults > 0) View.VISIBLE else View.GONE
+                binding.cleanSelectedButton.isEnabled = totalResults > 0 && currentSnapshotId.isNotBlank()
                 if (totalResults > 0) loadPage(0)
             }.onFailure { error ->
                 binding.resultText.text = "扫描失败：${error.message ?: error.javaClass.simpleName}"
@@ -161,6 +181,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadPage(page: Int) {
         val service = rootService ?: return
+        val snapshotId = currentSnapshotId
+        if (snapshotId.isBlank() || cleanupRunning) return
         val pageCount = pageCount()
         if (page !in 0 until pageCount) return
         lifecycleScope.launch {
@@ -168,14 +190,20 @@ class MainActivity : AppCompatActivity() {
             binding.cancelButton.isEnabled = true
             binding.previousPageButton.isEnabled = false
             binding.nextPageButton.isEnabled = false
+            binding.cleanSelectedButton.isEnabled = false
             binding.selectionText.text = "正在统计第 ${page + 1} 页，最长等待 8 秒…"
             val result = runCatching {
-                withContext(Dispatchers.IO) { service.getResultPage(page * pageSize, pageSize) }
+                withContext(Dispatchers.IO) { service.getResultPage(snapshotId, page * pageSize, pageSize) }
             }
             binding.progressIndicator.visibility = View.GONE
             binding.cancelButton.isEnabled = false
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
+                if (json.has("error")) {
+                    binding.selectionText.text = json.optString("message", "结果分页读取失败")
+                    binding.cleanSelectedButton.isEnabled = false
+                    return@onSuccess
+                }
                 val array = json.optJSONArray("items") ?: JSONArray()
                 val items = ArrayList<ScanCandidate>(array.length())
                 for (index in 0 until array.length()) {
@@ -203,9 +231,11 @@ class MainActivity : AppCompatActivity() {
                 binding.pageText.text = "${page + 1} / $pageCount"
                 binding.previousPageButton.isEnabled = page > 0
                 binding.nextPageButton.isEnabled = page + 1 < pageCount
+                binding.cleanSelectedButton.isEnabled = currentSnapshotId.isNotBlank()
                 updateSelectionText()
             }.onFailure {
                 binding.selectionText.text = "结果分页读取失败：${it.message}"
+                binding.cleanSelectedButton.isEnabled = false
             }
         }
     }
@@ -213,42 +243,199 @@ class MainActivity : AppCompatActivity() {
     private fun pageCount(): Int = ceil(totalResults / pageSize.toDouble()).toInt().coerceAtLeast(1)
 
     private fun updateSelectionText() {
+        val manuallyCancelled = selectionOverrides.values.count { !it }
         binding.selectionText.text = buildString {
             append("共 $totalResults 项 · 本页已选 ${adapter.currentSelectedCount()} 项")
+            append(" · 手动取消 $manuallyCancelled 项")
             append(" · 白名单 ${whitelist.size} 个应用")
         }
     }
 
     private fun addToWhitelist(packageName: String, appName: String) {
+        if (cleanupRunning) return
         val updated = whitelist
         updated += packageName
         preferences.edit().putStringSet(KEY_WHITELIST, updated).apply()
         adapter.markPackageWhitelisted(packageName)
         selectionOverrides.entries.removeAll { it.key.contains("/$packageName/") }
+        persistSelectionOverrides()
         updateSelectionText()
-        binding.resultText.text = "已将 $appName 加入白名单；下次扫描会自动取消勾选。"
+        binding.resultText.text = "已将 $appName 加入白名单；清理服务会再次读取白名单并强制保护。"
+    }
+
+    private fun confirmCleanup() {
+        if (currentSnapshotId.isBlank() || totalResults <= 0 || cleanupRunning) return
+        val manuallyCancelled = selectionOverrides.values.count { !it }
+        AlertDialog.Builder(this)
+            .setTitle("清理已选缓存")
+            .setMessage(
+                "默认清理当前快照内全部非白名单缓存目录，已手动取消 $manuallyCancelled 项。\n\n" +
+                    "清理前会重新校验包名、路径、目录类型和挂载点；只删除 cache/code_cache 内部内容，保留缓存根目录。"
+            )
+            .setNegativeButton("取消", null)
+            .setPositiveButton("开始清理") { _, _ -> startCleanup() }
+            .show()
+    }
+
+    private fun startCleanup() {
+        val service = rootService ?: return
+        val snapshotId = currentSnapshotId
+        if (snapshotId.isBlank()) return
+        cleanupRunning = true
+        adapter.setInteractionEnabled(false)
+        setTaskUi(true, allowCancel = true)
+        binding.resultsList.isEnabled = false
+        binding.resultText.text = "正在提交清理任务…"
+
+        val selectionJson = JSONObject().apply {
+            selectionOverrides.forEach { (path, selected) -> put(path, selected) }
+        }.toString()
+        val whitelistJson = JSONArray(whitelist.toList()).toString()
+
+        taskPollJob?.cancel()
+        taskPollJob = lifecycleScope.launch {
+            while (isActive && cleanupRunning) {
+                val state = runCatching {
+                    withContext(Dispatchers.IO) { service.getTaskState() }
+                }.getOrNull()
+                if (!state.isNullOrBlank()) renderTaskState(JSONObject(state))
+                delay(400)
+            }
+        }
+
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    service.cleanSelected(snapshotId, selectionJson, whitelistJson)
+                }
+            }
+            cleanupRunning = false
+            taskPollJob?.cancel()
+            adapter.setInteractionEnabled(true)
+            binding.resultsList.isEnabled = true
+            setTaskUi(false, allowCancel = false)
+            result.onSuccess { raw -> renderCleanupReport(JSONObject(raw)) }
+                .onFailure { error ->
+                    binding.resultText.text = "清理失败：${error.message ?: error.javaClass.simpleName}"
+                    binding.cleanSelectedButton.isEnabled = currentSnapshotId.isNotBlank()
+                }
+        }
+    }
+
+    private fun renderTaskState(json: JSONObject) {
+        if (json.optString("operation") != "clean") return
+        val current = json.optInt("current")
+        val total = json.optInt("total")
+        val appName = json.optString("currentApp")
+        val bytes = json.optLong("deletedBytes")
+        val files = json.optLong("deletedFiles")
+        val failures = json.optInt("failures")
+        binding.resultText.text = buildString {
+            append(json.optString("phase", "正在清理"))
+            if (total > 0) append(" · $current/$total")
+            append("\n已释放 ${Formatter.formatFileSize(this@MainActivity, bytes)}")
+            append(" · 已删除 $files 个文件")
+            if (failures > 0) append(" · 失败 $failures")
+            if (appName.isNotBlank()) append("\n当前：$appName")
+            if (json.optBoolean("cancelRequested")) append("\n正在安全停止…")
+        }
+    }
+
+    private fun renderCleanupReport(json: JSONObject) {
+        if (!json.optBoolean("success")) {
+            binding.resultText.text = json.optString("message", "清理任务未执行")
+            binding.cleanSelectedButton.isEnabled = false
+            return
+        }
+        val cancelled = json.optBoolean("cancelled")
+        val timedOut = json.optBoolean("totalTimedOut")
+        binding.resultText.text = buildString {
+            append(
+                when {
+                    cancelled -> "清理已停止"
+                    timedOut -> "清理达到总时间预算"
+                    else -> "清理完成"
+                }
+            )
+            append(" · ${json.optLong("elapsedMs")}ms\n")
+            append("已处理 ${json.optInt("processed")}/${json.optInt("selected")} 项\n")
+            append("已释放 ${Formatter.formatFileSize(this@MainActivity, json.optLong("deletedBytes"))}\n")
+            append("删除文件：${json.optLong("deletedFiles")} · 目录：${json.optLong("deletedDirectories")}\n")
+            append("完成：${json.optInt("cleanedCandidates")} · 跳过：${json.optInt("skippedCandidates")}")
+            append(" · 异常：${json.optInt("failedCandidates")}")
+            if (json.optInt("protectedMounts") > 0) append("\n挂载点保护：${json.optInt("protectedMounts")}")
+            if (json.optInt("failures") > 0) append(" · 删除失败：${json.optInt("failures")}")
+            append("\n详细报告已保存到 /data/adb/baize-v2/last-clean-report.json")
+        }
+        currentSnapshotId = ""
+        totalResults = 0
+        scanWhitelisted = 0
+        adapter.submitPage(emptyList())
+        binding.resultsSection.visibility = View.GONE
+        binding.cleanSelectedButton.isEnabled = false
+        clearSelectionOverrides()
+    }
+
+    private fun setTaskUi(running: Boolean, allowCancel: Boolean) {
+        binding.progressIndicator.visibility = if (running) View.VISIBLE else View.GONE
+        binding.connectButton.isEnabled = !running
+        binding.scanButton.isEnabled = !running && rootService != null
+        binding.cancelButton.isEnabled = running && allowCancel
+        binding.cleanSelectedButton.isEnabled = !running && currentSnapshotId.isNotBlank() && totalResults > 0
+        binding.previousPageButton.isEnabled = !running && currentPage > 0
+        binding.nextPageButton.isEnabled = !running && currentPage + 1 < pageCount()
+        binding.clearWhitelistButton.isEnabled = !running
+    }
+
+    private fun restoreSelectionOverrides() {
+        val raw = preferences.getString(KEY_SELECTION_OVERRIDES, null).orEmpty()
+        runCatching {
+            val json = JSONObject(raw)
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val path = keys.next()
+                if (path.startsWith("/") && !json.optBoolean(path, true)) selectionOverrides[path] = false
+            }
+        }
+    }
+
+    private fun persistSelectionOverrides() {
+        val json = JSONObject()
+        selectionOverrides.forEach { (path, selected) -> json.put(path, selected) }
+        preferences.edit().putString(KEY_SELECTION_OVERRIDES, json.toString()).apply()
+    }
+
+    private fun clearSelectionOverrides() {
+        selectionOverrides.clear()
+        preferences.edit().remove(KEY_SELECTION_OVERRIDES).apply()
     }
 
     private fun confirmClearWhitelist() {
-        if (whitelist.isEmpty()) return
+        if (whitelist.isEmpty() || cleanupRunning) return
         AlertDialog.Builder(this)
             .setTitle("清空白名单")
-            .setMessage("将移除全部 ${whitelist.size} 个应用白名单，当前扫描结果不会自动重新统计。")
+            .setMessage("将移除全部 ${whitelist.size} 个应用白名单。为避免使用旧快照清理，清空后需要重新扫描。")
             .setNegativeButton("取消", null)
             .setPositiveButton("清空") { _, _ ->
                 preferences.edit().remove(KEY_WHITELIST).apply()
-                updateSelectionText()
-                binding.resultText.text = "白名单已清空，请重新扫描刷新状态。"
+                currentSnapshotId = ""
+                totalResults = 0
+                adapter.submitPage(emptyList())
+                binding.resultsSection.visibility = View.GONE
+                binding.cleanSelectedButton.isEnabled = false
+                binding.resultText.text = "白名单已清空，请重新扫描。"
             }
             .show()
     }
 
     override fun onDestroy() {
+        taskPollJob?.cancel()
         if (bindingRequested) runCatching { RootService.unbind(connection) }
         super.onDestroy()
     }
 
     companion object {
         private const val KEY_WHITELIST = "package_whitelist"
+        private const val KEY_SELECTION_OVERRIDES = "selection_overrides"
     }
 }
