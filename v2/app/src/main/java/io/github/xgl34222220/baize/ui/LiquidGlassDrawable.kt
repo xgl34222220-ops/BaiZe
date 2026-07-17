@@ -11,18 +11,15 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
-import android.util.TypedValue
 import com.google.android.material.color.MaterialColors
-import io.github.xgl34222220.baize.R
 import kotlin.math.max
 
 /**
  * Lightweight MIUI X inspired liquid-glass surface.
  *
- * Android does not expose a reliable per-view backdrop blur API across rooted OEM ROMs. Instead of
- * putting a heavy realtime bitmap blur on every scrolling card, this drawable builds the glass from
- * translucent theme surfaces, directional highlights, colored refraction and a soft floating edge.
- * It stays fast inside long lists while Monet/fixed palettes still recolor the complete surface.
+ * The surface remains translucent enough to reveal the ambient backdrop while using directional
+ * highlights, theme-colour refraction, frost grain and a soft outline to keep text readable. It is
+ * deliberately drawable-based so long lists stay smooth on OEM ROMs that lack reliable backdrop blur.
  */
 class LiquidGlassDrawable(
     context: Context,
@@ -40,18 +37,19 @@ class LiquidGlassDrawable(
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val frostPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(if (variant == Variant.DOCK || variant == Variant.HERO) 1.15f else 0.8f)
+        strokeWidth = dp(if (variant == Variant.DOCK || variant == Variant.HERO) 1.1f else 0.75f)
     }
     private val shinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.05f)
+        strokeWidth = dp(1.0f)
         strokeCap = Paint.Cap.ROUND
     }
     private val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.1f)
+        strokeWidth = dp(1.05f)
     }
     private val rect = RectF()
     private val clipPath = Path()
@@ -63,12 +61,12 @@ class LiquidGlassDrawable(
         if (rect.width() <= 0f || rect.height() <= 0f) return
         val radius = dp(
             when (variant) {
-                Variant.DOCK -> 36f
-                Variant.HERO -> 30f
-                Variant.ACTIVE -> 28f
-                Variant.STRIP -> 24f
+                Variant.DOCK -> 37f
+                Variant.HERO -> 31f
+                Variant.ACTIVE -> 29f
+                Variant.STRIP -> 25f
                 Variant.BUTTON -> 22f
-                Variant.CARD -> 28f
+                Variant.CARD -> 29f
             }
         )
         clipPath.reset()
@@ -78,86 +76,109 @@ class LiquidGlassDrawable(
         canvas.clipPath(clipPath)
 
         val baseTopAlpha = when (variant) {
-            Variant.HERO -> 220
-            Variant.DOCK -> 205
-            Variant.ACTIVE -> 218
-            Variant.BUTTON -> 235
-            Variant.STRIP -> 168
-            Variant.CARD -> 185
+            Variant.HERO -> 166
+            Variant.DOCK -> 145
+            Variant.ACTIVE -> 188
+            Variant.BUTTON -> 218
+            Variant.STRIP -> 98
+            Variant.CARD -> 122
         }
         val baseBottomAlpha = when (variant) {
-            Variant.HERO -> 180
-            Variant.DOCK -> 174
-            Variant.ACTIVE -> 186
-            Variant.BUTTON -> 220
-            Variant.STRIP -> 138
-            Variant.CARD -> 148
+            Variant.HERO -> 106
+            Variant.DOCK -> 92
+            Variant.ACTIVE -> 126
+            Variant.BUTTON -> 174
+            Variant.STRIP -> 60
+            Variant.CARD -> 74
         }
-        val pressDelta = if (pressed) 18 else 0
+        val pressDelta = if (pressed) 20 else 0
+        val themeMix = when (variant) {
+            Variant.HERO -> 0.24f
+            Variant.DOCK -> 0.12f
+            Variant.ACTIVE -> 0.28f
+            Variant.BUTTON -> 0.36f
+            Variant.STRIP -> 0.06f
+            Variant.CARD -> 0.10f
+        }
         fillPaint.shader = LinearGradient(
             rect.left,
             rect.top,
             rect.right,
             rect.bottom,
             intArrayOf(
-                alpha(mix(surfaceVariant, primary, if (variant == Variant.HERO) 0.20f else 0.08f), (baseTopAlpha + pressDelta).coerceAtMost(255)),
-                alpha(surfaceVariant, (baseTopAlpha - 10 + pressDelta).coerceAtMost(255)),
-                alpha(mix(surface, primary, 0.10f), (baseBottomAlpha + pressDelta).coerceAtMost(255))
+                alpha(mix(surfaceVariant, primary, themeMix), (baseTopAlpha + pressDelta).coerceAtMost(255)),
+                alpha(mix(surfaceVariant, Color.WHITE, 0.025f), (baseTopAlpha - 18 + pressDelta).coerceAtMost(255)),
+                alpha(mix(surface, tertiary, themeMix * 0.46f), (baseBottomAlpha + pressDelta).coerceAtMost(255))
             ),
-            floatArrayOf(0f, 0.53f, 1f),
+            floatArrayOf(0f, 0.50f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(rect, fillPaint)
+
+        // White refraction near the upper edge makes the card read as glass rather than a gray slab.
+        fillPaint.shader = LinearGradient(
+            rect.left,
+            rect.top,
+            rect.left,
+            rect.top + rect.height() * 0.48f,
+            intArrayOf(alpha(Color.WHITE, if (variant == Variant.DOCK || variant == Variant.HERO) 34 else 23), Color.TRANSPARENT),
+            floatArrayOf(0f, 1f),
             Shader.TileMode.CLAMP
         )
         canvas.drawRect(rect, fillPaint)
 
         val glowStrength = when (variant) {
-            Variant.HERO -> 80
-            Variant.DOCK -> 66
-            Variant.ACTIVE -> 116
-            Variant.BUTTON -> 100
-            Variant.STRIP -> 34
-            Variant.CARD -> 48
+            Variant.HERO -> 92
+            Variant.DOCK -> 76
+            Variant.ACTIVE -> 126
+            Variant.BUTTON -> 112
+            Variant.STRIP -> 30
+            Variant.CARD -> 52
         }
-        glowPaint.shader = RadialGradient(
-            rect.left + rect.width() * 0.18f,
-            rect.top + rect.height() * 0.05f,
-            max(rect.width(), rect.height()) * 0.85f,
-            intArrayOf(alpha(primary, glowStrength), Color.TRANSPARENT),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
+        drawGlow(canvas, rect.left + rect.width() * 0.13f, rect.top + rect.height() * 0.02f, primary, glowStrength, 0.84f)
+        drawGlow(
+            canvas,
+            rect.right - rect.width() * 0.03f,
+            rect.bottom - rect.height() * 0.06f,
+            if (variant == Variant.ACTIVE || variant == Variant.BUTTON) primary else tertiary,
+            glowStrength / 2,
+            0.70f
         )
-        canvas.drawRect(rect, glowPaint)
-
-        glowPaint.shader = RadialGradient(
-            rect.right - rect.width() * 0.04f,
-            rect.bottom - rect.height() * 0.10f,
-            max(rect.width(), rect.height()) * 0.72f,
-            intArrayOf(alpha(if (variant == Variant.ACTIVE) primary else tertiary, glowStrength / 2), Color.TRANSPARENT),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(rect, glowPaint)
 
         if (variant == Variant.HERO || variant == Variant.CARD || variant == Variant.DOCK) {
             wavePath.reset()
-            wavePath.moveTo(rect.left - dp(12f), rect.bottom - rect.height() * 0.20f)
+            wavePath.moveTo(rect.left - dp(12f), rect.bottom - rect.height() * 0.19f)
             wavePath.cubicTo(
-                rect.left + rect.width() * 0.24f,
-                rect.bottom - rect.height() * 0.02f,
-                rect.left + rect.width() * 0.55f,
-                rect.bottom - rect.height() * 0.30f,
+                rect.left + rect.width() * 0.25f,
+                rect.bottom - rect.height() * 0.01f,
+                rect.left + rect.width() * 0.56f,
+                rect.bottom - rect.height() * 0.31f,
                 rect.right + dp(12f),
-                rect.bottom - rect.height() * 0.14f
+                rect.bottom - rect.height() * 0.13f
             )
             wavePaint.shader = LinearGradient(
                 rect.left,
                 rect.bottom,
                 rect.right,
                 rect.top,
-                alpha(primary, 34),
-                alpha(secondary, 8),
+                alpha(primary, if (variant == Variant.DOCK) 45 else 34),
+                alpha(secondary, 7),
                 Shader.TileMode.CLAMP
             )
             canvas.drawPath(wavePath, wavePaint)
+        }
+
+        frostPaint.shader = null
+        val grainCount = when (variant) {
+            Variant.DOCK, Variant.HERO -> 18
+            Variant.CARD -> 12
+            else -> 6
+        }
+        for (index in 0 until grainCount) {
+            val x = rect.left + rect.width() * (((index * 31 + 9) % 97) / 97f)
+            val y = rect.top + rect.height() * (((index * 47 + 13) % 89) / 89f)
+            frostPaint.color = alpha(if (index % 5 == 0) primary else Color.WHITE, if (index % 5 == 0) 10 else 7)
+            canvas.drawCircle(x, y, dp(0.55f + (index % 2) * 0.20f), frostPaint)
         }
         canvas.restoreToCount(save)
 
@@ -166,24 +187,45 @@ class LiquidGlassDrawable(
             rect.top,
             rect.right,
             rect.bottom,
-            intArrayOf(alpha(Color.WHITE, if (variant == Variant.ACTIVE) 190 else 116), alpha(primary, if (variant == Variant.ACTIVE) 220 else 126), alpha(outline, 96)),
+            intArrayOf(
+                alpha(Color.WHITE, if (variant == Variant.ACTIVE) 198 else 132),
+                alpha(primary, if (variant == Variant.ACTIVE) 222 else 142),
+                alpha(outline, 82)
+            ),
             floatArrayOf(0f, 0.43f, 1f),
             Shader.TileMode.CLAMP
         )
         val inset = strokePaint.strokeWidth / 2f
-        canvas.drawRoundRect(RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset), radius, radius, strokePaint)
+        canvas.drawRoundRect(
+            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+            radius,
+            radius,
+            strokePaint
+        )
 
         shinePaint.shader = LinearGradient(
             rect.left,
             rect.top,
             rect.right,
             rect.top,
-            intArrayOf(alpha(Color.WHITE, 164), alpha(primary, 98), Color.TRANSPARENT),
+            intArrayOf(alpha(Color.WHITE, 178), alpha(primary, 104), Color.TRANSPARENT),
             floatArrayOf(0f, 0.48f, 1f),
             Shader.TileMode.CLAMP
         )
-        val y = rect.top + dp(1.6f)
-        canvas.drawLine(rect.left + radius * 0.65f, y, rect.right - radius * 0.65f, y, shinePaint)
+        val y = rect.top + dp(1.55f)
+        canvas.drawLine(rect.left + radius * 0.64f, y, rect.right - radius * 0.64f, y, shinePaint)
+    }
+
+    private fun drawGlow(canvas: Canvas, x: Float, y: Float, color: Int, strength: Int, radiusScale: Float) {
+        glowPaint.shader = RadialGradient(
+            x,
+            y,
+            max(rect.width(), rect.height()) * radiusScale,
+            intArrayOf(alpha(color, strength), Color.TRANSPARENT),
+            floatArrayOf(0f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(rect, glowPaint)
     }
 
     override fun setAlpha(alpha: Int) = Unit
@@ -202,17 +244,22 @@ class LiquidGlassDrawable(
     }
 
     override fun getOutline(outlineValue: Outline) {
-        val radius = dp(if (variant == Variant.DOCK) 36f else 28f)
+        val radius = dp(if (variant == Variant.DOCK) 37f else 29f)
         outlineValue.setRoundRect(bounds, radius)
         outlineValue.alpha = when (variant) {
-            Variant.DOCK, Variant.HERO -> 0.78f
-            else -> 0.62f
+            Variant.DOCK, Variant.HERO -> 0.70f
+            else -> 0.56f
         }
     }
 
     private fun dp(value: Float): Float = value * density
 
-    private fun alpha(color: Int, value: Int): Int = Color.argb(value.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color))
+    private fun alpha(color: Int, value: Int): Int = Color.argb(
+        value.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
 
     private fun mix(first: Int, second: Int, amount: Float): Int {
         val inverse = 1f - amount.coerceIn(0f, 1f)
