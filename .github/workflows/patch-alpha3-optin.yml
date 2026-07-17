@@ -1,0 +1,80 @@
+name: Patch Alpha 3 explicit opt-in cleanup
+
+on:
+  push:
+    branches: [v2-alpha3]
+    paths:
+      - '.github/workflows/patch-alpha3-optin.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha3
+      - name: Require explicit item selection
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt')
+          text = root.read_text()
+          old = '(selection[candidate.path] ?: true)'
+          new = '(selection[candidate.path] == true)'
+          if old not in text:
+              raise SystemExit('root selection target not found')
+          root.write_text(text.replace(old, new, 1))
+
+          main = Path('v2/app/src/main/java/io/github/xgl34222220/baize/MainActivity.kt')
+          text = main.read_text()
+          replacements = [
+              (
+                  'if (checked) selectionOverrides.remove(item.path) else selectionOverrides[item.path] = false',
+                  'selectionOverrides[item.path] = checked'
+              ),
+              (
+                  'selected = selectionOverrides[path] ?: !whitelisted',
+                  'selected = selectionOverrides[path] == true && !whitelisted'
+              ),
+              (
+                  'val manuallyCancelled = selectionOverrides.values.count { !it }\n        binding.selectionText.text = buildString {\n            append("共 $totalResults 项 · 本页已选 ${adapter.currentSelectedCount()} 项")\n            append(" · 手动取消 $manuallyCancelled 项")',
+                  'val selectedTotal = selectionOverrides.values.count { it }\n        binding.selectionText.text = buildString {\n            append("共 $totalResults 项 · 本页已选 ${adapter.currentSelectedCount()} 项")\n            append(" · 全部分页明确勾选 $selectedTotal 项")'
+              ),
+              (
+                  'val manuallyCancelled = selectionOverrides.values.count { !it }\n        AlertDialog.Builder(this)',
+                  'val selectedTotal = selectionOverrides.values.count { it }\n        if (selectedTotal <= 0) {\n            binding.resultText.text = "请先勾选至少一个缓存项目。"\n            return\n        }\n        AlertDialog.Builder(this)'
+              ),
+              (
+                  '"默认清理当前快照内全部非白名单缓存目录，已手动取消 $manuallyCancelled 项。\\n\\n" +',
+                  '"本次只清理你明确勾选的 $selectedTotal 个缓存项目。\\n\\n" +'
+              ),
+              (
+                  'if (path.startsWith("/") && !json.optBoolean(path, true)) selectionOverrides[path] = false',
+                  'if (path.startsWith("/")) selectionOverrides[path] = json.optBoolean(path, false)'
+              )
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'main target not found: {old[:60]}')
+              text = text.replace(old, new, 1)
+          main.write_text(text)
+
+          layout = Path('v2/app/src/main/res/layout/activity_main.xml')
+          text = layout.read_text()
+          old = '默认选择全部非白名单结果；可翻页取消单项。删除前会再次执行服务端安全校验。'
+          new = '默认不选择任何结果；只有手动勾选的项目才会清理。删除前会再次执行服务端安全校验。'
+          if old not in text:
+              raise SystemExit('layout guidance target not found')
+          layout.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit explicit opt-in safety change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main
+          git commit -m 'Require explicit selection before Alpha 3 cleanup'
+          git push origin HEAD:v2-alpha3
