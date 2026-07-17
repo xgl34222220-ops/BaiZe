@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha6]
+    branches: [v2-alpha7]
     paths:
       - 'v2/**'
       - '.github/workflows/v2-alpha.yml'
@@ -43,18 +43,18 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha6.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha7.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify automatic cleaner, scheduler, App and rules
+      - name: Verify polished UI automatic cleaner scheduler App and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha6-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha7-Module.zip
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
@@ -62,17 +62,18 @@ jobs:
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
           unzip -p "$ZIP" cleaner.sh | grep -q '/data/adb/baize-v2'
           unzip -p "$ZIP" scheduler.sh | grep -q '/data/adb/baize-v2'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha07'
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha6
+          name: BaiZe-v2-Alpha7
           if-no-files-found: warn
           path: |
-            v2/build-alpha6.log
-            v2/dist/BaiZe-v2-Alpha6-Module.zip
+            v2/build-alpha7.log
+            v2/dist/BaiZe-v2-Alpha7-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
