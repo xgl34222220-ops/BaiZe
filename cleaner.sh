@@ -151,6 +151,8 @@ DEEP_CURRENT_PATH=""
 DEEP_SCAN_MANIFEST_TMP="$TMP_DIR/deep-scan.targets"
 CORPSE_SCAN_MANIFEST_TMP="$TMP_DIR/corpse-scan.targets"
 REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
+RULE_SEEN_FILE="$TMP_DIR/rule-targets.seen"
+: >"$RULE_SEEN_FILE"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
 set_phase "准备扫描"
 
@@ -172,6 +174,38 @@ get_uint() {
   [ "$value" -lt "$min" ] && value=$min
   [ "$value" -gt "$max" ] && value=$max
   echo "$value"
+}
+
+canonical_rule_path() {
+  target=$1
+  if command -v readlink >/dev/null 2>&1; then
+    resolved=$(readlink -f -- "$target" 2>/dev/null) && [ -n "$resolved" ] && { printf '%s\n' "$resolved"; return 0; }
+  fi
+  if command -v realpath >/dev/null 2>&1; then
+    resolved=$(realpath -- "$target" 2>/dev/null) && [ -n "$resolved" ] && { printf '%s\n' "$resolved"; return 0; }
+  fi
+  return 1
+}
+
+resolve_rule_target() {
+  base=$1
+  target=$2
+  [ -e "$target" ] || return 1
+  [ -L "$target" ] && return 1
+  base_real=$(canonical_rule_path "$base") || return 1
+  target_real=$(canonical_rule_path "$target") || return 1
+  case "$target_real" in
+    "$base_real"/*) printf '%s\n' "$target_real"; return 0 ;;
+  esac
+  return 1
+}
+
+rule_target_once() {
+  target=$1
+  [ -n "$target" ] || return 1
+  grep -Fqx -- "$target" "$RULE_SEEN_FILE" 2>/dev/null && return 1
+  printf '%s\n' "$target" >>"$RULE_SEEN_FILE"
+  return 0
 }
 
 log_line() {
@@ -827,9 +861,15 @@ run_app_rules() {
     case "$package" in *[!A-Za-z0-9._-]*) log_line "[拒绝:包名] $package"; continue ;; esac
     case "$relative" in ''|/*|*'..'*|*'//'*) log_line "[拒绝:相对路径] $package/$relative"; continue ;; esac
     case "$days" in ''|*[!0-9]*) log_line "[拒绝:规则天数] $package/$relative"; continue ;; esac
+    [ "$days" -le 365 ] || { log_line "[拒绝:规则天数超限] $package/$relative"; continue; }
     for base in /data/user/[0-9]*/"$package" /data/user_de/[0-9]*/"$package"; do
       [ -d "$base" ] || continue
-      target="$base/$relative"
+      raw_target="$base/$relative"
+      target=$(resolve_rule_target "$base" "$raw_target") || {
+        { [ -e "$raw_target" ] || [ -L "$raw_target" ]; } && log_line "[拒绝:规则越界或符号链接] $raw_target"
+        continue
+      }
+      rule_target_once "$target" || continue
       if [ -d "$target" ]; then
         clean_dir "$target" "$days" "应用扩展规则:$package" || return $?
       elif [ -f "$target" ] && { [ "$days" -eq 0 ] || find "$target" -type f -mtime "+$days" -print 2>/dev/null | grep -q .; }; then
@@ -854,9 +894,17 @@ run_external_rules() {
     case "$package" in *[!A-Za-z0-9._-]*) log_line "[拒绝:外部规则包名] $package"; continue ;; esac
     case "$relative" in ''|/*|*'..'*|*'//'*) log_line "[拒绝:外部相对路径] $package/$relative"; continue ;; esac
     case "$days" in ''|*[!0-9]*) log_line "[拒绝:外部规则天数] $package/$relative"; continue ;; esac
+    [ "$days" -le 365 ] || { log_line "[拒绝:外部规则天数超限] $package/$relative"; continue; }
     for userdir in /data/media/[0-9]*; do
       [ -d "$userdir" ] || continue
-      target="$userdir/Android/data/$package/$relative"
+      base="$userdir/Android/data/$package"
+      [ -d "$base" ] || continue
+      raw_target="$base/$relative"
+      target=$(resolve_rule_target "$base" "$raw_target") || {
+        { [ -e "$raw_target" ] || [ -L "$raw_target" ]; } && log_line "[拒绝:外部规则越界或符号链接] $raw_target"
+        continue
+      }
+      rule_target_once "$target" || continue
       if [ -d "$target" ]; then
         clean_dir "$target" "$days" "外部应用扩展规则:$package" || return $?
       elif [ -f "$target" ] && { [ "$days" -eq 0 ] || find "$target" -type f -mtime "+$days" -print 2>/dev/null | grep -q .; }; then

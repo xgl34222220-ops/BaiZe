@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.StatFs
 import android.text.format.Formatter
 import android.view.View
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
@@ -58,10 +59,11 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 9"
+        binding.versionText.text = "Alpha 10"
         setupNavigation()
         setupActions()
         setupSettings()
+        setupThemePicker()
         updateStorage()
         refreshSavedReport()
         connectService()
@@ -72,6 +74,7 @@ class DashboardActivity : AppCompatActivity() {
         updateStorage()
         refreshSavedReport()
         refreshWhitelist()
+        renderThemeSummary()
         if (profileService != null) {
             readServiceStatus()
             refreshModuleState()
@@ -80,22 +83,37 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun setupNavigation() {
         binding.bottomNavigation.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_home -> show(binding.homePage)
-                R.id.nav_plan -> show(binding.planPage)
-                R.id.nav_records -> show(binding.recordsPage)
-                R.id.nav_settings -> show(binding.settingsPage)
-                else -> return@setOnItemSelectedListener false
+            runCatching {
+                when (item.itemId) {
+                    R.id.nav_home -> show(binding.homePage)
+                    R.id.nav_plan -> show(binding.planPage)
+                    R.id.nav_records -> show(binding.recordsPage)
+                    R.id.nav_settings -> show(binding.settingsPage)
+                    else -> return@setOnItemSelectedListener false
+                }
+                true
+            }.getOrElse {
+                show(binding.homePage)
+                false
             }
-            true
         }
         binding.bottomNavigation.selectedItemId = R.id.nav_home
     }
 
     private fun show(page: View) {
         val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage, binding.settingsPage)
-        pages.forEach { it.visibility = if (it === page) View.VISIBLE else View.GONE }
-        page.scrollTo(0, 0)
+        pages.forEach { candidate ->
+            candidate.animate().cancel()
+            candidate.visibility = if (candidate === page) View.VISIBLE else View.GONE
+        }
+        page.alpha = 0f
+        page.translationY = dp(8).toFloat()
+        page.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(220L)
+            .start()
+        page.post { page.scrollTo(0, 0) }
     }
 
     private fun setupActions() {
@@ -122,6 +140,42 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun openProfile(profile: String) {
         startActivity(Intent(this, ProfileActivity::class.java).putExtra(ProfileActivity.EXTRA_PROFILE, profile))
+    }
+
+    private fun setupThemePicker() {
+        renderThemeSummary()
+        binding.themeButton.setOnClickListener { showThemeDialog() }
+    }
+
+    private fun renderThemeSummary() {
+        val palette = ThemeManager.currentPalette(this)
+        binding.themeSummaryText.text = buildString {
+            append(palette.label).append(" · ").append(palette.description)
+            if (palette.monet && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+                append("（当前系统回退为白泽蓝）")
+            }
+        }
+    }
+
+    private fun showThemeDialog() {
+        val current = ThemeManager.currentId(this)
+        val labels = ThemeManager.palettes.map { palette ->
+            if (palette.monet) {
+                "${palette.label}\n${palette.description}（Android 12+）"
+            } else {
+                "${palette.label}\n${palette.description}"
+            }
+        }.toTypedArray()
+        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("主题与取色")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                ThemeManager.setPalette(this, ThemeManager.palettes[which].id)
+                dialog.dismiss()
+                recreate()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun setupSettings() {
@@ -347,6 +401,9 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun fragmentRetentionLabel(days: Int): String =
         if (days <= 0) "碎片立即清理" else "碎片保留 $days 天"
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun flag(value: Boolean): Int = if (value) 1 else 0
 

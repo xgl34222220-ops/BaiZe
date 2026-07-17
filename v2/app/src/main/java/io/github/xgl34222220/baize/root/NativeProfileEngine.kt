@@ -17,7 +17,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Persistent native scanner for every non-cache cleaning profile.
+ * Persistent native scanner for every non-cache cleaning profile with Alpha 10 rule hardening.
  *
  * The client can only clean candidates stored in an unexpired server-side snapshot. Every target is
  * checked again immediately before mutation. The engine never accepts a new deletion path from UI.
@@ -478,7 +478,9 @@ internal class NativeProfileEngine(
 
     private fun stillMatches(candidate: Candidate, target: File, options: Options): Boolean = when (candidate.profile) {
         "empty" -> if (candidate.category == "empty_file") target.isFile && target.length() == 0L && !placeholder(target.name) else target.isDirectory && isEmptyDirectory(target)
-        "fragments" -> target.isFile && target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L
+        "fragments" -> target.isFile &&
+            target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
+            fragmentNameMatches(target.name)
         "corpses" -> corpsePath(canonical(target)) && !installedPackages().containsKey(candidate.packageName)
         "rules", "deep" -> mutationRoot(canonical(target))
         else -> false
@@ -591,7 +593,7 @@ internal class NativeProfileEngine(
 
     private fun expand(rawRule: String): List<File> {
         val raw = rawRule.substringBefore('|').substringBefore('#').trim()
-        if (!raw.startsWith("/") || raw.length > 4096) return emptyList()
+        if (!safeRuleSyntax(raw)) return emptyList()
         if (!raw.contains('*') && !raw.contains('?') && !raw.contains('[')) return listOf(File(raw))
         val segments = raw.split('/').filter { it.isNotEmpty() }
         var current: List<File> = listOf(File("/"))
@@ -615,6 +617,18 @@ internal class NativeProfileEngine(
             if (current.isEmpty()) break
         }
         return current
+    }
+
+    private fun safeRuleSyntax(raw: String): Boolean {
+        if (!raw.startsWith("/") || raw.length !in 2..4096) return false
+        if (raw.contains('\u0000') || raw.contains("\n") || raw.contains("\r")) return false
+        if (raw.split('/').any { it == ".." }) return false
+        if (raw.startsWith("/data/adb") || raw.startsWith("/metadata") || raw.startsWith("/proc") || raw.startsWith("/sys") || raw.startsWith("/dev")) return false
+        val segments = raw.split('/').filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return false
+        // Reject rules that wildcard an entire top-level filesystem tree.
+        if (segments.take(2).any { it == "*" || it == "**" || it == "?" }) return false
+        return true
     }
 
     private fun glob(segment: String): Regex {
@@ -706,10 +720,8 @@ internal class NativeProfileEngine(
         File("/data/system/heapdump"), File("/data/misc/logd"), File("/data/vendor/log"), File("/data/log")
     ).filter { it.isDirectory && !isSymlink(it) }
 
-    private fun rulesDirectory(): File? = listOf(
-        File("/data/adb/modules/baize_v2/config"),
-        File("/data/adb/modules/safesweep/config")
-    ).firstOrNull { it.isDirectory }
+    private fun rulesDirectory(): File? =
+        File("/data/adb/modules/baize_v2/config").takeIf { it.isDirectory }
 
     private fun deepRules(): File? = rulesDirectory()?.resolve("deep.rules")?.takeIf { it.isFile }
 
@@ -760,6 +772,15 @@ internal class NativeProfileEngine(
     }
 
     private fun protectedDirectoryName(name: String): Boolean = HIDDEN_PROTECTED.contains(name.lowercase())
+
+    private fun fragmentNameMatches(name: String): Boolean {
+        val value = name.lowercase()
+        return value.endsWith(".tmp") || value.endsWith(".temp") || value.endsWith(".part") ||
+            value.endsWith(".partial") || value.endsWith(".download") || value.endsWith(".crdownload") ||
+            Regex(""".*\.log\.[0-9]+$""").matches(value) || value.endsWith(".old") || value.endsWith(".bak~") ||
+            value.contains("tombstone") || value.contains("minidump") || value.contains("heapdump") ||
+            value.contains("crash") || value.contains("trace") || value.contains("dump")
+    }
 
     private fun placeholder(name: String): Boolean {
         val lower = name.lowercase()
