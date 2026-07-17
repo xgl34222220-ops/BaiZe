@@ -6,6 +6,7 @@ import com.topjohnwu.superuser.Shell
 class BaiZeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        ThemeManager.install(this)
         Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(
             Shell.Builder.create()
