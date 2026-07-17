@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha11]
+    branches: [v2-alpha12]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
@@ -24,15 +24,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Alpha 11 branch
+      - name: Checkout Alpha 12 branch
         uses: actions/checkout@v4
         with:
-          ref: v2-alpha11
+          ref: v2-alpha12
           fetch-depth: 0
 
-      - name: Apply Alpha 11 stability UI and cleaner patch
-        if: ${{ hashFiles('v2/scripts/alpha11-source-patch.py') != '' }}
-        run: python3 v2/scripts/alpha11-source-patch.py
+      - name: Apply Alpha 12 in-process settings patch
+        if: ${{ hashFiles('v2/scripts/alpha12-source-patch.py') != '' }}
+        run: python3 v2/scripts/alpha12-source-patch.py
 
       - name: Validate all cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -60,36 +60,35 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha11.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha12.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify isolated settings single action UI scheduler and rules
+      - name: Verify in-process settings single action UI scheduler and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha11-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha12-Module.zip
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha11'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha12'
           unzip -p "$ZIP" customize.sh | grep -q 'rm -rf "$OLD_MOD" "$OLD_UPDATE" "$OLD_STATE"'
           ! unzip -p "$ZIP" uninstall.sh | grep -q 'OLD_MOD'
           unzip -p "$ZIP" cleaner.sh | grep -q 'resolve_rule_target'
           unzip -p "$ZIP" cleaner.sh | grep -q 'rule_target_once'
-          grep -q 'SettingsActivity' app/src/main/AndroidManifest.xml
-          grep -q 'class SettingsActivity' app/src/main/java/io/github/xgl34222220/baize/SettingsActivity.kt
-          grep -q 'ActivitySettingsBinding' app/src/main/java/io/github/xgl34222220/baize/SettingsActivity.kt
-          grep -q 'themeButton' app/src/main/res/layout/activity_settings.xml
-          grep -q 'saveSettingsButton' app/src/main/res/layout/activity_settings.xml
-          grep -q 'startActivity(Intent(this, SettingsActivity::class.java))' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          ! grep -q 'show(binding.settingsPage)' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          ! grep -q 'SettingsActivity' app/src/main/AndroidManifest.xml
+          grep -q 'showSettingsMenu()' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'saveSettingsPatch' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'CrashRecorder.install' app/src/main/java/io/github/xgl34222220/baize/BaiZeApplication.kt
+          grep -q 'object CrashRecorder' app/src/main/java/io/github/xgl34222220/baize/CrashRecorder.kt
+          ! grep -q 'startActivity(Intent(this, SettingsActivity::class.java))' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           ! grep -q 'scanOnlyButton' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           ! grep -q 'scanOnlyButton' app/src/main/res/layout/activity_dashboard.xml
           grep -q '立即智能清理' app/src/main/res/layout/activity_dashboard.xml
@@ -101,26 +100,26 @@ jobs:
           grep -q 'Theme.BaiZe.Monet' app/src/main/res/values/themes.xml
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-      - name: Commit verified Alpha 11 sources
-        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha11-source-patch.py') != ''
+      - name: Commit verified Alpha 12 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha12-source-patch.py') != ''
         run: |
-          rm -f v2/scripts/alpha11-source-patch.py
+          rm -f v2/scripts/alpha12-source-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Alpha 11 isolated settings and single smart clean UI'
-          git pull --rebase origin v2-alpha11
-          git push origin HEAD:v2-alpha11
+          git commit -m 'Finalize Alpha 12 in-process settings and crash diagnostics'
+          git pull --rebase origin v2-alpha12
+          git push origin HEAD:v2-alpha12
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha11
+          name: BaiZe-v2-Alpha12
           if-no-files-found: warn
           path: |
-            v2/build-alpha11.log
-            v2/dist/BaiZe-v2-Alpha11-Module.zip
+            v2/build-alpha12.log
+            v2/dist/BaiZe-v2-Alpha12-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
