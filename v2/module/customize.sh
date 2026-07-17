@@ -5,21 +5,20 @@ STATE_DIR="/data/adb/baize-v2"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 
-ui_print "- 安装白泽 v2 Alpha 5"
-ui_print "- 单一模块包内置原生 App 与完整规则库"
-ui_print "- App 提供完整清理界面，模块负责 Root、开机补装与后台能力"
+ui_print "- 安装白泽 v2 Alpha 6"
+ui_print "- 单一模块包内置原生 App、完整清理引擎、真实调度器与规则库"
+ui_print "- 首页一键自动清理；高级审计、深度规则与卸载残留独立处理"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
 
-if [ ! -f "$APK" ]; then
-  abort "! 模块包中缺少 app/baize.apk"
-fi
-if [ ! -f "$MODPATH/config/deep.rules" ]; then
-  abort "! 模块包中缺少完整深度规则库"
-fi
+[ -f "$APK" ] || abort "! 模块包中缺少 app/baize.apk"
+[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少一键清理引擎"
+[ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
+[ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
