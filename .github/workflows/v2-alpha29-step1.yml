@@ -6,19 +6,17 @@ on:
     paths:
       - 'cleaner.sh'
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step1.py'
       - '.github/workflows/v2-alpha29-step1.yml'
   pull_request:
     branches: [v2-alpha28]
     paths:
       - 'cleaner.sh'
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step1.py'
       - '.github/workflows/v2-alpha29-step1.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   data-layer:
@@ -28,14 +26,6 @@ jobs:
         with:
           ref: v2-alpha29
           fetch-depth: 0
-
-      - name: Apply step 1 source migration
-        run: |
-          if ! grep -q '^APP_ITEMS=' cleaner.sh; then
-            python3 v2/scripts/apply-alpha29-step1.py
-          else
-            echo 'Alpha 29 step 1 sources already committed'
-          fi
 
       - name: Validate cleaner data schema
         run: |
@@ -81,17 +71,6 @@ jobs:
       - name: Compile native App
         working-directory: v2
         run: gradle --no-daemon :app:assembleDebug
-
-      - name: Commit verified step 1 sources
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cleaner.sh v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-          if ! git diff --cached --quiet; then
-            git commit -m 'Add per-app category cleanup data and path deduplication'
-            git push origin HEAD:v2-alpha29
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
