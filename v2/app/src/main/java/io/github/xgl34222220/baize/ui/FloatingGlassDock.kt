@@ -1,6 +1,5 @@
 package io.github.xgl34222220.baize.ui
 
-import android.animation.TimeInterpolator
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
@@ -9,7 +8,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
-import android.view.animation.OvershootInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -20,7 +19,7 @@ import com.google.android.material.color.MaterialColors
 import io.github.xgl34222220.baize.R
 import io.github.xgl34222220.baize.ThemeManager
 
-/** Four-item MIUIx floating dock with an optional liquid-glass surface. */
+/** Box-inspired four-item floating bar: compact, calm and easy to read with custom fonts. */
 class FloatingGlassDock @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -38,14 +37,13 @@ class FloatingGlassDock @JvmOverloads constructor(
     )
     private val items = LinkedHashMap<Int, DockItemView>()
     private var listener: ((Item) -> Boolean)? = null
-    private val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
     private val primaryContainer = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimaryContainer)
     private val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
     private val outline = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant)
     private val inactive = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant)
     private val activeText = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimaryContainer)
     private val glassEnabled = ThemeManager.isGlassEnabled(context)
-    private val bounce: TimeInterpolator = OvershootInterpolator(0.48f)
+    private val easing = DecelerateInterpolator(1.6f)
 
     var selectedItemId: Int = R.id.nav_home
         set(value) {
@@ -60,15 +58,15 @@ class FloatingGlassDock @JvmOverloads constructor(
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER
-        minimumHeight = dp(84)
-        setPadding(dp(7), dp(7), dp(7), dp(7))
+        minimumHeight = dp(76)
+        setPadding(dp(6), dp(6), dp(6), dp(6))
         background = if (glassEnabled) {
             LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
         } else {
-            rounded(surface, 32, outline, 1)
+            rounded(surface, 34, outline, 1)
         }
-        elevation = dp(if (glassEnabled) 16 else 10).toFloat()
-        translationZ = dp(4).toFloat()
+        elevation = dp(if (glassEnabled) 12 else 8).toFloat()
+        translationZ = dp(3).toFloat()
         clipToPadding = false
         clipChildren = false
         isClickable = true
@@ -86,7 +84,7 @@ class FloatingGlassDock @JvmOverloads constructor(
         items.clear()
         specs.forEach { spec ->
             val item = DockItemView(context, spec.icon, spec.title).apply {
-                layoutParams = LayoutParams(0, dp(66), 1f).apply {
+                layoutParams = LayoutParams(0, dp(62), 1f).apply {
                     marginStart = dp(2)
                     marginEnd = dp(2)
                 }
@@ -105,9 +103,7 @@ class FloatingGlassDock @JvmOverloads constructor(
     }
 
     private fun renderSelection(selected: Int, animated: Boolean) {
-        items.forEach { (id, view) ->
-            view.setActive(id == selected, animated, activeText, inactive, bounce)
-        }
+        items.forEach { (id, view) -> view.setActive(id == selected, animated) }
     }
 
     private inner class DockItemView(
@@ -121,61 +117,49 @@ class FloatingGlassDock @JvmOverloads constructor(
         init {
             orientation = VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(5), dp(6), dp(5), dp(5))
-            minimumWidth = dp(66)
+            setPadding(dp(5), dp(5), dp(5), dp(4))
+            minimumWidth = dp(64)
             isClickable = true
             isFocusable = true
             clipToOutline = true
             contentDescription = title
 
-            icon.layoutParams = LayoutParams(dp(22), dp(22))
+            icon.layoutParams = LayoutParams(dp(21), dp(21))
             icon.scaleType = ImageView.ScaleType.CENTER_INSIDE
             icon.setImageDrawable(AppCompatResources.getDrawable(context, iconRes))
             addView(icon)
 
-            label.layoutParams = LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(20)).apply {
-                topMargin = dp(5)
+            label.layoutParams = LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(19)).apply {
+                topMargin = dp(4)
             }
             label.text = title
             label.gravity = Gravity.CENTER
             label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            label.setLineSpacing(0f, 1f)
             label.includeFontPadding = false
             label.maxLines = 1
-            label.letterSpacing = 0.02f
+            label.letterSpacing = 0.01f
             addView(label)
         }
 
-        fun setActive(
-            active: Boolean,
-            animated: Boolean,
-            activeText: Int,
-            inactive: Int,
-            interpolator: TimeInterpolator
-        ) {
+        fun setActive(active: Boolean, animated: Boolean) {
             icon.imageTintList = ColorStateList.valueOf(if (active) activeText else inactive)
             label.setTextColor(if (active) activeText else inactive)
             label.setTypeface(label.typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-            background = when {
-                !active -> null
-                glassEnabled -> LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.ACTIVE)
-                else -> rounded(primaryContainer, 24)
-            }
-            elevation = if (active) dp(if (glassEnabled) 7 else 2).toFloat() else 0f
+            background = if (active) rounded(primaryContainer, 26) else null
+            elevation = if (active) dp(2).toFloat() else 0f
             if (!animated) {
-                scaleX = if (active) 1f else 0.98f
-                scaleY = if (active) 1f else 0.98f
-                alpha = if (active) 1f else 0.9f
+                scaleX = if (active) 1f else 0.96f
+                scaleY = if (active) 1f else 0.96f
+                alpha = if (active) 1f else 0.82f
                 return
             }
-            scaleX = if (active) 0.94f else 1f
-            scaleY = if (active) 0.94f else 1f
+            animate().cancel()
             animate()
-                .scaleX(if (active) 1f else 0.98f)
-                .scaleY(if (active) 1f else 0.98f)
-                .alpha(if (active) 1f else 0.9f)
-                .setDuration(200L)
-                .setInterpolator(interpolator)
+                .scaleX(if (active) 1f else 0.96f)
+                .scaleY(if (active) 1f else 0.96f)
+                .alpha(if (active) 1f else 0.82f)
+                .setDuration(180L)
+                .setInterpolator(easing)
                 .start()
         }
     }
