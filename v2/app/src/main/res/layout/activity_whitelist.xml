@@ -13,50 +13,40 @@
         android:id="@+id/headerContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingTop="12dp"
-        android:paddingBottom="14dp">
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="18dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/backButton"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:contentDescription="返回"
             android:gravity="center"
             android:minWidth="0dp"
             android:text="←"
             android:textColor="?attr/colorOnSurface"
-            android:textSize="28sp" />
+            android:textSize="27sp" />
 
-        <LinearLayout
-            android:layout_width="0dp"
+        <TextView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:layout_marginTop="10dp"
+            android:text="应用白名单"
+            android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="应用白名单"
-                android:textColor="?attr/colorOnSurface"
-                android:textSize="28sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:text="保护应用内部数据与 Android/data"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="12sp" />
-        </LinearLayout>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text="选择应用，保护内部数据、Android/data 与 media 目录"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="13sp" />
     </LinearLayout>
 
     <com.google.android.material.card.MaterialCardView
-        style="@style/Widget.BaiZe.SimpleCard"
+        style="@style/Widget.BaiZe.GroupCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
@@ -64,18 +54,20 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
 
             <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                style="@style/Widget.Material3.TextInputLayout.FilledBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="搜索应用名称或包名"
-                app:boxBackgroundColor="?attr/colorSurface"
+                app:boxBackgroundColor="?attr/colorSurfaceVariant"
                 app:boxCornerRadiusBottomEnd="20dp"
                 app:boxCornerRadiusBottomStart="20dp"
                 app:boxCornerRadiusTopEnd="20dp"
-                app:boxCornerRadiusTopStart="20dp">
+                app:boxCornerRadiusTopStart="20dp"
+                app:boxStrokeWidth="0dp"
+                app:boxStrokeWidthFocused="0dp">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/queryInput"
@@ -92,40 +84,62 @@
                 android:id="@+id/filterGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                app:chipSpacingHorizontal="6dp"
-                app:chipSpacingVertical="6dp"
+                android:layout_marginTop="12dp"
+                app:chipSpacingHorizontal="7dp"
+                app:chipSpacingVertical="7dp"
                 app:selectionRequired="true"
                 app:singleSelection="true">
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterAll"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.BaiZe.FilterChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="全部" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterUser"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.BaiZe.FilterChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="用户应用" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterSystem"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.BaiZe.FilterChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="系统应用" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/filterProtected"
-                    style="@style/Widget.Material3.Chip.Filter"
+                    style="@style/Widget.BaiZe.FilterChip"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="已保护" />
             </com.google.android.material.chip.ChipGroup>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="end"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/selectVisibleButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="46dp"
+                    android:text="全选当前" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/clearButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="46dp"
+                    android:text="取消全部" />
+            </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
@@ -133,7 +147,7 @@
         android:id="@+id/selectionText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="13dp"
         android:text="正在准备应用列表…"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:textSize="12sp" />
@@ -157,7 +171,7 @@
             android:layout_height="match_parent"
             android:clipToPadding="false"
             android:paddingTop="2dp"
-            android:paddingBottom="10dp" />
+            android:paddingBottom="12dp" />
 
         <TextView
             android:id="@+id/emptyText"
@@ -174,7 +188,7 @@
 
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottomActionCard"
-        style="@style/Widget.BaiZe.SimpleCard"
+        style="@style/Widget.BaiZe.GroupCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
@@ -194,35 +208,11 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="11sp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/selectVisibleButton"
-                    style="@style/Widget.Material3.Button.FilledTonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_weight="1"
-                    android:text="全选当前" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/clearButton"
-                    style="@style/Widget.BaiZe.Button.Outlined"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="0.75"
-                    android:text="全部取消" />
-            </LinearLayout>
-
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/saveButton"
                 android:layout_width="match_parent"
                 android:layout_height="54dp"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="10dp"
                 android:text="保存并立即生效" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
