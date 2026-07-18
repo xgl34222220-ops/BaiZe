@@ -102,7 +102,7 @@ class ThemeSettingsActivity : AppCompatActivity() {
         }
         ThemePopupMenu.show(this, binding.styleRow, options, ThemeManager.currentMonetStyle(this).id) { option ->
             ThemeManager.setMonetStyle(this, option.id)
-            renderValues()
+            recreate()
         }
     }
 
@@ -111,7 +111,7 @@ class ThemeSettingsActivity : AppCompatActivity() {
         val options = ThemeManager.colorStandards.map { ThemePopupMenu.Option(it.id, it.label) }
         ThemePopupMenu.show(this, binding.standardRow, options, ThemeManager.currentColorStandard(this).id) { option ->
             ThemeManager.setColorStandard(this, option.id)
-            renderValues()
+            recreate()
         }
     }
 
