@@ -34,6 +34,15 @@ jobs:
         if: ${{ hashFiles('v2/scripts/alpha18-source-patch.py') != '' }}
         run: |
           set -o pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/scripts/alpha18-source-patch.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.find('# The theme page itself must also rebuild after changing Monet variants/standards.')
+          end = text.find('# Manual clean always uses a safe intelligent profile.', start)
+          if start >= 0 and end > start:
+              path.write_text(text[:start] + text[end:], encoding='utf-8')
+          PY
           python3 v2/scripts/alpha18-source-patch.py 2>&1 | tee v2/alpha18-patch.log
 
       - name: Validate all cleaning rules
