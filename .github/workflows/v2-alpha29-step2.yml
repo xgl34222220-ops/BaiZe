@@ -5,18 +5,16 @@ on:
     branches: [v2-alpha29]
     paths:
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step2-icons.py'
       - '.github/workflows/v2-alpha29-step2.yml'
   pull_request:
     branches: [v2-alpha28]
     paths:
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step2-icons.py'
       - '.github/workflows/v2-alpha29-step2.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   app-icons:
@@ -26,14 +24,6 @@ jobs:
         with:
           ref: v2-alpha29
           fetch-depth: 0
-
-      - name: Apply real application icon UI
-        run: |
-          if ! grep -q 'packageName = item.packageName' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt; then
-            python3 v2/scripts/apply-alpha29-step2-icons.py
-          else
-            echo 'Alpha 29 real icon UI already committed'
-          fi
 
       - name: Validate icon loader
         run: |
@@ -60,17 +50,6 @@ jobs:
       - name: Compile native App
         working-directory: v2
         run: gradle --no-daemon :app:assembleDebug
-
-      - name: Commit verified icon sources
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
-          if ! git diff --cached --quiet; then
-            git commit -m 'Show cached real application icons in cleanup results'
-            git push origin HEAD:v2-alpha29
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
