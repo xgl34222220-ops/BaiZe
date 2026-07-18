@@ -32,7 +32,9 @@ jobs:
 
       - name: Apply Alpha 14 product patch
         if: ${{ hashFiles('v2/scripts/alpha14-source-patch.py') != '' }}
-        run: python3 v2/scripts/alpha14-source-patch.py
+        run: |
+          set -o pipefail
+          python3 v2/scripts/alpha14-source-patch.py 2>&1 | tee v2/alpha14-patch.log
 
       - name: Validate all cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -113,6 +115,7 @@ jobs:
           name: BaiZe-v2-Alpha14
           if-no-files-found: warn
           path: |
+            v2/alpha14-patch.log
             v2/build-alpha14.log
             v2/dist/BaiZe-v2-Alpha14-Module.zip
 
