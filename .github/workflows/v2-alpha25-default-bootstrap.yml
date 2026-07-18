@@ -1,16 +1,17 @@
 name: Bootstrap BaiZe Alpha 25 from main
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/alpha25-trigger.txt'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   patch-build:
-    if: github.head_ref == 'v2-alpha25'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
