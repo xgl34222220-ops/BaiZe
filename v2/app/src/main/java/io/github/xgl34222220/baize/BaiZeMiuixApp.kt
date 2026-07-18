@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -372,12 +374,18 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val accentGradient = rememberAccentGradient()
+    val listState = rememberLazyListState()
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    LaunchedEffect(state.scanCompleted) {
+        if (state.scanCompleted) listState.animateScrollToItem(5)
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 126.dp),
+        contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 24", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 25", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -396,7 +404,17 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                         Text("  ·  ${state.android}", color = Color.White.copy(.65f), fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(22.dp))
-                    Text(if (state.running) "清理任务执行中" else "清理引擎已连接", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        when {
+                            state.running -> "清理任务执行中"
+                            state.ready -> "清理引擎已就绪"
+                            state.connected -> "清理引擎已连接"
+                            else -> "正在连接清理引擎"
+                        },
+                        color = Color.White,
+                        fontSize = 27.sp,
+                        fontWeight = FontWeight.Black
+                    )
                     Spacer(Modifier.height(7.dp))
                     Text(state.taskPhase, color = Color.White.copy(.72f), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(22.dp))
@@ -405,7 +423,12 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                             Text("最近一次释放", color = Color.White.copy(.62f), fontSize = 12.sp)
                             Text(Formatter.formatFileSize(context, state.lastReleased), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                         }
-                        Icon(Icons.Rounded.CheckCircle, null, tint = Color.White, modifier = Modifier.size(34.dp))
+                        Icon(
+                            if (state.ready) Icons.Rounded.CheckCircle else Icons.Rounded.Refresh,
+                            null,
+                            tint = Color.White.copy(alpha = if (state.ready) 1f else .78f),
+                            modifier = Modifier.size(34.dp)
+                        )
                     }
                 }
             }
@@ -433,7 +456,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         item {
             Button(
                 onClick = if (state.running) actions.stop else actions.clean,
-                enabled = state.connected,
+                enabled = state.running || state.ready,
                 modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(72.dp),
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -502,7 +525,7 @@ private fun StatusPill(ready: Boolean, text: String) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(if (ready) SuccessGreen else Color(0xFFF2A93B)))
             Spacer(Modifier.width(10.dp))
             Text(text, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (ready) "运行正常" else "待检查", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+            Text(if (ready) "运行正常" else "未就绪", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
