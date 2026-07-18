@@ -4,6 +4,11 @@ on:
   push:
     branches: [v2-alpha27]
     paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
       - '.github/workflows/v2-alpha27.yml'
   pull_request:
     branches: [v2-alpha25]
@@ -17,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -27,9 +32,6 @@ jobs:
         with:
           ref: v2-alpha27
           fetch-depth: 0
-
-      - name: Restore Alpha 25 UI and repair root cleaner
-        run: python3 v2/scripts/apply-alpha27-root-clean.py
 
       - name: Validate shell and cleaning rules
         run: |
@@ -67,14 +69,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-
-      - name: Commit repaired sources
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2
-          git commit -m 'Restore UI and route one-click clean through module RootService'
-          git push origin HEAD:v2-alpha27
 
       - uses: actions/upload-artifact@v4
         with:
