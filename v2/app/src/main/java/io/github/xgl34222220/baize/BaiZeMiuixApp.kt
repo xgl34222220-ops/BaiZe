@@ -374,17 +374,7 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val accentGradient = rememberAccentGradient()
-    val listState = rememberLazyListState()
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(state.scanCompleted) {
-        if (state.scanCompleted) {
-            listState.animateScrollToItem(3)
-        } else if (listState.firstVisibleItemIndex > 0) {
-            listState.animateScrollToItem(0)
-        }
-    }
     LazyColumn(
-        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
@@ -477,6 +467,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                     Icon(
                         when {
                             state.running -> Icons.Rounded.Stop
+                            state.scanCompleted && state.scanFiles > 0 -> Icons.Rounded.AutoAwesome
                             state.ready -> Icons.Rounded.AutoAwesome
                             else -> Icons.Rounded.Refresh
                         },
@@ -487,6 +478,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                     Text(
                         when {
                             state.running -> "安全停止任务"
+                            state.scanCompleted && state.scanFiles > 0 -> "按扫描结果清理"
                             state.ready -> "立即智能清理"
                             state.connected -> "恢复连接并清理"
                             else -> "连接 Root 并清理"
@@ -650,7 +642,7 @@ private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
     val accentGradient = rememberAccentGradient()
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 132.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         item { PageHeader("AUTOMATION", "自动清理计划", "每类任务独立定时，最短支持 1 小时") }
@@ -775,7 +767,7 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 130.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         item { PageHeader("CLEAN HISTORY", "清理记录", "累计统计永久保存，任务明细保留最近 100 次", actions.refresh) }
