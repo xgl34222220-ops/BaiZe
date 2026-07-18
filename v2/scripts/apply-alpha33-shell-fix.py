@@ -13,6 +13,12 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 
 app = "v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt"
+replace_once(
+    app,
+    "import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings",
+    "import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings\nimport io.github.xgl34222220.baize.ui.appearance.UiStyle",
+)
+
 old_root = '''@Composable
 fun BaiZeMiuixApp(
     state: DashboardUiState,
