@@ -479,10 +479,11 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
 
 @Composable
 private fun StorageRing(progress: Float) {
+    val primary = MaterialTheme.colorScheme.primary
     Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             drawArc(Color(0xFFDDE4F1), -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(MaterialTheme.colorScheme.primary, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(primary, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
         }
         Text("${(progress * 100).roundToInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
