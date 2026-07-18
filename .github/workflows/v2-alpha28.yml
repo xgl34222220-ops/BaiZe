@@ -34,7 +34,19 @@ jobs:
           fetch-depth: 0
 
       - name: Apply Alpha 28 fixes
-        run: python3 v2/scripts/apply-alpha28-app-details.py
+        run: |
+          set +e
+          python3 v2/scripts/apply-alpha28-app-details.py > alpha28-patch.log 2>&1
+          code=$?
+          cat alpha28-patch.log
+          exit $code
+
+      - name: Upload patch diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alpha28-patch-diagnostics
+          path: alpha28-patch.log
 
       - name: Validate shell and cleaning rules
         run: |
