@@ -101,6 +101,7 @@ import io.github.xgl34222220.baize.ui.clean.CleanRoute
 import io.github.xgl34222220.baize.ui.home.HomeRoute
 import io.github.xgl34222220.baize.ui.history.HistoryRoute
 import io.github.xgl34222220.baize.ui.logs.LogsRoute
+import io.github.xgl34222220.baize.ui.settings.SettingsRoute
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidPrimaryButton
@@ -328,7 +329,7 @@ fun BaiZeMiuixApp(
                         BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
                         BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
                         BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions)
-                        BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                        BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions)
                     }
                     MaterialFloatingDock(
                         selected = page,
@@ -344,7 +345,7 @@ fun BaiZeMiuixApp(
                         BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
                         BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
                         BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions)
-                        BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                        BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions)
                     }
                     MiuixLiquidDock(
                         selectedIndex = page.ordinal,
@@ -501,7 +502,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Liquid Glass · Alpha 38",
+                "Miuix × Liquid Glass · Alpha 39",
                 actions.refresh
             )
         }
