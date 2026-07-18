@@ -1,0 +1,101 @@
+name: BaiZe v2 Alpha 32
+
+on:
+  push:
+    branches: [v2-alpha32]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha32.yml'
+  pull_request:
+    branches: [v2-alpha31]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha32.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha32
+          fetch-depth: 0
+
+      - name: Apply Alpha 32 history migration
+        run: |
+          if ! grep -q 'versionCode = 21200' v2/app/build.gradle.kts; then
+            python3 v2/scripts/apply-alpha32.py
+          else
+            echo 'Alpha 32 sources already committed'
+          fi
+
+      - name: Validate history details and shell
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'HISTORY_CATEGORIES' cleaner.sh
+          grep -q 'HISTORY_APPS' cleaner.sh
+          grep -q 'categoryDetails' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          grep -q 'parseHistoryCategories' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q '垃圾分类' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q '涉及应用' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'version=v2.0.0-alpha32' v2/module/module.prop
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha32-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha32'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -p "$ZIP" cleaner.sh | grep -q 'HISTORY_CATEGORIES'
+          unzip -p "$ZIP" cleaner.sh | grep -q 'HISTORY_APPS'
+
+      - name: Commit verified Alpha 32 sources
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2 cleaner.sh
+          if ! git diff --cached --quiet; then
+            git commit -m 'Persist readable garbage categories and app details in history'
+            git push origin HEAD:v2-alpha32
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha32
+          path: v2/dist/BaiZe-v2-Alpha32-Module.zip
