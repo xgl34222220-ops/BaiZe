@@ -448,18 +448,13 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val accentGradient = rememberAccentGradient()
-    val listState = rememberLazyListState()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LaunchedEffect(state.scanCompleted) {
-        if (state.scanCompleted) listState.animateScrollToItem(5)
-    }
     LazyColumn(
-        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 30", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 31", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -472,7 +467,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
             ) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(11.dp).clip(CircleShape).background(if (state.ready) Color(0xFF83F0C0) else Color(0xFFFFD27D)))
+                        Box(Modifier.size(11.dp).clip(CircleShape).background(if (state.ready || state.scanCompleted) Color(0xFF83F0C0) else Color(0xFFFFD27D)))
                         Spacer(Modifier.width(8.dp))
                         Text(state.device, color = Color.White.copy(.88f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Text("  ·  ${state.android}", color = Color.White.copy(.65f), fontSize = 12.sp)
@@ -481,9 +476,10 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                     Text(
                         when {
                             state.running -> "清理任务执行中"
+                            state.scanCompleted -> "扫描结果已就绪"
                             state.ready -> "清理引擎已就绪"
                             state.connected -> "清理引擎已连接"
-                            else -> "正在连接清理引擎"
+                            else -> "正在恢复清理引擎"
                         },
                         color = Color.White,
                         fontSize = 27.sp,
@@ -498,9 +494,9 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                             Text(Formatter.formatFileSize(context, state.lastReleased), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
                         }
                         Icon(
-                            if (state.ready) Icons.Rounded.CheckCircle else Icons.Rounded.Refresh,
+                            if (state.ready || state.scanCompleted) Icons.Rounded.CheckCircle else Icons.Rounded.Refresh,
                             null,
-                            tint = Color.White.copy(alpha = if (state.ready) 1f else .78f),
+                            tint = Color.White.copy(alpha = if (state.ready || state.scanCompleted) 1f else .78f),
                             modifier = Modifier.size(34.dp)
                         )
                     }
@@ -551,7 +547,15 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
             }
         }
         item {
-            StatusPill(state.ready, state.serviceText)
+            StatusPill(
+                ready = state.ready,
+                scanReady = state.scanCompleted,
+                text = if (state.scanCompleted && !state.ready) {
+                    "扫描快照已就绪；点击下方按钮时自动恢复 Root 服务"
+                } else {
+                    state.serviceText
+                }
+            )
         }
         if (state.scanCompleted) {
             item { ScanResultCard(state, actions) }
@@ -590,7 +594,7 @@ private fun StorageRing(progress: Float) {
 }
 
 @Composable
-private fun StatusPill(ready: Boolean, text: String) {
+private fun StatusPill(ready: Boolean, text: String, scanReady: Boolean = false) {
     GlassSurface(
         Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -598,10 +602,19 @@ private fun StatusPill(ready: Boolean, text: String) {
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(10.dp).clip(CircleShape).background(if (ready) SuccessGreen else Color(0xFFF2A93B)))
+            val positive = ready || scanReady
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (positive) SuccessGreen else Color(0xFFF2A93B)))
             Spacer(Modifier.width(10.dp))
             Text(text, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (ready) "运行正常" else "未就绪", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+            Text(
+                when {
+                    ready -> "运行正常"
+                    scanReady -> "快照就绪"
+                    else -> "未就绪"
+                },
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

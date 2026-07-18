@@ -46,7 +46,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var cacheService: IBaiZeRootService? = null
     private var profileBound = false
     private var cacheBound = false
-    private var pendingClean = false
+    private var pendingSmartClean = false
+    private var pendingSnapshotClean = false
+    private var pendingScanAfterConnect: Boolean? = null
     private var pendingModuleTask: String? = null
     private var pollJob: Job? = null
     private var cacheSnapshotId = ""
@@ -63,8 +65,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             profileBound = true
             updateConnectionState()
             refreshAll()
-            runPendingCleanIfReady()
-            runPendingModuleTaskIfReady()
+            runPendingActionsIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -72,6 +73,9 @@ class MiuixDashboardActivity : ComponentActivity() {
             profileBound = false
             pollJob?.cancel()
             updateConnectionState()
+            scheduleServiceRecovery(
+                requireCache = pendingScanAfterConnect != null || pendingSnapshotClean || safeSnapshotId.isNotBlank()
+            )
         }
     }
 
@@ -81,7 +85,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             cacheBound = true
             updateConnectionState()
             readServiceStatus()
-            runPendingCleanIfReady()
+            runPendingActionsIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -89,13 +93,16 @@ class MiuixDashboardActivity : ComponentActivity() {
             cacheBound = false
             pollJob?.cancel()
             updateConnectionState()
+            if (pendingScanAfterConnect != null || pendingSnapshotClean || cacheSnapshotId.isNotBlank()) {
+                scheduleServiceRecovery(requireCache = true)
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        pendingClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
+        pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
         updateStorage()
 
         setContent {
@@ -133,7 +140,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             if (hasUsableScanSnapshots()) {
                 cleanNativeSnapshots()
             } else if (rootService == null) {
-                pendingClean = true
+                pendingSmartClean = true
                 connectPrimaryService()
             } else {
                 runSmartClean()
@@ -227,22 +234,60 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun updateConnectionState() {
         val primaryConnected = rootService != null
+        val scanReady = dashboardState.value.scanCompleted && hasUsableScanSnapshots()
         dashboardState.value = dashboardState.value.copy(
             connected = primaryConnected,
             ready = if (primaryConnected) dashboardState.value.ready else false,
-            running = if (primaryConnected) dashboardState.value.running else false,
-            serviceText = if (primaryConnected) {
-                "Root 清理服务已连接，正在校验模块组件…"
-            } else {
-                "正在连接 Root 清理服务…"
+            serviceText = when {
+                primaryConnected -> "Root 清理服务已连接，正在校验模块组件…"
+                scanReady -> "扫描快照已就绪，清理时会自动恢复 Root 服务"
+                profileBound -> "正在连接 Root 清理服务…"
+                else -> "Root 清理服务已断开，正在自动恢复…"
             }
         )
     }
 
-    private fun runPendingCleanIfReady() {
-        if (!pendingClean || rootService == null) return
-        pendingClean = false
-        runSmartClean()
+    private fun runPendingActionsIfReady() {
+        if (dashboardState.value.running) return
+
+        if (pendingSnapshotClean) {
+            val needsCache = cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0
+            val needsProfile = safeSnapshotId.isNotBlank() && safeSnapshotCount > 0
+            val cacheReady = !needsCache || cacheService != null
+            val profileReady = !needsProfile || rootService != null
+            if (cacheReady && profileReady) {
+                pendingSnapshotClean = false
+                cleanNativeSnapshots()
+                return
+            }
+        }
+
+        val cleanAfterScan = pendingScanAfterConnect
+        if (cleanAfterScan != null && rootService != null && cacheService != null) {
+            pendingScanAfterConnect = null
+            runNativeScan(cleanAfterScan)
+            return
+        }
+
+        if (pendingSmartClean && rootService != null) {
+            pendingSmartClean = false
+            runSmartClean()
+            return
+        }
+
+        val mode = pendingModuleTask
+        if (mode != null && rootService != null) {
+            pendingModuleTask = null
+            runModuleUtilityTask(requireNotNull(rootService), mode)
+        }
+    }
+
+    private fun scheduleServiceRecovery(requireCache: Boolean) {
+        lifecycleScope.launch {
+            delay(350)
+            if (isFinishing || isDestroyed) return@launch
+            if (requireCache) connectServices() else connectPrimaryService()
+        }
     }
 
     private fun readServiceStatus() {
@@ -288,13 +333,6 @@ class MiuixDashboardActivity : ComponentActivity() {
                 storagePercent = if (total > 0) (used.toFloat() / total).coerceIn(0f, 1f) else 0f
             )
         }
-    }
-
-    private fun runPendingModuleTaskIfReady() {
-        val mode = pendingModuleTask ?: return
-        val service = rootService ?: return
-        pendingModuleTask = null
-        runModuleUtilityTask(service, mode)
     }
 
     private fun runApkScan() {
@@ -365,7 +403,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
         val service = rootService
         if (service == null) {
-            pendingClean = true
+            pendingSmartClean = true
             dashboardState.value = dashboardState.value.copy(
                 connected = false,
                 ready = false,
@@ -449,13 +487,15 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun runNativeScan(cleanAfterScan: Boolean) {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        val cache = cacheService ?: run {
-            pendingClean = cleanAfterScan
-            connectServices()
-            return
-        }
-        val profiles = rootService ?: run {
-            pendingClean = cleanAfterScan
+        val cache = cacheService
+        val profiles = rootService
+        if (cache == null || profiles == null) {
+            pendingScanAfterConnect = cleanAfterScan
+            dashboardState.value = dashboardState.value.copy(
+                connected = rootService != null,
+                ready = false,
+                taskPhase = "正在连接扫描引擎，连接后自动继续垃圾扫描"
+            )
             connectServices()
             return
         }
@@ -550,9 +590,9 @@ class MiuixDashboardActivity : ComponentActivity() {
         val cacheEngine = cacheService
         val profileEngine = rootService
         if ((needsCacheEngine && cacheEngine == null) || (needsProfileEngine && profileEngine == null)) {
-            pendingClean = true
+            pendingSnapshotClean = true
             dashboardState.value = dashboardState.value.copy(
-                connected = false,
+                connected = rootService != null,
                 ready = false,
                 serviceText = "扫描快照仍有效，正在重连缺失的 Root 引擎…",
                 taskPhase = "等待引擎重连后继续按扫描结果清理"
@@ -738,6 +778,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun clearScanResult() {
+        pendingSnapshotClean = false
         clearSnapshotHandles()
         dashboardState.value = dashboardState.value.copy(scanCompleted = false)
     }
