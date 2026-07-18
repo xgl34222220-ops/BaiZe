@@ -708,6 +708,15 @@ class MiuixDashboardActivity : ComponentActivity() {
                                 .put("errors", failures)
                                 .put("elapsedSeconds", elapsed / 1000L)
                                 .put("result", resultLine)
+                                .put(
+                                    "categorySummary",
+                                    buildList {
+                                        if (deletedFiles > 0) add("扫描快照|$deletedBytes|$deletedFiles")
+                                        if (emptyFiles > 0) add("空文件|0|$emptyFiles")
+                                        if (emptyDirs > 0) add("空目录|0|$emptyDirs")
+                                        if (fragments > 0) add("残留碎片|0|$fragments")
+                                    }.joinToString(";")
+                                )
                                 .toString()
                         )
                     }
@@ -965,7 +974,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                             files = item.optInt("files", 0).coerceAtLeast(0),
                             emptyDirs = item.optInt("emptyDirs", 0).coerceAtLeast(0),
                             errors = item.optInt("errors", 0).coerceAtLeast(0),
-                            cleaned = item.optBoolean("cleaned")
+                            cleaned = item.optBoolean("cleaned"),
+                            categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
+                            apps = parseHistoryApps(item.optJSONArray("appDetails"))
                         )
                     )
                 }
@@ -982,6 +993,34 @@ class MiuixDashboardActivity : ComponentActivity() {
             )
         }
     }
+
+    private fun parseHistoryCategories(array: JSONArray?): List<HistoryCategoryUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val name = item.optString("name").trim()
+            if (name.isBlank()) continue
+            add(HistoryCategoryUiItem(name, item.optLong("bytes", 0L).coerceAtLeast(0L), item.optLong("files", 0L).coerceAtLeast(0L)))
+        }
+    }.sortedByDescending { it.bytes }
+
+    private fun parseHistoryApps(array: JSONArray?): List<HistoryAppUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val packageName = item.optString("packageName").trim()
+            if (!looksLikePackageName(packageName)) continue
+            add(
+                HistoryAppUiItem(
+                    packageName = packageName,
+                    label = appLabel(packageName),
+                    category = item.optString("category").trim(),
+                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                    files = item.optLong("files", 0L).coerceAtLeast(0L)
+                )
+            )
+        }
+    }.sortedByDescending { it.bytes }
 
     private fun refreshWhitelist() {
         val service = rootService ?: return
@@ -1061,8 +1100,13 @@ class MiuixDashboardActivity : ComponentActivity() {
         "fragment-clean" -> "残留碎片清理"
         "deep-scan" -> "完整深度扫描"
         "deep-clean" -> "完整深度清理"
-        "corpse-scan", "corpse-clean" -> "卸载残留清理"
-        else -> "白泽清理任务"
+        "corpse-scan" -> "卸载残留扫描"
+        "corpse-clean" -> "卸载残留清理"
+        "apk-scan" -> "安装包扫描"
+        "apk-clean" -> "安装包清理"
+        "profile-scan" -> "分类垃圾扫描"
+        "profile-clean" -> "分类垃圾清理"
+        else -> if (mode.isBlank()) "未知清理任务" else mode.replace('-', ' ').replaceFirstChar { it.uppercase() }
     }
 
     private fun historyTrigger(trigger: String): String = when {

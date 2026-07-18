@@ -2527,7 +2527,37 @@ if [ "$REQUEST_MODE" = "corpse-clean" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CO
   rm -f "$CORPSE_SCAN_STATE" "$CORPSE_SCAN_TARGETS"
 fi
 cp -f "$REPORT_FILE" "$LATEST_REPORT"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REQUEST_MODE" "$BYTES" "$TOTAL_FILES" "$EMPTY_DIRS" "$ERRORS" "$RESULT" "$TRIGGER" >>"$HISTORY_FILE"
+
+# Persist compact category/application details with each history row. Old eight-column rows remain compatible.
+HISTORY_ACTION=candidate
+[ "$MODE" = "clean" ] && HISTORY_ACTION=cleaned
+HISTORY_CATEGORIES=$(awk -F '\t' -v action="$HISTORY_ACTION" '
+  NR > 1 && $1 == action {
+    name=$3; gsub(/[|;\t\r\n]/, " ", name)
+    if (name == "") next
+    files[name]+=$4+0; bytes[name]+=$5+0
+  }
+  END { for (name in bytes) printf "%d\t%d\t%s\n", bytes[name], files[name], name }
+' "$REPORT_FILE" 2>/dev/null | sort -t "$(printf '\t')" -k1,1nr | head -n 8 | awk -F '\t' '
+  BEGIN { first=1 }
+  { if (!first) printf ";"; printf "%s|%s|%s", $3, $1, $2; first=0 }
+')
+HISTORY_APPS=$(awk -F '\t' '
+  NR > 1 {
+    package=$1; category=$2
+    gsub(/[|;\t\r\n]/, " ", package); gsub(/[|;\t\r\n]/, " ", category)
+    if (package == "") next
+    files[package]+=$3+0; bytes[package]+=$4+0
+    if (topcat[package] == "" || ($4+0) > topbytes[package]) { topcat[package]=category; topbytes[package]=$4+0 }
+  }
+  END { for (package in bytes) printf "%d\t%d\t%s\t%s\n", bytes[package], files[package], package, topcat[package] }
+' "$APP_ITEMS" 2>/dev/null | sort -t "$(printf '\t')" -k1,1nr | head -n 8 | awk -F '\t' '
+  BEGIN { first=1 }
+  { if (!first) printf ";"; printf "%s|%s|%s|%s", $3, $1, $2, $4; first=0 }
+')
+HISTORY_CATEGORIES=$(sanitize_report_field "$HISTORY_CATEGORIES")
+HISTORY_APPS=$(sanitize_report_field "$HISTORY_APPS")
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REQUEST_MODE" "$BYTES" "$TOTAL_FILES" "$EMPTY_DIRS" "$ERRORS" "$RESULT" "$TRIGGER" "$HISTORY_CATEGORIES" "$HISTORY_APPS" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 update_cumulative_totals
 update_module_description

@@ -405,7 +405,7 @@ class BaiZeProfileRootService : RootService() {
         }.getOrDefault(emptyList())
 
         lines.forEach { raw ->
-            val columns = raw.split('\t', limit = 8)
+            val columns = raw.split('\t', limit = 10)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
             val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
@@ -424,6 +424,8 @@ class BaiZeProfileRootService : RootService() {
                     .put("errors", columns[5].toIntOrNull()?.coerceAtLeast(0) ?: 0)
                     .put("result", columns[6].trim())
                     .put("trigger", columns.getOrNull(7)?.trim().orEmpty())
+                    .put("categoryDetails", parseHistoryCategoryDetails(columns.getOrNull(8).orEmpty()))
+                    .put("appDetails", parseHistoryAppDetails(columns.getOrNull(9).orEmpty()))
                     .put("cleaned", cleaned)
             )
         }
@@ -442,6 +444,41 @@ class BaiZeProfileRootService : RootService() {
             .put("lifetimeElapsed", totals.optLong("elapsed", 0L).coerceAtLeast(0L))
             .put("entries", entries)
             .toString()
+    }
+
+    private fun parseHistoryCategoryDetails(raw: String): JSONArray {
+        val result = JSONArray()
+        raw.split(';').asSequence().map { it.trim() }.filter { it.isNotBlank() }.take(12).forEach { token ->
+            val columns = token.split('|', limit = 3)
+            if (columns.size < 3) return@forEach
+            val name = columns[0].trim().take(80)
+            if (name.isBlank()) return@forEach
+            result.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("bytes", columns[1].toLongOrNull()?.coerceAtLeast(0L) ?: 0L)
+                    .put("files", columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L)
+            )
+        }
+        return result
+    }
+
+    private fun parseHistoryAppDetails(raw: String): JSONArray {
+        val result = JSONArray()
+        raw.split(';').asSequence().map { it.trim() }.filter { it.isNotBlank() }.take(12).forEach { token ->
+            val columns = token.split('|', limit = 4)
+            if (columns.size < 3) return@forEach
+            val packageName = columns[0].trim()
+            if (!PACKAGE_NAME.matches(packageName)) return@forEach
+            result.put(
+                JSONObject()
+                    .put("packageName", packageName)
+                    .put("bytes", columns[1].toLongOrNull()?.coerceAtLeast(0L) ?: 0L)
+                    .put("files", columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L)
+                    .put("category", columns.getOrNull(3)?.trim().orEmpty().take(80))
+            )
+        }
+        return result
     }
 
     private fun clearTaskHistoryJson(): String = runCatching {
@@ -479,7 +516,11 @@ class BaiZeProfileRootService : RootService() {
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val stateDir = File(STATE_DIR).apply { mkdirs() }
         val history = File(stateDir, "history.tsv")
-        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\n")
+        val categorySummary = input.optString("categorySummary")
+            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
+        val appSummary = input.optString("appSummary")
+            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
+        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\n")
         val retained = history.readLines().takeLast(100)
         val historyTemp = File(stateDir, "history.tsv.tmp.${Process.myPid()}")
         historyTemp.writeText(retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))

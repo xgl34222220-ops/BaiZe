@@ -167,7 +167,23 @@ data class HistoryUiItem(
     val files: Int,
     val emptyDirs: Int,
     val errors: Int,
-    val cleaned: Boolean
+    val cleaned: Boolean,
+    val categories: List<HistoryCategoryUiItem> = emptyList(),
+    val apps: List<HistoryAppUiItem> = emptyList()
+)
+
+data class HistoryCategoryUiItem(
+    val name: String,
+    val bytes: Long,
+    val files: Long
+)
+
+data class HistoryAppUiItem(
+    val packageName: String,
+    val label: String,
+    val category: String,
+    val bytes: Long,
+    val files: Long
 )
 
 data class SchedulerUiState(
@@ -454,7 +470,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 31", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 32", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -938,27 +954,86 @@ private fun StatColumn(value: String, label: String) {
 @Composable
 private fun HistoryCard(item: HistoryUiItem) {
     val context = LocalContext.current
+    var expanded by rememberSaveable(item.time, item.title) { mutableStateOf(false) }
+    val hasDetails = item.categories.isNotEmpty() || item.apps.isNotEmpty()
+    val categorySummary = item.categories.take(3).joinToString(" · ") {
+        "${it.name} ${Formatter.formatFileSize(context, it.bytes)}"
+    }
+    val appSummary = item.apps.take(2).joinToString(" · ") {
+        "${it.label} ${Formatter.formatFileSize(context, it.bytes)}"
+    }
     ResultSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        Modifier.padding(horizontal = 18.dp).fillMaxWidth()
+            .clickable(enabled = hasDetails) { expanded = !expanded },
         shape = RoundedCornerShape(26.dp),
         contentPadding = PaddingValues(17.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(50.dp).clip(RoundedCornerShape(16.dp)).background(if (item.errors > 0) Color(0xFFFFC8C8).copy(.45f) else MaterialTheme.colorScheme.primary.copy(.13f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(if (item.errors > 0) Icons.Rounded.ErrorOutline else Icons.Rounded.CleaningServices, null, tint = if (item.errors > 0) Color(0xFFC43743) else MaterialTheme.colorScheme.primary)
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(50.dp).clip(RoundedCornerShape(16.dp)).background(if (item.errors > 0) Color(0xFFFFC8C8).copy(.45f) else MaterialTheme.colorScheme.primary.copy(.13f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(if (item.errors > 0) Icons.Rounded.ErrorOutline else Icons.Rounded.CleaningServices, null, tint = if (item.errors > 0) Color(0xFFC43743) else MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("${item.time} · ${item.trigger}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    Text(
+                        when {
+                            categorySummary.isNotBlank() -> categorySummary
+                            item.bytes == 0L && item.files == 0 -> if (item.cleaned) "未发现可清理内容" else "扫描未发现垃圾"
+                            else -> item.result
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = if (expanded) 4 else 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (appSummary.isNotBlank()) {
+                        Text(appSummary, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text(
+                        when {
+                            item.errors > 0 -> "异常 ${item.errors}"
+                            item.cleaned && item.bytes > 0 -> "已清理"
+                            item.cleaned -> "无垃圾"
+                            item.files > 0 -> "发现 ${item.files} 项"
+                            else -> "未发现"
+                        },
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("${item.time} · ${item.trigger}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-                Text("${item.files} 个项目 · 空目录 ${item.emptyDirs} · 异常 ${item.errors}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                Text(if (item.cleaned) "已清理" else "仅扫描", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (expanded && hasDetails) {
+                HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(.08f))
+                if (item.categories.isNotEmpty()) {
+                    Text("垃圾分类", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    item.categories.forEach { detail ->
+                        Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(detail.name, modifier = Modifier.weight(1f), fontSize = 11.sp)
+                            Text("${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                if (item.apps.isNotEmpty()) {
+                    Text("涉及应用", modifier = Modifier.padding(top = 12.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    item.apps.forEach { app ->
+                        Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(app.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Text(app.category.ifBlank { app.packageName }, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text("${app.files} 项 · ${Formatter.formatFileSize(context, app.bytes)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
             }
         }
     }
