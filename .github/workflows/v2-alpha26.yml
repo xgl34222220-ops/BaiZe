@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -88,3 +88,13 @@ jobs:
             v2/scripts/package-module.sh
             v2/README.md
             v2/ALPHA26-CHANGES.md
+
+      - name: Commit verified Alpha 26 sources
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2
+          if ! git diff --cached --quiet; then
+            git commit -m 'Fix RootService recovery and blocked dashboard controls'
+            git push origin HEAD:v2-alpha26
+          fi
