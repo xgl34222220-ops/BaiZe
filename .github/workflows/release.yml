@@ -3,6 +3,8 @@ name: Validate, build and release
 on:
   push:
     branches: [v2-alpha18]
+  pull_request:
+    branches: [v2-alpha18]
   workflow_dispatch:
 
 permissions:
