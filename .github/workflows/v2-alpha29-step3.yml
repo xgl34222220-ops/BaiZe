@@ -1,0 +1,78 @@
+name: BaiZe v2 Alpha 29 Step 3
+
+on:
+  push:
+    branches: [v2-alpha29]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step3-details.py'
+      - '.github/workflows/v2-alpha29-step3.yml'
+  pull_request:
+    branches: [v2-alpha28]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step3-details.py'
+      - '.github/workflows/v2-alpha29-step3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  category-details:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha29
+          fetch-depth: 0
+
+      - name: Apply category detail UI
+        run: |
+          if ! grep -q 'val categories: List<AppJunkCategoryUiItem>' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt; then
+            python3 v2/scripts/apply-alpha29-step3-details.py
+          else
+            echo 'Alpha 29 category detail UI already committed'
+          fi
+
+      - name: Validate category details
+        run: |
+          grep -q 'data class AppJunkCategoryUiItem' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'AppJunkCardContent(item)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'category.optLong("errors"' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q 'AnimatedVisibility' v2/app/src/main/java/io/github/xgl34222220/baize/AppJunkResultComponents.kt
+          grep -q 'friendlyCategory' v2/app/src/main/java/io/github/xgl34222220/baize/AppJunkResultComponents.kt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Commit verified category detail sources
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add expandable per-category application cleanup details'
+            git push origin HEAD:v2-alpha29
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alpha29-Step3-App
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
