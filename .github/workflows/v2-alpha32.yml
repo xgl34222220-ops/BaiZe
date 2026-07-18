@@ -99,3 +99,5 @@ jobs:
         with:
           name: BaiZe-v2-Alpha32
           path: v2/dist/BaiZe-v2-Alpha32-Module.zip
+
+# Trigger a push build to commit the verified source changes.
