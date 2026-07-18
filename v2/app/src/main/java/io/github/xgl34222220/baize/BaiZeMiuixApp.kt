@@ -96,6 +96,7 @@ import com.google.android.material.color.MaterialColors
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
+import io.github.xgl34222220.baize.ui.clean.CleanRoute
 import io.github.xgl34222220.baize.ui.home.HomeRoute
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
@@ -291,7 +292,7 @@ data class DashboardActions(
 
 private enum class BaiZePage(val title: String, val icon: ImageVector) {
     Home("首页", Icons.Rounded.Home),
-    Plan("计划", Icons.Rounded.CalendarMonth),
+    Clean("清理", Icons.Rounded.CleaningServices),
     Records("记录", Icons.Rounded.History),
     Settings("设置", Icons.Rounded.Settings)
 }
@@ -320,7 +321,7 @@ fun BaiZeMiuixApp(
                 ) {
                     when (page) {
                         BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions)
-                        BaiZePage.Plan -> PlanPage(scheduler, actions)
+                        BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
                         BaiZePage.Records -> RecordsPage(state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
@@ -335,7 +336,7 @@ fun BaiZeMiuixApp(
                     MiuiXBackdrop(dark, amoled)
                     when (page) {
                         BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions)
-                        BaiZePage.Plan -> PlanPage(scheduler, actions)
+                        BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
                         BaiZePage.Records -> RecordsPage(state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
