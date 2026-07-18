@@ -36,7 +36,7 @@ object NativeNotifier {
         val contentIntent = PendingIntent.getActivity(
             context,
             2101,
-            Intent(context, DashboardActivity::class.java)
+            Intent(context, MiuixDashboardActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

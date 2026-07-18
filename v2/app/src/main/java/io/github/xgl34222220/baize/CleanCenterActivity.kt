@@ -23,8 +23,8 @@ class CleanCenterActivity : AppCompatActivity() {
         binding.backButton.setOnClickListener { finish() }
         binding.quickCleanButton.setOnClickListener {
             startActivity(
-                Intent(this, DashboardActivity::class.java)
-                    .putExtra(DashboardActivity.EXTRA_RUN_SMART_CLEAN, true)
+                Intent(this, MiuixDashboardActivity::class.java)
+                    .putExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN, true)
                     .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             )
             finish()

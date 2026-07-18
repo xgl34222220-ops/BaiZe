@@ -21,9 +21,10 @@
         <activity android:name=".CleanCenterActivity" android:exported="false" />
         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
+        <activity android:name=".DashboardActivity" android:exported="false" />
 
         <activity
-            android:name=".DashboardActivity"
+            android:name=".MiuixDashboardActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
