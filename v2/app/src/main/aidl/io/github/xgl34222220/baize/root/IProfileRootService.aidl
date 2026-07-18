@@ -9,6 +9,8 @@ interface IProfileRootService {
 
     String runModuleTask(String mode);
     String getModuleState();
+    String getTaskHistory(int limit);
+    String clearTaskHistory();
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
 
