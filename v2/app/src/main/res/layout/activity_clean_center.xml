@@ -3,36 +3,41 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_app_gradient">
+    android:background="?android:attr/colorBackground">
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:clipToPadding="false"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
         <LinearLayout
+            android:id="@+id/pageContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="18dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="18dp"
-            android:paddingBottom="34dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="28dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
+                android:minHeight="62dp"
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/backButton"
-                    style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="46dp"
+                    android:layout_height="46dp"
                     android:contentDescription="返回"
+                    app:backgroundTint="?attr/colorSurface"
                     app:icon="@drawable/ic_arrow_back"
-                    app:iconTint="@color/baize_text_primary" />
+                    app:iconSize="23dp"
+                    app:iconTint="?attr/colorOnSurface" />
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -44,25 +49,42 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="清理中心"
-                        android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="0.16"
+                        android:text="CLEAN CENTER"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="9sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="-0.02"
+                        android:text="清理明细"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="28sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="完整功能，不再只有应用缓存"
-                        android:textColor="@color/baize_text_secondary"
-                        android:textSize="13sp" />
+                        android:layout_marginTop="4dp"
+                        android:text="自动处理安全项，危险项目单独确认"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.BaiZe.GlassCard"
+                android:id="@+id/heroCard"
+                style="@style/Widget.BaiZe.SimpleCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                app:cardBackgroundColor="@color/baize_primary_container">
+                android:layout_marginTop="18dp"
+                app:cardCornerRadius="30dp"
+                app:cardBackgroundColor="?attr/colorSurface">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -70,405 +92,658 @@
                     android:orientation="vertical"
                     android:padding="20dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="智能清理"
-                        android:textColor="@color/baize_text_primary"
-                        android:textSize="21sp"
-                        android:textStyle="bold" />
-
-                    <TextView
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="7dp"
-                        android:text="先扫描低风险分类，汇总后由你确认；深度规则与卸载残留始终单独授权。"
-                        android:textColor="#CDE4F7"
-                        android:textSize="13sp" />
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/smartScanButton"
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="68dp"
+                            android:layout_height="68dp"
+                            app:cardBackgroundColor="?attr/colorPrimaryContainer"
+                            app:cardCornerRadius="23dp"
+                            app:cardElevation="0dp">
+
+                            <ImageView
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:layout_gravity="center"
+                                android:contentDescription="智能清理"
+                                android:src="@drawable/ic_shield_check"
+                                app:tint="?attr/colorPrimary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="智能安全清理"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="21sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="缓存、空项目、规则垃圾和碎片自动归类；白名单与路径保护始终生效。"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <com.google.android.material.chip.ChipGroup
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:text="开始智能扫描"
-                        app:backgroundTint="@color/baize_primary" />
+                        android:layout_marginTop="15dp"
+                        app:chipSpacingHorizontal="6dp"
+                        app:chipSpacingVertical="5dp">
+
+                        <com.google.android.material.chip.Chip
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:text="白名单保护"
+                            android:textColor="?attr/colorOnPrimaryContainer"
+                            android:textSize="10sp"
+                            app:chipBackgroundColor="?attr/colorPrimaryContainer"
+                            app:chipMinHeight="31dp" />
+
+                        <com.google.android.material.chip.Chip
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:text="软链接防护"
+                            android:textColor="?attr/colorOnSecondaryContainer"
+                            android:textSize="10sp"
+                            app:chipBackgroundColor="?attr/colorSecondaryContainer"
+                            app:chipMinHeight="31dp" />
+
+                        <com.google.android.material.chip.Chip
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:clickable="false"
+                            android:text="挂载点保护"
+                            android:textColor="?attr/colorOnTertiaryContainer"
+                            android:textSize="10sp"
+                            app:chipBackgroundColor="?attr/colorTertiaryContainer"
+                            app:chipMinHeight="31dp" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/quickCleanButton"
+                            android:layout_width="0dp"
+                            android:layout_height="56dp"
+                            android:layout_weight="1.35"
+                            android:text="立即清理"
+                            app:backgroundTint="?attr/colorPrimary"
+                            app:cornerRadius="19dp"
+                            app:icon="@drawable/ic_shield_check"
+                            app:iconGravity="textStart"
+                            app:iconPadding="9dp"
+                            app:iconTint="?attr/colorOnPrimary" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/smartScanButton"
+                            style="@style/Widget.Material3.Button.FilledTonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="56dp"
+                            android:layout_marginStart="9dp"
+                            android:layout_weight="1"
+                            android:text="仅扫描"
+                            app:cornerRadius="19dp" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="清理分类"
-                android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
-
-            <TextView
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="3dp"
-                android:text="每类均提供扫描快照、分页详情、明确勾选和清理前二次校验"
-                android:textColor="@color/baize_text_secondary"
-                android:textSize="13sp" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cacheCard"
-                style="@style/Widget.BaiZe.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                android:layout_marginStart="3dp"
+                android:layout_marginTop="26dp"
+                android:layout_marginEnd="3dp"
+                android:gravity="bottom"
+                android:orientation="horizontal">
 
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_blue"
-                        android:gravity="center"
-                        android:text="缓"
-                        android:textColor="@color/baize_primary"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="应用缓存"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="内部 cache、code_cache 与外部缓存"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
-                    </LinearLayout>
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="低风险  ›"
-                        android:textColor="@color/baize_success"
-                        android:textSize="12sp" />
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="0.14"
+                        android:text="DAILY CLEAN"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="8sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="日常清理"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="19sp"
+                        android:textStyle="bold" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="点击查看候选项"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="10sp" />
+            </LinearLayout>
 
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/emptyCard"
-                style="@style/Widget.BaiZe.GlassCard"
+                style="@style/Widget.BaiZe.SimpleCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                app:cardCornerRadius="27dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_green"
-                        android:gravity="center"
-                        android:text="空"
-                        android:textColor="@color/baize_success"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
+                    android:orientation="vertical"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp">
 
                     <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
+                        android:id="@+id/cacheCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="76dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorPrimaryContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_app_cache"
+                                app:tint="?attr/colorPrimary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="应用缓存"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="内部 cache、code_cache 与外部缓存"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="空项目"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="3dp"
+                            android:text="低风险"
+                            android:textColor="?attr/colorSecondary"
+                            android:textSize="10sp"
                             android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="空文件与空目录，保护占位文件"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
                     </LinearLayout>
 
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="57dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/emptyCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="76dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorSecondaryContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_empty_items"
+                                app:tint="?attr/colorSecondary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="空文件与空目录"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="识别空项目并保护公共媒体目录"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="3dp"
+                            android:text="低风险"
+                            android:textColor="?attr/colorSecondary"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="57dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/rulesCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="76dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorTertiaryContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_rule_junk"
+                                app:tint="?attr/colorTertiary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="规则垃圾"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="应用规则、隐藏垃圾与系统日志"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="3dp"
+                            android:text="分级"
+                            android:textColor="?attr/colorTertiary"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="57dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/fragmentsCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="76dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorTertiaryContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_fragments"
+                                app:tint="?attr/colorTertiary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="残留碎片"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="过期临时文件、转储与中断下载"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="3dp"
+                            android:text="保留期"
+                            android:textColor="?attr/colorTertiary"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:layout_marginTop="26dp"
+                android:layout_marginEnd="3dp"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="低风险  ›"
-                        android:textColor="@color/baize_success"
-                        android:textSize="12sp" />
+                        android:fontFamily="sans-serif-medium"
+                        android:letterSpacing="0.14"
+                        android:text="MANUAL TOOLS"
+                        android:textColor="?attr/colorError"
+                        android:textSize="8sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="高级清理"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="19sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="执行前二次确认"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.BaiZe.SimpleCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                app:cardCornerRadius="27dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp">
+
+                    <LinearLayout
+                        android:id="@+id/corpsesCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="78dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorTertiaryContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_uninstall_residue"
+                                app:tint="?attr/colorTertiary" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="卸载残留"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="核对 data、obb、media 与私有目录"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="57dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:id="@+id/deepCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="78dp"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.card.MaterialCardView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            app:cardBackgroundColor="?attr/colorErrorContainer"
+                            app:cardCornerRadius="15dp"
+                            app:cardElevation="0dp">
+                            <ImageView
+                                android:layout_width="23dp"
+                                android:layout_height="23dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_deep_clean"
+                                app:tint="?attr/colorError" />
+                        </com.google.android.material.card.MaterialCardView>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="13dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="完整深度清理"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:ellipsize="end"
+                                android:maxLines="1"
+                                android:text="完整规则库扫描并按风险分级"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.card.MaterialCardView
-                android:id="@+id/rulesCard"
-                style="@style/Widget.BaiZe.GlassCard"
+                style="@style/Widget.BaiZe.SimpleCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
+                android:layout_marginTop="12dp"
+                app:cardBackgroundColor="?attr/colorErrorContainer"
+                app:cardCornerRadius="20dp">
 
-                <LinearLayout
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_cyan"
-                        android:gravity="center"
-                        android:text="规"
-                        android:textColor="@color/baize_secondary"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="规则垃圾"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="隐藏垃圾、系统/OEM 日志与扩展规则"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="分级  ›"
-                        android:textColor="@color/baize_warning"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/fragmentsCard"
-                style="@style/Widget.BaiZe.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_orange"
-                        android:gravity="center"
-                        android:text="碎"
-                        android:textColor="@color/baize_warning"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="残留碎片"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="过期临时文件、旋转日志与中断下载"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="保留期  ›"
-                        android:textColor="@color/baize_warning"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/deepCard"
-                style="@style/Widget.BaiZe.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_violet"
-                        android:gravity="center"
-                        android:text="深"
-                        android:textColor="@color/baize_violet"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="深度规则"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="4,746 条规则、SHA 授权与风险审计"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="高风险  ›"
-                        android:textColor="@color/baize_violet"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/corpsesCard"
-                style="@style/Widget.BaiZe.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:padding="18dp">
-
-                    <TextView
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_category_red"
-                        android:gravity="center"
-                        android:text="残"
-                        android:textColor="@color/baize_error"
-                        android:textSize="17sp"
-                        android:textStyle="bold" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="14dp"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="卸载残留"
-                            android:textColor="@color/baize_text_primary"
-                            android:textSize="17sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="Android/data 与 Android/obb 残留"
-                            android:textColor="@color/baize_text_secondary"
-                            android:textSize="13sp" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="复核  ›"
-                        android:textColor="@color/baize_error"
-                        android:textSize="12sp" />
-                </LinearLayout>
+                    android:paddingStart="15dp"
+                    android:paddingTop="13dp"
+                    android:paddingEnd="15dp"
+                    android:paddingBottom="13dp"
+                    android:text="高级项目先展示扫描候选，不会直接删除；确认清理时仍会再次校验白名单、软链接、挂载点和文件大小。"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:textSize="11sp"
+                    android:lineSpacingExtra="2dp" />
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
