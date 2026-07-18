@@ -8,6 +8,8 @@ on:
       - 'cleaner.sh'
       - 'config/**'
       - '.github/workflows/v2-alpha19.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
