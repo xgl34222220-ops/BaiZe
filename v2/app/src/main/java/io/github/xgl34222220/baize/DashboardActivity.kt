@@ -60,7 +60,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 12"
+        binding.versionText.text = "Alpha 12.1"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -151,17 +151,26 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun showSettingsMenu() {
-        runCatching {
-            refreshWhitelist()
-            renderThemeSummary()
-            show(binding.settingsPage)
-        }.onFailure { error ->
-            Toast.makeText(
-                this,
-                "设置页打开失败：${error.message ?: error.javaClass.simpleName}",
-                Toast.LENGTH_LONG
-            ).show()
+        // Do not animate or construct a dialog here. Some OEM ROMs validate hidden Material sliders
+        // only when the page becomes visible; normalize every discrete value first, then switch pages
+        // synchronously so a bad legacy config cannot crash the render pass.
+        runCatching { normalizeDiscreteSliders() }
+        runCatching { refreshWhitelist() }
+        runCatching { renderThemeSummary() }
+
+        val pages = listOf(binding.homePage, binding.planPage, binding.recordsPage, binding.settingsPage)
+        pages.forEach { candidate ->
+            candidate.animate().cancel()
+            candidate.alpha = 1f
+            candidate.translationY = 0f
+            candidate.visibility = if (candidate === binding.settingsPage) View.VISIBLE else View.GONE
         }
+        binding.settingsPage.scrollTo(0, 0)
+    }
+
+    private fun normalizeDiscreteSliders() {
+        binding.minBatterySlider.value = snapToStep(binding.minBatterySlider.value.toInt(), 0, 100, 5)
+        binding.largeFileSlider.value = snapToStep(binding.largeFileSlider.value.toInt(), 16, 2048, 16)
     }
 
     private fun setupThemePicker() {
@@ -417,9 +426,9 @@ class DashboardActivity : AppCompatActivity() {
             binding.screenOffSwitch.isChecked = json.optInt("screen_off_only", 1) == 1
             binding.chargingSwitch.isChecked = json.optInt("charging_only", 0) == 1
             binding.deviceIdleSwitch.isChecked = json.optInt("device_idle_only", 0) == 1
-            binding.minBatterySlider.value = json.optInt("min_battery", 25).coerceIn(0, 100).toFloat()
+            binding.minBatterySlider.value = snapToStep(json.optInt("min_battery", 25), 0, 100, 5)
             binding.notificationSwitch.isChecked = json.optInt("notify_on_complete", 1) == 1
-            binding.largeFileSlider.value = json.optInt("max_file_mb", 256).coerceIn(16, 2048).toFloat()
+            binding.largeFileSlider.value = snapToStep(json.optInt("max_file_mb", 256), 16, 2048, 16)
             binding.fragmentDaysSlider.value = json.optInt("fragment_days", 7).coerceIn(0, 30).toFloat()
             loadingConfig = false
             binding.intervalText.text = "每 ${binding.intervalSlider.value.toInt()} 小时"
@@ -495,6 +504,13 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun fragmentRetentionLabel(days: Int): String =
         if (days <= 0) "碎片立即清理" else "碎片保留 $days 天"
+
+    private fun snapToStep(value: Int, minimum: Int, maximum: Int, step: Int): Float {
+        val clamped = value.coerceIn(minimum, maximum)
+        val offset = clamped - minimum
+        val snapped = minimum + ((offset + step / 2) / step) * step
+        return snapped.coerceIn(minimum, maximum).toFloat()
+    }
 
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()

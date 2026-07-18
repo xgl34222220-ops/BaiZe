@@ -64,6 +64,9 @@ object Alpha7UiPolish {
     }
 
     private fun applyGlassTree(view: View, activity: Activity) {
+        // Keep the settings subtree on stock Material rendering for this hotfix. A few OEM GPU and
+        // Material combinations crash while revealing hidden sliders inside custom clipped drawables.
+        if (view.id == R.id.settingsPage) return
         if (view is MaterialCardView) {
             val variant = when (view.tag?.toString()) {
                 "glass:hero" -> LiquidGlassDrawable.Variant.HERO
@@ -98,7 +101,7 @@ object Alpha7UiPolish {
         val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 12"
+            text = "Alpha 12.1"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)
