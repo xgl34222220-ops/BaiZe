@@ -43,4 +43,4 @@ unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成 Alpha 13 主题 UI、应用白名单、一键清理、真实调度器与完整规则库模块：$OUTPUT"
+echo "已生成液态玻璃 UI、一键清理、真实调度器、内置 App 与完整规则库的一体化模块：$OUTPUT"
