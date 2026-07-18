@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21200
-        versionName = "2.0.0-alpha32"
+        versionCode = 21300
+        versionName = "2.0.0-alpha33"
     }
 
     buildFeatures {
@@ -59,7 +59,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
@@ -69,6 +71,7 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("com.materialkolor:material-kolor:2.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
