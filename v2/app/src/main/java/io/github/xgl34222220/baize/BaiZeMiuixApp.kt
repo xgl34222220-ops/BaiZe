@@ -98,6 +98,7 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.CleanRoute
 import io.github.xgl34222220.baize.ui.home.HomeRoute
+import io.github.xgl34222220.baize.ui.history.HistoryRoute
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidPrimaryButton
@@ -322,7 +323,7 @@ fun BaiZeMiuixApp(
                     when (page) {
                         BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
-                        BaiZePage.Records -> RecordsPage(state, actions)
+                        BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
                     MaterialFloatingDock(
@@ -337,7 +338,7 @@ fun BaiZeMiuixApp(
                     when (page) {
                         BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
-                        BaiZePage.Records -> RecordsPage(state, actions)
+                        BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
                     MiuixLiquidDock(
@@ -495,7 +496,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Liquid Glass · Alpha 36",
+                "Miuix × Liquid Glass · Alpha 37",
                 actions.refresh
             )
         }
@@ -908,7 +909,7 @@ private fun ScheduleRow(
 }
 
 @Composable
-private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
+private fun LegacyRecordsPage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LazyColumn(
