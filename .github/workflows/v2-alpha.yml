@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha12]
+    branches: [v2-alpha13]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
@@ -24,19 +24,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Alpha 12 branch
+      - name: Checkout Alpha 13 branch
         uses: actions/checkout@v4
         with:
-          ref: v2-alpha12
+          ref: v2-alpha13
           fetch-depth: 0
 
-      - name: Apply Alpha 12 in-process settings patch
-        if: ${{ hashFiles('v2/scripts/alpha12-source-patch.py') != '' }}
-        run: python3 v2/scripts/alpha12-source-patch.py
-
-      - name: Correct Alpha 12 Kotlin escapes
-        if: ${{ hashFiles('v2/scripts/alpha12-compile-fix.py') != '' }}
-        run: python3 v2/scripts/alpha12-compile-fix.py
+      - name: Apply Alpha 13 product patch
+        if: ${{ hashFiles('v2/scripts/alpha13-source-patch.py') != '' }}
+        run: python3 v2/scripts/alpha13-source-patch.py
 
       - name: Validate all cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -64,66 +60,64 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha12.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha13.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify in-process settings single action UI scheduler and rules
+      - name: Verify Alpha 13 UI whitelist scheduler and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha12-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha13-Module.zip
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha12'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha13'
           unzip -p "$ZIP" customize.sh | grep -q 'rm -rf "$OLD_MOD" "$OLD_UPDATE" "$OLD_STATE"'
           ! unzip -p "$ZIP" uninstall.sh | grep -q 'OLD_MOD'
           unzip -p "$ZIP" cleaner.sh | grep -q 'resolve_rule_target'
           unzip -p "$ZIP" cleaner.sh | grep -q 'rule_target_once'
-          ! grep -q 'SettingsActivity' app/src/main/AndroidManifest.xml
-          grep -q 'showSettingsMenu()' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          grep -q 'saveSettingsPatch' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          grep -q 'CrashRecorder.install' app/src/main/java/io/github/xgl34222220/baize/BaiZeApplication.kt
-          grep -q 'object CrashRecorder' app/src/main/java/io/github/xgl34222220/baize/CrashRecorder.kt
-          ! grep -q 'startActivity(Intent(this, SettingsActivity::class.java))' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          ! grep -q 'scanOnlyButton' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          ! grep -q 'scanOnlyButton' app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'WhitelistActivity' app/src/main/AndroidManifest.xml
+          grep -q 'getWhitelistPackages' app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+          grep -q 'saveWhitelistPackages' app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          grep -q 'manageWhitelistButton' app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'saveProtectionButton' app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'Theme.Material3.DayNight.NoActionBar' app/src/main/res/values/themes.xml
+          grep -q 'class WhitelistActivity' app/src/main/java/io/github/xgl34222220/baize/WhitelistActivity.kt
           grep -q '立即智能清理' app/src/main/res/layout/activity_dashboard.xml
           grep -q 'minimumHeight = dp(92)' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
           grep -q 'class LiquidGlassDrawable' app/src/main/java/io/github/xgl34222220/baize/ui/LiquidGlassDrawable.kt
           grep -q 'safeRuleSyntax' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           grep -q 'fragmentNameMatches' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           ! grep -q '/data/adb/modules/safesweep/config' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
-          grep -q 'Theme.BaiZe.Monet' app/src/main/res/values/themes.xml
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-      - name: Commit verified Alpha 12 sources
-        if: steps.app_build.outcome == 'success' && (hashFiles('v2/scripts/alpha12-source-patch.py') != '' || hashFiles('v2/scripts/alpha12-compile-fix.py') != '')
+      - name: Commit verified Alpha 13 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha13-source-patch.py') != ''
         run: |
-          rm -f v2/scripts/alpha12-source-patch.py v2/scripts/alpha12-compile-fix.py
+          rm -f v2/scripts/alpha13-source-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Alpha 12 in-process settings and crash diagnostics'
-          git pull --rebase origin v2-alpha12
-          git push origin HEAD:v2-alpha12
+          git commit -m 'Finalize Alpha 13 UI and whitelist management'
+          git pull --rebase origin v2-alpha13
+          git push origin HEAD:v2-alpha13
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha12
+          name: BaiZe-v2-Alpha13
           if-no-files-found: warn
           path: |
-            v2/build-alpha12.log
-            v2/dist/BaiZe-v2-Alpha12-Module.zip
+            v2/build-alpha13.log
+            v2/dist/BaiZe-v2-Alpha13-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
