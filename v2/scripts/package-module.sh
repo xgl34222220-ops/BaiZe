@@ -7,7 +7,7 @@ OUT="$ROOT/dist"
 MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-OUTPUT="$OUT/BaiZe-v2-Alpha28-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha29-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 
@@ -43,4 +43,4 @@ unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成 Alpha 28 原生扫描快照、单遍历安全扫描与完整规则库模块：$OUTPUT"
+echo "已生成 Alpha 29 应用图标、分类清理明细与完整清理引擎模块：$OUTPUT"
