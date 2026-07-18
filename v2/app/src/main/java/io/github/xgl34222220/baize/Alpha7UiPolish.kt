@@ -17,7 +17,7 @@ import com.google.android.material.progressindicator.CircularProgressIndicator
 import io.github.xgl34222220.baize.ui.LiquidBackdropDrawable
 import io.github.xgl34222220.baize.ui.LiquidGlassDrawable
 
-/** Stable runtime visual pass for the Alpha 10 MIUI X redesign. */
+/** Runtime pass for the Alpha 15 MIUIx layout: opaque content cards, glass only where it helps. */
 object Alpha7UiPolish {
     fun install(application: Application) {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -38,24 +38,24 @@ object Alpha7UiPolish {
         content?.getChildAt(0)?.background = LiquidBackdropDrawable(activity)
 
         if (activity is DashboardActivity) markDashboardSurfaces(activity)
-        applyGlassTree(activity.window.decorView, activity)
+        applySurfaceTree(activity.window.decorView, activity)
 
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
-            is WhitelistActivity -> Unit
+            is WhitelistActivity, is ThemeSettingsActivity -> Unit
             is CacheActivity, is ProfileActivity, is SmartScanActivity -> polishDetail(activity)
         }
     }
 
     private fun markDashboardSurfaces(activity: Activity) {
         markCard(activity, R.id.freeSpaceText, "glass:hero")
-        markCard(activity, R.id.serviceStatusText, "glass:strip")
-        markCard(activity, R.id.schedulerStatusText, "glass:strip")
-        markCard(activity, R.id.scheduleSwitch, "glass:hero")
-        markCard(activity, R.id.taskStatusText, "glass:card")
-        markCard(activity, R.id.recordSummaryText, "glass:card")
-        markCard(activity, R.id.settingsStatusText, "glass:card")
+        markCard(activity, R.id.serviceStatusText, "simple")
+        markCard(activity, R.id.schedulerStatusText, "simple")
+        markCard(activity, R.id.scheduleSwitch, "simple")
+        markCard(activity, R.id.taskStatusText, "simple")
+        markCard(activity, R.id.recordSummaryText, "simple")
+        markCard(activity, R.id.settingsStatusText, "simple")
     }
 
     private fun markCard(activity: Activity, childId: Int, tag: String) {
@@ -64,57 +64,53 @@ object Alpha7UiPolish {
         (node as? MaterialCardView)?.tag = tag
     }
 
-    private fun applyGlassTree(view: View, activity: Activity) {
-        // Keep the settings subtree on stock Material rendering for this hotfix. A few OEM GPU and
-        // Material combinations crash while revealing hidden sliders inside custom clipped drawables.
-        if (view.id == R.id.settingsPage) return
+    private fun applySurfaceTree(view: View, activity: Activity) {
         if (view is MaterialCardView) {
-            val variant = when (view.tag?.toString()) {
-                "glass:hero" -> LiquidGlassDrawable.Variant.HERO
-                "glass:strip" -> LiquidGlassDrawable.Variant.STRIP
-                "glass:active" -> LiquidGlassDrawable.Variant.ACTIVE
-                else -> LiquidGlassDrawable.Variant.CARD
+            val tag = view.tag?.toString().orEmpty()
+            val glass = ThemeManager.isGlassEnabled(activity) && tag == "glass:hero"
+            if (glass) {
+                view.setCardBackgroundColor(Color.TRANSPARENT)
+                view.strokeWidth = 0
+                view.cardElevation = 0f
+                view.background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.HERO)
+                view.elevation = dp(activity, 7).toFloat()
+                view.translationZ = dp(activity, 1).toFloat()
+                view.clipToOutline = true
+            } else {
+                val surface = MaterialColors.getColor(view, com.google.android.material.R.attr.colorSurface)
+                view.background = null
+                view.setCardBackgroundColor(surface)
+                view.strokeWidth = 0
+                view.cardElevation = 0f
+                view.elevation = 0f
+                view.translationZ = 0f
             }
-            view.setCardBackgroundColor(Color.TRANSPARENT)
-            view.strokeWidth = 0
-            view.cardElevation = 0f
-            view.background = LiquidGlassDrawable(activity, variant)
-            view.elevation = dp(activity, if (variant == LiquidGlassDrawable.Variant.HERO) 10 else 4).toFloat()
-            view.translationZ = dp(activity, 1).toFloat()
-            view.clipToOutline = true
         }
         if (view is MaterialButton) {
             view.stateListAnimator = null
-            view.elevation = if (
-                view.id == R.id.cleanNowButton ||
-                view.id == R.id.cleanAllButton ||
-                view.id == R.id.savePlanButton
-            ) dp(activity, 6).toFloat() else 0f
+            view.elevation = 0f
         }
         if (view is ViewGroup) {
-            for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
+            for (index in 0 until view.childCount) applySurfaceTree(view.getChildAt(index), activity)
         }
     }
 
     private fun polishDashboard(activity: Activity) {
-        val primary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, Color.rgb(90, 168, 255))
-        val secondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSecondary, Color.rgb(81, 214, 198))
-        val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
+        val primary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorPrimary, Color.rgb(11, 103, 209))
+        val secondary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorSecondary, Color.rgb(82, 110, 170))
+        val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(110, 102, 165))
+        val onPrimary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnPrimary, Color.WHITE)
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 14"
+            text = "Alpha 15"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)
         activity.findViewById<MaterialButton>(R.id.cleanNowButton)?.apply {
-            background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.BUTTON)
-            backgroundTintList = null
-            setTextColor(Color.WHITE)
+            setTextColor(onPrimary)
         }
-                activity.findViewById<MaterialButton>(R.id.savePlanButton)?.apply {
-            background = LiquidGlassDrawable(activity, LiquidGlassDrawable.Variant.BUTTON)
-            backgroundTintList = null
-            setTextColor(Color.WHITE)
+        activity.findViewById<MaterialButton>(R.id.savePlanButton)?.apply {
+            setTextColor(onPrimary)
         }
 
         styleTool(
@@ -129,14 +125,14 @@ object Alpha7UiPolish {
             R.id.corpsesToolButton,
             R.drawable.ic_uninstall_residue,
             secondary,
-            "卸载残留\n扫描后可一键清理 data / obb 残留"
+            "卸载残留\n扫描 Android data / obb / media 无主目录"
         )
         styleTool(
             activity,
             R.id.deepToolButton,
             R.drawable.ic_deep_clean,
             tertiary,
-            "深度清理\n4,746 条规则扫描，安全项一键清理"
+            "深度清理\n完整规则扫描，危险项目仍需确认"
         )
         activity.findViewById<TextView>(R.id.recentTaskText)?.visibility = View.GONE
         activity.findViewById<TextView>(R.id.taskStatusText)?.setLineSpacing(dp(activity, 3).toFloat(), 1f)
@@ -177,13 +173,6 @@ object Alpha7UiPolish {
             for (index in 0 until view.childCount) replaceText(view.getChildAt(index), from, to)
         }
     }
-
-    private fun alpha(color: Int, value: Int): Int = Color.argb(
-        value.coerceIn(0, 255),
-        Color.red(color),
-        Color.green(color),
-        Color.blue(color)
-    )
 
     private fun dp(activity: Activity, value: Int): Int =
         (value * activity.resources.displayMetrics.density + 0.5f).toInt()
