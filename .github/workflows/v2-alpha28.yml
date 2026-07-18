@@ -40,6 +40,7 @@ jobs:
           python3 v2/scripts/apply-alpha28-app-details.py > alpha28-patch.log 2>&1
           code=$?
           cat alpha28-patch.log
+          git diff > alpha28-generated.patch
           exit $code
 
       - name: Upload patch diagnostics
@@ -47,7 +48,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Alpha28-patch-diagnostics
-          path: alpha28-patch.log
+          path: |
+            alpha28-patch.log
+            alpha28-generated.patch
 
       - name: Validate shell and cleaning rules
         run: |
@@ -72,7 +75,21 @@ jobs:
 
       - name: Build native App
         working-directory: v2
-        run: gradle --no-daemon :app:assembleDebug
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug > ../alpha28-build.log 2>&1
+          code=$?
+          cat ../alpha28-build.log
+          exit $code
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alpha28-build-diagnostics
+          path: |
+            alpha28-build.log
+            alpha28-generated.patch
 
       - name: Package and verify module
         working-directory: v2
