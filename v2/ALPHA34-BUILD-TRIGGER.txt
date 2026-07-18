@@ -1,1 +1,2 @@
 Build the committed Miuix liquid navigation and home redesign.
+Persist verified source on the feature branch.
