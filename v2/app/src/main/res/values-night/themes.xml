@@ -1,63 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.BaiZe.Base" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorOnPrimary">#10233D</item>
-        <item name="colorOnPrimaryContainer">#D9E7FF</item>
-        <item name="colorOnSecondary">#20293A</item>
-        <item name="colorOnSecondaryContainer">#DDE5F6</item>
+        <item name="colorPrimary">#A9C7FF</item>
+        <item name="colorOnPrimary">#0A3262</item>
+        <item name="colorPrimaryContainer">#244477</item>
+        <item name="colorOnPrimaryContainer">#D8E6FF</item>
+        <item name="colorSecondary">#BBC7DC</item>
+        <item name="colorOnSecondary">#253044</item>
+        <item name="colorSecondaryContainer">#343D4F</item>
+        <item name="colorOnSecondaryContainer">#DCE5F8</item>
+        <item name="colorTertiary">#C9C0E8</item>
         <item name="colorError">#FFB4AB</item>
         <item name="colorOnError">#690005</item>
-        <item name="colorOnSurface">#F1F1F6</item>
-        <item name="colorOnSurfaceVariant">#C0C3CD</item>
-        <item name="colorOutline">#8D909B</item>
-        <item name="colorOutlineVariant">#343741</item>
+        <item name="colorSurface">#1A1E2B</item>
+        <item name="colorSurfaceVariant">#222737</item>
+        <item name="colorOnSurface">#F0F1F7</item>
+        <item name="colorOnSurfaceVariant">#BBC0CF</item>
+        <item name="colorOutline">#3B4151</item>
+        <item name="colorOutlineVariant">#2C3240</item>
+        <item name="android:colorBackground">#121520</item>
+        <item name="android:windowBackground">#121520</item>
+        <item name="android:statusBarColor">#121520</item>
+        <item name="android:navigationBarColor">#121520</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:colorBackground">#12131A</item>
-        <item name="android:windowBackground">#12131A</item>
-        <item name="android:statusBarColor">#12131A</item>
-        <item name="android:navigationBarColor">#12131A</item>
         <item name="materialCardViewStyle">@style/Widget.BaiZe.SimpleCard</item>
         <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
     </style>
 
-    <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#A8C7FA</item>
-        <item name="colorPrimaryContainer">#28415F</item>
-        <item name="colorSecondary">#BEC6DC</item>
-        <item name="colorSecondaryContainer">#3B465D</item>
-        <item name="colorTertiary">#C9C0E8</item>
-        <item name="colorSurface">#1B1D26</item>
-        <item name="colorSurfaceVariant">#272A35</item>
-    </style>
+    <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base" />
 
     <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
         <item name="colorPrimary">#D0BCFF</item>
         <item name="colorPrimaryContainer">#4F378B</item>
-        <item name="colorSecondary">#CCC2DC</item>
-        <item name="colorSecondaryContainer">#4A4458</item>
-        <item name="colorTertiary">#EFB8C8</item>
-        <item name="colorSurface">#1E1B22</item>
-        <item name="colorSurfaceVariant">#2A2731</item>
+        <item name="colorOnPrimaryContainer">#EADDFF</item>
     </style>
 
     <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
         <item name="colorPrimary">#9FD8CC</item>
         <item name="colorPrimaryContainer">#15584E</item>
-        <item name="colorSecondary">#B0CCC5</item>
-        <item name="colorSecondaryContainer">#324B46</item>
-        <item name="colorTertiary">#A9C7E3</item>
-        <item name="colorSurface">#181F1D</item>
-        <item name="colorSurfaceVariant">#232D2A</item>
+        <item name="colorOnPrimaryContainer">#BDF0E5</item>
     </style>
 
     <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
         <item name="colorPrimary">#F4BC94</item>
         <item name="colorPrimaryContainer">#6D3A18</item>
-        <item name="colorSecondary">#E5BFA9</item>
-        <item name="colorSecondaryContainer">#5A4132</item>
-        <item name="colorTertiary">#CBC784</item>
-        <item name="colorSurface">#211A17</item>
-        <item name="colorSurfaceVariant">#302621</item>
+        <item name="colorOnPrimaryContainer">#FFDDC7</item>
     </style>
 </resources>
