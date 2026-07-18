@@ -116,6 +116,7 @@ fun MiuixLiquidDock(
             .padding(horizontal = 6.dp, vertical = 7.dp)
     ) {
         val itemWidth = maxWidth / items.size.toFloat()
+        val compact = items.size > 4
         val targetIndex = selectedIndex.coerceIn(items.indices)
         val indicatorX by animateDpAsState(
             targetValue = itemWidth * targetIndex.toFloat(),
@@ -171,15 +172,15 @@ fun MiuixLiquidDock(
                     Icon(
                         imageVector = item.icon,
                         contentDescription = item.title,
-                        modifier = Modifier.size(if (active) 23.dp else 21.dp),
+                        modifier = Modifier.size(if (compact) 20.dp else if (active) 23.dp else 21.dp),
                         tint = iconColor
                     )
                     Spacer(Modifier.height(3.dp))
                     Text(
                         text = item.title,
                         color = textColor,
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
+                        fontSize = if (compact) 9.sp else 10.sp,
+                        lineHeight = if (compact) 11.sp else 12.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                     )
                 }

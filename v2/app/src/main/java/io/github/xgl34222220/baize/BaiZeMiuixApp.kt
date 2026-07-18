@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.History
@@ -99,6 +100,7 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.CleanRoute
 import io.github.xgl34222220.baize.ui.home.HomeRoute
 import io.github.xgl34222220.baize.ui.history.HistoryRoute
+import io.github.xgl34222220.baize.ui.logs.LogsRoute
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidPrimaryButton
@@ -295,6 +297,7 @@ private enum class BaiZePage(val title: String, val icon: ImageVector) {
     Home("首页", Icons.Rounded.Home),
     Clean("清理", Icons.Rounded.CleaningServices),
     Records("记录", Icons.Rounded.History),
+    Logs("日志", Icons.Rounded.Description),
     Settings("设置", Icons.Rounded.Settings)
 }
 
@@ -324,6 +327,7 @@ fun BaiZeMiuixApp(
                         BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
                         BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
+                        BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
                     MaterialFloatingDock(
@@ -339,6 +343,7 @@ fun BaiZeMiuixApp(
                         BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
                         BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
+                        BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
                     MiuixLiquidDock(
@@ -496,7 +501,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Liquid Glass · Alpha 37",
+                "Miuix × Liquid Glass · Alpha 38",
                 actions.refresh
             )
         }
