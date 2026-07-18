@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -16,7 +17,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.CircularProgressIndicator
 import io.github.xgl34222220.baize.ui.LiquidBackdropDrawable
 
-/** Alpha 16 clean MIUIx pass: solid content surfaces, one accent and optional dock glass only. */
+/** Alpha 17 BOX-style pass: grouped surfaces, one accent and user-controlled visual effects. */
 object Alpha7UiPolish {
     fun install(application: Application) {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
@@ -34,7 +35,11 @@ object Alpha7UiPolish {
 
     private fun polish(activity: Activity) {
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
-        content?.getChildAt(0)?.background = LiquidBackdropDrawable(activity)
+        content?.getChildAt(0)?.background = if (ThemeManager.isBlurEnabled(activity)) {
+            LiquidBackdropDrawable(activity)
+        } else {
+            ColorDrawable(MaterialColors.getColor(activity, android.R.attr.colorBackground, Color.rgb(238, 239, 249)))
+        }
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
@@ -49,7 +54,7 @@ object Alpha7UiPolish {
         val onPrimaryContainer = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnPrimaryContainer, Color.rgb(10, 53, 111))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 16"
+            text = "Alpha 17"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.apply {
@@ -76,27 +81,9 @@ object Alpha7UiPolish {
             elevation = 0f
         }
 
-        styleTool(
-            activity,
-            R.id.advancedAuditButton,
-            R.drawable.ic_clean_detail,
-            primary,
-            "清理明细\n查看缓存、空项目、规则垃圾与碎片"
-        )
-        styleTool(
-            activity,
-            R.id.corpsesToolButton,
-            R.drawable.ic_uninstall_residue,
-            primary,
-            "卸载残留\n扫描 data、obb 与 media 无主目录"
-        )
-        styleTool(
-            activity,
-            R.id.deepToolButton,
-            R.drawable.ic_deep_clean,
-            primary,
-            "深度清理\n完整规则扫描，按风险分级处理"
-        )
+        styleTool(activity, R.id.advancedAuditButton, R.drawable.ic_clean_detail, primary, "清理明细\n查看缓存、空项目、规则垃圾与碎片")
+        styleTool(activity, R.id.corpsesToolButton, R.drawable.ic_uninstall_residue, primary, "卸载残留\n扫描 data、obb 与 media 无主目录")
+        styleTool(activity, R.id.deepToolButton, R.drawable.ic_deep_clean, primary, "深度清理\n完整规则扫描，按风险分级处理")
 
         activity.findViewById<TextView>(R.id.recentTaskText)?.visibility = View.GONE
         activity.findViewById<TextView>(R.id.taskStatusText)?.setLineSpacing(dp(activity, 3).toFloat(), 1f)
