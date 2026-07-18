@@ -10,7 +10,7 @@ import androidx.annotation.StyleRes
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
 
-/** Central theme controller for the Alpha 15 MIUIx visual system. */
+/** Central controller for the Alpha 16 Box-inspired MIUIx visual system. */
 object ThemeManager {
     const val PREFS = "baize_v2"
     const val KEY_PALETTE = "theme_palette"
@@ -18,6 +18,7 @@ object ThemeManager {
     const val KEY_MONET = "theme_monet"
     const val KEY_AMOLED = "theme_amoled"
     const val KEY_GLASS = "theme_glass"
+    private const val KEY_ALPHA16_MIGRATED = "theme_alpha16_migrated"
 
     const val MODE_SYSTEM = "system"
     const val MODE_LIGHT = "light"
@@ -31,8 +32,8 @@ object ThemeManager {
     )
 
     val palettes: List<Palette> = listOf(
-        Palette("blue", "澄澈蓝", "清爽蓝与淡紫灰背景", R.style.Theme_BaiZe_Blue),
-        Palette("aurora", "雾紫", "低饱和紫与冷灰", R.style.Theme_BaiZe_Aurora),
+        Palette("blue", "澄澈蓝", "清爽蓝与冷灰背景", R.style.Theme_BaiZe_Blue),
+        Palette("aurora", "雾紫", "低饱和紫与中性灰", R.style.Theme_BaiZe_Aurora),
         Palette("jade", "青岚", "柔和青绿与浅灰", R.style.Theme_BaiZe_Jade),
         Palette("sunset", "暖砂", "温和米棕与暖灰", R.style.Theme_BaiZe_Sunset)
     )
@@ -73,8 +74,7 @@ object ThemeManager {
     }
 
     fun isMonetEnabled(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            prefs(context).getBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && prefs(context).getBoolean(KEY_MONET, false)
 
     fun isAmoledEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AMOLED, false)
 
@@ -95,7 +95,9 @@ object ThemeManager {
     }
 
     fun setMonet(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_MONET, enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S).apply()
+        prefs(context).edit()
+            .putBoolean(KEY_MONET, enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            .apply()
     }
 
     fun setAmoled(context: Context, enabled: Boolean) {
@@ -122,7 +124,7 @@ object ThemeManager {
                 append(palette.label)
                 if (isAmoledEnabled(context) && isDark(context)) append(" · 纯黑")
             }
-            append(if (isGlassEnabled(context)) " · 液态玻璃底栏" else " · 简约底栏")
+            append(if (isGlassEnabled(context)) " · 轻量玻璃底栏" else " · 实心底栏")
         }
     }
 
@@ -156,17 +158,23 @@ object ThemeManager {
 
     private fun migrateLegacySettings(context: Context) {
         val preferences = prefs(context)
+        val editor = preferences.edit()
         val oldPalette = preferences.getString(KEY_PALETTE, "blue").orEmpty()
+
         if (oldPalette == "monet") {
-            preferences.edit()
-                .putString(KEY_PALETTE, "blue")
-                .putBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                .apply()
+            editor.putString(KEY_PALETTE, "blue")
+            editor.putBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
         } else if (oldPalette == "amoled") {
-            preferences.edit()
-                .putString(KEY_PALETTE, "blue")
-                .putBoolean(KEY_AMOLED, true)
-                .apply()
+            editor.putString(KEY_PALETTE, "blue")
+            editor.putBoolean(KEY_AMOLED, true)
         }
+
+        if (!preferences.getBoolean(KEY_ALPHA16_MIGRATED, false)) {
+            if (!preferences.contains(KEY_MONET) && oldPalette != "monet") {
+                editor.putBoolean(KEY_MONET, false)
+            }
+            editor.putBoolean(KEY_ALPHA16_MIGRATED, true)
+        }
+        editor.apply()
     }
 }
