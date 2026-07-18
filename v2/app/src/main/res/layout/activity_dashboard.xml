@@ -23,9 +23,9 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingStart="18dp"
-                android:paddingTop="12dp"
+                android:paddingTop="20dp"
                 android:paddingEnd="18dp"
-                android:paddingBottom="126dp">
+                android:paddingBottom="112dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -44,8 +44,8 @@
                             android:layout_height="wrap_content"
                             android:text="白泽"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="30sp"
-                            android:textStyle="bold" />
+                            android:textSize="36sp"
+                            android:textStyle="normal" />
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -65,15 +65,15 @@
                         android:paddingTop="6dp"
                         android:paddingEnd="11dp"
                         android:paddingBottom="6dp"
-                        android:text="Alpha 8"
+                        android:text="Alpha 16"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
                 </LinearLayout>
 
                 <com.google.android.material.card.MaterialCardView
-                    android:tag="glass:hero"
-                    style="@style/Widget.BaiZe.GlassCard"
+                    android:tag="hero"
+                    style="@style/Widget.BaiZe.HeroCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp">
@@ -171,8 +171,8 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/cleanNowButton"
                     android:layout_width="match_parent"
-                    android:layout_height="64dp"
-                    android:layout_marginTop="13dp"
+                    android:layout_height="58dp"
+                    android:layout_marginTop="14dp"
                     android:text="立即智能清理"
                     android:textSize="17sp"
                     android:textStyle="bold" />
@@ -188,7 +188,7 @@
                     android:visibility="gone" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp">
@@ -236,7 +236,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp">
@@ -259,7 +259,7 @@
                             android:text="清理明细\n查看缓存、空项目、规则垃圾与碎片"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#16FFFFFF" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOutlineVariant" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/corpsesToolButton"
@@ -270,7 +270,7 @@
                             android:text="卸载残留\n扫描后可一键清理 data / obb 残留"
                             android:textColor="?attr/colorOnSurface" />
 
-                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#16FFFFFF" />
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOutlineVariant" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/deepToolButton"
@@ -291,7 +291,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp">
@@ -325,7 +325,7 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="10dp">
@@ -355,9 +355,9 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingStart="18dp"
-                android:paddingTop="14dp"
+                android:paddingTop="20dp"
                 android:paddingEnd="18dp"
-                android:paddingBottom="126dp">
+                android:paddingBottom="112dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -374,7 +374,7 @@
                     android:textSize="12sp" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp"
@@ -415,7 +415,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -480,7 +480,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -540,7 +540,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -587,7 +587,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -643,7 +643,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -756,7 +756,7 @@
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="9dp">
@@ -862,15 +862,15 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingStart="18dp"
-                android:paddingTop="14dp"
+                android:paddingTop="20dp"
                 android:paddingEnd="18dp"
-                android:paddingBottom="126dp">
+                android:paddingBottom="112dp">
 
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="清理记录" android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="手动任务与后台定时任务概览" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp">
@@ -904,9 +904,9 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:paddingStart="18dp"
-                android:paddingTop="14dp"
+                android:paddingTop="20dp"
                 android:paddingEnd="18dp"
-                android:paddingBottom="126dp">
+                android:paddingBottom="112dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -923,7 +923,7 @@
                     android:textSize="12sp" />
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp">
@@ -960,7 +960,7 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp">
@@ -1046,7 +1046,7 @@
                 </com.google.android.material.card.MaterialCardView>
 
                 <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                    style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp">
@@ -1096,9 +1096,9 @@
     <io.github.xgl34222220.baize.ui.FloatingGlassDock
         android:id="@+id/bottomNavigation"
         android:layout_width="match_parent"
-        android:layout_height="84dp"
+        android:layout_height="76dp"
         android:layout_gravity="bottom"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginStart="18dp"
+        android:layout_marginEnd="18dp"
+        android:layout_marginBottom="18dp" />
 </FrameLayout>
