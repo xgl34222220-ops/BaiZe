@@ -385,7 +385,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 25", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 27", actions.refresh) }
         item {
             Box(
                 Modifier

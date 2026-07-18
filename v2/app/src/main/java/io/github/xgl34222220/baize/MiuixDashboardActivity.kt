@@ -120,7 +120,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 )
             )
         }
-        connectServices()
+        connectPrimaryService()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -129,9 +129,9 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
             if (hasUsableScanSnapshots()) {
                 cleanNativeSnapshots()
-            } else if (rootService == null || cacheService == null) {
+            } else if (rootService == null) {
                 pendingClean = true
-                connectServices()
+                connectPrimaryService()
             } else {
                 runSmartClean()
             }
@@ -151,6 +151,30 @@ class MiuixDashboardActivity : ComponentActivity() {
         refreshModuleState()
         refreshHistory()
         refreshWhitelist()
+    }
+
+    private fun connectPrimaryService() {
+        if (rootService != null || profileBound) return
+        dashboardState.value = dashboardState.value.copy(
+            connected = false,
+            ready = false,
+            serviceText = "正在连接 Root 清理服务…"
+        )
+        runCatching {
+            RootService.bind(
+                Intent(this, BaiZeProfileRootService::class.java)
+                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                profileConnection
+            )
+            profileBound = true
+        }.onFailure {
+            profileBound = false
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                serviceText = "Root 清理服务启动失败：${it.message.orEmpty()}"
+            )
+        }
     }
 
     private fun connectServices() {
@@ -188,42 +212,38 @@ class MiuixDashboardActivity : ComponentActivity() {
         cacheService = null
         profileBound = false
         cacheBound = false
-        connectServices()
-        toast("正在重新连接双 Root 快照引擎")
+        dashboardState.value = dashboardState.value.copy(
+            connected = false,
+            ready = false,
+            running = false,
+            serviceText = "正在重新连接 Root 清理服务…"
+        )
+        connectPrimaryService()
+        toast("正在重新连接 Root 清理服务")
     }
 
     private fun updateConnectionState() {
-        val both = rootService != null && cacheService != null
+        val primaryConnected = rootService != null
         dashboardState.value = dashboardState.value.copy(
-            connected = both,
-            ready = if (both) dashboardState.value.ready else false,
-            running = if (both) dashboardState.value.running else false,
-            serviceText = when {
-                both -> "双 Root 快照引擎已连接，正在校验模块组件…"
-                rootService != null -> "分类引擎已连接，等待应用缓存引擎"
-                cacheService != null -> "应用缓存引擎已连接，等待分类引擎"
-                else -> "正在连接双 Root 快照引擎…"
+            connected = primaryConnected,
+            ready = if (primaryConnected) dashboardState.value.ready else false,
+            running = if (primaryConnected) dashboardState.value.running else false,
+            serviceText = if (primaryConnected) {
+                "Root 清理服务已连接，正在校验模块组件…"
+            } else {
+                "正在连接 Root 清理服务…"
             }
         )
     }
 
     private fun runPendingCleanIfReady() {
-        if (!pendingClean) return
-        val snapshotsReady = hasUsableScanSnapshots()
-        val requiredEnginesReady = if (snapshotsReady) {
-            (cacheSnapshotId.isBlank() || cacheSnapshotCount <= 0 || cacheService != null) &&
-                (safeSnapshotId.isBlank() || safeSnapshotCount <= 0 || rootService != null)
-        } else {
-            rootService != null && cacheService != null
-        }
-        if (!requiredEnginesReady) return
+        if (!pendingClean || rootService == null) return
         pendingClean = false
         runSmartClean()
     }
 
     private fun readServiceStatus() {
         val service = rootService ?: return
-        val cacheReady = cacheService != null
         lifecycleScope.launch {
             val json = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(service.ping()) }.getOrNull()
@@ -233,20 +253,19 @@ class MiuixDashboardActivity : ComponentActivity() {
             val cleaner = json.optBoolean("cleaner")
             val scheduler = json.optBoolean("scheduler")
             val rules = json.optBoolean("deepRules")
-            val ready = root && module && cleaner && scheduler && rules && cacheReady
-            val text = when {
+            val ready = root && module && cleaner && scheduler && rules
+            val status = when {
                 !root -> "服务已连接，但未取得完整 Root"
-                !cacheReady -> "分类引擎已连接，等待应用缓存引擎"
                 !module -> "Root 已连接 · 未检测到白泽模块"
                 !cleaner -> "模块已连接 · 清理引擎缺失"
                 !scheduler -> "清理引擎已连接 · 调度器缺失"
                 !rules -> "自动清理可用 · 深度规则库缺失"
-                else -> "双快照引擎、自动清理、定时任务与规则库均已就绪"
+                else -> "Root、完整清理引擎、定时任务与规则库均已就绪"
             }
             dashboardState.value = dashboardState.value.copy(
-                connected = cacheReady,
+                connected = true,
                 ready = ready,
-                serviceText = text,
+                serviceText = status,
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
             )
@@ -270,7 +289,84 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun runSmartClean() {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        if (hasUsableScanSnapshots()) cleanNativeSnapshots() else runNativeScan(cleanAfterScan = true)
+        val service = rootService
+        if (service == null) {
+            pendingClean = true
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                taskPhase = "正在连接 Root 清理服务，连接成功后继续清理"
+            )
+            connectPrimaryService()
+            return
+        }
+        runModuleClean(service)
+    }
+
+    private fun runModuleClean(service: IProfileRootService) {
+        if (dashboardState.value.running) return
+        clearSnapshotHandles()
+        dashboardState.value = dashboardState.value.copy(
+            running = true,
+            scanCompleted = false,
+            taskPhase = "正在调用模块完整清理引擎…"
+        )
+        startNativePoll()
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.runModuleTask("clean")) }
+            }
+            pollJob?.cancel()
+            if (response.isFailure) {
+                rootService = null
+                profileBound = false
+                dashboardState.value = dashboardState.value.copy(
+                    connected = false,
+                    ready = false,
+                    running = false,
+                    serviceText = "Root 清理服务已断开，正在重新连接…",
+                    taskPhase = "清理启动失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                )
+                connectPrimaryService()
+                return@launch
+            }
+
+            val json = response.getOrThrow()
+            val latest = json.optJSONObject("latest") ?: JSONObject()
+            val success = json.optBoolean("success")
+            val cancelled = json.optBoolean("cancelled")
+            val bytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
+            val files = latest.optLong("files", 0L).coerceAtLeast(0L)
+            val emptyFiles = latest.optLong("empty_files", 0L).coerceAtLeast(0L)
+            val emptyDirs = latest.optLong("empty_dirs", 0L).coerceAtLeast(0L)
+            val fragments = latest.optLong("fragment_files", 0L).coerceAtLeast(0L)
+            val errors = latest.optLong("errors", if (success) 0L else 1L).coerceAtLeast(0L)
+            val elapsed = latest.optLong("elapsed", json.optLong("elapsedMs", 0L) / 1000L).coerceAtLeast(0L)
+            val resultLine = latest.optString("result").ifBlank {
+                json.optString("message", if (success) "清理完成" else "清理失败")
+            }
+            val detailLine = "文件 $files · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $errors · ${formatElapsed(elapsed)}"
+            val title = when {
+                cancelled -> "白泽清理已停止"
+                success -> "白泽智能清理完成"
+                else -> "白泽智能清理失败"
+            }
+
+            dashboardState.value = dashboardState.value.copy(
+                running = false,
+                lastReleased = bytes,
+                taskPhase = "$resultLine\n$detailLine"
+            )
+            preferences.edit()
+                .putLong("last_clean_bytes", bytes)
+                .putString("last_report_text", "$resultLine\n$detailLine")
+                .apply()
+            notifyCleanResult(title, resultLine, detailLine, bytes)
+            refreshHistory()
+            refreshModuleState()
+            updateStorage()
+            readServiceStatus()
+        }
     }
 
     private fun runNativeScan(cleanAfterScan: Boolean) {
