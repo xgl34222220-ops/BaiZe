@@ -127,7 +127,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
-            if (rootService == null || cacheService == null) pendingClean = true else runSmartClean()
+            if (hasUsableScanSnapshots()) {
+                cleanNativeSnapshots()
+            } else if (rootService == null || cacheService == null) {
+                pendingClean = true
+                connectServices()
+            } else {
+                runSmartClean()
+            }
         }
     }
 
@@ -201,7 +208,15 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runPendingCleanIfReady() {
-        if (!pendingClean || rootService == null || cacheService == null) return
+        if (!pendingClean) return
+        val snapshotsReady = hasUsableScanSnapshots()
+        val requiredEnginesReady = if (snapshotsReady) {
+            (cacheSnapshotId.isBlank() || cacheSnapshotCount <= 0 || cacheService != null) &&
+                (safeSnapshotId.isBlank() || safeSnapshotCount <= 0 || rootService != null)
+        } else {
+            rootService != null && cacheService != null
+        }
+        if (!requiredEnginesReady) return
         pendingClean = false
         runSmartClean()
     }
@@ -346,8 +361,6 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun cleanNativeSnapshots() {
-        val cache = cacheService ?: return toast("应用缓存引擎尚未连接")
-        val profiles = rootService ?: return toast("分类引擎尚未连接")
         if (dashboardState.value.running) return
         if (!hasUsableScanSnapshots()) {
             dashboardState.value = dashboardState.value.copy(
@@ -357,6 +370,24 @@ class MiuixDashboardActivity : ComponentActivity() {
             toast("扫描结果已失效，请重新扫描")
             return
         }
+
+        val needsCacheEngine = cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0
+        val needsProfileEngine = safeSnapshotId.isNotBlank() && safeSnapshotCount > 0
+        val cacheEngine = cacheService
+        val profileEngine = rootService
+        if ((needsCacheEngine && cacheEngine == null) || (needsProfileEngine && profileEngine == null)) {
+            pendingClean = true
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                serviceText = "扫描快照仍有效，正在重连缺失的 Root 引擎…",
+                taskPhase = "等待引擎重连后继续按扫描结果清理"
+            )
+            connectServices()
+            toast("扫描快照仍有效，正在重连缺失引擎")
+            return
+        }
+
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
         val started = SystemClock.elapsedRealtime()
         dashboardState.value = dashboardState.value.copy(running = true, taskPhase = "正在复核并清理刚才的扫描快照…")
@@ -403,17 +434,17 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             try {
-                if (cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0) {
+                if (needsCacheEngine) {
                     dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理应用缓存快照…")
                     val result = withContext(Dispatchers.IO) {
-                        JSONObject(cache.cleanSelected(cacheSnapshotId, selection, whitelist))
+                        JSONObject(requireNotNull(cacheEngine).cleanSelected(cacheSnapshotId, selection, whitelist))
                     }
                     consume(result, profileResult = false)
                 }
-                if (!cancelled && safeSnapshotId.isNotBlank() && safeSnapshotCount > 0) {
+                if (!cancelled && needsProfileEngine) {
                     dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理安全项目快照…")
                     val result = withContext(Dispatchers.IO) {
-                        JSONObject(profiles.cleanProfileSelected(safeSnapshotId, selection, optionsJson()))
+                        JSONObject(requireNotNull(profileEngine).cleanProfileSelected(safeSnapshotId, selection, optionsJson()))
                     }
                     consume(result, profileResult = true)
                 }
@@ -446,23 +477,26 @@ class MiuixDashboardActivity : ComponentActivity() {
                 .putLong("last_clean_bytes", deletedBytes)
                 .putString("last_report_text", "$resultLine\n$detailLine")
                 .apply()
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    profiles.recordNativeTask(
-                        JSONObject()
-                            .put("mode", "snapshot-clean")
-                            .put("success", !cancelled && failures == 0)
-                            .put("cancelled", cancelled)
-                            .put("bytes", deletedBytes)
-                            .put("files", deletedFiles)
-                            .put("emptyFiles", emptyFiles)
-                            .put("emptyDirs", emptyDirs)
-                            .put("fragments", fragments)
-                            .put("errors", failures)
-                            .put("elapsedSeconds", elapsed / 1000L)
-                            .put("result", resultLine)
-                            .toString()
-                    )
+            val recorder = profileEngine ?: rootService
+            if (recorder != null) {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        recorder.recordNativeTask(
+                            JSONObject()
+                                .put("mode", "snapshot-clean")
+                                .put("success", !cancelled && failures == 0)
+                                .put("cancelled", cancelled)
+                                .put("bytes", deletedBytes)
+                                .put("files", deletedFiles)
+                                .put("emptyFiles", emptyFiles)
+                                .put("emptyDirs", emptyDirs)
+                                .put("fragments", fragments)
+                                .put("errors", failures)
+                                .put("elapsedSeconds", elapsed / 1000L)
+                                .put("result", resultLine)
+                                .toString()
+                        )
+                    }
                 }
             }
             notifyCleanResult(title, resultLine, detailLine, deletedBytes)
