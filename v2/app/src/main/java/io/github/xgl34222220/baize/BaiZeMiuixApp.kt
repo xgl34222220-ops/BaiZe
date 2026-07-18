@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.os.Build
 import android.text.format.Formatter
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -100,8 +101,8 @@ data class DashboardUiState(
     val serviceText: String = "正在等待 Root 服务…",
     val taskPhase: String = "等待下一次清理",
     val schedulerText: String = "等待调度器状态",
-    val device: String = android.os.Build.MODEL,
-    val android: String = "Android ${android.os.Build.VERSION.RELEASE}",
+    val device: String = Build.MODEL,
+    val android: String = "Android ${Build.VERSION.RELEASE}",
     val storageTotal: Long = 0,
     val storageUsed: Long = 0,
     val storageFree: Long = 0,
@@ -578,7 +579,11 @@ private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
             }
         }
         item {
-            PrimaryButton(if (config.saving) "正在保存…" else "保存自动清理计划", config.enabled && !config.saving) { actions.saveScheduler(config) }
+            PrimaryButton(
+                text = if (config.saving) "正在保存…" else "保存自动清理计划",
+                enabled = config.enabled && !config.saving,
+                onClick = { actions.saveScheduler(config) }
+            )
         }
     }
 }
