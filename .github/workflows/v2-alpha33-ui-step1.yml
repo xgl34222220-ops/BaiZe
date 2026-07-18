@@ -38,6 +38,16 @@ jobs:
           cat /tmp/alpha33-patch.log
           exit $status
 
+      - name: Persist patch failure details
+        if: failure() && github.event_name == 'push'
+        run: |
+          cp /tmp/alpha33-patch.log v2/ALPHA33-PATCH-ERROR.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/ALPHA33-PATCH-ERROR.txt
+          git commit -m 'Record Alpha 33 patch failure details' || true
+          git push origin HEAD:v2-alpha33-ui-step1 || true
+
       - name: Validate architecture and shell
         run: |
           sh -n cleaner.sh notify.sh service.sh
