@@ -95,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import com.google.android.material.color.MaterialColors
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.home.HomeRoute
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.json.JSONObject
@@ -303,19 +304,40 @@ fun BaiZeMiuixApp(
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
-            Box(modifier = Modifier.fillMaxSize()) {
-                MiuiXBackdrop(dark, amoled)
-                when (page) {
-                    BaiZePage.Home -> HomeRoute(appearance.uiStyle, state, actions)
-                    BaiZePage.Plan -> PlanPage(scheduler, actions)
-                    BaiZePage.Records -> RecordsPage(state, actions)
-                    BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+
+            when (appearance.uiStyle) {
+                UiStyle.MATERIAL -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    when (page) {
+                        BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions)
+                        BaiZePage.Plan -> PlanPage(scheduler, actions)
+                        BaiZePage.Records -> RecordsPage(state, actions)
+                        BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                    }
+                    MaterialFloatingDock(
+                        selected = page,
+                        onSelected = { page = it },
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
                 }
-                FloatingDock(
-                    selected = page,
-                    onSelected = { page = it },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+
+                UiStyle.MIUIX -> Box(modifier = Modifier.fillMaxSize()) {
+                    MiuiXBackdrop(dark, amoled)
+                    when (page) {
+                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions)
+                        BaiZePage.Plan -> PlanPage(scheduler, actions)
+                        BaiZePage.Records -> RecordsPage(state, actions)
+                        BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                    }
+                    FloatingDock(
+                        selected = page,
+                        onSelected = { page = it },
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    )
+                }
             }
         }
     }
@@ -1134,6 +1156,69 @@ private fun FloatingDock(selected: BaiZePage, onSelected: (BaiZePage) -> Unit, m
                         Spacer(Modifier.width(7.dp))
                         Text(item.title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialFloatingDock(
+    selected: BaiZePage,
+    onSelected: (BaiZePage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    Surface(
+        modifier = modifier
+            .padding(horizontal = 20.dp)
+            .padding(bottom = bottom + 12.dp)
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f),
+        tonalElevation = 10.dp,
+        shadowElevation = 18.dp
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            BaiZePage.entries.forEach { item ->
+                val active = item == selected
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(MaterialTheme.shapes.large)
+                        .clickable { onSelected(item) }
+                        .padding(vertical = 7.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 48.dp, height = 30.dp)
+                            .clip(MaterialTheme.shapes.extraLarge)
+                            .background(
+                                if (active) MaterialTheme.colorScheme.secondaryContainer
+                                else Color.Transparent
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.title,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = item.title,
+                        color = if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                    )
                 }
             }
         }
