@@ -17,6 +17,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -40,6 +45,7 @@ class WhitelistActivity : AppCompatActivity() {
     private var serviceBound = false
     private var currentFilter = Filter.ALL
     private var loading = true
+    private var localFallbackStarted = false
 
     private val adapter = AppAdapter(
         iconLoader = ::loadIcon,
@@ -67,8 +73,10 @@ class WhitelistActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityWhitelistBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applySystemBarInsets()
 
         binding.backButton.setOnClickListener { finish() }
         binding.appList.layoutManager = LinearLayoutManager(this)
@@ -109,6 +117,27 @@ class WhitelistActivity : AppCompatActivity() {
 
         showLoading("正在通过 Root 服务读取全部已安装应用…")
         connectService()
+        binding.root.postDelayed({
+            if (service == null && loading && !isFinishing) {
+                lifecycleScope.launch { loadLocalFallback("Root 服务连接较慢，先显示系统可见应用…") }
+            }
+        }, ROOT_FALLBACK_DELAY_MS)
+    }
+
+    private fun applySystemBarInsets() {
+        val headerTop = binding.headerContainer.paddingTop
+        val rootBottom = binding.whitelistRoot.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(binding.whitelistRoot) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.headerContainer.updatePadding(top = headerTop + bars.top)
+            binding.whitelistRoot.updatePadding(bottom = rootBottom + bars.bottom)
+            insets
+        }
+        WindowInsetsControllerCompat(window, binding.root).apply {
+            isAppearanceLightStatusBars = !ThemeManager.isDark(this@WhitelistActivity)
+            isAppearanceLightNavigationBars = !ThemeManager.isDark(this@WhitelistActivity)
+        }
+        ViewCompat.requestApplyInsets(binding.whitelistRoot)
     }
 
     private fun connectService() {
@@ -118,11 +147,10 @@ class WhitelistActivity : AppCompatActivity() {
                     .addCategory(RootService.CATEGORY_DAEMON_MODE),
                 connection
             )
-            serviceBound = true
         }.onFailure {
             serviceBound = false
             binding.statusText.text = "Root 服务连接失败：${it.message ?: it.javaClass.simpleName}"
-            lifecycleScope.launch { loadLocalFallback() }
+            lifecycleScope.launch { loadLocalFallback("Root 不可用，正在读取系统可见应用…") }
         }
     }
 
@@ -147,13 +175,15 @@ class WhitelistActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun loadLocalFallback() {
-        showLoading("Root 目录不可用，正在读取系统可见应用…")
+    private suspend fun loadLocalFallback(message: String) {
+        if (localFallbackStarted || service != null) return
+        localFallbackStarted = true
+        showLoading(message)
         val result = withContext(Dispatchers.IO) {
             val catalog = loadLocalCatalog()
             CatalogResult(buildEntries(catalog, emptySet()), 0, "系统兼容目录")
         }
-        renderCatalog(result)
+        if (service == null) renderCatalog(result)
     }
 
     private fun renderCatalog(result: CatalogResult) {
@@ -163,7 +193,7 @@ class WhitelistActivity : AppCompatActivity() {
         binding.loadingIndicator.visibility = View.GONE
         binding.clearButton.isEnabled = allApps.isNotEmpty()
         binding.statusText.text = if (allApps.isEmpty()) {
-            "仍未读取到应用。请确认模块已刷入并已授予 Root，然后返回重试。"
+            "仍未读取到应用。请确认模块已刷入并授予 Root，然后返回重试。"
         } else {
             "已从${result.source}读取 ${allApps.size} 个应用；已保存保护 ${result.selectedCount} 个。"
         }
@@ -290,7 +320,7 @@ class WhitelistActivity : AppCompatActivity() {
         binding.selectVisibleButton.text = if (visible.isNotEmpty() && visible.all { it.selected }) {
             "取消当前 ${visible.size} 个"
         } else {
-            "保护当前 ${visible.size} 个"
+            "全选当前 ${visible.size} 个"
         }
         binding.clearButton.isEnabled = selected > 0
     }
@@ -385,8 +415,8 @@ class WhitelistActivity : AppCompatActivity() {
                 binding.selectedCheck.isChecked = item.selected
 
                 val primaryContainer = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorPrimaryContainer)
-                val surface = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorSurfaceVariant)
-                val outline = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorOutline)
+                val surface = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorSurface)
+                val outline = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorOutlineVariant)
                 binding.root.setCardBackgroundColor(if (item.selected) primaryContainer else surface)
                 binding.root.strokeColor = outline
                 binding.root.strokeWidth = if (item.selected) dp(binding.root, 1) else 0
@@ -401,6 +431,7 @@ class WhitelistActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val ROOT_FALLBACK_DELAY_MS = 3_500L
         private val PACKAGE_NAME = Regex("^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$")
     }
 }
