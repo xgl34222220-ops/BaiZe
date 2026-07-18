@@ -8,9 +8,14 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.home.material.HomeScreenMaterial
 
 @Composable
-fun HomeRoute(style: UiStyle, state: DashboardUiState, actions: DashboardActions) {
+fun HomeRoute(
+    style: UiStyle,
+    state: DashboardUiState,
+    actions: DashboardActions,
+    onOpenClean: () -> Unit
+) {
     when (style) {
-        UiStyle.MATERIAL -> HomeScreenMaterial(state, actions)
-        UiStyle.MIUIX -> HomeScreenMiuix(state, actions)
+        UiStyle.MATERIAL -> HomeScreenMaterial(state, actions, onOpenClean)
+        UiStyle.MIUIX -> HomeScreenMiuix(state, actions, onOpenClean)
     }
 }

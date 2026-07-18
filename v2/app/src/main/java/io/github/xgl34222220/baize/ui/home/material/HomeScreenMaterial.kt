@@ -70,7 +70,11 @@ private data class MaterialCleanCategory(
 )
 
 @Composable
-fun HomeScreenMaterial(state: DashboardUiState, actions: DashboardActions) {
+fun HomeScreenMaterial(
+    state: DashboardUiState,
+    actions: DashboardActions,
+    onOpenClean: () -> Unit
+) {
     val settings = LocalAppearanceSettings.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val scheme = MaterialTheme.colorScheme
@@ -112,8 +116,8 @@ fun HomeScreenMaterial(state: DashboardUiState, actions: DashboardActions) {
             item { MaterialCleanButton(state, actions) }
             item { MaterialServiceCard(state) }
             if (state.scanCompleted) item { MaterialScanResultCard(state, actions) }
-            item { MaterialSectionTitle("CLEANING CATEGORIES", "更多清理") }
-            item { MaterialCategoryGroup(actions) }
+            item { MaterialSectionTitle("QUICK ACTIONS", "快捷操作") }
+            item { MaterialQuickActions(actions, onOpenClean) }
         }
     }
 }
@@ -138,7 +142,7 @@ private fun MaterialPageHeader(onRefresh: () -> Unit) {
             Spacer(Modifier.height(5.dp))
             Text("白泽", style = MaterialTheme.typography.headlineLarge)
             Text(
-                "Material 3 清理概览 · Alpha 33",
+                "Material 3 清理概览 · Alpha 36",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -372,59 +376,58 @@ private fun MaterialSectionTitle(eyebrow: String, title: String) {
 }
 
 @Composable
-private fun MaterialCategoryGroup(actions: DashboardActions) {
+private fun MaterialQuickActions(
+    actions: DashboardActions,
+    onOpenClean: () -> Unit
+) {
     val categories = listOf(
-        MaterialCleanCategory(Icons.Rounded.Search, "垃圾扫描", "只扫描并统计，确认后再清理", actions.scan),
-        MaterialCleanCategory(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK、APKS、XAPK 与 APKM", actions.apkScan),
-        MaterialCleanCategory(Icons.Rounded.DeleteSweep, "深度清理", "进一步扫描日志、规则垃圾与残留", actions.deep),
-        MaterialCleanCategory(Icons.Rounded.FolderDelete, "卸载残留", "查找无主应用目录和遗留文件", actions.corpses),
-        MaterialCleanCategory(Icons.Rounded.Rule, "清理明细", "查看各类垃圾与实际删除记录", actions.audit)
+        MaterialCleanCategory(Icons.Rounded.Search, "垃圾扫描", "只扫描统计", actions.scan),
+        MaterialCleanCategory(Icons.Rounded.InstallMobile, "安装包", "查找安装包", actions.apkScan),
+        MaterialCleanCategory(Icons.Rounded.CleaningServices, "全部选项", "进入清理页", onOpenClean)
     )
     Card(
         modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        Column {
-            categories.forEachIndexed { index, item ->
-                MaterialCategoryRow(item)
-                if (index != categories.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 76.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f)
+        Row(
+            Modifier.fillMaxWidth().padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            categories.forEach { item ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(MaterialTheme.shapes.large)
+                        .clickable(onClick = item.onClick)
+                        .padding(horizontal = 6.dp, vertical = 13.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.size(48.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+                    Text(
+                        item.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        item.description,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MaterialCategoryRow(item: MaterialCleanCategory) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = item.onClick).padding(horizontal = 17.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Surface(
-            modifier = Modifier.size(46.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.primaryContainer
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-            }
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                item.description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Icon(Icons.Rounded.CleaningServices, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     }
 }

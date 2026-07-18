@@ -320,7 +320,7 @@ fun BaiZeMiuixApp(
                         .background(MaterialTheme.colorScheme.background)
                 ) {
                     when (page) {
-                        BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions)
+                        BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
                         BaiZePage.Records -> RecordsPage(state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
@@ -335,7 +335,7 @@ fun BaiZeMiuixApp(
                 UiStyle.MIUIX -> Box(modifier = Modifier.fillMaxSize()) {
                     MiuiXBackdrop(dark, amoled)
                     when (page) {
-                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions)
+                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
                         BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
                         BaiZePage.Records -> RecordsPage(state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
@@ -470,7 +470,11 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 }
 
 @Composable
-internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions) {
+internal fun HomeScreenMiuix(
+    state: DashboardUiState,
+    actions: DashboardActions,
+    onOpenClean: () -> Unit
+) {
     val context = LocalContext.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val positive = state.ready || state.scanCompleted
@@ -491,7 +495,7 @@ internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions)
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Liquid Glass · Alpha 34",
+                "Miuix × Liquid Glass · Alpha 36",
                 actions.refresh
             )
         }
@@ -568,13 +572,18 @@ internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions)
         item {
             Column(Modifier.padding(horizontal = 22.dp, vertical = 5.dp)) {
                 Text(
-                    "CLEANING CATEGORIES",
+                    "QUICK ACTIONS",
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp
                 )
-                Text("更多清理", fontSize = 27.sp, fontWeight = FontWeight.Black)
+                Text("快捷操作", fontSize = 27.sp, fontWeight = FontWeight.Black)
+                Text(
+                    "完整清理类别、开关与周期统一放在“清理”页",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp
+                )
             }
         }
         item {
@@ -582,23 +591,69 @@ internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions)
                 Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
                 shape = RoundedCornerShape(30.dp),
                 shadow = 6,
-                contentPadding = PaddingValues(horizontal = 18.dp)
+                contentPadding = PaddingValues(10.dp)
             ) {
-                Column {
-                    ToolRow(Icons.Rounded.Search, "垃圾扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
-                    ToolRow(Icons.Rounded.InstallMobile, "安装包扫描", "查找 Download、QQ、微信等目录中的 APK/APKS/XAPK", actions.apkScan)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
-                    ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "扫描日志、临时文件与常见残留", actions.deep)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
-                    ToolRow(Icons.Rounded.FolderDelete, "卸载残留", "扫描 data / obb / media 无主目录", actions.corpses)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
-                    ToolRow(Icons.Rounded.Rule, "清理明细", "查看缓存、空项目、规则与碎片", actions.audit)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.Search,
+                        title = "垃圾扫描",
+                        modifier = Modifier.weight(1f),
+                        onClick = actions.scan
+                    )
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.InstallMobile,
+                        title = "安装包",
+                        modifier = Modifier.weight(1f),
+                        onClick = actions.apkScan
+                    )
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.CleaningServices,
+                        title = "全部选项",
+                        modifier = Modifier.weight(1f),
+                        onClick = onOpenClean
+                    )
                 }
             }
         }
     }
 }
+@Composable
+private fun MiuixHomeQuickAction(
+    icon: ImageVector,
+    title: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 5.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            title,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 @Composable
 private fun StorageRing(progress: Float) {
     val primary = MaterialTheme.colorScheme.primary
