@@ -2,123 +2,123 @@
 <resources>
     <style name="Theme.BaiZe.Base" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorOnPrimaryContainer">#15254A</item>
+        <item name="colorOnPrimaryContainer">#132B50</item>
         <item name="colorOnSecondary">#FFFFFF</item>
-        <item name="colorOnSecondaryContainer">#12383B</item>
+        <item name="colorOnSecondaryContainer">#26334D</item>
         <item name="colorError">#BA1A1A</item>
         <item name="colorOnError">#FFFFFF</item>
-        <item name="colorOnSurface">#17191F</item>
-        <item name="colorOnSurfaceVariant">#61656F</item>
-        <item name="colorOutline">#C5C9D3</item>
+        <item name="colorOnSurface">#1A1B22</item>
+        <item name="colorOnSurfaceVariant">#565B68</item>
+        <item name="colorOutline">#969CAB</item>
+        <item name="colorOutlineVariant">#E1E3EA</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:windowBackground">#F6F7FB</item>
-        <item name="android:statusBarColor">#F6F7FB</item>
-        <item name="android:navigationBarColor">#F6F7FB</item>
-        <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
+        <item name="android:windowBackground">#F1F2FB</item>
+        <item name="android:statusBarColor">#F1F2FB</item>
+        <item name="android:navigationBarColor">#F1F2FB</item>
+        <item name="materialCardViewStyle">@style/Widget.BaiZe.SimpleCard</item>
         <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
     </style>
 
     <style name="Theme.BaiZe" parent="Theme.BaiZe.Blue" />
 
     <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#4D6FAD</item>
-        <item name="colorPrimaryContainer">#E3EAF6</item>
-        <item name="colorSecondary">#4D7C7A</item>
-        <item name="colorSecondaryContainer">#DDECEA</item>
-        <item name="colorTertiary">#7A7192</item>
-        <item name="colorSurface">#F7F8FA</item>
-        <item name="colorSurfaceVariant">#EEF1F5</item>
+        <item name="colorPrimary">#0B67D1</item>
+        <item name="colorPrimaryContainer">#DCE8FF</item>
+        <item name="colorSecondary">#526EAA</item>
+        <item name="colorSecondaryContainer">#E3E9F8</item>
+        <item name="colorTertiary">#6E66A5</item>
+        <item name="colorSurface">#FBFBFF</item>
+        <item name="colorSurfaceVariant">#ECEEF7</item>
     </style>
 
     <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#756A9C</item>
-        <item name="colorPrimaryContainer">#ECE8F4</item>
-        <item name="colorSecondary">#5D788E</item>
-        <item name="colorSecondaryContainer">#E1EAF0</item>
-        <item name="colorTertiary">#8A667A</item>
-        <item name="colorSurface">#FAF8FD</item>
-        <item name="colorSurfaceVariant">#F0ECF6</item>
+        <item name="colorPrimary">#6750A4</item>
+        <item name="colorPrimaryContainer">#EADDFF</item>
+        <item name="colorSecondary">#625B71</item>
+        <item name="colorSecondaryContainer">#E8DEF8</item>
+        <item name="colorTertiary">#7D5260</item>
+        <item name="colorSurface">#FCF9FF</item>
+        <item name="colorSurfaceVariant">#EEEAF5</item>
     </style>
 
     <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#4C7B70</item>
-        <item name="colorPrimaryContainer">#DDECE7</item>
-        <item name="colorSecondary">#5A7886</item>
-        <item name="colorSecondaryContainer">#DFE9ED</item>
-        <item name="colorTertiary">#6A6F35</item>
-        <item name="colorSurface">#F7FAF8</item>
-        <item name="colorSurfaceVariant">#E9F1ED</item>
+        <item name="colorPrimary">#2D7468</item>
+        <item name="colorPrimaryContainer">#B6F2E6</item>
+        <item name="colorSecondary">#4A635E</item>
+        <item name="colorSecondaryContainer">#CCE8E1</item>
+        <item name="colorTertiary">#456179</item>
+        <item name="colorSurface">#F7FCFA</item>
+        <item name="colorSurfaceVariant">#E7F1EE</item>
     </style>
 
     <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#8D684F</item>
-        <item name="colorPrimaryContainer">#F2E7DF</item>
-        <item name="colorSecondary">#817357</item>
-        <item name="colorSecondaryContainer">#EEE8D9</item>
-        <item name="colorTertiary">#A44E61</item>
-        <item name="colorSurface">#FCF8F5</item>
-        <item name="colorSurfaceVariant">#F4ECE7</item>
+        <item name="colorPrimary">#8B5E3C</item>
+        <item name="colorPrimaryContainer">#FFDCC3</item>
+        <item name="colorSecondary">#755846</item>
+        <item name="colorSecondaryContainer">#FFDCC8</item>
+        <item name="colorTertiary">#646033</item>
+        <item name="colorSurface">#FFF9F5</item>
+        <item name="colorSurfaceVariant">#F4ECE6</item>
     </style>
 
     <style name="Theme.BaiZe.Amoled" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">#82B1FF</item>
-        <item name="colorPrimaryContainer">#163B70</item>
-        <item name="colorSecondary">#77D7D1</item>
-        <item name="colorSecondaryContainer">#174441</item>
-        <item name="colorTertiary">#C2B5FF</item>
+        <item name="colorPrimary">#A8C7FA</item>
+        <item name="colorPrimaryContainer">#20477E</item>
+        <item name="colorSecondary">#BEC6DC</item>
+        <item name="colorSecondaryContainer">#3F4759</item>
+        <item name="colorTertiary">#C9C0E8</item>
         <item name="colorSurface">#000000</item>
-        <item name="colorSurfaceVariant">#111318</item>
-        <item name="colorOnSurface">#F3F4F8</item>
-        <item name="colorOnSurfaceVariant">#ADB2BD</item>
-        <item name="colorOutline">#3F434C</item>
+        <item name="colorSurfaceVariant">#17181D</item>
+        <item name="colorOnSurface">#F4F4F7</item>
+        <item name="colorOnSurfaceVariant">#C7C8D0</item>
+        <item name="colorOutline">#8F909A</item>
+        <item name="colorOutlineVariant">#2D2E35</item>
         <item name="android:windowBackground">#000000</item>
         <item name="android:statusBarColor">#000000</item>
         <item name="android:navigationBarColor">#000000</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
+        <item name="materialCardViewStyle">@style/Widget.BaiZe.SimpleCard</item>
         <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
     </style>
 
-    <style name="Theme.BaiZe.Monet" parent="Theme.Material3.DynamicColors.Dark.NoActionBar">
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:fontFamily">sans-serif</item>
-        <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
-        <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
-    </style>
+    <style name="Theme.BaiZe.Monet" parent="Theme.BaiZe.Blue" />
 
-    <style name="Widget.BaiZe.GlassCard" parent="Widget.Material3.CardView.Filled">
-        <item name="cardBackgroundColor">?attr/colorSurfaceVariant</item>
-        <item name="cardCornerRadius">24dp</item>
+    <style name="Widget.BaiZe.SimpleCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardCornerRadius">28dp</item>
         <item name="cardElevation">0dp</item>
-        <item name="strokeColor">?attr/colorOutline</item>
-        <item name="strokeWidth">0.7dp</item>
+        <item name="strokeColor">?attr/colorOutlineVariant</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <style name="Widget.BaiZe.GlassCard" parent="Widget.BaiZe.SimpleCard">
+        <item name="cardBackgroundColor">?attr/colorSurfaceVariant</item>
     </style>
 
     <style name="Widget.BaiZe.Button" parent="Widget.Material3.Button">
-        <item name="cornerRadius">17dp</item>
+        <item name="cornerRadius">18dp</item>
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:letterSpacing">0.01</item>
+        <item name="android:letterSpacing">0.005</item>
     </style>
 
     <style name="Widget.Material3.Button.FilledTonalButton" parent="Widget.Material3.Button">
         <item name="backgroundTint">?attr/colorPrimaryContainer</item>
         <item name="android:textColor">?attr/colorOnPrimaryContainer</item>
-        <item name="cornerRadius">17dp</item>
+        <item name="cornerRadius">18dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 
     <style name="Widget.BaiZe.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="cornerRadius">17dp</item>
+        <item name="cornerRadius">18dp</item>
         <item name="android:minHeight">50dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:fontFamily">sans-serif-medium</item>
@@ -126,19 +126,19 @@
         <item name="strokeWidth">1dp</item>
     </style>
 
-    <style name="TextAppearance.BaiZe.PageTitle" parent="TextAppearance.Material3.HeadlineMedium">
+    <style name="TextAppearance.BaiZe.PageTitle" parent="TextAppearance.Material3.HeadlineLarge">
         <item name="android:textColor">?attr/colorOnSurface</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textSize">25sp</item>
-        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:letterSpacing">-0.015</item>
     </style>
 
-    <style name="TextAppearance.BaiZe.SectionTitle" parent="TextAppearance.Material3.TitleMedium">
+    <style name="TextAppearance.BaiZe.SectionTitle" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textSize">17sp</item>
+        <item name="android:textSize">18sp</item>
     </style>
 
     <style name="TextAppearance.BaiZe.Nav.Active" parent="TextAppearance.Material3.LabelMedium">
@@ -149,7 +149,7 @@
 
     <style name="TextAppearance.BaiZe.Nav.Inactive" parent="TextAppearance.Material3.LabelMedium">
         <item name="android:textSize">11sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:fontFamily">sans-serif</item>
     </style>
 </resources>
