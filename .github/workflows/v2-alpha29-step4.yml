@@ -1,0 +1,77 @@
+name: BaiZe v2 Alpha 29 Step 4
+
+on:
+  push:
+    branches: [v2-alpha29]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step4-summary.py'
+      - '.github/workflows/v2-alpha29-step4.yml'
+  pull_request:
+    branches: [v2-alpha28]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step4-summary.py'
+      - '.github/workflows/v2-alpha29-step4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  records-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha29
+          fetch-depth: 0
+
+      - name: Apply records summary UI
+        run: |
+          if ! grep -q 'CurrentCleanupSummaryContent(state.recentApps)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt; then
+            python3 v2/scripts/apply-alpha29-step4-summary.py
+          else
+            echo 'Alpha 29 records summary already committed'
+          fi
+
+      - name: Validate records summary and insets
+        run: |
+          grep -q 'fun CurrentCleanupSummaryContent' v2/app/src/main/java/io/github/xgl34222220/baize/CleanupSummaryComponents.kt
+          grep -q '按实际删除结果统计' v2/app/src/main/java/io/github/xgl34222220/baize/CleanupSummaryComponents.kt
+          grep -q 'bottomInset + 128.dp' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'CurrentCleanupSummaryContent(state.recentApps)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Commit verified records UI
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add current cleanup summary and records bottom inset'
+            git push origin HEAD:v2-alpha29
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alpha29-Step4-App
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
