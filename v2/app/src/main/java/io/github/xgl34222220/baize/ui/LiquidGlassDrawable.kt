@@ -6,21 +6,15 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Outline
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
+import androidx.core.graphics.ColorUtils
 import com.google.android.material.color.MaterialColors
 import kotlin.math.max
 
-/**
- * Lightweight MIUI X inspired liquid-glass surface.
- *
- * The drawable avoids realtime bitmap blur on long scrolling pages. It layers translucent theme
- * surfaces, two refraction fields, a soft inner sheen and a floating edge so cards remain smooth on
- * rooted OEM ROMs while still looking visibly glass-like.
- */
+/** Calm, theme-aware translucent surface without realtime blur or decorative waves. */
 class LiquidGlassDrawable(
     context: Context,
     private val variant: Variant = Variant.CARD
@@ -28,200 +22,81 @@ class LiquidGlassDrawable(
     enum class Variant { CARD, HERO, STRIP, DOCK, ACTIVE, BUTTON }
 
     private val density = context.resources.displayMetrics.density
-    private val primary = MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, Color.rgb(90, 168, 255))
-    private val secondary = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondary, Color.rgb(81, 214, 198))
-    private val tertiary = MaterialColors.getColor(context, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
-    private val surface = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, Color.rgb(7, 16, 30))
-    private val surfaceVariant = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceVariant, Color.rgb(23, 36, 56))
-    private val outline = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOutline, Color.rgb(100, 116, 138))
-
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val primary = MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, Color.rgb(53, 109, 243))
+    private val surface = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, Color.rgb(246, 247, 251))
+    private val surfaceVariant = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceVariant, Color.rgb(236, 239, 246))
+    private val outline = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOutline, Color.rgb(197, 201, 211))
+    private val light = ColorUtils.calculateLuminance(surface) > 0.45
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(if (variant == Variant.DOCK || variant == Variant.HERO) 1.25f else 0.9f)
+        strokeWidth = dp(if (variant == Variant.DOCK || variant == Variant.HERO) 1.1f else 0.8f)
     }
-    private val shinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val highlight = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.1f)
-        strokeCap = Paint.Cap.ROUND
+        strokeWidth = dp(0.9f)
     }
-    private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = dp(0.8f)
-    }
-    private val wavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.2f)
-    }
-
     private val rect = RectF()
-    private val clipPath = Path()
-    private val wavePath = Path()
     private var pressed = false
 
     override fun draw(canvas: Canvas) {
         rect.set(bounds)
         if (rect.width() <= 0f || rect.height() <= 0f) return
-
         val radius = dp(
             when (variant) {
-                Variant.DOCK -> 38f
-                Variant.HERO -> 31f
-                Variant.ACTIVE -> 29f
-                Variant.STRIP -> 25f
-                Variant.BUTTON -> 23f
-                Variant.CARD -> 28f
+                Variant.DOCK -> 36f
+                Variant.HERO -> 29f
+                Variant.ACTIVE -> 27f
+                Variant.STRIP -> 23f
+                Variant.BUTTON -> 20f
+                Variant.CARD -> 24f
             }
         )
-        clipPath.reset()
-        clipPath.addRoundRect(rect, radius, radius, Path.Direction.CW)
-
-        val baseTopAlpha = when (variant) {
-            Variant.HERO -> 196
-            Variant.DOCK -> 174
-            Variant.ACTIVE -> 210
-            Variant.BUTTON -> 232
-            Variant.STRIP -> 142
-            Variant.CARD -> 158
+        val accent = when (variant) {
+            Variant.ACTIVE, Variant.BUTTON, Variant.HERO -> if (light) 0.16f else 0.22f
+            Variant.DOCK -> if (light) 0.07f else 0.12f
+            else -> if (light) 0.025f else 0.055f
         }
-        val baseBottomAlpha = when (variant) {
-            Variant.HERO -> 138
-            Variant.DOCK -> 118
-            Variant.ACTIVE -> 164
-            Variant.BUTTON -> 208
-            Variant.STRIP -> 92
-            Variant.CARD -> 104
-        }
-        val pressDelta = if (pressed) 18 else 0
-
-        val save = canvas.save()
-        canvas.clipPath(clipPath)
-
-        fillPaint.shader = LinearGradient(
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.bottom,
-            intArrayOf(
-                alpha(mix(surfaceVariant, primary, if (variant == Variant.HERO) 0.24f else 0.10f), (baseTopAlpha + pressDelta).coerceAtMost(255)),
-                alpha(mix(surfaceVariant, Color.WHITE, 0.025f), (baseTopAlpha - 18 + pressDelta).coerceAtMost(255)),
-                alpha(mix(surface, tertiary, 0.09f), (baseBottomAlpha + pressDelta).coerceAtMost(255))
-            ),
-            floatArrayOf(0f, 0.48f, 1f),
-            Shader.TileMode.CLAMP
+        val pressedBoost = if (pressed) 0.04f else 0f
+        val top = mix(surfaceVariant, primary, (accent + pressedBoost).coerceAtMost(0.30f))
+        val bottom = mix(surface, primary, if (variant == Variant.BUTTON) accent * 0.82f else accent * 0.25f)
+        fill.shader = LinearGradient(
+            rect.left, rect.top, rect.right, rect.bottom,
+            intArrayOf(top, mix(surfaceVariant, surface, 0.50f), bottom),
+            floatArrayOf(0f, 0.48f, 1f), Shader.TileMode.CLAMP
         )
-        canvas.drawRect(rect, fillPaint)
+        canvas.drawRoundRect(rect, radius, radius, fill)
 
-        val glowStrength = when (variant) {
-            Variant.HERO -> 102
-            Variant.DOCK -> 78
-            Variant.ACTIVE -> 136
-            Variant.BUTTON -> 118
-            Variant.STRIP -> 44
-            Variant.CARD -> 62
-        }
-        glowPaint.shader = RadialGradient(
-            rect.left + rect.width() * 0.16f,
-            rect.top + rect.height() * 0.02f,
-            max(rect.width(), rect.height()) * 0.82f,
-            intArrayOf(alpha(primary, glowStrength), Color.TRANSPARENT),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(rect, glowPaint)
-
-        glowPaint.shader = RadialGradient(
-            rect.right - rect.width() * 0.03f,
-            rect.bottom - rect.height() * 0.06f,
-            max(rect.width(), rect.height()) * 0.70f,
-            intArrayOf(alpha(if (variant == Variant.ACTIVE) primary else tertiary, glowStrength / 2), Color.TRANSPARENT),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        canvas.drawRect(rect, glowPaint)
-
-        if (variant == Variant.HERO || variant == Variant.CARD || variant == Variant.DOCK) {
-            wavePath.reset()
-            wavePath.moveTo(rect.left - dp(14f), rect.bottom - rect.height() * 0.18f)
-            wavePath.cubicTo(
-                rect.left + rect.width() * 0.20f,
-                rect.bottom - rect.height() * 0.01f,
-                rect.left + rect.width() * 0.58f,
-                rect.bottom - rect.height() * 0.34f,
-                rect.right + dp(14f),
-                rect.bottom - rect.height() * 0.12f
-            )
-            wavePaint.shader = LinearGradient(
-                rect.left,
-                rect.bottom,
-                rect.right,
+        if (variant == Variant.HERO || variant == Variant.DOCK || variant == Variant.ACTIVE) {
+            glow.shader = RadialGradient(
+                rect.left + rect.width() * 0.12f,
                 rect.top,
-                alpha(primary, if (variant == Variant.DOCK) 46 else 38),
-                alpha(secondary, 6),
-                Shader.TileMode.CLAMP
+                max(rect.width(), rect.height()) * 0.72f,
+                intArrayOf(withAlpha(primary, if (light) 34 else 48), Color.TRANSPARENT),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
             )
-            canvas.drawPath(wavePath, wavePaint)
+            canvas.drawRoundRect(rect, radius, radius, glow)
         }
-        canvas.restoreToCount(save)
 
-        strokePaint.shader = LinearGradient(
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.bottom,
-            intArrayOf(
-                alpha(Color.WHITE, if (variant == Variant.ACTIVE) 214 else 148),
-                alpha(primary, if (variant == Variant.ACTIVE) 226 else 152),
-                alpha(outline, 92)
-            ),
-            floatArrayOf(0f, 0.42f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        val inset = strokePaint.strokeWidth / 2f
+        border.color = mix(outline, primary, if (variant == Variant.ACTIVE) 0.48f else 0.12f)
+        border.alpha = if (light) 135 else 155
+        val inset = border.strokeWidth / 2f
         canvas.drawRoundRect(
             RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
-            radius,
-            radius,
-            strokePaint
+            radius, radius, border
         )
 
-        innerPaint.shader = LinearGradient(
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.bottom,
-            alpha(Color.WHITE, 48),
-            alpha(primary, 14),
-            Shader.TileMode.CLAMP
-        )
-        val innerInset = dp(2.4f)
-        canvas.drawRoundRect(
-            RectF(rect.left + innerInset, rect.top + innerInset, rect.right - innerInset, rect.bottom - innerInset),
-            radius - innerInset,
-            radius - innerInset,
-            innerPaint
-        )
-
-        shinePaint.shader = LinearGradient(
-            rect.left,
-            rect.top,
-            rect.right,
-            rect.top,
-            intArrayOf(alpha(Color.WHITE, 190), alpha(primary, 112), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.47f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        val y = rect.top + dp(1.7f)
-        canvas.drawLine(rect.left + radius * 0.68f, y, rect.right - radius * 0.70f, y, shinePaint)
+        highlight.color = Color.WHITE
+        highlight.alpha = if (light) 112 else 72
+        val y = rect.top + dp(1.4f)
+        canvas.drawLine(rect.left + radius * 0.75f, y, rect.right - radius * 0.75f, y, highlight)
     }
 
     override fun setAlpha(alpha: Int) = Unit
     override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) = Unit
-
     @Deprecated("Deprecated in Android")
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
-
     override fun isStateful(): Boolean = true
 
     override fun onStateChange(state: IntArray): Boolean {
@@ -232,31 +107,22 @@ class LiquidGlassDrawable(
         return true
     }
 
-    override fun getOutline(outlineValue: Outline) {
-        val radius = dp(if (variant == Variant.DOCK) 38f else 28f)
-        outlineValue.setRoundRect(bounds, radius)
-        outlineValue.alpha = when (variant) {
-            Variant.DOCK, Variant.HERO -> 0.70f
-            Variant.ACTIVE -> 0.78f
-            else -> 0.56f
-        }
+    override fun getOutline(outline: Outline) {
+        outline.setRoundRect(bounds, dp(if (variant == Variant.DOCK) 36f else 24f))
+        outline.alpha = if (variant == Variant.ACTIVE || variant == Variant.HERO) 0.72f else 0.56f
     }
 
     private fun dp(value: Float): Float = value * density
-
-    private fun alpha(color: Int, value: Int): Int = Color.argb(
-        value.coerceIn(0, 255),
-        Color.red(color),
-        Color.green(color),
-        Color.blue(color)
+    private fun withAlpha(color: Int, value: Int): Int = Color.argb(
+        value.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color)
     )
-
     private fun mix(first: Int, second: Int, amount: Float): Int {
-        val inverse = 1f - amount.coerceIn(0f, 1f)
+        val a = amount.coerceIn(0f, 1f)
+        val b = 1f - a
         return Color.rgb(
-            (Color.red(first) * inverse + Color.red(second) * amount).toInt(),
-            (Color.green(first) * inverse + Color.green(second) * amount).toInt(),
-            (Color.blue(first) * inverse + Color.blue(second) * amount).toInt()
+            (Color.red(first) * b + Color.red(second) * a).toInt(),
+            (Color.green(first) * b + Color.green(second) * a).toInt(),
+            (Color.blue(first) * b + Color.blue(second) * a).toInt()
         )
     }
 }

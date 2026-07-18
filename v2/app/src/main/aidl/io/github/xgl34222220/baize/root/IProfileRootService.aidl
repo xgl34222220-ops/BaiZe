@@ -7,12 +7,13 @@ interface IProfileRootService {
     String getProfilePage(String snapshotId, int offset, int limit);
     String cleanProfileSelected(String snapshotId, String selectionJson, String optionsJson);
 
-    // Alpha 6 product path: run the module cleaner directly. "clean" performs one-tap safe
-    // discovery + deletion; "scan" only audits and never requires opening every category.
     String runModuleTask(String mode);
     String getModuleState();
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
+
+    String getWhitelistPackages();
+    String saveWhitelistPackages(String packagesJson);
 
     String getTaskState();
     void cancelCurrentTask();

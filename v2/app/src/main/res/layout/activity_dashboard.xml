@@ -698,57 +698,54 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="126dp">
 
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="设置" android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="偏好设置"
+                    android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
 
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.GlassCard"
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp"
-                    android:tag="glass:card">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="17dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="主题与取色"
-                            android:textColor="?attr/colorOnSurface"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/themeSummaryText"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="5dp"
-                            android:text="正在读取当前主题"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="11sp" />
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/themeButton"
-                            style="@style/Widget.BaiZe.Button.Outlined"
-                            android:layout_width="match_parent"
-                            android:layout_height="50dp"
-                            android:layout_marginTop="12dp"
-                            android:text="切换主题" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
+                    android:layout_marginTop="3dp"
+                    android:text="外观、清理保护与服务管理"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="18dp">
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="17dp">
-                        <TextView android:id="@+id/settingsStatusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="正在连接 Root 服务" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
-                        <TextView android:id="@+id/whitelistText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="白名单：0 个应用" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
-                        <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/notificationSwitch" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="任务完成通知" android:textColor="?attr/colorOnSurface" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="外观"
+                            android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
+
+                        <TextView
+                            android:id="@+id/themeSummaryText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="正在读取当前主题"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/themeButton"
+                            style="@style/Widget.BaiZe.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="14dp"
+                            android:text="选择主题配色" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -756,20 +753,125 @@
                     style="@style/Widget.BaiZe.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="11dp">
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="17dp">
-                        <TextView android:id="@+id/largeFileText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="单文件上限 256 MB" android:textColor="?attr/colorOnSurface" android:textSize="13sp" android:textStyle="bold" />
-                        <com.google.android.material.slider.Slider android:id="@+id/largeFileSlider" android:layout_width="match_parent" android:layout_height="wrap_content" android:value="256" android:stepSize="16" android:valueFrom="16" android:valueTo="2048" />
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="清理保护"
+                            android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
+
+                        <TextView
+                            android:id="@+id/whitelistText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="白名单：等待 Root 服务连接"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/manageWhitelistButton"
+                            style="@style/Widget.Material3.Button.FilledTonalButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="12dp"
+                            android:text="管理应用白名单" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/notificationSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="任务完成后发送通知"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <TextView
+                            android:id="@+id/largeFileText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="单文件保护上限 256 MB"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:text="超过上限的单个文件只统计，不会删除"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/largeFileSlider"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:value="256"
+                            android:stepSize="16"
+                            android:valueFrom="16"
+                            android:valueTo="2048" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/saveProtectionButton"
+                            android:layout_width="match_parent"
+                            android:layout_height="54dp"
+                            android:layout_marginTop="10dp"
+                            android:text="保存保护设置" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/reconnectButton"
-                    style="@style/Widget.BaiZe.Button.Outlined"
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.BaiZe.GlassCard"
                     android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:layout_marginTop="11dp"
-                    android:text="重新连接 Root 服务" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="服务与诊断"
+                            android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
+
+                        <TextView
+                            android:id="@+id/settingsStatusText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="正在连接 Root 服务"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/reconnectButton"
+                            style="@style/Widget.BaiZe.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="14dp"
+                            android:text="重新连接 Root 服务" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/crashReportButton"
+                            style="@style/Widget.BaiZe.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="10dp"
+                            android:text="查看最近崩溃诊断" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
     </FrameLayout>

@@ -42,6 +42,7 @@ class DashboardActivity : AppCompatActivity() {
             readServiceStatus()
             loadSchedulerConfig()
             refreshModuleState()
+            refreshWhitelist()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -60,7 +61,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 12.1"
+        binding.versionText.text = "Alpha 13"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -142,6 +143,16 @@ class DashboardActivity : AppCompatActivity() {
             serviceBound = false
             connectService()
         }
+        binding.manageWhitelistButton.setOnClickListener {
+            startActivity(Intent(this, WhitelistActivity::class.java))
+        }
+        binding.saveProtectionButton.setOnClickListener {
+            saveSettingsPatch(
+                notification = binding.notificationSwitch.isChecked,
+                maxFileMb = binding.largeFileSlider.value.toInt()
+            )
+        }
+        binding.crashReportButton.setOnClickListener { showCrashDialog() }
         binding.savePlanButton.setOnClickListener { saveSchedulerConfig() }
         binding.refreshRecordsButton.setOnClickListener { refreshModuleState() }
     }
@@ -542,37 +553,26 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun refreshWhitelist() {
-        val packageCount = readStringSetCompat("package_whitelist").size
-        val pathCount = readStringSetCompat("path_whitelist").size
-        binding.whitelistText.text = if (pathCount > 0) {
-            "白名单：$packageCount 个应用 · $pathCount 条路径"
-        } else {
-            "白名单：$packageCount 个应用"
+        val rootService = profileService
+        if (rootService == null) {
+            binding.whitelistText.text = "白名单：等待 Root 服务连接"
+            binding.manageWhitelistButton.isEnabled = false
+            return
         }
-    }
-
-    private fun readStringSetCompat(key: String): Set<String> {
-        runCatching {
-            return preferences.getStringSet(key, emptySet()).orEmpty().toSet()
+        binding.manageWhitelistButton.isEnabled = true
+        lifecycleScope.launch {
+            val raw = runCatching {
+                withContext(Dispatchers.IO) { rootService.getWhitelistPackages() }
+            }.getOrNull()
+            val count = raw?.let {
+                runCatching { org.json.JSONArray(it).length() }.getOrDefault(0)
+            } ?: 0
+            binding.whitelistText.text = if (count > 0) {
+                "已保护 $count 个应用 · 内部数据与外部目录均跳过"
+            } else {
+                "尚未添加应用白名单"
+            }
         }
-
-        val migrated = when (val legacy = preferences.all[key]) {
-            is String -> legacy
-                .trim()
-                .removePrefix("[")
-                .removeSuffix("]")
-                .split('\n', ',', ';')
-                .asSequence()
-                .map { it.trim().trim('\"') }
-                .filter { it.isNotBlank() }
-                .toSet()
-            is Collection<*> -> legacy.filterIsInstance<String>().filter { it.isNotBlank() }.toSet()
-            else -> emptySet()
-        }
-
-        preferences.edit().remove(key).apply()
-        if (migrated.isNotEmpty()) preferences.edit().putStringSet(key, migrated).apply()
-        return migrated
     }
 
     private fun connectService() {

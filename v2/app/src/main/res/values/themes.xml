@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.BaiZe.Base" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorOnPrimary">#07111B</item>
-        <item name="colorOnPrimaryContainer">#F5F9FF</item>
-        <item name="colorOnSecondary">#061411</item>
-        <item name="colorOnSecondaryContainer">#F2FFFC</item>
-        <item name="colorError">#FF7F88</item>
-        <item name="colorOnError">#210005</item>
-        <item name="colorOnSurface">#F5F8FD</item>
-        <item name="colorOnSurfaceVariant">#AAB8CC</item>
-        <item name="colorOutline">#64748A</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
+    <style name="Theme.BaiZe.Base" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorOnPrimaryContainer">#15254A</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorOnSecondaryContainer">#12383B</item>
+        <item name="colorError">#BA1A1A</item>
+        <item name="colorOnError">#FFFFFF</item>
+        <item name="colorOnSurface">#17191F</item>
+        <item name="colorOnSurfaceVariant">#61656F</item>
+        <item name="colorOutline">#C5C9D3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowBackground">#F6F7FB</item>
+        <item name="android:statusBarColor">#F6F7FB</item>
+        <item name="android:navigationBarColor">#F6F7FB</item>
         <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
         <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
     </style>
@@ -21,74 +24,68 @@
     <style name="Theme.BaiZe" parent="Theme.BaiZe.Blue" />
 
     <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#58A9FF</item>
-        <item name="colorPrimaryContainer">#173B5F</item>
-        <item name="colorSecondary">#53D4C6</item>
-        <item name="colorSecondaryContainer">#153F3A</item>
-        <item name="colorTertiary">#9B8CFF</item>
-        <item name="colorSurface">#0B1321</item>
-        <item name="colorSurfaceVariant">#172438</item>
-        <item name="android:windowBackground">#07101E</item>
-        <item name="android:statusBarColor">#07101E</item>
-        <item name="android:navigationBarColor">#07101E</item>
+        <item name="colorPrimary">#356DF3</item>
+        <item name="colorPrimaryContainer">#DDE6FF</item>
+        <item name="colorSecondary">#177A83</item>
+        <item name="colorSecondaryContainer">#C8EEF1</item>
+        <item name="colorTertiary">#7259C8</item>
+        <item name="colorSurface">#F8F9FD</item>
+        <item name="colorSurfaceVariant">#ECEFF6</item>
     </style>
 
     <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#9B8CFF</item>
-        <item name="colorPrimaryContainer">#33255F</item>
-        <item name="colorSecondary">#59C9FF</item>
-        <item name="colorSecondaryContainer">#153A52</item>
-        <item name="colorTertiary">#E18DFF</item>
-        <item name="colorSurface">#120F1D</item>
-        <item name="colorSurfaceVariant">#241C37</item>
-        <item name="android:windowBackground">#0B0913</item>
-        <item name="android:statusBarColor">#0B0913</item>
-        <item name="android:navigationBarColor">#0B0913</item>
+        <item name="colorPrimary">#7658D6</item>
+        <item name="colorPrimaryContainer">#E9E0FF</item>
+        <item name="colorSecondary">#3D739D</item>
+        <item name="colorSecondaryContainer">#D4E9F8</item>
+        <item name="colorTertiary">#A34E86</item>
+        <item name="colorSurface">#FAF8FD</item>
+        <item name="colorSurfaceVariant">#F0ECF6</item>
     </style>
 
     <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#4ED7B6</item>
-        <item name="colorPrimaryContainer">#123E37</item>
-        <item name="colorSecondary">#65B7FF</item>
-        <item name="colorSecondaryContainer">#163852</item>
-        <item name="colorTertiary">#A2D86B</item>
-        <item name="colorSurface">#0A1715</item>
-        <item name="colorSurfaceVariant">#162A27</item>
-        <item name="android:windowBackground">#06100F</item>
-        <item name="android:statusBarColor">#06100F</item>
-        <item name="android:navigationBarColor">#06100F</item>
+        <item name="colorPrimary">#167C68</item>
+        <item name="colorPrimaryContainer">#C6F0E4</item>
+        <item name="colorSecondary">#3B718E</item>
+        <item name="colorSecondaryContainer">#D2E9F4</item>
+        <item name="colorTertiary">#6A6F35</item>
+        <item name="colorSurface">#F7FAF8</item>
+        <item name="colorSurfaceVariant">#E9F1ED</item>
     </style>
 
     <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#FFAD63</item>
-        <item name="colorPrimaryContainer">#593217</item>
-        <item name="colorSecondary">#FFD166</item>
-        <item name="colorSecondaryContainer">#4A3A11</item>
-        <item name="colorTertiary">#FF8496</item>
-        <item name="colorSurface">#19120D</item>
-        <item name="colorSurfaceVariant">#2D2119</item>
-        <item name="android:windowBackground">#100B08</item>
-        <item name="android:statusBarColor">#100B08</item>
-        <item name="android:navigationBarColor">#100B08</item>
+        <item name="colorPrimary">#A95B25</item>
+        <item name="colorPrimaryContainer">#FFE2CC</item>
+        <item name="colorSecondary">#846417</item>
+        <item name="colorSecondaryContainer">#F5E5B8</item>
+        <item name="colorTertiary">#A44E61</item>
+        <item name="colorSurface">#FCF8F5</item>
+        <item name="colorSurfaceVariant">#F4ECE7</item>
     </style>
 
-    <style name="Theme.BaiZe.Amoled" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#65B3FF</item>
-        <item name="colorPrimaryContainer">#092A4A</item>
-        <item name="colorSecondary">#70E0D1</item>
-        <item name="colorSecondaryContainer">#103632</item>
-        <item name="colorTertiary">#A89AFF</item>
+    <style name="Theme.BaiZe.Amoled" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#82B1FF</item>
+        <item name="colorPrimaryContainer">#163B70</item>
+        <item name="colorSecondary">#77D7D1</item>
+        <item name="colorSecondaryContainer">#174441</item>
+        <item name="colorTertiary">#C2B5FF</item>
         <item name="colorSurface">#000000</item>
-        <item name="colorSurfaceVariant">#0A0E14</item>
+        <item name="colorSurfaceVariant">#111318</item>
+        <item name="colorOnSurface">#F3F4F8</item>
+        <item name="colorOnSurfaceVariant">#ADB2BD</item>
+        <item name="colorOutline">#3F434C</item>
         <item name="android:windowBackground">#000000</item>
         <item name="android:statusBarColor">#000000</item>
         <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
+        <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
     </style>
 
     <style name="Theme.BaiZe.Monet" parent="Theme.Material3.DynamicColors.Dark.NoActionBar">
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowActionModeOverlay">true</item>
         <item name="android:fontFamily">sans-serif</item>
         <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
         <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
@@ -96,14 +93,14 @@
 
     <style name="Widget.BaiZe.GlassCard" parent="Widget.Material3.CardView.Filled">
         <item name="cardBackgroundColor">?attr/colorSurfaceVariant</item>
-        <item name="cardCornerRadius">26dp</item>
+        <item name="cardCornerRadius">24dp</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeColor">?attr/colorOutline</item>
-        <item name="strokeWidth">0.6dp</item>
+        <item name="strokeWidth">0.7dp</item>
     </style>
 
     <style name="Widget.BaiZe.Button" parent="Widget.Material3.Button">
-        <item name="cornerRadius">18dp</item>
+        <item name="cornerRadius">17dp</item>
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
@@ -112,17 +109,16 @@
     </style>
 
     <style name="Widget.Material3.Button.FilledTonalButton" parent="Widget.Material3.Button">
-        <item name="backgroundTint">?attr/colorSurfaceVariant</item>
-        <item name="android:textColor">?attr/colorOnSurface</item>
-        <item name="cornerRadius">18dp</item>
+        <item name="backgroundTint">?attr/colorPrimaryContainer</item>
+        <item name="android:textColor">?attr/colorOnPrimaryContainer</item>
+        <item name="cornerRadius">17dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:stateListAnimator">@null</item>
     </style>
 
     <style name="Widget.BaiZe.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="cornerRadius">18dp</item>
+        <item name="cornerRadius">17dp</item>
         <item name="android:minHeight">50dp</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:fontFamily">sans-serif-medium</item>
@@ -142,7 +138,7 @@
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">17sp</item>
     </style>
 
     <style name="TextAppearance.BaiZe.Nav.Active" parent="TextAppearance.Material3.LabelMedium">

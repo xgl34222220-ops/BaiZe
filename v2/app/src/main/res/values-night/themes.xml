@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BaiZe.Base" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorOnPrimaryContainer">#EAF0FF</item>
+        <item name="colorOnSecondary">#071F21</item>
+        <item name="colorOnSecondaryContainer">#D8F5F4</item>
+        <item name="colorError">#FFB4AB</item>
+        <item name="colorOnError">#690005</item>
+        <item name="colorOnSurface">#F0F2F7</item>
+        <item name="colorOnSurfaceVariant">#ADB3C0</item>
+        <item name="colorOutline">#424854</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowBackground">#0D0F14</item>
+        <item name="android:statusBarColor">#0D0F14</item>
+        <item name="android:navigationBarColor">#0D0F14</item>
+        <item name="materialCardViewStyle">@style/Widget.BaiZe.GlassCard</item>
+        <item name="materialButtonStyle">@style/Widget.BaiZe.Button</item>
+    </style>
+
+    <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#8DB3FF</item>
+        <item name="colorPrimaryContainer">#243A68</item>
+        <item name="colorSecondary">#73CFD2</item>
+        <item name="colorSecondaryContainer">#24494C</item>
+        <item name="colorTertiary">#C2B4FF</item>
+        <item name="colorSurface">#0F1218</item>
+        <item name="colorSurfaceVariant">#1A1E27</item>
+    </style>
+
+    <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#C5B4FF</item>
+        <item name="colorPrimaryContainer">#45356F</item>
+        <item name="colorSecondary">#94C7EA</item>
+        <item name="colorSecondaryContainer">#294A60</item>
+        <item name="colorTertiary">#F2B3D8</item>
+        <item name="colorSurface">#121017</item>
+        <item name="colorSurfaceVariant">#211D29</item>
+    </style>
+
+    <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#78D8BE</item>
+        <item name="colorPrimaryContainer">#1F5147</item>
+        <item name="colorSecondary">#8BC7E4</item>
+        <item name="colorSecondaryContainer">#285064</item>
+        <item name="colorTertiary">#CED58B</item>
+        <item name="colorSurface">#0D1412</item>
+        <item name="colorSurfaceVariant">#18241F</item>
+    </style>
+
+    <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#FFB783</item>
+        <item name="colorPrimaryContainer">#633A21</item>
+        <item name="colorSecondary">#E6C46A</item>
+        <item name="colorSecondaryContainer">#554619</item>
+        <item name="colorTertiary">#F3B0BC</item>
+        <item name="colorSurface">#15110E</item>
+        <item name="colorSurfaceVariant">#251E19</item>
+    </style>
+</resources>

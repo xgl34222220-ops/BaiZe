@@ -78,7 +78,7 @@ object Alpha7UiPolish {
             view.strokeWidth = 0
             view.cardElevation = 0f
             view.background = LiquidGlassDrawable(activity, variant)
-            view.elevation = dp(activity, if (variant == LiquidGlassDrawable.Variant.HERO) 18 else 10).toFloat()
+            view.elevation = dp(activity, if (variant == LiquidGlassDrawable.Variant.HERO) 10 else 4).toFloat()
             view.translationZ = dp(activity, 1).toFloat()
             view.clipToOutline = true
         }
@@ -88,7 +88,7 @@ object Alpha7UiPolish {
                 view.id == R.id.cleanNowButton ||
                 view.id == R.id.cleanAllButton ||
                 view.id == R.id.savePlanButton
-            ) dp(activity, 10).toFloat() else dp(activity, 2).toFloat()
+            ) dp(activity, 6).toFloat() else 0f
         }
         if (view is ViewGroup) {
             for (index in 0 until view.childCount) applyGlassTree(view.getChildAt(index), activity)
@@ -101,7 +101,7 @@ object Alpha7UiPolish {
         val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 12.1"
+            text = "Alpha 13"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)
