@@ -60,10 +60,10 @@ class FloatingGlassDock @JvmOverloads constructor(
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER
-        minimumHeight = dp(92)
-        setPadding(dp(8), dp(8), dp(8), dp(8))
+        minimumHeight = dp(84)
+        setPadding(dp(7), dp(7), dp(7), dp(7))
         background = LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
-        elevation = dp(24).toFloat()
+        elevation = dp(16).toFloat()
         translationZ = dp(5).toFloat()
         clipToPadding = false
         clipChildren = false
@@ -82,7 +82,7 @@ class FloatingGlassDock @JvmOverloads constructor(
         items.clear()
         specs.forEach { spec ->
             val item = DockItemView(context, spec.icon, spec.title).apply {
-                layoutParams = LayoutParams(0, dp(74), 1f).apply {
+                layoutParams = LayoutParams(0, dp(66), 1f).apply {
                     marginStart = dp(2)
                     marginEnd = dp(2)
                 }
@@ -124,13 +124,13 @@ class FloatingGlassDock @JvmOverloads constructor(
             clipToOutline = true
             contentDescription = title
 
-            icon.layoutParams = LayoutParams(dp(24), dp(24))
+            icon.layoutParams = LayoutParams(dp(22), dp(22))
             icon.scaleType = ImageView.ScaleType.CENTER_INSIDE
             icon.setImageDrawable(AppCompatResources.getDrawable(context, iconRes))
             addView(icon)
 
             label.layoutParams = LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(20)).apply {
-                topMargin = dp(7)
+                topMargin = dp(5)
             }
             label.text = title
             label.gravity = Gravity.CENTER
@@ -154,7 +154,7 @@ class FloatingGlassDock @JvmOverloads constructor(
             label.setTextColor(if (active) activeText else inactive)
             label.setTypeface(label.typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             background = if (active) LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.ACTIVE) else null
-            elevation = if (active) dp(13).toFloat() else 0f
+            elevation = if (active) dp(8).toFloat() else 0f
             if (!animated) {
                 scaleX = if (active) 1f else 0.97f
                 scaleY = if (active) 1f else 0.97f
@@ -167,7 +167,7 @@ class FloatingGlassDock @JvmOverloads constructor(
                 .scaleX(if (active) 1f else 0.97f)
                 .scaleY(if (active) 1f else 0.97f)
                 .alpha(if (active) 1f else 0.88f)
-                .setDuration(280L)
+                .setDuration(220L)
                 .setInterpolator(interpolator)
                 .start()
         }

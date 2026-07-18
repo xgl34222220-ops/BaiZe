@@ -108,6 +108,9 @@ class BaiZeProfileRootService : RootService() {
 
         override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
 
+        override fun getInstalledPackageCatalog(): String =
+            this@BaiZeProfileRootService.installedPackageCatalogJson()
+
         override fun getWhitelistPackages(): String = this@BaiZeProfileRootService.whitelistPackagesJson()
 
         override fun saveWhitelistPackages(packagesJson: String?): String =
@@ -274,6 +277,55 @@ class BaiZeProfileRootService : RootService() {
         }
         return JSONObject().put("success", true).put("config", configJsonObject()).toString()
     }
+
+    private fun installedPackageCatalogJson(): String {
+        val systemPackages = queryPackageNames("cmd package list packages -s").toSet()
+        val thirdPartyPackages = queryPackageNames("cmd package list packages -3").toSet()
+        val allPackages = linkedSetOf<String>()
+        allPackages += queryPackageNames("cmd package list packages")
+        allPackages += systemPackages
+        allPackages += thirdPartyPackages
+
+        if (allPackages.isEmpty()) {
+            listOf("/data/user/0", "/data/user_de/0").forEach { rootPath ->
+                File(rootPath).listFiles()
+                    ?.asSequence()
+                    ?.filter { it.isDirectory && PACKAGE_NAME.matches(it.name) }
+                    ?.mapTo(allPackages) { it.name }
+            }
+        }
+
+        val packages = JSONArray()
+        allPackages.asSequence()
+            .filter { PACKAGE_NAME.matches(it) }
+            .sorted()
+            .forEach { packageName ->
+                packages.put(
+                    JSONObject()
+                        .put("packageName", packageName)
+                        .put("system", packageName in systemPackages && packageName !in thirdPartyPackages)
+                )
+            }
+        return JSONObject()
+            .put("success", packages.length() > 0)
+            .put("source", if (systemPackages.isNotEmpty() || thirdPartyPackages.isNotEmpty()) "root-cmd" else "data-fallback")
+            .put("count", packages.length())
+            .put("packages", packages)
+            .toString()
+    }
+
+    private fun queryPackageNames(command: String): List<String> = runCatching {
+        val process = ProcessBuilder("/system/bin/sh", "-c", command)
+            .redirectErrorStream(true)
+            .start()
+        val lines = process.inputStream.bufferedReader().use { it.readLines() }
+        if (!process.waitFor(8, TimeUnit.SECONDS)) process.destroyForcibly()
+        lines.asSequence()
+            .map { it.trim().removePrefix("package:").substringBefore(' ') }
+            .filter { PACKAGE_NAME.matches(it) }
+            .distinct()
+            .toList()
+    }.getOrDefault(emptyList())
 
     private fun whitelistPackagesJson(): String = JSONArray(readWhitelistPackages().sorted()).toString()
 
@@ -497,6 +549,7 @@ class BaiZeProfileRootService : RootService() {
             "clean_hidden_junk" to 0..1,
             "clean_fragments" to 0..1,
             "clean_custom_rules" to 0..1,
+            "clean_installer_temp" to 0..1,
             "notify_on_complete" to 0..1,
             "notify_zero_result" to 0..1,
             "deep_high_risk_enabled" to 0..1,
@@ -507,6 +560,7 @@ class BaiZeProfileRootService : RootService() {
             "empty_file_days" to 0..365,
             "hidden_junk_days" to 0..365,
             "fragment_days" to 0..365,
+            "installer_temp_days" to 1..30,
             "max_file_mb" to 16..16_384
         )
     }

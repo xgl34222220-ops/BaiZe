@@ -61,7 +61,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 13"
+        binding.versionText.text = "Alpha 14"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -149,6 +149,7 @@ class DashboardActivity : AppCompatActivity() {
         binding.saveProtectionButton.setOnClickListener {
             saveSettingsPatch(
                 notification = binding.notificationSwitch.isChecked,
+                notifyZero = binding.notifyZeroSwitch.isChecked,
                 maxFileMb = binding.largeFileSlider.value.toInt()
             )
         }
@@ -270,13 +271,14 @@ class DashboardActivity : AppCompatActivity() {
         Toast.makeText(this, "正在重新连接 Root 服务", Toast.LENGTH_SHORT).show()
     }
 
-    private fun saveSettingsPatch(notification: Boolean? = null, maxFileMb: Int? = null) {
+    private fun saveSettingsPatch(notification: Boolean? = null, notifyZero: Boolean? = null, maxFileMb: Int? = null) {
         val rootService = profileService ?: run {
             Toast.makeText(this, "Root 服务尚未连接", Toast.LENGTH_SHORT).show()
             return
         }
         val payload = JSONObject()
         notification?.let { payload.put("notify_on_complete", if (it) 1 else 0) }
+        notifyZero?.let { payload.put("notify_zero_result", if (it) 1 else 0) }
         maxFileMb?.let { payload.put("max_file_mb", it.coerceIn(16, 2048)) }
         lifecycleScope.launch {
             val result = runCatching {
@@ -310,6 +312,15 @@ class DashboardActivity : AppCompatActivity() {
         }
         binding.fragmentDaysSlider.addOnChangeListener { _, value, _ ->
             binding.fragmentDaysText.text = fragmentRetentionLabel(value.toInt())
+        }
+        binding.cacheDaysSlider.addOnChangeListener { _, value, _ ->
+            binding.cacheDaysText.text = retentionLabel("缓存", value.toInt())
+        }
+        binding.logDaysSlider.addOnChangeListener { _, value, _ ->
+            binding.logDaysText.text = retentionLabel("日志", value.toInt())
+        }
+        binding.installerDaysSlider.addOnChangeListener { _, value, _ ->
+            binding.installerDaysText.text = "安装临时文件保留 ${value.toInt()} 天"
         }
 
         val previewSwitches = listOf(
@@ -439,14 +450,32 @@ class DashboardActivity : AppCompatActivity() {
             binding.deviceIdleSwitch.isChecked = json.optInt("device_idle_only", 0) == 1
             binding.minBatterySlider.value = snapToStep(json.optInt("min_battery", 25), 0, 100, 5)
             binding.notificationSwitch.isChecked = json.optInt("notify_on_complete", 1) == 1
+            binding.notifyZeroSwitch.isChecked = json.optInt("notify_zero_result", 0) == 1
             binding.largeFileSlider.value = snapToStep(json.optInt("max_file_mb", 256), 16, 2048, 16)
             binding.fragmentDaysSlider.value = json.optInt("fragment_days", 7).coerceIn(0, 30).toFloat()
+            binding.cacheDaysSlider.value = json.optInt("app_cache_days", 0).coerceIn(0, 30).toFloat()
+            binding.logDaysSlider.value = json.optInt("system_logs_days", 7).coerceIn(0, 30).toFloat()
+            binding.installerDaysSlider.value = json.optInt("installer_temp_days", 7).coerceIn(1, 30).toFloat()
+            binding.cleanInternalCacheSwitch.isChecked = json.optInt("clean_app_cache", 1) == 1
+            binding.cleanExternalCacheSwitch.isChecked = json.optInt("clean_external_cache", 1) == 1
+            binding.cleanAppRulesSwitch.isChecked = json.optInt("clean_app_rules", 1) == 1
+            binding.cleanSystemLogsSwitch.isChecked = json.optInt("clean_system_logs", 1) == 1
+            binding.cleanOemLogsSwitch.isChecked = json.optInt("clean_oem_logs", 0) == 1
+            binding.cleanHiddenJunkSwitch.isChecked = json.optInt("clean_hidden_junk", 1) == 1
+            binding.cleanEmptyFilesSwitch.isChecked = json.optInt("clean_empty_files", 1) == 1
+            binding.cleanEmptyDirsSwitch.isChecked = json.optInt("clean_empty_dirs", 1) == 1
+            binding.cleanFragmentsSwitch.isChecked = json.optInt("clean_fragments", 1) == 1
+            binding.cleanInstallerTempSwitch.isChecked = json.optInt("clean_installer_temp", 0) == 1
+            binding.cleanCustomRulesSwitch.isChecked = json.optInt("clean_custom_rules", 0) == 1
             loadingConfig = false
             binding.intervalText.text = "每 ${binding.intervalSlider.value.toInt()} 小时"
             binding.dailyHourText.text = String.format("每日 %02d:00", binding.dailyHourSlider.value.toInt())
             binding.minBatteryText.text = "最低电量 ${binding.minBatterySlider.value.toInt()}%"
             binding.largeFileText.text = "单文件上限 ${binding.largeFileSlider.value.toInt()} MB"
             binding.fragmentDaysText.text = fragmentRetentionLabel(binding.fragmentDaysSlider.value.toInt())
+            binding.cacheDaysText.text = retentionLabel("缓存", binding.cacheDaysSlider.value.toInt())
+            binding.logDaysText.text = retentionLabel("日志", binding.logDaysSlider.value.toInt())
+            binding.installerDaysText.text = "安装临时文件保留 ${binding.installerDaysSlider.value.toInt()} 天"
             updatePlanPreview()
         }
     }
@@ -474,8 +503,27 @@ class DashboardActivity : AppCompatActivity() {
             .put("device_idle_only", flag(binding.deviceIdleSwitch.isChecked))
             .put("min_battery", binding.minBatterySlider.value.toInt())
             .put("notify_on_complete", flag(binding.notificationSwitch.isChecked))
+            .put("notify_zero_result", flag(binding.notifyZeroSwitch.isChecked))
             .put("max_file_mb", binding.largeFileSlider.value.toInt())
+            .put("clean_app_cache", flag(binding.cleanInternalCacheSwitch.isChecked))
+            .put("clean_external_cache", flag(binding.cleanExternalCacheSwitch.isChecked))
+            .put("clean_app_rules", flag(binding.cleanAppRulesSwitch.isChecked))
+            .put("clean_system_logs", flag(binding.cleanSystemLogsSwitch.isChecked))
+            .put("clean_oem_logs", flag(binding.cleanOemLogsSwitch.isChecked))
+            .put("clean_hidden_junk", flag(binding.cleanHiddenJunkSwitch.isChecked))
+            .put("clean_empty_files", flag(binding.cleanEmptyFilesSwitch.isChecked))
+            .put("clean_empty_dirs", flag(binding.cleanEmptyDirsSwitch.isChecked))
+            .put("clean_fragments", flag(binding.cleanFragmentsSwitch.isChecked))
+            .put("clean_installer_temp", flag(binding.cleanInstallerTempSwitch.isChecked))
+            .put("clean_custom_rules", flag(binding.cleanCustomRulesSwitch.isChecked))
+            .put("app_cache_days", binding.cacheDaysSlider.value.toInt())
+            .put("external_cache_days", binding.cacheDaysSlider.value.toInt())
+            .put("system_logs_days", binding.logDaysSlider.value.toInt())
+            .put("oem_logs_days", binding.logDaysSlider.value.toInt())
+            .put("hidden_junk_days", binding.cacheDaysSlider.value.toInt())
+            .put("empty_file_days", binding.cacheDaysSlider.value.toInt())
             .put("fragment_days", binding.fragmentDaysSlider.value.toInt())
+            .put("installer_temp_days", binding.installerDaysSlider.value.toInt())
 
         binding.planStateText.text = "正在写入模块调度配置…"
         lifecycleScope.launch {
@@ -515,6 +563,9 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun fragmentRetentionLabel(days: Int): String =
         if (days <= 0) "碎片立即清理" else "碎片保留 $days 天"
+
+    private fun retentionLabel(name: String, days: Int): String =
+        if (days <= 0) "$name 立即清理" else "$name 保留 $days 天"
 
     private fun snapToStep(value: Int, minimum: Int, maximum: Int, step: Int): Float {
         val clamped = value.coerceIn(minimum, maximum)

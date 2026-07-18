@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha13
-versionCode=20020
+version=v2.0.0-alpha14
+versionCode=20030
 author=惜故里丶
-description=白泽 v2 Alpha 13：重做系统明暗主题与低饱和玻璃 UI，新增真正写入清理引擎的应用白名单管理，并完善保护设置与诊断入口。
+description=白泽 v2 Alpha 14：Root 完整应用白名单、完整清理范围与保留策略、过期安装临时文件、安全明暗主题和精简 MIUI X 玻璃界面。

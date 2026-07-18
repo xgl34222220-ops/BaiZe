@@ -43,6 +43,7 @@ object Alpha7UiPolish {
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
+            is WhitelistActivity -> Unit
             is CacheActivity, is ProfileActivity, is SmartScanActivity -> polishDetail(activity)
         }
     }
@@ -101,7 +102,7 @@ object Alpha7UiPolish {
         val tertiary = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorTertiary, Color.rgb(155, 140, 255))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 13"
+            text = "Alpha 14"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.setIndicatorColor(primary)

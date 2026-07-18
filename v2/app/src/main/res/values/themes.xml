@@ -24,40 +24,40 @@
     <style name="Theme.BaiZe" parent="Theme.BaiZe.Blue" />
 
     <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#356DF3</item>
-        <item name="colorPrimaryContainer">#DDE6FF</item>
-        <item name="colorSecondary">#177A83</item>
-        <item name="colorSecondaryContainer">#C8EEF1</item>
-        <item name="colorTertiary">#7259C8</item>
-        <item name="colorSurface">#F8F9FD</item>
-        <item name="colorSurfaceVariant">#ECEFF6</item>
+        <item name="colorPrimary">#4D6FAD</item>
+        <item name="colorPrimaryContainer">#E3EAF6</item>
+        <item name="colorSecondary">#4D7C7A</item>
+        <item name="colorSecondaryContainer">#DDECEA</item>
+        <item name="colorTertiary">#7A7192</item>
+        <item name="colorSurface">#F7F8FA</item>
+        <item name="colorSurfaceVariant">#EEF1F5</item>
     </style>
 
     <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#7658D6</item>
-        <item name="colorPrimaryContainer">#E9E0FF</item>
-        <item name="colorSecondary">#3D739D</item>
-        <item name="colorSecondaryContainer">#D4E9F8</item>
-        <item name="colorTertiary">#A34E86</item>
+        <item name="colorPrimary">#756A9C</item>
+        <item name="colorPrimaryContainer">#ECE8F4</item>
+        <item name="colorSecondary">#5D788E</item>
+        <item name="colorSecondaryContainer">#E1EAF0</item>
+        <item name="colorTertiary">#8A667A</item>
         <item name="colorSurface">#FAF8FD</item>
         <item name="colorSurfaceVariant">#F0ECF6</item>
     </style>
 
     <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#167C68</item>
-        <item name="colorPrimaryContainer">#C6F0E4</item>
-        <item name="colorSecondary">#3B718E</item>
-        <item name="colorSecondaryContainer">#D2E9F4</item>
+        <item name="colorPrimary">#4C7B70</item>
+        <item name="colorPrimaryContainer">#DDECE7</item>
+        <item name="colorSecondary">#5A7886</item>
+        <item name="colorSecondaryContainer">#DFE9ED</item>
         <item name="colorTertiary">#6A6F35</item>
         <item name="colorSurface">#F7FAF8</item>
         <item name="colorSurfaceVariant">#E9F1ED</item>
     </style>
 
     <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#A95B25</item>
-        <item name="colorPrimaryContainer">#FFE2CC</item>
-        <item name="colorSecondary">#846417</item>
-        <item name="colorSecondaryContainer">#F5E5B8</item>
+        <item name="colorPrimary">#8D684F</item>
+        <item name="colorPrimaryContainer">#F2E7DF</item>
+        <item name="colorSecondary">#817357</item>
+        <item name="colorSecondaryContainer">#EEE8D9</item>
         <item name="colorTertiary">#A44E61</item>
         <item name="colorSurface">#FCF8F5</item>
         <item name="colorSurfaceVariant">#F4ECE7</item>

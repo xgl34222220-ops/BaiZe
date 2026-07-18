@@ -1870,6 +1870,22 @@ run_fragment_cleanup() {
   return 0
 }
 
+run_installer_temp() {
+  [ -d /data/local/tmp ] || return 0
+  list="$TMP_DIR/installer-temp.nul"
+  find /data/local/tmp -mindepth 1 -maxdepth 2 -type f -mtime "+$INSTALLER_TEMP_DAYS" \
+    \( -name '*.apk.tmp' -o -name '*.apks.tmp' -o -name '*.xapk.tmp' -o -name '*.zip.tmp' \
+       -o -name '*.part' -o -name '*.download' -o -name '*.crdownload' \) \
+    -size "-${MAX_FILE_BYTES}c" -print0 2>/dev/null >"$list"
+  filter_whitelist_list "$list"
+  while IFS= read -r -d '' file; do
+    CATEGORY="过期安装临时文件"
+    handle_file "$file" regular || { rm -f "$list"; return $?; }
+  done <"$list"
+  rm -f "$list"
+  return 0
+}
+
 run_custom_rules() {
   while IFS='|' read -r dir days extra || [ -n "$dir$days$extra" ]; do
     dir=$(printf '%s' "$dir" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -1902,6 +1918,7 @@ OEM_DAYS=$(get_uint oem_logs_days 7 0 365)
 EMPTY_DAYS=$(get_uint empty_file_days 0 0 365)
 HIDDEN_DAYS=$(get_uint hidden_junk_days 0 0 365)
 FRAGMENT_DAYS=$(get_uint fragment_days 7 0 365)
+INSTALLER_TEMP_DAYS=$(get_uint installer_temp_days 7 1 30)
 if [ "$FRAGMENT_DAYS" -eq 0 ]; then
   FRAGMENT_POLICY="立即清理"
   FRAGMENT_MTIME_ARGS=""
@@ -1996,6 +2013,11 @@ fi
 if [ "$STOPPED" = "0" ] && [ "$RUN_FRAGMENT" = "1" ] && [ "$(get_bool clean_fragments)" = "1" ]; then
   set_phase "扫描残留碎片（保留 ${FRAGMENT_DAYS} 天）"
   run_fragment_cleanup || STOPPED=1
+fi
+
+if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_installer_temp)" = "1" ]; then
+  set_phase "扫描过期安装临时文件"
+  run_installer_temp || STOPPED=1
 fi
 
 if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_custom_rules)" = "1" ]; then
