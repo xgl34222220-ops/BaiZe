@@ -2,6 +2,8 @@
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
 
+当前开发分支：`v2-alpha25`。
+
 ## Alpha 25
 
 - 补全应用缓存 `BaiZeRootService` 注册，修复双 Root 引擎状态不一致与缓存引擎无法连接。
