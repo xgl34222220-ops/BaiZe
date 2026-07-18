@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="baize_primary">#68B7FF</color>
-    <color name="baize_primary_container">#17334D</color>
-    <color name="baize_secondary">#5BDEC9</color>
-    <color name="baize_background">#0B1118</color>
-    <color name="baize_surface">#141B24</color>
-    <color name="baize_surface_high">#1B2734</color>
-    <color name="baize_glass">#E817202B</color>
-    <color name="baize_glass_soft">#D9232E3C</color>
-    <color name="baize_glass_stroke">#42FFFFFF</color>
-    <color name="baize_glass_highlight">#26FFFFFF</color>
-    <color name="baize_text_primary">#F7FAFF</color>
-    <color name="baize_text_secondary">#C1CCDA</color>
-    <color name="baize_text_tertiary">#929FB0</color>
-    <color name="baize_success">#5DD49D</color>
-    <color name="baize_warning">#F1B963</color>
-    <color name="baize_error">#F07A80</color>
-    <color name="baize_violet">#9187F6</color>
-    <color name="baize_nav_active">#FFFFFF</color>
-    <color name="baize_nav_inactive">#C7D2E0</color>
-    <color name="baize_nav_indicator">#38FFFFFF</color>
-    <color name="baize_nav_ripple">#24FFFFFF</color>
+    <color name="baize_primary">#2589F4</color>
+    <color name="baize_primary_container">#DCEBFF</color>
+    <color name="baize_secondary">#2FA6B8</color>
+    <color name="baize_background">#F2F5FA</color>
+    <color name="baize_surface">#FFFFFF</color>
+    <color name="baize_surface_high">#F6F8FC</color>
+    <color name="baize_glass">#F2FFFFFF</color>
+    <color name="baize_glass_soft">#E8FFFFFF</color>
+    <color name="baize_glass_stroke">#DCE4EF</color>
+    <color name="baize_glass_highlight">#FFFFFFFF</color>
+    <color name="baize_text_primary">#17202D</color>
+    <color name="baize_text_secondary">#657184</color>
+    <color name="baize_text_tertiary">#8993A3</color>
+    <color name="baize_success">#2E9F73</color>
+    <color name="baize_warning">#C8891F</color>
+    <color name="baize_error">#D85C60</color>
+    <color name="baize_violet">#7468D8</color>
+    <color name="baize_nav_active">#17202D</color>
+    <color name="baize_nav_inactive">#6C7482</color>
+    <color name="baize_nav_indicator">#DCE8F8</color>
+    <color name="baize_nav_ripple">#182589F4</color>
     <color name="transparent">#00000000</color>
 </resources>
