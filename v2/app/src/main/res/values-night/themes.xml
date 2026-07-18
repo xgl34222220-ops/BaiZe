@@ -13,6 +13,7 @@
         <item name="colorOutlineVariant">#343741</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorBackground">#12131A</item>
         <item name="android:windowBackground">#12131A</item>
         <item name="android:statusBarColor">#12131A</item>
         <item name="android:navigationBarColor">#12131A</item>

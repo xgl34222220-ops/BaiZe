@@ -1554,7 +1554,7 @@ run_corpse_cleanup() {
     while IFS= read -r target || [ -n "$target" ]; do
       should_stop && return 9
       case "$target" in
-        /data/media/[0-9]*/Android/data/*|/data/media/[0-9]*/Android/obb/*) ;;
+        /data/media/[0-9]*/Android/data/*|/data/media/[0-9]*/Android/obb/*|/data/media/[0-9]*/Android/media/*) ;;
         *) log_line "[残留跳过:快照路径异常] $target"; continue ;;
       esac
       rest=${target#/data/media/}
@@ -1588,7 +1588,7 @@ run_corpse_cleanup() {
       continue
     fi
     found_users=$((found_users + 1))
-    for root in "$userdir/Android/data" "$userdir/Android/obb"; do
+    for root in "$userdir/Android/data" "$userdir/Android/obb" "$userdir/Android/media"; do
       [ -d "$root" ] || continue
       for target in "$root"/*; do
         should_stop && return 9
@@ -1709,6 +1709,92 @@ scan_shared_empty_dirs() {
   report_line cleaned low 共享存储空目录 "$actual_total" 0 /data/media
   [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low 共享存储空目录 "$REMAINING_COUNT" 0 /data/media
   rm -f "$list" "$remaining" "$parents" "$removed"
+}
+
+is_reserved_shared_root() {
+  name=${1##*/}
+  case "$name" in
+    ''|.*|Android|DCIM|Download|Documents|Pictures|Movies|Music|Podcasts|Ringtones|Alarms|Notifications|Audiobooks|Recordings|Fonts|MIUI|ColorOS|HeyTap|oplus|Tencent|WeChat|QQ|backups|Backup|LOST.DIR) return 0 ;;
+  esac
+  return 1
+}
+
+is_mount_target() {
+  awk -v target="$1" '$2 == target { found=1; exit } END { exit found ? 0 : 1 }' /proc/mounts 2>/dev/null
+}
+
+root_shell_old_enough() {
+  [ "$ROOT_SHELL_DAYS" -le 0 ] && return 0
+  find "$1" -maxdepth 0 -mtime "+$ROOT_SHELL_DAYS" -print -quit 2>/dev/null | grep -q .
+}
+
+root_shell_effectively_empty() {
+  dir=$1
+  [ -d "$dir" ] || return 1
+  [ -L "$dir" ] && return 1
+  is_mount_target "$dir" && return 1
+  LIST_SEQ=$((LIST_SEQ + 1))
+  probe="$TMP_DIR/root-shell-probe.$LIST_SEQ"
+  run_limited_command 6 find "$dir" -mindepth 1 \
+    ! -type d \
+    ! \( -type f -size 0c \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \) \
+    -print -quit >"$probe" 2>/dev/null
+  probe_code=$?
+  if [ "$probe_code" -ne 0 ]; then
+    PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+    log_line "[根目录保护:扫描超时或异常] $dir"
+    report_line protected slow 根目录空壳 1 0 "$dir"
+    rm -f "$probe"
+    return 1
+  fi
+  if [ -s "$probe" ]; then
+    rm -f "$probe"
+    return 1
+  fi
+  rm -f "$probe"
+  return 0
+}
+
+run_shared_root_shells() {
+  [ -d /data/media ] || return 0
+  for userdir in /data/media/[0-9]*; do
+    [ -d "$userdir" ] || continue
+    for dir in "$userdir"/*; do
+      should_stop && return 9
+      [ -d "$dir" ] || continue
+      [ -L "$dir" ] && continue
+      is_reserved_shared_root "$dir" && continue
+      root_shell_old_enough "$dir" || continue
+      if is_whitelisted "$dir" || deep_conflicts_whitelist "$dir"; then
+        SKIPPED=$((SKIPPED + 1))
+        log_line "[根目录跳过:白名单] $dir"
+        continue
+      fi
+      root_shell_effectively_empty "$dir" || continue
+
+      if [ "$MODE" = "scan" ]; then
+        EMPTY_DIRS=$((EMPTY_DIRS + 1))
+        log_line "[根目录空壳候选] $dir（保留 ${ROOT_SHELL_DAYS} 天）"
+        report_line candidate medium 根目录空壳 1 0 "$dir"
+        continue
+      fi
+
+      find "$dir" -type f -size 0c \
+        \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \
+        -delete 2>/dev/null
+      run_limited_command 10 find "$dir" -depth -type d -empty -exec rmdir {} \; >/dev/null 2>&1
+      if [ ! -e "$dir" ]; then
+        EMPTY_DIRS=$((EMPTY_DIRS + 1))
+        log_line "[根目录空壳已清理] $dir"
+        report_line cleaned medium 根目录空壳 1 0 "$dir"
+      else
+        ERRORS=$((ERRORS + 1))
+        log_line "[根目录空壳未清理] $dir（目录状态发生变化或系统拒绝）"
+        report_line failed medium 根目录空壳 1 0 "$dir"
+      fi
+    done
+  done
+  return 0
 }
 
 is_protected_hidden_path() {
@@ -1919,6 +2005,7 @@ EMPTY_DAYS=$(get_uint empty_file_days 0 0 365)
 HIDDEN_DAYS=$(get_uint hidden_junk_days 0 0 365)
 FRAGMENT_DAYS=$(get_uint fragment_days 7 0 365)
 INSTALLER_TEMP_DAYS=$(get_uint installer_temp_days 7 1 30)
+ROOT_SHELL_DAYS=$(get_uint root_shell_days 14 1 90)
 if [ "$FRAGMENT_DAYS" -eq 0 ]; then
   FRAGMENT_POLICY="立即清理"
   FRAGMENT_MTIME_ARGS=""
@@ -1930,6 +2017,7 @@ MAX_RUN_MINUTES=$(get_uint max_run_minutes 45 5 180)
 MAX_RUN_SECONDS=$((MAX_RUN_MINUTES * 60))
 CLEAN_EMPTY_FILES=$(get_bool clean_empty_files)
 CLEAN_EMPTY_DIRS=$(get_bool clean_empty_dirs)
+CLEAN_ROOT_SHELLS=$(get_bool clean_root_shells)
 RUN_EMPTY=0
 RUN_CACHE=0
 RUN_RULES=0
@@ -1965,6 +2053,11 @@ fi
 if [ "$STOPPED" = "0" ] && [ "$RUN_EMPTY" = "1" ] && [ "$CLEAN_EMPTY_DIRS" = "1" ]; then
   set_phase "清理共享存储空目录"
   scan_shared_empty_dirs || STOPPED=1
+fi
+
+if [ "$STOPPED" = "0" ] && [ "$RUN_EMPTY" = "1" ] && [ "$CLEAN_ROOT_SHELLS" = "1" ]; then
+  set_phase "识别共享存储根目录空壳"
+  run_shared_root_shells || STOPPED=1
 fi
 
 if [ "$STOPPED" = "0" ] && [ "$RUN_CACHE" = "1" ] && [ "$(get_bool clean_app_cache)" = "1" ]; then

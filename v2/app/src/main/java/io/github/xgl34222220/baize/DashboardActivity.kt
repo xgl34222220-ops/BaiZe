@@ -61,7 +61,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 14"
+        binding.versionText.text = "Alpha 15"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -187,38 +187,13 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun setupThemePicker() {
         renderThemeSummary()
-        binding.themeButton.setOnClickListener { showThemeDialog() }
-    }
-
-    private fun renderThemeSummary() {
-        val palette = ThemeManager.currentPalette(this)
-        binding.themeSummaryText.text = buildString {
-            append(palette.label).append(" · ").append(palette.description)
-            if (palette.monet && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
-                append("（当前系统回退为白泽蓝）")
-            }
+        binding.themeButton.setOnClickListener {
+            startActivity(Intent(this, ThemeSettingsActivity::class.java))
         }
     }
 
-    private fun showThemeDialog() {
-        val current = ThemeManager.currentId(this)
-        val labels = ThemeManager.palettes.map { palette ->
-            if (palette.monet) {
-                "${palette.label}\n${palette.description}（Android 12+）"
-            } else {
-                "${palette.label}\n${palette.description}"
-            }
-        }.toTypedArray()
-        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("主题与取色")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setPalette(this, ThemeManager.palettes[which].id)
-                dialog.dismiss()
-                recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+    private fun renderThemeSummary() {
+        binding.themeSummaryText.text = ThemeManager.themeSummary(this)
     }
 
     private fun showLargeFileDialog(current: Int) {
@@ -321,6 +296,9 @@ class DashboardActivity : AppCompatActivity() {
         }
         binding.installerDaysSlider.addOnChangeListener { _, value, _ ->
             binding.installerDaysText.text = "安装临时文件保留 ${value.toInt()} 天"
+        }
+        binding.rootShellDaysSlider.addOnChangeListener { _, value, _ ->
+            binding.rootShellDaysText.text = "根目录空壳保留 ${value.toInt()} 天"
         }
 
         val previewSwitches = listOf(
@@ -456,6 +434,7 @@ class DashboardActivity : AppCompatActivity() {
             binding.cacheDaysSlider.value = json.optInt("app_cache_days", 0).coerceIn(0, 30).toFloat()
             binding.logDaysSlider.value = json.optInt("system_logs_days", 7).coerceIn(0, 30).toFloat()
             binding.installerDaysSlider.value = json.optInt("installer_temp_days", 7).coerceIn(1, 30).toFloat()
+            binding.rootShellDaysSlider.value = json.optInt("root_shell_days", 14).coerceIn(1, 90).toFloat()
             binding.cleanInternalCacheSwitch.isChecked = json.optInt("clean_app_cache", 1) == 1
             binding.cleanExternalCacheSwitch.isChecked = json.optInt("clean_external_cache", 1) == 1
             binding.cleanAppRulesSwitch.isChecked = json.optInt("clean_app_rules", 1) == 1
@@ -464,6 +443,7 @@ class DashboardActivity : AppCompatActivity() {
             binding.cleanHiddenJunkSwitch.isChecked = json.optInt("clean_hidden_junk", 1) == 1
             binding.cleanEmptyFilesSwitch.isChecked = json.optInt("clean_empty_files", 1) == 1
             binding.cleanEmptyDirsSwitch.isChecked = json.optInt("clean_empty_dirs", 1) == 1
+            binding.cleanRootShellsSwitch.isChecked = json.optInt("clean_root_shells", 1) == 1
             binding.cleanFragmentsSwitch.isChecked = json.optInt("clean_fragments", 1) == 1
             binding.cleanInstallerTempSwitch.isChecked = json.optInt("clean_installer_temp", 0) == 1
             binding.cleanCustomRulesSwitch.isChecked = json.optInt("clean_custom_rules", 0) == 1
@@ -476,6 +456,7 @@ class DashboardActivity : AppCompatActivity() {
             binding.cacheDaysText.text = retentionLabel("缓存", binding.cacheDaysSlider.value.toInt())
             binding.logDaysText.text = retentionLabel("日志", binding.logDaysSlider.value.toInt())
             binding.installerDaysText.text = "安装临时文件保留 ${binding.installerDaysSlider.value.toInt()} 天"
+            binding.rootShellDaysText.text = "根目录空壳保留 ${binding.rootShellDaysSlider.value.toInt()} 天"
             updatePlanPreview()
         }
     }
@@ -513,6 +494,7 @@ class DashboardActivity : AppCompatActivity() {
             .put("clean_hidden_junk", flag(binding.cleanHiddenJunkSwitch.isChecked))
             .put("clean_empty_files", flag(binding.cleanEmptyFilesSwitch.isChecked))
             .put("clean_empty_dirs", flag(binding.cleanEmptyDirsSwitch.isChecked))
+            .put("clean_root_shells", flag(binding.cleanRootShellsSwitch.isChecked))
             .put("clean_fragments", flag(binding.cleanFragmentsSwitch.isChecked))
             .put("clean_installer_temp", flag(binding.cleanInstallerTempSwitch.isChecked))
             .put("clean_custom_rules", flag(binding.cleanCustomRulesSwitch.isChecked))
@@ -524,6 +506,7 @@ class DashboardActivity : AppCompatActivity() {
             .put("empty_file_days", binding.cacheDaysSlider.value.toInt())
             .put("fragment_days", binding.fragmentDaysSlider.value.toInt())
             .put("installer_temp_days", binding.installerDaysSlider.value.toInt())
+            .put("root_shell_days", binding.rootShellDaysSlider.value.toInt())
 
         binding.planStateText.text = "正在写入模块调度配置…"
         lifecycleScope.launch {

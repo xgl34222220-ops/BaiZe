@@ -78,7 +78,6 @@ object Alpha7UiPolish {
                 view.clipToOutline = true
             } else {
                 val surface = MaterialColors.getColor(view, com.google.android.material.R.attr.colorSurface)
-                view.background = null
                 view.setCardBackgroundColor(surface)
                 view.strokeWidth = 0
                 view.cardElevation = 0f

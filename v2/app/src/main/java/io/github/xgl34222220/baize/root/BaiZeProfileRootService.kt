@@ -545,6 +545,7 @@ class BaiZeProfileRootService : RootService() {
             "clean_oem_logs" to 0..1,
             "clean_empty_files" to 0..1,
             "clean_empty_dirs" to 0..1,
+            "clean_root_shells" to 0..1,
             "clean_app_rules" to 0..1,
             "clean_hidden_junk" to 0..1,
             "clean_fragments" to 0..1,
@@ -561,6 +562,7 @@ class BaiZeProfileRootService : RootService() {
             "hidden_junk_days" to 0..365,
             "fragment_days" to 0..365,
             "installer_temp_days" to 1..30,
+            "root_shell_days" to 1..90,
             "max_file_mb" to 16..16_384
         )
     }

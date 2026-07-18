@@ -719,6 +719,13 @@
                             android:textColor="?attr/colorOnSurface" />
 
                         <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/cleanRootShellsSwitch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="共享存储根目录空壳（严格保护）"
+                            android:textColor="?attr/colorOnSurface" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
                             android:id="@+id/cleanFragmentsSwitch"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
@@ -812,6 +819,24 @@
                             android:value="7"
                             android:valueFrom="1"
                             android:valueTo="30" />
+
+                        <TextView
+                            android:id="@+id/rootShellDaysText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="根目录空壳保留 14 天"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.slider.Slider
+                            android:id="@+id/rootShellDaysSlider"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:stepSize="1"
+                            android:value="14"
+                            android:valueFrom="1"
+                            android:valueTo="90" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -930,7 +955,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="50dp"
                             android:layout_marginTop="14dp"
-                            android:text="选择主题配色" />
+                            android:text="主题模式、Monet 与配色" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 

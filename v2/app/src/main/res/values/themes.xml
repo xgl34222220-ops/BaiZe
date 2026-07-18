@@ -15,6 +15,7 @@
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorBackground">#F1F2FB</item>
         <item name="android:windowBackground">#F1F2FB</item>
         <item name="android:statusBarColor">#F1F2FB</item>
         <item name="android:navigationBarColor">#F1F2FB</item>
