@@ -34,7 +34,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply Alpha 26 recovery refactor
-        run: python3 v2/scripts/apply-alpha26-recovery.py
+        run: |
+          python3 v2/scripts/apply-alpha26-recovery.py
+          python3 v2/scripts/apply-alpha26-ui-final.py
 
       - name: Validate shell and cleaning rules
         run: |
