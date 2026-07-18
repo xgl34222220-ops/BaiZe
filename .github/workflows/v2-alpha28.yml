@@ -36,6 +36,7 @@ jobs:
       - name: Apply Alpha 28 fixes
         run: |
           set +e
+          python3 v2/scripts/fix-alpha28-patcher.py
           python3 v2/scripts/apply-alpha28-app-details.py > alpha28-patch.log 2>&1
           code=$?
           cat alpha28-patch.log
