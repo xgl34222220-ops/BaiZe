@@ -23,7 +23,7 @@
 ## Alpha 23
 
 - 启动页改为与洛书同源的 Compose MIUIx 设计系统：蓝紫渐变、静态液态玻璃、统一圆角与小型悬浮底栏。
-- Compose 主卡、按钮、进度环、记录图标和底栏会真实响应 Monet 壁纸取色或用户选择的固定配色。
+- Compose 主卡、按钮、进度环和底栏会响应 Monet 壁纸取色或用户选择的固定配色。
 - 安全扫描只统计不删除；完成后展示候选空间、文件、空目录、碎片、异常和耗时，并提供一键清理。
 - 扫描候选不会再误记成最近释放空间；一键清理会重新校验路径、白名单和当前文件状态。
 - 移除首页大块 Material 胶囊和堆叠滑杆；计划页仅展开当前项目，常用 1/6/12/24 小时可一键选择。
@@ -43,7 +43,7 @@
 
 ## 构建
 
-需要 JDK 17、Android SDK 36、Python 3 和 Gradle 8.13：
+需要 JDK 17、Android SDK 36 和 Gradle 8.13；执行规则校验时还需要 Python 3：
 
 ```bash
 cd v2
@@ -51,7 +51,7 @@ gradle --no-daemon :app:assembleDebug
 sh scripts/package-module.sh
 ```
 
-`preBuild` 会幂等应用 Alpha 25 热修，确保本地和 CI 编译使用修复后的 Root 快照逻辑与首页布局。
+Alpha 25 修复已直接提交到源码，本地与 CI 使用同一套代码，不再依赖构建阶段临时打补丁。
 
 产物：
 
