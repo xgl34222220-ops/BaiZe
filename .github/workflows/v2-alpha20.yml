@@ -8,6 +8,13 @@ on:
       - 'cleaner.sh'
       - 'config/**'
       - '.github/workflows/v2-alpha20.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha20.yml'
   workflow_dispatch:
 
 permissions:
@@ -94,6 +101,7 @@ jobs:
         if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha20-source-patch.py') != ''
         run: |
           rm -f v2/scripts/alpha20-source-patch.py
+          rm -f v2/scripts/alpha20-build-trigger.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
