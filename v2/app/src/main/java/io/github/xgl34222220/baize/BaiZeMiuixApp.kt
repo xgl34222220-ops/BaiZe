@@ -97,6 +97,10 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.home.HomeRoute
+import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
+import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
+import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidPrimaryButton
+import io.github.xgl34222220.baize.ui.miuix.MiuixOverviewHero
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.json.JSONObject
 import kotlin.math.roundToInt
@@ -304,6 +308,9 @@ fun BaiZeMiuixApp(
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
+            val miuixNavItems = remember {
+                BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
+            }
 
             when (appearance.uiStyle) {
                 UiStyle.MATERIAL -> Box(
@@ -332,9 +339,10 @@ fun BaiZeMiuixApp(
                         BaiZePage.Records -> RecordsPage(state, actions)
                         BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
                     }
-                    FloatingDock(
-                        selected = page,
-                        onSelected = { page = it },
+                    MiuixLiquidDock(
+                        selectedIndex = page.ordinal,
+                        items = miuixNavItems,
+                        onSelected = { index -> page = BaiZePage.entries[index] },
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -463,111 +471,91 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 @Composable
 internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
-    val accentGradient = rememberAccentGradient()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val positive = state.ready || state.scanCompleted
+    val statusTitle = when {
+        state.running -> "清理任务执行中"
+        state.scanCompleted -> "扫描结果已就绪"
+        state.ready -> "清理引擎已就绪"
+        state.connected -> "清理引擎已连接"
+        else -> "正在恢复清理引擎"
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "Miuix 清理概览 · Alpha 33", actions.refresh) }
         item {
-            Box(
-                Modifier
-                    .padding(horizontal = 18.dp)
-                    .fillMaxWidth()
-                    .shadow(18.dp, RoundedCornerShape(36.dp))
-                    .clip(RoundedCornerShape(36.dp))
-                    .background(Brush.horizontalGradient(accentGradient))
-                    .padding(24.dp)
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(11.dp).clip(CircleShape).background(if (state.ready || state.scanCompleted) Color(0xFF83F0C0) else Color(0xFFFFD27D)))
-                        Spacer(Modifier.width(8.dp))
-                        Text(state.device, color = Color.White.copy(.88f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Text("  ·  ${state.android}", color = Color.White.copy(.65f), fontSize = 12.sp)
-                    }
-                    Spacer(Modifier.height(22.dp))
-                    Text(
-                        when {
-                            state.running -> "清理任务执行中"
-                            state.scanCompleted -> "扫描结果已就绪"
-                            state.ready -> "清理引擎已就绪"
-                            state.connected -> "清理引擎已连接"
-                            else -> "正在恢复清理引擎"
-                        },
-                        color = Color.White,
-                        fontSize = 27.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                    Spacer(Modifier.height(7.dp))
-                    Text(state.taskPhase, color = Color.White.copy(.72f), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(22.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
-                        Column {
-                            Text("最近一次释放", color = Color.White.copy(.62f), fontSize = 12.sp)
-                            Text(Formatter.formatFileSize(context, state.lastReleased), color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Icon(
-                            if (state.ready || state.scanCompleted) Icons.Rounded.CheckCircle else Icons.Rounded.Refresh,
-                            null,
-                            tint = Color.White.copy(alpha = if (state.ready || state.scanCompleted) 1f else .78f),
-                            modifier = Modifier.size(34.dp)
-                        )
-                    }
-                }
-            }
+            PageHeader(
+                "SMART CLEAN",
+                "白泽",
+                "Miuix × Liquid Glass · Alpha 34",
+                actions.refresh
+            )
+        }
+        item {
+            MiuixOverviewHero(
+                device = state.device,
+                android = state.android,
+                statusTitle = statusTitle,
+                taskPhase = state.taskPhase,
+                releasedText = Formatter.formatFileSize(context, state.lastReleased),
+                positive = positive,
+                modifier = Modifier.padding(horizontal = 18.dp)
+            )
         }
         item {
             GlassSurface(
                 modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-                contentPadding = PaddingValues(20.dp)
+                shape = RoundedCornerShape(30.dp),
+                shadow = 6,
+                contentPadding = PaddingValues(18.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StorageRing(state.storagePercent)
-                    Spacer(Modifier.width(20.dp))
+                    Spacer(Modifier.width(18.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("可用空间", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                        Text(Formatter.formatFileSize(context, state.storageFree), fontSize = 29.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            "可用空间",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            Formatter.formatFileSize(context, state.storageFree),
+                            fontSize = 31.sp,
+                            lineHeight = 35.sp,
+                            fontWeight = FontWeight.Black
+                        )
                         Text(
                             "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         )
                     }
                 }
             }
         }
         item {
-            Button(
-                onClick = if (state.running) actions.stop else actions.clean,
-                enabled = state.running || state.ready,
-                modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(72.dp),
-                shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxSize().background(
-                        if (state.running) Brush.horizontalGradient(listOf(Color(0xFF6D7080), Color(0xFF4A4D5C)))
-                        else Brush.horizontalGradient(accentGradient.take(2))
-                    ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.AutoAwesome, null, tint = Color.White)
-                    Spacer(Modifier.width(10.dp))
-                    Text(if (state.running) "安全停止任务" else "立即智能清理", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-            }
+            MiuixLiquidPrimaryButton(
+                running = state.running,
+                scanReady = state.scanCompleted,
+                enabled = state.running || state.ready || state.scanCompleted,
+                onClick = when {
+                    state.running -> actions.stop
+                    state.scanCompleted -> actions.cleanScan
+                    else -> actions.clean
+                },
+                modifier = Modifier.padding(horizontal = 18.dp)
+            )
         }
         item {
             StatusPill(
                 ready = state.ready,
                 scanReady = state.scanCompleted,
                 text = if (state.scanCompleted && !state.ready) {
-                    "扫描快照已就绪；点击下方按钮时自动恢复 Root 服务"
+                    "扫描快照已就绪；清理时会自动恢复 Root 服务"
                 } else {
                     state.serviceText
                 }
@@ -577,26 +565,39 @@ internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions)
             item { ScanResultCard(state, actions) }
         }
         item {
-            Text("更多清理", modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp), fontSize = 25.sp, fontWeight = FontWeight.Black)
+            Column(Modifier.padding(horizontal = 22.dp, vertical = 5.dp)) {
+                Text(
+                    "CLEANING CATEGORIES",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp
+                )
+                Text("更多清理", fontSize = 27.sp, fontWeight = FontWeight.Black)
+            }
         }
         item {
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 18.dp)) {
+            GlassSurface(
+                Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(30.dp),
+                shadow = 6,
+                contentPadding = PaddingValues(horizontal = 18.dp)
+            ) {
                 Column {
                     ToolRow(Icons.Rounded.Search, "垃圾扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
                     ToolRow(Icons.Rounded.InstallMobile, "安装包扫描", "查找 Download、QQ、微信等目录中的 APK/APKS/XAPK", actions.apkScan)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
                     ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "扫描日志、临时文件与常见残留", actions.deep)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
                     ToolRow(Icons.Rounded.FolderDelete, "卸载残留", "扫描 data / obb / media 无主目录", actions.corpses)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.09f))
                     ToolRow(Icons.Rounded.Rule, "清理明细", "查看缓存、空项目、规则与碎片", actions.audit)
                 }
             }
         }
     }
 }
-
 @Composable
 private fun StorageRing(progress: Float) {
     val primary = MaterialTheme.colorScheme.primary
@@ -1130,36 +1131,6 @@ private fun PrimaryButton(text: String, enabled: Boolean, onClick: () -> Unit, o
         shape = RoundedCornerShape(22.dp),
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
     ) { Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-}
-
-@Composable
-private fun FloatingDock(selected: BaiZePage, onSelected: (BaiZePage) -> Unit, modifier: Modifier = Modifier) {
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    GlassSurface(
-        modifier = modifier.padding(horizontal = 18.dp).padding(bottom = bottom + 10.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(32.dp),
-        shadow = 18,
-        contentPadding = PaddingValues(7.dp)
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            BaiZePage.entries.forEach { item ->
-                val active = item == selected
-                Row(
-                    Modifier.weight(1f).clip(RoundedCornerShape(24.dp))
-                        .background(if (active) Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary.copy(.18f), MaterialTheme.colorScheme.secondary.copy(.15f))) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent)))
-                        .clickable { onSelected(item) }.padding(vertical = 11.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(item.icon, item.title, modifier = Modifier.size(21.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (active) {
-                        Spacer(Modifier.width(7.dp))
-                        Text(item.title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
