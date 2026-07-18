@@ -1,6 +1,13 @@
-# 白泽 v2 Alpha 24
+# 白泽 v2 Alpha 25
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
+
+## Alpha 25
+
+- 补全应用缓存 `BaiZeRootService` 注册，修复双 Root 引擎状态不一致与缓存引擎无法连接。
+- 仅安全项目快照存在时可以直接消费该快照，不再错误要求应用缓存引擎，也不会重新全盘扫描。
+- 缺失的必需引擎会自动重连，30 分钟有效快照继续保留。
+- 首页连接标题改为真实状态；扫描结果卡片增加底部安全间距并自动定位，避免悬浮 Dock 遮挡。
 
 ## Alpha 24
 
@@ -34,7 +41,7 @@
 
 ## 构建
 
-需要 JDK 17、Android SDK 36 和 Gradle 8.13：
+需要 JDK 17、Android SDK 36、Python 3 和 Gradle 8.13：
 
 ```bash
 cd v2
@@ -42,7 +49,9 @@ gradle --no-daemon :app:assembleDebug
 sh scripts/package-module.sh
 ```
 
+`preBuild` 会幂等应用 Alpha 25 热修，确保本地和 CI 编译使用修复后的 Root 快照逻辑与首页布局。
+
 产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- `dist/BaiZe-v2-Alpha24-Module.zip`
+- `dist/BaiZe-v2-Alpha25-Module.zip`
