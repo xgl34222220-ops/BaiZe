@@ -54,7 +54,7 @@ object Alpha7UiPolish {
         val onPrimaryContainer = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnPrimaryContainer, Color.rgb(10, 53, 111))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 17"
+            text = "Alpha 18"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.apply {

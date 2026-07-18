@@ -65,7 +65,7 @@
                         android:paddingTop="6dp"
                         android:paddingEnd="11dp"
                         android:paddingBottom="6dp"
-                        android:text="Alpha 17"
+                        android:text="Alpha 18"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
@@ -369,7 +369,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:text="定时任务、条件触发与保留策略"
+                    android:text="选择执行频率，其余安全项目由白泽自动处理"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp" />
 
@@ -386,14 +386,26 @@
                         android:orientation="vertical"
                         android:padding="18dp">
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/scheduleSwitch"
+                        <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="自动清理已开启"
-                            android:textColor="?attr/colorOnPrimaryContainer"
-                            android:textSize="16sp"
-                            android:textStyle="bold" />
+                            android:layout_height="56dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="启用自动清理"
+                                android:textColor="?attr/colorOnPrimaryContainer"
+                                android:textSize="17sp"
+                                android:textStyle="bold" />
+
+                            <io.github.xgl34222220.baize.ui.MiuixSwitch
+                                android:id="@+id/scheduleSwitch"
+                                android:layout_width="64dp"
+                                android:layout_height="48dp" />
+                        </LinearLayout>
 
                         <TextView
                             android:id="@+id/planStateText"
@@ -450,7 +462,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="7dp"
                             android:text="改为每日固定时间"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:textColor="?attr/colorOnSurface" 
+                            android:visibility="gone"/>
 
                         <TextView
                             android:id="@+id/dailyHourText"
@@ -459,7 +472,8 @@
                             android:layout_marginTop="7dp"
                             android:text="每日 03:00"
                             android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="11sp" />
+                            android:textSize="11sp" 
+                            android:visibility="gone"/>
 
                         <com.google.android.material.slider.Slider
                             android:id="@+id/dailyHourSlider"
@@ -468,7 +482,8 @@
                             android:value="3"
                             android:stepSize="1"
                             android:valueFrom="0"
-                            android:valueTo="23" />
+                            android:valueTo="23" 
+                            android:visibility="gone"/>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -477,13 +492,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="执行条件"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -537,13 +554,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="保留策略"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -584,13 +603,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="一键自动清理范围"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -640,13 +661,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="清理引擎范围"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -753,13 +776,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="分类保留时间"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -840,12 +865,53 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.BaiZe.SimpleCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="智能安全模式"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="自动处理应用缓存、外部缓存、规则垃圾、系统日志、隐藏临时文件、空文件与空目录、严格判定的根目录空壳、残留碎片和过期安装临时文件。"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="12sp"
+                            android:lineSpacingExtra="3dp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="卸载残留、OEM 调试日志、自定义规则与高风险深度候选项不会后台自动删除，只能手动进入并二次确认。"
+                            android:textColor="?attr/colorPrimary"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:lineSpacingExtra="3dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/savePlanButton"
                     android:layout_width="match_parent"
                     android:layout_height="56dp"
                     android:layout_marginTop="14dp"
-                    android:text="保存并启用自动清理计划" />
+                    android:text="保存自动清理" />
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
 

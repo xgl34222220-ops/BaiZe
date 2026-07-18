@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha17
-versionCode=20060
+version=v2.0.0-alpha18
+versionCode=20070
 author=惜故里丶
-description=白泽 v2 Alpha 17：真正重做 BOX 风格主题系统，加入 MIUIx 自绘开关、锚点悬浮菜单、Monet 风格、色彩标准、强调色和完整视觉效果开关。
+description=白泽 v2 Alpha 18：修复 Monet 只刷新主题页的问题，所有页面统一动态配色；自动清理改为智能安全模式，危险项目仅手动二次确认。

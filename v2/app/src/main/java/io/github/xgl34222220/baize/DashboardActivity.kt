@@ -61,7 +61,7 @@ class DashboardActivity : AppCompatActivity() {
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.versionText.text = "Alpha 17"
+        binding.versionText.text = "Alpha 18"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -127,13 +127,25 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun setupActions() {
-        binding.cleanNowButton.setOnClickListener { runModuleTask("clean") }
+        binding.cleanNowButton.setOnClickListener { runSmartClean() }
         binding.stopTaskButton.setOnClickListener {
             profileService?.cancelCurrentTask()
             binding.taskStatusText.text = "正在安全停止当前任务…"
         }
-        binding.deepToolButton.setOnClickListener { openProfile("deep") }
-        binding.corpsesToolButton.setOnClickListener { openProfile("corpses") }
+        binding.deepToolButton.setOnClickListener {
+            confirmRiskAction(
+                title = "开始深度清理？",
+                message = "深度清理会扫描 OEM 调试日志、自定义规则和较高风险候选项。白名单、挂载点、软链接和单文件保护仍然生效。",
+                confirmText = "继续扫描"
+            ) { openProfile("deep") }
+        }
+        binding.corpsesToolButton.setOnClickListener {
+            confirmRiskAction(
+                title = "扫描卸载残留？",
+                message = "将检查 Android/data、obb、media 和应用私有目录中的无主数据。进入后仍会先展示候选项，不会直接删除。",
+                confirmText = "继续扫描"
+            ) { openProfile("corpses") }
+        }
         binding.advancedAuditButton.setOnClickListener {
             startActivity(Intent(this, CleanCenterActivity::class.java))
         }
@@ -160,6 +172,92 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun openProfile(profile: String) {
         startActivity(Intent(this, ProfileActivity::class.java).putExtra(ProfileActivity.EXTRA_PROFILE, profile))
+    }
+
+    private fun confirmRiskAction(
+        title: String,
+        message: String,
+        confirmText: String,
+        action: () -> Unit
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setNegativeButton("取消", null)
+            .setPositiveButton(confirmText) { _, _ -> action() }
+            .show()
+    }
+
+    private fun runSmartClean() {
+        val service = profileService ?: run {
+            binding.taskStatusText.text = "正在连接 Root 服务…"
+            connectService()
+            return
+        }
+        if (taskRunning) return
+        binding.cleanNowButton.isEnabled = false
+        binding.taskStatusText.text = "正在启用智能安全清理范围…"
+        lifecycleScope.launch {
+            val saved = runCatching {
+                withContext(Dispatchers.IO) {
+                    service.saveSchedulerConfig(smartSchedulerPayload().toString())
+                }
+            }
+            if (saved.isFailure || !runCatching { JSONObject(saved.getOrThrow()).optBoolean("success") }.getOrDefault(false)) {
+                binding.cleanNowButton.isEnabled = true
+                binding.taskStatusText.text = "智能清理配置写入失败，请重新连接 Root 服务"
+                return@launch
+            }
+            runModuleTask("clean")
+        }
+    }
+
+    private fun smartSchedulerPayload(): JSONObject {
+        val interval = binding.intervalSlider.value.toInt().coerceIn(1, 720)
+        return JSONObject()
+            .put("enabled", flag(binding.scheduleSwitch.isChecked))
+            .put("schedule_cache_enabled", 1)
+            .put("schedule_cache_hours", interval)
+            .put("schedule_empty_enabled", 1)
+            .put("schedule_empty_hours", interval)
+            .put("schedule_rules_enabled", 1)
+            .put("schedule_rules_hours", interval)
+            .put("schedule_fragment_enabled", 1)
+            .put("schedule_fragment_hours", interval)
+            .put("schedule_deep_enabled", 0)
+            .put("schedule_deep_hours", 168)
+            .put("daily_schedule_enabled", 0)
+            .put("daily_schedule_hour", 3)
+            .put("daily_schedule_minute", 0)
+            .put("screen_off_only", 1)
+            .put("charging_only", 0)
+            .put("device_idle_only", 0)
+            .put("min_battery", 20)
+            .put("notify_on_complete", flag(binding.notificationSwitch.isChecked))
+            .put("notify_zero_result", flag(binding.notifyZeroSwitch.isChecked))
+            .put("max_file_mb", binding.largeFileSlider.value.toInt())
+            .put("clean_app_cache", 1)
+            .put("clean_external_cache", 1)
+            .put("clean_app_rules", 1)
+            .put("clean_system_logs", 1)
+            .put("clean_oem_logs", 0)
+            .put("clean_hidden_junk", 1)
+            .put("clean_empty_files", 1)
+            .put("clean_empty_dirs", 1)
+            .put("clean_root_shells", 1)
+            .put("clean_fragments", 1)
+            .put("clean_installer_temp", 1)
+            .put("clean_custom_rules", 0)
+            .put("deep_high_risk_enabled", 0)
+            .put("app_cache_days", 0)
+            .put("external_cache_days", 0)
+            .put("system_logs_days", 7)
+            .put("oem_logs_days", 14)
+            .put("hidden_junk_days", 0)
+            .put("empty_file_days", 0)
+            .put("fragment_days", 7)
+            .put("installer_temp_days", 7)
+            .put("root_shell_days", 14)
     }
 
     private fun showSettingsMenu() {
@@ -301,8 +399,10 @@ class DashboardActivity : AppCompatActivity() {
             binding.rootShellDaysText.text = "根目录空壳保留 ${value.toInt()} 天"
         }
 
+        binding.scheduleSwitch.setOnCheckedChangeListener { _, _ ->
+            if (!loadingConfig) updatePlanPreview()
+        }
         val previewSwitches = listOf(
-            binding.scheduleSwitch,
             binding.dailySwitch,
             binding.cacheScheduleSwitch,
             binding.emptyScheduleSwitch,
@@ -463,50 +563,7 @@ class DashboardActivity : AppCompatActivity() {
 
     private fun saveSchedulerConfig() {
         val service = profileService ?: return
-        val interval = binding.intervalSlider.value.toInt()
-        val json = JSONObject()
-            .put("enabled", flag(binding.scheduleSwitch.isChecked))
-            .put("schedule_cache_enabled", flag(binding.cacheScheduleSwitch.isChecked))
-            .put("schedule_cache_hours", interval)
-            .put("schedule_empty_enabled", flag(binding.emptyScheduleSwitch.isChecked))
-            .put("schedule_empty_hours", interval)
-            .put("schedule_rules_enabled", flag(binding.rulesScheduleSwitch.isChecked))
-            .put("schedule_rules_hours", interval)
-            .put("schedule_fragment_enabled", flag(binding.fragmentScheduleSwitch.isChecked))
-            .put("schedule_fragment_hours", interval)
-            .put("schedule_deep_enabled", flag(binding.deepScheduleSwitch.isChecked))
-            .put("schedule_deep_hours", 168)
-            .put("daily_schedule_enabled", flag(binding.dailySwitch.isChecked))
-            .put("daily_schedule_hour", binding.dailyHourSlider.value.toInt())
-            .put("daily_schedule_minute", 0)
-            .put("screen_off_only", flag(binding.screenOffSwitch.isChecked))
-            .put("charging_only", flag(binding.chargingSwitch.isChecked))
-            .put("device_idle_only", flag(binding.deviceIdleSwitch.isChecked))
-            .put("min_battery", binding.minBatterySlider.value.toInt())
-            .put("notify_on_complete", flag(binding.notificationSwitch.isChecked))
-            .put("notify_zero_result", flag(binding.notifyZeroSwitch.isChecked))
-            .put("max_file_mb", binding.largeFileSlider.value.toInt())
-            .put("clean_app_cache", flag(binding.cleanInternalCacheSwitch.isChecked))
-            .put("clean_external_cache", flag(binding.cleanExternalCacheSwitch.isChecked))
-            .put("clean_app_rules", flag(binding.cleanAppRulesSwitch.isChecked))
-            .put("clean_system_logs", flag(binding.cleanSystemLogsSwitch.isChecked))
-            .put("clean_oem_logs", flag(binding.cleanOemLogsSwitch.isChecked))
-            .put("clean_hidden_junk", flag(binding.cleanHiddenJunkSwitch.isChecked))
-            .put("clean_empty_files", flag(binding.cleanEmptyFilesSwitch.isChecked))
-            .put("clean_empty_dirs", flag(binding.cleanEmptyDirsSwitch.isChecked))
-            .put("clean_root_shells", flag(binding.cleanRootShellsSwitch.isChecked))
-            .put("clean_fragments", flag(binding.cleanFragmentsSwitch.isChecked))
-            .put("clean_installer_temp", flag(binding.cleanInstallerTempSwitch.isChecked))
-            .put("clean_custom_rules", flag(binding.cleanCustomRulesSwitch.isChecked))
-            .put("app_cache_days", binding.cacheDaysSlider.value.toInt())
-            .put("external_cache_days", binding.cacheDaysSlider.value.toInt())
-            .put("system_logs_days", binding.logDaysSlider.value.toInt())
-            .put("oem_logs_days", binding.logDaysSlider.value.toInt())
-            .put("hidden_junk_days", binding.cacheDaysSlider.value.toInt())
-            .put("empty_file_days", binding.cacheDaysSlider.value.toInt())
-            .put("fragment_days", binding.fragmentDaysSlider.value.toInt())
-            .put("installer_temp_days", binding.installerDaysSlider.value.toInt())
-            .put("root_shell_days", binding.rootShellDaysSlider.value.toInt())
+        val json = smartSchedulerPayload()
 
         binding.planStateText.text = "正在写入模块调度配置…"
         lifecycleScope.launch {
@@ -514,7 +571,7 @@ class DashboardActivity : AppCompatActivity() {
             raw.onSuccess {
                 val result = JSONObject(it)
                 binding.planStateText.text = if (result.optBoolean("success")) {
-                    "已写入模块配置，后台调度器将在下一次轮询时直接使用。"
+                    "智能自动清理已保存：安全项目全自动，危险项目只允许手动确认后执行。"
                 } else {
                     "保存失败：${result.optString("error", "未知错误")}"
                 }

@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
 import com.google.android.material.color.utilities.Hct
+import java.util.WeakHashMap
 
 /** Central controller for the Alpha 17 BOX-style MIUIx theme system. */
 object ThemeManager {
@@ -27,7 +28,9 @@ object ThemeManager {
     const val KEY_GLASS = "theme_glass"
     const val KEY_PREDICTIVE_BACK = "theme_predictive_back"
     const val KEY_FOLLOW_EDGE = "theme_follow_edge"
+    private const val KEY_REVISION = "theme_revision"
     private const val KEY_ALPHA17_MIGRATED = "theme_alpha17_migrated"
+    private val appliedRevision = WeakHashMap<Activity, Int>()
 
     const val MODE_SYSTEM = "system"
     const val MODE_LIGHT = "light"
@@ -86,18 +89,33 @@ object ThemeManager {
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) {
                 applyBeforeCreate(activity)
+                appliedRevision[activity] = themeRevision(activity)
             }
 
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) applyBeforeCreate(activity)
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    applyBeforeCreate(activity)
+                    appliedRevision[activity] = themeRevision(activity)
+                }
             }
 
             override fun onActivityStarted(activity: Activity) = Unit
-            override fun onActivityResumed(activity: Activity) = Unit
+
+            override fun onActivityResumed(activity: Activity) {
+                val current = themeRevision(activity)
+                val applied = appliedRevision[activity] ?: current
+                if (applied != current && !activity.isFinishing && !activity.isChangingConfigurations) {
+                    appliedRevision[activity] = current
+                    activity.recreate()
+                }
+            }
+
             override fun onActivityPaused(activity: Activity) = Unit
             override fun onActivityStopped(activity: Activity) = Unit
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
-            override fun onActivityDestroyed(activity: Activity) = Unit
+            override fun onActivityDestroyed(activity: Activity) {
+                appliedRevision.remove(activity)
+            }
         })
     }
 
@@ -143,6 +161,7 @@ object ThemeManager {
             .putString(KEY_ACCENT, normalized)
             .putString(KEY_PALETTE, normalized)
             .apply()
+        bumpRevision(context)
     }
 
     fun setMode(context: Context, mode: String) {
@@ -151,6 +170,7 @@ object ThemeManager {
             else -> MODE_SYSTEM
         }
         prefs(context).edit().putString(KEY_MODE, normalized).apply()
+        bumpRevision(context)
         syncNightMode(context)
     }
 
@@ -158,16 +178,19 @@ object ThemeManager {
         prefs(context).edit()
             .putBoolean(KEY_MONET, enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
             .apply()
+        bumpRevision(context)
     }
 
     fun setMonetStyle(context: Context, id: String) {
         val normalized = monetStyles.firstOrNull { it.id == id }?.id ?: "vibrant"
         prefs(context).edit().putString(KEY_MONET_STYLE, normalized).apply()
+        bumpRevision(context)
     }
 
     fun setColorStandard(context: Context, id: String) {
         val normalized = colorStandards.firstOrNull { it.id == id }?.id ?: "m3_2021"
         prefs(context).edit().putString(KEY_COLOR_STANDARD, normalized).apply()
+        bumpRevision(context)
     }
 
     fun setAmoled(context: Context, enabled: Boolean) = putBoolean(context, KEY_AMOLED, enabled)
@@ -201,6 +224,14 @@ object ThemeManager {
 
     private fun putBoolean(context: Context, key: String, value: Boolean) {
         prefs(context).edit().putBoolean(key, value).apply()
+        bumpRevision(context)
+    }
+
+    private fun themeRevision(context: Context): Int = prefs(context).getInt(KEY_REVISION, 0)
+
+    private fun bumpRevision(context: Context) {
+        val next = if (themeRevision(context) == Int.MAX_VALUE) 1 else themeRevision(context) + 1
+        prefs(context).edit().putInt(KEY_REVISION, next).apply()
     }
 
     private fun normalizeAccent(value: String): String {
