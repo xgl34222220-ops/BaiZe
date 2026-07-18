@@ -229,7 +229,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 else -> "双快照引擎、自动清理、定时任务与规则库均已就绪"
             }
             dashboardState.value = dashboardState.value.copy(
-                connected = true,
+                connected = cacheReady,
                 ready = ready,
                 serviceText = text,
                 device = Build.MODEL,

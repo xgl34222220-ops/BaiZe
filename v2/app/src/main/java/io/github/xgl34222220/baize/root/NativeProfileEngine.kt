@@ -340,18 +340,19 @@ internal class NativeProfileEngine(
             }
 
             val target = File(candidate.path)
-            val before = measure(target, min(deadline, SystemClock.elapsedRealtime() + ITEM_CLEAN_MS))
             val result = deleteCandidate(candidate, target, options.maxFileBytes, mounts, min(deadline, SystemClock.elapsedRealtime() + ITEM_CLEAN_MS))
-            val after = if (target.exists()) measure(target, min(deadline, SystemClock.elapsedRealtime() + 1_000L)) else Stats(0L, 0L, 0L, true)
-            val actualBytes = max(0L, before.bytes - after.bytes)
-            val actualFiles = max(0L, before.files - after.files)
-            val actualDirs = max(0L, before.directories - after.directories)
+            // deleteCandidate already counts successful mutations exactly. Measuring the whole
+            // directory before and after deletion made snapshot cleaning look like a second scan
+            // and also lost the count for an empty root directory.
+            val actualBytes = result.bytes.coerceAtLeast(0L)
+            val actualFiles = result.files.coerceAtLeast(0L)
+            val actualDirs = result.directories.coerceAtLeast(0L)
             deletedBytes += actualBytes
             deletedFiles += actualFiles
             deletedDirectories += actualDirs
             failures += result.failures
 
-            val complete = if (candidate.deleteRoot) !target.exists() else after.files == 0L && after.directories == 0L
+            val complete = result.complete && if (candidate.deleteRoot) !target.exists() else isEmptyDirectory(target)
             if (complete || actualBytes > 0L || actualFiles > 0L || actualDirs > 0L) cleaned += 1 else skipped += 1
             details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else "仍有受保护或未删除项目", actualBytes, actualFiles, actualDirs))
         }
