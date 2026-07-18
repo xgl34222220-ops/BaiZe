@@ -15,6 +15,7 @@ TOTALS_FILE="$STATE_DIR/totals.env"
 REPORT_DIR="$STATE_DIR/reports"
 LATEST_REPORT="$REPORT_DIR/latest.tsv"
 APP_DETAILS="$REPORT_DIR/apps-latest.tsv"
+APP_ITEMS="$REPORT_DIR/app-items-latest.tsv"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 DEEP_SCAN_STATE="$STATE_DIR/deep_scan.env"
 DEEP_SCAN_TARGETS="$STATE_DIR/deep_scan.targets"
@@ -75,6 +76,8 @@ printf '%s\n' "$$" >"$LOCK_DIR/pid"
 
 TMP_DIR="$LOCK_DIR/tmp"
 mkdir -p "$TMP_DIR"
+PROCESSED_PATHS="$TMP_DIR/processed-paths"
+: >"$PROCESSED_PATHS"
 cleanup_lock() {
   if [ -d "$RUNNING_FILE" ]; then
     rm -rf -- "$RUNNING_FILE" 2>/dev/null
@@ -156,6 +159,7 @@ RULE_SEEN_FILE="$TMP_DIR/rule-targets.seen"
 : >"$RULE_SEEN_FILE"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
 printf 'package\tcategory\tfiles\tbytes\n' >"$APP_DETAILS"
+printf 'package\tcategory\tfiles\tbytes\terrors\tsample_path\n' >"$APP_ITEMS"
 set_phase "准备扫描"
 
 get_value() {
@@ -266,13 +270,18 @@ append_app_detail() {
   category=$2
   files=$3
   bytes=$4
+  errors=${5:-0}
+  sample_path=${6:-}
   valid_package_name "$package" || return 0
   case "$files" in ''|*[!0-9]*) files=0 ;; esac
   case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
-  [ "$files" -gt 0 ] || [ "$bytes" -gt 0 ] || return 0
+  case "$errors" in ''|*[!0-9]*) errors=0 ;; esac
+  [ "$files" -gt 0 ] || [ "$bytes" -gt 0 ] || [ "$errors" -gt 0 ] || return 0
   package=$(sanitize_report_field "$package")
   category=$(sanitize_report_field "$category")
+  sample_path=$(sanitize_report_field "$sample_path")
   printf '%s\t%s\t%s\t%s\n' "$package" "$category" "$files" "$bytes" >>"$APP_DETAILS"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$package" "$category" "$files" "$bytes" "$errors" "$sample_path" >>"$APP_ITEMS"
 }
 
 record_app_detail_for() {
@@ -280,8 +289,10 @@ record_app_detail_for() {
   category=$2
   files=$3
   bytes=$4
+  errors=${5:-0}
+  sample_path=${6:-$target}
   package=$(package_for_detail "$target" "$category" 2>/dev/null) || return 0
-  append_app_detail "$package" "$category" "$files" "$bytes"
+  append_app_detail "$package" "$category" "$files" "$bytes" "$errors" "$sample_path"
 }
 
 should_stop() {
@@ -318,6 +329,31 @@ existing_paths_to_list() {
   while IFS= read -r -d '' candidate; do
     { [ -e "$candidate" ] || [ -L "$candidate" ]; } && printf '%s\0' "$candidate" >>"$target_list"
   done <"$source_list"
+}
+
+first_nul_path() {
+  source_list=$1
+  while IFS= read -r -d '' candidate; do
+    printf '%s\n' "$candidate"
+    return 0
+  done <"$source_list"
+  return 1
+}
+
+filter_processed_list() {
+  source_list=$1
+  unique_list="$source_list.unique"
+  : >"$unique_list"
+  while IFS= read -r -d '' candidate; do
+    [ -n "$candidate" ] || continue
+    canonical=$(canonical_rule_path "$candidate" 2>/dev/null)
+    [ -n "$canonical" ] || canonical=$candidate
+    key=$(printf '%s' "$canonical" | tr '\r\n' '  ')
+    grep -Fqx -- "$key" "$PROCESSED_PATHS" 2>/dev/null && continue
+    printf '%s\n' "$key" >>"$PROCESSED_PATHS"
+    printf '%s\0' "$candidate" >>"$unique_list"
+  done <"$source_list"
+  mv -f "$unique_list" "$source_list"
 }
 
 is_whitelisted() {
@@ -693,9 +729,11 @@ process_cache_candidates() {
   app_done=${4:-0}
   app_total=${5:-0}
   filter_whitelist_list "$list"
+  filter_processed_list "$list"
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
+  sample_path=$(first_nul_path "$list" 2>/dev/null)
 
   if [ -n "$app_package" ]; then
     if [ "$MODE" = "clean" ]; then
@@ -719,14 +757,14 @@ process_cache_candidates() {
     log_line "[应用清理][$app_package][$CATEGORY] $ACTUAL_COUNT 个缓存文件，$ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
     report_line cleaned low "$CATEGORY:$app_package" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$app_package"
     [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY:$app_package" "$REMAINING_COUNT" "$REMAINING_BYTES" "$app_package"
-    append_app_detail "$app_package" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES"
+    append_app_detail "$app_package" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$REMAINING_COUNT" "$sample_path"
     FILES=$((FILES + ACTUAL_COUNT))
     add_bytes "$ACTUAL_BYTES"
     rm -f "$remaining" "$err_file"
   else
     log_line "[应用扫描][$app_package][$CATEGORY] $count 个缓存文件，$estimated bytes"
     report_line candidate low "$CATEGORY:$app_package" "$count" "$estimated" "$app_package"
-    append_app_detail "$app_package" "$CATEGORY" "$count" "$estimated"
+    append_app_detail "$app_package" "$CATEGORY" "$count" "$estimated" 0 "$sample_path"
     FILES=$((FILES + count))
     add_bytes "$estimated"
   fi
@@ -752,8 +790,10 @@ clean_dir() {
     find "$dir" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -mtime "+$days" -print0 2>/dev/null >"$list"
   fi
   filter_whitelist_list "$list"
+  filter_processed_list "$list"
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  sample_path=$(first_nul_path "$list" 2>/dev/null)
 
   if [ "$count" -gt 0 ]; then
     estimated=$(bytes_from_list "$list")
@@ -772,7 +812,7 @@ clean_dir() {
       add_bytes "$ACTUAL_BYTES"
       log_line "[批量清理][$CATEGORY] $dir ($ACTUAL_COUNT 个文件，约 $ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个)"
       report_line cleaned low "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$dir"
-      record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES"
+      record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$REMAINING_COUNT" "$sample_path"
       [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY" "$REMAINING_COUNT" "$REMAINING_BYTES" "$dir"
       rm -f "$remaining" "$err_file"
     else
@@ -794,8 +834,10 @@ clean_dir() {
       find "$dir" -mindepth 1 -type f -size 0c -mtime "+$EMPTY_DAYS" ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
     fi
     filter_whitelist_list "$list"
+    filter_processed_list "$list"
     count=$(count_nul "$list")
     case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    sample_path=$(first_nul_path "$list" 2>/dev/null)
     if [ "$count" -gt 0 ]; then
       if [ "$MODE" = "clean" ]; then
         err_file="$TMP_DIR/rm-empty.$LIST_SEQ.err"
@@ -810,7 +852,7 @@ clean_dir() {
         [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
         log_line "[批量清理][空文件:$CATEGORY] $dir ($ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个)"
         report_line cleaned low "空文件:$CATEGORY" "$ACTUAL_COUNT" 0 "$dir"
-        record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" 0
+        record_app_detail_for "$dir" "空文件:$CATEGORY" "$ACTUAL_COUNT" 0 "$REMAINING_COUNT" "$sample_path"
         [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "空文件:$CATEGORY" "$REMAINING_COUNT" 0 "$dir"
         rm -f "$remaining" "$err_file"
       else
@@ -828,8 +870,10 @@ clean_dir() {
     list="$TMP_DIR/empty-dirs.$LIST_SEQ.nul"
     find "$dir" -depth -mindepth 1 -type d -empty -print0 2>/dev/null >"$list"
     filter_whitelist_list "$list"
+    filter_processed_list "$list"
     count=$(count_nul "$list")
     case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    sample_path=$(first_nul_path "$list" 2>/dev/null)
     if [ "$count" -gt 0 ]; then
       if [ "$MODE" = "clean" ]; then
         xargs -0 -n 100 rmdir <"$list" 2>/dev/null
@@ -841,7 +885,7 @@ clean_dir() {
         [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
         log_line "[批量清理][空目录:$CATEGORY] $dir ($ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个)"
         report_line cleaned low "空目录:$CATEGORY" "$ACTUAL_COUNT" 0 "$dir"
-        record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" 0
+        record_app_detail_for "$dir" "空目录:$CATEGORY" "$ACTUAL_COUNT" 0 "$REMAINING_COUNT" "$sample_path"
         [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "空目录:$CATEGORY" "$REMAINING_COUNT" 0 "$dir"
         rm -f "$remaining"
       else
