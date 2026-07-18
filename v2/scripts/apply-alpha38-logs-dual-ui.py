@@ -18,6 +18,7 @@ module_prop = "v2/module/module.prop"
 package_script = "v2/scripts/package-module.sh"
 customize = "v2/module/customize.sh"
 miuix_components = "v2/app/src/main/java/io/github/xgl34222220/baize/ui/miuix/MiuixLiquidComponents.kt"
+logs_miuix = "v2/app/src/main/java/io/github/xgl34222220/baize/ui/logs/miuix/LogsScreenMiuix.kt"
 
 replace_once(
     app,
@@ -79,4 +80,14 @@ replace_once(
     miuix_components,
     "                        fontSize = 10.sp,\n                        lineHeight = 12.sp,\n",
     "                        fontSize = if (compact) 9.sp else 10.sp,\n                        lineHeight = if (compact) 11.sp else 12.sp,\n",
+)
+replace_once(
+    logs_miuix,
+    "import androidx.compose.foundation.layout.Column\n",
+    "import androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.ColumnScope\n",
+)
+replace_once(
+    logs_miuix,
+    "    content: @Composable Column.() -> Unit\n",
+    "    content: @Composable ColumnScope.() -> Unit\n",
 )
