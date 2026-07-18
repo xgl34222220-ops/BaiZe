@@ -2,7 +2,7 @@ name: BaiZe v2 Alpha
 
 on:
   push:
-    branches: [v2-alpha15]
+    branches: [v2-alpha16]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
@@ -24,17 +24,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Alpha 15 branch
+      - name: Checkout Alpha 16 branch
         uses: actions/checkout@v4
         with:
-          ref: v2-alpha15
+          ref: v2-alpha16
           fetch-depth: 0
 
-      - name: Apply Alpha 15 product patch
-        if: ${{ hashFiles('v2/scripts/alpha15-source-patch.py') != '' }}
+      - name: Apply Alpha 16 product patch
+        if: ${{ hashFiles('v2/scripts/alpha16-source-patch.py') != '' }}
         run: |
           set -o pipefail
-          python3 v2/scripts/alpha15-source-patch.py 2>&1 | tee v2/alpha15-patch.log
+          python3 v2/scripts/alpha16-source-patch.py 2>&1 | tee v2/alpha16-patch.log
 
       - name: Validate all cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -62,25 +62,25 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha15.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha16.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: sh scripts/package-module.sh
 
-      - name: Verify Alpha 15 root cleaner whitelist Monet UI and rules
+      - name: Verify Alpha 16 Box-inspired UI cleaner whitelist Monet and rules
         if: steps.app_build.outcome == 'success'
         working-directory: v2
         run: |
-          ZIP=dist/BaiZe-v2-Alpha15-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha16-Module.zip
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'app/baize.apk.sha256'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha15'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha16'
           unzip -p "$ZIP" cleaner.sh | grep -q 'run_shared_root_shells'
           unzip -p "$ZIP" cleaner.sh | grep -q 'root_shell_effectively_empty'
           unzip -p "$ZIP" cleaner.sh | grep -q 'Android/media'
@@ -88,42 +88,40 @@ jobs:
           unzip -p "$ZIP" cleaner.sh | grep -q 'resolve_rule_target'
           unzip -p "$ZIP" config/default.conf | grep -q 'clean_root_shells=1'
           unzip -p "$ZIP" config/default.conf | grep -q 'root_shell_days=14'
-          grep -q 'ThemeSettingsActivity' app/src/main/AndroidManifest.xml
-          grep -q 'DynamicColors.applyToActivityIfAvailable' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
-          grep -q 'KEY_MONET' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
-          grep -q 'WindowInsetsCompat.Type.systemBars' app/src/main/java/io/github/xgl34222220/baize/WhitelistActivity.kt
-          grep -q 'headerContainer' app/src/main/res/layout/activity_whitelist.xml
-          grep -q 'cleanRootShellsSwitch' app/src/main/res/layout/activity_dashboard.xml
-          grep -q 'rootShellDaysSlider' app/src/main/res/layout/activity_dashboard.xml
-          grep -q 'root_shell_days' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-          grep -q 'Widget.BaiZe.SimpleCard' app/src/main/res/values/themes.xml
-          grep -q '悬浮底栏液态玻璃效果' app/src/main/res/layout/activity_theme_settings.xml
+          grep -q 'Widget.BaiZe.HeroCard' app/src/main/res/values/themes.xml
+          grep -q 'Widget.BaiZe.FilterChip' app/src/main/res/values/themes.xml
+          grep -q 'Widget.BaiZe.FilterChip' app/src/main/res/layout/activity_whitelist.xml
+          grep -q 'MIUIx Clean' app/src/main/res/layout/activity_theme_settings.xml
+          grep -q 'minimumHeight = dp(76)' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
           grep -q 'ThemeManager.isGlassEnabled' app/src/main/java/io/github/xgl34222220/baize/ui/FloatingGlassDock.kt
+          grep -q 'getBoolean(KEY_MONET, false)' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
+          grep -q 'solid content surfaces' app/src/main/java/io/github/xgl34222220/baize/Alpha7UiPolish.kt
+          ! grep -q 'applySurfaceTree' app/src/main/java/io/github/xgl34222220/baize/Alpha7UiPolish.kt
           grep -q 'safeRuleSyntax' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           ! grep -q '/data/adb/modules/safesweep/config' app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
           test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-      - name: Commit verified Alpha 15 sources
-        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha15-source-patch.py') != ''
+      - name: Commit verified Alpha 16 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha16-source-patch.py') != ''
         run: |
-          rm -f v2/scripts/alpha15-source-patch.py
+          rm -f v2/scripts/alpha16-source-patch.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'Finalize Alpha 15 root cleanup and Monet MIUIx UI'
-          git pull --rebase origin v2-alpha15
-          git push origin HEAD:v2-alpha15
+          git commit -m 'Finalize Alpha 16 Box-inspired MIUIx component refactor'
+          git pull --rebase origin v2-alpha16
+          git push origin HEAD:v2-alpha16
 
       - name: Upload integrated module and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha15
+          name: BaiZe-v2-Alpha16
           if-no-files-found: warn
           path: |
-            v2/alpha15-patch.log
-            v2/build-alpha15.log
-            v2/dist/BaiZe-v2-Alpha15-Module.zip
+            v2/alpha16-patch.log
+            v2/build-alpha16.log
+            v2/dist/BaiZe-v2-Alpha16-Module.zip
 
       - name: Fail when app build failed
         if: steps.app_build.outcome != 'success'
