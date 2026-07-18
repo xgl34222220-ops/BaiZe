@@ -79,6 +79,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -311,7 +312,7 @@ private fun GlassSurface(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
     val fill = if (dark) Color(0xFF252733).copy(alpha = .86f) else Color.White.copy(alpha = .80f)
     val border = if (dark) Color.White.copy(alpha = .09f) else Color.White.copy(alpha = .82f)
     Box(
@@ -581,7 +582,7 @@ private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
         item {
             PrimaryButton(
                 text = if (config.saving) "正在保存…" else "保存自动清理计划",
-                enabled = config.enabled && !config.saving,
+                enabled = !config.saving,
                 onClick = { actions.saveScheduler(config) }
             )
         }
