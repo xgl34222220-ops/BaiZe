@@ -10,6 +10,11 @@ on:
       - 'service.sh'
       - 'config/**'
       - '.github/workflows/v2-alpha34-miuix-liquid.yml'
+  pull_request:
+    branches: [v2-alpha33-ui-step1]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha34-miuix-liquid.yml'
   workflow_dispatch:
 
 permissions:
@@ -69,6 +74,7 @@ jobs:
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
 
       - name: Commit verified UI source
+        if: github.event_name == 'push'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
