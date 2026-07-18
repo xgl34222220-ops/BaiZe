@@ -14,6 +14,9 @@ import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -41,6 +44,7 @@ import org.json.JSONObject
  * never restart discovery.
  */
 class MiuixDashboardActivity : ComponentActivity() {
+    private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
     private var rootService: IProfileRootService? = null
     private var cacheService: IBaiZeRootService? = null
@@ -106,6 +110,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         updateStorage()
 
         setContent {
+            val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
             BaiZeMiuixApp(
                 state = dashboardState.value,
                 scheduler = schedulerState.value,
@@ -127,7 +132,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                     theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
                     crash = { showCrashDialog() }
-                )
+                ),
+                appearance = appearance
             )
         }
         connectPrimaryService()

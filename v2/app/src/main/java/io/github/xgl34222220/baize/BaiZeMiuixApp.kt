@@ -67,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -92,6 +93,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.material.color.MaterialColors
+import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
+import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.home.HomeRoute
+import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
@@ -287,58 +292,31 @@ private enum class BaiZePage(val title: String, val icon: ImageVector) {
 }
 
 @Composable
-fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions: DashboardActions) {
-    val context = LocalContext.current
-    val systemDark = isSystemInDarkTheme()
-    val dark = when (ThemeManager.currentMode(context)) {
-        ThemeManager.MODE_LIGHT -> false
-        ThemeManager.MODE_DARK -> true
-        else -> systemDark
-    }
-    val amoled = dark && ThemeManager.isAmoledEnabled(context)
-    val resolvedPrimary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, 0xFF3975F4.toInt()))
-    val resolvedSecondary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondary, 0xFF7658E8.toInt()))
-    val resolvedTertiary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorTertiary, 0xFFFF91D0.toInt()))
-    val resolvedSurface = if (amoled) Color(0xFF080808) else Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, if (dark) 0xFF191B24.toInt() else 0xFFFFFFFF.toInt()))
-    val resolvedOnSurface = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurface, if (dark) 0xFFF0F1F8.toInt() else 0xFF151722.toInt()))
-    val resolvedOnSurfaceVariant = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, if (dark) 0xFFBFC2D0.toInt() else 0xFF6D7080.toInt()))
-    val colors = if (dark) {
-        darkColorScheme(
-            primary = resolvedPrimary,
-            secondary = resolvedSecondary,
-            tertiary = resolvedTertiary,
-            background = if (amoled) Color.Black else Color(0xFF101117),
-            surface = resolvedSurface,
-            surfaceVariant = if (amoled) Color(0xFF101010) else Color(0xFF20232D),
-            onSurface = resolvedOnSurface,
-            onSurfaceVariant = resolvedOnSurfaceVariant
-        )
-    } else {
-        lightColorScheme(
-            primary = resolvedPrimary,
-            secondary = resolvedSecondary,
-            tertiary = resolvedTertiary,
-            background = Color(0xFFF4F5FB),
-            surface = resolvedSurface,
-            onSurface = resolvedOnSurface,
-            onSurfaceVariant = resolvedOnSurfaceVariant
-        )
-    }
-    MaterialTheme(colorScheme = colors) {
-        var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
-        Box(modifier = Modifier.fillMaxSize()) {
-            MiuiXBackdrop(dark, amoled)
-            when (page) {
-                BaiZePage.Home -> HomePage(state, actions)
-                BaiZePage.Plan -> PlanPage(scheduler, actions)
-                BaiZePage.Records -> RecordsPage(state, actions)
-                BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+fun BaiZeMiuixApp(
+    state: DashboardUiState,
+    scheduler: SchedulerUiState,
+    actions: DashboardActions,
+    appearance: AppearanceSettings
+) {
+    BaiZeTheme(appearance) {
+        CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
+            val dark = MaterialTheme.colorScheme.background.luminance() < .5f
+            val amoled = dark && appearance.amoledBlack
+            var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
+            Box(modifier = Modifier.fillMaxSize()) {
+                MiuiXBackdrop(dark, amoled)
+                when (page) {
+                    BaiZePage.Home -> HomeRoute(appearance.uiStyle, state, actions)
+                    BaiZePage.Plan -> PlanPage(scheduler, actions)
+                    BaiZePage.Records -> RecordsPage(state, actions)
+                    BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                }
+                FloatingDock(
+                    selected = page,
+                    onSelected = { page = it },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
-            FloatingDock(
-                selected = page,
-                onSelected = { page = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
@@ -461,7 +439,7 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 }
 
 @Composable
-private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
+internal fun HomeScreenMiuix(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val accentGradient = rememberAccentGradient()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -470,7 +448,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 32", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "Miuix 清理概览 · Alpha 33", actions.refresh) }
         item {
             Box(
                 Modifier
