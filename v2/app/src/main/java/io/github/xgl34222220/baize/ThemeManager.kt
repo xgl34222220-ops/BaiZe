@@ -3,48 +3,49 @@ package io.github.xgl34222220.baize
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.annotation.StyleRes
+import androidx.appcompat.app.AppCompatDelegate
+import com.google.android.material.color.DynamicColors
 
-/**
- * Runtime palette controller for Alpha 8.
- *
- * The activity theme is selected before Activity.onCreate on modern Android so every Material
- * component, dialog, slider, switch, card and navigation indicator resolves the same palette.
- * Monet uses Material 3 dynamic system colors on Android 12+ and falls back to BaiZe Blue on older
- * systems. Fixed palettes never depend on the wallpaper and remain stable across ROMs.
- */
+/** Central theme controller for the Alpha 15 MIUIx visual system. */
 object ThemeManager {
     const val PREFS = "baize_v2"
     const val KEY_PALETTE = "theme_palette"
+    const val KEY_MODE = "theme_mode"
+    const val KEY_MONET = "theme_monet"
+    const val KEY_AMOLED = "theme_amoled"
+    const val KEY_GLASS = "theme_glass"
+
+    const val MODE_SYSTEM = "system"
+    const val MODE_LIGHT = "light"
+    const val MODE_DARK = "dark"
 
     data class Palette(
         val id: String,
         val label: String,
         val description: String,
-        @StyleRes val themeRes: Int,
-        val monet: Boolean = false
+        @StyleRes val themeRes: Int
     )
 
     val palettes: List<Palette> = listOf(
-        Palette("blue", "澄澈蓝", "跟随系统明暗的克制蓝灰", R.style.Theme_BaiZe_Blue),
-        Palette("aurora", "暮光紫", "低饱和紫与雾蓝", R.style.Theme_BaiZe_Aurora),
-        Palette("jade", "青岚", "青绿与冷灰的清爽组合", R.style.Theme_BaiZe_Jade),
-        Palette("sunset", "暖砂", "柔和橙棕与暖灰", R.style.Theme_BaiZe_Sunset),
-        Palette("amoled", "极夜黑", "纯黑背景与低亮度高对比", R.style.Theme_BaiZe_Amoled),
-        Palette("monet", "系统取色", "Android 12+ 壁纸动态配色", R.style.Theme_BaiZe_Monet, monet = true)
+        Palette("blue", "澄澈蓝", "清爽蓝与淡紫灰背景", R.style.Theme_BaiZe_Blue),
+        Palette("aurora", "雾紫", "低饱和紫与冷灰", R.style.Theme_BaiZe_Aurora),
+        Palette("jade", "青岚", "柔和青绿与浅灰", R.style.Theme_BaiZe_Jade),
+        Palette("sunset", "暖砂", "温和米棕与暖灰", R.style.Theme_BaiZe_Sunset)
     )
 
     fun install(application: Application) {
+        migrateLegacySettings(application)
+        syncNightMode(application)
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) {
                 applyBeforeCreate(activity)
             }
 
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                // Android 9 and earlier do not dispatch onActivityPreCreated. The default BaiZe theme
-                // remains usable there; theme selection is fully applied on Android 10+.
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) applyBeforeCreate(activity)
             }
 
@@ -57,36 +58,115 @@ object ThemeManager {
         })
     }
 
-    fun currentId(activity: Activity): String = currentId(activity.application)
-
-    fun currentId(application: Application): String {
-        val fallback = "blue"
-        val stored = application.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_PALETTE, fallback)
-            .orEmpty()
-        return palettes.firstOrNull { it.id == stored }?.id ?: fallback
+    fun currentId(context: Context): String {
+        val stored = prefs(context).getString(KEY_PALETTE, "blue").orEmpty()
+        return palettes.firstOrNull { it.id == stored }?.id ?: "blue"
     }
 
-    fun currentPalette(activity: Activity): Palette = paletteFor(currentId(activity))
+    fun currentPalette(context: Context): Palette =
+        palettes.firstOrNull { it.id == currentId(context) } ?: palettes.first()
 
-    fun setPalette(activity: Activity, id: String) {
+    fun currentMode(context: Context): String = when (prefs(context).getString(KEY_MODE, MODE_SYSTEM)) {
+        MODE_LIGHT -> MODE_LIGHT
+        MODE_DARK -> MODE_DARK
+        else -> MODE_SYSTEM
+    }
+
+    fun isMonetEnabled(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            prefs(context).getBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+
+    fun isAmoledEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AMOLED, false)
+
+    fun isGlassEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_GLASS, true)
+
+    fun setPalette(context: Context, id: String) {
         val normalized = palettes.firstOrNull { it.id == id }?.id ?: "blue"
-        activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_PALETTE, normalized)
-            .apply()
+        prefs(context).edit().putString(KEY_PALETTE, normalized).apply()
     }
 
-    private fun paletteFor(id: String): Palette {
-        val selected = palettes.firstOrNull { it.id == id } ?: palettes.first { it.id == "blue" }
-        return if (selected.monet && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            palettes.first { it.id == "blue" }
-        } else {
-            selected
+    fun setMode(context: Context, mode: String) {
+        val normalized = when (mode) {
+            MODE_LIGHT, MODE_DARK -> mode
+            else -> MODE_SYSTEM
+        }
+        prefs(context).edit().putString(KEY_MODE, normalized).apply()
+        syncNightMode(context)
+    }
+
+    fun setMonet(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_MONET, enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S).apply()
+    }
+
+    fun setAmoled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AMOLED, enabled).apply()
+    }
+
+    fun setGlass(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_GLASS, enabled).apply()
+    }
+
+    fun modeLabel(context: Context): String = when (currentMode(context)) {
+        MODE_LIGHT -> "浅色"
+        MODE_DARK -> "深色"
+        else -> "跟随系统"
+    }
+
+    fun themeSummary(context: Context): String {
+        val palette = currentPalette(context)
+        return buildString {
+            append(modeLabel(context)).append(" · ")
+            if (isMonetEnabled(context)) {
+                append("Monet 壁纸取色")
+            } else {
+                append(palette.label)
+                if (isAmoledEnabled(context) && isDark(context)) append(" · 纯黑")
+            }
+            append(if (isGlassEnabled(context)) " · 液态玻璃底栏" else " · 简约底栏")
+        }
+    }
+
+    fun isDark(context: Context): Boolean =
+        context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun syncNightMode(context: Context) {
+        val mode = when (currentMode(context)) {
+            MODE_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            MODE_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        if (AppCompatDelegate.getDefaultNightMode() != mode) {
+            AppCompatDelegate.setDefaultNightMode(mode)
         }
     }
 
     private fun applyBeforeCreate(activity: Activity) {
-        activity.setTheme(currentPalette(activity).themeRes)
+        val monet = isMonetEnabled(activity)
+        val themeRes = when {
+            !monet && isAmoledEnabled(activity) && isDark(activity) -> R.style.Theme_BaiZe_Amoled
+            else -> currentPalette(activity).themeRes
+        }
+        activity.setTheme(themeRes)
+        if (monet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            DynamicColors.applyToActivityIfAvailable(activity)
+        }
+    }
+
+    private fun migrateLegacySettings(context: Context) {
+        val preferences = prefs(context)
+        val oldPalette = preferences.getString(KEY_PALETTE, "blue").orEmpty()
+        if (oldPalette == "monet") {
+            preferences.edit()
+                .putString(KEY_PALETTE, "blue")
+                .putBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                .apply()
+        } else if (oldPalette == "amoled") {
+            preferences.edit()
+                .putString(KEY_PALETTE, "blue")
+                .putBoolean(KEY_AMOLED, true)
+                .apply()
+        }
     }
 }
