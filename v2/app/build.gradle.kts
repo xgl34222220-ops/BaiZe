@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20400
-        versionName = "2.0.0-alpha24"
+        versionCode = 20500
+        versionName = "2.0.0-alpha25"
     }
 
     buildFeatures {
@@ -73,4 +73,16 @@ dependencies {
 
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
+}
+
+// Keep the Alpha 25 source hotfix deterministic for local and CI builds. The script is idempotent
+// and patches the Compose dashboard before Android's preBuild phase reaches Kotlin compilation.
+val applyAlpha25Hotfix = tasks.register<org.gradle.api.tasks.Exec>("applyAlpha25Hotfix") {
+    workingDir = rootProject.projectDir.parentFile
+    commandLine("python3", "v2/scripts/apply-alpha25-hotfix.py")
+    outputs.upToDateWhen { false }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(applyAlpha25Hotfix)
 }
