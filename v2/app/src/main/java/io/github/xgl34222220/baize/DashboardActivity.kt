@@ -34,6 +34,7 @@ class DashboardActivity : AppCompatActivity() {
     private var taskRunning = false
     private var taskPollJob: Job? = null
     private var loadingConfig = false
+    private var pendingSmartClean = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -43,6 +44,7 @@ class DashboardActivity : AppCompatActivity() {
             loadSchedulerConfig()
             refreshModuleState()
             refreshWhitelist()
+            consumePendingSmartClean()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -60,8 +62,9 @@ class DashboardActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
 
-        binding.versionText.text = "Alpha 18"
+        binding.versionText.text = "Alpha 19"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -69,6 +72,15 @@ class DashboardActivity : AppCompatActivity() {
         updateStorage()
         refreshSavedReport()
         connectService()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
+            pendingSmartClean = true
+            consumePendingSmartClean()
+        }
     }
 
     override fun onResume() {
@@ -81,6 +93,13 @@ class DashboardActivity : AppCompatActivity() {
             readServiceStatus()
             refreshModuleState()
         }
+    }
+
+    private fun consumePendingSmartClean() {
+        if (!pendingSmartClean || profileService == null || taskRunning) return
+        pendingSmartClean = false
+        binding.bottomNavigation.selectedItemId = R.id.nav_home
+        runSmartClean()
     }
 
     private fun setupNavigation() {
@@ -739,5 +758,9 @@ class DashboardActivity : AppCompatActivity() {
         taskPollJob?.cancel()
         if (serviceBound) runCatching { RootService.unbind(connection) }
         super.onDestroy()
+    }
+
+    companion object {
+        const val EXTRA_RUN_SMART_CLEAN = "io.github.xgl34222220.baize.RUN_SMART_CLEAN"
     }
 }

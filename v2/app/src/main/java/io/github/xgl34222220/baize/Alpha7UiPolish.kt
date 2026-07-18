@@ -34,6 +34,8 @@ object Alpha7UiPolish {
     }
 
     private fun polish(activity: Activity) {
+        // Alpha 19 Clean Center owns its complete WebUI-derived surface and inset system.
+        if (activity is CleanCenterActivity) return
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         content?.getChildAt(0)?.background = if (ThemeManager.isBlurEnabled(activity)) {
             LiquidBackdropDrawable(activity)
@@ -54,7 +56,7 @@ object Alpha7UiPolish {
         val onPrimaryContainer = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnPrimaryContainer, Color.rgb(10, 53, 111))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 18"
+            text = "Alpha 19"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.apply {
