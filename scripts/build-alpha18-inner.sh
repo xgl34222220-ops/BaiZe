@@ -75,20 +75,15 @@ if command -v sdkmanager >/dev/null 2>&1; then
   yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
 fi
 
-GRADLE_CMD=""
-if command -v gradle >/dev/null 2>&1; then
-  GRADLE_CMD=$(command -v gradle)
-else
-  GRADLE_HOME="$ROOT/.ci-gradle-8.13"
-  if [ ! -x "$GRADLE_HOME/bin/gradle" ]; then
-    ARCHIVE="$ROOT/.ci-gradle-8.13-bin.zip"
-    curl -fsSL --retry 3 -o "$ARCHIVE" https://services.gradle.org/distributions/gradle-8.13-bin.zip
-    rm -rf "$GRADLE_HOME" "$ROOT/gradle-8.13"
-    unzip -q "$ARCHIVE" -d "$ROOT"
-    mv "$ROOT/gradle-8.13" "$GRADLE_HOME"
-  fi
-  GRADLE_CMD="$GRADLE_HOME/bin/gradle"
+GRADLE_HOME="$ROOT/.ci-gradle-8.13"
+if [ ! -x "$GRADLE_HOME/bin/gradle" ]; then
+  ARCHIVE="$ROOT/.ci-gradle-8.13-bin.zip"
+  curl -fsSL --retry 3 -o "$ARCHIVE" https://services.gradle.org/distributions/gradle-8.13-bin.zip
+  rm -rf "$GRADLE_HOME" "$ROOT/gradle-8.13"
+  unzip -q "$ARCHIVE" -d "$ROOT"
+  mv "$ROOT/gradle-8.13" "$GRADLE_HOME"
 fi
+GRADLE_CMD="$GRADLE_HOME/bin/gradle"
 
 (
   cd v2
