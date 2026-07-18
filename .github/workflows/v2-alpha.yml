@@ -41,7 +41,9 @@ jobs:
           start = text.find('# The theme page itself must also rebuild after changing Monet variants/standards.')
           end = text.find('# Manual clean always uses a safe intelligent profile.', start)
           if start >= 0 and end > start:
-              path.write_text(text[:start] + text[end:], encoding='utf-8')
+              text = text[:start] + text[end:]
+          text = text.replace('已生成 Alpha 17 BOX 风格主题、完整清理引擎', '已生成 Alpha 17 BOX 风格主题系统、完整清理引擎')
+          path.write_text(text, encoding='utf-8')
           PY
           python3 v2/scripts/alpha18-source-patch.py 2>&1 | tee v2/alpha18-patch.log
 
