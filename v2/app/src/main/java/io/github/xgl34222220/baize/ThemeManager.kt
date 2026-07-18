@@ -201,12 +201,14 @@ object ThemeManager {
         prefs(context).edit().putBoolean(key, value).apply()
     }
 
-    private fun normalizeAccent(value: String): String = when (value) {
-        "aurora" -> "purple"
-        "jade" -> "light_blue"
-        "sunset" -> "red"
-        "blue" -> "default"
-        else -> palettes.firstOrNull { it.id == value }?.id ?: "default"
+    private fun normalizeAccent(value: String): String {
+        palettes.firstOrNull { it.id == value }?.let { return it.id }
+        return when (value) {
+            "aurora" -> "purple"
+            "jade" -> "light_blue"
+            "sunset" -> "red"
+            else -> "default"
+        }
     }
 
     private fun syncNightMode(context: Context) {
@@ -247,7 +249,7 @@ object ThemeManager {
                 editor.putString(KEY_ACCENT, "default")
                 editor.putBoolean(KEY_AMOLED, true)
             }
-            else -> editor.putString(KEY_ACCENT, normalizeAccent(oldPalette))
+            else -> editor.putString(KEY_ACCENT, if (oldPalette == "blue") "default" else normalizeAccent(oldPalette))
         }
         if (!preferences.contains(KEY_MONET_STYLE)) editor.putString(KEY_MONET_STYLE, "vibrant")
         if (!preferences.contains(KEY_COLOR_STANDARD)) editor.putString(KEY_COLOR_STANDARD, "m3_2021")

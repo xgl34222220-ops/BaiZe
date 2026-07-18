@@ -65,7 +65,7 @@
                         android:paddingTop="6dp"
                         android:paddingEnd="11dp"
                         android:paddingBottom="6dp"
-                        android:text="Alpha 16"
+                        android:text="Alpha 17"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
