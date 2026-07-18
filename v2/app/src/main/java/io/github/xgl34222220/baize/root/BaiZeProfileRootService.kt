@@ -295,7 +295,7 @@ class BaiZeProfileRootService : RootService() {
     private fun recordNativeTaskJson(raw: String): String = runCatching {
         val input = JSONObject(raw)
         val mode = input.optString("mode").trim()
-        require(mode in setOf("smart-clean")) { "unsupported_native_mode" }
+        require(mode in setOf("smart-clean", "snapshot-clean")) { "unsupported_native_mode" }
         val success = input.optBoolean("success", true)
         val cancelled = input.optBoolean("cancelled", false)
         val bytes = input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)

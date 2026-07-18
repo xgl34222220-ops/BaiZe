@@ -209,6 +209,7 @@ data class DashboardActions(
     val refresh: () -> Unit,
     val clean: () -> Unit,
     val scan: () -> Unit,
+    val cleanScan: () -> Unit,
     val dismissScan: () -> Unit,
     val stop: () -> Unit,
     val deep: () -> Unit,
@@ -376,7 +377,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = 126.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "智能清理引擎 · Alpha 23", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 24", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -528,8 +529,11 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                 Column(Modifier.weight(1f)) {
                     Text("安全扫描完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
                     Text(
-                        if (state.scanBytes > 0) "发现 ${Formatter.formatFileSize(context, state.scanBytes)} 可清理内容"
-                        else "没有发现可安全清理的内容",
+                        when {
+                            state.scanFiles <= 0 -> "没有发现可安全清理的内容"
+                            state.scanBytes > 0 -> "发现 ${state.scanFiles} 项；已知至少 ${Formatter.formatFileSize(context, state.scanBytes)}"
+                            else -> "发现 ${state.scanFiles} 项；大小按实际删除统计"
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
                     )
@@ -553,19 +557,19 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                     )
                 ) { Text("关闭", fontWeight = FontWeight.Bold) }
                 Button(
-                    onClick = actions.clean,
-                    enabled = state.scanBytes > 0 && !state.running,
+                    onClick = actions.cleanScan,
+                    enabled = state.scanFiles > 0 && !state.running,
                     modifier = Modifier.weight(1.45f).height(52.dp),
                     shape = RoundedCornerShape(19.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (state.scanBytes > 0) "一键清理" else "无需清理", fontWeight = FontWeight.Bold)
+                    Text(if (state.scanFiles > 0) "按扫描结果清理" else "无需清理", fontWeight = FontWeight.Bold)
                 }
             }
             Text(
-                "执行清理时会重新校验路径、白名单和文件状态，不会直接使用过期扫描列表。",
+                "点击后直接消费本次快照，不会重新扫描；删除前只复核路径、白名单、挂载点和文件状态。快照 30 分钟后自动失效。",
                 modifier = Modifier.padding(top = 11.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 10.sp

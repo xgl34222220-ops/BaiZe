@@ -1,6 +1,15 @@
-# 白泽 v2 Alpha 23
+# 白泽 v2 Alpha 24
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
+
+## Alpha 24
+
+- 首页安全扫描与一键清理改接原生 Root 快照引擎；点击扫描结果清理不会再次发现候选。
+- 应用缓存扫描与安全项目扫描并行执行；空项目、隐藏规则与碎片合并为一次共享存储遍历。
+- 扫描快照保留 30 分钟，过期后明确要求重新扫描，不会静默退回全盘扫描。
+- 清理前仍逐项复核白名单、路径、符号链接、挂载点、文件状态与单文件上限。
+- 扫描结果按候选项启用清理按钮；未遍历测量的目录不再错误显示为 0 B。
+- 首页、清理中心与原生智能扫描入口统一使用相同的快照闭环和实际删除统计。
 
 ## Alpha 23
 
@@ -36,4 +45,4 @@ sh scripts/package-module.sh
 产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- `dist/BaiZe-v2-Alpha23-Module.zip`
+- `dist/BaiZe-v2-Alpha24-Module.zip`

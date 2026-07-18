@@ -11,6 +11,7 @@ on:
       - 'config/**'
       - '.github/workflows/v2-alpha23.yml'
   pull_request:
+    branches: [v2-alpha22]
     paths:
       - 'v2/**'
       - 'cleaner.sh'

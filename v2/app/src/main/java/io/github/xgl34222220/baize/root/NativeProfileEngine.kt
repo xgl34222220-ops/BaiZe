@@ -120,6 +120,7 @@ internal class NativeProfileEngine(
 
         progress(Progress("准备${label(id)}扫描", 0, 0))
         when (id) {
+            "safe" -> scanSafe(options, candidates, progress, started)
             "empty" -> scanEmpty(options, candidates, progress, started)
             "rules" -> scanRules(options, candidates, progress, started)
             "fragments" -> scanFragments(options, candidates, progress, started)
@@ -153,8 +154,105 @@ internal class NativeProfileEngine(
             .put("medium", list.count { it.risk == "medium" })
             .put("high", list.count { it.risk == "high" })
             .put("critical", list.count { it.risk == "critical" })
+            .put("knownBytes", list.filter { it.measured }.sumOf { it.bytes.coerceAtLeast(0L) })
+            .put("measuredCandidates", list.count { it.measured })
+            .put("unmeasuredCandidates", list.count { !it.measured })
+            .put("emptyFiles", list.count { it.category == "empty_file" })
+            .put("emptyDirs", list.count { it.category == "empty_dir" })
+            .put("fragmentFiles", list.count { it.category == "fragment" })
+            .put("ruleTargets", list.count { it.profile == "rules" })
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .toString()
+    }
+
+    /**
+     * Scans the three ordinary non-cache profiles in one shared-storage traversal. The old UI
+     * called empty/rules/fragments separately, which walked the same tree three times before the
+     * user could clean anything. A single snapshot also guarantees that the follow-up clean uses
+     * exactly this candidate set instead of starting discovery again.
+     */
+    private fun scanSafe(
+        options: Options,
+        out: MutableMap<String, Candidate>,
+        progress: (Progress) -> Unit,
+        started: Long
+    ) {
+        val rules = ordinaryRules()
+        for ((index, rule) in rules.withIndex()) {
+            if (stop(started, SCAN_TOTAL_MS)) return
+            if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.first))
+            for (target in expand(rule.first)) {
+                if (target.exists() && !isSymlink(target)) {
+                    add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options)
+                }
+            }
+        }
+
+        val cutoff = System.currentTimeMillis() - options.fragmentDays * 86_400_000L
+        val fragmentPatterns = fragmentPatterns()
+        val hidden = HIDDEN_TRASH_NAMES
+        val roots = storageRoots()
+        var visited = 0
+        for ((index, root) in roots.withIndex()) {
+            if (stop(started, SCAN_TOTAL_MS)) return
+            progress(Progress("一次遍历扫描空项目、规则垃圾与碎片", index, roots.size, root.path))
+            walk(root, 9, started + SCAN_TOTAL_MS, true) { file, post ->
+                if (!post) {
+                    visited += 1
+                    if (visited % 512 == 0) progress(Progress("单遍历扫描中 · 已检查 $visited 项", visited, 0, file.path))
+                }
+                if (post) {
+                    if (file != root && isEmptyDirectory(file) && !protectedDirectoryName(file.name)) {
+                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, deleteRoot = true), options)
+                    }
+                    return@walk
+                }
+                if (file.isDirectory && file != root && hidden.contains(file.name.lowercase())) {
+                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, deleteRoot = false), options)
+                } else if (file.isFile) {
+                    if (file.length() == 0L && !placeholder(file.name)) {
+                        val item = candidate("empty", "empty_file", "空文件", "low", file, deleteRoot = true)
+                        item.bytes = 0L
+                        item.files = 1L
+                        item.directories = 0L
+                        item.measured = true
+                        item.complete = true
+                        add(out, item, options)
+                    } else if (file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
+                        val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
+                        item.bytes = file.length()
+                        item.files = 1L
+                        item.directories = 0L
+                        item.measured = true
+                        item.complete = true
+                        add(out, item, options)
+                    }
+                }
+            }
+        }
+
+        // System/OEM log roots are outside shared storage, so only these small trees need a
+        // separate fragment pass.
+        val systemLogRoots = logRoots()
+        for ((index, root) in systemLogRoots.withIndex()) {
+            if (stop(started, SCAN_TOTAL_MS)) return
+            progress(Progress("补充扫描系统日志碎片", index, systemLogRoots.size, root.path))
+            walk(root, 9, started + SCAN_TOTAL_MS, false) { file, post ->
+                if (!post) {
+                    visited += 1
+                    if (visited % 512 == 0) progress(Progress("补充扫描中 · 已检查 $visited 项", visited, 0, file.path))
+                }
+                if (!post && file.isFile && file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
+                    val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
+                    item.bytes = file.length()
+                    item.files = 1L
+                    item.directories = 0L
+                    item.measured = true
+                    item.complete = true
+                    add(out, item, options)
+                }
+            }
+        }
     }
 
     fun page(snapshotId: String, offset: Int, limit: Int): String {
@@ -307,12 +405,7 @@ internal class NativeProfileEngine(
         }
     }
 
-    private fun scanRules(
-        options: Options,
-        out: MutableMap<String, Candidate>,
-        progress: (Progress) -> Unit,
-        started: Long
-    ) {
+    private fun ordinaryRules(): List<Pair<String, String>> {
         val rules = ArrayList<Pair<String, String>>()
         rules.add("/data/anr" to "系统 ANR")
         rules.add("/data/tombstones" to "Tombstone")
@@ -334,6 +427,22 @@ internal class NativeProfileEngine(
                 }
             }
         }
+        return rules
+    }
+
+    private fun fragmentPatterns(): List<Pattern> = listOf(
+        Pattern.compile(".*\\.(tmp|temp|part|partial|download|crdownload)$", Pattern.CASE_INSENSITIVE),
+        Pattern.compile(".*\\.(log\\.[0-9]+|old|bak~)$", Pattern.CASE_INSENSITIVE),
+        Pattern.compile(".*(tombstone|minidump|heapdump|crash|trace|dump).*", Pattern.CASE_INSENSITIVE)
+    )
+
+    private fun scanRules(
+        options: Options,
+        out: MutableMap<String, Candidate>,
+        progress: (Progress) -> Unit,
+        started: Long
+    ) {
+        val rules = ordinaryRules()
 
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
@@ -345,7 +454,7 @@ internal class NativeProfileEngine(
             }
         }
 
-        val hidden = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
+        val hidden = HIDDEN_TRASH_NAMES
         for (root in storageRoots()) {
             walk(root, 6, started + SCAN_TOTAL_MS, true) { file, post ->
                 if (!post && file.isDirectory && hidden.contains(file.name.lowercase())) {
@@ -362,11 +471,7 @@ internal class NativeProfileEngine(
         started: Long
     ) {
         val cutoff = System.currentTimeMillis() - options.fragmentDays * 86_400_000L
-        val patterns = listOf(
-            Pattern.compile(".*\\.(tmp|temp|part|partial|download|crdownload)$", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(".*\\.(log\\.[0-9]+|old|bak~)$", Pattern.CASE_INSENSITIVE),
-            Pattern.compile(".*(tombstone|minidump|heapdump|crash|trace|dump).*", Pattern.CASE_INSENSITIVE)
-        )
+        val patterns = fragmentPatterns()
         val roots = ArrayList<File>()
         roots.addAll(storageRoots())
         roots.addAll(logRoots())
@@ -696,6 +801,7 @@ internal class NativeProfileEngine(
         .put("id", id).put("title", title).put("subtitle", subtitle).put("risk", risk)
 
     private fun label(id: String): String = when (id) {
+        "safe" -> "安全项目"
         "empty" -> "空项目"
         "rules" -> "规则垃圾"
         "fragments" -> "残留碎片"
@@ -863,6 +969,8 @@ internal class NativeProfileEngine(
         private const val MAX_CANDIDATES = 20_000
         private const val MAX_RULE_LINES = 12_000
         private const val MAX_EXPANSIONS = 256
+
+        private val HIDDEN_TRASH_NAMES = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
 
         private val HARD_EXACT = setOf(
             "/", "/data", "/data/adb", "/data/system", "/data/misc", "/storage", "/storage/emulated", "/sdcard"

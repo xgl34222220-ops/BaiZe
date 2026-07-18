@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.StatFs
+import android.os.SystemClock
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -20,51 +21,72 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
+import io.github.xgl34222220.baize.root.BaiZeRootService
+import io.github.xgl34222220.baize.root.IBaiZeRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Compose launcher for Alpha 23. The proven RootService and shell cleaner remain untouched; this
- * activity is intentionally a thin state bridge so UI work cannot change deletion semantics.
+ * Compose launcher backed by two native snapshot engines. A safety scan produces immutable,
+ * expiring server-side candidate snapshots; the follow-up clean consumes those snapshots and must
+ * never restart discovery.
  */
 class MiuixDashboardActivity : ComponentActivity() {
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
     private var rootService: IProfileRootService? = null
-    private var bound = false
+    private var cacheService: IBaiZeRootService? = null
+    private var profileBound = false
+    private var cacheBound = false
     private var pendingClean = false
     private var pollJob: Job? = null
+    private var cacheSnapshotId = ""
+    private var safeSnapshotId = ""
+    private var cacheSnapshotCount = 0
+    private var safeSnapshotCount = 0
 
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
     private var schedulerState = androidx.compose.runtime.mutableStateOf(SchedulerUiState())
 
-    private val connection = object : ServiceConnection {
+    private val profileConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             rootService = IProfileRootService.Stub.asInterface(binder)
-            bound = true
-            dashboardState.value = dashboardState.value.copy(connected = true, serviceText = "正在校验模块组件…")
+            profileBound = true
+            updateConnectionState()
             refreshAll()
-            if (pendingClean) {
-                pendingClean = false
-                runModuleTask("clean")
-            }
+            runPendingCleanIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             rootService = null
-            bound = false
+            profileBound = false
             pollJob?.cancel()
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                running = false,
-                serviceText = "Root 服务已断开"
-            )
+            updateConnectionState()
+        }
+    }
+
+    private val cacheConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheBound = true
+            updateConnectionState()
+            readServiceStatus()
+            runPendingCleanIfReady()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            cacheService = null
+            cacheBound = false
+            pollJob?.cancel()
+            updateConnectionState()
         }
     }
 
@@ -81,8 +103,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                 actions = DashboardActions(
                     refresh = { refreshAll() },
                     clean = { runSmartClean() },
-                    scan = { runModuleTask("scan") },
-                    dismissScan = { dashboardState.value = dashboardState.value.copy(scanCompleted = false) },
+                    scan = { runNativeScan(cleanAfterScan = false) },
+                    cleanScan = { cleanNativeSnapshots() },
+                    dismissScan = { clearScanResult() },
                     stop = { stopTask() },
                     deep = { confirmDeepClean() },
                     corpses = { openProfile("corpses") },
@@ -97,14 +120,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 )
             )
         }
-        connectService()
+        connectServices()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
-            if (rootService == null) pendingClean = true else runSmartClean()
+            if (rootService == null || cacheService == null) pendingClean = true else runSmartClean()
         }
     }
 
@@ -123,30 +146,69 @@ class MiuixDashboardActivity : ComponentActivity() {
         refreshWhitelist()
     }
 
-    private fun connectService() {
-        dashboardState.value = dashboardState.value.copy(serviceText = "正在连接 Root 服务…")
-        runCatching {
-            RootService.bind(
-                Intent(this, BaiZeProfileRootService::class.java)
-                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
-                connection
-            )
-            bound = true
-        }.onFailure {
-            dashboardState.value = dashboardState.value.copy(serviceText = "Root 服务启动失败：${it.message.orEmpty()}")
+    private fun connectServices() {
+        dashboardState.value = dashboardState.value.copy(serviceText = "正在连接双 Root 快照引擎…")
+        if (!profileBound) {
+            runCatching {
+                RootService.bind(
+                    Intent(this, BaiZeProfileRootService::class.java)
+                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                    profileConnection
+                )
+                profileBound = true
+            }.onFailure {
+                dashboardState.value = dashboardState.value.copy(serviceText = "分类引擎启动失败：${it.message.orEmpty()}")
+            }
+        }
+        if (!cacheBound) {
+            runCatching {
+                RootService.bind(
+                    Intent(this, BaiZeRootService::class.java)
+                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                    cacheConnection
+                )
+                cacheBound = true
+            }.onFailure {
+                dashboardState.value = dashboardState.value.copy(serviceText = "缓存引擎启动失败：${it.message.orEmpty()}")
+            }
         }
     }
 
     private fun reconnectService() {
-        if (bound) runCatching { RootService.unbind(connection) }
+        if (profileBound) runCatching { RootService.unbind(profileConnection) }
+        if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
         rootService = null
-        bound = false
-        connectService()
-        toast("正在重新连接 Root 服务")
+        cacheService = null
+        profileBound = false
+        cacheBound = false
+        connectServices()
+        toast("正在重新连接双 Root 快照引擎")
+    }
+
+    private fun updateConnectionState() {
+        val both = rootService != null && cacheService != null
+        dashboardState.value = dashboardState.value.copy(
+            connected = both,
+            ready = if (both) dashboardState.value.ready else false,
+            running = if (both) dashboardState.value.running else false,
+            serviceText = when {
+                both -> "双 Root 快照引擎已连接，正在校验模块组件…"
+                rootService != null -> "分类引擎已连接，等待应用缓存引擎"
+                cacheService != null -> "应用缓存引擎已连接，等待分类引擎"
+                else -> "正在连接双 Root 快照引擎…"
+            }
+        )
+    }
+
+    private fun runPendingCleanIfReady() {
+        if (!pendingClean || rootService == null || cacheService == null) return
+        pendingClean = false
+        runSmartClean()
     }
 
     private fun readServiceStatus() {
         val service = rootService ?: return
+        val cacheReady = cacheService != null
         lifecycleScope.launch {
             val json = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(service.ping()) }.getOrNull()
@@ -156,14 +218,15 @@ class MiuixDashboardActivity : ComponentActivity() {
             val cleaner = json.optBoolean("cleaner")
             val scheduler = json.optBoolean("scheduler")
             val rules = json.optBoolean("deepRules")
-            val ready = root && module && cleaner && scheduler && rules
+            val ready = root && module && cleaner && scheduler && rules && cacheReady
             val text = when {
                 !root -> "服务已连接，但未取得完整 Root"
+                !cacheReady -> "分类引擎已连接，等待应用缓存引擎"
                 !module -> "Root 已连接 · 未检测到白泽模块"
                 !cleaner -> "模块已连接 · 清理引擎缺失"
                 !scheduler -> "清理引擎已连接 · 调度器缺失"
                 !rules -> "自动清理可用 · 深度规则库缺失"
-                else -> "Root、自动清理、定时任务与规则库均已就绪"
+                else -> "双快照引擎、自动清理、定时任务与规则库均已就绪"
             }
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
@@ -192,42 +255,298 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun runSmartClean() {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        runModuleTask("clean")
+        if (hasUsableScanSnapshots()) cleanNativeSnapshots() else runNativeScan(cleanAfterScan = true)
     }
 
-    private fun runModuleTask(mode: String) {
-        val service = rootService ?: run {
-            pendingClean = mode == "clean"
-            connectService()
+    private fun runNativeScan(cleanAfterScan: Boolean) {
+        if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
+        val cache = cacheService ?: run {
+            pendingClean = cleanAfterScan
+            connectServices()
+            return
+        }
+        val profiles = rootService ?: run {
+            pendingClean = cleanAfterScan
+            connectServices()
             return
         }
         if (dashboardState.value.running) return
+        clearSnapshotHandles()
+        val started = SystemClock.elapsedRealtime()
         dashboardState.value = dashboardState.value.copy(
             running = true,
-            scanCompleted = if (mode == "clean") false else dashboardState.value.scanCompleted,
-            taskPhase = if (mode == "scan") "正在执行安全扫描…" else "正在智能扫描并清理…"
+            scanCompleted = false,
+            taskPhase = "正在并行发现应用缓存与安全项目…"
         )
+        startNativePoll()
+        lifecycleScope.launch {
+            val pair = runCatching {
+                withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        val whitelist = JSONArray(packageWhitelist().toList()).toString()
+                        val cacheJob = async { JSONObject(cache.scanCandidates(whitelist)) }
+                        val safeJob = async { JSONObject(profiles.scanProfile("safe", optionsJson())) }
+                        cacheJob.await() to safeJob.await()
+                    }
+                }
+            }
+            pollJob?.cancel()
+            if (pair.isFailure) {
+                dashboardState.value = dashboardState.value.copy(
+                    running = false,
+                    taskPhase = "安全扫描失败：${pair.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                )
+                return@launch
+            }
+
+            val (cacheJson, safeJson) = pair.getOrThrow()
+            val cacheOk = !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
+            val safeOk = safeJson.optBoolean("success") && !safeJson.optBoolean("cancelled")
+            if (cacheOk) {
+                cacheSnapshotId = cacheJson.optString("snapshotId")
+                cacheSnapshotCount = (cacheJson.optInt("totalCandidates") - cacheJson.optInt("whitelisted")).coerceAtLeast(0)
+            }
+            if (safeOk) {
+                safeSnapshotId = safeJson.optString("snapshotId")
+                safeSnapshotCount = (safeJson.optInt("low") + safeJson.optInt("medium")).coerceAtLeast(0)
+            }
+            val total = cacheSnapshotCount + safeSnapshotCount
+            val knownBytes = safeJson.optLong("knownBytes", 0L).coerceAtLeast(0L)
+            val emptyFiles = safeJson.optLong("emptyFiles", 0L).coerceAtLeast(0L)
+            val emptyDirs = safeJson.optLong("emptyDirs", 0L).coerceAtLeast(0L)
+            val fragments = safeJson.optLong("fragmentFiles", 0L).coerceAtLeast(0L)
+            val failures = listOf(cacheOk, safeOk).count { !it }.toLong()
+            val cancelled = cacheJson.optBoolean("cancelled") || safeJson.optBoolean("cancelled")
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            val successfulScan = (cacheOk || safeOk) && !cancelled
+            dashboardState.value = dashboardState.value.copy(
+                running = false,
+                scanCompleted = successfulScan,
+                scanBytes = knownBytes,
+                scanFiles = total.toLong(),
+                scanEmptyFiles = emptyFiles,
+                scanEmptyDirs = emptyDirs,
+                scanFragments = fragments,
+                scanErrors = failures,
+                scanElapsed = elapsed / 1000L,
+                taskPhase = when {
+                    cancelled -> "安全扫描已停止"
+                    !successfulScan -> "安全扫描失败：${safeJson.optString("message", cacheJson.optString("message", "引擎没有返回有效快照"))}"
+                    total == 0 -> "扫描完成，没有发现可安全清理的项目"
+                    else -> "扫描完成，发现 $total 项；快照 30 分钟内有效"
+                }
+            )
+            if (!cleanAfterScan) notifyScanResult(successfulScan, cancelled, total, knownBytes, emptyFiles, emptyDirs, fragments, elapsed)
+            if (cleanAfterScan && successfulScan && total > 0) {
+                cleanNativeSnapshots()
+            } else if (cleanAfterScan && successfulScan) {
+                notifyCleanResult("白泽智能清理完成", "没有发现可安全清理的项目", "扫描一次完成 · 未执行删除", 0L)
+            }
+        }
+    }
+
+    private fun cleanNativeSnapshots() {
+        val cache = cacheService ?: return toast("应用缓存引擎尚未连接")
+        val profiles = rootService ?: return toast("分类引擎尚未连接")
+        if (dashboardState.value.running) return
+        if (!hasUsableScanSnapshots()) {
+            dashboardState.value = dashboardState.value.copy(
+                scanCompleted = false,
+                taskPhase = "没有可用扫描快照，请先执行安全扫描"
+            )
+            toast("扫描结果已失效，请重新扫描")
+            return
+        }
+        if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
+        val started = SystemClock.elapsedRealtime()
+        dashboardState.value = dashboardState.value.copy(running = true, taskPhase = "正在复核并清理刚才的扫描快照…")
+        startNativePoll()
+        lifecycleScope.launch {
+            var deletedBytes = 0L
+            var deletedFiles = 0L
+            var deletedDirectories = 0L
+            var emptyFiles = 0L
+            var emptyDirs = 0L
+            var fragments = 0L
+            var cleanedCandidates = 0
+            var failures = 0
+            var cancelled = false
+            var stale = false
+            val selection = JSONObject().put("__all_safe__", true).toString()
+            val whitelist = JSONArray(packageWhitelist().toList()).toString()
+
+            suspend fun consume(result: JSONObject, profileResult: Boolean) {
+                if (result.has("error")) {
+                    failures += 1
+                    stale = stale || result.optString("error").contains("snapshot")
+                    return
+                }
+                deletedBytes += result.optLong("deletedBytes", 0L).coerceAtLeast(0L)
+                deletedFiles += result.optLong("deletedFiles", 0L).coerceAtLeast(0L)
+                deletedDirectories += result.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
+                cleanedCandidates += result.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                failures += result.optInt("failures", 0).coerceAtLeast(0)
+                cancelled = cancelled || result.optBoolean("cancelled")
+                if (profileResult) {
+                    val details = result.optJSONArray("details") ?: JSONArray()
+                    for (index in 0 until details.length()) {
+                        val item = details.optJSONObject(index) ?: continue
+                        when (item.optString("profile")) {
+                            "empty" -> {
+                                emptyFiles += item.optLong("files", 0L).coerceAtLeast(0L)
+                                emptyDirs += item.optLong("directories", 0L).coerceAtLeast(0L)
+                            }
+                            "fragments" -> fragments += item.optLong("files", 0L).coerceAtLeast(0L)
+                        }
+                    }
+                }
+            }
+
+            try {
+                if (cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0) {
+                    dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理应用缓存快照…")
+                    val result = withContext(Dispatchers.IO) {
+                        JSONObject(cache.cleanSelected(cacheSnapshotId, selection, whitelist))
+                    }
+                    consume(result, profileResult = false)
+                }
+                if (!cancelled && safeSnapshotId.isNotBlank() && safeSnapshotCount > 0) {
+                    dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理安全项目快照…")
+                    val result = withContext(Dispatchers.IO) {
+                        JSONObject(profiles.cleanProfileSelected(safeSnapshotId, selection, optionsJson()))
+                    }
+                    consume(result, profileResult = true)
+                }
+            } catch (error: Throwable) {
+                failures += 1
+                dashboardState.value = dashboardState.value.copy(taskPhase = "快照清理异常：${error.message ?: error.javaClass.simpleName}")
+            }
+
+            pollJob?.cancel()
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            val title = when {
+                cancelled -> "白泽快照清理已停止"
+                stale -> "部分扫描结果已过期"
+                failures > 0 -> "白泽快照清理完成，但有异常"
+                else -> "白泽快照清理完成"
+            }
+            val resultLine = when {
+                stale -> "扫描快照已过期，没有重新扫描；请手动再次扫描"
+                cancelled -> "任务已安全停止，已释放 ${formatBytes(deletedBytes)}"
+                else -> "释放 ${formatBytes(deletedBytes)} · 处理 $cleanedCandidates 项"
+            }
+            val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
+            dashboardState.value = dashboardState.value.copy(
+                running = false,
+                scanCompleted = false,
+                lastReleased = deletedBytes,
+                taskPhase = "$resultLine\n$detailLine"
+            )
+            preferences.edit()
+                .putLong("last_clean_bytes", deletedBytes)
+                .putString("last_report_text", "$resultLine\n$detailLine")
+                .apply()
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    profiles.recordNativeTask(
+                        JSONObject()
+                            .put("mode", "snapshot-clean")
+                            .put("success", !cancelled && failures == 0)
+                            .put("cancelled", cancelled)
+                            .put("bytes", deletedBytes)
+                            .put("files", deletedFiles)
+                            .put("emptyFiles", emptyFiles)
+                            .put("emptyDirs", emptyDirs)
+                            .put("fragments", fragments)
+                            .put("errors", failures)
+                            .put("elapsedSeconds", elapsed / 1000L)
+                            .put("result", resultLine)
+                            .toString()
+                    )
+                }
+            }
+            notifyCleanResult(title, resultLine, detailLine, deletedBytes)
+            clearSnapshotHandles()
+            refreshHistory()
+            refreshModuleState()
+            updateStorage()
+        }
+    }
+
+    private fun startNativePoll() {
         pollJob?.cancel()
         pollJob = lifecycleScope.launch {
             while (isActive && dashboardState.value.running) {
-                val raw = withContext(Dispatchers.IO) { runCatching { service.getTaskState() }.getOrNull() }
-                raw?.let { renderTaskState(JSONObject(it)) }
-                delay(450)
+                val state = withContext(Dispatchers.IO) {
+                    val profile = runCatching { rootService?.getTaskState()?.let { JSONObject(it) } }.getOrNull()
+                    val cache = runCatching { cacheService?.getTaskState()?.let { JSONObject(it) } }.getOrNull()
+                    listOfNotNull(profile, cache).firstOrNull { it.optBoolean("running") }
+                }
+                if (state != null) renderTaskState(state)
+                delay(350)
             }
         }
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { JSONObject(service.runModuleTask(mode)) } }
-            pollJob?.cancel()
-            result.onSuccess { renderTaskResult(it, mode) }.onFailure {
-                dashboardState.value = dashboardState.value.copy(
-                    running = false,
-                    taskPhase = "任务失败：${it.message ?: it.javaClass.simpleName}"
-                )
-            }
-            refreshModuleState()
-            refreshHistory()
-            updateStorage()
-        }
+    }
+
+    private fun notifyScanResult(
+        success: Boolean,
+        cancelled: Boolean,
+        total: Int,
+        knownBytes: Long,
+        emptyFiles: Long,
+        emptyDirs: Long,
+        fragments: Long,
+        elapsed: Long
+    ) {
+        val config = schedulerState.value
+        if (!config.notifyOnComplete || (success && total == 0 && !config.notifyZero)) return
+        NativeNotifier.showTaskResult(
+            this,
+            when {
+                cancelled -> "白泽安全扫描已停止"
+                success -> "白泽安全扫描完成"
+                else -> "白泽安全扫描失败"
+            },
+            if (knownBytes > 0) "发现 $total 项 · 已知至少 ${formatBytes(knownBytes)}" else "发现 $total 项可清理内容",
+            "空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · ${formatElapsed(elapsed / 1000L)}"
+        )
+    }
+
+    private fun notifyCleanResult(title: String, summary: String, detail: String, bytes: Long) {
+        val config = schedulerState.value
+        if (!config.notifyOnComplete || (bytes == 0L && !config.notifyZero && !summary.contains("过期"))) return
+        NativeNotifier.showTaskResult(this, title, summary, detail)
+    }
+
+    private fun hasUsableScanSnapshots(): Boolean =
+        (cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0) ||
+            (safeSnapshotId.isNotBlank() && safeSnapshotCount > 0)
+
+    private fun clearSnapshotHandles() {
+        cacheSnapshotId = ""
+        safeSnapshotId = ""
+        cacheSnapshotCount = 0
+        safeSnapshotCount = 0
+    }
+
+    private fun clearScanResult() {
+        clearSnapshotHandles()
+        dashboardState.value = dashboardState.value.copy(scanCompleted = false)
+    }
+
+    private fun packageWhitelist(): Set<String> =
+        preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+
+    private fun optionsJson(): String {
+        val paths = preferences.getStringSet("path_whitelist", emptySet()).orEmpty()
+        val maxMb = schedulerState.value.maxFileMb.coerceIn(16, 2048)
+        return JSONObject()
+            .put("whitelistPackages", JSONArray(packageWhitelist().toList()))
+            .put("whitelistPaths", JSONArray(paths.toList()))
+            .put("maxFileBytes", maxMb * 1024L * 1024L)
+            .put("fragmentDays", preferences.getInt("fragment_days", 7).coerceIn(0, 365))
+            .put("allowHighRisk", false)
+            .toString()
     }
 
     private fun renderTaskState(json: JSONObject) {
@@ -243,55 +562,9 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(taskPhase = text)
     }
 
-    private fun renderTaskResult(json: JSONObject, requestedMode: String) {
-        val success = json.optBoolean("success")
-        val cancelled = json.optBoolean("cancelled")
-        val isScan = requestedMode == "scan"
-        val elapsedMs = json.optLong("elapsedMs").coerceAtLeast(0L)
-        val latest = json.optJSONObject("latest") ?: JSONObject()
-        val bytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
-        val regular = latest.optLong("regular_files", latest.optLong("files", 0L)).coerceAtLeast(0L)
-        val emptyFiles = latest.optLong("empty_files", 0L).coerceAtLeast(0L)
-        val emptyDirs = latest.optLong("empty_dirs", 0L).coerceAtLeast(0L)
-        val fragments = latest.optLong("fragment_files", 0L).coerceAtLeast(0L)
-        val message = when {
-            cancelled -> "任务已停止"
-            success -> json.optString("message", "清理完成")
-            else -> json.optString("message", "任务失败")
-        }
-        dashboardState.value = dashboardState.value.copy(
-            running = false,
-            taskPhase = "$message · ${formatElapsed(elapsedMs / 1000)}",
-            lastReleased = if (isScan) dashboardState.value.lastReleased else bytes,
-            scanCompleted = isScan && success && !cancelled,
-            scanBytes = if (isScan) bytes else 0L,
-            scanFiles = if (isScan) regular + emptyFiles + emptyDirs else 0L,
-            scanEmptyFiles = if (isScan) emptyFiles else 0L,
-            scanEmptyDirs = if (isScan) emptyDirs else 0L,
-            scanFragments = if (isScan) fragments else 0L,
-            scanErrors = if (isScan) latest.optLong("errors", 0L).coerceAtLeast(0L) else 0L,
-            scanElapsed = if (isScan) elapsedMs / 1000L else 0L
-        )
-        if (!isScan) preferences.edit().putLong("last_clean_bytes", bytes).apply()
-        val config = schedulerState.value
-        if (config.notifyOnComplete && (!success || cancelled || bytes > 0 || config.notifyZero)) {
-            NativeNotifier.showTaskResult(
-                this,
-                when {
-                    cancelled -> "白泽任务已停止"
-                    !success -> "白泽任务失败"
-                    isScan -> "白泽安全扫描完成"
-                    else -> "白泽清理完成"
-                },
-                if (isScan) "发现可清理 ${formatBytes(bytes)} · ${regular + emptyFiles + emptyDirs} 个项目"
-                else "释放 ${formatBytes(bytes)} · 文件 $regular 个",
-                "空文件 $emptyFiles 个 · 空目录 $emptyDirs 个 · 碎片 $fragments 个 · ${formatElapsed(elapsedMs / 1000)}"
-            )
-        }
-    }
-
     private fun stopTask() {
         rootService?.cancelCurrentTask()
+        cacheService?.cancelCurrentTask()
         dashboardState.value = dashboardState.value.copy(taskPhase = "正在安全停止当前任务…")
     }
 
@@ -454,6 +727,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun historyModeTitle(mode: String): String = when (mode) {
         "scan" -> "智能安全扫描"
         "clean" -> "智能自动清理"
+        "snapshot-clean" -> "扫描快照清理"
+        "smart-clean" -> "原生智能清理"
         "cache-clean" -> "应用缓存清理"
         "empty-clean" -> "空文件与空目录"
         "rules-clean" -> "规则垃圾与日志"
@@ -478,7 +753,8 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     override fun onDestroy() {
         pollJob?.cancel()
-        if (bound) runCatching { RootService.unbind(connection) }
+        if (profileBound) runCatching { RootService.unbind(profileConnection) }
+        if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
         super.onDestroy()
     }
 

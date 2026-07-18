@@ -1,24 +1,24 @@
-name: BaiZe v2 Alpha 21
+name: BaiZe v2 Alpha 24
 
 on:
   push:
-    branches: [v2-alpha21]
+    branches: [v2-alpha24]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
       - 'notify.sh'
       - 'service.sh'
       - 'config/**'
-      - '.github/workflows/v2-alpha21.yml'
+      - '.github/workflows/v2-alpha24.yml'
   pull_request:
-    branches: [v2-alpha20]
+    branches: [v2-alpha23]
     paths:
       - 'v2/**'
       - 'cleaner.sh'
       - 'notify.sh'
       - 'service.sh'
       - 'config/**'
-      - '.github/workflows/v2-alpha21.yml'
+      - '.github/workflows/v2-alpha24.yml'
   workflow_dispatch:
 
 permissions:
@@ -59,9 +59,9 @@ jobs:
         working-directory: v2
         run: |
           sh scripts/package-module.sh
-          ZIP=dist/BaiZe-v2-Alpha21-Module.zip
+          ZIP=dist/BaiZe-v2-Alpha24-Module.zip
           unzip -tq "$ZIP"
-          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha21'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha24'
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
@@ -69,5 +69,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha21
-          path: v2/dist/BaiZe-v2-Alpha21-Module.zip
+          name: BaiZe-v2-Alpha24
+          path: v2/dist/BaiZe-v2-Alpha24-Module.zip

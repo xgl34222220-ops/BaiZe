@@ -18,6 +18,8 @@ import io.github.xgl34222220.baize.root.BaiZeRootService
 import io.github.xgl34222220.baize.root.IBaiZeRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -34,8 +36,8 @@ class SmartScanActivity : AppCompatActivity() {
     private var running = false
     private var cacheSnapshotId = ""
     private var cacheCount = 0
-    private val profileSnapshots = LinkedHashMap<String, String>()
-    private val profileSafeCounts = LinkedHashMap<String, Int>()
+    private var safeSnapshotId = ""
+    private var safeCount = 0
     private var totalSafe = 0
 
     private val cacheConnection = object : ServiceConnection {
@@ -128,9 +130,13 @@ class SmartScanActivity : AppCompatActivity() {
             var failed = 0
             try {
                 val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-                val cacheJson = JSONObject(withContext(Dispatchers.IO) {
-                    cache.scanCandidates(JSONArray(whitelist.toList()).toString())
-                })
+                val (cacheJson, safeJson) = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        val cacheJob = async { JSONObject(cache.scanCandidates(JSONArray(whitelist.toList()).toString())) }
+                        val safeJob = async { JSONObject(profiles.scanProfile("safe", optionsJson())) }
+                        cacheJob.await() to safeJob.await()
+                    }
+                }
                 if (cacheJson.has("error")) failed++ else {
                     cacheSnapshotId = cacheJson.optString("snapshotId")
                     cacheCount = cacheJson.optInt("totalCandidates") - cacheJson.optInt("whitelisted")
@@ -140,30 +146,29 @@ class SmartScanActivity : AppCompatActivity() {
                 binding.cacheResultText.text = categorySummary("应用缓存", cacheCount, cacheJson.optLong("elapsedMs"))
                 if (cacheJson.optBoolean("cancelled")) return@launch
 
-                for (profile in listOf("empty", "rules", "fragments")) {
-                    binding.summaryText.text = "正在扫描${ProfileActivity.profileTitle(profile)}…"
-                    setCategoryText(profile, "${ProfileActivity.profileTitle(profile)} · 正在扫描")
-                    val json = JSONObject(withContext(Dispatchers.IO) { profiles.scanProfile(profile, optionsJson()) })
-                    if (json.has("error")) {
-                        failed++
-                        setCategoryText(profile, "${ProfileActivity.profileTitle(profile)} · ${json.optString("message", "扫描失败")}")
-                    } else {
-                        val safe = (json.optInt("low") + json.optInt("medium")).coerceAtLeast(0)
-                        profileSnapshots[profile] = json.optString("snapshotId")
-                        profileSafeCounts[profile] = safe
-                        totalSafe += safe
-                        setCategoryText(profile, categorySummary(ProfileActivity.profileTitle(profile), safe, json.optLong("elapsedMs")))
-                    }
-                    if (json.optBoolean("cancelled")) break
+                if (safeJson.has("error")) {
+                    failed++
+                    val reason = safeJson.optString("message", "扫描失败")
+                    binding.emptyResultText.text = "空项目 · $reason"
+                    binding.rulesResultText.text = "规则垃圾 · $reason"
+                    binding.fragmentsResultText.text = "残留碎片 · $reason"
+                } else {
+                    safeSnapshotId = safeJson.optString("snapshotId")
+                    safeCount = (safeJson.optInt("low") + safeJson.optInt("medium")).coerceAtLeast(0)
+                    totalSafe += safeCount
+                    val elapsedSafe = safeJson.optLong("elapsedMs")
+                    binding.emptyResultText.text = categorySummary("空项目", safeJson.optInt("emptyFiles") + safeJson.optInt("emptyDirs"), elapsedSafe)
+                    binding.rulesResultText.text = categorySummary("规则垃圾", safeJson.optInt("ruleTargets"), elapsedSafe)
+                    binding.fragmentsResultText.text = categorySummary("残留碎片", safeJson.optInt("fragmentFiles"), elapsedSafe)
                 }
 
-                val cancelled = cacheJson.optBoolean("cancelled")
+                val cancelled = cacheJson.optBoolean("cancelled") || safeJson.optBoolean("cancelled")
                 binding.summaryText.text = buildString {
                     append(if (cancelled) "智能扫描已停止" else "智能扫描完成")
                     append(" · ${SystemClock.elapsedRealtime() - started}ms\n")
                     append("四类共发现 $totalSafe 项可安全清理内容")
                     if (failed > 0) append(" · $failed 类扫描异常")
-                    if (!cancelled) append("\n无需进入二级页面或再次扫描，直接一键清理。")
+                    if (!cancelled) append("\n共享存储只遍历一次；一键清理直接消费本次快照。")
                 }
                 binding.cleanAllButton.text = if (totalSafe > 0) "一键清理 $totalSafe 项" else "没有可清理项目"
                 binding.cleanAllButton.visibility = if (totalSafe > 0) View.VISIBLE else View.GONE
@@ -183,7 +188,7 @@ class SmartScanActivity : AppCompatActivity() {
         if (running || totalSafe <= 0) return
         AlertDialog.Builder(this)
             .setTitle("一键清理 $totalSafe 项")
-            .setMessage("直接清理刚才智能扫描生成的四类安全快照，不进入二级页面，也不会重新扫描。清理前仍会逐项复核白名单、路径、软链接、挂载点与大文件限制。")
+            .setMessage("直接清理刚才生成的应用缓存与安全项目快照，不进入二级页面，也不会重新扫描。清理前仍会逐项复核白名单、路径、软链接、挂载点与大文件限制。")
             .setNegativeButton("取消", null)
             .setPositiveButton("立即清理") { _, _ -> cleanSnapshots() }
             .show()
@@ -224,26 +229,28 @@ class SmartScanActivity : AppCompatActivity() {
                     cancelled = json.optBoolean("cancelled")
                 }
                 if (!cancelled) {
-                    for (profile in listOf("empty", "rules", "fragments")) {
-                        val snapshot = profileSnapshots[profile].orEmpty()
-                        if (snapshot.isBlank() || profileSafeCounts.getOrDefault(profile, 0) <= 0) continue
-                        binding.summaryText.text = "正在清理${ProfileActivity.profileTitle(profile)}快照…"
+                    if (safeSnapshotId.isNotBlank() && safeCount > 0) {
+                        binding.summaryText.text = "正在清理安全项目快照…"
                         val json = JSONObject(withContext(Dispatchers.IO) {
-                            profiles.cleanProfileSelected(snapshot, selectAll, optionsJson())
+                            profiles.cleanProfileSelected(safeSnapshotId, selectAll, optionsJson())
                         })
                         deletedBytes += json.optLong("deletedBytes")
                         deletedFiles += json.optLong("deletedFiles")
                         deletedDirectories += json.optLong("deletedDirectories")
-                        if (profile == "empty") {
-                            deletedEmptyFiles += json.optLong("deletedFiles")
-                            deletedEmptyDirectories += json.optLong("deletedDirectories")
-                        } else if (profile == "fragments") {
-                            deletedFragments += json.optLong("deletedFiles")
+                        val details = json.optJSONArray("details") ?: JSONArray()
+                        for (index in 0 until details.length()) {
+                            val item = details.optJSONObject(index) ?: continue
+                            when (item.optString("profile")) {
+                                "empty" -> {
+                                    deletedEmptyFiles += item.optLong("files")
+                                    deletedEmptyDirectories += item.optLong("directories")
+                                }
+                                "fragments" -> deletedFragments += item.optLong("files")
+                            }
                         }
                         cleaned += json.optInt("cleanedCandidates")
                         failures += json.optInt("failures")
                         cancelled = json.optBoolean("cancelled")
-                        if (cancelled) break
                     }
                 }
                 val report = buildString {
@@ -308,20 +315,12 @@ class SmartScanActivity : AppCompatActivity() {
     private fun resetSnapshots() {
         cacheSnapshotId = ""
         cacheCount = 0
-        profileSnapshots.clear()
-        profileSafeCounts.clear()
+        safeSnapshotId = ""
+        safeCount = 0
         totalSafe = 0
     }
 
     private fun categorySummary(title: String, count: Int, elapsed: Long): String = "$title · $count 项 · ${elapsed}ms"
-
-    private fun setCategoryText(profile: String, value: String) {
-        when (profile) {
-            "empty" -> binding.emptyResultText.text = value
-            "rules" -> binding.rulesResultText.text = value
-            "fragments" -> binding.fragmentsResultText.text = value
-        }
-    }
 
     private fun optionsJson(): String {
         val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
