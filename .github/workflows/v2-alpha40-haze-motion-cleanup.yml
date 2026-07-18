@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -29,9 +29,6 @@ jobs:
           ref: v2-alpha40-haze-motion-cleanup
           fetch-depth: 0
           show-progress: false
-
-      - name: Apply Alpha 40 Haze motion cleanup
-        run: python3 v2/scripts/apply-alpha40-haze-motion-cleanup.py
 
       - name: Validate UI architecture and shell
         run: |
@@ -77,17 +74,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
-
-      - name: Commit verified source
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2
-          if ! git diff --cached --quiet; then
-            git commit -m 'Add real Haze blur, page motion and remove legacy pages'
-            git push origin HEAD:v2-alpha40-haze-motion-cleanup
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
