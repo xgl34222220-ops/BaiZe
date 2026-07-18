@@ -360,6 +360,9 @@ update_cumulative_totals() {
 send_completion_notification() {
   [ "$MODE" = "clean" ] || return 0
   [ "$(get_bool notify_on_complete)" = "1" ] || return 0
+  # App-triggered tasks use the native Android notification channel, which is considerably more
+  # reliable on MIUI/HyperOS/ColorOS. Background scheduler jobs still use notify.sh.
+  [ "$TRIGGER" = "app" ] && return 0
   if [ "${FATAL_CODE:-0}" -ne 0 ]; then
     title="白泽任务失败（代码 $FATAL_CODE）"
   elif [ "$STOPPED" = "1" ]; then

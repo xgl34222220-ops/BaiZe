@@ -8,12 +8,12 @@ class BaiZeApplication : Application() {
         super.onCreate()
         CrashRecorder.install(this)
         ThemeManager.install(this)
+        NativeNotifier.ensureChannel(this)
         Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(
             Shell.Builder.create()
                 .setFlags(Shell.FLAG_MOUNT_MASTER)
                 .setTimeout(15)
         )
-        Alpha7UiPolish.install(this)
     }
 }

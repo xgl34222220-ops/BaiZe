@@ -1,8 +1,11 @@
 package io.github.xgl34222220.baize
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.StatFs
@@ -11,7 +14,11 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.databinding.ActivityDashboardBinding
@@ -62,12 +69,13 @@ class DashboardActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        setupEdgeToEdge()
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
 
-        binding.versionText.text = "Alpha 20"
+        binding.versionText.text = "Alpha 21"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -183,6 +191,7 @@ class DashboardActivity : AppCompatActivity() {
             startActivity(Intent(this, WhitelistActivity::class.java))
         }
         binding.saveProtectionButton.setOnClickListener {
+            if (binding.notificationSwitch.isChecked) requestNotificationPermissionIfNeeded()
             saveSettingsPatch(
                 notification = binding.notificationSwitch.isChecked,
                 notifyZero = binding.notifyZeroSwitch.isChecked,
@@ -217,75 +226,35 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun runSmartClean() {
-        val service = profileService ?: run {
+        profileService ?: run {
             binding.taskStatusText.text = "正在连接 Root 服务…"
             connectService()
             return
         }
         if (taskRunning) return
-        binding.cleanNowButton.isEnabled = false
-        binding.taskStatusText.text = "正在启用智能安全清理范围…"
-        lifecycleScope.launch {
-            val saved = runCatching {
-                withContext(Dispatchers.IO) {
-                    service.saveSchedulerConfig(smartSchedulerPayload().toString())
-                }
-            }
-            if (saved.isFailure || !runCatching { JSONObject(saved.getOrThrow()).optBoolean("success") }.getOrDefault(false)) {
-                binding.cleanNowButton.isEnabled = true
-                binding.taskStatusText.text = "智能清理配置写入失败，请重新连接 Root 服务"
-                return@launch
-            }
-            runModuleTask("clean")
-        }
+        if (binding.notificationSwitch.isChecked) requestNotificationPermissionIfNeeded()
+        // Manual cleaning must respect the saved user configuration. Older builds rewrote the
+        // whole scheduler file here, silently resetting independent intervals and advanced rules.
+        runModuleTask("clean")
     }
 
     private fun smartSchedulerPayload(): JSONObject {
-        val interval = binding.intervalSlider.value.toInt().coerceIn(1, 720)
         return JSONObject()
             .put("enabled", flag(binding.scheduleSwitch.isChecked))
-            .put("schedule_cache_enabled", 1)
-            .put("schedule_cache_hours", interval)
-            .put("schedule_empty_enabled", 1)
-            .put("schedule_empty_hours", interval)
-            .put("schedule_rules_enabled", 1)
-            .put("schedule_rules_hours", interval)
-            .put("schedule_fragment_enabled", 1)
-            .put("schedule_fragment_hours", interval)
-            .put("schedule_deep_enabled", 0)
-            .put("schedule_deep_hours", 168)
-            .put("daily_schedule_enabled", 0)
-            .put("daily_schedule_hour", 3)
-            .put("daily_schedule_minute", 0)
-            .put("screen_off_only", 1)
-            .put("charging_only", 0)
-            .put("device_idle_only", 0)
-            .put("min_battery", 20)
-            .put("notify_on_complete", flag(binding.notificationSwitch.isChecked))
-            .put("notify_zero_result", flag(binding.notifyZeroSwitch.isChecked))
-            .put("max_file_mb", binding.largeFileSlider.value.toInt())
-            .put("clean_app_cache", 1)
-            .put("clean_external_cache", 1)
-            .put("clean_app_rules", 1)
-            .put("clean_system_logs", 1)
-            .put("clean_oem_logs", 0)
-            .put("clean_hidden_junk", 1)
-            .put("clean_empty_files", 1)
-            .put("clean_empty_dirs", 1)
-            .put("clean_root_shells", 1)
-            .put("clean_fragments", 1)
-            .put("clean_installer_temp", 1)
-            .put("clean_custom_rules", 0)
-            .put("deep_high_risk_enabled", 0)
-            .put("app_cache_days", 0)
-            .put("external_cache_days", 0)
-            .put("system_logs_days", 7)
-            .put("oem_logs_days", 14)
-            .put("hidden_junk_days", 0)
-            .put("empty_file_days", 0)
-            .put("fragment_days", 7)
-            .put("installer_temp_days", 7)
-            .put("root_shell_days", 14)
+            .put("schedule_cache_enabled", flag(binding.cacheScheduleControl.enabledForSchedule))
+            .put("schedule_cache_hours", binding.cacheScheduleControl.hours)
+            .put("schedule_empty_enabled", flag(binding.emptyScheduleControl.enabledForSchedule))
+            .put("schedule_empty_hours", binding.emptyScheduleControl.hours)
+            .put("schedule_rules_enabled", flag(binding.rulesScheduleControl.enabledForSchedule))
+            .put("schedule_rules_hours", binding.rulesScheduleControl.hours)
+            .put("schedule_fragment_enabled", flag(binding.fragmentScheduleControl.enabledForSchedule))
+            .put("schedule_fragment_hours", binding.fragmentScheduleControl.hours)
+            .put("schedule_deep_enabled", flag(binding.deepScheduleControl.enabledForSchedule))
+            .put("schedule_deep_hours", binding.deepScheduleControl.hours)
+            .put("screen_off_only", flag(binding.screenOffSwitch.isChecked))
+            .put("charging_only", flag(binding.chargingSwitch.isChecked))
+            .put("device_idle_only", flag(binding.deviceIdleSwitch.isChecked))
+            .put("min_battery", binding.minBatterySlider.value.toInt())
     }
 
     private fun showSettingsMenu() {
@@ -397,9 +366,26 @@ class DashboardActivity : AppCompatActivity() {
     }
 
     private fun setupSettings() {
-        binding.intervalSlider.addOnChangeListener { _, value, _ ->
-            binding.intervalText.text = "每 ${value.toInt()} 小时"
-            updatePlanPreview()
+        binding.cacheScheduleControl.configure("应用缓存", 1)
+        binding.emptyScheduleControl.configure("空文件与空目录", 1)
+        binding.rulesScheduleControl.configure("规则垃圾与日志", 6)
+        binding.fragmentScheduleControl.configure("残留碎片", 12)
+        binding.deepScheduleControl.configure("深度安全项", 168)
+        val scheduleControls = listOf(
+            binding.cacheScheduleControl,
+            binding.emptyScheduleControl,
+            binding.rulesScheduleControl,
+            binding.fragmentScheduleControl,
+            binding.deepScheduleControl
+        )
+        scheduleControls.forEach { control -> control.setOnScheduleChangedListener { updatePlanPreview() } }
+
+        binding.intervalSlider.addOnChangeListener { _, value, fromUser ->
+            binding.intervalText.text = "同步全部周期 · ${value.toInt()} 小时"
+            if (fromUser && !loadingConfig) {
+                scheduleControls.forEach { it.hours = value.toInt() }
+                updatePlanPreview()
+            }
         }
         binding.dailyHourSlider.addOnChangeListener { _, value, _ ->
             binding.dailyHourText.text = String.format("每日 %02d:00", value.toInt())
@@ -426,17 +412,15 @@ class DashboardActivity : AppCompatActivity() {
         binding.rootShellDaysSlider.addOnChangeListener { _, value, _ ->
             binding.rootShellDaysText.text = "根目录空壳保留 ${value.toInt()} 天"
         }
+        binding.notificationSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked && !loadingConfig) requestNotificationPermissionIfNeeded()
+        }
 
         binding.scheduleSwitch.setOnCheckedChangeListener { _, _ ->
             if (!loadingConfig) updatePlanPreview()
         }
         val previewSwitches = listOf(
             binding.dailySwitch,
-            binding.cacheScheduleSwitch,
-            binding.emptyScheduleSwitch,
-            binding.rulesScheduleSwitch,
-            binding.fragmentScheduleSwitch,
-            binding.deepScheduleSwitch,
             binding.screenOffSwitch,
             binding.chargingSwitch,
             binding.deviceIdleSwitch
@@ -529,6 +513,26 @@ class DashboardActivity : AppCompatActivity() {
             .putLong("last_clean_bytes", latestBytes.coerceAtLeast(0L))
             .apply()
         binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes.coerceAtLeast(0L))
+        if (binding.notificationSwitch.isChecked &&
+            (!success || cancelled || latestBytes > 0L || binding.notifyZeroSwitch.isChecked)
+        ) {
+            val latest = json.optJSONObject("latest") ?: JSONObject()
+            val regularFiles = latest.optLong("regular_files", latest.optLong("files", 0L)).coerceAtLeast(0L)
+            val emptyFiles = latest.optLong("empty_files", 0L).coerceAtLeast(0L)
+            val emptyDirs = latest.optLong("empty_dirs", 0L).coerceAtLeast(0L)
+            val fragments = latest.optLong("fragment_files", 0L).coerceAtLeast(0L)
+            val title = when {
+                cancelled -> "白泽清理已停止"
+                success -> "白泽清理完成"
+                else -> "白泽任务失败"
+            }
+            NativeNotifier.showTaskResult(
+                this,
+                title,
+                "释放 ${Formatter.formatFileSize(this, latestBytes)} · 文件 $regularFiles 个",
+                "空文件 $emptyFiles 个 · 空目录 $emptyDirs 个 · 碎片 $fragments 个 · ${formatElapsed(elapsed / 1000L)}"
+            )
+        }
         refreshTaskHistory()
     }
 
@@ -547,11 +551,16 @@ class DashboardActivity : AppCompatActivity() {
             binding.intervalSlider.value = json.optInt("schedule_cache_hours", 24).coerceIn(1, 720).toFloat()
             binding.dailySwitch.isChecked = json.optInt("daily_schedule_enabled", 0) == 1
             binding.dailyHourSlider.value = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23).toFloat()
-            binding.cacheScheduleSwitch.isChecked = json.optInt("schedule_cache_enabled", 1) == 1
-            binding.emptyScheduleSwitch.isChecked = json.optInt("schedule_empty_enabled", 1) == 1
-            binding.rulesScheduleSwitch.isChecked = json.optInt("schedule_rules_enabled", 1) == 1
-            binding.fragmentScheduleSwitch.isChecked = json.optInt("schedule_fragment_enabled", 1) == 1
-            binding.deepScheduleSwitch.isChecked = json.optInt("schedule_deep_enabled", 0) == 1
+            binding.cacheScheduleControl.enabledForSchedule = json.optInt("schedule_cache_enabled", 1) == 1
+            binding.cacheScheduleControl.hours = json.optInt("schedule_cache_hours", 1)
+            binding.emptyScheduleControl.enabledForSchedule = json.optInt("schedule_empty_enabled", 1) == 1
+            binding.emptyScheduleControl.hours = json.optInt("schedule_empty_hours", 1)
+            binding.rulesScheduleControl.enabledForSchedule = json.optInt("schedule_rules_enabled", 1) == 1
+            binding.rulesScheduleControl.hours = json.optInt("schedule_rules_hours", 6)
+            binding.fragmentScheduleControl.enabledForSchedule = json.optInt("schedule_fragment_enabled", 1) == 1
+            binding.fragmentScheduleControl.hours = json.optInt("schedule_fragment_hours", 12)
+            binding.deepScheduleControl.enabledForSchedule = json.optInt("schedule_deep_enabled", 0) == 1
+            binding.deepScheduleControl.hours = json.optInt("schedule_deep_hours", 168)
             binding.screenOffSwitch.isChecked = json.optInt("screen_off_only", 1) == 1
             binding.chargingSwitch.isChecked = json.optInt("charging_only", 0) == 1
             binding.deviceIdleSwitch.isChecked = json.optInt("device_idle_only", 0) == 1
@@ -577,7 +586,7 @@ class DashboardActivity : AppCompatActivity() {
             binding.cleanInstallerTempSwitch.isChecked = json.optInt("clean_installer_temp", 0) == 1
             binding.cleanCustomRulesSwitch.isChecked = json.optInt("clean_custom_rules", 0) == 1
             loadingConfig = false
-            binding.intervalText.text = "每 ${binding.intervalSlider.value.toInt()} 小时"
+            binding.intervalText.text = "同步全部周期 · ${binding.intervalSlider.value.toInt()} 小时"
             binding.dailyHourText.text = String.format("每日 %02d:00", binding.dailyHourSlider.value.toInt())
             binding.minBatteryText.text = "最低电量 ${binding.minBatterySlider.value.toInt()}%"
             binding.largeFileText.text = "单文件上限 ${binding.largeFileSlider.value.toInt()} MB"
@@ -622,7 +631,15 @@ class DashboardActivity : AppCompatActivity() {
             }
         } else {
             buildString {
-                append("每 ${binding.intervalSlider.value.toInt()} 小时")
+                val enabled = listOf(
+                    binding.cacheScheduleControl,
+                    binding.emptyScheduleControl,
+                    binding.rulesScheduleControl,
+                    binding.fragmentScheduleControl,
+                    binding.deepScheduleControl
+                ).filter { it.enabledForSchedule }
+                append("已启用 ${enabled.size} 类独立任务")
+                if (enabled.isNotEmpty()) append(" · 最短 ${enabled.minOf { it.hours }} 小时")
                 if (binding.screenOffSwitch.isChecked) append(" · 等待息屏")
                 if (binding.chargingSwitch.isChecked) append(" · 仅充电")
                 if (binding.deviceIdleSwitch.isChecked) append(" · 仅空闲")
@@ -646,7 +663,27 @@ class DashboardActivity : AppCompatActivity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density + 0.5f).toInt()
 
+    private fun setupEdgeToEdge() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.pageHost.setPadding(0, bars.top, 0, 0)
+            val params = binding.bottomNavigation.layoutParams as android.widget.FrameLayout.LayoutParams
+            params.bottomMargin = bars.bottom + dp(12)
+            binding.bottomNavigation.layoutParams = params
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.root)
+    }
+
     private fun flag(value: Boolean): Int = if (value) 1 else 0
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2101)
+        }
+    }
 
     private fun updateStorage() {
         runCatching {
@@ -677,7 +714,7 @@ class DashboardActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val raw = runCatching {
-                withContext(Dispatchers.IO) { service.getTaskHistory(100) }
+                withContext(Dispatchers.IO) { service.getTaskHistory(30) }
             }.getOrNull()
             historyLoading = false
             val json = raw?.let { runCatching { JSONObject(it) }.getOrNull() }
@@ -694,9 +731,18 @@ class DashboardActivity : AppCompatActivity() {
     private fun renderTaskHistory(json: JSONObject) {
         val entries = json.optJSONArray("entries")
         val count = entries?.length() ?: 0
+        val lifetimeRuns = json.optLong("lifetimeRuns", json.optLong("cleanedRuns", 0L)).coerceAtLeast(0L)
+        val lifetimeReleased = json.optLong("lifetimeReleased", json.optLong("totalReleased", 0L)).coerceAtLeast(0L)
         binding.historyList.removeAllViews()
-        binding.historyCountText.text = "$count 次"
-        binding.historyReleasedText.text = Formatter.formatFileSize(this, json.optLong("totalReleased", 0L))
+        binding.historyCountText.text = "$lifetimeRuns 次"
+        binding.historyReleasedText.text = Formatter.formatFileSize(this, lifetimeReleased)
+        val regularFiles = json.optLong("lifetimeFiles", 0L).coerceAtLeast(0L)
+        val emptyFiles = json.optLong("lifetimeEmptyFiles", 0L).coerceAtLeast(0L)
+        val emptyDirs = json.optLong("lifetimeEmptyDirs", 0L).coerceAtLeast(0L)
+        val fragments = json.optLong("lifetimeFragments", 0L).coerceAtLeast(0L)
+        val elapsed = json.optLong("lifetimeElapsed", 0L).coerceAtLeast(0L)
+        binding.historyLifetimeDetailText.text =
+            "文件 $regularFiles · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · ${formatElapsed(elapsed)}"
 
         if (count <= 0) {
             binding.historyLastText.text = "暂无"
@@ -785,6 +831,7 @@ class DashboardActivity : AppCompatActivity() {
         "deep-clean" -> "完整深度清理"
         "corpse-scan" -> "卸载残留扫描"
         "corpse-clean" -> "卸载残留清理"
+        "smart-clean" -> "原生智能清理"
         else -> "清理任务"
     }
 
@@ -795,6 +842,12 @@ class DashboardActivity : AppCompatActivity() {
         trigger == "manual" -> "手动执行"
         trigger.isBlank() -> "历史任务"
         else -> trigger
+    }
+
+    private fun formatElapsed(seconds: Long): String = when {
+        seconds >= 3600L -> "耗时 ${seconds / 3600}小时${(seconds % 3600) / 60}分"
+        seconds >= 60L -> "耗时 ${seconds / 60}分${seconds % 60}秒"
+        else -> "耗时 ${seconds}秒"
     }
 
     private fun refreshSavedReport() {

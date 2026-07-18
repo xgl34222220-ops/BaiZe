@@ -202,6 +202,9 @@ class SmartScanActivity : AppCompatActivity() {
             var deletedBytes = 0L
             var deletedFiles = 0L
             var deletedDirectories = 0L
+            var deletedEmptyFiles = 0L
+            var deletedEmptyDirectories = 0L
+            var deletedFragments = 0L
             var cleaned = 0
             var failures = 0
             var cancelled = false
@@ -231,6 +234,12 @@ class SmartScanActivity : AppCompatActivity() {
                         deletedBytes += json.optLong("deletedBytes")
                         deletedFiles += json.optLong("deletedFiles")
                         deletedDirectories += json.optLong("deletedDirectories")
+                        if (profile == "empty") {
+                            deletedEmptyFiles += json.optLong("deletedFiles")
+                            deletedEmptyDirectories += json.optLong("deletedDirectories")
+                        } else if (profile == "fragments") {
+                            deletedFragments += json.optLong("deletedFiles")
+                        }
                         cleaned += json.optInt("cleanedCandidates")
                         failures += json.optInt("failures")
                         cancelled = json.optBoolean("cancelled")
@@ -249,6 +258,31 @@ class SmartScanActivity : AppCompatActivity() {
                     .putString("last_report_text", report)
                     .putLong("last_clean_bytes", deletedBytes)
                     .apply()
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        profiles.recordNativeTask(
+                            JSONObject()
+                                .put("mode", "smart-clean")
+                                .put("success", !cancelled)
+                                .put("cancelled", cancelled)
+                                .put("bytes", deletedBytes)
+                                .put("files", deletedFiles)
+                                .put("emptyFiles", deletedEmptyFiles)
+                                .put("emptyDirs", deletedEmptyDirectories)
+                                .put("fragments", deletedFragments)
+                                .put("errors", failures)
+                                .put("elapsedSeconds", (SystemClock.elapsedRealtime() - started) / 1000L)
+                                .put("result", report.substringBefore('\n'))
+                                .toString()
+                        )
+                    }
+                }
+                NativeNotifier.showTaskResult(
+                    this@SmartScanActivity,
+                    if (cancelled) "白泽一键清理已停止" else "白泽一键清理完成",
+                    "释放 ${Formatter.formatFileSize(this@SmartScanActivity, deletedBytes)}",
+                    report
+                )
                 resetSnapshots()
                 binding.cleanAllButton.visibility = View.GONE
                 binding.detailsButton.visibility = View.GONE

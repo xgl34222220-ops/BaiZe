@@ -105,7 +105,7 @@ internal class NativeProfileEngine(
             put(profile("empty", "空项目", "空文件与空目录", "low"))
             put(profile("rules", "规则垃圾", "隐藏垃圾、系统/OEM 日志与扩展规则", "medium"))
             put(profile("fragments", "残留碎片", "过期临时文件、旋转日志、崩溃转储与中断下载", "medium"))
-            put(profile("deep", "深度规则", "4,746 条规则分级审计与清理", "high"))
+            put(profile("deep", "深度规则", "4,714 条有效规则分级审计与清理", "high"))
             put(profile("corpses", "卸载残留", "Android/data 与 Android/obb 残留", "high"))
         })
         .toString()

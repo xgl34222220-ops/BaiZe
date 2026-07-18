@@ -11,6 +11,7 @@ interface IProfileRootService {
     String getModuleState();
     String getTaskHistory(int limit);
     String clearTaskHistory();
+    String recordNativeTask(String taskJson);
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
 

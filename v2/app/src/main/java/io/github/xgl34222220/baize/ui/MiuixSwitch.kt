@@ -23,9 +23,7 @@ class MiuixSwitch @JvmOverloads constructor(
 
     private val density = resources.displayMetrics.density
     private val track = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val thumb = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        setShadowLayer(dp(2.5f), 0f, dp(1.2f), 0x33000000)
-    }
+    private val thumb = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     private val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
     private val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
@@ -47,7 +45,6 @@ class MiuixSwitch @JvmOverloads constructor(
         isFocusable = true
         minimumWidth = dp(64f).toInt()
         minimumHeight = dp(48f).toInt()
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 

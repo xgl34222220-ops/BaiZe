@@ -2,9 +2,12 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:fitsSystemWindows="true"
-    android:background="?android:attr/colorBackground">
+    android:layout_height="match_parent">
+
+    <io.github.xgl34222220.baize.ui.MiuixBackdropView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
 
     <FrameLayout
         android:id="@+id/pageHost"
@@ -44,8 +47,9 @@
                             android:layout_height="wrap_content"
                             android:text="白泽"
                             android:textColor="?attr/colorOnSurface"
-                            android:textSize="36sp"
-                            android:textStyle="normal" />
+                            android:fontFamily="sans-serif-medium"
+                            android:textSize="38sp"
+                            android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -65,7 +69,7 @@
                         android:paddingTop="6dp"
                         android:paddingEnd="11dp"
                         android:paddingBottom="6dp"
-                        android:text="Alpha 20"
+                        android:text="Alpha 21"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
@@ -278,7 +282,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="72dp"
                             android:gravity="start|center_vertical"
-                            android:text="深度清理\n4,746 条规则扫描，安全项一键清理"
+                            android:text="深度清理\n4,714 条有效规则，按风险分级处理"
                             android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -422,7 +426,120 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
-                    android:text="执行频率"
+                    android:text="独立定时"
+                    android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="每类任务都有自己的开关与周期；1 小时起，不再互相覆盖"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="11sp" />
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.BaiZe.GroupCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:paddingStart="18dp"
+                            android:paddingTop="14dp"
+                            android:paddingEnd="18dp"
+                            android:paddingBottom="4dp">
+
+                            <TextView
+                                android:id="@+id/intervalText"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="同步全部周期 · 1 小时"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <com.google.android.material.slider.Slider
+                                android:id="@+id/intervalSlider"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:value="1"
+                                android:stepSize="1"
+                                android:valueFrom="1"
+                                android:valueTo="720" />
+                        </LinearLayout>
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?attr/colorOutlineVariant" />
+
+                        <io.github.xgl34222220.baize.ui.MiuixScheduleRow
+                            android:id="@+id/cacheScheduleControl"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="18dp" android:background="?attr/colorOutlineVariant" />
+
+                        <io.github.xgl34222220.baize.ui.MiuixScheduleRow
+                            android:id="@+id/emptyScheduleControl"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="18dp" android:background="?attr/colorOutlineVariant" />
+
+                        <io.github.xgl34222220.baize.ui.MiuixScheduleRow
+                            android:id="@+id/rulesScheduleControl"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="18dp" android:background="?attr/colorOutlineVariant" />
+
+                        <io.github.xgl34222220.baize.ui.MiuixScheduleRow
+                            android:id="@+id/fragmentScheduleControl"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+
+                        <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginStart="18dp" android:background="?attr/colorOutlineVariant" />
+
+                        <io.github.xgl34222220.baize.ui.MiuixScheduleRow
+                            android:id="@+id/deepScheduleControl"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <io.github.xgl34222220.baize.ui.MiuixSwitch
+                    android:id="@+id/dailySwitch"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/dailyHourText"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:visibility="gone" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/dailyHourSlider"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:value="3"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="23"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:text="执行条件"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
@@ -437,96 +554,32 @@
                         android:orientation="vertical"
                         android:padding="16dp">
 
-                        <TextView
-                            android:id="@+id/intervalText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="每 1 小时"
-                            android:textColor="?attr/colorOnSurface"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/intervalSlider"
+                        <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:value="1"
-                            android:stepSize="1"
-                            android:valueFrom="1"
-                            android:valueTo="720" />
+                            android:layout_height="54dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="仅息屏执行" android:textColor="?attr/colorOnSurface" android:textSize="14sp" />
+                            <io.github.xgl34222220.baize.ui.MiuixSwitch android:id="@+id/screenOffSwitch" android:layout_width="64dp" android:layout_height="48dp" />
+                        </LinearLayout>
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/dailySwitch"
+                        <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="7dp"
-                            android:text="改为每日固定时间"
-                            android:textColor="?attr/colorOnSurface" 
-                            android:visibility="gone"/>
+                            android:layout_height="54dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="仅充电执行" android:textColor="?attr/colorOnSurface" android:textSize="14sp" />
+                            <io.github.xgl34222220.baize.ui.MiuixSwitch android:id="@+id/chargingSwitch" android:layout_width="64dp" android:layout_height="48dp" />
+                        </LinearLayout>
 
-                        <TextView
-                            android:id="@+id/dailyHourText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="7dp"
-                            android:text="每日 03:00"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="11sp" 
-                            android:visibility="gone"/>
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/dailyHourSlider"
+                        <LinearLayout
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:value="3"
-                            android:stepSize="1"
-                            android:valueFrom="0"
-                            android:valueTo="23" 
-                            android:visibility="gone"/>
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="22dp"
-                    android:text="执行条件"
-                    android:visibility="gone"
-                    android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
-
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.SimpleCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp"
-                    android:visibility="gone">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/screenOffSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="仅息屏执行"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/chargingSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="仅充电执行"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/deviceIdleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="系统空闲时执行"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:layout_height="54dp"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="系统空闲时执行" android:textColor="?attr/colorOnSurface" android:textSize="14sp" />
+                            <io.github.xgl34222220.baize.ui.MiuixSwitch android:id="@+id/deviceIdleSwitch" android:layout_width="64dp" android:layout_height="48dp" />
+                        </LinearLayout>
 
                         <TextView
                             android:id="@+id/minBatteryText"
@@ -594,64 +647,6 @@
                             android:stepSize="1"
                             android:valueFrom="0"
                             android:valueTo="30" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="22dp"
-                    android:text="一键自动清理范围"
-                    android:visibility="gone"
-                    android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
-
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.SimpleCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp"
-                    android:visibility="gone">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/cacheScheduleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="应用缓存"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/emptyScheduleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="空文件与空目录"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/rulesScheduleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="规则垃圾与日志"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/fragmentScheduleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="残留碎片"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/deepScheduleSwitch"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="深度安全项（仅低/中风险）"
-                            android:textColor="?attr/colorOnSurface" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -953,7 +948,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="记录由模块持久保存，重启 App 或手机后仍然存在"
+                    android:text="累计统计永久保存，任务明细保留最近 100 次"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp" />
 
@@ -1002,7 +997,7 @@
                                 android:gravity="center"
                                 android:orientation="vertical">
                                 <TextView android:id="@+id/historyCountText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 次" android:textColor="?attr/colorPrimary" android:textSize="18sp" android:textStyle="bold" />
-                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="记录数量" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="累计清理" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
                             </LinearLayout>
 
                             <View android:layout_width="1dp" android:layout_height="42dp" android:background="?attr/colorOutlineVariant" />
@@ -1029,6 +1024,20 @@
                                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="最近任务" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
                             </LinearLayout>
                         </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/historyLifetimeDetailText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:background="@drawable/bg_version_pill"
+                            android:paddingStart="12dp"
+                            android:paddingTop="9dp"
+                            android:paddingEnd="12dp"
+                            android:paddingBottom="9dp"
+                            android:text="累计文件 0 · 空文件 0 · 空目录 0"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 

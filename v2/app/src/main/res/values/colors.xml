@@ -4,11 +4,14 @@
     <color name="baize_primary_container">#DCEBFF</color>
     <color name="baize_secondary">#2FA6B8</color>
     <color name="baize_background">#F2F5FA</color>
+    <color name="baize_background_start">#EDF6FF</color>
+    <color name="baize_background_center">#F5F7FB</color>
+    <color name="baize_background_end">#F5F1FA</color>
     <color name="baize_surface">#FFFFFF</color>
     <color name="baize_surface_high">#F6F8FC</color>
-    <color name="baize_glass">#F2FFFFFF</color>
-    <color name="baize_glass_soft">#E8FFFFFF</color>
-    <color name="baize_glass_stroke">#DCE4EF</color>
+    <color name="baize_glass">#E6FFFFFF</color>
+    <color name="baize_glass_soft">#D9FFFFFF</color>
+    <color name="baize_glass_stroke">#B8FFFFFF</color>
     <color name="baize_glass_highlight">#FFFFFFFF</color>
     <color name="baize_text_primary">#17202D</color>
     <color name="baize_text_secondary">#657184</color>

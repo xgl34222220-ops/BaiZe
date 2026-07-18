@@ -13,7 +13,7 @@ import com.google.android.material.color.DynamicColorsOptions
 import com.google.android.material.color.utilities.Hct
 import java.util.WeakHashMap
 
-/** Central controller for the Alpha 17 BOX-style MIUIx theme system. */
+/** Central controller for the native MIUIx theme, palette and low-cost glass preferences. */
 object ThemeManager {
     const val PREFS = "baize_v2"
     const val KEY_PALETTE = "theme_palette"

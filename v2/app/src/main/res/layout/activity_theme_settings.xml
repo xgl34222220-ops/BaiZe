@@ -4,7 +4,7 @@
     android:id="@+id/themeRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="?android:colorBackground"
+    android:background="@drawable/bg_app_gradient"
     android:clipToPadding="false"
     android:fillViewport="true">
 

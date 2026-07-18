@@ -8,6 +8,9 @@ import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -107,6 +110,8 @@ class BaiZeProfileRootService : RootService() {
         override fun getTaskHistory(limit: Int): String = taskHistoryJson(limit)
 
         override fun clearTaskHistory(): String = clearTaskHistoryJson()
+
+        override fun recordNativeTask(taskJson: String?): String = recordNativeTaskJson(taskJson.orEmpty())
 
         override fun getSchedulerConfig(): String = configJson()
 
@@ -229,6 +234,7 @@ class BaiZeProfileRootService : RootService() {
         val entries = JSONArray()
         var totalReleased = 0L
         var cleanedRuns = 0
+        val totals = readEnv(File(STATE_DIR, "totals.env"))
 
         val lines = runCatching {
             if (historyFile.isFile) historyFile.readLines().takeLast(limit).asReversed() else emptyList()
@@ -263,6 +269,13 @@ class BaiZeProfileRootService : RootService() {
             .put("count", entries.length())
             .put("cleanedRuns", cleanedRuns)
             .put("totalReleased", totalReleased)
+            .put("lifetimeRuns", totals.optLong("runs", cleanedRuns.toLong()).coerceAtLeast(0L))
+            .put("lifetimeReleased", totals.optLong("bytes", totalReleased).coerceAtLeast(0L))
+            .put("lifetimeFiles", totals.optLong("regular_files", 0L).coerceAtLeast(0L))
+            .put("lifetimeEmptyFiles", totals.optLong("empty_files", 0L).coerceAtLeast(0L))
+            .put("lifetimeEmptyDirs", totals.optLong("empty_dirs", 0L).coerceAtLeast(0L))
+            .put("lifetimeFragments", totals.optLong("fragment_files", 0L).coerceAtLeast(0L))
+            .put("lifetimeElapsed", totals.optLong("elapsed", 0L).coerceAtLeast(0L))
             .put("entries", entries)
             .toString()
     }
@@ -277,6 +290,115 @@ class BaiZeProfileRootService : RootService() {
             .put("success", false)
             .put("error", error.message ?: error.javaClass.simpleName)
             .toString()
+    }
+
+    private fun recordNativeTaskJson(raw: String): String = runCatching {
+        val input = JSONObject(raw)
+        val mode = input.optString("mode").trim()
+        require(mode in setOf("smart-clean")) { "unsupported_native_mode" }
+        val success = input.optBoolean("success", true)
+        val cancelled = input.optBoolean("cancelled", false)
+        val bytes = input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)
+        val files = input.optLong("files", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
+        val emptyFiles = input.optLong("emptyFiles", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
+        val emptyDirs = input.optLong("emptyDirs", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
+        val fragments = input.optLong("fragments", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
+        val errors = input.optLong("errors", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
+        val elapsedSeconds = input.optLong("elapsedSeconds", 0L).coerceIn(0L, 24L * 60L * 60L)
+        val result = input.optString("result", "原生智能清理完成")
+            .replace('\t', ' ')
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(500)
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val stateDir = File(STATE_DIR).apply { mkdirs() }
+        val history = File(stateDir, "history.tsv")
+        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\n")
+        val retained = history.readLines().takeLast(100)
+        val historyTemp = File(stateDir, "history.tsv.tmp.${Process.myPid()}")
+        historyTemp.writeText(retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))
+        replaceFile(historyTemp, history)
+
+        if (success && !cancelled) {
+            val totalsFile = File(stateDir, "totals.env")
+            val totals = readEnv(totalsFile)
+            val updated = linkedMapOf(
+                "runs" to totals.optLong("runs", 0L) + 1L,
+                "regular_files" to totals.optLong("regular_files", 0L) + files,
+                "empty_files" to totals.optLong("empty_files", 0L) + emptyFiles,
+                "empty_dirs" to totals.optLong("empty_dirs", 0L) + emptyDirs,
+                "hidden_items" to totals.optLong("hidden_items", 0L),
+                "fragment_files" to totals.optLong("fragment_files", 0L) + fragments,
+                "bytes" to totals.optLong("bytes", 0L) + bytes,
+                "elapsed" to totals.optLong("elapsed", 0L) + elapsedSeconds
+            )
+            val totalsTemp = File(stateDir, "totals.env.tmp.${Process.myPid()}")
+            totalsTemp.writeText(buildString {
+                updated.forEach { (key, value) -> append(key).append('=').append(value.coerceAtLeast(0L)).append('\n') }
+                append("last_time=").append(SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())).append('\n')
+            })
+            replaceFile(totalsTemp, totalsFile)
+            updateModuleDescription(updated)
+        }
+
+        File(stateDir, "latest.env").writeText(buildString {
+            append("mode=").append(mode).append('\n')
+            append("time=").append(timestamp).append('\n')
+            append("files=").append(files).append('\n')
+            append("regular_files=").append(files).append('\n')
+            append("empty_files=").append(emptyFiles).append('\n')
+            append("empty_dirs=").append(emptyDirs).append('\n')
+            append("fragment_files=").append(fragments).append('\n')
+            append("bytes=").append(bytes).append('\n')
+            append("errors=").append(errors).append('\n')
+            append("elapsed=").append(elapsedSeconds).append('\n')
+            append("result=").append(result).append('\n')
+        })
+        JSONObject().put("success", true).toString()
+    }.getOrElse { error ->
+        JSONObject()
+            .put("success", false)
+            .put("error", error.message ?: error.javaClass.simpleName)
+            .toString()
+    }
+
+    private fun replaceFile(temporary: File, target: File, worldReadable: Boolean = false) {
+        temporary.setReadable(true, !worldReadable)
+        temporary.setWritable(true, true)
+        if (!temporary.renameTo(target)) {
+            temporary.copyTo(target, overwrite = true)
+            temporary.delete()
+        }
+        target.setReadable(true, !worldReadable)
+        target.setWritable(true, true)
+    }
+
+    private fun updateModuleDescription(totals: Map<String, Long>) = runCatching {
+        val moduleProp = File(MODULE_DIR, "module.prop")
+        if (!moduleProp.isFile) return@runCatching
+        val description = buildString {
+            append("description=累计清理 ").append(humanBytes(totals["bytes"] ?: 0L))
+            append(" · 文件 ").append(totals["regular_files"] ?: 0L)
+            append(" · 空文件 ").append(totals["empty_files"] ?: 0L)
+            append(" · 空目录 ").append(totals["empty_dirs"] ?: 0L)
+            append(" · 碎片 ").append(totals["fragment_files"] ?: 0L)
+        }
+        val lines = moduleProp.readLines().toMutableList()
+        val index = lines.indexOfFirst { it.startsWith("description=") }
+        if (index >= 0) lines[index] = description else lines += description
+        val temporary = File(moduleProp.parentFile, "module.prop.tmp.${Process.myPid()}")
+        temporary.writeText(lines.joinToString("\n", postfix = "\n"))
+        replaceFile(temporary, moduleProp, worldReadable = true)
+    }
+
+    private fun humanBytes(value: Long): String {
+        val bytes = value.coerceAtLeast(0L).toDouble()
+        return when {
+            bytes >= 1_073_741_824.0 -> String.format(Locale.US, "%.2f GB", bytes / 1_073_741_824.0)
+            bytes >= 1_048_576.0 -> String.format(Locale.US, "%.2f MB", bytes / 1_048_576.0)
+            bytes >= 1024.0 -> String.format(Locale.US, "%.2f KB", bytes / 1024.0)
+            else -> "${bytes.toLong()} B"
+        }
     }
 
     private fun configJson(): String = configJsonObject().toString()

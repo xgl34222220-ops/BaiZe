@@ -289,6 +289,12 @@ class CacheActivity : AppCompatActivity() {
                 }
                 binding.summaryText.text = report
                 preferences.edit().putString("last_report_text", report).apply()
+                NativeNotifier.showTaskResult(
+                    this@CacheActivity,
+                    if (json.optBoolean("success")) "白泽缓存清理完成" else "白泽缓存任务结束",
+                    json.optString("message", "缓存任务已结束"),
+                    report
+                )
                 quickCleanReady = false
                 snapshotId = ""
                 total = 0

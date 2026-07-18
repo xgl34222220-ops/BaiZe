@@ -337,6 +337,12 @@ class ProfileActivity : AppCompatActivity() {
                 }
                 binding.summaryText.text = report
                 preferences.edit().putString("last_report_text", report).apply()
+                NativeNotifier.showTaskResult(
+                    this@ProfileActivity,
+                    if (json.optBoolean("success")) "白泽${profileTitle(profile)}清理完成" else "白泽清理任务结束",
+                    json.optString("message", "${profileTitle(profile)}任务已结束"),
+                    report
+                )
                 quickCleanReady = false
                 snapshotId = ""
                 total = 0
@@ -463,7 +469,7 @@ class ProfileActivity : AppCompatActivity() {
             "empty" -> "扫描空文件与空目录，自动保护占位文件和常用媒体目录"
             "rules" -> "清理隐藏垃圾、系统/OEM 日志与扩展规则路径"
             "fragments" -> "清理超过保留期的临时文件、旋转日志和中断下载"
-            "deep" -> "使用 4,746 条规则扫描，安全项目可一键清理"
+            "deep" -> "使用 4,714 条有效规则扫描，安全项目可一键清理"
             "corpses" -> "清理已卸载应用留在 Android/data 与 Android/obb 的目录"
             else -> ""
         }

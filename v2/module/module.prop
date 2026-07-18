@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha20
-versionCode=20090
+version=v2.0.0-alpha21
+versionCode=20100
 author=惜故里丶
-description=白泽 v2 Alpha 20：恢复模块持久清理历史，重做 MIUIx 记录页与最近清理信息，并修复浅色模式旧页面文字对比度。
+description=白泽 v2 Alpha 21：重构流畅 MIUIx 渐变玻璃界面，加入真实累计统计、五类独立定时与原生任务通知。

@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import androidx.core.graphics.ColorUtils
 import com.google.android.material.color.MaterialColors
@@ -28,6 +30,10 @@ class LiquidGlassDrawable(
     private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = dp(0.8f)
+    }
+    private val highlight = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(1.1f)
     }
     private val rect = RectF()
 
@@ -54,14 +60,27 @@ class LiquidGlassDrawable(
             Variant.ACTIVE, Variant.BUTTON -> 0.025f
             else -> 0f
         }
-        fill.color = ColorUtils.setAlphaComponent(
-            mix(base, primary, tintAmount),
-            when (variant) {
-                Variant.DOCK -> if (light) 238 else 232
-                else -> 255
-            }
+        val mixed = mix(base, primary, tintAmount)
+        val alpha = when (variant) {
+            Variant.DOCK -> if (light) 218 else 222
+            Variant.ACTIVE -> if (light) 224 else 205
+            else -> if (light) 232 else 224
+        }
+        fill.shader = LinearGradient(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            intArrayOf(
+                ColorUtils.setAlphaComponent(ColorUtils.blendARGB(mixed, Color.WHITE, if (light) 0.08f else 0.02f), alpha),
+                ColorUtils.setAlphaComponent(mixed, alpha),
+                ColorUtils.setAlphaComponent(ColorUtils.blendARGB(mixed, primary, 0.035f), alpha)
+            ),
+            floatArrayOf(0f, 0.56f, 1f),
+            Shader.TileMode.CLAMP
         )
         canvas.drawRoundRect(rect, radius, radius, fill)
+        fill.shader = null
 
         border.color = outline
         border.alpha = if (variant == Variant.DOCK) 150 else 95
@@ -72,6 +91,20 @@ class LiquidGlassDrawable(
             radius,
             border
         )
+
+        // A short top-left highlight supplies the liquid edge without a costly blur pass.
+        highlight.color = Color.WHITE
+        highlight.alpha = if (light) 118 else 35
+        val highlightRect = RectF(
+            rect.left + dp(1.4f),
+            rect.top + dp(1.4f),
+            rect.right - dp(1.4f),
+            rect.bottom - dp(1.4f)
+        )
+        canvas.save()
+        canvas.clipRect(rect.left, rect.top, rect.right, rect.top + rect.height() * 0.48f)
+        canvas.drawRoundRect(highlightRect, radius, radius, highlight)
+        canvas.restore()
     }
 
     override fun setAlpha(alpha: Int) = Unit
