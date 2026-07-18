@@ -12,6 +12,7 @@ interface IProfileRootService {
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
 
+    String getInstalledPackageCatalog();
     String getWhitelistPackages();
     String saveWhitelistPackages(String packagesJson);
 
