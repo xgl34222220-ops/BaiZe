@@ -3,11 +3,11 @@ package io.github.xgl34222220.baize.ui
 import android.animation.TimeInterpolator
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
-import android.view.View
 import android.view.ViewGroup
 import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
@@ -18,13 +18,9 @@ import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.view.ViewCompat
 import com.google.android.material.color.MaterialColors
 import io.github.xgl34222220.baize.R
+import io.github.xgl34222220.baize.ThemeManager
 
-/**
- * Four-item floating MIUI X style dock.
- *
- * Every icon and label owns a fixed measurement box. This prevents custom system fonts and OEM font
- * scaling from pushing labels into icons while retaining a clearly floating active capsule.
- */
+/** Four-item MIUIx floating dock with an optional liquid-glass surface. */
 class FloatingGlassDock @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -43,9 +39,13 @@ class FloatingGlassDock @JvmOverloads constructor(
     private val items = LinkedHashMap<Int, DockItemView>()
     private var listener: ((Item) -> Boolean)? = null
     private val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
+    private val primaryContainer = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimaryContainer)
+    private val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
+    private val outline = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant)
     private val inactive = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant)
     private val activeText = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimaryContainer)
-    private val bounce: TimeInterpolator = OvershootInterpolator(0.64f)
+    private val glassEnabled = ThemeManager.isGlassEnabled(context)
+    private val bounce: TimeInterpolator = OvershootInterpolator(0.48f)
 
     var selectedItemId: Int = R.id.nav_home
         set(value) {
@@ -62,9 +62,13 @@ class FloatingGlassDock @JvmOverloads constructor(
         gravity = Gravity.CENTER
         minimumHeight = dp(84)
         setPadding(dp(7), dp(7), dp(7), dp(7))
-        background = LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
-        elevation = dp(16).toFloat()
-        translationZ = dp(5).toFloat()
+        background = if (glassEnabled) {
+            LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
+        } else {
+            rounded(surface, 32, outline, 1)
+        }
+        elevation = dp(if (glassEnabled) 16 else 10).toFloat()
+        translationZ = dp(4).toFloat()
         clipToPadding = false
         clipChildren = false
         isClickable = true
@@ -102,7 +106,7 @@ class FloatingGlassDock @JvmOverloads constructor(
 
     private fun renderSelection(selected: Int, animated: Boolean) {
         items.forEach { (id, view) ->
-            view.setActive(id == selected, animated, primary, activeText, inactive, bounce)
+            view.setActive(id == selected, animated, activeText, inactive, bounce)
         }
     }
 
@@ -138,14 +142,13 @@ class FloatingGlassDock @JvmOverloads constructor(
             label.setLineSpacing(0f, 1f)
             label.includeFontPadding = false
             label.maxLines = 1
-            label.letterSpacing = 0.03f
+            label.letterSpacing = 0.02f
             addView(label)
         }
 
         fun setActive(
             active: Boolean,
             animated: Boolean,
-            primary: Int,
             activeText: Int,
             inactive: Int,
             interpolator: TimeInterpolator
@@ -153,25 +156,37 @@ class FloatingGlassDock @JvmOverloads constructor(
             icon.imageTintList = ColorStateList.valueOf(if (active) activeText else inactive)
             label.setTextColor(if (active) activeText else inactive)
             label.setTypeface(label.typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-            background = if (active) LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.ACTIVE) else null
-            elevation = if (active) dp(8).toFloat() else 0f
+            background = when {
+                !active -> null
+                glassEnabled -> LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.ACTIVE)
+                else -> rounded(primaryContainer, 24)
+            }
+            elevation = if (active) dp(if (glassEnabled) 7 else 2).toFloat() else 0f
             if (!animated) {
-                scaleX = if (active) 1f else 0.97f
-                scaleY = if (active) 1f else 0.97f
-                alpha = if (active) 1f else 0.88f
+                scaleX = if (active) 1f else 0.98f
+                scaleY = if (active) 1f else 0.98f
+                alpha = if (active) 1f else 0.9f
                 return
             }
-            scaleX = if (active) 0.92f else 1f
-            scaleY = if (active) 0.92f else 1f
+            scaleX = if (active) 0.94f else 1f
+            scaleY = if (active) 0.94f else 1f
             animate()
-                .scaleX(if (active) 1f else 0.97f)
-                .scaleY(if (active) 1f else 0.97f)
-                .alpha(if (active) 1f else 0.88f)
-                .setDuration(220L)
+                .scaleX(if (active) 1f else 0.98f)
+                .scaleY(if (active) 1f else 0.98f)
+                .alpha(if (active) 1f else 0.9f)
+                .setDuration(200L)
                 .setInterpolator(interpolator)
                 .start()
         }
     }
+
+    private fun rounded(color: Int, radiusDp: Int, strokeColor: Int? = null, strokeDp: Int = 0): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = dp(radiusDp).toFloat()
+            if (strokeColor != null && strokeDp > 0) setStroke(dp(strokeDp), strokeColor)
+        }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 }
