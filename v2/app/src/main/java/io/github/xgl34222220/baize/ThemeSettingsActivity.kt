@@ -2,10 +2,10 @@ package io.github.xgl34222220.baize
 
 import android.os.Build
 import android.os.Bundle
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import io.github.xgl34222220.baize.databinding.ActivityThemeSettingsBinding
+import io.github.xgl34222220.baize.ui.ThemePopupMenu
 
 class ThemeSettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityThemeSettingsBinding
@@ -18,8 +18,10 @@ class ThemeSettingsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.backButton.setOnClickListener { finish() }
-        binding.modeRow.setOnClickListener { showModeDialog() }
-        binding.paletteRow.setOnClickListener { showPaletteDialog() }
+        binding.modeRow.setOnClickListener { showModeMenu() }
+        binding.styleRow.setOnClickListener { showMonetStyleMenu() }
+        binding.standardRow.setOnClickListener { showColorStandardMenu() }
+        binding.accentRow.setOnClickListener { showAccentMenu() }
 
         binding.monetSwitch.setOnCheckedChangeListener { _, checked ->
             if (bindingValues) return@setOnCheckedChangeListener
@@ -31,10 +33,20 @@ class ThemeSettingsActivity : AppCompatActivity() {
             ThemeManager.setAmoled(this, checked)
             recreate()
         }
+        binding.blurSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!bindingValues) ThemeManager.setBlur(this, checked)
+        }
+        binding.floatingSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!bindingValues) ThemeManager.setFloatingDock(this, checked)
+        }
         binding.glassSwitch.setOnCheckedChangeListener { _, checked ->
-            if (bindingValues) return@setOnCheckedChangeListener
-            ThemeManager.setGlass(this, checked)
-            recreate()
+            if (!bindingValues) ThemeManager.setGlass(this, checked)
+        }
+        binding.predictiveSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!bindingValues) ThemeManager.setPredictiveBack(this, checked)
+        }
+        binding.edgeSwitch.setOnCheckedChangeListener { _, checked ->
+            if (!bindingValues) ThemeManager.setFollowEdge(this, checked)
         }
 
         renderValues()
@@ -42,51 +54,74 @@ class ThemeSettingsActivity : AppCompatActivity() {
 
     private fun renderValues() {
         bindingValues = true
-        val palette = ThemeManager.currentPalette(this)
-        binding.modeValue.text = "${ThemeManager.modeLabel(this)}  ›"
-        binding.paletteValue.text = "${palette.label}  ›"
-        binding.monetSwitch.isEnabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        binding.monetSwitch.isChecked = ThemeManager.isMonetEnabled(this)
-        binding.amoledSwitch.isChecked = ThemeManager.isAmoledEnabled(this)
-        binding.glassSwitch.isChecked = ThemeManager.isGlassEnabled(this)
-        binding.paletteRow.alpha = if (binding.monetSwitch.isChecked) 0.72f else 1f
-        binding.paletteHint.text = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            "当前 Android 版本不支持 Monet，使用固定配色"
-        } else if (binding.monetSwitch.isChecked) {
-            "Monet 开启时作为无法取色时的回退方案"
-        } else {
-            "当前正在使用固定配色"
-        }
+        val style = ThemeManager.currentMonetStyle(this)
+        val standard = ThemeManager.currentColorStandard(this)
+        val accent = ThemeManager.currentPalette(this)
+        val monetSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        val monetEnabled = ThemeManager.isMonetEnabled(this)
+
+        binding.modeValue.text = ThemeManager.modeLabel(this)
+        binding.styleValue.text = style.label
+        binding.styleDots.setColors(style.preview)
+        binding.standardValue.text = standard.label
+        binding.accentValue.text = accent.label
+        binding.accentDots.setColors(accent.preview)
+
+        binding.monetSwitch.isEnabled = monetSupported
+        binding.monetSwitch.setCheckedSilently(monetEnabled)
+        binding.amoledSwitch.setCheckedSilently(ThemeManager.isAmoledEnabled(this))
+        binding.blurSwitch.setCheckedSilently(ThemeManager.isBlurEnabled(this))
+        binding.floatingSwitch.setCheckedSilently(ThemeManager.isFloatingDockEnabled(this))
+        binding.glassSwitch.setCheckedSilently(ThemeManager.isGlassEnabled(this))
+        binding.predictiveSwitch.setCheckedSilently(ThemeManager.isPredictiveBackEnabled(this))
+        binding.edgeSwitch.setCheckedSilently(ThemeManager.isFollowEdgeEnabled(this))
+
+        binding.styleRow.isEnabled = monetSupported && monetEnabled
+        binding.standardRow.isEnabled = monetSupported && monetEnabled
+        binding.styleRow.alpha = if (binding.styleRow.isEnabled) 1f else 0.48f
+        binding.standardRow.alpha = if (binding.standardRow.isEnabled) 1f else 0.48f
         bindingValues = false
     }
 
-    private fun showModeDialog() {
-        val values = arrayOf(ThemeManager.MODE_SYSTEM, ThemeManager.MODE_LIGHT, ThemeManager.MODE_DARK)
-        val labels = arrayOf("跟随系统", "浅色", "深色")
-        val checked = values.indexOf(ThemeManager.currentMode(this)).coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("主题模式")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setMode(this, values[which])
-                dialog.dismiss()
-                recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+    private fun showModeMenu() {
+        val options = listOf(
+            ThemePopupMenu.Option(ThemeManager.MODE_SYSTEM, "跟随系统"),
+            ThemePopupMenu.Option(ThemeManager.MODE_LIGHT, "浅色"),
+            ThemePopupMenu.Option(ThemeManager.MODE_DARK, "深色")
+        )
+        ThemePopupMenu.show(this, binding.modeRow, options, ThemeManager.currentMode(this)) { option ->
+            ThemeManager.setMode(this, option.id)
+            recreate()
+        }
     }
 
-    private fun showPaletteDialog() {
-        val palettes = ThemeManager.palettes
-        val labels = palettes.map { "${it.label}\n${it.description}" }.toTypedArray()
-        val checked = palettes.indexOfFirst { it.id == ThemeManager.currentId(this) }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("固定配色")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setPalette(this, palettes[which].id)
-                dialog.dismiss()
-                recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+    private fun showMonetStyleMenu() {
+        if (!binding.styleRow.isEnabled) return
+        val options = ThemeManager.monetStyles.map {
+            ThemePopupMenu.Option(it.id, it.label, it.preview)
+        }
+        ThemePopupMenu.show(this, binding.styleRow, options, ThemeManager.currentMonetStyle(this).id) { option ->
+            ThemeManager.setMonetStyle(this, option.id)
+            renderValues()
+        }
+    }
+
+    private fun showColorStandardMenu() {
+        if (!binding.standardRow.isEnabled) return
+        val options = ThemeManager.colorStandards.map { ThemePopupMenu.Option(it.id, it.label) }
+        ThemePopupMenu.show(this, binding.standardRow, options, ThemeManager.currentColorStandard(this).id) { option ->
+            ThemeManager.setColorStandard(this, option.id)
+            renderValues()
+        }
+    }
+
+    private fun showAccentMenu() {
+        val options = ThemeManager.palettes.map {
+            ThemePopupMenu.Option(it.id, it.label, it.preview)
+        }
+        ThemePopupMenu.show(this, binding.accentRow, options, ThemeManager.currentId(this)) { option ->
+            ThemeManager.setPalette(this, option.id)
+            recreate()
+        }
     }
 }
