@@ -46,6 +46,48 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           python3 v2/scripts/alpha18-source-patch.py 2>&1 | tee v2/alpha18-patch.log
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt')
+          text = path.read_text(encoding='utf-8')
+          old = '''        val previewSwitches = listOf(
+            binding.scheduleSwitch,
+            binding.dailySwitch,
+            binding.cacheScheduleSwitch,
+            binding.emptyScheduleSwitch,
+            binding.rulesScheduleSwitch,
+            binding.fragmentScheduleSwitch,
+            binding.deepScheduleSwitch,
+            binding.screenOffSwitch,
+            binding.chargingSwitch,
+            binding.deviceIdleSwitch
+        )
+        previewSwitches.forEach { toggle ->
+            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
+        }
+'''
+          new = '''        binding.scheduleSwitch.setOnCheckedChangeListener { _, _ ->
+            if (!loadingConfig) updatePlanPreview()
+        }
+        val previewSwitches = listOf(
+            binding.dailySwitch,
+            binding.cacheScheduleSwitch,
+            binding.emptyScheduleSwitch,
+            binding.rulesScheduleSwitch,
+            binding.fragmentScheduleSwitch,
+            binding.deepScheduleSwitch,
+            binding.screenOffSwitch,
+            binding.chargingSwitch,
+            binding.deviceIdleSwitch
+        )
+        previewSwitches.forEach { toggle ->
+            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
+        }
+'''
+          if old not in text:
+              raise SystemExit('missing mixed switch listener block')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
 
       - name: Validate all cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -97,6 +139,7 @@ jobs:
           grep -q 'activity.recreate()' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
           grep -q 'smartSchedulerPayload' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           grep -q 'confirmRiskAction' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'binding.scheduleSwitch.setOnCheckedChangeListener' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           grep -q '智能安全模式' app/src/main/res/layout/activity_dashboard.xml
           grep -q 'io.github.xgl34222220.baize.ui.MiuixSwitch' app/src/main/res/layout/activity_dashboard.xml
           grep -q 'android:text="保存自动清理"' app/src/main/res/layout/activity_dashboard.xml
