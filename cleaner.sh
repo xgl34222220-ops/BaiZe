@@ -35,8 +35,10 @@ case "$REQUEST_MODE" in
   deep-clean) MODE=clean; DEEP_MODE=1; PROFILE=deep ;;
   corpse-scan) MODE=scan; PROFILE=corpse ;;
   corpse-clean) MODE=clean; PROFILE=corpse ;;
+  apk-scan) MODE=scan; PROFILE=apk ;;
+  apk-clean) MODE=clean; PROFILE=apk ;;
   scan|clean) MODE=$REQUEST_MODE ;;
-  *) echo "用法: cleaner.sh scan|clean|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean [trigger]"; exit 2 ;;
+  *) echo "用法: cleaner.sh scan|clean|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean [trigger]"; exit 2 ;;
 esac
 TRIGGER=${2:-manual}
 
@@ -2152,6 +2154,67 @@ run_fragment_cleanup() {
   return 0
 }
 
+run_apk_packages() {
+  [ -d /data/media ] || return 0
+  list="$TMP_DIR/apk-packages.nul"
+  : >"$list"
+  for userdir in /data/media/[0-9]*; do
+    [ -d "$userdir" ] || continue
+    for root in \
+      "$userdir/Download" \
+      "$userdir/Documents" \
+      "$userdir/Tencent/QQfile_recv" \
+      "$userdir/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
+      "$userdir/Android/data/com.tencent.mm/MicroMsg/Download" \
+      "$userdir/UCDownloads" \
+      "$userdir/Quark/Download" \
+      "$userdir/BaiduNetdisk"; do
+      [ -d "$root" ] || continue
+      if [ "$APK_PACKAGE_DAYS" -eq 0 ]; then
+        find "$root" -mindepth 1 -maxdepth 5 -type f -size "-${APK_PACKAGE_MAX_BYTES}c" \
+          \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
+          -print0 2>/dev/null >>"$list"
+      else
+        find "$root" -mindepth 1 -maxdepth 5 -type f -mtime "+$APK_PACKAGE_DAYS" \
+          -size "-${APK_PACKAGE_MAX_BYTES}c" \
+          \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
+          -print0 2>/dev/null >>"$list"
+      fi
+    done
+  done
+
+  filter_whitelist_list "$list"
+  filter_processed_list "$list"
+  count=$(count_nul "$list")
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
+  estimated=$(bytes_from_list "$list")
+  case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
+  sample_path=$(first_nul_path "$list" 2>/dev/null)
+
+  if [ "$MODE" = "clean" ]; then
+    err_file="$TMP_DIR/rm-apk-packages.err"
+    xargs -0 -n 100 rm -f -- <"$list" 2>"$err_file"
+    remaining="$TMP_DIR/apk-packages.remaining.nul"
+    existing_files_to_list "$list" "$remaining"
+    batch_actuals "$list" "$remaining" "$estimated"
+    [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+    FILES=$((FILES + ACTUAL_COUNT))
+    add_bytes "$ACTUAL_BYTES"
+    log_line "[安装包清理] 清理 $ACTUAL_COUNT 个，释放 $ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
+    [ "$ACTUAL_COUNT" -gt 0 ] && report_line cleaned low APK安装包 "$ACTUAL_COUNT" "$ACTUAL_BYTES" "${sample_path:-共享存储安装包}"
+    [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low APK安装包 "$REMAINING_COUNT" "$REMAINING_BYTES" "仍存在的安装包"
+    rm -f "$remaining" "$err_file"
+  else
+    FILES=$((FILES + count))
+    add_bytes "$estimated"
+    log_line "[安装包扫描] 发现 $count 个过期安装包，约 $estimated bytes"
+    report_line candidate low APK安装包 "$count" "$estimated" "${sample_path:-共享存储安装包}"
+  fi
+  rm -f "$list"
+  return 0
+}
+
 run_installer_temp() {
   [ -d /data/local/tmp ] || return 0
   list="$TMP_DIR/installer-temp.nul"
@@ -2201,6 +2264,9 @@ EMPTY_DAYS=$(get_uint empty_file_days 0 0 365)
 HIDDEN_DAYS=$(get_uint hidden_junk_days 0 0 365)
 FRAGMENT_DAYS=$(get_uint fragment_days 7 0 365)
 INSTALLER_TEMP_DAYS=$(get_uint installer_temp_days 7 1 30)
+APK_PACKAGE_DAYS=$(get_uint apk_package_days 30 0 365)
+APK_PACKAGE_MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
+APK_PACKAGE_MAX_BYTES=$(awk -v m="$APK_PACKAGE_MAX_MB" 'BEGIN {printf "%.0f", m * 1048576}')
 ROOT_SHELL_DAYS=$(get_uint root_shell_days 14 1 90)
 if [ "$FRAGMENT_DAYS" -eq 0 ]; then
   FRAGMENT_POLICY="立即清理"
@@ -2218,12 +2284,14 @@ RUN_EMPTY=0
 RUN_CACHE=0
 RUN_RULES=0
 RUN_FRAGMENT=0
+RUN_APK=0
 case "$PROFILE" in
-  all) RUN_EMPTY=1; RUN_CACHE=1; RUN_RULES=1; RUN_FRAGMENT=1 ;;
+  all) RUN_EMPTY=1; RUN_CACHE=1; RUN_RULES=1; RUN_FRAGMENT=1; RUN_APK=1 ;;
   empty) RUN_EMPTY=1 ;;
   cache) RUN_CACHE=1 ;;
-  rules) RUN_RULES=1 ;;
+  rules) RUN_RULES=1; RUN_APK=1 ;;
   fragment) RUN_FRAGMENT=1 ;;
+  apk) RUN_APK=1 ;;
   corpse) ;;
 esac
 WHITELIST_PATHS=$(sed -n 's/[[:space:]]*$//; /^[[:space:]]*\($\|#\)/d; p' "$WHITELIST" 2>/dev/null)
@@ -2302,6 +2370,11 @@ fi
 if [ "$STOPPED" = "0" ] && [ "$RUN_FRAGMENT" = "1" ] && [ "$(get_bool clean_fragments)" = "1" ]; then
   set_phase "扫描残留碎片（保留 ${FRAGMENT_DAYS} 天）"
   run_fragment_cleanup || STOPPED=1
+fi
+
+if [ "$STOPPED" = "0" ] && [ "$RUN_APK" = "1" ] && [ "$(get_bool clean_apk_packages)" = "1" ]; then
+  set_phase "扫描过期 APK 安装包（保留 ${APK_PACKAGE_DAYS} 天）"
+  run_apk_packages || STOPPED=1
 fi
 
 if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_installer_temp)" = "1" ]; then

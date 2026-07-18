@@ -204,6 +204,7 @@ class BaiZeProfileRootService : RootService() {
             .put("latest", latest)
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("appDetails", appDetails)
+            .put("otherDetails", otherDetailsJson(latestReport))
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
                 3 -> "已有其他任务正在运行"
@@ -312,6 +313,57 @@ class BaiZeProfileRootService : RootService() {
         return result
     }
 
+    private fun otherDetailsJson(file: File): JSONArray {
+        data class Aggregate(
+            var files: Long = 0,
+            var bytes: Long = 0,
+            var errors: Long = 0,
+            var samplePath: String = ""
+        )
+
+        val groups = linkedMapOf<String, Aggregate>()
+        runCatching {
+            if (!file.isFile) return@runCatching
+            file.forEachLine { raw ->
+                val columns = raw.split('\t', limit = 6)
+                if (columns.size < 6 || columns[0] == "action") return@forEachLine
+                val action = columns[0].trim()
+                if (action !in setOf("candidate", "cleaned", "failed")) return@forEachLine
+                val category = columns[2].trim().take(80)
+                if (category.isBlank()) return@forEachLine
+                val suffix = category.substringAfterLast(':', "")
+                if (suffix.isNotBlank() && PACKAGE_NAME.matches(suffix)) return@forEachLine
+                val items = columns[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                val bytes = columns[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                val path = columns[5].trim().take(240)
+                val aggregate = groups.getOrPut(category) { Aggregate() }
+                if (action == "failed") {
+                    aggregate.errors += items
+                } else {
+                    aggregate.files += items
+                    aggregate.bytes += bytes
+                }
+                if (aggregate.samplePath.isBlank() && path.isNotBlank()) aggregate.samplePath = path
+            }
+        }
+        val result = JSONArray()
+        groups.entries
+            .filter { (_, value) -> value.files > 0 || value.bytes > 0 || value.errors > 0 }
+            .sortedWith(compareByDescending<Map.Entry<String, Aggregate>> { it.value.bytes }.thenBy { it.key })
+            .take(60)
+            .forEach { (name, value) ->
+                result.put(
+                    JSONObject()
+                        .put("name", name)
+                        .put("files", value.files)
+                        .put("bytes", value.bytes)
+                        .put("errors", value.errors)
+                        .put("samplePath", value.samplePath)
+                )
+            }
+        return result
+    }
+
     private fun moduleState(): String {
         val stateDir = File(STATE_DIR)
         val scheduler = readEnv(File(stateDir, "scheduler.env"))
@@ -334,6 +386,7 @@ class BaiZeProfileRootService : RootService() {
                     File(stateDir, "reports/app-items-latest.tsv")
                 )
             )
+            .put("otherDetails", otherDetailsJson(File(stateDir, "reports/latest.tsv")))
             .put("running", running)
             .put("config", configJsonObject())
             .toString()
@@ -809,7 +862,8 @@ class BaiZeProfileRootService : RootService() {
 
         private val MODULE_TASKS = setOf(
             "scan", "clean", "cache-clean", "empty-clean", "rules-clean", "fragment-scan",
-            "fragment-clean", "deep-scan", "deep-clean", "corpse-scan", "corpse-clean"
+            "fragment-clean", "deep-scan", "deep-clean", "corpse-scan", "corpse-clean",
+            "apk-scan", "apk-clean"
         )
 
         private val ALLOWED_CONFIG: Map<String, IntRange> = mapOf(
@@ -846,6 +900,7 @@ class BaiZeProfileRootService : RootService() {
             "clean_fragments" to 0..1,
             "clean_custom_rules" to 0..1,
             "clean_installer_temp" to 0..1,
+            "clean_apk_packages" to 0..1,
             "notify_on_complete" to 0..1,
             "notify_zero_result" to 0..1,
             "deep_high_risk_enabled" to 0..1,
@@ -857,6 +912,8 @@ class BaiZeProfileRootService : RootService() {
             "hidden_junk_days" to 0..365,
             "fragment_days" to 0..365,
             "installer_temp_days" to 1..30,
+            "apk_package_days" to 0..365,
+            "apk_package_max_mb" to 16..16_384,
             "root_shell_days" to 1..90,
             "max_file_mb" to 16..16_384
         )

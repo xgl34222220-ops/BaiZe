@@ -1,8 +1,16 @@
-# 白泽 v2 Alpha 29
+# 白泽 v2 Alpha 30
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
 
-当前开发分支：`v2-alpha29`。
+当前开发分支：`v2-alpha30`。
+
+## Alpha 30
+
+- 新增 APK/APKS/XAPK/APKM 安装包扫描，覆盖 Download、QQ、微信和常见浏览器下载目录，并支持保留天数设置。
+- 记录页增加其他垃圾分类，安装包、日志、临时文件和碎片不再只混在总数中。
+- 结果卡片改用实心 Surface，移除透明叠层造成的白色矩形渲染异常。
+- AMOLED 开关真正启用纯黑背景、纯黑卡片和纯黑底栏，并关闭背景彩色光晕。
+- 保持 Alpha 29 的单 RootService 一键清理与按应用明细链路。
 
 ## Alpha 29
 

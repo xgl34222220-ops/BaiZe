@@ -149,6 +149,15 @@ object ThemeManager {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && prefs(context).getBoolean(KEY_MONET, false)
 
     fun isAmoledEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AMOLED, false)
+
+    fun resolvedDark(context: Context): Boolean = when (currentMode(context)) {
+        MODE_LIGHT -> false
+        MODE_DARK -> true
+        else -> isDark(context)
+    }
+
+    fun isAmoledActive(context: Context): Boolean = isAmoledEnabled(context) && resolvedDark(context)
+
     fun isBlurEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_BLUR, true)
     fun isFloatingDockEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_FLOATING_DOCK, true)
     fun isGlassEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_GLASS, true)
@@ -212,9 +221,9 @@ object ThemeManager {
             append("Monet ").append(currentMonetStyle(context).label)
         } else {
             append(currentPalette(context).label)
-            if (isAmoledEnabled(context) && isDark(context)) append(" · 纯黑")
         }
-        append(if (isGlassEnabled(context)) " · 液态玻璃" else " · 实心底栏")
+        if (isAmoledActive(context)) append(" · 纯黑")
+        append(if (isGlassEnabled(context)) " · 柔和卡片" else " · 实心卡片")
     }
 
     fun isDark(context: Context): Boolean =
@@ -258,7 +267,7 @@ object ThemeManager {
     private fun applyBeforeCreate(activity: Activity) {
         val monet = isMonetEnabled(activity)
         val themeRes = when {
-            !monet && isAmoledEnabled(activity) && isDark(activity) -> R.style.Theme_BaiZe_Amoled
+            isAmoledActive(activity) -> R.style.Theme_BaiZe_Amoled
             else -> currentPalette(activity).themeRes
         }
         activity.setTheme(themeRes)

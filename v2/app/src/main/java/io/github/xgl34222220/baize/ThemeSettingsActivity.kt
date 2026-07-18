@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
@@ -16,6 +17,11 @@ class ThemeSettingsActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
         binding = ActivityThemeSettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        if (ThemeManager.isAmoledActive(this)) {
+            binding.root.setBackgroundColor(Color.BLACK)
+            window.statusBarColor = Color.BLACK
+            window.navigationBarColor = Color.BLACK
+        }
 
         binding.backButton.setOnClickListener { finish() }
         binding.modeRow.setOnClickListener { showModeMenu() }

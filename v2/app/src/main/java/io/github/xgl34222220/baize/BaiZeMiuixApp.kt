@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
@@ -60,6 +61,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -126,6 +128,7 @@ data class DashboardUiState(
     val lifetimeElapsed: Long = 0,
     val whitelistCount: Int = 0,
     val recentApps: List<AppJunkUiItem> = emptyList(),
+    val recentJunk: List<GeneralJunkUiItem> = emptyList(),
     val history: List<HistoryUiItem> = emptyList()
 )
 
@@ -140,6 +143,14 @@ data class AppJunkUiItem(
 )
 
 data class AppJunkCategoryUiItem(
+    val name: String,
+    val files: Long,
+    val bytes: Long,
+    val errors: Long,
+    val samplePath: String
+)
+
+data class GeneralJunkUiItem(
     val name: String,
     val files: Long,
     val bytes: Long,
@@ -178,6 +189,8 @@ data class SchedulerUiState(
     val notifyOnComplete: Boolean = true,
     val notifyZero: Boolean = false,
     val maxFileMb: Int = 256,
+    val apkPackagesEnabled: Boolean = true,
+    val apkPackageDays: Int = 30,
     val saving: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -199,6 +212,8 @@ data class SchedulerUiState(
         .put("notify_on_complete", notifyOnComplete.flag())
         .put("notify_zero_result", notifyZero.flag())
         .put("max_file_mb", maxFileMb.coerceIn(16, 2048))
+        .put("clean_apk_packages", apkPackagesEnabled.flag())
+        .put("apk_package_days", apkPackageDays.coerceIn(0, 365))
 
     companion object {
         fun fromJson(json: JSONObject) = SchedulerUiState(
@@ -219,7 +234,9 @@ data class SchedulerUiState(
             minBattery = json.optInt("min_battery", 25).coerceIn(0, 100),
             notifyOnComplete = json.optInt("notify_on_complete", 1) == 1,
             notifyZero = json.optInt("notify_zero_result", 0) == 1,
-            maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048)
+            maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
+            apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
+            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365)
         )
     }
 }
@@ -230,6 +247,7 @@ data class DashboardActions(
     val refresh: () -> Unit,
     val clean: () -> Unit,
     val scan: () -> Unit,
+    val apkScan: () -> Unit,
     val cleanScan: () -> Unit,
     val dismissScan: () -> Unit,
     val stop: () -> Unit,
@@ -261,10 +279,11 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
         ThemeManager.MODE_DARK -> true
         else -> systemDark
     }
+    val amoled = dark && ThemeManager.isAmoledEnabled(context)
     val resolvedPrimary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, 0xFF3975F4.toInt()))
     val resolvedSecondary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondary, 0xFF7658E8.toInt()))
     val resolvedTertiary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorTertiary, 0xFFFF91D0.toInt()))
-    val resolvedSurface = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, if (dark) 0xFF191B24.toInt() else 0xFFFFFFFF.toInt()))
+    val resolvedSurface = if (amoled) Color(0xFF080808) else Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, if (dark) 0xFF191B24.toInt() else 0xFFFFFFFF.toInt()))
     val resolvedOnSurface = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurface, if (dark) 0xFFF0F1F8.toInt() else 0xFF151722.toInt()))
     val resolvedOnSurfaceVariant = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, if (dark) 0xFFBFC2D0.toInt() else 0xFF6D7080.toInt()))
     val colors = if (dark) {
@@ -272,8 +291,9 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
             primary = resolvedPrimary,
             secondary = resolvedSecondary,
             tertiary = resolvedTertiary,
-            background = if (ThemeManager.isAmoledEnabled(context)) Color.Black else Color(0xFF101117),
+            background = if (amoled) Color.Black else Color(0xFF101117),
             surface = resolvedSurface,
+            surfaceVariant = if (amoled) Color(0xFF101010) else Color(0xFF20232D),
             onSurface = resolvedOnSurface,
             onSurfaceVariant = resolvedOnSurfaceVariant
         )
@@ -291,7 +311,7 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
     MaterialTheme(colorScheme = colors) {
         var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
         Box(modifier = Modifier.fillMaxSize()) {
-            MiuiXBackdrop(dark)
+            MiuiXBackdrop(dark, amoled)
             when (page) {
                 BaiZePage.Home -> HomePage(state, actions)
                 BaiZePage.Plan -> PlanPage(scheduler, actions)
@@ -308,15 +328,19 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
 }
 
 @Composable
-private fun MiuiXBackdrop(dark: Boolean) {
+private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
     val scheme = MaterialTheme.colorScheme
-    val base = if (dark) listOf(Color(0xFF101117), Color(0xFF151827), Color(0xFF101117))
-    else listOf(Color(0xFFF8F7FF), Color(0xFFF0F5FF), Color(0xFFF8F8FC))
+    val base = when {
+        amoled -> listOf(Color.Black, Color.Black, Color.Black)
+        dark -> listOf(Color(0xFF101117), Color(0xFF151827), Color(0xFF101117))
+        else -> listOf(Color(0xFFF8F7FF), Color(0xFFF0F5FF), Color(0xFFF8F8FC))
+    }
     Box(
         Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(base))
             .drawBehind {
+                if (amoled) return@drawBehind
                 drawRect(
                     Brush.radialGradient(
                         listOf(scheme.secondary.copy(alpha = if (dark) .15f else .24f), Color.Transparent),
@@ -350,9 +374,18 @@ private fun GlassSurface(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
     val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val fill = if (dark) Color(0xFF252733).copy(alpha = .86f) else Color.White.copy(alpha = .80f)
-    val border = if (dark) Color.White.copy(alpha = .09f) else Color.White.copy(alpha = .82f)
+    val amoled = dark && ThemeManager.isAmoledEnabled(context)
+    val glass = ThemeManager.isGlassEnabled(context)
+    val fill = when {
+        amoled -> Color(0xFF080808)
+        dark && glass -> Color(0xFF1B1D25)
+        dark -> MaterialTheme.colorScheme.surface
+        glass -> Color(0xFFF9F9FD)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    val border = if (dark) Color.White.copy(alpha = .08f) else MaterialTheme.colorScheme.primary.copy(alpha = .08f)
     Box(
         modifier
             .shadow(shadow.dp, shape, clip = false)
@@ -361,6 +394,28 @@ private fun GlassSurface(
             .border(1.dp, border, shape)
             .padding(contentPadding)
     ) { content() }
+}
+
+@Composable
+private fun ResultSurface(
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = RoundedCornerShape(26.dp),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    content: @Composable () -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 3.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.onSurface.copy(alpha = .06f)
+        )
+    ) {
+        Box(Modifier.padding(contentPadding)) { content() }
+    }
 }
 
 @Composable
@@ -404,7 +459,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 29", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 30", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -509,7 +564,9 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                 Column {
                     ToolRow(Icons.Rounded.Search, "垃圾扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
-                    ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "高风险规则先展示，再由你确认", actions.deep)
+                    ToolRow(Icons.Rounded.InstallMobile, "安装包扫描", "查找 Download、QQ、微信等目录中的 APK/APKS/XAPK", actions.apkScan)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
+                    ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "扫描日志、临时文件与常见残留", actions.deep)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
                     ToolRow(Icons.Rounded.FolderDelete, "卸载残留", "扫描 data / obb / media 无主目录", actions.corpses)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
@@ -774,20 +831,19 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         item { PageHeader("CLEAN HISTORY", "清理记录", "累计统计永久保存，任务明细保留最近 100 次", actions.refresh) }
-        if (state.recentApps.isNotEmpty()) {
+        if (state.recentApps.isNotEmpty() || state.recentJunk.isNotEmpty()) {
             item {
-                GlassSurface(
+                ResultSurface(
                     Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
                     shape = RoundedCornerShape(28.dp),
-                    shadow = 8,
                     contentPadding = PaddingValues(20.dp)
                 ) {
-                    CurrentCleanupSummaryContent(state.recentApps)
+                    CurrentCleanupSummaryContent(state.recentApps, state.recentJunk)
                 }
             }
         }
         item {
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(22.dp)) {
+            ResultSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(22.dp)) {
                 Column {
                     Text(if (state.history.isEmpty()) "等待第一条清理记录" else state.history.first().result, fontSize = 21.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(18.dp))
@@ -805,9 +861,15 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
             }
         }
         if (state.recentApps.isNotEmpty()) {
-            item { SectionTitle("本次应用垃圾", "按实际清理结果从大到小排列") }
+            item { SectionTitle("应用垃圾", "按实际结果从大到小排列，点击卡片查看分类") }
             items(state.recentApps.indices.toList(), key = { index -> "app-$index-${state.recentApps[index].packageName}" }) { index ->
                 AppJunkCard(state.recentApps[index])
+            }
+        }
+        if (state.recentJunk.isNotEmpty()) {
+            item { SectionTitle("其他垃圾", "安装包、日志、临时文件与碎片") }
+            items(state.recentJunk.indices.toList(), key = { index -> "junk-$index-${state.recentJunk[index].name}" }) { index ->
+                GeneralJunkCard(state.recentJunk[index])
             }
         }
         item {
@@ -832,13 +894,23 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
 
 @Composable
 private fun AppJunkCard(item: AppJunkUiItem) {
-    GlassSurface(
+    ResultSurface(
         Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        shadow = 5,
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(17.dp)
     ) {
         AppJunkCardContent(item)
+    }
+}
+
+@Composable
+private fun GeneralJunkCard(item: GeneralJunkUiItem) {
+    ResultSurface(
+        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        contentPadding = PaddingValues(17.dp)
+    ) {
+        GeneralJunkCardContent(item)
     }
 }
 
@@ -853,10 +925,9 @@ private fun StatColumn(value: String, label: String) {
 @Composable
 private fun HistoryCard(item: HistoryUiItem) {
     val context = LocalContext.current
-    GlassSurface(
+    ResultSurface(
         Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        shadow = 5,
         contentPadding = PaddingValues(17.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -899,7 +970,7 @@ private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, acti
             }
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
                 Column {
-                    Text("清理保护", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("清理范围", fontSize = 22.sp, fontWeight = FontWeight.Black)
                     Text(
                         if (state.whitelistCount > 0) "已保护 ${state.whitelistCount} 个应用" else "尚未添加应用白名单",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
@@ -908,6 +979,10 @@ private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, acti
                     PrimaryButton("管理应用白名单", true, actions.whitelist, outerPadding = false)
                     SettingSwitch("任务完成后发送通知", config.notifyOnComplete) { actions.updateScheduler(config.copy(notifyOnComplete = it)) }
                     SettingSwitch("没有垃圾时也发送通知", config.notifyZero) { actions.updateScheduler(config.copy(notifyZero = it)) }
+                    SettingSwitch("清理过期 APK 安装包", config.apkPackagesEnabled) { actions.updateScheduler(config.copy(apkPackagesEnabled = it)) }
+                    Text("APK 安装包保留 ${config.apkPackageDays} 天", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                    Text("扫描 Download、QQ、微信及常见浏览器下载目录中的 APK/APKS/XAPK。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Slider(value = config.apkPackageDays.toFloat(), onValueChange = { actions.updateScheduler(config.copy(apkPackageDays = it.roundToInt().coerceIn(0, 365))) }, valueRange = 0f..365f)
                     Text("单文件上限 ${config.maxFileMb} MB", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
                     Text("超过上限的单个文件只统计，不会自动删除。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     Slider(value = config.maxFileMb.toFloat(), onValueChange = { actions.updateScheduler(config.copy(maxFileMb = (it / 16).roundToInt() * 16)) }, valueRange = 16f..2048f)

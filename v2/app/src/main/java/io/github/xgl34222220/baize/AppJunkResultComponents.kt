@@ -49,20 +49,25 @@ internal fun AppJunkCardContent(item: AppJunkUiItem) {
             .clickable(enabled = categories.isNotEmpty()) { expanded = !expanded }
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ApplicationIcon(
-                packageName = item.packageName,
-                label = item.label,
-                modifier = Modifier.size(50.dp)
-            )
-            Spacer(Modifier.width(13.dp))
+            ApplicationIcon(item.packageName, item.label, Modifier.size(50.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    item.label,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        item.label,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        Formatter.formatFileSize(context, item.bytes),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 17.sp
+                    )
+                }
                 Text(
                     item.packageName,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -70,33 +75,24 @@ internal fun AppJunkCardContent(item: AppJunkUiItem) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(7.dp))
+                Spacer(Modifier.height(8.dp))
                 CategoryChipRow(categories, item.category)
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    buildString {
-                        append("${item.files} 个文件")
-                        if (item.errors > 0) append(" · ${item.errors} 个未清理")
-                    },
-                    color = if (item.errors > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    Formatter.formatFileSize(context, item.bytes),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 18.sp
-                )
-                if (categories.isNotEmpty()) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        contentDescription = if (expanded) "收起明细" else "展开明细",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(21.dp)
+                Spacer(Modifier.height(7.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${item.files} 个文件${if (item.errors > 0) " · ${item.errors} 个未清理" else ""}",
+                        modifier = Modifier.weight(1f),
+                        color = if (item.errors > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
                     )
+                    if (categories.isNotEmpty()) {
+                        Icon(
+                            if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            if (expanded) "收起明细" else "展开明细",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
@@ -104,12 +100,10 @@ internal fun AppJunkCardContent(item: AppJunkUiItem) {
         AnimatedVisibility(visible = expanded && categories.isNotEmpty()) {
             Column {
                 HorizontalDivider(
-                    modifier = Modifier.padding(top = 14.dp, bottom = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .09f)
+                    modifier = Modifier.padding(top = 14.dp, bottom = 7.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f)
                 )
-                categories.forEach { category ->
-                    CategoryDetailRow(category)
-                }
+                categories.forEach { CategoryDetailRow(it) }
             }
         }
     }
@@ -123,43 +117,31 @@ private fun CategoryChipRow(categories: List<AppJunkCategoryUiItem>, fallback: S
         fallback.split('、', ',', '，').map { friendlyCategory(it) }.filter { it.isNotBlank() }.distinct()
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        labels.take(2).forEach { label -> CategoryChip(label) }
-        if (labels.size > 2) CategoryChip("+${labels.size - 2}")
+        labels.take(3).forEach { CategoryChip(it) }
+        if (labels.size > 3) CategoryChip("+${labels.size - 3}")
     }
 }
 
 @Composable
 private fun CategoryChip(label: String) {
     Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(9.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f))
+        Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = label,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
+        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun CategoryDetailRow(category: AppJunkCategoryUiItem) {
     val context = LocalContext.current
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(friendlyCategory(category.name), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                buildString {
-                    append("${category.files} 个文件")
-                    if (category.errors > 0) append(" · ${category.errors} 个未清理")
-                },
+                "${category.files} 个文件${if (category.errors > 0) " · ${category.errors} 个未清理" else ""}",
                 color = if (category.errors > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 10.sp
             )
@@ -185,9 +167,9 @@ private fun CategoryDetailRow(category: AppJunkCategoryUiItem) {
 private fun friendlyCategory(raw: String): String {
     val value = raw.substringBeforeLast(':', raw).trim()
     return when {
-        value.contains("WebView", ignoreCase = true) -> "WebView"
+        value.contains("WebView", true) -> "WebView"
         value.contains("外部") && value.contains("缓存") -> "外部缓存"
-        value.contains("code", ignoreCase = true) -> "代码缓存"
+        value.contains("code", true) -> "代码缓存"
         value.contains("内部") && value.contains("缓存") -> "内部缓存"
         value.contains("空文件") -> "空文件"
         value.contains("空目录") -> "空目录"
@@ -195,6 +177,6 @@ private fun friendlyCategory(raw: String): String {
         value.contains("扩展规则") -> "扩展缓存"
         value.contains("缓存") -> "应用缓存"
         value.isBlank() -> "应用垃圾"
-        else -> value.take(10)
+        else -> value.take(12)
     }
 }

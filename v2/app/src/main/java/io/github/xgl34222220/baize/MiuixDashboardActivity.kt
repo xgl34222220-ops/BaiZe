@@ -47,6 +47,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var profileBound = false
     private var cacheBound = false
     private var pendingClean = false
+    private var pendingModuleTask: String? = null
     private var pollJob: Job? = null
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
@@ -63,6 +64,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             updateConnectionState()
             refreshAll()
             runPendingCleanIfReady()
+            runPendingModuleTaskIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -104,6 +106,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     refresh = { refreshAll() },
                     clean = { runSmartClean() },
                     scan = { runNativeScan(cleanAfterScan = false) },
+                    apkScan = { runApkScan() },
                     cleanScan = { cleanNativeSnapshots() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
@@ -287,6 +290,77 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
+    private fun runPendingModuleTaskIfReady() {
+        val mode = pendingModuleTask ?: return
+        val service = rootService ?: return
+        pendingModuleTask = null
+        runModuleUtilityTask(service, mode)
+    }
+
+    private fun runApkScan() {
+        val service = rootService
+        if (service == null) {
+            pendingModuleTask = "apk-scan"
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                taskPhase = "正在连接 Root 服务，连接后自动扫描安装包"
+            )
+            connectPrimaryService()
+            return
+        }
+        runModuleUtilityTask(service, "apk-scan")
+    }
+
+    private fun runModuleUtilityTask(service: IProfileRootService, mode: String) {
+        if (dashboardState.value.running) return
+        dashboardState.value = dashboardState.value.copy(
+            running = true,
+            taskPhase = if (mode == "apk-scan") "正在扫描 APK 安装包…" else "正在执行清理任务…"
+        )
+        startNativePoll()
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.runModuleTask(mode)) }
+            }
+            pollJob?.cancel()
+            if (response.isFailure) {
+                rootService = null
+                profileBound = false
+                dashboardState.value = dashboardState.value.copy(
+                    connected = false,
+                    ready = false,
+                    running = false,
+                    serviceText = "Root 服务已断开，正在重新连接…",
+                    taskPhase = "安装包扫描失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                )
+                connectPrimaryService()
+                return@launch
+            }
+            val json = response.getOrThrow()
+            val latest = json.optJSONObject("latest") ?: JSONObject()
+            val success = json.optBoolean("success")
+            val cancelled = json.optBoolean("cancelled")
+            val junk = parseGeneralJunk(json.optJSONArray("otherDetails"))
+            val result = latest.optString("result").ifBlank {
+                when {
+                    cancelled -> "安装包扫描已停止"
+                    success && junk.isEmpty() -> "没有发现超过保留期的安装包"
+                    success -> "安装包扫描完成，发现 ${junk.sumOf { it.files }} 项"
+                    else -> json.optString("message", "安装包扫描失败")
+                }
+            }
+            dashboardState.value = dashboardState.value.copy(
+                running = false,
+                recentJunk = junk,
+                taskPhase = result
+            )
+            refreshHistory()
+            refreshModuleState()
+            readServiceStatus()
+        }
+    }
+
     private fun runSmartClean() {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
         val service = rootService
@@ -346,6 +420,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 json.optString("message", if (success) "清理完成" else "清理失败")
             }
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
+            val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
             val detailLine = "文件 $files · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $errors · ${formatElapsed(elapsed)}"
             val title = when {
                 cancelled -> "白泽清理已停止"
@@ -356,6 +431,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 lastReleased = bytes,
+                recentApps = appDetails,
+                recentJunk = otherDetails,
                 taskPhase = "$resultLine\n$detailLine"
             )
             preferences.edit()
@@ -715,6 +792,24 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }.sortedWith(compareByDescending<AppJunkUiItem> { it.bytes }.thenByDescending { it.files })
 
+    private fun parseGeneralJunk(array: JSONArray?): List<GeneralJunkUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val name = item.optString("name").trim()
+            if (name.isBlank()) continue
+            add(
+                GeneralJunkUiItem(
+                    name = name,
+                    files = item.optLong("files", 0L).coerceAtLeast(0L),
+                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                    errors = item.optLong("errors", 0L).coerceAtLeast(0L),
+                    samplePath = item.optString("samplePath").trim()
+                )
+            )
+        }
+    }.sortedWith(compareByDescending<GeneralJunkUiItem> { it.bytes }.thenByDescending { it.files })
+
     private fun looksLikePackageName(value: String): Boolean =
         value.length in 3..180 && value.contains('.') && value.none { it == '/' || it.isWhitespace() }
 
@@ -786,6 +881,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
+            val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
             val latestMode = latest.optString("mode")
             val latestReleased = if (latestMode.endsWith("scan") || latestMode == "scan") {
                 preferences.getLong("last_clean_bytes", dashboardState.value.lastReleased)
@@ -795,6 +891,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 lastReleased = latestReleased,
                 recentApps = if (appDetails.isNotEmpty()) appDetails else dashboardState.value.recentApps,
+                recentJunk = if (otherDetails.isNotEmpty()) otherDetails else dashboardState.value.recentJunk,
                 schedulerText = when (scheduler.optString("state", "waiting")) {
                     "running" -> "定时任务正在执行"
                     "completed" -> "最近定时任务已完成"
