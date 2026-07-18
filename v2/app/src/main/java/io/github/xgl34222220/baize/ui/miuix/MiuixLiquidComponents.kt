@@ -50,6 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import dev.chrisbanes.haze.materials.HazeMaterials
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 
 /** A stable Miuix navigation item. Labels always stay below icons. */
@@ -58,11 +62,13 @@ data class MiuixLiquidNavItem(
     val icon: ImageVector
 )
 
+@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun MiuixLiquidDock(
     selectedIndex: Int,
     items: List<MiuixLiquidNavItem>,
     onSelected: (Int) -> Unit,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) return
@@ -74,12 +80,26 @@ fun MiuixLiquidDock(
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = RoundedCornerShape(34.dp)
 
-    val dockColor = when {
-        amoled -> Color(0xE8000000)
-        dark -> scheme.surface.copy(alpha = if (settings.blurEnabled) .82f else .98f)
-        else -> Color.White.copy(alpha = if (settings.blurEnabled) .78f else .98f)
+    val activeHazeState = hazeState.takeIf {
+        settings.blurEnabled && settings.glassEnabled && !amoled
     }
-    val borderColor = if (dark) Color.White.copy(alpha = .13f) else Color.White.copy(alpha = .88f)
+    val dockColor = when {
+        amoled -> Color(0xEE000000)
+        activeHazeState != null && dark -> scheme.surface.copy(alpha = .28f)
+        activeHazeState != null -> Color.White.copy(alpha = .22f)
+        dark -> scheme.surface.copy(alpha = .98f)
+        else -> Color.White.copy(alpha = .98f)
+    }
+    val borderColor = if (dark) Color.White.copy(alpha = .15f) else Color.White.copy(alpha = .82f)
+    val hazeModifier = activeHazeState?.let { state ->
+        Modifier.hazeEffect(
+            state = state,
+            style = HazeMaterials.ultraThin()
+        ) {
+            blurRadius = 28.dp
+            noiseFactor = .06f
+        }
+    } ?: Modifier
 
     BoxWithConstraints(
         modifier = modifier
@@ -88,6 +108,7 @@ fun MiuixLiquidDock(
             .fillMaxWidth()
             .shadow(22.dp, shape, clip = false)
             .clip(shape)
+            .then(hazeModifier)
             .background(dockColor)
             .border(1.dp, borderColor, shape)
             .drawBehind {

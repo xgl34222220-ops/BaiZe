@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21900
-        versionName = "2.0.0-alpha39"
+        versionCode = 22000
+        versionName = "2.0.0-alpha40"
     }
 
     buildFeatures {
@@ -72,6 +72,8 @@ dependencies {
     implementation("androidx.viewpager2:viewpager2:1.1.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.materialkolor:material-kolor:2.0.0")
+    implementation("dev.chrisbanes.haze:haze:1.6.10")
+    implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     implementation("com.github.topjohnwu.libsu:core:6.0.0")

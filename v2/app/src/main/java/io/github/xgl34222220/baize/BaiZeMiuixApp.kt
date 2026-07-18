@@ -2,6 +2,13 @@ package io.github.xgl34222220.baize
 
 import android.os.Build
 import android.text.format.Formatter
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -94,6 +101,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.material.color.MaterialColors
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
@@ -313,6 +322,9 @@ fun BaiZeMiuixApp(
         CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
+            val hazeState = rememberHazeState(
+                blurEnabled = appearance.blurEnabled && appearance.glassEnabled
+            )
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
@@ -324,12 +336,18 @@ fun BaiZeMiuixApp(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                 ) {
-                    when (page) {
-                        BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
-                        BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
-                        BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
-                        BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions)
-                        BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions)
+                    AnimatedPageHost(
+                        page = page,
+                        style = UiStyle.MATERIAL,
+                        modifier = Modifier.fillMaxSize()
+                    ) { targetPage ->
+                        when (targetPage) {
+                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
+                            BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
+                            BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
+                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions)
+                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions)
+                        }
                     }
                     MaterialFloatingDock(
                         selected = page,
@@ -339,23 +357,68 @@ fun BaiZeMiuixApp(
                 }
 
                 UiStyle.MIUIX -> Box(modifier = Modifier.fillMaxSize()) {
-                    MiuiXBackdrop(dark, amoled)
-                    when (page) {
-                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
-                        BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
-                        BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
-                        BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions)
-                        BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .hazeSource(state = hazeState)
+                    ) {
+                        MiuiXBackdrop(dark, amoled)
+                        AnimatedPageHost(
+                            page = page,
+                            style = UiStyle.MIUIX,
+                            modifier = Modifier.fillMaxSize()
+                        ) { targetPage ->
+                            when (targetPage) {
+                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
+                                BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
+                                BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
+                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions)
+                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions)
+                            }
+                        }
                     }
                     MiuixLiquidDock(
                         selectedIndex = page.ordinal,
                         items = miuixNavItems,
                         onSelected = { index -> page = BaiZePage.entries[index] },
+                        hazeState = hazeState,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AnimatedPageHost(
+    page: BaiZePage,
+    style: UiStyle,
+    modifier: Modifier = Modifier,
+    content: @Composable (BaiZePage) -> Unit
+) {
+    AnimatedContent(
+        targetState = page,
+        modifier = modifier,
+        contentKey = { it },
+        transitionSpec = {
+            val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+            val enterDuration = if (style == UiStyle.MIUIX) 300 else 250
+            val exitDuration = if (style == UiStyle.MIUIX) 210 else 170
+            val enterDivisor = if (style == UiStyle.MIUIX) 8 else 11
+            val exitDivisor = if (style == UiStyle.MIUIX) 13 else 16
+
+            (fadeIn(tween(enterDuration)) + slideInHorizontally(tween(enterDuration)) { width ->
+                direction * width / enterDivisor
+            }).togetherWith(
+                fadeOut(tween(exitDuration)) + slideOutHorizontally(tween(exitDuration)) { width ->
+                    -direction * width / exitDivisor
+                }
+            )
+        },
+        label = "baizePageMotion"
+    ) { targetPage ->
+        content(targetPage)
     }
 }
 
@@ -406,10 +469,10 @@ private fun GlassSurface(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
+    val settings = LocalAppearanceSettings.current
     val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val amoled = dark && ThemeManager.isAmoledEnabled(context)
-    val glass = ThemeManager.isGlassEnabled(context)
+    val amoled = dark && settings.amoledBlack
+    val glass = settings.glassEnabled
     val fill = when {
         amoled -> Color(0xFF080808)
         dark && glass -> Color(0xFF1B1D25)
@@ -502,7 +565,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Liquid Glass · Alpha 39",
+                "Miuix × Haze Glass · Alpha 40",
                 actions.refresh
             )
         }
@@ -771,432 +834,6 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
 }
 
 @Composable
-private fun ToolRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
-    var expanded by rememberSaveable { mutableStateOf("cache") }
-    val accentGradient = rememberAccentGradient()
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 132.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
-    ) {
-        item { PageHeader("AUTOMATION", "自动清理计划", "每类任务独立定时，最短支持 1 小时") }
-        item {
-            Box(
-                Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp))
-                    .background(Brush.horizontalGradient(accentGradient)).padding(22.dp)
-            ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("启用自动清理", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Black)
-                            Text(
-                                if (config.enabled) "已启用 ${enabledScheduleCount(config)} 类独立任务" else "总开关已关闭",
-                                color = Color.White.copy(.70f), fontSize = 12.sp
-                            )
-                        }
-                        Switch(checked = config.enabled, onCheckedChange = { actions.updateScheduler(config.copy(enabled = it)) })
-                    }
-                }
-            }
-        }
-        item { SectionTitle("独立定时", "点开一项再调整周期，避免页面堆满滑杆") }
-        item {
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 18.dp)) {
-                Column {
-                    ScheduleRow("cache", "应用缓存", "安全缓存与临时文件", config.cacheEnabled, config.cacheHours, expanded == "cache", {
-                        actions.updateScheduler(config.copy(cacheEnabled = it))
-                    }, {
-                        actions.updateScheduler(config.copy(cacheHours = it))
-                    }) { expanded = if (expanded == "cache") "" else "cache" }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ScheduleRow("empty", "空文件与空目录", "保持公共存储目录整洁", config.emptyEnabled, config.emptyHours, expanded == "empty", {
-                        actions.updateScheduler(config.copy(emptyEnabled = it))
-                    }, {
-                        actions.updateScheduler(config.copy(emptyHours = it))
-                    }) { expanded = if (expanded == "empty") "" else "empty" }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ScheduleRow("rules", "规则垃圾与日志", "规则库命中与过期日志", config.rulesEnabled, config.rulesHours, expanded == "rules", {
-                        actions.updateScheduler(config.copy(rulesEnabled = it))
-                    }, {
-                        actions.updateScheduler(config.copy(rulesHours = it))
-                    }) { expanded = if (expanded == "rules") "" else "rules" }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ScheduleRow("fragment", "残留碎片", "下载碎片、缩略图和离线残留", config.fragmentEnabled, config.fragmentHours, expanded == "fragment", {
-                        actions.updateScheduler(config.copy(fragmentEnabled = it))
-                    }, {
-                        actions.updateScheduler(config.copy(fragmentHours = it))
-                    }) { expanded = if (expanded == "fragment") "" else "fragment" }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ScheduleRow("deep", "深度清理项", "可单独启用定时，仍受保护规则限制", config.deepEnabled, config.deepHours, expanded == "deep", {
-                        actions.updateScheduler(config.copy(deepEnabled = it))
-                    }, {
-                        actions.updateScheduler(config.copy(deepHours = it))
-                    }) { expanded = if (expanded == "deep") "" else "deep" }
-                }
-            }
-        }
-        item { SectionTitle("执行条件", "降低前台卡顿和意外耗电") }
-        item {
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)) {
-                Column {
-                    SettingSwitch("等待息屏后执行", config.screenOffOnly) { actions.updateScheduler(config.copy(screenOffOnly = it)) }
-                    SettingSwitch("仅在充电时执行", config.chargingOnly) { actions.updateScheduler(config.copy(chargingOnly = it)) }
-                    SettingSwitch("仅在设备空闲时执行", config.idleOnly) { actions.updateScheduler(config.copy(idleOnly = it)) }
-                    Text("最低电量 ${config.minBattery}%", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
-                    Slider(value = config.minBattery.toFloat(), onValueChange = { actions.updateScheduler(config.copy(minBattery = (it / 5).roundToInt() * 5)) }, valueRange = 0f..100f, steps = 19)
-                }
-            }
-        }
-        item {
-            PrimaryButton(
-                text = if (config.saving) "正在保存…" else "保存自动清理计划",
-                enabled = !config.saving,
-                onClick = { actions.saveScheduler(config) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScheduleRow(
-    key: String,
-    title: String,
-    subtitle: String,
-    enabled: Boolean,
-    hours: Int,
-    expanded: Boolean,
-    onEnabled: (Boolean) -> Unit,
-    onHours: (Int) -> Unit,
-    onExpand: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 13.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f).clickable(onClick = onExpand)) {
-                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("$hours 小时", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Spacer(Modifier.width(9.dp))
-            Switch(checked = enabled, onCheckedChange = onEnabled)
-        }
-        if (expanded) {
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                listOf(1, 6, 12, 24).forEach { quick ->
-                    Box(
-                        Modifier.clip(RoundedCornerShape(12.dp))
-                            .background(if (hours == quick) MaterialTheme.colorScheme.primary.copy(.18f) else MaterialTheme.colorScheme.onSurface.copy(.05f))
-                            .clickable { onHours(quick) }.padding(horizontal = 12.dp, vertical = 7.dp)
-                    ) { Text("${quick}h", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (hours == quick) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
-            Slider(value = hours.toFloat(), onValueChange = { onHours(it.roundToInt().coerceIn(1, 720)) }, valueRange = 1f..720f)
-            Text("可设 1–720 小时；拖动用于长周期，常用周期可直接点选。", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun LegacyRecordsPage(state: DashboardUiState, actions: DashboardActions) {
-    val context = LocalContext.current
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 128.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
-    ) {
-        item { PageHeader("CLEAN HISTORY", "清理记录", "累计统计永久保存，任务明细保留最近 100 次", actions.refresh) }
-        if (state.recentApps.isNotEmpty() || state.recentJunk.isNotEmpty()) {
-            item {
-                ResultSurface(
-                    Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    contentPadding = PaddingValues(20.dp)
-                ) {
-                    CurrentCleanupSummaryContent(state.recentApps, state.recentJunk)
-                }
-            }
-        }
-        item {
-            ResultSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(22.dp)) {
-                Column {
-                    Text(if (state.history.isEmpty()) "等待第一条清理记录" else state.history.first().result, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(18.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        StatColumn("${state.lifetimeRuns} 次", "累计清理")
-                        StatColumn(Formatter.formatFileSize(context, state.lifetimeReleased), "累计释放")
-                        StatColumn(formatElapsedUi(state.lifetimeElapsed), "累计耗时")
-                    }
-                    Spacer(Modifier.height(18.dp))
-                    Text(
-                        "文件 ${state.lifetimeFiles} · 空文件 ${state.lifetimeEmptyFiles} · 空目录 ${state.lifetimeEmptyDirs} · 碎片 ${state.lifetimeFragments}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
-                    )
-                }
-            }
-        }
-        if (state.recentApps.isNotEmpty()) {
-            item { SectionTitle("应用垃圾", "按实际结果从大到小排列，点击卡片查看分类") }
-            items(state.recentApps.indices.toList(), key = { index -> "app-$index-${state.recentApps[index].packageName}" }) { index ->
-                AppJunkCard(state.recentApps[index])
-            }
-        }
-        if (state.recentJunk.isNotEmpty()) {
-            item { SectionTitle("其他垃圾", "安装包、日志、临时文件与碎片") }
-            items(state.recentJunk.indices.toList(), key = { index -> "junk-$index-${state.recentJunk[index].name}" }) { index ->
-                GeneralJunkCard(state.recentJunk[index])
-            }
-        }
-        item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("最近任务", modifier = Modifier.weight(1f), fontSize = 25.sp, fontWeight = FontWeight.Black)
-                Text("清空", modifier = Modifier.clickable(onClick = actions.clearHistory).padding(10.dp), color = Color(0xFFC43743), fontWeight = FontWeight.Bold)
-            }
-        }
-        if (state.history.isEmpty()) {
-            item {
-                GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(24.dp)) {
-                    Text("完成一次手动或自动清理后，这里会显示释放空间、文件数量、空目录、异常和清理时间。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        } else {
-            items(state.history.indices.toList(), key = { index -> "history-$index" }) { index ->
-                HistoryCard(state.history[index])
-            }
-        }
-    }
-}
-
-@Composable
-private fun AppJunkCard(item: AppJunkUiItem) {
-    ResultSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        contentPadding = PaddingValues(17.dp)
-    ) {
-        AppJunkCardContent(item)
-    }
-}
-
-@Composable
-private fun GeneralJunkCard(item: GeneralJunkUiItem) {
-    ResultSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        contentPadding = PaddingValues(17.dp)
-    ) {
-        GeneralJunkCardContent(item)
-    }
-}
-
-@Composable
-private fun StatColumn(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-    }
-}
-
-@Composable
-private fun HistoryCard(item: HistoryUiItem) {
-    val context = LocalContext.current
-    var expanded by rememberSaveable(item.time, item.title) { mutableStateOf(false) }
-    val hasDetails = item.categories.isNotEmpty() || item.apps.isNotEmpty()
-    val categorySummary = item.categories.take(3).joinToString(" · ") {
-        "${it.name} ${Formatter.formatFileSize(context, it.bytes)}"
-    }
-    val appSummary = item.apps.take(2).joinToString(" · ") {
-        "${it.label} ${Formatter.formatFileSize(context, it.bytes)}"
-    }
-    ResultSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth()
-            .clickable(enabled = hasDetails) { expanded = !expanded },
-        shape = RoundedCornerShape(26.dp),
-        contentPadding = PaddingValues(17.dp)
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(50.dp).clip(RoundedCornerShape(16.dp)).background(if (item.errors > 0) Color(0xFFFFC8C8).copy(.45f) else MaterialTheme.colorScheme.primary.copy(.13f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(if (item.errors > 0) Icons.Rounded.ErrorOutline else Icons.Rounded.CleaningServices, null, tint = if (item.errors > 0) Color(0xFFC43743) else MaterialTheme.colorScheme.primary)
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(item.title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("${item.time} · ${item.trigger}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-                    Text(
-                        when {
-                            categorySummary.isNotBlank() -> categorySummary
-                            item.bytes == 0L && item.files == 0 -> if (item.cleaned) "未发现可清理内容" else "扫描未发现垃圾"
-                            else -> item.result
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        maxLines = if (expanded) 4 else 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (appSummary.isNotBlank()) {
-                        Text(appSummary, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                    Text(
-                        when {
-                            item.errors > 0 -> "异常 ${item.errors}"
-                            item.cleaned && item.bytes > 0 -> "已清理"
-                            item.cleaned -> "无垃圾"
-                            item.files > 0 -> "发现 ${item.files} 项"
-                            else -> "未发现"
-                        },
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (expanded && hasDetails) {
-                HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.onSurface.copy(.08f))
-                if (item.categories.isNotEmpty()) {
-                    Text("垃圾分类", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    item.categories.forEach { detail ->
-                        Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(detail.name, modifier = Modifier.weight(1f), fontSize = 11.sp)
-                            Text("${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                if (item.apps.isNotEmpty()) {
-                    Text("涉及应用", modifier = Modifier.padding(top = 12.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    item.apps.forEach { app ->
-                        Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(app.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                Text(app.category.ifBlank { app.packageName }, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Text("${app.files} 项 · ${Formatter.formatFileSize(context, app.bytes)}", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, actions: DashboardActions) {
-    val context = LocalContext.current
-    Column(Modifier.fillMaxSize()) {
-        PageHeader("PREFERENCES", "偏好设置", "外观、清理保护与服务管理")
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 132.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
-        ) {
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
-                Column {
-                    Text("外观", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text(ThemeManager.themeSummary(context), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    Spacer(Modifier.height(15.dp))
-                    OutlineAction(Icons.Rounded.Palette, "主题模式、配色与玻璃", actions.theme)
-                }
-            }
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
-                Column {
-                    Text("清理范围", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        if (state.whitelistCount > 0) "已保护 ${state.whitelistCount} 个应用" else "尚未添加应用白名单",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
-                    )
-                    Spacer(Modifier.height(15.dp))
-                    PrimaryButton("管理应用白名单", true, actions.whitelist, outerPadding = false)
-                    SettingSwitch("任务完成后发送通知", config.notifyOnComplete) { actions.updateScheduler(config.copy(notifyOnComplete = it)) }
-                    SettingSwitch("没有垃圾时也发送通知", config.notifyZero) { actions.updateScheduler(config.copy(notifyZero = it)) }
-                    SettingSwitch("清理过期 APK 安装包", config.apkPackagesEnabled) { actions.updateScheduler(config.copy(apkPackagesEnabled = it)) }
-                    Text("APK 安装包保留 ${config.apkPackageDays} 天", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
-                    Text("扫描 Download、QQ、微信及常见浏览器下载目录中的 APK/APKS/XAPK。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                    Slider(value = config.apkPackageDays.toFloat(), onValueChange = { actions.updateScheduler(config.copy(apkPackageDays = it.roundToInt().coerceIn(0, 365))) }, valueRange = 0f..365f)
-                    Text("单文件上限 ${config.maxFileMb} MB", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
-                    Text("超过上限的单个文件只统计，不会自动删除。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                    Slider(value = config.maxFileMb.toFloat(), onValueChange = { actions.updateScheduler(config.copy(maxFileMb = (it / 16).roundToInt() * 16)) }, valueRange = 16f..2048f)
-                    PrimaryButton(if (config.saving) "正在保存…" else "保存保护设置", !config.saving, { actions.saveScheduler(config) }, outerPadding = false)
-                }
-            }
-            GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 20.dp)) {
-                Column {
-                    Text("服务与诊断", modifier = Modifier.padding(top = 20.dp), fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text(state.serviceText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    Spacer(Modifier.height(8.dp))
-                    ToolRow(Icons.Rounded.Refresh, "重新连接 Root 服务", state.schedulerText, actions.reconnect)
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ToolRow(Icons.Rounded.BugReport, "崩溃诊断", "查看或清除最近 App 崩溃记录", actions.crash)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun SectionTitle(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 3.dp)) {
-        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Black)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-    }
-}
-
-@Composable
-private fun OutlineAction(icon: ImageVector, title: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(.7f), RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 15.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(9.dp))
-        Text(title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun PrimaryButton(text: String, enabled: Boolean, onClick: () -> Unit, outerPadding: Boolean = true) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = (if (outerPadding) Modifier.padding(horizontal = 18.dp) else Modifier).fillMaxWidth().height(58.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-    ) { Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-}
-
-@Composable
 private fun MaterialFloatingDock(
     selected: BaiZePage,
     onSelected: (BaiZePage) -> Unit,
@@ -1258,30 +895,6 @@ private fun MaterialFloatingDock(
         }
     }
 }
-
-private fun enabledScheduleCount(config: SchedulerUiState): Int = listOf(
-    config.cacheEnabled, config.emptyEnabled, config.rulesEnabled, config.fragmentEnabled, config.deepEnabled
-).count { it }
-
-@Composable
-private fun rememberAccentGradient(): List<Color> {
-    val scheme = MaterialTheme.colorScheme
-    val dark = scheme.background.luminance() < .5f
-    return remember(scheme.primary, scheme.secondary, scheme.tertiary, dark) {
-        listOf(
-            if (dark) scheme.primary.darken(.58f) else scheme.primary,
-            if (dark) scheme.secondary.darken(.58f) else scheme.secondary,
-            if (dark) scheme.tertiary.darken(.62f) else scheme.tertiary
-        )
-    }
-}
-
-private fun Color.darken(factor: Float): Color = Color(
-    red = red * factor,
-    green = green * factor,
-    blue = blue * factor,
-    alpha = alpha
-)
 
 private fun formatElapsedUi(seconds: Long): String = when {
     seconds >= 3600 -> "${seconds / 3600}时${seconds % 3600 / 60}分"
