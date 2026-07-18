@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -32,14 +32,6 @@ jobs:
         with:
           ref: v2-alpha30
           fetch-depth: 0
-
-      - name: Apply Alpha 30 migration
-        run: |
-          if ! grep -q 'versionCode = 21000' v2/app/build.gradle.kts; then
-            python3 v2/scripts/apply-alpha30.py
-          else
-            echo 'Alpha 30 sources already committed'
-          fi
 
       - name: Validate cleaner and UI changes
         run: |
@@ -55,6 +47,7 @@ jobs:
           grep -q 'ResultSurface' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'isAmoledActive' v2/app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
           grep -q 'version=v2.0.0-alpha30' v2/module/module.prop
+          grep -q 'versionCode = 21000' v2/app/build.gradle.kts
 
       - uses: actions/setup-java@v4
         with:
@@ -84,17 +77,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -p "$ZIP" cleaner.sh | grep -q '^run_apk_packages()'
           unzip -p "$ZIP" config/default.conf | grep -q 'clean_apk_packages=1'
-
-      - name: Commit verified Alpha 30 sources
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cleaner.sh config/default.conf v2
-          if ! git diff --cached --quiet; then
-            git commit -m 'Add APK package scanning, solid result cards and working AMOLED mode'
-            git push origin HEAD:v2-alpha30
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
