@@ -273,17 +273,17 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
         var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
         Box(modifier = Modifier.fillMaxSize()) {
             MiuiXBackdrop(dark)
-            when (page) {
-                BaiZePage.Home -> HomePage(state, actions)
-                BaiZePage.Plan -> PlanPage(scheduler, actions)
-                BaiZePage.Records -> RecordsPage(state, actions)
-                BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) {
+                    when (page) {
+                        BaiZePage.Home -> HomePage(state, actions)
+                        BaiZePage.Plan -> PlanPage(scheduler, actions)
+                        BaiZePage.Records -> RecordsPage(state, actions)
+                        BaiZePage.Settings -> SettingsPage(state, scheduler, actions)
+                    }
+                }
+                FloatingDock(selected = page, onSelected = { page = it })
             }
-            FloatingDock(
-                selected = page,
-                onSelected = { page = it },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
@@ -377,15 +377,19 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
     val listState = rememberLazyListState()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LaunchedEffect(state.scanCompleted) {
-        if (state.scanCompleted) listState.animateScrollToItem(5)
+        if (state.scanCompleted) {
+            listState.animateScrollToItem(3)
+        } else if (listState.firstVisibleItemIndex > 0) {
+            listState.animateScrollToItem(0)
+        }
     }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 25", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生快照清理引擎 · Alpha 26", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -456,7 +460,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         item {
             Button(
                 onClick = if (state.running) actions.stop else actions.clean,
-                enabled = state.running || state.ready,
+                enabled = true,
                 modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(72.dp),
                 shape = RoundedCornerShape(26.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -470,14 +474,32 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.AutoAwesome, null, tint = Color.White)
+                    Icon(
+                        when {
+                            state.running -> Icons.Rounded.Stop
+                            state.ready -> Icons.Rounded.AutoAwesome
+                            else -> Icons.Rounded.Refresh
+                        },
+                        null,
+                        tint = Color.White
+                    )
                     Spacer(Modifier.width(10.dp))
-                    Text(if (state.running) "安全停止任务" else "立即智能清理", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        when {
+                            state.running -> "安全停止任务"
+                            state.ready -> "立即智能清理"
+                            state.connected -> "恢复连接并清理"
+                            else -> "连接 Root 并清理"
+                        },
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
         item {
-            StatusPill(state.ready, state.serviceText)
+            StatusPill(state.ready, state.serviceText, actions.reconnect)
         }
         if (state.scanCompleted) {
             item { ScanResultCard(state, actions) }
@@ -514,18 +536,21 @@ private fun StorageRing(progress: Float) {
 }
 
 @Composable
-private fun StatusPill(ready: Boolean, text: String) {
+private fun StatusPill(ready: Boolean, text: String, onReconnect: () -> Unit) {
     GlassSurface(
         Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         shadow = 5,
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = if (ready) Modifier else Modifier.clickable(onClick = onReconnect),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(if (ready) SuccessGreen else Color(0xFFF2A93B)))
             Spacer(Modifier.width(10.dp))
             Text(text, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (ready) "运行正常" else "未就绪", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+            Text(if (ready) "运行正常" else "点击重连", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -836,7 +861,7 @@ private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, acti
     Column(Modifier.fillMaxSize()) {
         PageHeader("PREFERENCES", "偏好设置", "外观、清理保护与服务管理")
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 132.dp),
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
@@ -923,7 +948,7 @@ private fun PrimaryButton(text: String, enabled: Boolean, onClick: () -> Unit, o
 private fun FloatingDock(selected: BaiZePage, onSelected: (BaiZePage) -> Unit, modifier: Modifier = Modifier) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     GlassSurface(
-        modifier = modifier.padding(horizontal = 18.dp).padding(bottom = bottom + 10.dp).fillMaxWidth(),
+        modifier = modifier.padding(horizontal = 18.dp).padding(bottom = bottom + 8.dp).fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
         shadow = 18,
         contentPadding = PaddingValues(7.dp)

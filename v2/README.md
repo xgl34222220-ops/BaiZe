@@ -1,8 +1,16 @@
-# 白泽 v2 Alpha 25
+# 白泽 v2 Alpha 26
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
 
-当前开发分支：`v2-alpha25`。
+当前开发分支：`v2-alpha26`。
+
+## Alpha 26
+
+- RootService 断开、绑定死亡、空 Binder 和连接超时都会自动退避重连，不再永久卡在“正在连接”。
+- 主按钮不再出现“看起来可点、实际被禁用”的假按钮；未就绪时点击会连接 Root 并自动继续清理。
+- 双引擎支持降级运行：单个引擎在线时仍可扫描和清理对应快照，另一个引擎在后台恢复。
+- 扫描结果自动定位不再把首页顶到状态栏下面；结果消费或关闭后自动回到顶部。
+- 底部导航改为正常布局流，不再覆盖“更多清理”和扫描结果按钮。
 
 ## Alpha 25
 
@@ -56,4 +64,4 @@ Alpha 25 修复已直接提交到源码，本地与 CI 使用同一套代码，�
 产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- `dist/BaiZe-v2-Alpha25-Module.zip`
+- `dist/BaiZe-v2-Alpha26-Module.zip`

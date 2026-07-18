@@ -46,8 +46,15 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var cacheService: IBaiZeRootService? = null
     private var profileBound = false
     private var cacheBound = false
+    private var profileBinding = false
+    private var cacheBinding = false
+    private var destroyed = false
+    private var reconnectAttempt = 0
     private var pendingClean = false
     private var pollJob: Job? = null
+    private var reconnectJob: Job? = null
+    private var bindWatchdogJob: Job? = null
+    private var pendingActionJob: Job? = null
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
     private var cacheSnapshotCount = 0
@@ -58,35 +65,49 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private val profileConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            rootService = IProfileRootService.Stub.asInterface(binder)
+            profileBinding = false
             profileBound = true
+            reconnectAttempt = 0
+            rootService = IProfileRootService.Stub.asInterface(binder)
             updateConnectionState()
             refreshAll()
             runPendingCleanIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            rootService = null
-            profileBound = false
-            pollJob?.cancel()
-            updateConnectionState()
+            handleServiceLoss(profile = true, reason = "分类 Root 引擎已断开")
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            handleServiceLoss(profile = true, reason = "分类 Root 引擎绑定失效")
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            handleServiceLoss(profile = true, reason = "分类 Root 引擎没有返回 Binder")
         }
     }
 
     private val cacheConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheBinding = false
             cacheBound = true
+            reconnectAttempt = 0
+            cacheService = IBaiZeRootService.Stub.asInterface(binder)
             updateConnectionState()
             readServiceStatus()
             runPendingCleanIfReady()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            cacheService = null
-            cacheBound = false
-            pollJob?.cancel()
-            updateConnectionState()
+            handleServiceLoss(profile = false, reason = "应用缓存 Root 引擎已断开")
+        }
+
+        override fun onBindingDied(name: ComponentName?) {
+            handleServiceLoss(profile = false, reason = "应用缓存 Root 引擎绑定失效")
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            handleServiceLoss(profile = false, reason = "应用缓存 Root 引擎没有返回 Binder")
         }
     }
 
@@ -142,6 +163,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         super.onResume()
         updateStorage()
         if (rootService != null) refreshAll()
+        if (rootService == null || cacheService == null) scheduleReconnect(immediate = true)
     }
 
     private fun refreshAll() {
@@ -153,56 +175,176 @@ class MiuixDashboardActivity : ComponentActivity() {
         refreshWhitelist()
     }
 
-    private fun connectServices() {
-        dashboardState.value = dashboardState.value.copy(serviceText = "正在连接双 Root 快照引擎…")
-        if (!profileBound) {
-            runCatching {
-                RootService.bind(
-                    Intent(this, BaiZeProfileRootService::class.java)
-                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
-                    profileConnection
-                )
-                profileBound = true
-            }.onFailure {
-                dashboardState.value = dashboardState.value.copy(serviceText = "分类引擎启动失败：${it.message.orEmpty()}")
+    private fun connectServices(force: Boolean = false) {
+        if (destroyed) return
+        if (force) releaseConnections()
+
+        val anyConnected = rootService != null || cacheService != null
+        dashboardState.value = dashboardState.value.copy(
+            connected = anyConnected,
+            ready = false,
+            serviceText = when {
+                rootService != null && cacheService == null -> "分类引擎已连接，正在恢复应用缓存引擎…"
+                cacheService != null && rootService == null -> "应用缓存引擎已连接，正在恢复分类引擎…"
+                else -> "正在连接 Root 清理引擎…"
             }
+        )
+
+        bindProfileIfNeeded()
+        bindCacheIfNeeded()
+        startBindWatchdog()
+    }
+
+    private fun bindProfileIfNeeded() {
+        if (destroyed || rootService != null || profileBinding) return
+        profileBinding = true
+        runCatching {
+            RootService.bind(
+                Intent(this, BaiZeProfileRootService::class.java)
+                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                profileConnection
+            )
+        }.onFailure {
+            profileBinding = false
+            profileBound = false
+            dashboardState.value = dashboardState.value.copy(
+                connected = cacheService != null,
+                ready = false,
+                serviceText = "分类引擎启动失败，正在重试：${it.message.orEmpty()}"
+            )
+            scheduleReconnect()
         }
-        if (!cacheBound) {
-            runCatching {
-                RootService.bind(
-                    Intent(this, BaiZeRootService::class.java)
-                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
-                    cacheConnection
+    }
+
+    private fun bindCacheIfNeeded() {
+        if (destroyed || cacheService != null || cacheBinding) return
+        cacheBinding = true
+        runCatching {
+            RootService.bind(
+                Intent(this, BaiZeRootService::class.java)
+                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                cacheConnection
+            )
+        }.onFailure {
+            cacheBinding = false
+            cacheBound = false
+            dashboardState.value = dashboardState.value.copy(
+                connected = rootService != null,
+                ready = false,
+                serviceText = "应用缓存引擎启动失败，正在重试：${it.message.orEmpty()}"
+            )
+            scheduleReconnect()
+        }
+    }
+
+    private fun startBindWatchdog() {
+        bindWatchdogJob?.cancel()
+        bindWatchdogJob = lifecycleScope.launch {
+            delay(7_000)
+            var timedOut = false
+            if (rootService == null && profileBinding) {
+                runCatching { RootService.unbind(profileConnection) }
+                profileBinding = false
+                profileBound = false
+                timedOut = true
+            }
+            if (cacheService == null && cacheBinding) {
+                runCatching { RootService.unbind(cacheConnection) }
+                cacheBinding = false
+                cacheBound = false
+                timedOut = true
+            }
+            if (timedOut && !destroyed) {
+                dashboardState.value = dashboardState.value.copy(
+                    connected = rootService != null || cacheService != null,
+                    ready = false,
+                    serviceText = "Root 引擎连接超时，正在自动重试…"
                 )
-                cacheBound = true
-            }.onFailure {
-                dashboardState.value = dashboardState.value.copy(serviceText = "缓存引擎启动失败：${it.message.orEmpty()}")
+                scheduleReconnect(immediate = true)
             }
         }
     }
 
-    private fun reconnectService() {
-        if (profileBound) runCatching { RootService.unbind(profileConnection) }
-        if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
+    private fun handleServiceLoss(profile: Boolean, reason: String) {
+        if (profile) {
+            rootService = null
+            profileBound = false
+            profileBinding = false
+        } else {
+            cacheService = null
+            cacheBound = false
+            cacheBinding = false
+        }
+        val wasRunning = dashboardState.value.running
+        pollJob?.cancel()
+        dashboardState.value = dashboardState.value.copy(
+            connected = rootService != null || cacheService != null,
+            ready = false,
+            running = false,
+            serviceText = "$reason，正在自动恢复…",
+            taskPhase = if (wasRunning) "任务连接中断，正在恢复 Root 服务；已有扫描快照不会重新扫描" else dashboardState.value.taskPhase
+        )
+        if (!destroyed) scheduleReconnect()
+    }
+
+    private fun scheduleReconnect(immediate: Boolean = false) {
+        if (destroyed || (rootService != null && cacheService != null)) return
+        reconnectJob?.cancel()
+        val shift = reconnectAttempt.coerceIn(0, 3)
+        val delayMs = if (immediate) 0L else (600L * (1 shl shift)).coerceAtMost(4_800L)
+        reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(8)
+        reconnectJob = lifecycleScope.launch {
+            delay(delayMs)
+            if (!destroyed && (rootService == null || cacheService == null)) connectServices()
+        }
+    }
+
+    private fun releaseConnections() {
+        bindWatchdogJob?.cancel()
+        pendingActionJob?.cancel()
+        if (profileBound || profileBinding) runCatching { RootService.unbind(profileConnection) }
+        if (cacheBound || cacheBinding) runCatching { RootService.unbind(cacheConnection) }
         rootService = null
         cacheService = null
         profileBound = false
         cacheBound = false
+        profileBinding = false
+        cacheBinding = false
+    }
+
+    private fun reconnectService() {
+        reconnectJob?.cancel()
+        reconnectAttempt = 0
+        releaseConnections()
+        dashboardState.value = dashboardState.value.copy(
+            connected = false,
+            ready = false,
+            running = false,
+            serviceText = "正在重新连接 Root 清理引擎…"
+        )
         connectServices()
-        toast("正在重新连接双 Root 快照引擎")
+        toast("正在重新连接 Root 清理引擎")
     }
 
     private fun updateConnectionState() {
-        val both = rootService != null && cacheService != null
+        val profileReady = rootService != null
+        val cacheReady = cacheService != null
+        val both = profileReady && cacheReady
+        if (both) {
+            bindWatchdogJob?.cancel()
+            reconnectJob?.cancel()
+            reconnectAttempt = 0
+        } else if (!destroyed) {
+            scheduleReconnect()
+        }
         dashboardState.value = dashboardState.value.copy(
-            connected = both,
+            connected = profileReady || cacheReady,
             ready = if (both) dashboardState.value.ready else false,
-            running = if (both) dashboardState.value.running else false,
             serviceText = when {
                 both -> "双 Root 快照引擎已连接，正在校验模块组件…"
-                rootService != null -> "分类引擎已连接，等待应用缓存引擎"
-                cacheService != null -> "应用缓存引擎已连接，等待分类引擎"
-                else -> "正在连接双 Root 快照引擎…"
+                profileReady -> "分类引擎已连接，正在恢复应用缓存引擎…"
+                cacheReady -> "应用缓存引擎已连接，正在恢复分类引擎…"
+                else -> "正在连接 Root 清理引擎…"
             }
         )
     }
@@ -210,15 +352,34 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun runPendingCleanIfReady() {
         if (!pendingClean) return
         val snapshotsReady = hasUsableScanSnapshots()
-        val requiredEnginesReady = if (snapshotsReady) {
-            (cacheSnapshotId.isBlank() || cacheSnapshotCount <= 0 || cacheService != null) &&
-                (safeSnapshotId.isBlank() || safeSnapshotCount <= 0 || rootService != null)
-        } else {
-            rootService != null && cacheService != null
+        if (snapshotsReady) {
+            val requiredEnginesReady =
+                (cacheSnapshotId.isBlank() || cacheSnapshotCount <= 0 || cacheService != null) &&
+                    (safeSnapshotId.isBlank() || safeSnapshotCount <= 0 || rootService != null)
+            if (!requiredEnginesReady) return
+            pendingActionJob?.cancel()
+            pendingClean = false
+            runSmartClean()
+            return
         }
-        if (!requiredEnginesReady) return
-        pendingClean = false
-        runSmartClean()
+
+        val both = rootService != null && cacheService != null
+        val any = rootService != null || cacheService != null
+        if (both) {
+            pendingActionJob?.cancel()
+            pendingClean = false
+            runSmartClean()
+        } else if (any) {
+            pendingActionJob?.cancel()
+            pendingActionJob = lifecycleScope.launch {
+                delay(1_800)
+                if (pendingClean && (rootService != null || cacheService != null)) {
+                    pendingClean = false
+                    runSmartClean()
+                }
+            }
+            scheduleReconnect(immediate = true)
+        }
     }
 
     private fun readServiceStatus() {
@@ -244,7 +405,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 else -> "双快照引擎、自动清理、定时任务与规则库均已就绪"
             }
             dashboardState.value = dashboardState.value.copy(
-                connected = cacheReady,
+                connected = rootService != null || cacheReady,
                 ready = ready,
                 serviceText = text,
                 device = Build.MODEL,
@@ -270,28 +431,47 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun runSmartClean() {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
+        if (rootService == null && cacheService == null) {
+            pendingClean = true
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                taskPhase = "正在连接 Root 引擎，连接成功后继续清理"
+            )
+            connectServices()
+            toast("正在连接 Root 引擎，稍后会自动继续")
+            return
+        }
         if (hasUsableScanSnapshots()) cleanNativeSnapshots() else runNativeScan(cleanAfterScan = true)
     }
 
     private fun runNativeScan(cleanAfterScan: Boolean) {
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        val cache = cacheService ?: run {
+        val cache = cacheService
+        val profiles = rootService
+        if (cache == null && profiles == null) {
             pendingClean = cleanAfterScan
-            connectServices()
-            return
-        }
-        val profiles = rootService ?: run {
-            pendingClean = cleanAfterScan
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                taskPhase = "正在连接 Root 引擎，连接成功后继续扫描"
+            )
             connectServices()
             return
         }
         if (dashboardState.value.running) return
+        pendingClean = false
+        pendingActionJob?.cancel()
         clearSnapshotHandles()
         val started = SystemClock.elapsedRealtime()
         dashboardState.value = dashboardState.value.copy(
             running = true,
             scanCompleted = false,
-            taskPhase = "正在并行发现应用缓存与安全项目…"
+            taskPhase = when {
+                cache != null && profiles != null -> "正在并行发现应用缓存与安全项目…"
+                cache != null -> "分类引擎恢复中，先扫描应用缓存…"
+                else -> "应用缓存引擎恢复中，先扫描安全项目…"
+            }
         )
         startNativePoll()
         lifecycleScope.launch {
@@ -299,9 +479,15 @@ class MiuixDashboardActivity : ComponentActivity() {
                 withContext(Dispatchers.IO) {
                     coroutineScope {
                         val whitelist = JSONArray(packageWhitelist().toList()).toString()
-                        val cacheJob = async { JSONObject(cache.scanCandidates(whitelist)) }
-                        val safeJob = async { JSONObject(profiles.scanProfile("safe", optionsJson())) }
-                        cacheJob.await() to safeJob.await()
+                        val cacheJob = cache?.let { engine -> async { JSONObject(engine.scanCandidates(whitelist)) } }
+                        val safeJob = profiles?.let { engine -> async { JSONObject(engine.scanProfile("safe", optionsJson())) } }
+                        val cacheJson = cacheJob?.await() ?: JSONObject()
+                            .put("error", "cache_engine_unavailable")
+                            .put("message", "应用缓存引擎未连接")
+                        val safeJson = safeJob?.await() ?: JSONObject()
+                            .put("error", "profile_engine_unavailable")
+                            .put("message", "分类引擎未连接")
+                        cacheJson to safeJson
                     }
                 }
             }
@@ -311,6 +497,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     running = false,
                     taskPhase = "安全扫描失败：${pair.exceptionOrNull()?.message ?: "Root 服务异常"}"
                 )
+                scheduleReconnect()
                 return@launch
             }
 
@@ -347,6 +534,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                 taskPhase = when {
                     cancelled -> "安全扫描已停止"
                     !successfulScan -> "安全扫描失败：${safeJson.optString("message", cacheJson.optString("message", "引擎没有返回有效快照"))}"
+                    failures > 0 && total > 0 -> "部分扫描完成，发现 $total 项；缺失引擎恢复后可再次扫描"
+                    failures > 0 -> "部分扫描完成，当前在线引擎未发现可清理项目"
                     total == 0 -> "扫描完成，没有发现可安全清理的项目"
                     else -> "扫描完成，发现 $total 项；快照 30 分钟内有效"
                 }
@@ -355,8 +544,14 @@ class MiuixDashboardActivity : ComponentActivity() {
             if (cleanAfterScan && successfulScan && total > 0) {
                 cleanNativeSnapshots()
             } else if (cleanAfterScan && successfulScan) {
-                notifyCleanResult("白泽智能清理完成", "没有发现可安全清理的项目", "扫描一次完成 · 未执行删除", 0L)
+                notifyCleanResult(
+                    "白泽智能清理完成",
+                    if (failures > 0) "部分引擎在线，当前未发现可清理项目" else "没有发现可安全清理的项目",
+                    "扫描一次完成 · 未执行删除",
+                    0L
+                )
             }
+            if (rootService == null || cacheService == null) scheduleReconnect()
         }
     }
 
@@ -786,9 +981,12 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     override fun onDestroy() {
+        destroyed = true
         pollJob?.cancel()
-        if (profileBound) runCatching { RootService.unbind(profileConnection) }
-        if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
+        reconnectJob?.cancel()
+        bindWatchdogJob?.cancel()
+        pendingActionJob?.cancel()
+        releaseConnections()
         super.onDestroy()
     }
 
