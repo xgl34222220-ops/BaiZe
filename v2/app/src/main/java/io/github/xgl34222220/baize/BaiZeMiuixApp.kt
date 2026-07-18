@@ -767,12 +767,25 @@ private fun ScheduleRow(
 @Composable
 private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 130.dp),
+        contentPadding = PaddingValues(bottom = bottomInset + 128.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         item { PageHeader("CLEAN HISTORY", "清理记录", "累计统计永久保存，任务明细保留最近 100 次", actions.refresh) }
+        if (state.recentApps.isNotEmpty()) {
+            item {
+                GlassSurface(
+                    Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+                    shape = RoundedCornerShape(28.dp),
+                    shadow = 8,
+                    contentPadding = PaddingValues(20.dp)
+                ) {
+                    CurrentCleanupSummaryContent(state.recentApps)
+                }
+            }
+        }
         item {
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(22.dp)) {
                 Column {
