@@ -4,112 +4,33 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
-# The repository's standard PR workflow calls this script. On the Alpha 18 branch it acts as the
-# integration builder so the Android App and Magisk module are validated together.
-if [ -f v2/scripts/alpha18-source-patch.py ]; then
-  python3 - <<'PY'
-from pathlib import Path
-
-patch = Path('v2/scripts/alpha18-source-patch.py')
-text = patch.read_text(encoding='utf-8')
-start = text.find('# The theme page itself must also rebuild after changing Monet variants/standards.')
-end = text.find('# Manual clean always uses a safe intelligent profile.', start)
-if start >= 0 and end > start:
-    text = text[:start] + text[end:]
-text = text.replace(
-    '已生成 Alpha 17 BOX 风格主题、完整清理引擎',
-    '已生成 Alpha 17 BOX 风格主题系统、完整清理引擎',
-)
-patch.write_text(text, encoding='utf-8')
-PY
-  python3 v2/scripts/alpha18-source-patch.py
-
-  python3 - <<'PY'
-from pathlib import Path
-
-path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt')
-text = path.read_text(encoding='utf-8')
-old = '''        val previewSwitches = listOf(
-            binding.scheduleSwitch,
-            binding.dailySwitch,
-            binding.cacheScheduleSwitch,
-            binding.emptyScheduleSwitch,
-            binding.rulesScheduleSwitch,
-            binding.fragmentScheduleSwitch,
-            binding.deepScheduleSwitch,
-            binding.screenOffSwitch,
-            binding.chargingSwitch,
-            binding.deviceIdleSwitch
-        )
-        previewSwitches.forEach { toggle ->
-            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
-        }
-'''
-new = '''        binding.scheduleSwitch.setOnCheckedChangeListener { _, _ ->
-            if (!loadingConfig) updatePlanPreview()
-        }
-        val previewSwitches = listOf(
-            binding.dailySwitch,
-            binding.cacheScheduleSwitch,
-            binding.emptyScheduleSwitch,
-            binding.rulesScheduleSwitch,
-            binding.fragmentScheduleSwitch,
-            binding.deepScheduleSwitch,
-            binding.screenOffSwitch,
-            binding.chargingSwitch,
-            binding.deviceIdleSwitch
-        )
-        previewSwitches.forEach { toggle ->
-            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
-        }
-'''
-if old not in text:
-    raise SystemExit('missing mixed switch listener block')
-path.write_text(text.replace(old, new, 1), encoding='utf-8')
-PY
-fi
-
-python3 v2/scripts/validate-rules.py
-
-export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
-export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-if command -v sdkmanager >/dev/null 2>&1; then
-  yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
-fi
-
-GRADLE_CMD=""
-if command -v gradle >/dev/null 2>&1; then
-  GRADLE_CMD=$(command -v gradle)
-else
-  GRADLE_HOME="$ROOT/.ci-gradle-8.13"
-  if [ ! -x "$GRADLE_HOME/bin/gradle" ]; then
-    ARCHIVE="$ROOT/.ci-gradle-8.13-bin.zip"
-    curl -fsSL --retry 3 -o "$ARCHIVE" https://services.gradle.org/distributions/gradle-8.13-bin.zip
-    rm -rf "$GRADLE_HOME" "$ROOT/gradle-8.13"
-    unzip -q "$ARCHIVE" -d "$ROOT"
-    mv "$ROOT/gradle-8.13" "$GRADLE_HOME"
-  fi
-  GRADLE_CMD="$GRADLE_HOME/bin/gradle"
-fi
-
-(
-  cd v2
-  "$GRADLE_CMD" --no-daemon :app:assembleDebug
-  sh scripts/package-module.sh
-)
+VERSION=$(sed -n 's/^version=//p' module.prop | head -n1)
+[ -n "$VERSION" ] || { echo "module.prop 缺少 version" >&2; exit 1; }
 
 OUT="$ROOT/dist"
-rm -rf "$OUT"
-mkdir -p "$OUT"
-cp -f v2/dist/BaiZe-v2-Alpha18-Module.zip "$OUT/BaiZe-v2-Alpha18-Module.zip"
-sha256sum "$OUT/BaiZe-v2-Alpha18-Module.zip" > "$OUT/BaiZe-v2-Alpha18-Module.zip.sha256.txt"
+STAGE="$ROOT/build/module"
+NAME="白泽-${VERSION}.zip"
 
-unzip -tq "$OUT/BaiZe-v2-Alpha18-Module.zip" >/dev/null
-unzip -p "$OUT/BaiZe-v2-Alpha18-Module.zip" module.prop | grep -q 'version=v2.0.0-alpha18'
-unzip -l "$OUT/BaiZe-v2-Alpha18-Module.zip" | grep -q 'app/baize.apk'
-grep -q 'KEY_REVISION' v2/app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
-grep -q 'smartSchedulerPayload' v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-grep -q 'confirmRiskAction' v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
-grep -q '智能安全模式' v2/app/src/main/res/layout/activity_dashboard.xml
+rm -rf "$ROOT/build"
+mkdir -p "$STAGE" "$OUT"
 
-echo "已生成: $OUT/BaiZe-v2-Alpha18-Module.zip"
+for p in \
+  action.sh cleaner.sh customize.sh job-runner.sh notify.sh service.sh status.sh uninstall.sh webctl.sh \
+  module.prop skip_mount README.md \
+  CHANGELOG-v0.9.7.md CHANGELOG-v0.9.9.md CHANGELOG-v1.0.0.md CHANGELOG-v1.0.1.md CHANGELOG-v1.0.2.md CHANGELOG-v1.0.3.md \
+  config webroot; do
+  cp -a "$p" "$STAGE/"
+done
+
+find "$STAGE" -type f -name '*.sh' -exec chmod 0755 {} +
+
+(
+  cd "$STAGE"
+  zip -qr "$OUT/$NAME" .
+)
+
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$OUT" && sha256sum "$NAME" > "$NAME.sha256.txt")
+fi
+
+echo "已生成: $OUT/$NAME"
