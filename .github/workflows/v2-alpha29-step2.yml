@@ -1,0 +1,78 @@
+name: BaiZe v2 Alpha 29 Step 2
+
+on:
+  push:
+    branches: [v2-alpha29]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step2-icons.py'
+      - '.github/workflows/v2-alpha29-step2.yml'
+  pull_request:
+    branches: [v2-alpha28]
+    paths:
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step2-icons.py'
+      - '.github/workflows/v2-alpha29-step2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  app-icons:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha29
+          fetch-depth: 0
+
+      - name: Apply real application icon UI
+        run: |
+          if ! grep -q 'packageName = item.packageName' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt; then
+            python3 v2/scripts/apply-alpha29-step2-icons.py
+          else
+            echo 'Alpha 29 real icon UI already committed'
+          fi
+
+      - name: Validate icon loader
+        run: |
+          grep -q 'object AppIconRepository' v2/app/src/main/java/io/github/xgl34222220/baize/AppIconRepository.kt
+          grep -q 'LruCache<String, ImageBitmap>' v2/app/src/main/java/io/github/xgl34222220/baize/AppIconRepository.kt
+          grep -q 'withContext(Dispatchers.IO)' v2/app/src/main/java/io/github/xgl34222220/baize/AppIconRepository.kt
+          grep -q 'ApplicationIcon(' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'android.permission.QUERY_ALL_PACKAGES' v2/app/src/main/AndroidManifest.xml
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Commit verified icon sources
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Show cached real application icons in cleanup results'
+            git push origin HEAD:v2-alpha29
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Alpha29-Step2-App
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
