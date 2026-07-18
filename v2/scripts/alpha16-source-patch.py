@@ -17,12 +17,30 @@ def replace_all(path: Path, old: str, new: str, label: str) -> None:
 
 
 root = Path("v2")
+themes = root / "app/src/main/res/values/themes.xml"
 dashboard_layout = root / "app/src/main/res/layout/activity_dashboard.xml"
 dashboard_activity = root / "app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt"
 build_gradle = root / "app/build.gradle.kts"
 module_prop = root / "module/module.prop"
 customize = root / "module/customize.sh"
 package_script = root / "scripts/package-module.sh"
+
+# Avoid implicit dotted-style parent resolution: Chip supports a direct radius token.
+replace_once(
+    themes,
+    '''        <item name="shapeAppearanceOverlay">@style/ShapeAppearanceOverlay.BaiZe.Chip</item>
+    </style>
+
+    <style name="ShapeAppearanceOverlay.BaiZe.Chip">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">18dp</item>
+    </style>
+''',
+    '''        <item name="chipCornerRadius">18dp</item>
+    </style>
+''',
+    "filter chip corner shape",
+)
 
 # Turn every normal content card into a solid surface. The runtime polish only adds a tonal hero.
 replace_all(
