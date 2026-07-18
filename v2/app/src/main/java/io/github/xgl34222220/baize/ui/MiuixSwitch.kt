@@ -34,8 +34,10 @@ class MiuixSwitch @JvmOverloads constructor(
 
     private var progress = 0f
     private var listener: ((MiuixSwitch, Boolean) -> Unit)? = null
+    private var checkedState = false
 
-    var isChecked: Boolean = false
+    var isChecked: Boolean
+        get() = checkedState
         set(value) {
             setChecked(value, true)
         }
@@ -58,9 +60,9 @@ class MiuixSwitch @JvmOverloads constructor(
     }
 
     fun setChecked(value: Boolean, animate: Boolean, notify: Boolean = true) {
-        if (isCheckedField == value && progress == if (value) 1f else 0f) return
-        isCheckedField = value
         val target = if (value) 1f else 0f
+        if (checkedState == value && progress == target) return
+        checkedState = value
         if (!animate || !isLaidOut) {
             progress = target
             invalidate()
@@ -81,13 +83,11 @@ class MiuixSwitch @JvmOverloads constructor(
         sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED)
     }
 
-    private var isCheckedField: Boolean = false
-
     override fun performClick(): Boolean {
         super.performClick()
         if (!isEnabled) return false
         performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-        setChecked(!isCheckedField, true)
+        setChecked(!checkedState, true)
         return true
     }
 
