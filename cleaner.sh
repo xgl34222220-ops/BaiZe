@@ -14,6 +14,7 @@ RUNNING_FILE="$STATE_DIR/running.env"
 TOTALS_FILE="$STATE_DIR/totals.env"
 REPORT_DIR="$STATE_DIR/reports"
 LATEST_REPORT="$REPORT_DIR/latest.tsv"
+APP_DETAILS="$REPORT_DIR/apps-latest.tsv"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 DEEP_SCAN_STATE="$STATE_DIR/deep_scan.env"
 DEEP_SCAN_TARGETS="$STATE_DIR/deep_scan.targets"
@@ -154,6 +155,7 @@ REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
 RULE_SEEN_FILE="$TMP_DIR/rule-targets.seen"
 : >"$RULE_SEEN_FILE"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
+printf 'package\tcategory\tfiles\tbytes\n' >"$APP_DETAILS"
 set_phase "准备扫描"
 
 get_value() {
@@ -224,6 +226,62 @@ report_line() {
   bytes=$5
   path=$(sanitize_report_field "$6")
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$action" "$risk" "$category" "$items" "$bytes" "$path" >>"$REPORT_FILE"
+}
+
+valid_package_name() {
+  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9._-]+$'
+}
+
+package_from_target() {
+  target=${1%/}
+  case "$target" in
+    /data/user/[0-9]*/*/*)
+      rest=${target#/data/user/}; rest=${rest#*/}; printf '%s\n' "${rest%%/*}"; return 0 ;;
+    /data/user_de/[0-9]*/*/*)
+      rest=${target#/data/user_de/}; rest=${rest#*/}; printf '%s\n' "${rest%%/*}"; return 0 ;;
+    /data/media/[0-9]*/Android/data/*/*)
+      rest=${target#*/Android/data/}; printf '%s\n' "${rest%%/*}"; return 0 ;;
+  esac
+  return 1
+}
+
+package_for_detail() {
+  target=$1
+  category=$2
+  candidate=""
+  case "$category" in
+    应用扩展规则:*|外部应用扩展规则:*|WebView缓存:*) candidate=${category##*:} ;;
+  esac
+  if valid_package_name "$candidate"; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  candidate=$(package_from_target "$target" 2>/dev/null)
+  valid_package_name "$candidate" || return 1
+  printf '%s\n' "$candidate"
+}
+
+append_app_detail() {
+  package=$1
+  category=$2
+  files=$3
+  bytes=$4
+  valid_package_name "$package" || return 0
+  case "$files" in ''|*[!0-9]*) files=0 ;; esac
+  case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
+  [ "$files" -gt 0 ] || [ "$bytes" -gt 0 ] || return 0
+  package=$(sanitize_report_field "$package")
+  category=$(sanitize_report_field "$category")
+  printf '%s\t%s\t%s\t%s\n' "$package" "$category" "$files" "$bytes" >>"$APP_DETAILS"
+}
+
+record_app_detail_for() {
+  target=$1
+  category=$2
+  files=$3
+  bytes=$4
+  package=$(package_for_detail "$target" "$category" 2>/dev/null) || return 0
+  append_app_detail "$package" "$category" "$files" "$bytes"
 }
 
 should_stop() {
@@ -631,15 +689,26 @@ collect_cache_candidates() {
 process_cache_candidates() {
   list=$1
   CATEGORY=$2
+  app_package=${3:-}
+  app_done=${4:-0}
+  app_total=${5:-0}
   filter_whitelist_list "$list"
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
 
+  if [ -n "$app_package" ]; then
+    if [ "$MODE" = "clean" ]; then
+      set_phase "正在清理应用缓存" "$app_done" "$app_total" "$app_package"
+    else
+      set_phase "正在统计应用缓存" "$app_done" "$app_total" "$app_package"
+    fi
+  fi
+
   estimated=$(bytes_from_list "$list")
   case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
   if [ "$MODE" = "clean" ]; then
-    err_file="$TMP_DIR/rm-cache.err"
+    err_file="$TMP_DIR/rm-cache.err.$LIST_SEQ"
     xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
     remaining="$list.remaining"
     existing_files_to_list "$list" "$remaining"
@@ -647,15 +716,17 @@ process_cache_candidates() {
     [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
     reason=$(tail -n 1 "$err_file" 2>/dev/null)
     [ "$REMAINING_COUNT" -gt 0 ] && log_line "[部分未清理][$CATEGORY] ${reason:-系统拒绝删除部分文件}"
-    log_line "[批量清理][$CATEGORY] $ACTUAL_COUNT 个缓存文件，约 $ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
-    report_line cleaned low "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "批量缓存文件"
-    [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY" "$REMAINING_COUNT" "$REMAINING_BYTES" "仍存在的缓存文件"
+    log_line "[应用清理][$app_package][$CATEGORY] $ACTUAL_COUNT 个缓存文件，$ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
+    report_line cleaned low "$CATEGORY:$app_package" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$app_package"
+    [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY:$app_package" "$REMAINING_COUNT" "$REMAINING_BYTES" "$app_package"
+    append_app_detail "$app_package" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES"
     FILES=$((FILES + ACTUAL_COUNT))
     add_bytes "$ACTUAL_BYTES"
     rm -f "$remaining" "$err_file"
   else
-    log_line "[批量扫描][$CATEGORY] $count 个缓存文件，$estimated bytes"
-    report_line candidate low "$CATEGORY" "$count" "$estimated" "批量缓存文件"
+    log_line "[应用扫描][$app_package][$CATEGORY] $count 个缓存文件，$estimated bytes"
+    report_line candidate low "$CATEGORY:$app_package" "$count" "$estimated" "$app_package"
+    append_app_detail "$app_package" "$CATEGORY" "$count" "$estimated"
     FILES=$((FILES + count))
     add_bytes "$estimated"
   fi
@@ -667,6 +738,8 @@ clean_dir() {
   dir=$1
   days=$2
   CATEGORY=$3
+  detail_package=$(package_for_detail "$dir" "$CATEGORY" 2>/dev/null)
+  [ -n "$detail_package" ] && set_phase "正在处理应用垃圾" 0 0 "$detail_package"
   [ -d "$dir" ] || return 0
   [ -L "$dir" ] && return 0
   should_stop && return 9
@@ -699,6 +772,7 @@ clean_dir() {
       add_bytes "$ACTUAL_BYTES"
       log_line "[批量清理][$CATEGORY] $dir ($ACTUAL_COUNT 个文件，约 $ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个)"
       report_line cleaned low "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$dir"
+      record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES"
       [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY" "$REMAINING_COUNT" "$REMAINING_BYTES" "$dir"
       rm -f "$remaining" "$err_file"
     else
@@ -736,6 +810,7 @@ clean_dir() {
         [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
         log_line "[批量清理][空文件:$CATEGORY] $dir ($ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个)"
         report_line cleaned low "空文件:$CATEGORY" "$ACTUAL_COUNT" 0 "$dir"
+        record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" 0
         [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "空文件:$CATEGORY" "$REMAINING_COUNT" 0 "$dir"
         rm -f "$remaining" "$err_file"
       else
@@ -766,6 +841,7 @@ clean_dir() {
         [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
         log_line "[批量清理][空目录:$CATEGORY] $dir ($ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个)"
         report_line cleaned low "空目录:$CATEGORY" "$ACTUAL_COUNT" 0 "$dir"
+        record_app_detail_for "$dir" "$CATEGORY" "$ACTUAL_COUNT" 0
         [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "空目录:$CATEGORY" "$REMAINING_COUNT" 0 "$dir"
         rm -f "$remaining"
       else
@@ -817,43 +893,111 @@ scan_cache_roots() {
   roots=$1
   days=$2
   category=$3
-  list="$TMP_DIR/dirs.$category"
-  : >"$list"
+  packages="$TMP_DIR/cache-packages.internal"
+  : >"$packages"
+
   for root in $roots; do
     [ -d "$root" ] || continue
-    for dir in "$root"/[0-9]*/*/cache "$root"/[0-9]*/*/code_cache; do
-      [ -d "$dir" ] && [ ! -L "$dir" ] && printf '%s\n' "$dir" >>"$list"
+    for user_root in "$root"/[0-9]*; do
+      [ -d "$user_root" ] || continue
+      for app_dir in "$user_root"/*; do
+        [ -d "$app_dir" ] || continue
+        package=${app_dir##*/}
+        valid_package_name "$package" || continue
+        { [ -d "$app_dir/cache" ] || [ -d "$app_dir/code_cache" ]; } || continue
+        grep -Fqx -- "$package" "$packages" 2>/dev/null || printf '%s\n' "$package" >>"$packages"
+      done
     done
   done
-  dir_count=$(wc -l <"$list" 2>/dev/null | tr -d ' ')
-  case "$dir_count" in ''|*[!0-9]*) dir_count=0 ;; esac
-  set_phase "批量扫描应用缓存（${dir_count}个目录）"
-  candidates="$TMP_DIR/cache-internal.nul"
-  : >"$candidates"
-  should_stop && return 9
-  collect_cache_candidates "$list" "$days" "$candidates" "$category" || return $?
-  set_phase "统计并清理应用缓存"
-  process_cache_candidates "$candidates" "$category"
+
+  total=$(wc -l <"$packages" 2>/dev/null | tr -d ' ')
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  done_count=0
+  stage_started=$(date +%s)
+  while IFS= read -r package || [ -n "$package" ]; do
+    valid_package_name "$package" || continue
+    done_count=$((done_count + 1))
+    set --
+    for root in $roots; do
+      for user_root in "$root"/[0-9]*; do
+        [ -d "$user_root/$package/cache" ] && [ ! -L "$user_root/$package/cache" ] && set -- "$@" "$user_root/$package/cache"
+        [ -d "$user_root/$package/code_cache" ] && [ ! -L "$user_root/$package/code_cache" ] && set -- "$@" "$user_root/$package/code_cache"
+      done
+    done
+    [ "$#" -gt 0 ] || continue
+    should_stop && { rm -f "$packages"; return 9; }
+    set_phase "正在扫描应用缓存" "$done_count" "$total" "$package"
+    LIST_SEQ=$((LIST_SEQ + 1))
+    candidates="$TMP_DIR/cache-internal.$LIST_SEQ.nul"
+    run_cache_find 10 "$days" "$candidates" "$@"
+    code=$?
+    if [ "$code" -eq 0 ]; then
+      process_cache_candidates "$candidates" "$category" "$package" "$done_count" "$total"
+    else
+      CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
+      PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+      report_line protected timeout "$category:$package" 1 0 "$package"
+      rm -f "$candidates"
+    fi
+    now=$(date +%s)
+    if [ $((now - stage_started)) -ge 240 ]; then
+      CACHE_TRUNCATED=1
+      log_line "[应用缓存提前结束] 已达到 240 秒上限"
+      break
+    fi
+  done <"$packages"
+  rm -f "$packages"
+  return 0
 }
 
 scan_external_cache() {
   days=$1
-  list="$TMP_DIR/dirs.external"
-  : >"$list"
-  if [ -d /data/media ]; then
-    for dir in /data/media/[0-9]*/Android/data/*/cache; do
-      [ -d "$dir" ] && [ ! -L "$dir" ] && printf '%s\n' "$dir" >>"$list"
+  packages="$TMP_DIR/cache-packages.external"
+  : >"$packages"
+  for app_dir in /data/media/[0-9]*/Android/data/*; do
+    [ -d "$app_dir" ] || continue
+    package=${app_dir##*/}
+    valid_package_name "$package" || continue
+    { [ -d "$app_dir/cache" ] || [ -d "$app_dir/code_cache" ]; } || continue
+    grep -Fqx -- "$package" "$packages" 2>/dev/null || printf '%s\n' "$package" >>"$packages"
+  done
+
+  total=$(wc -l <"$packages" 2>/dev/null | tr -d ' ')
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  done_count=0
+  stage_started=$(date +%s)
+  while IFS= read -r package || [ -n "$package" ]; do
+    valid_package_name "$package" || continue
+    done_count=$((done_count + 1))
+    set --
+    for app_dir in /data/media/[0-9]*/Android/data/"$package"; do
+      [ -d "$app_dir/cache" ] && [ ! -L "$app_dir/cache" ] && set -- "$@" "$app_dir/cache"
+      [ -d "$app_dir/code_cache" ] && [ ! -L "$app_dir/code_cache" ] && set -- "$@" "$app_dir/code_cache"
     done
-  fi
-  dir_count=$(wc -l <"$list" 2>/dev/null | tr -d ' ')
-  case "$dir_count" in ''|*[!0-9]*) dir_count=0 ;; esac
-  set_phase "批量扫描外部缓存（${dir_count}个目录）"
-  candidates="$TMP_DIR/cache-external.nul"
-  : >"$candidates"
-  should_stop && return 9
-  collect_cache_candidates "$list" "$days" "$candidates" "外部应用缓存" || return $?
-  set_phase "统计并清理外部缓存"
-  process_cache_candidates "$candidates" "外部应用缓存"
+    [ "$#" -gt 0 ] || continue
+    should_stop && { rm -f "$packages"; return 9; }
+    set_phase "正在扫描外部应用缓存" "$done_count" "$total" "$package"
+    LIST_SEQ=$((LIST_SEQ + 1))
+    candidates="$TMP_DIR/cache-external.$LIST_SEQ.nul"
+    run_cache_find 10 "$days" "$candidates" "$@"
+    code=$?
+    if [ "$code" -eq 0 ]; then
+      process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total"
+    else
+      CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
+      PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+      report_line protected timeout "外部应用缓存:$package" 1 0 "$package"
+      rm -f "$candidates"
+    fi
+    now=$(date +%s)
+    if [ $((now - stage_started)) -ge 180 ]; then
+      CACHE_TRUNCATED=1
+      log_line "[外部缓存提前结束] 已达到 180 秒上限"
+      break
+    fi
+  done <"$packages"
+  rm -f "$packages"
+  return 0
 }
 
 run_app_rules() {
@@ -942,7 +1086,12 @@ run_webview_cache_rules() {
     /data/user_de/[0-9]*/*/app_webview/Default/'Code Cache' \
     /data/user_de/[0-9]*/*/app_webview/Crashpad/completed; do
     [ -d "$dir" ] || continue
-    clean_dir "$dir" 0 "WebView可再生缓存" || return $?
+    package=$(package_from_target "$dir" 2>/dev/null)
+    if valid_package_name "$package"; then
+      clean_dir "$dir" 0 "WebView缓存:$package" || return $?
+    else
+      clean_dir "$dir" 0 "WebView缓存" || return $?
+    fi
   done
   return 0
 }

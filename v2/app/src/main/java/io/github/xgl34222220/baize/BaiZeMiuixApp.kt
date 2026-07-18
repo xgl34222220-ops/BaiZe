@@ -125,7 +125,16 @@ data class DashboardUiState(
     val lifetimeFragments: Long = 0,
     val lifetimeElapsed: Long = 0,
     val whitelistCount: Int = 0,
+    val recentApps: List<AppJunkUiItem> = emptyList(),
     val history: List<HistoryUiItem> = emptyList()
+)
+
+data class AppJunkUiItem(
+    val packageName: String,
+    val label: String,
+    val category: String,
+    val files: Long,
+    val bytes: Long
 )
 
 data class HistoryUiItem(
@@ -385,7 +394,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 27", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "原生清理引擎 · Alpha 28", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -488,7 +497,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         item {
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 18.dp)) {
                 Column {
-                    ToolRow(Icons.Rounded.Search, "安全扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
+                    ToolRow(Icons.Rounded.Search, "垃圾扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
                     ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "高风险规则先展示，再由你确认", actions.deep)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
@@ -550,7 +559,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("安全扫描完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text("垃圾扫描完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
                     Text(
                         when {
                             state.scanFiles <= 0 -> "没有发现可安全清理的内容"
@@ -676,7 +685,7 @@ private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
                         actions.updateScheduler(config.copy(fragmentHours = it))
                     }) { expanded = if (expanded == "fragment") "" else "fragment" }
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.10f))
-                    ScheduleRow("deep", "深度安全项", "可单独启用定时，仍受保护规则限制", config.deepEnabled, config.deepHours, expanded == "deep", {
+                    ScheduleRow("deep", "深度清理项", "可单独启用定时，仍受保护规则限制", config.deepEnabled, config.deepHours, expanded == "deep", {
                         actions.updateScheduler(config.copy(deepEnabled = it))
                     }, {
                         actions.updateScheduler(config.copy(deepHours = it))
@@ -772,6 +781,12 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
                 }
             }
         }
+        if (state.recentApps.isNotEmpty()) {
+            item { SectionTitle("本次应用垃圾", "按实际清理结果从大到小排列") }
+            items(state.recentApps.indices.toList(), key = { index -> "app-$index-${state.recentApps[index].packageName}" }) { index ->
+                AppJunkCard(state.recentApps[index])
+            }
+        }
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("最近任务", modifier = Modifier.weight(1f), fontSize = 25.sp, fontWeight = FontWeight.Black)
@@ -785,9 +800,36 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
                 }
             }
         } else {
-            items(state.history, key = { "${it.time}-${it.title}-${it.bytes}" }) { item ->
-                HistoryCard(item)
+            items(state.history.indices.toList(), key = { index -> "history-$index" }) { index ->
+                HistoryCard(state.history[index])
             }
+        }
+    }
+}
+
+@Composable
+private fun AppJunkCard(item: AppJunkUiItem) {
+    val context = LocalContext.current
+    GlassSurface(
+        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        shadow = 5,
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.primary.copy(.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.CleaningServices, null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.packageName, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${item.category} · ${item.files} 个文件", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
         }
     }
 }

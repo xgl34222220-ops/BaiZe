@@ -188,6 +188,7 @@ class BaiZeProfileRootService : RootService() {
         val totals = readEnv(File(stateDir, "totals.env"))
         val latest = readEnv(File(stateDir, "latest.env"))
         val latestReport = File(stateDir, "reports/latest.tsv")
+        val appDetails = appDetailsJson(File(stateDir, "reports/apps-latest.tsv"))
         val output = tailText(log, 12_000)
         return JSONObject()
             .put("success", code == 0)
@@ -199,6 +200,7 @@ class BaiZeProfileRootService : RootService() {
             .put("totals", totals)
             .put("latest", latest)
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
+            .put("appDetails", appDetails)
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
                 3 -> "已有其他任务正在运行"
@@ -206,6 +208,41 @@ class BaiZeProfileRootService : RootService() {
                 else -> "任务失败（代码 $code）"
             })
             .toString()
+    }
+
+    private fun appDetailsJson(file: File): JSONArray {
+        val filesByPackage = linkedMapOf<String, Long>()
+        val bytesByPackage = linkedMapOf<String, Long>()
+        val categoriesByPackage = linkedMapOf<String, LinkedHashSet<String>>()
+        runCatching {
+            if (!file.isFile) return@runCatching
+            file.forEachLine { raw ->
+                val columns = raw.split('\t', limit = 4)
+                if (columns.size < 4 || columns[0] == "package") return@forEachLine
+                val packageName = columns[0].trim()
+                if (!PACKAGE_NAME.matches(packageName)) return@forEachLine
+                val category = columns[1].trim().take(80)
+                val files = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                val bytes = columns[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                filesByPackage[packageName] = (filesByPackage[packageName] ?: 0L) + files
+                bytesByPackage[packageName] = (bytesByPackage[packageName] ?: 0L) + bytes
+                if (category.isNotBlank()) categoriesByPackage.getOrPut(packageName) { linkedSetOf() } += category
+            }
+        }
+        val result = JSONArray()
+        bytesByPackage.keys
+            .sortedWith(compareByDescending<String> { bytesByPackage[it] ?: 0L }.thenBy { it })
+            .take(100)
+            .forEach { packageName ->
+                result.put(
+                    JSONObject()
+                        .put("packageName", packageName)
+                        .put("files", filesByPackage[packageName] ?: 0L)
+                        .put("bytes", bytesByPackage[packageName] ?: 0L)
+                        .put("category", categoriesByPackage[packageName].orEmpty().joinToString("、"))
+                )
+            }
+        return result
     }
 
     private fun moduleState(): String {
@@ -223,6 +260,7 @@ class BaiZeProfileRootService : RootService() {
             .put("module", module)
             .put("totals", totals)
             .put("latest", latest)
+            .put("appDetails", appDetailsJson(File(stateDir, "reports/apps-latest.tsv")))
             .put("running", running)
             .put("config", configJsonObject())
             .toString()
@@ -284,6 +322,7 @@ class BaiZeProfileRootService : RootService() {
         File(STATE_DIR, "history.tsv").writeText("")
         File(STATE_DIR, "latest.env").delete()
         File(STATE_DIR, "reports/latest.tsv").delete()
+        File(STATE_DIR, "reports/apps-latest.tsv").delete()
         JSONObject().put("success", true).toString()
     }.getOrElse { error ->
         JSONObject()

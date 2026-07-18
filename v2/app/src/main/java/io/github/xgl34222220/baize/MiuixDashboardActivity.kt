@@ -345,6 +345,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val resultLine = latest.optString("result").ifBlank {
                 json.optString("message", if (success) "清理完成" else "清理失败")
             }
+            val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val detailLine = "文件 $files · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $errors · ${formatElapsed(elapsed)}"
             val title = when {
                 cancelled -> "白泽清理已停止"
@@ -679,15 +680,51 @@ class MiuixDashboardActivity : ComponentActivity() {
             .toString()
     }
 
+    private fun parseAppDetails(array: JSONArray?): List<AppJunkUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val packageName = item.optString("packageName").trim()
+            if (!looksLikePackageName(packageName)) continue
+            add(
+                AppJunkUiItem(
+                    packageName = packageName,
+                    label = appLabel(packageName),
+                    category = item.optString("category").ifBlank { "应用缓存" },
+                    files = item.optLong("files", 0L).coerceAtLeast(0L),
+                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L)
+                )
+            )
+        }
+    }.sortedByDescending { it.bytes }
+
+    private fun looksLikePackageName(value: String): Boolean =
+        value.length in 3..180 && value.contains('.') && value.none { it == '/' || it.isWhitespace() }
+
+    @Suppress("DEPRECATION")
+    private fun appLabel(packageName: String): String = runCatching {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0L))
+        } else {
+            packageManager.getApplicationInfo(packageName, 0)
+        }
+        packageManager.getApplicationLabel(info).toString().ifBlank { packageName }
+    }.getOrDefault(packageName)
+
     private fun renderTaskState(json: JSONObject) {
         val current = json.optInt("progress_current", json.optInt("current", 0))
         val total = json.optInt("progress_total", json.optInt("total", 0))
-        val path = json.optString("current_path", json.optString("currentPath"))
+        val target = json.optString("current_path", json.optString("currentPath")).trim()
+        val targetText = when {
+            looksLikePackageName(target) -> "${appLabel(target)} · $target"
+            target.isNotBlank() -> target.takeLast(72)
+            else -> ""
+        }
         val text = buildString {
             append(json.optString("phase", "任务执行中"))
             if (total > 0) append(" · $current/$total")
-            if (path.isNotBlank()) append("\n").append(path.takeLast(64))
-            if (json.optBoolean("cancelRequested")) append("\n正在安全停止…")
+            if (targetText.isNotBlank()) append("\n").append(targetText)
+            if (json.optBoolean("cancelRequested")) append("\n正在停止…")
         }
         dashboardState.value = dashboardState.value.copy(taskPhase = text)
     }
@@ -731,6 +768,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             } ?: return@launch
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
+            val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val latestMode = latest.optString("mode")
             val latestReleased = if (latestMode.endsWith("scan") || latestMode == "scan") {
                 preferences.getLong("last_clean_bytes", dashboardState.value.lastReleased)
@@ -739,6 +777,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
             dashboardState.value = dashboardState.value.copy(
                 lastReleased = latestReleased,
+                recentApps = if (appDetails.isNotEmpty()) appDetails else dashboardState.value.recentApps,
                 schedulerText = when (scheduler.optString("state", "waiting")) {
                     "running" -> "定时任务正在执行"
                     "completed" -> "最近定时任务已完成"
@@ -824,6 +863,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                         runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
                     }
                     toast(if (success) "最近记录已清空" else "清空失败")
+                    if (success) dashboardState.value = dashboardState.value.copy(history = emptyList(), recentApps = emptyList())
                     refreshHistory()
                 }
             }.show()
@@ -855,7 +895,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun historyModeTitle(mode: String): String = when (mode) {
-        "scan" -> "智能安全扫描"
+        "scan" -> "垃圾扫描"
         "clean" -> "智能自动清理"
         "snapshot-clean" -> "扫描快照清理"
         "smart-clean" -> "原生智能清理"

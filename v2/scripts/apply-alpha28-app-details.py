@@ -435,7 +435,7 @@ old_render = '''    private fun renderTaskState(json: JSONObject) {
         }
         dashboardState.value = dashboardState.value.copy(taskPhase = text)
     }'''
-new_render = '''    private fun renderTaskState(json: JSONObject) {
+new_render = r'''    private fun renderTaskState(json: JSONObject) {
         val current = json.optInt("progress_current", json.optInt("current", 0))
         val total = json.optInt("progress_total", json.optInt("total", 0))
         val target = json.optString("current_path", json.optString("currentPath")).trim()
@@ -452,9 +452,7 @@ new_render = '''    private fun renderTaskState(json: JSONObject) {
         }
         dashboardState.value = dashboardState.value.copy(taskPhase = text)
     }'''
-if old_render not in activity:
-    raise SystemExit("renderTaskState target not found")
-activity = activity.replace(old_render, new_render, 1)
+activity = replace_kotlin_method(activity, "renderTaskState", new_render)
 
 helper_anchor = '''    private fun renderTaskState(json: JSONObject) {'''
 activity_helpers = '''    private fun parseAppDetails(array: JSONArray?): List<AppJunkUiItem> = buildList {
@@ -481,7 +479,7 @@ activity_helpers = '''    private fun parseAppDetails(array: JSONArray?): List<A
     @Suppress("DEPRECATION")
     private fun appLabel(packageName: String): String = runCatching {
         val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0))
+            packageManager.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0L))
         } else {
             packageManager.getApplicationInfo(packageName, 0)
         }
