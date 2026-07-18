@@ -15,7 +15,6 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.CircularProgressIndicator
-import io.github.xgl34222220.baize.ui.LiquidBackdropDrawable
 
 /** Alpha 17 BOX-style pass: grouped surfaces, one accent and user-controlled visual effects. */
 object Alpha7UiPolish {
@@ -37,11 +36,9 @@ object Alpha7UiPolish {
         // Alpha 19 Clean Center owns its complete WebUI-derived surface and inset system.
         if (activity is CleanCenterActivity) return
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
-        content?.getChildAt(0)?.background = if (ThemeManager.isBlurEnabled(activity)) {
-            LiquidBackdropDrawable(activity)
-        } else {
-            ColorDrawable(MaterialColors.getColor(activity, android.R.attr.colorBackground, Color.rgb(238, 239, 249)))
-        }
+        content?.getChildAt(0)?.background = ColorDrawable(
+            MaterialColors.getColor(activity, android.R.attr.colorBackground, Color.rgb(242, 245, 250))
+        )
         when (activity) {
             is DashboardActivity -> polishDashboard(activity)
             is CleanCenterActivity -> polishCleanCenter(activity)
@@ -56,7 +53,7 @@ object Alpha7UiPolish {
         val onPrimaryContainer = MaterialColors.getColor(activity, com.google.android.material.R.attr.colorOnPrimaryContainer, Color.rgb(10, 53, 111))
 
         activity.findViewById<TextView>(R.id.versionText)?.apply {
-            text = "Alpha 19"
+            text = "Alpha 20"
             setTextColor(primary)
         }
         activity.findViewById<CircularProgressIndicator>(R.id.storageRing)?.apply {

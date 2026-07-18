@@ -104,6 +104,10 @@ class BaiZeProfileRootService : RootService() {
 
         override fun getModuleState(): String = moduleState()
 
+        override fun getTaskHistory(limit: Int): String = taskHistoryJson(limit)
+
+        override fun clearTaskHistory(): String = clearTaskHistoryJson()
+
         override fun getSchedulerConfig(): String = configJson()
 
         override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
@@ -216,6 +220,62 @@ class BaiZeProfileRootService : RootService() {
             .put("latest", latest)
             .put("running", running)
             .put("config", configJsonObject())
+            .toString()
+    }
+
+    private fun taskHistoryJson(requestedLimit: Int): String {
+        val limit = requestedLimit.coerceIn(1, 100)
+        val historyFile = File(STATE_DIR, "history.tsv")
+        val entries = JSONArray()
+        var totalReleased = 0L
+        var cleanedRuns = 0
+
+        val lines = runCatching {
+            if (historyFile.isFile) historyFile.readLines().takeLast(limit).asReversed() else emptyList()
+        }.getOrDefault(emptyList())
+
+        lines.forEach { raw ->
+            val columns = raw.split('\t', limit = 8)
+            if (columns.size < 7) return@forEach
+            val mode = columns[1].trim()
+            val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val cleaned = mode != "scan" && !mode.endsWith("-scan")
+            if (cleaned) {
+                totalReleased += bytes
+                cleanedRuns += 1
+            }
+            entries.put(
+                JSONObject()
+                    .put("time", columns[0].trim())
+                    .put("mode", mode)
+                    .put("bytes", bytes)
+                    .put("files", columns[3].toIntOrNull()?.coerceAtLeast(0) ?: 0)
+                    .put("emptyDirs", columns[4].toIntOrNull()?.coerceAtLeast(0) ?: 0)
+                    .put("errors", columns[5].toIntOrNull()?.coerceAtLeast(0) ?: 0)
+                    .put("result", columns[6].trim())
+                    .put("trigger", columns.getOrNull(7)?.trim().orEmpty())
+                    .put("cleaned", cleaned)
+            )
+        }
+
+        return JSONObject()
+            .put("success", true)
+            .put("count", entries.length())
+            .put("cleanedRuns", cleanedRuns)
+            .put("totalReleased", totalReleased)
+            .put("entries", entries)
+            .toString()
+    }
+
+    private fun clearTaskHistoryJson(): String = runCatching {
+        File(STATE_DIR, "history.tsv").writeText("")
+        File(STATE_DIR, "latest.env").delete()
+        File(STATE_DIR, "reports/latest.tsv").delete()
+        JSONObject().put("success", true).toString()
+    }.getOrElse { error ->
+        JSONObject()
+            .put("success", false)
+            .put("error", error.message ?: error.javaClass.simpleName)
             .toString()
     }
 

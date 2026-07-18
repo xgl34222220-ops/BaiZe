@@ -15,6 +15,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.databinding.ActivityDashboardBinding
+import io.github.xgl34222220.baize.databinding.ItemTaskHistoryBinding
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ class DashboardActivity : AppCompatActivity() {
     private var taskPollJob: Job? = null
     private var loadingConfig = false
     private var pendingSmartClean = false
+    private var historyLoading = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -44,6 +46,7 @@ class DashboardActivity : AppCompatActivity() {
             loadSchedulerConfig()
             refreshModuleState()
             refreshWhitelist()
+            refreshTaskHistory()
             consumePendingSmartClean()
         }
 
@@ -64,7 +67,7 @@ class DashboardActivity : AppCompatActivity() {
         setContentView(binding.root)
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
 
-        binding.versionText.text = "Alpha 19"
+        binding.versionText.text = "Alpha 20"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -88,6 +91,7 @@ class DashboardActivity : AppCompatActivity() {
         updateStorage()
         refreshSavedReport()
         refreshWhitelist()
+        refreshTaskHistory()
         renderThemeSummary()
         if (profileService != null) {
             readServiceStatus()
@@ -115,6 +119,7 @@ class DashboardActivity : AppCompatActivity() {
                 }
                 R.id.nav_records -> {
                     show(binding.recordsPage)
+                    refreshTaskHistory()
                     true
                 }
                 R.id.nav_settings -> {
@@ -186,7 +191,11 @@ class DashboardActivity : AppCompatActivity() {
         }
         binding.crashReportButton.setOnClickListener { showCrashDialog() }
         binding.savePlanButton.setOnClickListener { saveSchedulerConfig() }
-        binding.refreshRecordsButton.setOnClickListener { refreshModuleState() }
+        binding.refreshRecordsButton.setOnClickListener {
+            refreshModuleState()
+            refreshTaskHistory()
+        }
+        binding.clearHistoryButton.setOnClickListener { confirmClearHistory() }
     }
 
     private fun openProfile(profile: String) {
@@ -520,6 +529,7 @@ class DashboardActivity : AppCompatActivity() {
             .putLong("last_clean_bytes", latestBytes.coerceAtLeast(0L))
             .apply()
         binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes.coerceAtLeast(0L))
+        refreshTaskHistory()
     }
 
     private fun renderTaskButtons(running: Boolean) {
@@ -652,6 +662,139 @@ class DashboardActivity : AppCompatActivity() {
             binding.freeSpaceText.text = "--"
             binding.storageDetailText.text = "存储状态读取失败"
         }
+    }
+
+    private fun refreshTaskHistory() {
+        val service = profileService ?: run {
+            binding.historyEmptyText.visibility = View.VISIBLE
+            binding.historyEmptyText.text = "等待 Root 服务连接后读取记录"
+            return
+        }
+        if (historyLoading) return
+        historyLoading = true
+        binding.historyEmptyText.visibility = View.VISIBLE
+        binding.historyEmptyText.text = "正在读取模块清理记录…"
+
+        lifecycleScope.launch {
+            val raw = runCatching {
+                withContext(Dispatchers.IO) { service.getTaskHistory(100) }
+            }.getOrNull()
+            historyLoading = false
+            val json = raw?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (json == null || !json.optBoolean("success", false)) {
+                binding.historyList.removeAllViews()
+                binding.historyEmptyText.visibility = View.VISIBLE
+                binding.historyEmptyText.text = "记录读取失败，请重新连接 Root 服务"
+                return@launch
+            }
+            renderTaskHistory(json)
+        }
+    }
+
+    private fun renderTaskHistory(json: JSONObject) {
+        val entries = json.optJSONArray("entries")
+        val count = entries?.length() ?: 0
+        binding.historyList.removeAllViews()
+        binding.historyCountText.text = "$count 次"
+        binding.historyReleasedText.text = Formatter.formatFileSize(this, json.optLong("totalReleased", 0L))
+
+        if (count <= 0) {
+            binding.historyLastText.text = "暂无"
+            binding.recordSummaryText.text = "还没有清理记录"
+            binding.historyEmptyText.visibility = View.VISIBLE
+            binding.historyEmptyText.text = "完成一次手动或自动清理后，记录会永久保存在模块目录中。"
+            binding.taskStatusText.text = "还没有清理记录"
+            binding.recentTaskText.text = "记录由模块保存，重启 App 或手机后仍会保留"
+            return
+        }
+
+        binding.historyEmptyText.visibility = View.GONE
+        for (index in 0 until count) {
+            val item = entries?.optJSONObject(index) ?: continue
+            val row = ItemTaskHistoryBinding.inflate(layoutInflater, binding.historyList, false)
+            val mode = item.optString("mode")
+            val cleaned = item.optBoolean("cleaned")
+            val bytes = item.optLong("bytes", 0L).coerceAtLeast(0L)
+            val files = item.optInt("files", 0).coerceAtLeast(0)
+            val emptyDirs = item.optInt("emptyDirs", 0).coerceAtLeast(0)
+            val errors = item.optInt("errors", 0).coerceAtLeast(0)
+            val result = item.optString("result", if (cleaned) "清理完成" else "扫描完成")
+            val trigger = historyTriggerLabel(item.optString("trigger"))
+
+            row.historyTitle.text = historyModeTitle(mode)
+            row.historySubtitle.text = "${item.optString("time")} · $trigger"
+            row.historyDetail.text = "$result\n$files 个项目 · 空目录 $emptyDirs · 异常 $errors"
+            row.historyBytes.text = if (cleaned) {
+                Formatter.formatFileSize(this, bytes)
+            } else {
+                "可清理 ${Formatter.formatFileSize(this, bytes)}"
+            }
+            row.historyStatus.text = when {
+                errors > 0 -> "有异常"
+                cleaned -> "已清理"
+                else -> "仅扫描"
+            }
+            binding.historyList.addView(row.root)
+        }
+
+        val latest = entries?.optJSONObject(0) ?: return
+        val latestTime = latest.optString("time")
+        val latestResult = latest.optString("result", "任务完成")
+        val latestCleaned = latest.optBoolean("cleaned")
+        val latestBytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
+        val latestFiles = latest.optInt("files", 0).coerceAtLeast(0)
+        binding.historyLastText.text = latestTime.substringAfter(' ', latestTime)
+        binding.recordSummaryText.text = latestResult
+        binding.taskStatusText.text = latestResult
+        binding.recentTaskText.visibility = View.VISIBLE
+        binding.recentTaskText.text = "$latestTime · $latestFiles 个项目"
+        if (latestCleaned) binding.lastFreedText.text = Formatter.formatFileSize(this, latestBytes)
+    }
+
+    private fun confirmClearHistory() {
+        val service = profileService ?: return
+        AlertDialog.Builder(this)
+            .setTitle("清空清理记录？")
+            .setMessage("只会删除历史任务摘要，不会修改累计统计、白名单、清理规则或用户文件。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清空") { _, _ ->
+                lifecycleScope.launch {
+                    val raw = runCatching { withContext(Dispatchers.IO) { service.clearTaskHistory() } }.getOrNull()
+                    val success = raw?.let { runCatching { JSONObject(it).optBoolean("success") }.getOrDefault(false) } == true
+                    if (success) {
+                        preferences.edit().remove("last_report_text").remove("last_clean_bytes").apply()
+                        refreshTaskHistory()
+                        Toast.makeText(this@DashboardActivity, "清理记录已清空", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@DashboardActivity, "清空失败", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun historyModeTitle(mode: String): String = when (mode) {
+        "scan" -> "智能安全扫描"
+        "clean" -> "智能自动清理"
+        "cache-clean" -> "应用缓存清理"
+        "empty-clean" -> "空文件与空目录清理"
+        "rules-clean" -> "规则垃圾清理"
+        "fragment-scan" -> "残留碎片扫描"
+        "fragment-clean" -> "残留碎片清理"
+        "deep-scan" -> "完整深度扫描"
+        "deep-clean" -> "完整深度清理"
+        "corpse-scan" -> "卸载残留扫描"
+        "corpse-clean" -> "卸载残留清理"
+        else -> "清理任务"
+    }
+
+    private fun historyTriggerLabel(trigger: String): String = when {
+        trigger.startsWith("scheduled:") -> "自动定时"
+        trigger.startsWith("daily:") -> "每日定时"
+        trigger == "app" -> "App 手动"
+        trigger == "manual" -> "手动执行"
+        trigger.isBlank() -> "历史任务"
+        else -> trigger
     }
 
     private fun refreshSavedReport() {

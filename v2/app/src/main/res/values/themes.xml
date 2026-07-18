@@ -13,16 +13,16 @@
         <item name="colorOnTertiary">#FFFFFF</item>
         <item name="colorError">#BA1A1A</item>
         <item name="colorOnError">#FFFFFF</item>
-        <item name="colorSurface">#F9F8FE</item>
-        <item name="colorSurfaceVariant">#EFEEF5</item>
-        <item name="colorOnSurface">#1B1D27</item>
-        <item name="colorOnSurfaceVariant">#555A67</item>
-        <item name="colorOutline">#D8DAE4</item>
-        <item name="colorOutlineVariant">#DFE1E9</item>
-        <item name="android:colorBackground">#EEEFF9</item>
-        <item name="android:windowBackground">#EEEFF9</item>
-        <item name="android:statusBarColor">#EEEFF9</item>
-        <item name="android:navigationBarColor">#EEEFF9</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorSurfaceVariant">#F4F6FA</item>
+        <item name="colorOnSurface">#17202D</item>
+        <item name="colorOnSurfaceVariant">#657184</item>
+        <item name="colorOutline">#D7DEE8</item>
+        <item name="colorOutlineVariant">#E6EAF0</item>
+        <item name="android:colorBackground">#F2F5FA</item>
+        <item name="android:windowBackground">#F2F5FA</item>
+        <item name="android:statusBarColor">#F2F5FA</item>
+        <item name="android:navigationBarColor">#F2F5FA</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
@@ -165,7 +165,7 @@
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textStyle">normal</item>
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:textSize">36sp</item>
+        <item name="android:textSize">30sp</item>
         <item name="android:letterSpacing">-0.02</item>
     </style>
 

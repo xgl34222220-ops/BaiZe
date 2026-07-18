@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fitsSystemWindows="true"
-    android:background="@drawable/bg_app_gradient">
+    android:background="?android:attr/colorBackground">
 
     <FrameLayout
         android:id="@+id/pageHost"
@@ -65,7 +65,7 @@
                         android:paddingTop="6dp"
                         android:paddingEnd="11dp"
                         android:paddingBottom="6dp"
-                        android:text="Alpha 18"
+                        android:text="Alpha 20"
                         android:textColor="?attr/colorPrimary"
                         android:textSize="11sp"
                         android:textStyle="bold" />
@@ -287,7 +287,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="23dp"
-                    android:text="运行概览"
+                    android:text="最近清理"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
@@ -317,10 +317,9 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="7dp"
-                            android:text="暂无清理记录"
+                            android:text="记录由模块保存，重启后仍会保留"
                             android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="11sp"
-                            android:visibility="gone" />
+                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -919,8 +918,9 @@
             android:id="@+id/recordsPage"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:fillViewport="true"
             android:clipToPadding="false"
+            android:fillViewport="true"
+            android:overScrollMode="never"
             android:visibility="gone">
 
             <LinearLayout
@@ -932,28 +932,158 @@
                 android:paddingEnd="18dp"
                 android:paddingBottom="112dp">
 
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="清理记录" android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="手动任务与后台定时任务概览" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.15"
+                    android:text="CLEAN HISTORY"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="清理记录"
+                    android:textAppearance="@style/TextAppearance.BaiZe.PageTitle" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="记录由模块持久保存，重启 App 或手机后仍然存在"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="18dp">
-                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="17dp">
-                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="最近手动任务" android:textColor="?attr/colorOnSurface" android:textSize="14sp" android:textStyle="bold" />
-                        <TextView android:id="@+id/recordSummaryText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="9dp" android:text="暂无清理记录" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" android:lineSpacingExtra="3dp" />
-                        <TextView android:id="@+id/recordSchedulerText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="正在读取定时任务状态" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="12sp" />
+                    android:layout_marginTop="18dp"
+                    app:cardCornerRadius="28dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="18dp">
+
+                        <TextView
+                            android:id="@+id/recordSummaryText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="还没有清理记录"
+                            android:textColor="?attr/colorOnSurface"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/recordSchedulerText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="正在读取自动清理状态"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="11sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="16dp"
+                            android:orientation="horizontal">
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+                                <TextView android:id="@+id/historyCountText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 次" android:textColor="?attr/colorPrimary" android:textSize="18sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="记录数量" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
+                            </LinearLayout>
+
+                            <View android:layout_width="1dp" android:layout_height="42dp" android:background="?attr/colorOutlineVariant" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+                                <TextView android:id="@+id/historyReleasedText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="0 B" android:textColor="?attr/colorPrimary" android:textSize="18sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="累计释放" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
+                            </LinearLayout>
+
+                            <View android:layout_width="1dp" android:layout_height="42dp" android:background="?attr/colorOutlineVariant" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:gravity="center"
+                                android:orientation="vertical">
+                                <TextView android:id="@+id/historyLastText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="暂无" android:textColor="?attr/colorPrimary" android:textSize="15sp" android:textStyle="bold" />
+                                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="最近任务" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="10sp" />
+                            </LinearLayout>
+                        </LinearLayout>
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/refreshRecordsButton"
-                    style="@style/Widget.BaiZe.Button.Outlined"
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:layout_marginTop="11dp"
-                    android:text="刷新记录状态" />
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="22dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="最近任务"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="19sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/clearHistoryButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:text="清空"
+                        android:textColor="?attr/colorError" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/refreshRecordsButton"
+                        style="@style/Widget.Material3.Button.FilledTonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:layout_marginStart="4dp"
+                        android:text="刷新" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/historyEmptyText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="?attr/colorSurface"
+                    android:gravity="center"
+                    android:padding="24dp"
+                    android:text="正在读取模块清理记录…"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:id="@+id/historyList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="vertical" />
             </LinearLayout>
         </androidx.core.widget.NestedScrollView>
 
