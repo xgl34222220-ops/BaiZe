@@ -8,6 +8,13 @@ on:
       - 'v2/app/**'
       - 'v2/scripts/apply-alpha29-step1.py'
       - '.github/workflows/v2-alpha29-step1.yml'
+  pull_request:
+    branches: [v2-alpha28]
+    paths:
+      - 'cleaner.sh'
+      - 'v2/app/**'
+      - 'v2/scripts/apply-alpha29-step1.py'
+      - '.github/workflows/v2-alpha29-step1.yml'
   workflow_dispatch:
 
 permissions:
@@ -76,6 +83,7 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Commit verified step 1 sources
+        if: github.event_name == 'push'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
