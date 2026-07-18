@@ -34,7 +34,8 @@ jobs:
         if: ${{ hashFiles('v2/scripts/alpha20-source-patch.py') != '' }}
         run: |
           set -o pipefail
-          python3 v2/scripts/alpha20-source-patch.py 2>&1 | tee v2/alpha20-patch.log
+          python3 v2/scripts/alpha20-prepatch.py 2>&1 | tee v2/alpha20-patch.log
+          python3 v2/scripts/alpha20-source-patch.py 2>&1 | tee -a v2/alpha20-patch.log
 
       - name: Validate cleaning rules
         run: python3 v2/scripts/validate-rules.py
@@ -101,6 +102,7 @@ jobs:
         if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha20-source-patch.py') != ''
         run: |
           rm -f v2/scripts/alpha20-source-patch.py
+          rm -f v2/scripts/alpha20-prepatch.py
           rm -f v2/scripts/alpha20-build-trigger.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
