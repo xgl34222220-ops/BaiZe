@@ -18,12 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/**
- * Isolated settings screen for Alpha 11.
- *
- * Settings no longer share the dashboard's hidden page host or floating dock state. This keeps theme
- * recreation, Root-service binding and preference writes away from running cleaning tasks.
- */
+/** Legacy settings route kept for compatibility with older launch shortcuts. */
 class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
     private val preferences by lazy { getSharedPreferences(ThemeManager.PREFS, MODE_PRIVATE) }
@@ -55,7 +50,9 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         binding.backButton.setOnClickListener { finish() }
-        binding.themeButton.setOnClickListener { showThemeDialog() }
+        binding.themeButton.setOnClickListener {
+            startActivity(Intent(this, ThemeSettingsActivity::class.java))
+        }
         binding.reconnectButton.setOnClickListener { reconnect() }
         binding.saveSettingsButton.setOnClickListener { saveEngineSettings() }
         binding.clearWhitelistButton.setOnClickListener { confirmClearWhitelist() }
@@ -162,34 +159,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun renderThemeSummary() {
-        val palette = ThemeManager.currentPalette(this)
-        binding.themeSummaryText.text = buildString {
-            append(palette.label).append(" · ").append(palette.description)
-            if (palette.monet && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
-                append("（当前系统回退为白泽蓝）")
-            }
-        }
-    }
-
-    private fun showThemeDialog() {
-        val current = ThemeManager.currentId(this)
-        val labels = ThemeManager.palettes.map { palette ->
-            if (palette.monet) {
-                "${palette.label}\n${palette.description}（Android 12+）"
-            } else {
-                "${palette.label}\n${palette.description}"
-            }
-        }.toTypedArray()
-        val checked = ThemeManager.palettes.indexOfFirst { it.id == current }.coerceAtLeast(0)
-        AlertDialog.Builder(this)
-            .setTitle("主题与取色")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                ThemeManager.setPalette(this, ThemeManager.palettes[which].id)
-                dialog.dismiss()
-                recreate()
-            }
-            .setNegativeButton("取消", null)
-            .show()
+        binding.themeSummaryText.text = ThemeManager.themeSummary(this)
     }
 
     private fun refreshWhitelist() {
