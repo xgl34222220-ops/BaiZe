@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -33,20 +33,13 @@ jobs:
           ref: v2-alpha31
           fetch-depth: 0
 
-      - name: Apply Alpha 31 hotfix
-        run: |
-          if ! grep -q 'versionCode = 21100' v2/app/build.gradle.kts; then
-            python3 v2/scripts/apply-alpha31.py
-          else
-            echo 'Alpha 31 sources already committed'
-          fi
-
       - name: Validate state machine and UI
         run: |
           sh -n cleaner.sh notify.sh service.sh
           sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
           sh -n v2/scripts/package-module.sh
           python3 v2/scripts/validate-rules.py
+          test ! -f v2/scripts/apply-alpha31.py
           grep -q 'pendingSnapshotClean' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
           grep -q 'pendingScanAfterConnect' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
           grep -q 'runPendingActionsIfReady' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
@@ -86,20 +79,7 @@ jobs:
           unzip -p "$ZIP" cleaner.sh | grep -q '^run_apk_packages()'
           unzip -p "$ZIP" config/default.conf | grep -q 'clean_apk_packages=1'
 
-      - name: Commit verified Alpha 31 sources
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2 cleaner.sh config
-          if ! git diff --cached --quiet; then
-            git commit -m 'Fix scan snapshot reconnect state and remove forced scroll'
-            git push origin HEAD:v2-alpha31
-          fi
-
       - uses: actions/upload-artifact@v4
         with:
           name: BaiZe-v2-Alpha31
           path: v2/dist/BaiZe-v2-Alpha31-Module.zip
-
-# Trigger a push build so verified source changes are committed to the branch.
