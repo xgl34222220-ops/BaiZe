@@ -5,18 +5,16 @@ on:
     branches: [v2-alpha29]
     paths:
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step4-summary.py'
       - '.github/workflows/v2-alpha29-step4.yml'
   pull_request:
     branches: [v2-alpha28]
     paths:
       - 'v2/app/**'
-      - 'v2/scripts/apply-alpha29-step4-summary.py'
       - '.github/workflows/v2-alpha29-step4.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   records-summary:
@@ -26,14 +24,6 @@ jobs:
         with:
           ref: v2-alpha29
           fetch-depth: 0
-
-      - name: Apply records summary UI
-        run: |
-          if ! grep -q 'CurrentCleanupSummaryContent(state.recentApps)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt; then
-            python3 v2/scripts/apply-alpha29-step4-summary.py
-          else
-            echo 'Alpha 29 records summary already committed'
-          fi
 
       - name: Validate records summary and insets
         run: |
@@ -59,17 +49,6 @@ jobs:
       - name: Compile native App
         working-directory: v2
         run: gradle --no-daemon :app:assembleDebug
-
-      - name: Commit verified records UI
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
-          if ! git diff --cached --quiet; then
-            git commit -m 'Add current cleanup summary and records bottom inset'
-            git push origin HEAD:v2-alpha29
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
