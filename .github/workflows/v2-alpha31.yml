@@ -101,3 +101,5 @@ jobs:
         with:
           name: BaiZe-v2-Alpha31
           path: v2/dist/BaiZe-v2-Alpha31-Module.zip
+
+# Trigger a push build so verified source changes are committed to the branch.
