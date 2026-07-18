@@ -686,17 +686,34 @@ class MiuixDashboardActivity : ComponentActivity() {
             val item = array.optJSONObject(index) ?: continue
             val packageName = item.optString("packageName").trim()
             if (!looksLikePackageName(packageName)) continue
+            val categoryArray = item.optJSONArray("categories")
+            val categories = buildList {
+                if (categoryArray != null) for (categoryIndex in 0 until categoryArray.length()) {
+                    val category = categoryArray.optJSONObject(categoryIndex) ?: continue
+                    add(
+                        AppJunkCategoryUiItem(
+                            name = category.optString("name").ifBlank { "应用缓存" },
+                            files = category.optLong("files", 0L).coerceAtLeast(0L),
+                            bytes = category.optLong("bytes", 0L).coerceAtLeast(0L),
+                            errors = category.optLong("errors", 0L).coerceAtLeast(0L),
+                            samplePath = category.optString("samplePath").trim()
+                        )
+                    )
+                }
+            }.sortedByDescending { it.bytes }
             add(
                 AppJunkUiItem(
                     packageName = packageName,
                     label = appLabel(packageName),
                     category = item.optString("category").ifBlank { "应用缓存" },
                     files = item.optLong("files", 0L).coerceAtLeast(0L),
-                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L)
+                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                    errors = item.optLong("errors", 0L).coerceAtLeast(0L),
+                    categories = categories
                 )
             )
         }
-    }.sortedByDescending { it.bytes }
+    }.sortedWith(compareByDescending<AppJunkUiItem> { it.bytes }.thenByDescending { it.files })
 
     private fun looksLikePackageName(value: String): Boolean =
         value.length in 3..180 && value.contains('.') && value.none { it == '/' || it.isWhitespace() }

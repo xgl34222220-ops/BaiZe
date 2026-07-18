@@ -134,7 +134,17 @@ data class AppJunkUiItem(
     val label: String,
     val category: String,
     val files: Long,
-    val bytes: Long
+    val bytes: Long,
+    val errors: Long = 0,
+    val categories: List<AppJunkCategoryUiItem> = emptyList()
+)
+
+data class AppJunkCategoryUiItem(
+    val name: String,
+    val files: Long,
+    val bytes: Long,
+    val errors: Long,
+    val samplePath: String
 )
 
 data class HistoryUiItem(
@@ -809,27 +819,13 @@ private fun RecordsPage(state: DashboardUiState, actions: DashboardActions) {
 
 @Composable
 private fun AppJunkCard(item: AppJunkUiItem) {
-    val context = LocalContext.current
     GlassSurface(
         Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         shadow = 5,
         contentPadding = PaddingValues(16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ApplicationIcon(
-                packageName = item.packageName,
-                label = item.label,
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.packageName, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${item.category} · ${item.files} 个文件", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-        }
+        AppJunkCardContent(item)
     }
 }
 
