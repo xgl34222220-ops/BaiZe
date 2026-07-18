@@ -27,10 +27,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: v2-alpha33-ui-step1
-          fetch-depth: 0
+          fetch-depth: 1
+          show-progress: false
 
       - name: Apply dual UI step one migration
-        run: python3 v2/scripts/apply-alpha33-ui-step1.py
+        run: |
+          set +e
+          python3 v2/scripts/apply-alpha33-ui-step1.py > /tmp/alpha33-patch.log 2>&1
+          status=$?
+          cat /tmp/alpha33-patch.log
+          exit $status
 
       - name: Validate architecture and shell
         run: |
