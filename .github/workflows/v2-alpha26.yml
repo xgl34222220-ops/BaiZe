@@ -10,6 +10,15 @@ on:
       - 'service.sh'
       - 'config/**'
       - '.github/workflows/v2-alpha26.yml'
+  pull_request:
+    branches: [v2-alpha25]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha26.yml'
   workflow_dispatch:
 
 permissions:
