@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -73,17 +73,16 @@ jobs:
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -l "$ZIP" | grep -q 'config/deep.rules'
 
-      - name: Commit verified Alpha 26 sources
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2
-          if ! git diff --cached --quiet; then
-            git commit -m 'Fix RootService recovery and blocked dashboard controls'
-            git push origin HEAD:v2-alpha26
-          fi
-
       - uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2-Alpha26
-          path: v2/dist/BaiZe-v2-Alpha26-Module.zip
+          name: BaiZe-v2-Alpha26-verified
+          path: |
+            v2/dist/BaiZe-v2-Alpha26-Module.zip
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+            v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+            v2/app/build.gradle.kts
+            v2/module/module.prop
+            v2/module/customize.sh
+            v2/scripts/package-module.sh
+            v2/README.md
+            v2/ALPHA26-CHANGES.md
