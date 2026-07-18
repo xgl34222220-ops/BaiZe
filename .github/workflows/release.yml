@@ -2,9 +2,7 @@ name: Validate, build and release
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
+    branches: [v2-alpha18]
   workflow_dispatch:
 
 permissions:
@@ -14,27 +12,129 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout Alpha 18 branch
         uses: actions/checkout@v4
+        with:
+          ref: v2-alpha18
+          fetch-depth: 0
 
-      - name: Validate
-        run: sh scripts/check.sh
+      - name: Apply Alpha 18 product patch
+        if: ${{ hashFiles('v2/scripts/alpha18-source-patch.py') != '' }}
+        run: |
+          set -o pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/scripts/alpha18-source-patch.py')
+          text = path.read_text(encoding='utf-8')
+          start = text.find('# The theme page itself must also rebuild after changing Monet variants/standards.')
+          end = text.find('# Manual clean always uses a safe intelligent profile.', start)
+          if start >= 0 and end > start:
+              text = text[:start] + text[end:]
+          text = text.replace('已生成 Alpha 17 BOX 风格主题、完整清理引擎', '已生成 Alpha 17 BOX 风格主题系统、完整清理引擎')
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 v2/scripts/alpha18-source-patch.py 2>&1 | tee v2/alpha18-patch.log
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt')
+          text = path.read_text(encoding='utf-8')
+          old = '''        val previewSwitches = listOf(
+            binding.scheduleSwitch,
+            binding.dailySwitch,
+            binding.cacheScheduleSwitch,
+            binding.emptyScheduleSwitch,
+            binding.rulesScheduleSwitch,
+            binding.fragmentScheduleSwitch,
+            binding.deepScheduleSwitch,
+            binding.screenOffSwitch,
+            binding.chargingSwitch,
+            binding.deviceIdleSwitch
+        )
+        previewSwitches.forEach { toggle ->
+            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
+        }
+'''
+          new = '''        binding.scheduleSwitch.setOnCheckedChangeListener { _, _ ->
+            if (!loadingConfig) updatePlanPreview()
+        }
+        val previewSwitches = listOf(
+            binding.dailySwitch,
+            binding.cacheScheduleSwitch,
+            binding.emptyScheduleSwitch,
+            binding.rulesScheduleSwitch,
+            binding.fragmentScheduleSwitch,
+            binding.deepScheduleSwitch,
+            binding.screenOffSwitch,
+            binding.chargingSwitch,
+            binding.deviceIdleSwitch
+        )
+        previewSwitches.forEach { toggle ->
+            toggle.setOnCheckedChangeListener { _, _ -> if (!loadingConfig) updatePlanPreview() }
+        }
+'''
+          if old not in text:
+              raise SystemExit('missing mixed switch listener block')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
 
-      - name: Performance smoke test
-        run: sudo env PATH="$PATH" sh scripts/smoke-test.sh
+      - name: Validate all cleaning rules
+        run: python3 v2/scripts/validate-rules.py
 
-      - name: Build module
-        run: sh scripts/build.sh
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-      - name: Upload build artifact
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha18.log
+
+      - name: Package integrated module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify Alpha 18 package
+        working-directory: v2
+        run: |
+          ZIP=dist/BaiZe-v2-Alpha18-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha18'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          grep -q 'KEY_REVISION' app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
+          grep -q 'smartSchedulerPayload' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'confirmRiskAction' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q '智能安全模式' app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'android:text="保存自动清理"' app/src/main/res/layout/activity_dashboard.xml
+
+      - name: Commit verified Alpha 18 sources
+        if: ${{ hashFiles('v2/scripts/alpha18-source-patch.py') != '' }}
+        run: |
+          rm -f v2/scripts/alpha18-source-patch.py v2/alpha18-trigger.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finalize Alpha 18 global Monet and smart automatic cleaning'
+          git pull --rebase origin v2-alpha18
+          git push origin HEAD:v2-alpha18
+
+      - name: Upload Alpha 18 module
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-module
-          path: dist/*
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          body_path: RELEASE-v1.0.3.md
+          name: BaiZe-v2-Alpha18
+          path: |
+            v2/build-alpha18.log
+            v2/dist/BaiZe-v2-Alpha18-Module.zip
