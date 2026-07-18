@@ -87,12 +87,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.material.color.MaterialColors
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
-private val AccentBlue = Color(0xFF3975F4)
-private val AccentViolet = Color(0xFF7658E8)
-private val AccentPink = Color(0xFFFF91D0)
 private val SuccessGreen = Color(0xFF2DBE87)
 
 data class DashboardUiState(
@@ -109,6 +107,14 @@ data class DashboardUiState(
     val storageFree: Long = 0,
     val storagePercent: Float = 0f,
     val lastReleased: Long = 0,
+    val scanCompleted: Boolean = false,
+    val scanBytes: Long = 0,
+    val scanFiles: Long = 0,
+    val scanEmptyFiles: Long = 0,
+    val scanEmptyDirs: Long = 0,
+    val scanFragments: Long = 0,
+    val scanErrors: Long = 0,
+    val scanElapsed: Long = 0,
     val lifetimeRuns: Long = 0,
     val lifetimeReleased: Long = 0,
     val lifetimeFiles: Long = 0,
@@ -203,6 +209,7 @@ data class DashboardActions(
     val refresh: () -> Unit,
     val clean: () -> Unit,
     val scan: () -> Unit,
+    val dismissScan: () -> Unit,
     val stop: () -> Unit,
     val deep: () -> Unit,
     val corpses: () -> Unit,
@@ -232,23 +239,31 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
         ThemeManager.MODE_DARK -> true
         else -> systemDark
     }
+    val resolvedPrimary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorPrimary, 0xFF3975F4.toInt()))
+    val resolvedSecondary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSecondary, 0xFF7658E8.toInt()))
+    val resolvedTertiary = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorTertiary, 0xFFFF91D0.toInt()))
+    val resolvedSurface = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, if (dark) 0xFF191B24.toInt() else 0xFFFFFFFF.toInt()))
+    val resolvedOnSurface = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurface, if (dark) 0xFFF0F1F8.toInt() else 0xFF151722.toInt()))
+    val resolvedOnSurfaceVariant = Color(MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, if (dark) 0xFFBFC2D0.toInt() else 0xFF6D7080.toInt()))
     val colors = if (dark) {
         darkColorScheme(
-            primary = Color(0xFFAEC5FF),
-            secondary = Color(0xFFD0C1FF),
-            background = Color(0xFF101117),
-            surface = Color(0xFF191B24),
-            onSurface = Color(0xFFF0F1F8),
-            onSurfaceVariant = Color(0xFFBFC2D0)
+            primary = resolvedPrimary,
+            secondary = resolvedSecondary,
+            tertiary = resolvedTertiary,
+            background = if (ThemeManager.isAmoledEnabled(context)) Color.Black else Color(0xFF101117),
+            surface = resolvedSurface,
+            onSurface = resolvedOnSurface,
+            onSurfaceVariant = resolvedOnSurfaceVariant
         )
     } else {
         lightColorScheme(
-            primary = AccentBlue,
-            secondary = AccentViolet,
+            primary = resolvedPrimary,
+            secondary = resolvedSecondary,
+            tertiary = resolvedTertiary,
             background = Color(0xFFF4F5FB),
-            surface = Color.White,
-            onSurface = Color(0xFF151722),
-            onSurfaceVariant = Color(0xFF6D7080)
+            surface = resolvedSurface,
+            onSurface = resolvedOnSurface,
+            onSurfaceVariant = resolvedOnSurfaceVariant
         )
     }
     MaterialTheme(colorScheme = colors) {
@@ -272,6 +287,7 @@ fun BaiZeMiuixApp(state: DashboardUiState, scheduler: SchedulerUiState, actions:
 
 @Composable
 private fun MiuiXBackdrop(dark: Boolean) {
+    val scheme = MaterialTheme.colorScheme
     val base = if (dark) listOf(Color(0xFF101117), Color(0xFF151827), Color(0xFF101117))
     else listOf(Color(0xFFF8F7FF), Color(0xFFF0F5FF), Color(0xFFF8F8FC))
     Box(
@@ -281,21 +297,21 @@ private fun MiuiXBackdrop(dark: Boolean) {
             .drawBehind {
                 drawRect(
                     Brush.radialGradient(
-                        listOf(Color(0xFF7E65FF).copy(alpha = if (dark) .15f else .24f), Color.Transparent),
+                        listOf(scheme.secondary.copy(alpha = if (dark) .15f else .24f), Color.Transparent),
                         center = Offset(size.width * .9f, size.height * .06f),
                         radius = size.width * .72f
                     )
                 )
                 drawRect(
                     Brush.radialGradient(
-                        listOf(Color(0xFF4DA6FF).copy(alpha = if (dark) .12f else .18f), Color.Transparent),
+                        listOf(scheme.primary.copy(alpha = if (dark) .12f else .18f), Color.Transparent),
                         center = Offset(size.width * .02f, size.height * .54f),
                         radius = size.width * .82f
                     )
                 )
                 drawRect(
                     Brush.radialGradient(
-                        listOf(AccentPink.copy(alpha = if (dark) .06f else .12f), Color.Transparent),
+                        listOf(scheme.tertiary.copy(alpha = if (dark) .06f else .12f), Color.Transparent),
                         center = Offset(size.width, size.height),
                         radius = size.width * .72f
                     )
@@ -354,12 +370,13 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
 @Composable
 private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
+    val accentGradient = rememberAccentGradient()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 126.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        item { PageHeader("SMART CLEAN", "白泽", "智能清理引擎 · Alpha 22", actions.refresh) }
+        item { PageHeader("SMART CLEAN", "白泽", "智能清理引擎 · Alpha 23", actions.refresh) }
         item {
             Box(
                 Modifier
@@ -367,7 +384,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                     .fillMaxWidth()
                     .shadow(18.dp, RoundedCornerShape(36.dp))
                     .clip(RoundedCornerShape(36.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF5268FF), Color(0xFF7258EB), Color(0xFF8A58D7))))
+                    .background(Brush.horizontalGradient(accentGradient))
                     .padding(24.dp)
             ) {
                 Column {
@@ -424,7 +441,7 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
                 Row(
                     Modifier.fillMaxSize().background(
                         if (state.running) Brush.horizontalGradient(listOf(Color(0xFF6D7080), Color(0xFF4A4D5C)))
-                        else Brush.horizontalGradient(listOf(AccentBlue, AccentViolet))
+                        else Brush.horizontalGradient(accentGradient.take(2))
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
@@ -438,13 +455,16 @@ private fun HomePage(state: DashboardUiState, actions: DashboardActions) {
         item {
             StatusPill(state.ready, state.serviceText)
         }
+        if (state.scanCompleted) {
+            item { ScanResultCard(state, actions) }
+        }
         item {
             Text("更多清理", modifier = Modifier.padding(horizontal = 22.dp, vertical = 4.dp), fontSize = 25.sp, fontWeight = FontWeight.Black)
         }
         item {
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 18.dp)) {
                 Column {
-                    ToolRow(Icons.Rounded.Search, "安全扫描", "只计算候选，不删除任何文件", actions.scan)
+                    ToolRow(Icons.Rounded.Search, "安全扫描", "只查找并统计垃圾，不删除；完成后可一键清理", actions.scan)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
                     ToolRow(Icons.Rounded.DeleteSweep, "深度清理", "高风险规则先展示，再由你确认", actions.deep)
                     HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(.12f))
@@ -462,7 +482,7 @@ private fun StorageRing(progress: Float) {
     Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             drawArc(Color(0xFFDDE4F1), -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(AccentBlue, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(MaterialTheme.colorScheme.primary, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
         }
         Text("${(progress * 100).roundToInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
@@ -486,12 +506,80 @@ private fun StatusPill(ready: Boolean, text: String) {
 }
 
 @Composable
+private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
+    val context = LocalContext.current
+    GlassSurface(
+        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        shadow = 8,
+        contentPadding = PaddingValues(20.dp)
+    ) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(.14f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Rounded.Search, null, tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("安全扫描完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (state.scanBytes > 0) "发现 ${Formatter.formatFileSize(context, state.scanBytes)} 可清理内容"
+                        else "没有发现可安全清理的内容",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(15.dp))
+            Text(
+                "候选 ${state.scanFiles} 项 · 空文件 ${state.scanEmptyFiles} · 空目录 ${state.scanEmptyDirs} · 碎片 ${state.scanFragments} · 异常 ${state.scanErrors} · ${formatElapsedUi(state.scanElapsed)}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = actions.dismissScan,
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    shape = RoundedCornerShape(19.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSurface.copy(.07f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) { Text("关闭", fontWeight = FontWeight.Bold) }
+                Button(
+                    onClick = actions.clean,
+                    enabled = state.scanBytes > 0 && !state.running,
+                    modifier = Modifier.weight(1.45f).height(52.dp),
+                    shape = RoundedCornerShape(19.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (state.scanBytes > 0) "一键清理" else "无需清理", fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(
+                "执行清理时会重新校验路径、白名单和文件状态，不会直接使用过期扫描列表。",
+                modifier = Modifier.padding(top = 11.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+@Composable
 private fun ToolRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(AccentBlue.copy(.10f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.primary.copy(.10f)), contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.width(14.dp))
@@ -506,6 +594,7 @@ private fun ToolRow(icon: ImageVector, title: String, subtitle: String, onClick:
 @Composable
 private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
     var expanded by rememberSaveable { mutableStateOf("cache") }
+    val accentGradient = rememberAccentGradient()
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 132.dp),
@@ -515,7 +604,7 @@ private fun PlanPage(config: SchedulerUiState, actions: DashboardActions) {
         item {
             Box(
                 Modifier.padding(horizontal = 18.dp).fillMaxWidth().clip(RoundedCornerShape(32.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFF5268FF), AccentViolet))).padding(22.dp)
+                    .background(Brush.horizontalGradient(accentGradient)).padding(22.dp)
             ) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -617,7 +706,7 @@ private fun ScheduleRow(
                 listOf(1, 6, 12, 24).forEach { quick ->
                     Box(
                         Modifier.clip(RoundedCornerShape(12.dp))
-                            .background(if (hours == quick) AccentBlue.copy(.18f) else MaterialTheme.colorScheme.onSurface.copy(.05f))
+                            .background(if (hours == quick) MaterialTheme.colorScheme.primary.copy(.18f) else MaterialTheme.colorScheme.onSurface.copy(.05f))
                             .clickable { onHours(quick) }.padding(horizontal = 12.dp, vertical = 7.dp)
                     ) { Text("${quick}h", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (hours == quick) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
@@ -694,7 +783,7 @@ private fun HistoryCard(item: HistoryUiItem) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(50.dp).clip(RoundedCornerShape(16.dp)).background(if (item.errors > 0) Color(0xFFFFC8C8).copy(.45f) else AccentBlue.copy(.13f)),
+                Modifier.size(50.dp).clip(RoundedCornerShape(16.dp)).background(if (item.errors > 0) Color(0xFFFFC8C8).copy(.45f) else MaterialTheme.colorScheme.primary.copy(.13f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(if (item.errors > 0) Icons.Rounded.ErrorOutline else Icons.Rounded.CleaningServices, null, tint = if (item.errors > 0) Color(0xFFC43743) else MaterialTheme.colorScheme.primary)
@@ -715,6 +804,7 @@ private fun HistoryCard(item: HistoryUiItem) {
 
 @Composable
 private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, actions: DashboardActions) {
+    val context = LocalContext.current
     Column(Modifier.fillMaxSize()) {
         PageHeader("PREFERENCES", "偏好设置", "外观、清理保护与服务管理")
         Column(
@@ -724,7 +814,7 @@ private fun SettingsPage(state: DashboardUiState, config: SchedulerUiState, acti
             GlassSurface(Modifier.padding(horizontal = 18.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp)) {
                 Column {
                     Text("外观", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text("洛书同源蓝紫配色 · 静态液态玻璃", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text(ThemeManager.themeSummary(context), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.height(15.dp))
                     OutlineAction(Icons.Rounded.Palette, "主题模式、配色与玻璃", actions.theme)
                 }
@@ -797,7 +887,7 @@ private fun PrimaryButton(text: String, enabled: Boolean, onClick: () -> Unit, o
         enabled = enabled,
         modifier = (if (outerPadding) Modifier.padding(horizontal = 18.dp) else Modifier).fillMaxWidth().height(58.dp),
         shape = RoundedCornerShape(22.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue)
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
     ) { Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
 }
 
@@ -815,7 +905,7 @@ private fun FloatingDock(selected: BaiZePage, onSelected: (BaiZePage) -> Unit, m
                 val active = item == selected
                 Row(
                     Modifier.weight(1f).clip(RoundedCornerShape(24.dp))
-                        .background(if (active) Brush.horizontalGradient(listOf(AccentBlue.copy(.18f), AccentViolet.copy(.15f))) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .background(if (active) Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.primary.copy(.18f), MaterialTheme.colorScheme.secondary.copy(.15f))) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent)))
                         .clickable { onSelected(item) }.padding(vertical = 11.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
@@ -834,6 +924,26 @@ private fun FloatingDock(selected: BaiZePage, onSelected: (BaiZePage) -> Unit, m
 private fun enabledScheduleCount(config: SchedulerUiState): Int = listOf(
     config.cacheEnabled, config.emptyEnabled, config.rulesEnabled, config.fragmentEnabled, config.deepEnabled
 ).count { it }
+
+@Composable
+private fun rememberAccentGradient(): List<Color> {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.background.luminance() < .5f
+    return remember(scheme.primary, scheme.secondary, scheme.tertiary, dark) {
+        listOf(
+            if (dark) scheme.primary.darken(.58f) else scheme.primary,
+            if (dark) scheme.secondary.darken(.58f) else scheme.secondary,
+            if (dark) scheme.tertiary.darken(.62f) else scheme.tertiary
+        )
+    }
+}
+
+private fun Color.darken(factor: Float): Color = Color(
+    red = red * factor,
+    green = green * factor,
+    blue = blue * factor,
+    alpha = alpha
+)
 
 private fun formatElapsedUi(seconds: Long): String = when {
     seconds >= 3600 -> "${seconds / 3600}时${seconds % 3600 / 60}分"

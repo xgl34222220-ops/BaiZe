@@ -1,10 +1,13 @@
-# 白泽 v2 Alpha 22
+# 白泽 v2 Alpha 23
 
 白泽是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。App 通过 libsu RootService 调用模块清理引擎，不依赖 WebUI。
 
-## Alpha 22
+## Alpha 23
 
 - 启动页改为与洛书同源的 Compose MIUIx 设计系统：蓝紫渐变、静态液态玻璃、统一圆角与小型悬浮底栏。
+- Compose 主卡、按钮、进度环、记录图标和底栏会真实响应 Monet 壁纸取色或用户选择的固定配色。
+- 安全扫描只统计不删除；完成后展示候选空间、文件、空目录、碎片、异常和耗时，并提供一键清理。
+- 扫描候选不会再误记成最近释放空间；一键清理会重新校验路径、白名单和当前文件状态。
 - 移除首页大块 Material 胶囊和堆叠滑杆；计划页仅展开当前项目，常用 1/6/12/24 小时可一键选择。
 - 首页直接显示 `/data` 分区的可用、已用和总容量，全部使用自动换算的 GB / MB 单位。
 - 应用缓存、空文件、规则垃圾、残留碎片和深度安全项可分别开关、分别设置 1～720 小时周期。
@@ -33,4 +36,4 @@ sh scripts/package-module.sh
 产物：
 
 - `app/build/outputs/apk/debug/app-debug.apk`
-- `dist/BaiZe-v2-Alpha22-Module.zip`
+- `dist/BaiZe-v2-Alpha23-Module.zip`

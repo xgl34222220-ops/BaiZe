@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
- * Compose launcher for Alpha 22. The proven RootService and shell cleaner remain untouched; this
+ * Compose launcher for Alpha 23. The proven RootService and shell cleaner remain untouched; this
  * activity is intentionally a thin state bridge so UI work cannot change deletion semantics.
  */
 class MiuixDashboardActivity : ComponentActivity() {
@@ -82,6 +82,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     refresh = { refreshAll() },
                     clean = { runSmartClean() },
                     scan = { runModuleTask("scan") },
+                    dismissScan = { dashboardState.value = dashboardState.value.copy(scanCompleted = false) },
                     stop = { stopTask() },
                     deep = { confirmDeepClean() },
                     corpses = { openProfile("corpses") },
@@ -203,6 +204,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (dashboardState.value.running) return
         dashboardState.value = dashboardState.value.copy(
             running = true,
+            scanCompleted = if (mode == "clean") false else dashboardState.value.scanCompleted,
             taskPhase = if (mode == "scan") "正在执行安全扫描…" else "正在智能扫描并清理…"
         )
         pollJob?.cancel()
@@ -216,7 +218,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { JSONObject(service.runModuleTask(mode)) } }
             pollJob?.cancel()
-            result.onSuccess { renderTaskResult(it) }.onFailure {
+            result.onSuccess { renderTaskResult(it, mode) }.onFailure {
                 dashboardState.value = dashboardState.value.copy(
                     running = false,
                     taskPhase = "任务失败：${it.message ?: it.javaClass.simpleName}"
@@ -241,9 +243,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(taskPhase = text)
     }
 
-    private fun renderTaskResult(json: JSONObject) {
+    private fun renderTaskResult(json: JSONObject, requestedMode: String) {
         val success = json.optBoolean("success")
         val cancelled = json.optBoolean("cancelled")
+        val isScan = requestedMode == "scan"
         val elapsedMs = json.optLong("elapsedMs").coerceAtLeast(0L)
         val latest = json.optJSONObject("latest") ?: JSONObject()
         val bytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
@@ -259,15 +262,29 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(
             running = false,
             taskPhase = "$message · ${formatElapsed(elapsedMs / 1000)}",
-            lastReleased = bytes
+            lastReleased = if (isScan) dashboardState.value.lastReleased else bytes,
+            scanCompleted = isScan && success && !cancelled,
+            scanBytes = if (isScan) bytes else 0L,
+            scanFiles = if (isScan) regular + emptyFiles + emptyDirs else 0L,
+            scanEmptyFiles = if (isScan) emptyFiles else 0L,
+            scanEmptyDirs = if (isScan) emptyDirs else 0L,
+            scanFragments = if (isScan) fragments else 0L,
+            scanErrors = if (isScan) latest.optLong("errors", 0L).coerceAtLeast(0L) else 0L,
+            scanElapsed = if (isScan) elapsedMs / 1000L else 0L
         )
-        preferences.edit().putLong("last_clean_bytes", bytes).apply()
+        if (!isScan) preferences.edit().putLong("last_clean_bytes", bytes).apply()
         val config = schedulerState.value
         if (config.notifyOnComplete && (!success || cancelled || bytes > 0 || config.notifyZero)) {
             NativeNotifier.showTaskResult(
                 this,
-                if (success) "白泽清理完成" else if (cancelled) "白泽任务已停止" else "白泽任务失败",
-                "释放 ${formatBytes(bytes)} · 文件 $regular 个",
+                when {
+                    cancelled -> "白泽任务已停止"
+                    !success -> "白泽任务失败"
+                    isScan -> "白泽安全扫描完成"
+                    else -> "白泽清理完成"
+                },
+                if (isScan) "发现可清理 ${formatBytes(bytes)} · ${regular + emptyFiles + emptyDirs} 个项目"
+                else "释放 ${formatBytes(bytes)} · 文件 $regular 个",
                 "空文件 $emptyFiles 个 · 空目录 $emptyDirs 个 · 碎片 $fragments 个 · ${formatElapsed(elapsedMs / 1000)}"
             )
         }
@@ -311,8 +328,14 @@ class MiuixDashboardActivity : ComponentActivity() {
             } ?: return@launch
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
+            val latestMode = latest.optString("mode")
+            val latestReleased = if (latestMode.endsWith("scan") || latestMode == "scan") {
+                preferences.getLong("last_clean_bytes", dashboardState.value.lastReleased)
+            } else {
+                latest.optLong("bytes", preferences.getLong("last_clean_bytes", 0L)).coerceAtLeast(0L)
+            }
             dashboardState.value = dashboardState.value.copy(
-                lastReleased = latest.optLong("bytes", preferences.getLong("last_clean_bytes", 0L)).coerceAtLeast(0L),
+                lastReleased = latestReleased,
                 schedulerText = when (scheduler.optString("state", "waiting")) {
                     "running" -> "定时任务正在执行"
                     "completed" -> "最近定时任务已完成"
