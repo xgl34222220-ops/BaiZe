@@ -10,6 +10,15 @@ on:
       - 'service.sh'
       - 'config/**'
       - '.github/workflows/v2-alpha28.yml'
+  pull_request:
+    branches: [v2-alpha27]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha28.yml'
   workflow_dispatch:
 
 permissions:
@@ -67,6 +76,7 @@ jobs:
           grep -q 'AppJunkCard' app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
 
       - name: Commit verified sources
+        if: github.event_name == 'push'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
