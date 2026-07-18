@@ -13,16 +13,16 @@
         <item name="colorOnTertiary">#FFFFFF</item>
         <item name="colorError">#BA1A1A</item>
         <item name="colorOnError">#FFFFFF</item>
-        <item name="colorSurface">#FBFAFF</item>
-        <item name="colorSurfaceVariant">#F4F3FA</item>
+        <item name="colorSurface">#F9F8FE</item>
+        <item name="colorSurfaceVariant">#EFEEF5</item>
         <item name="colorOnSurface">#1B1D27</item>
-        <item name="colorOnSurfaceVariant">#5B5F6D</item>
+        <item name="colorOnSurfaceVariant">#555A67</item>
         <item name="colorOutline">#D8DAE4</item>
-        <item name="colorOutlineVariant">#E7E8EF</item>
-        <item name="android:colorBackground">#F1F2FC</item>
-        <item name="android:windowBackground">#F1F2FC</item>
-        <item name="android:statusBarColor">#F1F2FC</item>
-        <item name="android:navigationBarColor">#F1F2FC</item>
+        <item name="colorOutlineVariant">#DFE1E9</item>
+        <item name="android:colorBackground">#EEEFF9</item>
+        <item name="android:windowBackground">#EEEFF9</item>
+        <item name="android:statusBarColor">#EEEFF9</item>
+        <item name="android:navigationBarColor">#EEEFF9</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowActionModeOverlay">true</item>
@@ -34,23 +34,51 @@
     <style name="Theme.BaiZe" parent="Theme.BaiZe.Blue" />
     <style name="Theme.BaiZe.Blue" parent="Theme.BaiZe.Base" />
 
-    <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#6750A4</item>
-        <item name="colorPrimaryContainer">#EADDFF</item>
-        <item name="colorOnPrimaryContainer">#2A1857</item>
+    <style name="Theme.BaiZe.Red" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#C70018</item>
+        <item name="colorPrimaryContainer">#FFDAD9</item>
+        <item name="colorOnPrimaryContainer">#410004</item>
     </style>
 
-    <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#237568</item>
-        <item name="colorPrimaryContainer">#BDF0E5</item>
-        <item name="colorOnPrimaryContainer">#073B33</item>
+    <style name="Theme.BaiZe.Pink" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#C50056</item>
+        <item name="colorPrimaryContainer">#FFD9E2</item>
+        <item name="colorOnPrimaryContainer">#3F0019</item>
     </style>
 
-    <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Base">
-        <item name="colorPrimary">#8B5E3C</item>
-        <item name="colorPrimaryContainer">#FFDDC7</item>
-        <item name="colorOnPrimaryContainer">#4A280F</item>
+    <style name="Theme.BaiZe.Purple" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#A900C0</item>
+        <item name="colorPrimaryContainer">#FAD7FF</item>
+        <item name="colorOnPrimaryContainer">#35003E</item>
     </style>
+
+    <style name="Theme.BaiZe.DeepPurple" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#7500E8</item>
+        <item name="colorPrimaryContainer">#EBDDFF</item>
+        <item name="colorOnPrimaryContainer">#25005A</item>
+    </style>
+
+    <style name="Theme.BaiZe.Indigo" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#2457D6</item>
+        <item name="colorPrimaryContainer">#DDE2FF</item>
+        <item name="colorOnPrimaryContainer">#001453</item>
+    </style>
+
+    <style name="Theme.BaiZe.Cobalt" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#0879B4</item>
+        <item name="colorPrimaryContainer">#C9E6FF</item>
+        <item name="colorOnPrimaryContainer">#001E2D</item>
+    </style>
+
+    <style name="Theme.BaiZe.LightBlue" parent="Theme.BaiZe.Base">
+        <item name="colorPrimary">#007F9E</item>
+        <item name="colorPrimaryContainer">#B7EAFF</item>
+        <item name="colorOnPrimaryContainer">#001F29</item>
+    </style>
+
+    <style name="Theme.BaiZe.Aurora" parent="Theme.BaiZe.Purple" />
+    <style name="Theme.BaiZe.Jade" parent="Theme.BaiZe.LightBlue" />
+    <style name="Theme.BaiZe.Sunset" parent="Theme.BaiZe.Red" />
 
     <style name="Theme.BaiZe.Amoled" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">#A9C7FF</item>
