@@ -817,12 +817,11 @@ private fun AppJunkCard(item: AppJunkUiItem) {
         contentPadding = PaddingValues(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(MaterialTheme.colorScheme.primary.copy(.12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.CleaningServices, null, tint = MaterialTheme.colorScheme.primary)
-            }
+            ApplicationIcon(
+                packageName = item.packageName,
+                label = item.label,
+                modifier = Modifier.size(48.dp)
+            )
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.label, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
