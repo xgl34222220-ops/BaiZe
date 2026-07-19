@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -27,6 +27,105 @@ jobs:
           ref: v2-alpha42-8-snapshot-clean-ui
           fetch-depth: 0
           show-progress: false
+
+      - name: Apply APK scan snapshot persistence
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('cleaner.sh')
+          text = path.read_text()
+
+          state_anchor = 'CORPSE_SCAN_TARGETS="$STATE_DIR/corpse_scan.targets"\n'
+          if 'APK_SCAN_STATE="$STATE_DIR/apk_scan.env"' not in text:
+              text = text.replace(
+                  state_anchor,
+                  state_anchor + 'APK_SCAN_STATE="$STATE_DIR/apk_scan.env"\nAPK_SCAN_TARGETS="$STATE_DIR/apk_scan.targets"\n',
+                  1,
+              )
+
+          function_anchor = 'run_apk_packages() {\n  [ -d /data/media ] || return 0\n  list="$TMP_DIR/apk-packages.nul"\n'
+          if 'snapshot_sha256() {' not in text:
+              replacement = '''snapshot_sha256() {
+            file=$1
+            [ -f "$file" ] || { echo missing; return; }
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+            else
+              toybox sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+            fi
+          }
+
+          run_apk_packages() {
+            [ -d /data/media ] || return 0
+            if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
+              rm -f "$APK_SCAN_STATE" "$APK_SCAN_TARGETS"
+            fi
+            list="$TMP_DIR/apk-packages.nul"
+          '''
+              if function_anchor not in text:
+                  raise SystemExit('run_apk_packages anchor missing')
+              text = text.replace(function_anchor, replacement, 1)
+
+          sample_anchor = '  sample_path=$(first_nul_path "$list" 2>/dev/null)\n\n  if [ "$MODE" = "clean" ]; then\n'
+          if 'engine=compat-apk-scan-v42.8' not in text:
+              replacement = '''  sample_path=$(first_nul_path "$list" 2>/dev/null)
+
+            if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
+              cp -f "$list" "$APK_SCAN_TARGETS"
+              targets_sha=$(snapshot_sha256 "$APK_SCAN_TARGETS")
+              whitelist_sha=$(snapshot_sha256 "$WHITELIST")
+              scan_epoch=$(date +%s)
+              snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
+              {
+                echo "epoch=$scan_epoch"
+                echo "snapshot_id=$snapshot_id"
+                echo "targets_sha=$targets_sha"
+                echo "whitelist_sha=$whitelist_sha"
+                echo "max_file_bytes=$APK_PACKAGE_MAX_BYTES"
+                echo "package_days=$APK_PACKAGE_DAYS"
+                echo "bytes=$estimated"
+                echo "files=$count"
+                echo "engine=compat-apk-scan-v42.8"
+              } >"$APK_SCAN_STATE"
+              chmod 0600 "$APK_SCAN_STATE" "$APK_SCAN_TARGETS" 2>/dev/null
+            fi
+
+            if [ "$MODE" = "clean" ]; then
+          '''
+              if sample_anchor not in text:
+                  raise SystemExit('APK sample anchor missing')
+              text = text.replace(sample_anchor, replacement, 1)
+
+          result_anchor = '''  elif [ "$PROFILE" = "fragment" ]; then
+              RESULT="碎片扫描完成，可清理 $SPACE"
+            else
+              if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
+          '''
+          if 'RESULT="安装包扫描完成，可清理 $SPACE"' not in text:
+              replacement = '''  elif [ "$PROFILE" = "fragment" ]; then
+              RESULT="碎片扫描完成，可清理 $SPACE"
+            elif [ "$PROFILE" = "apk" ]; then
+              RESULT="安装包扫描完成，可清理 $SPACE"
+            else
+              if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
+          '''
+              if result_anchor not in text:
+                  raise SystemExit('APK result anchor missing')
+              text = text.replace(result_anchor, replacement, 1)
+
+          path.write_text(text)
+          PY
+
+          sh -n cleaner.sh
+          if ! git diff --quiet; then
+            git diff --check
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add cleaner.sh
+            git commit -m "feat(engine): persist APK scan authorization snapshot"
+            git push origin HEAD:v2-alpha42-8-snapshot-clean-ui
+          fi
 
       - name: Validate snapshot routing and themed pages
         run: |
