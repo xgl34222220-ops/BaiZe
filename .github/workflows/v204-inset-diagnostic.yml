@@ -14,35 +14,89 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/v2.0.4-system-bars-insets
-      - name: Inspect all patch anchors
+      - name: Trace exact patch operation
         shell: bash
         run: |
+          set +e
           python3 - <<'PY' > v204-inset-diagnostic.txt 2>&1
           from pathlib import Path
           import re
+          import subprocess
+          import traceback
 
-          app = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt').read_text(encoding='utf-8')
-          old_header = '''.fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 22.dp, vertical = 14.dp)'''
-          print('old_header_count=', app.count(old_header))
-          print('all_status_padding_count=', app.count('.statusBarsPadding()'))
-          for style in ('MATERIAL', 'MIUIX'):
-              pattern = rf'(style = UiStyle\.{style},\n\s*)modifier = Modifier\.fillMaxSize\(\)'
-              print(style, 'host_count=', len(re.findall(pattern, app)))
+          try:
+              app_path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt')
+              app = app_path.read_text(encoding='utf-8')
+              print('initial status padding=', app.count('.statusBarsPadding()'))
 
-          gradle = Path('v2/app/build.gradle.kts').read_text(encoding='utf-8')
-          print('gradle_code=', len(re.findall(r'versionCode\s*=\s*22330', gradle)))
-          print('gradle_name=', len(re.findall(r'versionName\s*=\s*"2\.0\.3"', gradle)))
+              app, header_count = re.subn(
+                  r'(\.fillMaxWidth\(\)\s*)\.statusBarsPadding\(\)(\s*\.padding\(horizontal = 22\.dp, vertical = 14\.dp\))',
+                  r'\1\2',
+                  app,
+                  count=1,
+              )
+              print('header_count=', header_count)
 
-          prop = Path('v2/module/module.prop').read_text(encoding='utf-8')
-          print('module_prop=')
-          print(prop)
+              patterns = [
+                  (
+                      r'(style = UiStyle\.MATERIAL,\n\s*)modifier = Modifier\.fillMaxSize\(\)',
+                      r'\1modifier = Modifier\n                            .fillMaxSize()\n                            .statusBarsPadding()'
+                  ),
+                  (
+                      r'(style = UiStyle\.MIUIX,\n\s*)modifier = Modifier\.fillMaxSize\(\)',
+                      r'\1modifier = Modifier\n                                .fillMaxSize()\n                                .statusBarsPadding()'
+                  ),
+              ]
+              for pattern, replacement in patterns:
+                  app, count = re.subn(pattern, replacement, app, count=1)
+                  print('host_count=', count, pattern)
+              print('final status padding=', app.count('.statusBarsPadding()'))
+              app_path.write_text(app, encoding='utf-8')
 
-          package = Path('v2/scripts/package-module.sh').read_text(encoding='utf-8')
-          print('package_v203=', package.count('v2.0.3'))
-          print('package_22330=', package.count('22330'))
-          print('package_label=', package.count('原生调度完整版模块'))
+              gradle = Path('v2/app/build.gradle.kts')
+              text = gradle.read_text(encoding='utf-8')
+              text, code_count = re.subn(r'versionCode\s*=\s*22330', 'versionCode = 22340', text, count=1)
+              text, name_count = re.subn(r'versionName\s*=\s*"2\.0\.3"', 'versionName = "2.0.4"', text, count=1)
+              print('App version counts=', code_count, name_count)
+              gradle.write_text(text, encoding='utf-8')
+
+              prop = Path('v2/module/module.prop')
+              lines = prop.read_text(encoding='utf-8').splitlines()
+              values = {
+                  'version': 'v2.0.4',
+                  'versionCode': '22340',
+                  'description': '白泽 v2.0.4：统一修复所有原生页面的状态栏安全区，保留完整自动清理、快照与安全保护。',
+              }
+              seen = set()
+              output = []
+              for line in lines:
+                  key = line.split('=', 1)[0] if '=' in line else ''
+                  if key in values:
+                      output.append(f'{key}={values[key]}')
+                      seen.add(key)
+                  else:
+                      output.append(line)
+              print('module keys=', seen)
+              prop.write_text('\n'.join(output) + '\n', encoding='utf-8')
+
+              package = Path('v2/scripts/package-module.sh')
+              text = package.read_text(encoding='utf-8')
+              print('package anchors=', text.count('v2.0.3'), text.count('22330'), text.count('原生调度完整版模块'))
+              text = text.replace('v2.0.3', 'v2.0.4').replace('22330', '22340')
+              text = text.replace('原生调度完整版模块', '状态栏安全区修正版模块')
+              package.write_text(text, encoding='utf-8')
+
+              notes = Path('RELEASE_NOTES_V2.md')
+              note_text = notes.read_text(encoding='utf-8')
+              header = '''# 白泽 v2.0.4\n\n- 状态栏安全区诊断。\n\n'''
+              notes.write_text(header + note_text, encoding='utf-8')
+
+              result = subprocess.run(['git', 'diff', '--check'], text=True, capture_output=True)
+              print('git diff check rc=', result.returncode)
+              print(result.stdout)
+              print(result.stderr)
+          except Exception:
+              traceback.print_exc()
           PY
           cat v204-inset-diagnostic.txt
       - uses: actions/upload-artifact@v4
