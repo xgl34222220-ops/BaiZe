@@ -9,37 +9,40 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.5 缓存快照修复版"
-ui_print "- 应用缓存扫描、深度规则与卸载残留优先使用 arm64 C 引擎"
-ui_print "- 缓存一键清理只消费刚才的扫描快照，不再重新扫描全机"
-ui_print "- 退出页面可恢复真实进度，停止请求会传递给模块任务"
+ui_print "- 安装白泽 v2 Alpha 42.6 统一快照清理版"
+ui_print "- 缓存、深度规则与卸载残留均为：扫描一次 → 持久快照 → 直接清理"
+ui_print "- 一键清理不会再回退旧引擎，也不会重新跑规则或重新发现全机目标"
+ui_print "- 退出页面可恢复真实进度；停止请求会传递给当前模块进程"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
 
 [ -f "$APK" ] || abort "! 模块包中缺少 app/baize.apk"
-[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少清理入口"
-[ -f "$MODPATH/cleaner.native.sh" ] || abort "! 模块包中缺少原生扫描分流入口"
+[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少清理总入口"
+[ -f "$MODPATH/native-scan.sh" ] || abort "! 模块包中缺少原生扫描执行器"
 [ -f "$MODPATH/cache-snapshot-clean.sh" ] || abort "! 模块包中缺少缓存快照执行器"
+[ -f "$MODPATH/profile-snapshot-clean.sh" ] || abort "! 模块包中缺少深度/残留快照执行器"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
-# Alpha 42.4 以前可能留下只有 running.env、但实际进程已不存在的假忙状态。
-# 刷入新版本时只清理任务运行态与旧格式缓存快照，不动用户配置、白名单和历史。
+# Stop any Alpha 42.5 task and remove its old-format authorization files. User configuration,
+# whitelist, history and reports are retained. Old snapshots cannot be reused because they do not
+# contain the target/whitelist/rule hashes required by Alpha 42.6.
 touch "$STATE_DIR/stop" 2>/dev/null
 pkill -f '/data/adb/modules/baize_v2/cleaner.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/native-scan.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/cache-snapshot-clean.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/profile-snapshot-clean.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR/run.lock"
 rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv"
+rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
+rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
 
-# v1 and v2 use different module IDs. Copy the user's configuration once, stop the old scheduler,
-# then remove the legacy module and its state completely so future flashes have no duplicate module,
-# no repeated warning and no chance of two cleaners running together.
 if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ]; then
   migrated=0
   for name in config.conf whitelist.conf custom.rules; do
@@ -65,14 +68,13 @@ fi
 
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/cleaner.native.sh" "$MODPATH/cache-snapshot-clean.sh" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-scan.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/profile-snapshot-clean.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
 
-  # Alpha 调试包的签名可能随 CI 构建变化；覆盖失败时只替换旧 Alpha App。
   if pm path "$APP_ID" >/dev/null 2>&1; then
     ui_print "- 旧 Alpha App 签名不兼容，正在自动替换"
     pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
