@@ -1,9 +1,13 @@
 package io.github.xgl34222220.baize.ui.clean
 
+import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import io.github.xgl34222220.baize.ApkScanActivity
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.SchedulerUiState
+import io.github.xgl34222220.baize.SmartScanActivity
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.material.CleanScreenMaterial
 import io.github.xgl34222220.baize.ui.clean.miuix.CleanScreenMiuix
@@ -15,6 +19,7 @@ fun CleanRoute(
     scheduler: SchedulerUiState,
     dashboardActions: DashboardActions
 ) {
+    val context = LocalContext.current
     val state = scheduler.toCleanUiState(
         engineReady = dashboard.ready,
         running = dashboard.running,
@@ -36,8 +41,8 @@ fun CleanRoute(
             dashboardActions.updateScheduler(scheduler.copy(apkPackagesEnabled = enabled))
         },
         onSave = { dashboardActions.saveScheduler(scheduler) },
-        onScan = dashboardActions.scan,
-        onApkScan = dashboardActions.apkScan,
+        onScan = { context.startActivity(Intent(context, SmartScanActivity::class.java)) },
+        onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
         onAudit = dashboardActions.audit
