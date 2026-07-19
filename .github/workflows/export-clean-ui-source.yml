@@ -15,16 +15,16 @@ jobs:
         with:
           ref: fix/v2.0.1-app-scheduler-takeover
       - name: Export active native App sources
+        shell: bash
         run: |
           set -euo pipefail
-          tar -czf active-clean-ui-source.tar.gz \
-            v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/ui \
-            v2/module/scheduler.sh \
-            v2/module/action.sh \
-            v2/module/customize.sh \
-            v2/app/src/main/AndroidManifest.xml
+          {
+            find v2/app/src/main/java/io/github/xgl34222220/baize -type f -name '*.kt' -print
+            find v2/module -maxdepth 2 -type f \( -name '*.sh' -o -name '*.conf' -o -name 'module.prop' \) -print
+            printf '%s\n' v2/app/src/main/AndroidManifest.xml v2/app/build.gradle.kts
+          } | sort -u > /tmp/active-source-files.txt
+          tar -czf /tmp/active-clean-ui-source.tar.gz -T /tmp/active-source-files.txt
+          cp /tmp/active-clean-ui-source.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
           name: active-clean-ui-source
