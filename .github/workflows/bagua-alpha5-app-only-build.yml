@@ -1,0 +1,93 @@
+name: Build BaGua Alpha 5 App-only
+
+on:
+  push:
+    branches: [bagua-alpha5-app-only]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bagua-alpha5-app-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and expand BaGua source
+        run: |
+          set -e
+          cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
+          echo "ef766b71e62939064643ae66f1b7beeca82cd83d072e6fbd41762425c0e1408e  bagua-alpha5-source.zip" | sha256sum -c -
+          unzip -tq bagua-alpha5-source.zip
+          unzip -q bagua-alpha5-source.zip -d work
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Validate App-only source
+        run: |
+          set -e
+          cd work
+          test ! -d module-src/webroot
+          test ! -d module-src/webui
+          test ! -d module-src/www
+          for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.sh module-src/action.sh module-src/uninstall.sh module-src/scripts/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Build native App
+        working-directory: work
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package integrated module
+        working-directory: work
+        run: bash scripts/package-module.sh
+
+      - name: Verify integrated artifacts
+        working-directory: work
+        run: |
+          set -e
+          ZIP=dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
+          APK=module-src/app/bagua.apk
+          unzip -tq "$ZIP"
+          unzip -l "$ZIP" | grep -q 'app/bagua.apk'
+          unzip -l "$ZIP" | grep -q 'scripts/install-app.sh'
+          unzip -l "$ZIP" | grep -q 'scripts/bagua.sh'
+          ! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
+          unzip -p "$ZIP" module.prop | grep -q '^version=0.5.0-alpha.5$'
+          unzip -p "$ZIP" module.prop | grep -q '^versionCode=105$'
+          aapt dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
+          aapt dump badging "$APK" | grep -q "versionCode='105'"
+          aapt dump badging "$APK" | grep -q "application-label:'八卦'"
+          test -s dist/BaGua-v0.5.0-alpha.5-SHA256.txt
+
+      - name: Upload App-only build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua-v0.5.0-alpha.5-AppOnly
+          if-no-files-found: error
+          path: |
+            work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
+            work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Source.zip
+            work/dist/BaGua-v0.5.0-alpha.5-SHA256.txt
+            work/module-src/app/bagua.apk
