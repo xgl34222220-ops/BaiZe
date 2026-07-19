@@ -32,6 +32,17 @@ jobs:
           app_path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt')
           app = app_path.read_text(encoding='utf-8')
 
+          # v2.0.3 only protected the legacy home header. Move that inset to the common page host
+          # so Clean, Records, Logs and Settings receive exactly the same safe top area.
+          old_header = '''.fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 22.dp, vertical = 14.dp)'''
+          new_header = '''.fillMaxWidth()
+            .padding(horizontal = 22.dp, vertical = 14.dp)'''
+          if app.count(old_header) != 1:
+              raise SystemExit(f'expected one legacy home-only status inset, found {app.count(old_header)}')
+          app = app.replace(old_header, new_header, 1)
+
           patterns = [
               (
                   r'(style = UiStyle\.MATERIAL,\n\s*)modifier = Modifier\.fillMaxSize\(\)',
@@ -47,7 +58,7 @@ jobs:
               if count != 1:
                   raise SystemExit(f'page host inset anchor matched {count} times: {pattern}')
           if app.count('.statusBarsPadding()') != 2:
-              raise SystemExit('expected exactly two global page-host status bar paddings')
+              raise SystemExit(f'expected exactly two global page-host status bar paddings, found {app.count(".statusBarsPadding()")}')
           app_path.write_text(app, encoding='utf-8')
 
           gradle = Path('v2/app/build.gradle.kts')
@@ -88,7 +99,7 @@ jobs:
 
           notes = Path('RELEASE_NOTES_V2.md')
           note_text = notes.read_text(encoding='utf-8')
-          header = '''# 白泽 v2.0.4\n\n- 修复 MIUIx 与 Material 所有主页面内容侵入状态栏、时间和挖孔区域的问题。\n- 页面背景继续延伸至系统栏，标题、按钮和列表统一从状态栏安全区下方开始。\n- 保留 v2.0.3 的每日定时、1–720 小时精确周期与 App 全面接管。\n\n'''
+          header = '''# 白泽 v2.0.4\n\n- 将状态栏安全区从首页私有标题迁移到公共页面宿主。\n- 修复 MIUIx 与 Material 的首页、清理、记录、日志、设置内容侵入时间、信号图标和挖孔区域。\n- 页面背景继续延伸至系统栏，实际交互内容统一从安全区下方开始。\n- 保留 v2.0.3 的每日定时、1–720 小时精确周期与 App 全面接管。\n\n'''
           if not note_text.startswith('# 白泽 v2.0.4'):
               notes.write_text(header + note_text, encoding='utf-8')
           PY
@@ -137,6 +148,7 @@ jobs:
           test "$(grep -c 'statusBarsPadding()' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt)" -eq 2
           grep -A4 'style = UiStyle.MATERIAL' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
           grep -A4 'style = UiStyle.MIUIX' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
+          ! grep -A4 'private fun PageHeader' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "versionCode='22340' versionName='2.0.4'"
           if unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
             echo '模块包中仍存在 WebUI 目录' >&2
