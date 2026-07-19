@@ -11,13 +11,23 @@ on:
       - 'service.sh'
       - 'RELEASE_NOTES_V2.md'
       - '.github/workflows/v2-stable-release.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'v2/**'
+      - 'config/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'RELEASE_NOTES_V2.md'
+      - '.github/workflows/v2-stable-release.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: baize-v2-stable-release
+  group: baize-v2-stable-release-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
@@ -96,12 +106,13 @@ jobs:
       - name: Upload verified build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.0.0-Stable
+          name: BaiZe-v2.0.0-Stable-${{ github.event_name }}
           path: |
             v2/dist/BaiZe-v2.0.0-Module.zip
             v2/dist/BaiZe-v2.0.0-Module.zip.sha256
 
       - name: Publish stable GitHub Release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
