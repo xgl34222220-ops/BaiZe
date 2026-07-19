@@ -137,7 +137,7 @@ jobs:
           grep -q 'range = 1..720' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
           grep -q '精确周期' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
           grep -q '每日固定时间' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
-          grep -q 'NumberInputDialog' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/ScheduleInputDialogs.kt
+          grep -q 'IntValueDialog' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/ScheduleInputDialogs.kt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/baize-apk-badging.txt
           grep -q "versionCode='22330' versionName='2.0.3'" /tmp/baize-apk-badging.txt
           sha256sum "$ZIP" | tee "$ZIP.sha256"
@@ -150,6 +150,7 @@ jobs:
           rm -f .github/workflows/v2.0.3-real-compose-scheduler.yml
           rm -f .github/workflows/export-clean-ui-source.yml
           rm -f .github/workflows/v203-payload-diagnostic.yml
+          rm -f .github/workflows/patch-v203-verify.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
