@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha42.2
-versionCode=22220
+version=v2.0.0-alpha42.3
+versionCode=22230
 author=惜故里丶
-description=智能清理缓存、日志、空项目与存储垃圾。
+description=智能清理缓存、日志、空项目与存储垃圾；卸载残留支持 C 原生高速扫描。
