@@ -21,6 +21,8 @@ DEEP_SCAN_STATE="$STATE_DIR/deep_scan.env"
 DEEP_SCAN_TARGETS="$STATE_DIR/deep_scan.targets"
 CORPSE_SCAN_STATE="$STATE_DIR/corpse_scan.env"
 CORPSE_SCAN_TARGETS="$STATE_DIR/corpse_scan.targets"
+APK_SCAN_STATE="$STATE_DIR/apk_scan.env"
+APK_SCAN_TARGETS="$STATE_DIR/apk_scan.targets"
 
 REQUEST_MODE=${1:-scan}
 DEEP_MODE=0
@@ -2154,8 +2156,21 @@ run_fragment_cleanup() {
   return 0
 }
 
+snapshot_sha256() {
+  file=$1
+  [ -f "$file" ] || { echo missing; return; }
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+  else
+    toybox sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+  fi
+}
+
 run_apk_packages() {
   [ -d /data/media ] || return 0
+  if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
+    rm -f "$APK_SCAN_STATE" "$APK_SCAN_TARGETS"
+  fi
   list="$TMP_DIR/apk-packages.nul"
   : >"$list"
   for userdir in /data/media/[0-9]*; do
@@ -2191,6 +2206,26 @@ run_apk_packages() {
   estimated=$(bytes_from_list "$list")
   case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
   sample_path=$(first_nul_path "$list" 2>/dev/null)
+
+  if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
+    cp -f "$list" "$APK_SCAN_TARGETS"
+    targets_sha=$(snapshot_sha256 "$APK_SCAN_TARGETS")
+    whitelist_sha=$(snapshot_sha256 "$WHITELIST")
+    scan_epoch=$(date +%s)
+    snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
+    {
+      echo "epoch=$scan_epoch"
+      echo "snapshot_id=$snapshot_id"
+      echo "targets_sha=$targets_sha"
+      echo "whitelist_sha=$whitelist_sha"
+      echo "max_file_bytes=$APK_PACKAGE_MAX_BYTES"
+      echo "package_days=$APK_PACKAGE_DAYS"
+      echo "bytes=$estimated"
+      echo "files=$count"
+      echo "engine=compat-apk-scan-v42.8"
+    } >"$APK_SCAN_STATE"
+    chmod 0600 "$APK_SCAN_STATE" "$APK_SCAN_TARGETS" 2>/dev/null
+  fi
 
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-apk-packages.err"
@@ -2432,6 +2467,8 @@ elif [ "$MODE" = "scan" ]; then
     [ "$DEEP_TRUNCATED" = "1" ] && RESULT="$RESULT，已达到深度阶段时限"
   elif [ "$PROFILE" = "fragment" ]; then
     RESULT="碎片扫描完成，可清理 $SPACE"
+  elif [ "$PROFILE" = "apk" ]; then
+    RESULT="安装包扫描完成，可清理 $SPACE"
   else
     if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
     [ "$CACHE_SLOW_DIRS" -gt 0 ] && RESULT="$RESULT，慢缓存目录跳过 ${CACHE_SLOW_DIRS} 项"
