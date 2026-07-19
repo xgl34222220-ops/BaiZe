@@ -1,0 +1,26 @@
+name: Export BaiZe v2.0.5 source
+
+on:
+  push:
+    branches: [fix/v2.0.5-reliable-snapshots]
+    paths:
+      - '.github/workflows/export-v205-source.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.0.5-reliable-snapshots
+          fetch-depth: 0
+      - name: Pack source workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf BaiZe-v2.0.5-source.tar.gz v2 RELEASE_NOTES_V2.md .github/workflows/v2-stable-release.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.0.5-source
+          path: BaiZe-v2.0.5-source.tar.gz
