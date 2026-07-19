@@ -72,7 +72,6 @@ jobs:
           unzip -p "$ZIP" app/baize.apk.sha256 | grep -Eq '^[0-9a-f]{64}$'
 
       - name: Commit verified source
-        if: github.event_name == 'push'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
