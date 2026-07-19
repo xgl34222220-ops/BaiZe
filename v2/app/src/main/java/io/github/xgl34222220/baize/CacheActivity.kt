@@ -37,6 +37,7 @@ class CacheActivity : AppCompatActivity() {
     private var cacheBindingRequested = false
     private var moduleBindingRequested = false
     private var running = false
+    private var recovering = false
     private var snapshotId = ""
     private var total = 0
     private var page = 0
@@ -49,13 +50,12 @@ class CacheActivity : AppCompatActivity() {
             cacheBindingRequested = true
             renderConnectionState()
             renderActionState()
+            recoverRemoteOrSnapshot()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             cacheService = null
             cacheBindingRequested = false
-            running = false
-            pollJob?.cancel()
             renderConnectionState()
             renderActionState()
         }
@@ -67,13 +67,12 @@ class CacheActivity : AppCompatActivity() {
             moduleBindingRequested = true
             renderConnectionState()
             renderActionState()
+            recoverRemoteOrSnapshot()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             moduleService = null
             moduleBindingRequested = false
-            running = false
-            pollJob?.cancel()
             renderConnectionState()
             renderActionState()
         }
@@ -87,7 +86,7 @@ class CacheActivity : AppCompatActivity() {
         binding.titleText.text = "应用缓存"
         binding.subtitleText.text = "内部 cache、code_cache 与 Android/data 外部缓存"
         binding.resultTitleText.text = "缓存明细"
-        binding.safetyText.text = "扫描后会自动纳入全部安全缓存，无需逐项勾选；白名单、标准路径、软链接、挂载点和大文件限制仍会在删除前再次校验。"
+        binding.safetyText.text = "扫描只执行一次并保存 30 分钟快照；一键清理只处理刚才扫描到的缓存，不会再次扫描。退出页面后任务进度与结果仍可恢复。"
 
         adapter = ProfileCandidateAdapter { _, _ -> }
         adapter.setInteractionEnabled(false)
@@ -96,18 +95,15 @@ class CacheActivity : AppCompatActivity() {
 
         binding.backButton.setOnClickListener { finish() }
         binding.scanButton.setOnClickListener { scan() }
-        binding.cancelButton.setOnClickListener {
-            cacheService?.cancelCurrentTask()
-            moduleService?.cancelCurrentTask()
-            binding.summaryText.text = "正在安全停止当前任务…"
-        }
+        binding.cancelButton.setOnClickListener { stopTask() }
         binding.cleanButton.setOnClickListener { confirmQuickClean() }
         binding.previousButton.setOnClickListener { loadPage(page - 1) }
         binding.nextButton.setOnClickListener { loadPage(page + 1) }
 
         binding.scanButton.text = "扫描缓存明细"
         binding.cleanButton.text = "扫描后可一键清理"
-        binding.statusText.text = "正在连接 Root 扫描与自动清理引擎"
+        binding.statusText.text = "正在连接 Root 持久任务引擎"
+        binding.resultSection.visibility = View.GONE
         renderActionState()
         connectServices()
     }
@@ -123,21 +119,21 @@ class CacheActivity : AppCompatActivity() {
             RootService.bind(cacheIntent(), cacheConnection)
             cacheBindingRequested = true
         }.onFailure {
-            binding.statusText.text = it.message ?: "缓存扫描服务启动失败"
+            binding.statusText.text = it.message ?: "缓存任务服务启动失败"
         }
         runCatching {
             RootService.bind(moduleIntent(), moduleConnection)
             moduleBindingRequested = true
         }.onFailure {
-            binding.statusText.text = it.message ?: "自动清理服务启动失败"
+            binding.statusText.text = it.message ?: "模块任务服务启动失败"
         }
     }
 
     private fun renderConnectionState() {
         binding.statusText.text = when {
-            cacheService != null && moduleService != null -> "Root 扫描与一键清理引擎已连接"
-            cacheService != null -> "缓存扫描已连接 · 正在连接一键清理"
-            moduleService != null -> "一键清理已连接 · 正在连接缓存扫描"
+            cacheService != null && moduleService != null -> "Root 持久扫描与快照清理引擎已连接"
+            cacheService != null -> "缓存扫描已连接 · 正在连接快照清理"
+            moduleService != null -> "快照清理已连接 · 正在连接缓存扫描"
             else -> "Root 服务已断开"
         }
     }
@@ -154,7 +150,8 @@ class CacheActivity : AppCompatActivity() {
         adapter.setInteractionEnabled(false)
         binding.resultSection.visibility = View.GONE
         setTaskUi(true)
-        binding.summaryText.text = "正在发现真实且非空的应用缓存目录…"
+        binding.summaryText.text = "正在扫描应用缓存…"
+        startPolling()
 
         lifecycleScope.launch {
             val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
@@ -162,34 +159,52 @@ class CacheActivity : AppCompatActivity() {
                 withContext(Dispatchers.IO) { root.scanCandidates(JSONArray(whitelist.toList()).toString()) }
             }
             running = false
+            pollJob?.cancel()
             setTaskUi(false)
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
+                if (json.optString("error") == "busy") {
+                    binding.summaryText.text = "检测到后台任务，正在恢复真实进度…"
+                    recoverRemoteOrSnapshot()
+                    return@onSuccess
+                }
                 if (json.has("error")) {
                     binding.summaryText.text = json.optString("message", "扫描失败")
                     return@onSuccess
                 }
                 if (json.optBoolean("cancelled")) {
                     binding.summaryText.text = "扫描已停止 · ${json.optLong("elapsedMs")}ms"
+                    restoreSnapshot(showEmptyMessage = false)
                     return@onSuccess
                 }
-                snapshotId = json.optString("snapshotId")
-                total = json.optInt("totalCandidates")
-                quickCleanReady = total > 0
-                binding.summaryText.text = buildString {
-                    append("扫描完成 · ${json.optLong("elapsedMs")}ms\n")
-                    append("发现 $total 项真实非空缓存 · 白名单保护 ${json.optInt("whitelisted")} 项\n")
-                    append("已自动选择全部安全缓存，直接点击一键清理即可。")
-                }
-                binding.cleanButton.text = if (total > 0) "一键清理全部缓存（$total 项）" else "没有可清理缓存"
-                binding.selectionText.text = "全部安全缓存已自动纳入本次清理；列表仅用于查看明细。"
-                binding.resultSection.visibility = if (total > 0) View.VISIBLE else View.GONE
-                if (total > 0) loadPage(0)
-                renderActionState()
+                applyScanResult(json)
             }.onFailure {
                 binding.summaryText.text = "扫描失败：${it.message ?: it.javaClass.simpleName}"
             }
         }
+    }
+
+    private fun applyScanResult(json: JSONObject) {
+        snapshotId = json.optString("snapshotId")
+        total = json.optInt("totalCandidates").coerceAtLeast(0)
+        page = 0
+        quickCleanReady = snapshotId.isNotBlank() && total > 0
+        binding.summaryText.text = buildString {
+            append("扫描完成 · ${json.optLong("elapsedMs")}ms\n")
+            append("发现 $total 项真实非空缓存")
+            val files = json.optLong("totalFiles", 0L)
+            val bytes = json.optLong("totalBytes", 0L)
+            if (files > 0L) append(" · $files 个文件")
+            if (bytes > 0L) append(" · ${Formatter.formatFileSize(this@CacheActivity, bytes)}")
+            val protected = json.optInt("whitelisted", 0)
+            if (protected > 0) append(" · 白名单保护 $protected 项")
+            append("\n已保存扫描快照，清理时不会再次扫描。")
+        }
+        binding.cleanButton.text = if (quickCleanReady) "一键清理刚才扫描的缓存（$total 项）" else "没有可清理缓存"
+        binding.selectionText.text = if (quickCleanReady) "当前快照 30 分钟内有效；列表只用于查看明细。" else "没有发现可清理缓存"
+        binding.resultSection.visibility = if (quickCleanReady) View.VISIBLE else View.GONE
+        if (quickCleanReady) loadPage(0)
+        renderActionState()
     }
 
     private fun loadPage(targetPage: Int) {
@@ -209,6 +224,8 @@ class CacheActivity : AppCompatActivity() {
                 val json = JSONObject(raw)
                 if (json.has("error")) {
                     binding.selectionText.text = json.optString("message", "读取结果失败")
+                    quickCleanReady = false
+                    renderActionState()
                     return@onSuccess
                 }
                 val array = json.optJSONArray("items") ?: JSONArray()
@@ -229,7 +246,7 @@ class CacheActivity : AppCompatActivity() {
                             directories = item.optLong("directories", -1L),
                             measured = item.optBoolean("measured"),
                             complete = item.optBoolean("complete"),
-                            note = "已自动选择",
+                            note = "已纳入扫描快照",
                             selected = true
                         )
                     )
@@ -240,7 +257,7 @@ class CacheActivity : AppCompatActivity() {
                 binding.pageText.text = "${page + 1} / $pages"
                 binding.previousButton.isEnabled = page > 0
                 binding.nextButton.isEnabled = page + 1 < pages
-                binding.selectionText.text = "共 $total 项 · 当前页 ${values.size} 项 · 已自动选择全部安全缓存"
+                binding.selectionText.text = "共 $total 项 · 当前页 ${values.size} 项 · 清理只消费本次快照"
                 renderActionState()
             }.onFailure {
                 binding.selectionText.text = "读取结果失败：${it.message}"
@@ -251,8 +268,8 @@ class CacheActivity : AppCompatActivity() {
     private fun confirmQuickClean() {
         if (!quickCleanReady || moduleService == null || running) return
         AlertDialog.Builder(this)
-            .setTitle("一键清理全部安全缓存")
-            .setMessage("将自动清理本次分类下所有通过二次校验的应用缓存，不需要逐项勾选。缓存根目录会保留，白名单、软链接、挂载点和异常路径会自动跳过。")
+            .setTitle("清理刚才扫描到的缓存")
+            .setMessage("不会再次扫描。只处理当前 30 分钟快照中的安全缓存；扫描后新建或修改的文件、白名单路径、软链接、挂载点和大文件会自动跳过。")
             .setNegativeButton("取消", null)
             .setPositiveButton("立即清理") { _, _ -> quickClean() }
             .show()
@@ -260,10 +277,10 @@ class CacheActivity : AppCompatActivity() {
 
     private fun quickClean() {
         val root = moduleService ?: return
-        if (running) return
+        if (running || snapshotId.isBlank()) return
         running = true
         setTaskUi(true)
-        binding.summaryText.text = "正在自动扫描并清理全部安全缓存…"
+        binding.summaryText.text = "正在清理刚才扫描到的缓存，不会重新扫描…"
         startPolling()
 
         lifecycleScope.launch {
@@ -275,12 +292,17 @@ class CacheActivity : AppCompatActivity() {
             setTaskUi(false)
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
-                val output = json.optString("output").lineSequence().filter { it.isNotBlank() }.takeLast(5).joinToString("\n")
+                if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
+                    binding.summaryText.text = "检测到后台任务，正在恢复真实进度…"
+                    recoverRemoteOrSnapshot()
+                    return@onSuccess
+                }
+                val output = json.optString("output").lineSequence().filter { it.isNotBlank() }.takeLast(6).joinToString("\n")
                 val report = buildString {
                     append(
                         when {
                             json.optBoolean("cancelled") -> "缓存清理已停止"
-                            json.optBoolean("success") -> "全部安全缓存清理完成"
+                            json.optBoolean("success") -> "扫描快照清理完成"
                             else -> json.optString("message", "缓存清理失败")
                         }
                     )
@@ -295,14 +317,64 @@ class CacheActivity : AppCompatActivity() {
                     json.optString("message", "缓存任务已结束"),
                     report
                 )
-                quickCleanReady = false
-                snapshotId = ""
-                total = 0
-                adapter.submitPage(emptyList())
-                binding.resultSection.visibility = View.GONE
-                binding.cleanButton.text = "扫描后可一键清理"
+                if (json.optBoolean("success") && !json.optBoolean("cancelled")) clearSnapshotUi()
+                else restoreSnapshot(showEmptyMessage = false)
             }.onFailure {
                 binding.summaryText.text = "清理失败：${it.message ?: it.javaClass.simpleName}"
+            }
+        }
+    }
+
+    private fun stopTask() {
+        if (!running) return
+        cacheService?.cancelCurrentTask()
+        moduleService?.cancelCurrentTask()
+        binding.summaryText.text = "已发送停止请求，正在结束当前目录…"
+        startPolling()
+    }
+
+    private fun recoverRemoteOrSnapshot() {
+        if (recovering || running || (cacheService == null && moduleService == null)) return
+        recovering = true
+        lifecycleScope.launch {
+            val task = runCatching {
+                withContext(Dispatchers.IO) {
+                    val raw = cacheService?.getTaskState().orEmpty().ifBlank { moduleService?.getTaskState().orEmpty() }
+                    if (raw.isBlank()) null else JSONObject(raw)
+                }
+            }.getOrNull()
+            recovering = false
+            if (task?.optBoolean("running") == true) {
+                val mode = task.optString("mode", task.optString("operation"))
+                if (mode.contains("cache", ignoreCase = true)) {
+                    running = true
+                    setTaskUi(true)
+                    renderRemoteTaskState(task)
+                    startRecoveryPolling()
+                } else {
+                    binding.summaryText.text = "其他清理任务正在运行：${task.optString("phase", mode)}"
+                    renderActionState()
+                }
+            } else {
+                restoreSnapshot(showEmptyMessage = true)
+            }
+        }
+    }
+
+    private fun startRecoveryPolling() {
+        pollJob?.cancel()
+        pollJob = lifecycleScope.launch {
+            while (isActive && running) {
+                val task = readRemoteTaskState()
+                if (task?.optBoolean("running") == true) {
+                    renderRemoteTaskState(task)
+                    delay(350L)
+                    continue
+                }
+                running = false
+                setTaskUi(false)
+                restoreSnapshot(showEmptyMessage = false)
+                break
             }
         }
     }
@@ -311,23 +383,73 @@ class CacheActivity : AppCompatActivity() {
         pollJob?.cancel()
         pollJob = lifecycleScope.launch {
             while (isActive && running) {
-                val raw = runCatching { withContext(Dispatchers.IO) { moduleService?.getTaskState().orEmpty() } }.getOrNull()
-                if (!raw.isNullOrBlank()) {
-                    val json = runCatching { JSONObject(raw) }.getOrNull()
-                    if (json != null && json.optBoolean("running")) {
-                        binding.summaryText.text = buildString {
-                            append(json.optString("phase", "正在自动清理缓存"))
-                            val current = json.optInt("progress_current", json.optInt("current"))
-                            val totalState = json.optInt("progress_total", json.optInt("total"))
-                            if (totalState > 0) append(" · $current/$totalState")
-                            val path = json.optString("current_path", json.optString("currentPath"))
-                            if (path.isNotBlank()) append("\n").append(path.takeLast(92))
-                        }
-                    }
-                }
-                delay(400L)
+                val task = readRemoteTaskState()
+                if (task?.optBoolean("running") == true) renderRemoteTaskState(task)
+                delay(300L)
             }
         }
+    }
+
+    private suspend fun readRemoteTaskState(): JSONObject? = runCatching {
+        withContext(Dispatchers.IO) {
+            val raw = cacheService?.getTaskState().orEmpty().ifBlank { moduleService?.getTaskState().orEmpty() }
+            if (raw.isBlank()) null else JSONObject(raw)
+        }
+    }.getOrNull()
+
+    private fun renderRemoteTaskState(json: JSONObject) {
+        binding.summaryText.text = buildString {
+            append(json.optString("phase", "后台缓存任务正在执行"))
+            val current = json.optInt("progress_current", json.optInt("current"))
+            val totalState = json.optInt("progress_total", json.optInt("total"))
+            if (totalState > 0) append(" · $current/$totalState")
+            val path = json.optString("current_path", json.optString("currentPath"))
+            if (path.isNotBlank()) append("\n").append(path.takeLast(92))
+            if (json.optBoolean("cancelRequested")) append("\n正在安全停止…")
+        }
+    }
+
+    private fun restoreSnapshot(showEmptyMessage: Boolean) {
+        val root = cacheService ?: return
+        lifecycleScope.launch {
+            val info = runCatching {
+                withContext(Dispatchers.IO) { JSONObject(root.ping()) }
+            }.getOrNull() ?: return@launch
+            if (!info.optBoolean("snapshotReady")) {
+                clearSnapshotUi()
+                if (showEmptyMessage) binding.summaryText.text = "等待开始缓存扫描"
+                return@launch
+            }
+            snapshotId = info.optString("snapshotId")
+            total = info.optInt("snapshotItems").coerceAtLeast(0)
+            page = 0
+            quickCleanReady = snapshotId.isNotBlank() && total > 0
+            val files = info.optLong("snapshotFiles", 0L)
+            val bytes = info.optLong("snapshotBytes", 0L)
+            binding.summaryText.text = buildString {
+                append("已恢复最近一次缓存扫描快照")
+                if (total > 0) append("\n$total 项 · $files 个文件 · ${Formatter.formatFileSize(this@CacheActivity, bytes)}")
+                else append("\n没有可清理缓存")
+                append("\n可直接一键清理，不会重新扫描。")
+            }
+            binding.cleanButton.text = if (quickCleanReady) "一键清理刚才扫描的缓存（$total 项）" else "没有可清理缓存"
+            binding.selectionText.text = "已从模块状态恢复；快照 30 分钟内有效。"
+            binding.resultSection.visibility = if (quickCleanReady) View.VISIBLE else View.GONE
+            if (quickCleanReady) loadPage(0)
+            renderActionState()
+        }
+    }
+
+    private fun clearSnapshotUi() {
+        quickCleanReady = false
+        snapshotId = ""
+        total = 0
+        page = 0
+        adapter.submitPage(emptyList())
+        binding.resultSection.visibility = View.GONE
+        binding.cleanButton.text = "扫描后可一键清理"
+        binding.selectionText.text = "扫描后保存快照，再一键清理"
+        renderActionState()
     }
 
     private fun setTaskUi(active: Boolean) {
@@ -342,6 +464,7 @@ class CacheActivity : AppCompatActivity() {
 
     private fun renderActionState() {
         binding.scanButton.isEnabled = !running && cacheService != null
+        binding.cancelButton.isEnabled = running
         binding.cleanButton.isEnabled = !running && quickCleanReady && moduleService != null
     }
 
