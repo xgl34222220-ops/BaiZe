@@ -1,0 +1,223 @@
+name: BaiZe v2 Alpha 42.5 Cache Snapshot Recovery
+
+on:
+  push:
+    branches: [v2-alpha42-5-cache-snapshot-recovery]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-5-cache-snapshot-recovery.yml'
+  pull_request:
+    branches: [v2-alpha42-4-native-deep-cache-scanner]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-5-cache-snapshot-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-5-cache-snapshot-recovery
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Validate sources and version
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/cleaner.sh v2/module/customize.sh v2/module/service.sh v2/module/action.sh
+          sh -n v2/scripts/build-native.sh v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'version=v2.0.0-alpha42.5' v2/module/module.prop
+          grep -q 'versionCode=22250' v2/module/module.prop
+          grep -q 'cache_scan.env' v2/module/cleaner.sh
+          grep -q '正在清理刚才扫描到的缓存' v2/module/cleaner.sh
+          grep -q 'snapshotReady' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+          grep -q '不会重新扫描' v2/app/src/main/java/io/github/xgl34222220/baize/CacheActivity.kt
+
+      - name: Build host native scanner
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize_engine_host
+
+      - name: Test scan snapshot and no-rescan clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-cache-snapshot
+          rm -rf "$TEST"
+          mkdir -p "$TEST/data/user/0/com.example.cache/cache/sub"
+          mkdir -p "$TEST/media/0/Android/data/com.example.external/cache"
+          mkdir -p "$TEST/state/reports"
+          printf 'old-a' > "$TEST/data/user/0/com.example.cache/cache/a.bin"
+          printf 'old-b' > "$TEST/data/user/0/com.example.cache/cache/sub/b.bin"
+          printf 'old-c' > "$TEST/media/0/Android/data/com.example.external/cache/c.bin"
+          touch -d '10 minutes ago' \
+            "$TEST/data/user/0/com.example.cache/cache/a.bin" \
+            "$TEST/data/user/0/com.example.cache/cache/sub/b.bin" \
+            "$TEST/media/0/Android/data/com.example.external/cache/c.bin"
+          printf 'max_file_mb=256\napp_cache_days=0\nexternal_cache_days=0\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT="$TEST/data" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
+            bash v2/module/cleaner.sh cache-scan ci
+
+          test -s "$TEST/state/cache_scan.env"
+          test -s "$TEST/state/cache_scan.targets"
+          test -s "$TEST/state/cache_scan.items.tsv"
+          grep -q '^snapshot_id=' "$TEST/state/cache_scan.env"
+          grep -q '^mode=cache-scan$' "$TEST/state/latest.env"
+
+          # This file did not exist during the scan and must survive snapshot cleaning.
+          printf 'new-after-scan' > "$TEST/data/user/0/com.example.cache/cache/new.bin"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT="$TEST/data" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
+            bash v2/module/cleaner.sh cache-clean ci
+
+          test ! -e "$TEST/data/user/0/com.example.cache/cache/a.bin"
+          test ! -e "$TEST/data/user/0/com.example.cache/cache/sub/b.bin"
+          test ! -e "$TEST/media/0/Android/data/com.example.external/cache/c.bin"
+          test -f "$TEST/data/user/0/com.example.cache/cache/new.bin"
+          test -d "$TEST/data/user/0/com.example.cache/cache"
+          test ! -e "$TEST/state/cache_scan.env"
+          test ! -e "$TEST/state/cache_scan.targets"
+          grep -q '^mode=cache-clean$' "$TEST/state/latest.env"
+          grep -q '扫描快照' "$TEST/state/logs/latest.log"
+
+      - name: Test stop request and snapshot retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-cache-stop
+          rm -rf "$TEST"
+          mkdir -p "$TEST/data/user/0/com.example.stop/cache"
+          mkdir -p "$TEST/media/0" "$TEST/state/reports" "$TEST/fakebin"
+          for index in $(seq 1 120); do
+            mkdir -p "$TEST/data/user/0/com.example.stop/cache/d$index"
+            printf 'old-%s' "$index" > "$TEST/data/user/0/com.example.stop/cache/d$index/f$index.bin"
+          done
+          find "$TEST/data/user/0/com.example.stop/cache" -type f -exec touch -d '10 minutes ago' {} +
+          printf 'max_file_mb=256\napp_cache_days=0\nexternal_cache_days=0\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT="$TEST/data" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
+            bash v2/module/cleaner.sh cache-scan ci
+
+          cat > "$TEST/fakebin/find" <<'SCRIPT'
+          #!/usr/bin/env bash
+          sleep 1
+          exec /usr/bin/find "$@"
+          SCRIPT
+          chmod +x "$TEST/fakebin/find"
+
+          set +e
+          PATH="$TEST/fakebin:$PATH" \
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT="$TEST/data" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
+            bash v2/module/cleaner.sh cache-clean ci > "$TEST/clean.out" 2>&1 &
+          task_pid=$!
+          set -e
+          for _ in $(seq 1 40); do
+            test -f "$TEST/state/running.env" && break
+            sleep 0.1
+          done
+          touch "$TEST/state/stop"
+          set +e
+          wait "$task_pid"
+          code=$?
+          set -e
+          test "$code" -eq 9
+          test -s "$TEST/state/cache_scan.env"
+          grep -q '清理已停止' "$TEST/clean.out"
+          test ! -e "$TEST/state/run.lock"
+          test ! -e "$TEST/state/running.env"
+
+      - name: Test stale lock recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-stale-lock
+          rm -rf "$TEST"
+          mkdir -p "$TEST/data/user/0/com.example.lock/cache" "$TEST/media/0" "$TEST/state/run.lock" "$TEST/state/reports"
+          printf 'old' > "$TEST/data/user/0/com.example.lock/cache/a"
+          touch -d '10 minutes ago' "$TEST/data/user/0/com.example.lock/cache/a"
+          printf 'max_file_mb=256\napp_cache_days=0\nexternal_cache_days=0\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+          printf '%s\n' "$$" > "$TEST/state/run.lock/pid"
+          printf 'mode=cache-scan\nphase=stale\n' > "$TEST/state/running.env"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT="$TEST/data" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
+            bash v2/module/cleaner.sh cache-scan ci
+          grep -q '^mode=cache-scan$' "$TEST/state/latest.env"
+          test ! -e "$TEST/state/run.lock"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build arm64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha42.5-Cache-Snapshot-Recovery-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.5'
+          unzip -p "$ZIP" module.prop | grep -q 'versionCode=22250'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh.compat'
+          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
+          unzip -p "$ZIP" bin/arm64-v8a/baize_engine > /tmp/baize_engine_android
+          file /tmp/baize_engine_android | grep -q 'ARM aarch64'
+          sha256sum "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.5-Cache-Snapshot-Recovery
+          path: v2/dist/BaiZe-v2-Alpha42.5-Cache-Snapshot-Recovery-Module.zip
