@@ -1,0 +1,52 @@
+name: Apply Alpha 42.7 Source Fixes
+
+on:
+  push:
+    branches: [v2-alpha42-7-secondary-scan-pages]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-7-secondary-scan-pages
+          fetch-depth: 0
+
+      - name: Apply deterministic source fixes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          apk = Path('v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt')
+          text = apk.read_text()
+          needle = 'import androidx.compose.foundation.layout.statusBarsPadding\n'
+          addition = needle + 'import androidx.compose.foundation.layout.weight\n'
+          if 'import androidx.compose.foundation.layout.weight\n' not in text:
+              if needle not in text:
+                  raise SystemExit('ApkScanActivity import anchor missing')
+              text = text.replace(needle, addition, 1)
+          apk.write_text(text)
+
+          customize = Path('v2/module/customize.sh')
+          text = customize.read_text()
+          text = text.replace('Alpha 42.6 统一快照清理版', 'Alpha 42.7 二级扫描页面修复版')
+          customize.write_text(text)
+          PY
+
+      - name: Commit source fixes
+        run: |
+          if git diff --quiet; then
+            echo "Source fixes already applied"
+            exit 0
+          fi
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt v2/module/customize.sh
+          git commit -m "fix(app): complete secondary scan page source"
+          git push origin HEAD:v2-alpha42-7-secondary-scan-pages
