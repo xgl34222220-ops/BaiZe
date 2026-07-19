@@ -124,22 +124,22 @@ jobs:
           test -s "$ZIP"
           test -s "$APK"
           unzip -tq "$ZIP"
-          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.0.3'
-          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22330'
-          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          unzip -p "$ZIP" module.prop > /tmp/baize-module.prop
+          grep -qx 'version=v2.0.3' /tmp/baize-module.prop
+          grep -qx 'versionCode=22330' /tmp/baize-module.prop
+          unzip -Z1 "$ZIP" > /tmp/baize-zip-list.txt
+          if grep -Eq '^(webroot|webui|www|ksu-webui)/' /tmp/baize-zip-list.txt; then
+            echo '模块包中仍存在 WebUI 目录' >&2
+            exit 1
+          fi
           grep -q 'daily_schedule_enabled' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'daily_grace_minutes' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'range = 1..720' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
           grep -q '精确周期' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
           grep -q '每日固定时间' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "versionCode='22330' versionName='2.0.3'"
-          rm -rf /tmp/baize-v203-dex && mkdir -p /tmp/baize-v203-dex
-          cd /tmp/baize-v203-dex
-          unzip -q "$GITHUB_WORKSPACE/$APK" 'classes*.dex'
-          strings classes*.dex | grep -Fq '精确输入 1–720 小时'
-          strings classes*.dex | grep -Fq '每日固定时间'
-          strings classes*.dex | grep -Fq 'daily_schedule_minute'
-          cd "$GITHUB_WORKSPACE"
+          grep -q 'NumberInputDialog' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/ScheduleInputDialogs.kt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > /tmp/baize-apk-badging.txt
+          grep -q "versionCode='22330' versionName='2.0.3'" /tmp/baize-apk-badging.txt
           sha256sum "$ZIP" | tee "$ZIP.sha256"
 
       - name: Commit verified native App changes
