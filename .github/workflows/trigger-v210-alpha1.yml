@@ -1,0 +1,20 @@
+name: Trigger BaiZe v2.1.0 Alpha 1
+
+on:
+  pull_request:
+    branches: [fix/v2.0.5-reliable-snapshots]
+    paths:
+      - '.github/workflows/trigger-v210-alpha1.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch repaired Alpha 1 workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run v2.1.0-alpha1-indexed-scanner.yml --ref perf/v2.1.0-one-pass-scanner
