@@ -9,10 +9,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.StatFs
-import android.text.InputType
 import android.text.format.Formatter
 import android.view.View
-import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -77,7 +75,7 @@ class DashboardActivity : AppCompatActivity() {
         setupEdgeToEdge()
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
 
-        binding.versionText.text = "v${BuildConfig.VERSION_NAME}"
+        binding.versionText.text = "Alpha 21"
         setupNavigation()
         setupActions()
         setupSettings()
@@ -253,36 +251,10 @@ class DashboardActivity : AppCompatActivity() {
             .put("schedule_fragment_hours", binding.fragmentScheduleControl.hours)
             .put("schedule_deep_enabled", flag(binding.deepScheduleControl.enabledForSchedule))
             .put("schedule_deep_hours", binding.deepScheduleControl.hours)
-            .put("daily_schedule_enabled", flag(binding.dailySwitch.isChecked))
-            .put("daily_schedule_hour", binding.dailyHourSlider.value.toInt())
-            .put("daily_schedule_minute", binding.dailyMinuteSlider.value.toInt())
-            .put("daily_grace_minutes", binding.dailyGraceSlider.value.toInt())
             .put("screen_off_only", flag(binding.screenOffSwitch.isChecked))
             .put("charging_only", flag(binding.chargingSwitch.isChecked))
             .put("device_idle_only", flag(binding.deviceIdleSwitch.isChecked))
             .put("min_battery", binding.minBatterySlider.value.toInt())
-            .put("notify_on_complete", flag(binding.notificationSwitch.isChecked))
-            .put("notify_zero_result", flag(binding.notifyZeroSwitch.isChecked))
-            .put("max_file_mb", binding.largeFileSlider.value.toInt())
-            .put("fragment_days", binding.fragmentDaysSlider.value.toInt())
-            .put("app_cache_days", binding.cacheDaysSlider.value.toInt())
-            .put("external_cache_days", binding.cacheDaysSlider.value.toInt())
-            .put("system_logs_days", binding.logDaysSlider.value.toInt())
-            .put("oem_logs_days", binding.logDaysSlider.value.toInt())
-            .put("installer_temp_days", binding.installerDaysSlider.value.toInt())
-            .put("root_shell_days", binding.rootShellDaysSlider.value.toInt())
-            .put("clean_app_cache", flag(binding.cleanInternalCacheSwitch.isChecked))
-            .put("clean_external_cache", flag(binding.cleanExternalCacheSwitch.isChecked))
-            .put("clean_app_rules", flag(binding.cleanAppRulesSwitch.isChecked))
-            .put("clean_system_logs", flag(binding.cleanSystemLogsSwitch.isChecked))
-            .put("clean_oem_logs", flag(binding.cleanOemLogsSwitch.isChecked))
-            .put("clean_hidden_junk", flag(binding.cleanHiddenJunkSwitch.isChecked))
-            .put("clean_empty_files", flag(binding.cleanEmptyFilesSwitch.isChecked))
-            .put("clean_empty_dirs", flag(binding.cleanEmptyDirsSwitch.isChecked))
-            .put("clean_root_shells", flag(binding.cleanRootShellsSwitch.isChecked))
-            .put("clean_fragments", flag(binding.cleanFragmentsSwitch.isChecked))
-            .put("clean_installer_temp", flag(binding.cleanInstallerTempSwitch.isChecked))
-            .put("clean_custom_rules", flag(binding.cleanCustomRulesSwitch.isChecked))
     }
 
     private fun showSettingsMenu() {
@@ -409,42 +381,14 @@ class DashboardActivity : AppCompatActivity() {
         scheduleControls.forEach { control -> control.setOnScheduleChangedListener { updatePlanPreview() } }
 
         binding.intervalSlider.addOnChangeListener { _, value, fromUser ->
-            val hours = value.toInt()
-            binding.intervalText.text = "同步全部周期 · ${formatHours(hours)}（点此精确输入）"
+            binding.intervalText.text = "同步全部周期 · ${value.toInt()} 小时"
             if (fromUser && !loadingConfig) {
-                scheduleControls.forEach { it.hours = hours }
+                scheduleControls.forEach { it.hours = value.toInt() }
                 updatePlanPreview()
             }
         }
-        binding.intervalText.setOnClickListener {
-            showHoursInputDialog(binding.intervalSlider.value.toInt()) { hours ->
-                loadingConfig = true
-                binding.intervalSlider.value = hours.toFloat()
-                scheduleControls.forEach { it.hours = hours }
-                loadingConfig = false
-                binding.intervalText.text = "同步全部周期 · ${formatHours(hours)}（点此精确输入）"
-                updatePlanPreview()
-            }
-        }
-        val updateDailyLabels = {
-            binding.dailyHourText.text = String.format(
-                "每天 %02d:%02d 执行",
-                binding.dailyHourSlider.value.toInt(),
-                binding.dailyMinuteSlider.value.toInt()
-            )
-            binding.dailyMinuteText.text = "分钟 · ${binding.dailyMinuteSlider.value.toInt()}"
-            binding.dailyGraceText.text = "条件补做窗口 · ${binding.dailyGraceSlider.value.toInt()} 分钟"
-        }
-        binding.dailyHourSlider.addOnChangeListener { _, _, _ ->
-            updateDailyLabels()
-            updatePlanPreview()
-        }
-        binding.dailyMinuteSlider.addOnChangeListener { _, _, _ ->
-            updateDailyLabels()
-            updatePlanPreview()
-        }
-        binding.dailyGraceSlider.addOnChangeListener { _, _, _ ->
-            updateDailyLabels()
+        binding.dailyHourSlider.addOnChangeListener { _, value, _ ->
+            binding.dailyHourText.text = String.format("每日 %02d:00", value.toInt())
             updatePlanPreview()
         }
         binding.minBatterySlider.addOnChangeListener { _, value, _ ->
@@ -607,8 +551,6 @@ class DashboardActivity : AppCompatActivity() {
             binding.intervalSlider.value = json.optInt("schedule_cache_hours", 24).coerceIn(1, 720).toFloat()
             binding.dailySwitch.isChecked = json.optInt("daily_schedule_enabled", 0) == 1
             binding.dailyHourSlider.value = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23).toFloat()
-            binding.dailyMinuteSlider.value = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59).toFloat()
-            binding.dailyGraceSlider.value = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720).toFloat()
             binding.cacheScheduleControl.enabledForSchedule = json.optInt("schedule_cache_enabled", 1) == 1
             binding.cacheScheduleControl.hours = json.optInt("schedule_cache_hours", 1)
             binding.emptyScheduleControl.enabledForSchedule = json.optInt("schedule_empty_enabled", 1) == 1
@@ -644,14 +586,8 @@ class DashboardActivity : AppCompatActivity() {
             binding.cleanInstallerTempSwitch.isChecked = json.optInt("clean_installer_temp", 0) == 1
             binding.cleanCustomRulesSwitch.isChecked = json.optInt("clean_custom_rules", 0) == 1
             loadingConfig = false
-            binding.intervalText.text = "同步全部周期 · ${formatHours(binding.intervalSlider.value.toInt())}（点此精确输入）"
-            binding.dailyHourText.text = String.format(
-                "每天 %02d:%02d 执行",
-                binding.dailyHourSlider.value.toInt(),
-                binding.dailyMinuteSlider.value.toInt()
-            )
-            binding.dailyMinuteText.text = "分钟 · ${binding.dailyMinuteSlider.value.toInt()}"
-            binding.dailyGraceText.text = "条件补做窗口 · ${binding.dailyGraceSlider.value.toInt()} 分钟"
+            binding.intervalText.text = "同步全部周期 · ${binding.intervalSlider.value.toInt()} 小时"
+            binding.dailyHourText.text = String.format("每日 %02d:00", binding.dailyHourSlider.value.toInt())
             binding.minBatteryText.text = "最低电量 ${binding.minBatterySlider.value.toInt()}%"
             binding.largeFileText.text = "单文件上限 ${binding.largeFileSlider.value.toInt()} MB"
             binding.fragmentDaysText.text = fragmentRetentionLabel(binding.fragmentDaysSlider.value.toInt())
@@ -688,13 +624,7 @@ class DashboardActivity : AppCompatActivity() {
             "自动清理总开关已关闭。"
         } else if (binding.dailySwitch.isChecked) {
             buildString {
-                append(
-                    String.format(
-                        "每天 %02d:%02d",
-                        binding.dailyHourSlider.value.toInt(),
-                        binding.dailyMinuteSlider.value.toInt()
-                    )
-                )
+                append(String.format("每日 %02d:00", binding.dailyHourSlider.value.toInt()))
                 if (binding.screenOffSwitch.isChecked) append(" · 等待息屏")
                 if (binding.chargingSwitch.isChecked) append(" · 仅充电")
                 if (binding.deviceIdleSwitch.isChecked) append(" · 仅空闲")
@@ -714,44 +644,6 @@ class DashboardActivity : AppCompatActivity() {
                 if (binding.chargingSwitch.isChecked) append(" · 仅充电")
                 if (binding.deviceIdleSwitch.isChecked) append(" · 仅空闲")
             }
-        }
-    }
-
-    private fun showHoursInputDialog(current: Int, onSelected: (Int) -> Unit) {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(current.coerceIn(1, 720).toString())
-            hint = "1 - 720"
-            setSelectAllOnFocus(true)
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("精确设置执行周期")
-            .setMessage("可输入 1 到 720 小时。例如 168 小时为 7 天，720 小时为 30 天。")
-            .setView(input)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("确定", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                val hours = input.text?.toString()?.trim()?.toIntOrNull()
-                if (hours == null || hours !in 1..720) {
-                    input.error = "请输入 1 到 720 之间的整数"
-                    return@setOnClickListener
-                }
-                onSelected(hours)
-                dialog.dismiss()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun formatHours(hours: Int): String {
-        val safe = hours.coerceIn(1, 720)
-        return if (safe >= 24 && safe % 24 == 0) {
-            "$safe 小时 / ${safe / 24} 天"
-        } else {
-            "$safe 小时"
         }
     }
 

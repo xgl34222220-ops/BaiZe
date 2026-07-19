@@ -433,7 +433,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:text="每类任务都有自己的开关与周期；支持 1 - 720 小时，点击右侧周期可精确输入"
+                    android:text="每类任务都有自己的开关与周期；1 小时起，不再互相覆盖"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="11sp" />
 
@@ -513,118 +513,27 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="22dp"
-                    android:text="每日固定时间"
-                    android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
+                <io.github.xgl34222220.baize.ui.MiuixSwitch
+                    android:id="@+id/dailySwitch"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:visibility="gone" />
 
                 <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="开启后按每天的具体时刻执行已启用分类，并替代上方间隔周期"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:textSize="11sp" />
+                    android:id="@+id/dailyHourText"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:visibility="gone" />
 
-                <com.google.android.material.card.MaterialCardView
-                    style="@style/Widget.BaiZe.SimpleCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="16dp">
-
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="54dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="启用每日定时"
-                                android:textColor="?attr/colorOnSurface"
-                                android:textSize="14sp"
-                                android:textStyle="bold" />
-
-                            <io.github.xgl34222220.baize.ui.MiuixSwitch
-                                android:id="@+id/dailySwitch"
-                                android:layout_width="64dp"
-                                android:layout_height="48dp" />
-                        </LinearLayout>
-
-                        <TextView
-                            android:id="@+id/dailyHourText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="每天 03:30 执行"
-                            android:textColor="?attr/colorOnSurface"
-                            android:textSize="13sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:text="小时"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/dailyHourSlider"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:value="3"
-                            android:stepSize="1"
-                            android:valueFrom="0"
-                            android:valueTo="23" />
-
-                        <TextView
-                            android:id="@+id/dailyMinuteText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="分钟 · 30"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/dailyMinuteSlider"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:value="30"
-                            android:stepSize="1"
-                            android:valueFrom="0"
-                            android:valueTo="59" />
-
-                        <TextView
-                            android:id="@+id/dailyGraceText"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="条件补做窗口 · 240 分钟"
-                            android:textColor="?attr/colorOnSurfaceVariant"
-                            android:textSize="10sp" />
-
-                        <com.google.android.material.slider.Slider
-                            android:id="@+id/dailyGraceSlider"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:value="240"
-                            android:stepSize="1"
-                            android:valueFrom="15"
-                            android:valueTo="720" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/dailyHourSlider"
+                    android:layout_width="1dp"
+                    android:layout_height="1dp"
+                    android:value="3"
+                    android:stepSize="1"
+                    android:valueFrom="0"
+                    android:valueTo="23"
+                    android:visibility="gone" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -697,13 +606,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="保留策略"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -744,13 +655,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="清理引擎范围"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -857,13 +770,15 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="22dp"
                     android:text="分类保留时间"
+                    android:visibility="gone"
                     android:textAppearance="@style/TextAppearance.BaiZe.SectionTitle" />
 
                 <com.google.android.material.card.MaterialCardView
                     style="@style/Widget.BaiZe.SimpleCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="9dp">
+                    android:layout_marginTop="9dp"
+                    android:visibility="gone">
 
                     <LinearLayout
                         android:layout_width="match_parent"

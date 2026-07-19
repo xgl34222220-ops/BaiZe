@@ -1,19 +1,15 @@
 package io.github.xgl34222220.baize.ui
 
 import android.content.Context
-import android.content.DialogInterface
 import android.graphics.Typeface
-import android.text.InputType
 import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
-import com.google.android.material.color.MaterialColors
 import com.google.android.material.slider.Slider
+import com.google.android.material.color.MaterialColors
 
 /** Compact independent scheduler row used by the five cleaner groups. */
 class MiuixScheduleRow @JvmOverloads constructor(
@@ -62,11 +58,7 @@ class MiuixScheduleRow @JvmOverloads constructor(
         valueView.apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary))
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            isClickable = true
-            isFocusable = true
-            contentDescription = "点击精确输入 1 到 720 小时"
-            setOnClickListener { showExactHoursDialog() }
+            setPadding(dp(8), 0, dp(8), 0)
         }
         toggle.layoutParams = LayoutParams(dp(58), dp(44))
         header.addView(titleView)
@@ -103,42 +95,8 @@ class MiuixScheduleRow @JvmOverloads constructor(
         listener = block
     }
 
-    private fun showExactHoursDialog() {
-        val input = EditText(context).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(hours.toString())
-            hint = "$MIN_HOURS - $MAX_HOURS"
-            setSelectAllOnFocus(true)
-            setPadding(dp(20), dp(8), dp(20), dp(8))
-        }
-        val dialog = AlertDialog.Builder(context)
-            .setTitle("$title · 执行周期")
-            .setMessage("输入 1 到 720 小时，可精确设置数百小时周期。")
-            .setView(input)
-            .setNegativeButton("取消", null)
-            .setPositiveButton("确定", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                val selected = input.text?.toString()?.trim()?.toIntOrNull()
-                if (selected == null || selected !in MIN_HOURS..MAX_HOURS) {
-                    input.error = "请输入 1 到 720 之间的整数"
-                    return@setOnClickListener
-                }
-                slider.value = selected.toFloat()
-                renderValue()
-                listener?.invoke()
-                dialog.dismiss()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun formatHours(value: Int): String =
-        if (value >= 24 && value % 24 == 0) "$value 小时 / ${value / 24} 天" else "$value 小时"
-
     private fun renderValue() {
-        valueView.text = if (toggle.isChecked) "${formatHours(hours)} ›" else "已关闭 · ${formatHours(hours)} ›"
+        valueView.text = if (toggle.isChecked) "${hours} 小时" else "已关闭"
     }
 
     private fun renderEnabledState() {
