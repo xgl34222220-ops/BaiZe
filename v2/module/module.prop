@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.4
-versionCode=22340
+version=v2.0.5
+versionCode=22350
 author=惜故里丶
-description=白泽 v2.0.4：统一修复所有原生页面的状态栏安全区，保留完整自动清理、快照与安全保护。
+description=白泽 v2.0.5：自动缓存事务化、逐文件不可变快照、失败熔断与动态调度，保留完整安全保护。

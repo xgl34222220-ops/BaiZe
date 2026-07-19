@@ -31,13 +31,7 @@ install_app() {
   INSTALL_MODE="updated"
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
-
-  INSTALL_MODE="reinstalled"
-  if pm path "$APP_ID" >/dev/null 2>&1; then
-    pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
-  fi
-  pm install -d --user 0 "$APK" >/dev/null 2>&1 && return 0
-  pm install -d "$APK" >/dev/null 2>&1 && return 0
+  INSTALL_MODE="failed-preserved"
   return 1
 }
 
@@ -59,7 +53,7 @@ if [ "$need_install" = "1" ]; then
     [ -n "$bundle_hash" ] && printf '%s\n' "$bundle_hash" > "$INSTALLED_HASH"
     chmod 0600 "$INSTALLED_HASH"
   else
-    install_result="failed"
+    install_result="$INSTALL_MODE"
   fi
 fi
 
@@ -81,7 +75,7 @@ scheduler_ready=0
   echo "rules_ready=$rules_ready"
   echo "cleaner_ready=$cleaner_ready"
   echo "scheduler_ready=$scheduler_ready"
-  echo "module_version=2.0.3"
+  echo "module_version=2.0.5"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"

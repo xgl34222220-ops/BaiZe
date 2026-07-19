@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fnmatch.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -18,7 +19,7 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "42.4-preview1"
+#define ENGINE_VERSION "42.5-snapshot1"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;
@@ -29,7 +30,7 @@ typedef struct {
 typedef struct {
     const char *media_root, *data_root, *installed_root, *whitelist_path;
     const char *package_whitelist_path, *rules_path, *report_path, *targets_path;
-    const char *items_path, *summary_path, *progress_path, *stop_path;
+    const char *items_path, *manifest_path, *summary_path, *progress_path, *stop_path;
     uint64_t max_file_bytes;
     int min_age_days;
     bool allow_high_risk;
@@ -239,6 +240,7 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--report") == 0) o->report_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--targets") == 0) o->targets_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--items") == 0) o->items_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--manifest") == 0) o->manifest_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--summary") == 0) o->summary_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--progress") == 0) o->progress_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--stop") == 0) o->stop_path = arg_value(argc, argv, &i);
@@ -315,61 +317,150 @@ static int scan_corpses(const Options *o) {
     return 0;
 }
 
-static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *items, Totals *t, const char *pkg, const char *category, const char *path, uint64_t cur) {
+
+static bool write_nul_field(FILE *file, const char *value) {
+    if (!file || !value) return false;
+    size_t length = strlen(value) + 1U;
+    return fwrite(value, 1, length, file) == length;
+}
+static bool write_nul_u64(FILE *file, uint64_t value) {
+    char text[32];
+    snprintf(text, sizeof(text), "%" PRIu64, value);
+    return write_nul_field(file, text);
+}
+static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o, int days,
+                              FILE *manifest, const char *pkg, const char *category,
+                              Stats *stats, unsigned depth) {
+    if (depth > 512U) { stats->incomplete = true; return -1; }
+    if (stop_requested(o)) return 9;
+    struct stat st;
+    if (lstat(path, &st) != 0) { stats->incomplete = true; return -1; }
+    if (S_ISLNK(st.st_mode)) return 0;
+    if (S_ISREG(st.st_mode)) {
+        if (!eligible_mtime(&st, days)) return 0;
+        stats->files++;
+        uint64_t size = st.st_size > 0 ? (uint64_t)st.st_size : 0U;
+        stats->bytes += size;
+        if (size > o->max_file_bytes) stats->oversized = true;
+        if (!write_nul_field(manifest, pkg) || !write_nul_field(manifest, category) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_dev) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_ino) ||
+            !write_nul_u64(manifest, size) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_mtim.tv_sec) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_mtim.tv_nsec) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_ctim.tv_sec) ||
+            !write_nul_u64(manifest, (uint64_t)st.st_ctim.tv_nsec) ||
+            !write_nul_field(manifest, path)) {
+            stats->incomplete = true;
+            return -1;
+        }
+        return 0;
+    }
+    if (!S_ISDIR(st.st_mode)) return 0;
+    if (depth > 0U && st.st_dev != root_dev) { stats->mount_conflict = true; return 0; }
+    DIR *dir = opendir(path);
+    if (!dir) { stats->incomplete = true; return -1; }
+    uint64_t before = stats->files;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        char child[PATH_MAX];
+        int written = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(child)) { stats->incomplete = true; continue; }
+        int code = snapshot_cache_rec(child, root_dev, o, days, manifest, pkg, category, stats, depth + 1U);
+        if (code == 9) { closedir(dir); return 9; }
+    }
+    closedir(dir);
+    stats->dirs++;
+    if (stats->files == before) stats->empty_dirs++;
+    return 0;
+}
+static int snapshot_cache_tree(const char *path, const Options *o, const char *pkg,
+                               const char *category, FILE *manifest, Stats *stats) {
+    memset(stats, 0, sizeof(*stats));
+    struct stat root;
+    if (lstat(path, &root) != 0 || !S_ISDIR(root.st_mode) || S_ISLNK(root.st_mode)) return -1;
+    FILE *temporary = tmpfile();
+    if (!temporary) return -1;
+    int code = snapshot_cache_rec(path, root.st_dev, o, o->min_age_days, temporary, pkg, category, stats, 0U);
+    if (code == 0 && !stats->oversized && !stats->mount_conflict && !stats->incomplete && stats->files > 0U) {
+        rewind(temporary);
+        char buffer[16384];
+        size_t count;
+        while ((count = fread(buffer, 1, sizeof(buffer), temporary)) > 0U) {
+            if (fwrite(buffer, 1, count, manifest) != count) {
+                stats->incomplete = true;
+                code = -1;
+                break;
+            }
+        }
+    }
+    fclose(temporary);
+    return code;
+}
+static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *items, FILE *manifest,
+                            Totals *totals, const char *pkg, const char *category,
+                            const char *path, uint64_t current) {
     if (!is_dir_nofollow(path)) return;
-    atomic_progress(o, "cache-scan", "C 原生应用缓存扫描", cur, 0, path);
+    atomic_progress(o, "cache-scan", "C 原生应用缓存扫描", current, 0, path);
     if (package_whitelisted(pkg) || whitelist_conflict(path)) {
-        t->skipped++;
-        t->whitelisted++;
+        totals->skipped++;
+        totals->whitelisted++;
         report_row(rep, "skipped", "protected", category, 0, 0, path);
         return;
     }
-    Stats s;
-    int rc = stat_tree(path, o, o->min_age_days, &s);
-    if (rc == 9) return;
-    if (rc < 0 || s.incomplete) t->errors++;
-    if (s.files == 0) return;
-    uint64_t count = s.files;
-    if (s.oversized || s.mount_conflict) {
-        t->protected_items += count;
-        t->protected_bytes += s.bytes;
-        if (s.mount_conflict) t->mount_items++;
-        report_row(rep, "protected", "low", category, count, s.bytes, path);
+    Stats stats;
+    int code = snapshot_cache_tree(path, o, pkg, category, manifest, &stats);
+    if (code == 9) return;
+    if (code < 0 || stats.incomplete) totals->errors++;
+    if (stats.files == 0U) return;
+    uint64_t count = stats.files;
+    if (stats.oversized || stats.mount_conflict || stats.incomplete) {
+        totals->protected_items += count;
+        totals->protected_bytes += stats.bytes;
+        if (stats.mount_conflict) totals->mount_items++;
+        report_row(rep, "protected", "low", category, count, stats.bytes, path);
         return;
     }
-    t->files += s.files;
-    t->bytes += s.bytes;
-    t->dirs += s.dirs;
-    t->candidates++;
-    t->targets++;
-    report_row(rep, "candidate", "low", category, count, s.bytes, path);
+    totals->files += stats.files;
+    totals->bytes += stats.bytes;
+    totals->dirs += stats.dirs;
+    totals->candidates++;
+    totals->targets++;
+    report_row(rep, "candidate", "low", category, count, stats.bytes, path);
     if (targets) fprintf(targets, "%s\n", path);
-    if (items) fprintf(items, "%s\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%s\n", pkg, category, s.files, s.bytes, s.dirs, path);
+    if (items) {
+        fprintf(items, "%s\t%s\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%s\n",
+                pkg, category, stats.files, stats.bytes, stats.dirs, path);
+    }
 }
-static void scan_cache_user_root(const Options *o, const char *root, const char *prefix, FILE *rep, FILE *targets, FILE *items, Totals *t, uint64_t *cur) {
+static void scan_cache_user_root(const Options *o, const char *root, const char *prefix,
+                                 FILE *rep, FILE *targets, FILE *items, FILE *manifest,
+                                 Totals *totals, uint64_t *current) {
     DIR *users = opendir(root);
     if (!users) return;
-    struct dirent *ue;
-    while ((ue = readdir(users)) != NULL) {
-        if (!isdigit((unsigned char)ue->d_name[0])) continue;
+    struct dirent *user_entry;
+    while ((user_entry = readdir(users)) != NULL) {
+        if (!isdigit((unsigned char)user_entry->d_name[0])) continue;
         char user[PATH_MAX];
-        snprintf(user, sizeof(user), "%s/%s", root, ue->d_name);
+        snprintf(user, sizeof(user), "%s/%s", root, user_entry->d_name);
         DIR *apps = opendir(user);
         if (!apps) continue;
-        struct dirent *ae;
-        while ((ae = readdir(apps)) != NULL) {
-            if (ae->d_name[0] == '.' || !safe_package(ae->d_name)) continue;
+        struct dirent *app_entry;
+        while ((app_entry = readdir(apps)) != NULL) {
+            if (app_entry->d_name[0] == '.' || !safe_package(app_entry->d_name)) continue;
             char app[PATH_MAX];
-            snprintf(app, sizeof(app), "%s/%s", user, ae->d_name);
+            snprintf(app, sizeof(app), "%s/%s", user, app_entry->d_name);
             const char *leaves[] = {"cache", "code_cache"};
-            for (size_t i = 0; i < 2; i++) {
+            for (size_t i = 0; i < 2U; i++) {
                 if (stop_requested(o)) { closedir(apps); closedir(users); return; }
-                char p[PATH_MAX];
-                snprintf(p, sizeof(p), "%s/%s", app, leaves[i]);
-                (*cur)++;
-                char cat[320];
-                snprintf(cat, sizeof(cat), "%s:%s", prefix, ae->d_name);
-                cache_candidate(o, rep, targets, items, t, ae->d_name, cat, p, *cur);
+                char path[PATH_MAX];
+                snprintf(path, sizeof(path), "%s/%s", app, leaves[i]);
+                (*current)++;
+                char category[320];
+                snprintf(category, sizeof(category), "%s:%s", prefix, app_entry->d_name);
+                cache_candidate(o, rep, targets, items, manifest, totals,
+                                app_entry->d_name, category, path, *current);
             }
         }
         closedir(apps);
@@ -378,61 +469,267 @@ static void scan_cache_user_root(const Options *o, const char *root, const char 
 }
 static int scan_cache(const Options *o) {
     require_outputs(o);
+    if (!o->manifest_path) die("cache manifest required");
     load_lines(o->whitelist_path, &g_whitelist, true);
     load_lines(o->package_whitelist_path, &g_package_whitelist, false);
-    FILE *rep = open_report(o->report_path);
+    FILE *report = open_report(o->report_path);
     FILE *targets = fopen(o->targets_path, "w");
     FILE *items = o->items_path ? fopen(o->items_path, "w") : NULL;
-    if (items) fprintf(items, "package\tcategory\tfiles\tbytes\tdirectories\tpath\n");
-    Totals t = {0};
-    uint64_t cur = 0;
+    FILE *manifest = fopen(o->manifest_path, "wb");
+    if (!report || !targets || !items || !manifest) {
+        if (report) fclose(report);
+        if (targets) fclose(targets);
+        if (items) fclose(items);
+        if (manifest) fclose(manifest);
+        return 71;
+    }
+    fprintf(items, "package\tcategory\tfiles\tbytes\tdirectories\tpath\n");
+    Totals totals = {0};
+    uint64_t current = 0;
     char root[PATH_MAX];
     snprintf(root, sizeof(root), "%s/user", o->data_root);
-    scan_cache_user_root(o, root, "内部应用缓存", rep, targets, items, &t, &cur);
+    scan_cache_user_root(o, root, "内部应用缓存", report, targets, items, manifest, &totals, &current);
     if (stop_requested(o)) goto stopped;
     snprintf(root, sizeof(root), "%s/user_de", o->data_root);
-    scan_cache_user_root(o, root, "设备保护缓存", rep, targets, items, &t, &cur);
+    scan_cache_user_root(o, root, "设备保护缓存", report, targets, items, manifest, &totals, &current);
     if (stop_requested(o)) goto stopped;
     DIR *users = opendir(o->media_root);
     if (users) {
-        struct dirent *ue;
-        while ((ue = readdir(users)) != NULL) {
-            if (!isdigit((unsigned char)ue->d_name[0])) continue;
-            char appsroot[PATH_MAX];
-            snprintf(appsroot, sizeof(appsroot), "%s/%s/Android/data", o->media_root, ue->d_name);
-            DIR *apps = opendir(appsroot);
+        struct dirent *user_entry;
+        while ((user_entry = readdir(users)) != NULL) {
+            if (!isdigit((unsigned char)user_entry->d_name[0])) continue;
+            char apps_root[PATH_MAX];
+            snprintf(apps_root, sizeof(apps_root), "%s/%s/Android/data", o->media_root, user_entry->d_name);
+            DIR *apps = opendir(apps_root);
             if (!apps) continue;
-            struct dirent *ae;
-            while ((ae = readdir(apps)) != NULL) {
-                if (ae->d_name[0] == '.' || !safe_package(ae->d_name)) continue;
+            struct dirent *app_entry;
+            while ((app_entry = readdir(apps)) != NULL) {
+                if (app_entry->d_name[0] == '.' || !safe_package(app_entry->d_name)) continue;
                 char app[PATH_MAX];
-                snprintf(app, sizeof(app), "%s/%s", appsroot, ae->d_name);
+                snprintf(app, sizeof(app), "%s/%s", apps_root, app_entry->d_name);
                 const char *leaves[] = {"cache", "code_cache"};
-                for (size_t i = 0; i < 2; i++) {
+                for (size_t i = 0; i < 2U; i++) {
                     if (stop_requested(o)) { closedir(apps); closedir(users); goto stopped; }
-                    char p[PATH_MAX];
-                    snprintf(p, sizeof(p), "%s/%s", app, leaves[i]);
-                    cur++;
-                    char cat[320];
-                    snprintf(cat, sizeof(cat), "外部应用缓存:%s", ae->d_name);
-                    cache_candidate(o, rep, targets, items, &t, ae->d_name, cat, p, cur);
+                    char path[PATH_MAX];
+                    snprintf(path, sizeof(path), "%s/%s", app, leaves[i]);
+                    current++;
+                    char category[320];
+                    snprintf(category, sizeof(category), "外部应用缓存:%s", app_entry->d_name);
+                    cache_candidate(o, report, targets, items, manifest, &totals,
+                                    app_entry->d_name, category, path, current);
                 }
             }
             closedir(apps);
         }
         closedir(users);
     }
-    if (rep) fclose(rep);
-    if (targets) fclose(targets);
-    if (items) fclose(items);
-    write_summary(o, &t);
+    fflush(manifest);
+    fsync(fileno(manifest));
+    fclose(report);
+    fclose(targets);
+    fclose(items);
+    fclose(manifest);
+    write_summary(o, &totals);
     return 0;
 stopped:
-    if (rep) fclose(rep);
-    if (targets) fclose(targets);
-    if (items) fclose(items);
-    write_summary(o, &t);
+    fclose(report);
+    fclose(targets);
+    fclose(items);
+    fclose(manifest);
+    write_summary(o, &totals);
     return 9;
+}
+
+static int read_nul_field(FILE *file, char **value, size_t *capacity) {
+    ssize_t length = getdelim(value, capacity, '\0', file);
+    if (length < 0) return feof(file) ? 0 : -1;
+    if (length == 0 || (*value)[length - 1] != '\0') return -1;
+    (*value)[length - 1] = '\0';
+    return 1;
+}
+static bool parse_u64_value(const char *text, uint64_t *value) {
+    if (!text || !*text) return false;
+    char *end = NULL;
+    errno = 0;
+    unsigned long long parsed = strtoull(text, &end, 10);
+    if (errno != 0 || !end || *end != '\0') return false;
+    *value = (uint64_t)parsed;
+    return true;
+}
+static bool next_segment(const char **cursor, char *output, size_t capacity) {
+    const char *start = *cursor;
+    if (!start || !*start) return false;
+    const char *slash = strchr(start, '/');
+    size_t length = slash ? (size_t)(slash - start) : strlen(start);
+    if (length == 0U || length + 1U > capacity) return false;
+    memcpy(output, start, length);
+    output[length] = '\0';
+    *cursor = slash ? slash + 1 : start + length;
+    return true;
+}
+static bool numeric_segment(const char *value) {
+    if (!value || !*value) return false;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (!isdigit(*p)) return false;
+    }
+    return true;
+}
+static bool safe_relative_tail(const char *tail) {
+    if (!tail || !*tail || tail[0] == '/') return false;
+    if (strcmp(tail, ".") == 0 || strcmp(tail, "..") == 0) return false;
+    if (strstr(tail, "/../") || strstr(tail, "/./")) return false;
+    size_t length = strlen(tail);
+    if (length >= 3U && strcmp(tail + length - 3U, "/..") == 0) return false;
+    if (length >= 2U && strcmp(tail + length - 2U, "/.") == 0) return false;
+    return true;
+}
+static bool cache_path_matches_package(const Options *o, const char *path, const char *pkg) {
+    if (!path || !pkg || !safe_package(pkg)) return false;
+    const char *cursor = NULL;
+    size_t data_length = strlen(o->data_root);
+    size_t media_length = strlen(o->media_root);
+    bool external = false;
+    if (strncmp(path, o->data_root, data_length) == 0 && path[data_length] == '/') {
+        cursor = path + data_length + 1U;
+    } else if (strncmp(path, o->media_root, media_length) == 0 && path[media_length] == '/') {
+        cursor = path + media_length + 1U;
+        external = true;
+    } else {
+        return false;
+    }
+    char segment[512];
+    if (external) {
+        if (!next_segment(&cursor, segment, sizeof(segment)) || !numeric_segment(segment)) return false;
+        if (!next_segment(&cursor, segment, sizeof(segment)) || strcmp(segment, "Android") != 0) return false;
+        if (!next_segment(&cursor, segment, sizeof(segment)) || strcmp(segment, "data") != 0) return false;
+    } else {
+        if (!next_segment(&cursor, segment, sizeof(segment)) ||
+            (strcmp(segment, "user") != 0 && strcmp(segment, "user_de") != 0)) return false;
+        if (!next_segment(&cursor, segment, sizeof(segment)) || !numeric_segment(segment)) return false;
+    }
+    if (!next_segment(&cursor, segment, sizeof(segment)) || strcmp(segment, pkg) != 0) return false;
+    if (!next_segment(&cursor, segment, sizeof(segment)) ||
+        (strcmp(segment, "cache") != 0 && strcmp(segment, "code_cache") != 0)) return false;
+    return safe_relative_tail(cursor);
+}
+typedef struct {
+    char *field[10];
+    size_t capacity[10];
+} ManifestRecord;
+static void manifest_record_free(ManifestRecord *record) {
+    for (size_t i = 0; i < 10U; i++) free(record->field[i]);
+    memset(record, 0, sizeof(*record));
+}
+static int manifest_record_read(FILE *file, ManifestRecord *record) {
+    int first = read_nul_field(file, &record->field[0], &record->capacity[0]);
+    if (first <= 0) return first;
+    for (size_t i = 1; i < 10U; i++) {
+        if (read_nul_field(file, &record->field[i], &record->capacity[i]) != 1) return -1;
+    }
+    return 1;
+}
+static bool stat_matches_manifest(const struct stat *st, uint64_t dev, uint64_t ino, uint64_t size,
+                                  uint64_t mtime_sec, uint64_t mtime_nsec,
+                                  uint64_t ctime_sec, uint64_t ctime_nsec) {
+    uint64_t actual_size = st->st_size > 0 ? (uint64_t)st->st_size : 0U;
+    return S_ISREG(st->st_mode) && !S_ISLNK(st->st_mode) &&
+           (uint64_t)st->st_dev == dev && (uint64_t)st->st_ino == ino &&
+           actual_size == size &&
+           (uint64_t)st->st_mtim.tv_sec == mtime_sec &&
+           (uint64_t)st->st_mtim.tv_nsec == mtime_nsec &&
+           (uint64_t)st->st_ctim.tv_sec == ctime_sec &&
+           (uint64_t)st->st_ctim.tv_nsec == ctime_nsec;
+}
+static int clean_cache_snapshot(const Options *o) {
+    if (!o->manifest_path || !o->report_path || !o->summary_path) die("missing cache clean paths");
+    load_lines(o->whitelist_path, &g_whitelist, true);
+    load_lines(o->package_whitelist_path, &g_package_whitelist, false);
+    FILE *manifest = fopen(o->manifest_path, "rb");
+    FILE *report = open_report(o->report_path);
+    if (!manifest || !report) {
+        if (manifest) fclose(manifest);
+        if (report) fclose(report);
+        return 71;
+    }
+    ManifestRecord record = {0};
+    uint64_t total = 0;
+    int read_code;
+    while ((read_code = manifest_record_read(manifest, &record)) == 1) total++;
+    if (read_code < 0) {
+        manifest_record_free(&record);
+        fclose(manifest);
+        fclose(report);
+        return 7;
+    }
+    rewind(manifest);
+    Totals totals = {0};
+    uint64_t current = 0;
+    int result = 0;
+    while ((read_code = manifest_record_read(manifest, &record)) == 1) {
+        current++;
+        const char *pkg = record.field[0];
+        const char *category = record.field[1];
+        const char *path = record.field[9];
+        if (stop_requested(o)) { result = 9; break; }
+        if (current == 1U || current % 128U == 0U || current == total) {
+            atomic_progress(o, "cache-clean", "C 原生校验并消费不可变缓存快照", current, total, path);
+        }
+        uint64_t dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec;
+        bool metadata_ok =
+            parse_u64_value(record.field[2], &dev) &&
+            parse_u64_value(record.field[3], &ino) &&
+            parse_u64_value(record.field[4], &size) &&
+            parse_u64_value(record.field[5], &mtime_sec) &&
+            parse_u64_value(record.field[6], &mtime_nsec) &&
+            parse_u64_value(record.field[7], &ctime_sec) &&
+            parse_u64_value(record.field[8], &ctime_nsec);
+        if (!metadata_ok || size > o->max_file_bytes ||
+            !cache_path_matches_package(o, path, pkg) ||
+            package_whitelisted(pkg) || whitelist_conflict(path)) {
+            totals.skipped++;
+            totals.protected_items++;
+            report_row(report, "protected", "low", category, 1, 0, path);
+            continue;
+        }
+        struct stat first_stat;
+        struct stat second_stat;
+        if (lstat(path, &first_stat) != 0) {
+            totals.skipped++;
+            report_row(report, "missing", "low", category, 1, 0, path);
+            continue;
+        }
+        if (!stat_matches_manifest(&first_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
+            totals.skipped++;
+            totals.protected_items++;
+            totals.protected_bytes += size;
+            report_row(report, "changed", "low", category, 1, size, path);
+            continue;
+        }
+        if (lstat(path, &second_stat) != 0 ||
+            !stat_matches_manifest(&second_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
+            totals.skipped++;
+            totals.protected_items++;
+            totals.protected_bytes += size;
+            report_row(report, "changed", "low", category, 1, size, path);
+            continue;
+        }
+        if (unlink(path) == 0) {
+            totals.files++;
+            totals.bytes += size;
+            totals.candidates++;
+            report_row(report, "cleaned", "low", category, 1, size, path);
+        } else {
+            totals.errors++;
+            report_row(report, "failed", "low", category, 1, size, path);
+        }
+    }
+    if (read_code < 0) result = 7;
+    manifest_record_free(&record);
+    fclose(manifest);
+    fclose(report);
+    totals.targets = total;
+    write_summary(o, &totals);
+    return result;
 }
 
 static char *normalize_rule(const char *raw) {
@@ -620,13 +917,14 @@ static int scan_deep(const Options *o) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-deep> [options]");
+    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|clean-cache-snapshot|scan-deep> [options]");
     g_started = time(NULL);
     Options o;
     parse_options(argc, argv, &o);
     int rc;
     if (strcmp(argv[1], "scan-corpses") == 0) rc = scan_corpses(&o);
     else if (strcmp(argv[1], "scan-cache") == 0) rc = scan_cache(&o);
+    else if (strcmp(argv[1], "clean-cache-snapshot") == 0) rc = clean_cache_snapshot(&o);
     else if (strcmp(argv[1], "scan-deep") == 0) rc = scan_deep(&o);
     else die("unsupported command");
     vec_free(&g_whitelist);

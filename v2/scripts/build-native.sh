@@ -26,7 +26,7 @@ CC="$TOOLCHAIN/aarch64-linux-android${API}-clang"
 STRIP="$TOOLCHAIN/llvm-strip"
 
 [ -x "$CC" ] || { echo "未找到编译器：$CC" >&2; exit 1; }
-[ -f "$SOURCE" ] || { echo "未找到 Alpha 42.4 原生引擎源码：$SOURCE" >&2; exit 1; }
+[ -f "$SOURCE" ] || { echo "未找到白泽 v2 原生引擎源码：$SOURCE" >&2; exit 1; }
 mkdir -p "$OUT"
 "$CC" -std=c11 -O2 -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
   -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
@@ -34,4 +34,4 @@ mkdir -p "$OUT"
 "$STRIP" --strip-unneeded "$OUT/baize_engine"
 chmod 0755 "$OUT/baize_engine"
 file "$OUT/baize_engine"
-echo "已生成 Alpha 42.4 原生深度/缓存/卸载残留扫描器：$OUT/baize_engine"
+echo "已生成白泽 v2.0.5 原生不可变快照/深度/残留引擎：$OUT/baize_engine"

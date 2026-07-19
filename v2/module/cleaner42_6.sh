@@ -13,6 +13,9 @@ run_script() {
 }
 
 case "$MODE" in
+  cache-auto)
+    run_script "$MODDIR/cache-transaction.sh" "$MODE" "$TRIGGER"
+    ;;
   cache-clean)
     run_script "$MODDIR/cache-snapshot-clean.sh" "$MODE" "$TRIGGER"
     ;;
