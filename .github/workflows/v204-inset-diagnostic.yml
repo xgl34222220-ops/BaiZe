@@ -1,0 +1,51 @@
+name: Diagnose v2.0.4 inset patch
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/v204-inset-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.0.4-system-bars-insets
+      - name: Inspect all patch anchors
+        shell: bash
+        run: |
+          python3 - <<'PY' > v204-inset-diagnostic.txt 2>&1
+          from pathlib import Path
+          import re
+
+          app = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt').read_text(encoding='utf-8')
+          old_header = '''.fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 22.dp, vertical = 14.dp)'''
+          print('old_header_count=', app.count(old_header))
+          print('all_status_padding_count=', app.count('.statusBarsPadding()'))
+          for style in ('MATERIAL', 'MIUIX'):
+              pattern = rf'(style = UiStyle\.{style},\n\s*)modifier = Modifier\.fillMaxSize\(\)'
+              print(style, 'host_count=', len(re.findall(pattern, app)))
+
+          gradle = Path('v2/app/build.gradle.kts').read_text(encoding='utf-8')
+          print('gradle_code=', len(re.findall(r'versionCode\s*=\s*22330', gradle)))
+          print('gradle_name=', len(re.findall(r'versionName\s*=\s*"2\.0\.3"', gradle)))
+
+          prop = Path('v2/module/module.prop').read_text(encoding='utf-8')
+          print('module_prop=')
+          print(prop)
+
+          package = Path('v2/scripts/package-module.sh').read_text(encoding='utf-8')
+          print('package_v203=', package.count('v2.0.3'))
+          print('package_22330=', package.count('22330'))
+          print('package_label=', package.count('原生调度完整版模块'))
+          PY
+          cat v204-inset-diagnostic.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v204-inset-diagnostic
+          path: v204-inset-diagnostic.txt
