@@ -69,6 +69,7 @@ fun MiuixLiquidDock(
     items: List<MiuixLiquidNavItem>,
     onSelected: (Int) -> Unit,
     hazeState: HazeState? = null,
+    floating: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) return
@@ -78,7 +79,11 @@ fun MiuixLiquidDock(
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val shape = RoundedCornerShape(34.dp)
+    val shape = if (floating) {
+        RoundedCornerShape(34.dp)
+    } else {
+        RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp)
+    }
 
     val activeHazeState = hazeState.takeIf {
         settings.blurEnabled && settings.glassEnabled && !amoled
@@ -103,10 +108,17 @@ fun MiuixLiquidDock(
 
     BoxWithConstraints(
         modifier = modifier
-            .padding(horizontal = 16.dp)
-            .padding(bottom = bottomInset + 10.dp)
+            .then(
+                if (floating) {
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = bottomInset + 10.dp)
+                } else {
+                    Modifier
+                }
+            )
             .fillMaxWidth()
-            .shadow(22.dp, shape, clip = false)
+            .shadow(if (floating) 22.dp else 8.dp, shape, clip = false)
             .clip(shape)
             .then(hazeModifier)
             .background(dockColor)
@@ -134,7 +146,12 @@ fun MiuixLiquidDock(
                     )
                 }
             }
-            .padding(horizontal = 6.dp, vertical = 7.dp)
+            .padding(
+                start = 6.dp,
+                top = 7.dp,
+                end = 6.dp,
+                bottom = if (floating) 7.dp else bottomInset + 7.dp
+            )
     ) {
         val itemWidth = maxWidth / items.size.toFloat()
         val compact = items.size > 4

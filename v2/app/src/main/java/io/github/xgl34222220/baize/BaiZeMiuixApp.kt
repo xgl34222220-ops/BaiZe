@@ -352,6 +352,7 @@ fun BaiZeMiuixApp(
                     MaterialFloatingDock(
                         selected = page,
                         onSelected = { page = it },
+                        floating = appearance.floatingDock,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -382,6 +383,7 @@ fun BaiZeMiuixApp(
                         items = miuixNavItems,
                         onSelected = { index -> page = BaiZePage.entries[index] },
                         hazeState = hazeState,
+                        floating = appearance.floatingDock,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
@@ -565,7 +567,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Haze Glass · Alpha 40",
+                "Miuix × Haze Glass · Alpha 41",
                 actions.refresh
             )
         }
@@ -837,21 +839,40 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
 private fun MaterialFloatingDock(
     selected: BaiZePage,
     onSelected: (BaiZePage) -> Unit,
+    floating: Boolean,
     modifier: Modifier = Modifier
 ) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    Surface(
-        modifier = modifier
+    val shape = if (floating) {
+        MaterialTheme.shapes.extraLarge
+    } else {
+        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    }
+    val outerModifier = if (floating) {
+        modifier
             .padding(horizontal = 20.dp)
             .padding(bottom = bottom + 12.dp)
-            .fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+            .fillMaxWidth()
+    } else {
+        modifier.fillMaxWidth()
+    }
+
+    Surface(
+        modifier = outerModifier,
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f),
-        tonalElevation = 10.dp,
-        shadowElevation = 18.dp
+        tonalElevation = if (floating) 10.dp else 5.dp,
+        shadowElevation = if (floating) 18.dp else 8.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 7.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    start = 7.dp,
+                    top = 7.dp,
+                    end = 7.dp,
+                    bottom = if (floating) 7.dp else bottom + 7.dp
+                ),
             horizontalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             BaiZePage.entries.forEach { item ->
