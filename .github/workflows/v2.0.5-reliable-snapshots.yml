@@ -24,21 +24,40 @@ jobs:
       - name: Apply reliable snapshot implementation
         shell: bash
         run: |
-          set -euo pipefail
-          cat .github/v205-payload/part* | base64 -d | tar -xzf -
-          git diff --check
-          for script in \
-            service.sh \
-            v2/module/service.sh \
-            v2/module/customize.sh \
-            v2/module/cache-transaction.sh \
-            v2/module/cache-snapshot-clean.sh \
-            v2/module/native-scan.sh \
-            v2/module/cleaner42_6.sh \
-            v2/scripts/package-module.sh \
-            v2/scripts/build-native.sh; do
-            sh -n "$script"
-          done
+          set +e
+          {
+            set -x
+            wc -c .github/v205-payload/part*
+            cat .github/v205-payload/part* > /tmp/v205-payload.b64
+            wc -c /tmp/v205-payload.b64
+            base64 -d /tmp/v205-payload.b64 > /tmp/v205-payload.tar.gz
+            sha256sum /tmp/v205-payload.tar.gz
+            tar -tzf /tmp/v205-payload.tar.gz
+            tar -xzf /tmp/v205-payload.tar.gz
+            git diff --check
+            for script in \
+              service.sh \
+              v2/module/service.sh \
+              v2/module/customize.sh \
+              v2/module/cache-transaction.sh \
+              v2/module/cache-snapshot-clean.sh \
+              v2/module/native-scan.sh \
+              v2/module/cleaner42_6.sh \
+              v2/scripts/package-module.sh \
+              v2/scripts/build-native.sh; do
+              sh -n "$script"
+            done
+          } > APPLY_V205_DIAGNOSTICS.txt 2>&1
+          status=$?
+          cat APPLY_V205_DIAGNOSTICS.txt
+          if [ "$status" -ne 0 ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add APPLY_V205_DIAGNOSTICS.txt
+            git commit -m 'ci(v2): preserve v2.0.5 apply diagnostics' || true
+            git push origin HEAD:fix/v2.0.5-reliable-snapshots
+          fi
+          exit "$status"
 
       - name: Test immutable snapshot semantics on host
         shell: bash
@@ -144,6 +163,7 @@ jobs:
           rm -rf .github/v205-payload
           rm -f .github/workflows/export-v205-source.yml
           rm -f .github/workflows/v2.0.5-reliable-snapshots.yml
+          rm -f APPLY_V205_DIAGNOSTICS.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
