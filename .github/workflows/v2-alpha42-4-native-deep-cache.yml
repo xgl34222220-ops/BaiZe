@@ -118,7 +118,20 @@ jobs:
 
       - name: Build Android App
         working-directory: v2
-        run: gradle --no-daemon :app:assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug > /tmp/alpha42-4-gradle.log 2>&1
+          code=$?
+          tail -n 160 /tmp/alpha42-4-gradle.log
+          exit "$code"
+
+      - name: Upload Android diagnostic
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alpha42.4-Android-Diagnostic
+          path: /tmp/alpha42-4-gradle.log
 
       - name: Package and verify module
         working-directory: v2
