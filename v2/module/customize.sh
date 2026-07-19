@@ -9,9 +9,9 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.3 C 原生扫描预览版"
-ui_print "- 卸载残留扫描优先使用 arm64 C 引擎，异常时自动回退 Shell"
-ui_print "- 删除、授权快照、高风险保护与其他清理功能继续沿用稳定引擎"
+ui_print "- 安装白泽 v2 Alpha 42.4 C 原生高速扫描版"
+ui_print "- 深度规则、应用缓存与卸载残留扫描优先使用 arm64 C 引擎"
+ui_print "- 删除、授权快照、高风险保护与异常回退继续沿用稳定 Shell 引擎"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 
 mkdir -p "$STATE_DIR"
