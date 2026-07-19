@@ -55,7 +55,21 @@ jobs:
 
       - name: Build Android App
         working-directory: v2
-        run: gradle --no-daemon :app:assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee ../app-build.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            tail -n 500 ../app-build.log > ../APP_BUILD_FAILURE.txt
+            cd ..
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add APP_BUILD_FAILURE.txt
+            git commit -m 'ci(v2): preserve App takeover compiler diagnostics' || true
+            git push origin HEAD:fix/v2.0.1-app-scheduler-takeover
+          fi
+          exit "$status"
 
       - name: Package App-only module
         working-directory: v2
@@ -83,7 +97,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f v2/scripts/app-scheduler-takeover-patch.py
+          rm -f v2/scripts/app-scheduler-takeover-patch.py APP_BUILD_FAILURE.txt app-build.log
           rm -f .github/workflows/v2-app-scheduler-takeover.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -99,6 +113,7 @@ jobs:
             v2/module/module.prop \
             RELEASE_NOTES_V2.md \
             .github/workflows/v2-app-scheduler-takeover.yml
+          git add -u APP_BUILD_FAILURE.txt app-build.log || true
           git commit -m 'fix(v2): let the native app take over scheduling'
           git push origin HEAD:fix/v2.0.1-app-scheduler-takeover
 
