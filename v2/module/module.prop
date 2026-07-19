@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha42.7
-versionCode=22270
+version=v2.0.0-alpha42.8
+versionCode=22280
 author=惜故里丶
-description=垃圾扫描与安装包扫描恢复独立二级页面；进入页面后再启动扫描，快照清理不重复扫描。
+description=安装包与应用缓存均为扫描快照后一键清理；应用缓存页面跟随统一 MIUIx、Monet 与明暗主题。
