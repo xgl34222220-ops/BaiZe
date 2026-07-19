@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -25,9 +25,6 @@ jobs:
           ref: v2-alpha42-2-compose-aux-ui
           fetch-depth: 0
           show-progress: false
-
-      - name: Apply Alpha 42.2 Compose background fix
-        run: python3 v2/scripts/apply-alpha42-2-background-fix.py
 
       - name: Validate auxiliary Compose UI and shell
         run: |
@@ -45,6 +42,7 @@ jobs:
           grep -q 'version=v2.0.0-alpha42.2' v2/module/module.prop
           ! grep -q 'ActivityCleanCenterBinding' v2/app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt
           ! grep -q 'ActivityProfileBinding' v2/app/src/main/java/io/github/xgl34222220/baize/ProfileActivity.kt
+          test ! -e v2/scripts/apply-alpha42-2-background-fix.py
 
       - uses: actions/setup-java@v4
         with:
@@ -61,32 +59,8 @@ jobs:
           gradle-version: '8.13'
 
       - name: Build native App
-        id: app_build
         working-directory: v2
-        shell: bash
-        run: |
-          set +e
-          gradle --no-daemon --console=plain :app:assembleDebug > /tmp/alpha42-2-build.log 2>&1
-          status=$?
-          grep -nE '(^| )e: |error: |Exception|FAILURE:' /tmp/alpha42-2-build.log | tail -n 220 > /tmp/alpha42-2-errors.log || true
-          tail -n 260 /tmp/alpha42-2-build.log >> /tmp/alpha42-2-errors.log
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Upload compiler diagnostics
-        if: steps.app_build.outputs.status != '0'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Alpha42.2-compiler-diagnostics
-          path: |
-            /tmp/alpha42-2-errors.log
-            /tmp/alpha42-2-build.log
-
-      - name: Fail on compiler error
-        if: steps.app_build.outputs.status != '0'
-        run: |
-          cat /tmp/alpha42-2-errors.log
-          exit 1
+        run: gradle --no-daemon :app:assembleDebug
 
       - name: Package and verify module
         working-directory: v2
@@ -98,18 +72,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -p "$ZIP" app/baize.apk.sha256 | grep -Eq '^[0-9a-f]{64}$'
-
-      - name: Commit verified source
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add v2/app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt
-          git add v2/app/src/main/java/io/github/xgl34222220/baize/ProfileActivity.kt
-          if ! git diff --cached --quiet; then
-            git commit -m 'Fix Alpha 42.2 Compose background brushes'
-            git push origin HEAD:v2-alpha42-2-compose-aux-ui
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
