@@ -47,12 +47,17 @@ jobs:
       - name: Test scan snapshot and no-rescan clean
         shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           TEST=/tmp/baize-cache-snapshot
           diagnose() {
             status=$?
             echo "===== snapshot regression failed: $status ====="
-            find "$TEST" -maxdepth 8 -printf '%y %TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null || true
+            echo "===== scan trace ====="
+            tail -n 100 "$TEST/scan.trace" 2>/dev/null || true
+            echo "===== clean trace ====="
+            tail -n 160 "$TEST/clean.trace" 2>/dev/null || true
+            echo "===== remaining files ====="
+            find "$TEST" -maxdepth 9 -printf '%y %TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null || true
             for file in "$TEST/state/cache_scan.env" "$TEST/state/cache_scan.targets" "$TEST/state/cache_scan.items.tsv" "$TEST/state/latest.env" "$TEST/state/logs/latest.log"; do
               echo "===== $file ====="
               cat "$file" 2>/dev/null || true
@@ -81,7 +86,7 @@ jobs:
           BAIZE_MEDIA_ROOT="$TEST/media" \
           BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
           BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
-            bash -x v2/module/cleaner.sh cache-scan ci
+            bash -x v2/module/cleaner.sh cache-scan ci >"$TEST/scan.trace" 2>&1
 
           test -s "$TEST/state/cache_scan.env"
           test -s "$TEST/state/cache_scan.targets"
@@ -97,7 +102,7 @@ jobs:
           BAIZE_DATA_ROOT="$TEST/data" \
           BAIZE_MEDIA_ROOT="$TEST/media" \
           BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
-            bash -x v2/module/cleaner.sh cache-clean ci
+            bash -x v2/module/cleaner.sh cache-clean ci >"$TEST/clean.trace" 2>&1
 
           test ! -e "$TEST/data/user/0/com.example.cache/cache/a.bin"
           test ! -e "$TEST/data/user/0/com.example.cache/cache/sub/b.bin"
@@ -109,6 +114,13 @@ jobs:
           grep -q '^mode=cache-clean$' "$TEST/state/latest.env"
           grep -q '扫描快照' "$TEST/state/logs/latest.log"
           trap - ERR
+
+      - name: Upload cache snapshot failure state
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alpha42.5-Cache-Snapshot-Failure
+          path: /tmp/baize-cache-snapshot
 
       - name: Test stop request and snapshot retention
         shell: bash
