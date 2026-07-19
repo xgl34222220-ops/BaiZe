@@ -34,7 +34,7 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotId = ""
     @Volatile private var snapshotCreatedAt = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
-    @Volatile private var taskState = idleState()
+    @Volatile private var taskStateJson = idleState()
 
     private val binder = object : IBaiZeRootService.Stub() {
         override fun ping(): String = JSONObject()
@@ -58,7 +58,7 @@ class BaiZeRootService : RootService() {
                     .toString()
             } finally {
                 running.set(false)
-                taskState = idleState()
+                taskStateJson = idleState()
             }
         }
 
@@ -115,8 +115,8 @@ class BaiZeRootService : RootService() {
                     .toString()
             }
             return runCatching {
-                JSONObject(taskState).put("cancelRequested", cancelled.get()).toString()
-            }.getOrDefault(taskState)
+                JSONObject(taskStateJson).put("cancelRequested", cancelled.get()).toString()
+            }.getOrDefault(taskStateJson)
         }
 
         override fun cancelCurrentTask() {
@@ -142,7 +142,7 @@ class BaiZeRootService : RootService() {
         writePackageWhitelist(File(stateDir, "native-cache-packages.conf"), whitelistJson)
         val logDir = File(stateDir, "logs").apply { mkdirs() }
         val appLog = File(logDir, "app-cache-scan-${System.currentTimeMillis()}.log")
-        taskState = JSONObject()
+        taskStateJson = JSONObject()
             .put("running", true)
             .put("operation", "native-cache-scan")
             .put("phase", "正在启动 C 原生缓存扫描")
@@ -157,7 +157,7 @@ class BaiZeRootService : RootService() {
         while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
             if (cancelled.get()) runCatching { File(stateDir, "stop").writeText("1\n") }
             val state = readEnv(File(stateDir, "running.env"))
-            taskState = state
+            taskStateJson = state
                 .put("running", true)
                 .put("operation", "native-cache-scan")
                 .put("elapsedMs", SystemClock.elapsedRealtime() - started)
@@ -167,13 +167,17 @@ class BaiZeRootService : RootService() {
         val code = process.exitValue()
         val elapsed = SystemClock.elapsedRealtime() - started
         if (code != 0) {
-            val message = if (code == 9 || cancelled.get()) "缓存扫描已停止" else tailText(appLog, 4_000).ifBlank { "原生缓存扫描失败（代码 $code）" }
-            return JSONObject()
-                .put("cancelled", code == 9 || cancelled.get())
-                .put("error", if (code == 9) JSONObject.NULL else "native_scan_exit_$code")
-                .put("message", message)
+            val wasCancelled = code == 9 || cancelled.get()
+            val result = JSONObject()
+                .put("cancelled", wasCancelled)
+                .put(
+                    "message",
+                    if (wasCancelled) "缓存扫描已停止"
+                    else tailText(appLog, 4_000).ifBlank { "原生缓存扫描失败（代码 $code）" }
+                )
                 .put("elapsedMs", elapsed)
-                .toString()
+            if (!wasCancelled) result.put("error", "native_scan_exit_$code")
+            return result.toString()
         }
 
         val parsed = parseItems(File(stateDir, "cache_scan.items.tsv"))
