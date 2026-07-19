@@ -32,18 +32,34 @@ jobs:
           python3 v2/scripts/app-scheduler-takeover-patch.py
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('v2/app/src/main/res/layout/activity_dashboard.xml')
           text = path.read_text(encoding='utf-8')
-          patterns = [
-              r'''\n\s*<TextView\n\s*android:id="@\+id/dailyHourText"\n.*?android:visibility="gone" />''',
-              r'''\n\s*<com\.google\.android\.material\.slider\.Slider\n\s*android:id="@\+id/dailyHourSlider"\n.*?android:visibility="gone" />''',
-          ]
-          for pattern in patterns:
-              text, count = re.subn(pattern, '', text, count=1, flags=re.S)
-              if count != 1:
-                  raise SystemExit(f'expected one obsolete daily control, found {count}')
+
+          def remove_second_self_closing_node(source: str, view_id: str) -> str:
+              marker = f'android:id="@+id/{view_id}"'
+              positions = []
+              cursor = 0
+              while True:
+                  found = source.find(marker, cursor)
+                  if found < 0:
+                      break
+                  positions.append(found)
+                  cursor = found + len(marker)
+              if len(positions) != 2:
+                  raise SystemExit(f'{view_id}: expected two nodes before cleanup, found {len(positions)}')
+              target = positions[1]
+              start = source.rfind('<', 0, target)
+              end = source.find('/>', target)
+              if start < 0 or end < 0:
+                  raise SystemExit(f'{view_id}: obsolete self-closing node not found')
+              line_start = source.rfind('\n', 0, start)
+              if line_start >= 0:
+                  start = line_start
+              return source[:start] + source[end + 2:]
+
+          text = remove_second_self_closing_node(text, 'dailyHourText')
+          text = remove_second_self_closing_node(text, 'dailyHourSlider')
           path.write_text(text, encoding='utf-8')
           PY
           git diff --check
