@@ -1,8 +1,8 @@
 name: Export BaiZe v2.0.5 source
 
 on:
-  push:
-    branches: [fix/v2.0.5-reliable-snapshots]
+  pull_request:
+    branches: [fix/v2.0.4-system-bars-insets]
     paths:
       - '.github/workflows/export-v205-source.yml'
   workflow_dispatch:
