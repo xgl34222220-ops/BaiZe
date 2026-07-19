@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22230
-        versionName = "2.0.0-alpha42.3"
+        versionCode = 22240
+        versionName = "2.0.0-alpha42.4"
     }
 
     buildFeatures {
@@ -37,7 +37,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
+                getDefaultProguardFile("android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
