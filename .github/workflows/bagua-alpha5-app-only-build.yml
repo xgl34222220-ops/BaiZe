@@ -28,6 +28,8 @@ jobs:
           echo "ef766b71e62939064643ae66f1b7beeca82cd83d072e6fbd41762425c0e1408e  bagua-alpha5-source.zip" | sha256sum -c -
           unzip -tq bagua-alpha5-source.zip
           unzip -q bagua-alpha5-source.zip -d work
+          sed -i 's/fun setSkin(/fun applySkin(/; s/fun setThemeMode(/fun applyThemeMode(/; s/fun setAmoled(/fun applyAmoled(/; s/fun setMonet(/fun applyMonet(/' work/app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
+          sed -i 's/controller::setSkin/controller::applySkin/g; s/controller::setThemeMode/controller::applyThemeMode/g; s/controller::setAmoled/controller::applyAmoled/g; s/controller::setMonet/controller::applyMonet/g' work/app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
