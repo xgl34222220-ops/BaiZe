@@ -440,13 +440,16 @@ private fun CleanCenterMiuix(
         Modifier
             .fillMaxSize()
             .background(
-                if (amoled) androidx.compose.ui.graphics.Color.Black
-                else Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = if (dark) .13f else .09f),
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.background
-                    )
+                Brush.verticalGradient(
+                    if (amoled) {
+                        listOf(androidx.compose.ui.graphics.Color.Black, androidx.compose.ui.graphics.Color.Black)
+                    } else {
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = if (dark) .13f else .09f),
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.background
+                        )
+                    }
                 )
             )
     ) {
