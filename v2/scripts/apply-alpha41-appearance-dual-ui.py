@@ -191,12 +191,12 @@ replace_once("v2/module/module.prop", 'versionCode=22000', 'versionCode=22100')
 replace_once("v2/scripts/package-module.sh", 'BaiZe-v2-Alpha40-Module.zip', 'BaiZe-v2-Alpha41-Module.zip')
 replace_once(
     "v2/scripts/package-module.sh",
-    '已生成 Alpha 40 Haze 动效与遗留清理模块',
+    '已生成 Alpha 40 Haze 动效与清理模块',
     '已生成 Alpha 41 完整主题双皮肤模块',
 )
 replace_once(
     "v2/module/customize.sh",
-    '安装白泽 v2 Alpha 40 Haze 动效与遗留清理版',
+    '安装白泽 v2 Alpha 40 Haze 动效版',
     '安装白泽 v2 Alpha 41 完整主题双皮肤版',
 )
 
