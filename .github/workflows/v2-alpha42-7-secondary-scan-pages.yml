@@ -59,8 +59,23 @@ jobs:
         run: sh scripts/build-native.sh
 
       - name: Build Android App
+        id: android_build
         working-directory: v2
-        run: gradle --no-daemon :app:assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee android-build.log
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Upload Android build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.7-Android-Build-Log
+          path: v2/android-build.log
+          if-no-files-found: ignore
 
       - name: Package and verify module
         working-directory: v2
