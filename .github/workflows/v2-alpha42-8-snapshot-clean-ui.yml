@@ -4,19 +4,17 @@ on:
   push:
     branches: [v2-alpha42-8-snapshot-clean-ui]
     paths:
-      - 'cleaner.sh'
       - 'v2/**'
       - '.github/workflows/v2-alpha42-8-snapshot-clean-ui.yml'
   pull_request:
     branches: [v2-alpha42-7-secondary-scan-pages]
     paths:
-      - 'cleaner.sh'
       - 'v2/**'
       - '.github/workflows/v2-alpha42-8-snapshot-clean-ui.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -28,105 +26,6 @@ jobs:
           fetch-depth: 0
           show-progress: false
 
-      - name: Apply APK scan snapshot persistence
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('cleaner.sh')
-          text = path.read_text()
-
-          state_anchor = 'CORPSE_SCAN_TARGETS="$STATE_DIR/corpse_scan.targets"\n'
-          if 'APK_SCAN_STATE="$STATE_DIR/apk_scan.env"' not in text:
-              text = text.replace(
-                  state_anchor,
-                  state_anchor + 'APK_SCAN_STATE="$STATE_DIR/apk_scan.env"\nAPK_SCAN_TARGETS="$STATE_DIR/apk_scan.targets"\n',
-                  1,
-              )
-
-          function_anchor = 'run_apk_packages() {\n  [ -d /data/media ] || return 0\n  list="$TMP_DIR/apk-packages.nul"\n'
-          if 'snapshot_sha256() {' not in text:
-              replacement = '''snapshot_sha256() {
-            file=$1
-            [ -f "$file" ] || { echo missing; return; }
-            if command -v sha256sum >/dev/null 2>&1; then
-              sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
-            else
-              toybox sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
-            fi
-          }
-
-          run_apk_packages() {
-            [ -d /data/media ] || return 0
-            if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
-              rm -f "$APK_SCAN_STATE" "$APK_SCAN_TARGETS"
-            fi
-            list="$TMP_DIR/apk-packages.nul"
-          '''
-              if function_anchor not in text:
-                  raise SystemExit('run_apk_packages anchor missing')
-              text = text.replace(function_anchor, replacement, 1)
-
-          sample_anchor = '  sample_path=$(first_nul_path "$list" 2>/dev/null)\n\n  if [ "$MODE" = "clean" ]; then\n'
-          if 'engine=compat-apk-scan-v42.8' not in text:
-              replacement = '''  sample_path=$(first_nul_path "$list" 2>/dev/null)
-
-            if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
-              cp -f "$list" "$APK_SCAN_TARGETS"
-              targets_sha=$(snapshot_sha256 "$APK_SCAN_TARGETS")
-              whitelist_sha=$(snapshot_sha256 "$WHITELIST")
-              scan_epoch=$(date +%s)
-              snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
-              {
-                echo "epoch=$scan_epoch"
-                echo "snapshot_id=$snapshot_id"
-                echo "targets_sha=$targets_sha"
-                echo "whitelist_sha=$whitelist_sha"
-                echo "max_file_bytes=$APK_PACKAGE_MAX_BYTES"
-                echo "package_days=$APK_PACKAGE_DAYS"
-                echo "bytes=$estimated"
-                echo "files=$count"
-                echo "engine=compat-apk-scan-v42.8"
-              } >"$APK_SCAN_STATE"
-              chmod 0600 "$APK_SCAN_STATE" "$APK_SCAN_TARGETS" 2>/dev/null
-            fi
-
-            if [ "$MODE" = "clean" ]; then
-          '''
-              if sample_anchor not in text:
-                  raise SystemExit('APK sample anchor missing')
-              text = text.replace(sample_anchor, replacement, 1)
-
-          result_anchor = '''  elif [ "$PROFILE" = "fragment" ]; then
-              RESULT="碎片扫描完成，可清理 $SPACE"
-            else
-              if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
-          '''
-          if 'RESULT="安装包扫描完成，可清理 $SPACE"' not in text:
-              replacement = '''  elif [ "$PROFILE" = "fragment" ]; then
-              RESULT="碎片扫描完成，可清理 $SPACE"
-            elif [ "$PROFILE" = "apk" ]; then
-              RESULT="安装包扫描完成，可清理 $SPACE"
-            else
-              if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
-          '''
-              if result_anchor not in text:
-                  raise SystemExit('APK result anchor missing')
-              text = text.replace(result_anchor, replacement, 1)
-
-          path.write_text(text)
-          PY
-
-          sh -n cleaner.sh
-          if ! git diff --quiet; then
-            git diff --check
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add cleaner.sh
-            git commit -m "feat(engine): persist APK scan authorization snapshot"
-            git push origin HEAD:v2-alpha42-8-snapshot-clean-ui
-          fi
-
       - name: Validate snapshot routing and themed pages
         run: |
           sh -n cleaner.sh notify.sh service.sh
@@ -134,13 +33,14 @@ jobs:
           sh -n v2/module/native-scan.sh
           sh -n v2/module/cache-snapshot-clean.sh
           sh -n v2/module/profile-snapshot-clean.sh
+          sh -n v2/module/apk-snapshot-scan.sh
           sh -n v2/module/apk-snapshot-clean.sh
           sh -n v2/module/customize.sh v2/module/service.sh v2/module/action.sh
           sh -n v2/scripts/build-native.sh v2/scripts/package-module.sh
           python3 v2/scripts/validate-rules.py
-          grep -q 'APK_SCAN_STATE="$STATE_DIR/apk_scan.env"' cleaner.sh
-          grep -q 'engine=compat-apk-scan-v42.8' cleaner.sh
+          grep -q 'apk-scanner.sh' v2/module/cleaner42_6.sh
           grep -q 'apk-cleaner.sh' v2/module/cleaner42_6.sh
+          grep -q 'engine=apk-snapshot-v42.8' v2/module/apk-snapshot-scan.sh
           grep -q 'runModuleTask("apk-clean")' v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt
           grep -q '一键清理.*项' v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt
           grep -q 'CACHE SNAPSHOT' v2/app/src/main/java/io/github/xgl34222220/baize/CacheActivity.kt
@@ -148,7 +48,7 @@ jobs:
           grep -q 'versionCode = 22280' v2/app/build.gradle.kts
           grep -q 'version=v2.0.0-alpha42.8' v2/module/module.prop
 
-      - name: Test APK snapshot clean without rediscovery
+      - name: Test APK scan then snapshot clean without rediscovery
         shell: bash
         run: |
           set -euo pipefail
@@ -160,21 +60,17 @@ jobs:
           rm -rf "$TEST"
           mkdir -p "$MEDIA/0/Download" "$STATE/reports" "$STATE/logs"
           printf 'old-apk-content' > "$TARGET"
-          touch -d '10 minutes ago' "$TARGET"
+          printf 'enabled=1\napk_package_days=0\napk_package_max_mb=4096\n' > "$STATE/config.conf"
           : > "$STATE/whitelist.conf"
-          printf '%s\0' "$TARGET" > "$STATE/apk_scan.targets"
-          targets_sha=$(sha256sum "$STATE/apk_scan.targets" | awk '{print $1}')
-          whitelist_sha=$(sha256sum "$STATE/whitelist.conf" | awk '{print $1}')
-          epoch=$(date +%s)
-          {
-            echo "epoch=$epoch"
-            echo "snapshot_id=${epoch}-${targets_sha:0:16}"
-            echo "targets_sha=$targets_sha"
-            echo "whitelist_sha=$whitelist_sha"
-            echo "max_file_bytes=1073741824"
-            echo "bytes=$(stat -c %s "$TARGET")"
-            echo "files=1"
-          } > "$STATE/apk_scan.env"
+
+          BAIZE_STATE_DIR="$STATE" BAIZE_MEDIA_ROOT="$MEDIA" \
+            bash v2/module/apk-snapshot-scan.sh apk-scan ci > "$TEST/scan.out"
+
+          test -s "$STATE/apk_scan.env"
+          test -s "$STATE/apk_scan.targets"
+          grep -q '^mode=apk-scan$' "$STATE/latest.env"
+          grep -q '安装包扫描完成' "$TEST/scan.out"
+
           sleep 1
           printf 'new-apk-content' > "$NEW"
 
@@ -220,9 +116,10 @@ jobs:
           unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.8'
           unzip -p "$ZIP" module.prop | grep -q 'versionCode=22280'
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'apk-scanner.sh'
           unzip -l "$ZIP" | grep -q 'apk-cleaner.sh'
+          unzip -p "$ZIP" cleaner.sh | grep -q 'apk-scanner.sh'
           unzip -p "$ZIP" cleaner.sh | grep -q 'apk-cleaner.sh'
-          unzip -p "$ZIP" cleaner.sh.compat | grep -q 'engine=compat-apk-scan-v42.8'
           unzip -p "$ZIP" app/baize.apk > /tmp/baize.apk
           unzip -l /tmp/baize.apk | grep -q 'AndroidManifest.xml'
           sha256sum "$ZIP"
