@@ -19,7 +19,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar -czf BaiZe-v2.0.5-source.tar.gz v2 RELEASE_NOTES_V2.md .github/workflows/v2-stable-release.yml
+          tar -czf BaiZe-v2.0.5-source.tar.gz \
+            v2 config cleaner.sh notify.sh service.sh \
+            RELEASE_NOTES_V2.md .github/workflows/v2-stable-release.yml
       - uses: actions/upload-artifact@v4
         with:
           name: BaiZe-v2.0.5-source
