@@ -357,7 +357,9 @@ fun BaiZeMiuixApp(
                     AnimatedPageHost(
                         page = page,
                         style = UiStyle.MATERIAL,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
                     ) { targetPage ->
                         when (targetPage) {
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
@@ -385,7 +387,9 @@ fun BaiZeMiuixApp(
                         AnimatedPageHost(
                             page = page,
                             style = UiStyle.MIUIX,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
                         ) { targetPage ->
                             when (targetPage) {
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
@@ -538,7 +542,6 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
     Row(
         Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
             .padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
