@@ -9,7 +9,7 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.6 统一快照清理版"
+ui_print "- 安装白泽 v2 Alpha 42.7 二级扫描页面修复版"
 ui_print "- 缓存、深度规则与卸载残留均为：扫描一次 → 持久快照 → 直接清理"
 ui_print "- 一键清理不会再回退旧引擎，也不会重新跑规则或重新发现全机目标"
 ui_print "- 退出页面可恢复真实进度；停止请求会传递给当前模块进程"
