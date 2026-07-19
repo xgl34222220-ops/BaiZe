@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2-Alpha42.3-Native-Corpse-Scanner-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha42.4-Native-Deep-Cache-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -18,7 +18,7 @@ mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
 cp -a "$MODULE/." "$STAGE/"
 cp -a "$REPO/config" "$STAGE/config"
 
-# 保留成熟 Shell 引擎作为所有清理操作与原生扫描失败时的兼容回退。
+# 删除逻辑继续使用成熟 Shell 引擎；C 引擎只负责高速扫描和授权快照。
 cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
 cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
 cp -f "$REPO/service.sh" "$STAGE/scheduler.sh"
@@ -49,4 +49,4 @@ unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成 Alpha 42.3 C 原生卸载残留扫描预览模块：$OUTPUT"
+echo "已生成 Alpha 42.4 C 原生深度、缓存与卸载残留扫描模块：$OUTPUT"
