@@ -1,4 +1,4 @@
-name: BaiZe v2.0.3 Real Compose Scheduler
+name: BaiZe v2.0.3 Real Compose Scheduler Finalize
 
 on:
   pull_request:
