@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha42.6
-versionCode=22260
+version=v2.0.0-alpha42.7
+versionCode=22270
 author=惜故里丶
-description=智能清理缓存、深度规则与卸载残留；所有扫描结果持久化，一键清理只消费快照且不会重复扫描。
+description=垃圾扫描与安装包扫描恢复独立二级页面；进入页面后再启动扫描，快照清理不重复扫描。
