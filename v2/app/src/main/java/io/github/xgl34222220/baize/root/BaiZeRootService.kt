@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Alpha 42.5 cache task bridge.
+ * v2.1.0 indexed cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -44,6 +44,11 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotFiles = 0L
     @Volatile private var snapshotBytes = 0L
     @Volatile private var snapshotWhitelisted = 0
+    @Volatile private var snapshotVisitedFiles = 0L
+    @Volatile private var snapshotVisitedDirs = 0L
+    @Volatile private var snapshotFirstResultMs = 0L
+    @Volatile private var snapshotEngineElapsedMs = 0L
+    @Volatile private var snapshotItemsPerSecond = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -53,7 +58,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v42.5")
+                .put("engine", "native-c-arm64-cache-v43.0-alpha1-index")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -61,6 +66,11 @@ class BaiZeRootService : RootService() {
                 .put("snapshotFiles", if (ready) snapshotFiles else 0L)
                 .put("snapshotBytes", if (ready) snapshotBytes else 0L)
                 .put("snapshotWhitelisted", if (ready) snapshotWhitelisted else 0)
+                .put("visitedFiles", if (ready) snapshotVisitedFiles else 0L)
+                .put("visitedDirs", if (ready) snapshotVisitedDirs else 0L)
+                .put("firstResultMs", if (ready) snapshotFirstResultMs else 0L)
+                .put("engineElapsedMs", if (ready) snapshotEngineElapsedMs else 0L)
+                .put("itemsPerSecond", if (ready) snapshotItemsPerSecond else 0L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -252,7 +262,12 @@ class BaiZeRootService : RootService() {
             .put("whitelisted", snapshotWhitelisted)
             .put("totalFiles", snapshotFiles)
             .put("totalBytes", snapshotBytes)
-            .put("engine", "native-c-arm64")
+            .put("visitedFiles", snapshotVisitedFiles)
+            .put("visitedDirs", snapshotVisitedDirs)
+            .put("firstResultMs", snapshotFirstResultMs)
+            .put("engineElapsedMs", snapshotEngineElapsedMs)
+            .put("itemsPerSecond", snapshotItemsPerSecond)
+            .put("engine", "native-c-arm64-indexed")
             .toString()
     }
 
@@ -368,7 +383,13 @@ class BaiZeRootService : RootService() {
         snapshotCreatedAt = createdAt
         snapshotFiles = state.optLong("files", 0L).coerceAtLeast(0L)
         snapshotBytes = state.optLong("bytes", 0L).coerceAtLeast(0L)
-        snapshotWhitelisted = readEnv(File(STATE_DIR, "latest.env")).optInt("whitelisted", 0).coerceAtLeast(0)
+        val latest = readEnv(File(STATE_DIR, "latest.env"))
+        snapshotWhitelisted = latest.optInt("whitelisted", 0).coerceAtLeast(0)
+        snapshotVisitedFiles = state.optLong("visited_files", latest.optLong("visited_files", 0L)).coerceAtLeast(0L)
+        snapshotVisitedDirs = state.optLong("visited_dirs", latest.optLong("visited_dirs", 0L)).coerceAtLeast(0L)
+        snapshotFirstResultMs = state.optLong("first_result_ms", latest.optLong("first_result_ms", 0L)).coerceAtLeast(0L)
+        snapshotEngineElapsedMs = state.optLong("engine_elapsed_ms", latest.optLong("engine_elapsed_ms", 0L)).coerceAtLeast(0L)
+        snapshotItemsPerSecond = state.optLong("items_per_second", latest.optLong("items_per_second", 0L)).coerceAtLeast(0L)
         return true
     }
 

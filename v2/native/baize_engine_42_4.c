@@ -19,12 +19,13 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "42.5-snapshot1"
+#define ENGINE_VERSION "43.0-alpha1-index"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;
 typedef struct {
     uint64_t files, bytes, dirs, empty_dirs;
+    uint64_t visited_files, visited_dirs;
     bool oversized, mount_conflict, incomplete;
 } Stats;
 typedef struct {
@@ -40,10 +41,15 @@ typedef struct {
     uint64_t protected_items, protected_bytes, candidates, targets;
     uint64_t risk_low, risk_medium, risk_high, risk_critical;
     uint64_t mount_items, truncated, whitelisted;
+    uint64_t visited_files, visited_dirs;
+    uint64_t package_index_entries, package_index_files, package_lookups;
+    uint64_t first_result_ms;
 } Totals;
 
-static StrVec g_whitelist = {0}, g_package_whitelist = {0};
+static StrVec g_whitelist = {0}, g_package_whitelist = {0}, g_installed_index = {0};
 static time_t g_started;
+static uint64_t g_started_ms;
+static uint64_t g_last_progress_ms;
 
 static void die(const char *msg) { fprintf(stderr, "%s\n", msg); exit(2); }
 static void *xmalloc(size_t n) { void *p = malloc(n ? n : 1); if (!p) die("out of memory"); return p; }
@@ -63,6 +69,26 @@ static void vec_free(StrVec *a) {
     memset(a, 0, sizeof(*a));
 }
 static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+static uint64_t monotonic_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (uint64_t)ts.tv_sec * 1000U + (uint64_t)ts.tv_nsec / 1000000U;
+}
+static bool vec_contains_sorted(const StrVec *a, const char *value) {
+    size_t low = 0, high = a ? a->n : 0;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2U;
+        int cmp = strcmp(a->v[mid], value);
+        if (cmp < 0) low = mid + 1U;
+        else high = mid;
+    }
+    return a && low < a->n && strcmp(a->v[low], value) == 0;
+}
+static void mark_first_result(Totals *totals) {
+    if (!totals || totals->first_result_ms != 0U || g_started_ms == 0U) return;
+    uint64_t now = monotonic_ms();
+    totals->first_result_ms = now >= g_started_ms ? now - g_started_ms : 0U;
+}
 static void vec_sort_unique(StrVec *a) {
     if (a->n < 2) return;
     qsort(a->v, a->n, sizeof(*a->v), cmp_str);
@@ -80,6 +106,10 @@ static bool stop_requested(const Options *o) { return o->stop_path && access(o->
 static void sanitize(char *s) { for (; *s; s++) if (*s == '\t' || *s == '\r' || *s == '\n') *s = ' '; }
 static void atomic_progress(const Options *o, const char *mode, const char *phase, uint64_t cur, uint64_t total, const char *path) {
     if (!o->progress_path) return;
+    uint64_t now_ms = monotonic_ms();
+    bool force = cur == 0U || (total > 0U && cur >= total);
+    if (!force && g_last_progress_ms != 0U && now_ms >= g_last_progress_ms && now_ms - g_last_progress_ms < 250U) return;
+    g_last_progress_ms = now_ms;
     char tmp[PATH_MAX];
     snprintf(tmp, sizeof(tmp), "%s.tmp.%ld", o->progress_path, (long)getpid());
     FILE *f = fopen(tmp, "w");
@@ -122,8 +152,7 @@ static bool whitelist_conflict(const char *target) {
     return false;
 }
 static bool package_whitelisted(const char *pkg) {
-    for (size_t i = 0; i < g_package_whitelist.n; i++) if (strcmp(pkg, g_package_whitelist.v[i]) == 0) return true;
-    return false;
+    return pkg && vec_contains_sorted(&g_package_whitelist, pkg);
 }
 static bool safe_package(const char *s) {
     bool dot = false;
@@ -134,22 +163,55 @@ static bool safe_package(const char *s) {
     }
     return dot;
 }
-static bool installed_contains(const char *root, const char *user, const char *pkg) {
-    char p[PATH_MAX];
-    snprintf(p, sizeof(p), "%s/%s.txt", root, user);
-    FILE *f = fopen(p, "r");
-    if (!f) return false;
-    char *line = NULL;
-    size_t cap = 0;
-    bool found = false;
-    while (getline(&line, &cap, f) >= 0) {
-        char *e = line + strlen(line);
-        while (e > line && isspace((unsigned char)e[-1])) *--e = '\0';
-        if (strcmp(line, pkg) == 0) { found = true; break; }
+static void load_installed_index(const char *root, Totals *totals) {
+    if (!root) return;
+    DIR *directory = opendir(root);
+    if (!directory) return;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+        size_t length = strlen(entry->d_name);
+        if (length <= 4U || strcmp(entry->d_name + length - 4U, ".txt") != 0) continue;
+        char user[128];
+        size_t user_length = length - 4U;
+        if (user_length == 0U || user_length >= sizeof(user)) continue;
+        memcpy(user, entry->d_name, user_length);
+        user[user_length] = '\0';
+        for (size_t i = 0; i < user_length; i++) {
+            if (!isdigit((unsigned char)user[i])) { user[0] = '\0'; break; }
+        }
+        if (!user[0]) continue;
+        char path[PATH_MAX];
+        int written = snprintf(path, sizeof(path), "%s/%s", root, entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path)) continue;
+        FILE *file = fopen(path, "r");
+        if (!file) continue;
+        if (totals) totals->package_index_files++;
+        char *line = NULL;
+        size_t capacity = 0;
+        while (getline(&line, &capacity, file) >= 0) {
+            char *begin = line;
+            while (isspace((unsigned char)*begin)) begin++;
+            char *finish = begin + strlen(begin);
+            while (finish > begin && isspace((unsigned char)finish[-1])) *--finish = '\0';
+            if (!safe_package(begin)) continue;
+            char key[512];
+            written = snprintf(key, sizeof(key), "%s\t%s", user, begin);
+            if (written < 0 || (size_t)written >= sizeof(key)) continue;
+            vec_add(&g_installed_index, key);
+        }
+        free(line);
+        fclose(file);
     }
-    free(line);
-    fclose(f);
-    return found;
+    closedir(directory);
+    vec_sort_unique(&g_installed_index);
+    if (totals) totals->package_index_entries = (uint64_t)g_installed_index.n;
+}
+static bool installed_index_contains(const char *user, const char *pkg, Totals *totals) {
+    if (totals) totals->package_lookups++;
+    char key[512];
+    int written = snprintf(key, sizeof(key), "%s\t%s", user ? user : "", pkg ? pkg : "");
+    if (written < 0 || (size_t)written >= sizeof(key)) return false;
+    return vec_contains_sorted(&g_installed_index, key);
 }
 static bool eligible_mtime(const struct stat *st, int days) {
     if (days <= 0) return true;
@@ -163,6 +225,7 @@ static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, i
     if (lstat(path, &st) != 0) { s->incomplete = true; return -1; }
     if (S_ISLNK(st.st_mode)) return 0;
     if (S_ISREG(st.st_mode)) {
+        s->visited_files++;
         if (eligible_mtime(&st, days)) {
             s->files++;
             s->bytes += (uint64_t)st.st_size;
@@ -171,6 +234,7 @@ static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, i
         return 0;
     }
     if (!S_ISDIR(st.st_mode)) return 0;
+    s->visited_dirs++;
     if (depth > 0 && st.st_dev != root_dev) { s->mount_conflict = true; return 0; }
     DIR *d = opendir(path);
     if (!d) { s->incomplete = true; return -1; }
@@ -212,12 +276,19 @@ static void report_row(FILE *f, const char *a, const char *r, const char *c, uin
 static void write_summary(const Options *o, const Totals *t) {
     FILE *f = fopen(o->summary_path, "w");
     if (!f) return;
+    uint64_t now_ms = monotonic_ms();
+    uint64_t elapsed_ms = now_ms >= g_started_ms ? now_ms - g_started_ms : 0U;
+    uint64_t visited = t->visited_files + t->visited_dirs;
+    uint64_t throughput = elapsed_ms > 0U ? visited * 1000U / elapsed_ms : 0U;
     fprintf(f,
-        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
+        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nvisited_files=%" PRIu64 "\nvisited_dirs=%" PRIu64 "\npackage_index_entries=%" PRIu64 "\npackage_index_files=%" PRIu64 "\npackage_lookups=%" PRIu64 "\nfirst_result_ms=%" PRIu64 "\nelapsed_ms=%" PRIu64 "\nitems_per_second=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
         t->files, t->bytes, t->dirs, t->empty_dirs, t->skipped, t->errors,
         t->protected_items, t->protected_bytes, t->candidates, t->targets,
         t->risk_low, t->risk_medium, t->risk_high, t->risk_critical,
-        t->mount_items, t->truncated, t->whitelisted, ENGINE_VERSION);
+        t->mount_items, t->truncated, t->whitelisted,
+        t->visited_files, t->visited_dirs, t->package_index_entries,
+        t->package_index_files, t->package_lookups, t->first_result_ms,
+        elapsed_ms, throughput, ENGINE_VERSION);
     fclose(f);
 }
 static const char *arg_value(int argc, char **argv, int *i) {
@@ -261,6 +332,7 @@ static int scan_corpses(const Options *o) {
     FILE *rep = open_report(o->report_path);
     FILE *targets = fopen(o->targets_path, "w");
     Totals t = {0};
+    load_installed_index(o->installed_root, &t);
     DIR *users = opendir(o->media_root);
     if (!users) { if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); return 0; }
     struct dirent *ue;
@@ -279,7 +351,7 @@ static int scan_corpses(const Options *o) {
             while ((de = readdir(d)) != NULL) {
                 if (de->d_name[0] == '.' || !safe_package(de->d_name)) continue;
                 if (stop_requested(o)) { closedir(d); closedir(users); if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); return 9; }
-                if (installed_contains(o->installed_root, ue->d_name, de->d_name)) continue;
+                if (installed_index_contains(ue->d_name, de->d_name, &t)) continue;
                 char path[PATH_MAX];
                 snprintf(path, sizeof(path), "%s/%s", root, de->d_name);
                 if (!is_dir_nofollow(path)) { t.skipped++; continue; }
@@ -290,6 +362,8 @@ static int scan_corpses(const Options *o) {
                 int rc = stat_tree(path, o, 0, &st);
                 if (rc == 9) { closedir(d); closedir(users); if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); return 9; }
                 if (rc < 0 || st.incomplete) t.errors++;
+                t.visited_files += st.visited_files;
+                t.visited_dirs += st.visited_dirs;
                 uint64_t item_count = st.files ? st.files : 1;
                 if (st.oversized || st.mount_conflict) {
                     t.protected_items += item_count;
@@ -304,6 +378,7 @@ static int scan_corpses(const Options *o) {
                 t.empty_dirs += (st.files == 0);
                 t.candidates++;
                 t.targets++;
+                mark_first_result(&t);
                 report_row(rep, "candidate", "high", "卸载残留", item_count, st.bytes, path);
                 if (targets) fprintf(targets, "%s\n", path);
             }
@@ -337,6 +412,7 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
     if (lstat(path, &st) != 0) { stats->incomplete = true; return -1; }
     if (S_ISLNK(st.st_mode)) return 0;
     if (S_ISREG(st.st_mode)) {
+        stats->visited_files++;
         if (!eligible_mtime(&st, days)) return 0;
         stats->files++;
         uint64_t size = st.st_size > 0 ? (uint64_t)st.st_size : 0U;
@@ -357,6 +433,7 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
         return 0;
     }
     if (!S_ISDIR(st.st_mode)) return 0;
+    stats->visited_dirs++;
     if (depth > 0U && st.st_dev != root_dev) { stats->mount_conflict = true; return 0; }
     DIR *dir = opendir(path);
     if (!dir) { stats->incomplete = true; return -1; }
@@ -413,6 +490,8 @@ static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *it
     int code = snapshot_cache_tree(path, o, pkg, category, manifest, &stats);
     if (code == 9) return;
     if (code < 0 || stats.incomplete) totals->errors++;
+    totals->visited_files += stats.visited_files;
+    totals->visited_dirs += stats.visited_dirs;
     if (stats.files == 0U) return;
     uint64_t count = stats.files;
     if (stats.oversized || stats.mount_conflict || stats.incomplete) {
@@ -427,6 +506,7 @@ static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *it
     totals->dirs += stats.dirs;
     totals->candidates++;
     totals->targets++;
+    mark_first_result(totals);
     report_row(rep, "candidate", "low", category, count, stats.bytes, path);
     if (targets) fprintf(targets, "%s\n", path);
     if (items) {
@@ -693,6 +773,7 @@ static int clean_cache_snapshot(const Options *o) {
         }
         struct stat first_stat;
         struct stat second_stat;
+        totals.visited_files++;
         if (lstat(path, &first_stat) != 0) {
             totals.skipped++;
             report_row(report, "missing", "low", category, 1, 0, path);
@@ -717,6 +798,7 @@ static int clean_cache_snapshot(const Options *o) {
             totals.files++;
             totals.bytes += size;
             totals.candidates++;
+            mark_first_result(&totals);
             report_row(report, "cleaned", "low", category, 1, size, path);
         } else {
             totals.errors++;
@@ -890,6 +972,8 @@ static int scan_deep(const Options *o) {
         int rc = stat_tree(p, o, 0, &s);
         if (rc == 9) { if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); vec_free(&cand); return 9; }
         if (rc < 0 || s.incomplete) t.errors++;
+        t.visited_files += s.visited_files;
+        t.visited_dirs += s.visited_dirs;
         uint64_t item_count = s.files ? s.files : 1;
         if (s.oversized || s.mount_conflict) {
             t.protected_items += item_count;
@@ -905,6 +989,7 @@ static int scan_deep(const Options *o) {
         if (s.files == 0) t.empty_dirs++;
         t.candidates++;
         t.targets++;
+        mark_first_result(&t);
         report_row(rep, "candidate", r, "深度规则", item_count, s.bytes, p);
         if (targets) fprintf(targets, "%s\t%s\n", p, r);
         if (is_dir_nofollow(p)) snprintf(covered_all, sizeof(covered_all), "%s", p);
@@ -919,6 +1004,7 @@ static int scan_deep(const Options *o) {
 int main(int argc, char **argv) {
     if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|clean-cache-snapshot|scan-deep> [options]");
     g_started = time(NULL);
+    g_started_ms = monotonic_ms();
     Options o;
     parse_options(argc, argv, &o);
     int rc;

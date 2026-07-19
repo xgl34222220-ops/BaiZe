@@ -204,6 +204,14 @@ RISK_CRITICAL=$(summary_number risk_critical)
 MOUNT_ITEMS=$(summary_number mount_items)
 TRUNCATED=$(summary_number truncated)
 WHITELISTED=$(summary_number whitelisted)
+VISITED_FILES=$(summary_number visited_files)
+VISITED_DIRS=$(summary_number visited_dirs)
+PACKAGE_INDEX_ENTRIES=$(summary_number package_index_entries)
+PACKAGE_INDEX_FILES=$(summary_number package_index_files)
+PACKAGE_LOOKUPS=$(summary_number package_lookups)
+FIRST_RESULT_MS=$(summary_number first_result_ms)
+ENGINE_ELAPSED_MS=$(summary_number elapsed_ms)
+ITEMS_PER_SECOND=$(summary_number items_per_second)
 TOTAL_ITEMS=$((FILES + EMPTY_DIRS))
 END_EPOCH=$(date +%s)
 ELAPSED=$((END_EPOCH - START_EPOCH))
@@ -232,7 +240,15 @@ else
         echo "files=$TOTAL_ITEMS"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "engine=native-c-arm64-indexed"
       } >"$STATE_DIR/corpse_scan.env"
       chmod 0600 "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets" 2>/dev/null
       ;;
@@ -252,7 +268,15 @@ else
         echo "files=$TOTAL_ITEMS"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "engine=native-c-arm64-indexed"
       } >"$STATE_DIR/deep_scan.env"
       chmod 0600 "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets" 2>/dev/null
       ;;
@@ -281,7 +305,15 @@ else
         echo "files=$FILES"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "engine=native-c-arm64-indexed"
       } >"$CACHE_SCAN_STATE"
       chmod 0600 "$CACHE_SCAN_STATE" "$CACHE_SCAN_TARGETS" "$CACHE_SCAN_ITEMS" "$CACHE_SCAN_MANIFEST" 2>/dev/null
       if [ "$CACHE_PREFIX" = "cache_scan" ]; then
@@ -320,8 +352,16 @@ fi
   echo "deep_progress_current=$TARGET_COUNT"
   echo "deep_progress_total=$TARGET_COUNT"
   echo "whitelisted=$WHITELISTED"
+  echo "visited_files=$VISITED_FILES"
+  echo "visited_dirs=$VISITED_DIRS"
+  echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+  echo "package_index_files=$PACKAGE_INDEX_FILES"
+  echo "package_lookups=$PACKAGE_LOOKUPS"
+  echo "first_result_ms=$FIRST_RESULT_MS"
+  echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+  echo "items_per_second=$ITEMS_PER_SECOND"
   echo "elapsed=$ELAPSED"
-  echo "engine=native-c-arm64"
+  echo "engine=native-c-arm64-indexed"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 
@@ -329,8 +369,9 @@ fi
 {
   echo "----------------------------------------"
   echo "$RESULT"
-  echo "原生引擎: C arm64 42.5 不可变快照"
-  echo "候选: $CANDIDATES | 文件: $FILES | 目录: $DIRS | 受保护: $PROTECTED_ITEMS | 跳过: $SKIPPED | 错误: $ERRORS | 耗时: ${ELAPSED}s"
+  echo "原生引擎: C arm64 43.0 Alpha 1 共享索引"
+  echo "候选: $CANDIDATES | 文件: $FILES | 目录: $DIRS | 访问: $((VISITED_FILES + VISITED_DIRS)) | 吞吐: ${ITEMS_PER_SECOND}/s | 首项: ${FIRST_RESULT_MS}ms | 耗时: ${ENGINE_ELAPSED_MS}ms"
+  [ "$MODE" = "corpse-scan" ] && echo "安装包索引: $PACKAGE_INDEX_ENTRIES 项 / $PACKAGE_INDEX_FILES 个用户文件 / $PACKAGE_LOOKUPS 次内存查询"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 
@@ -344,7 +385,7 @@ if [ "${BAIZE_SUPPRESS_SCAN_HISTORY:-0}" != "1" ]; then
 fi
 
 echo "$RESULT"
-echo "原生引擎: C arm64 | 候选: $CANDIDATES | 文件: $FILES | 受保护: $PROTECTED_ITEMS | 耗时: ${ELAPSED}s"
+echo "原生引擎: C arm64 共享索引 | 候选: $CANDIDATES | 首项: ${FIRST_RESULT_MS}ms | 吞吐: ${ITEMS_PER_SECOND}/s | 耗时: ${ENGINE_ELAPSED_MS}ms"
 cleanup_lock
 trap - EXIT INT TERM
 [ "$code" -eq 9 ] && exit 9
