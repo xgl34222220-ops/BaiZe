@@ -15,7 +15,7 @@ jobs:
         with:
           ref: fix/v2.0.1-app-scheduler-takeover
           fetch-depth: 0
-      - name: Trace exact apply step
+      - name: Trace exact normalized apply step
         shell: bash
         run: |
           set +e
@@ -25,7 +25,7 @@ jobs:
           ROOT=v2/app/src/main/java/io/github/xgl34222220/baize
           mkdir -p "$ROOT/ui/clean/miuix" "$ROOT/ui/clean/material"
 
-          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 -d | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
+          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 --decode --ignore-garbage | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
           echo "BaiZe decode rc=${PIPESTATUS[*]}"
 
           for spec in \
@@ -36,13 +36,25 @@ jobs:
             "CleanScreenMaterial.kt.gz.b64|$ROOT/ui/clean/material/CleanScreenMaterial.kt"; do
             src=${spec%%|*}
             dst=${spec#*|}
-            base64 -d "$PAYLOAD/$src" | gzip -d > "$dst"
+            base64 --decode --ignore-garbage "$PAYLOAD/$src" | gzip -d > "$dst"
             echo "$src rc=${PIPESTATUS[*]}"
             wc -l -c "$dst"
           done
 
           python3 - <<'PY'
           from pathlib import Path
+
+          kotlin_files = [
+              'v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/ScheduleInputDialogs.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt',
+          ]
+          for path in kotlin_files:
+              file = Path(path)
+              file.write_text(file.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
 
           def replace(path: str, old: str, new: str, count: int = 1):
               file = Path(path)
