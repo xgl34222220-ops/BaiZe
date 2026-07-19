@@ -3,7 +3,6 @@ package io.github.xgl34222220.baize.ui.appearance
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.github.xgl34222220.baize.ThemeManager
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -18,42 +17,25 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = AppearanceSettings()
     )
 
-    fun setUiStyle(value: UiStyle) {
-        viewModelScope.launch { repository.setUiStyle(value) }
-    }
+    fun setUiStyle(value: UiStyle) = launch { repository.setUiStyle(value) }
 
-    fun setThemeMode(value: ThemeMode) {
-        ThemeManager.setMode(getApplication(), value.storageValue)
-        viewModelScope.launch { repository.setThemeMode(value) }
-    }
+    fun setThemeMode(value: ThemeMode) = launch { repository.setThemeMode(value) }
 
-    fun setSeedPalette(paletteId: String, argb: Int) {
-        ThemeManager.setPalette(getApplication(), paletteId)
-        viewModelScope.launch { repository.setSeedArgb(argb) }
-    }
+    fun setSeedArgb(value: Int) = launch { repository.setSeedArgb(value) }
 
-    fun setKolorStyle(value: KolorStyle) {
-        val legacyId = when (value) {
-            KolorStyle.SOFT -> "tonal_spot"
-            KolorStyle.VIBRANT -> "vibrant"
-            KolorStyle.NEUTRAL -> "neutral"
-        }
-        ThemeManager.setMonetStyle(getApplication(), legacyId)
-        viewModelScope.launch { repository.setKolorStyle(value) }
-    }
+    fun setKolorStyle(value: KolorStyle) = launch { repository.setKolorStyle(value) }
 
-    fun setAmoledBlack(enabled: Boolean) {
-        ThemeManager.setAmoled(getApplication(), enabled)
-        viewModelScope.launch { repository.setAmoledBlack(enabled) }
-    }
+    fun setMonetEnabled(enabled: Boolean) = launch { repository.setMonetEnabled(enabled) }
 
-    fun setBlurEnabled(enabled: Boolean) {
-        ThemeManager.setBlur(getApplication(), enabled)
-        viewModelScope.launch { repository.setBlurEnabled(enabled) }
-    }
+    fun setAmoledBlack(enabled: Boolean) = launch { repository.setAmoledBlack(enabled) }
 
-    fun setGlassEnabled(enabled: Boolean) {
-        ThemeManager.setGlass(getApplication(), enabled)
-        viewModelScope.launch { repository.setGlassEnabled(enabled) }
+    fun setBlurEnabled(enabled: Boolean) = launch { repository.setBlurEnabled(enabled) }
+
+    fun setGlassEnabled(enabled: Boolean) = launch { repository.setGlassEnabled(enabled) }
+
+    fun setFloatingDock(enabled: Boolean) = launch { repository.setFloatingDock(enabled) }
+
+    private fun launch(block: suspend () -> Unit) {
+        viewModelScope.launch { block() }
     }
 }
