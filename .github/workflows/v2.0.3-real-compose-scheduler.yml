@@ -33,7 +33,7 @@ jobs:
           }
           PAYLOAD=.github/v203-payload
           ROOT=v2/app/src/main/java/io/github/xgl34222220/baize
-          decode "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64" "$ROOT/BaiZeMiuixApp.kt"
+          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 -d | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
           decode "$PAYLOAD/CleanContract.kt.gz.b64" "$ROOT/ui/clean/CleanContract.kt"
           decode "$PAYLOAD/CleanRoute.kt.gz.b64" "$ROOT/ui/clean/CleanRoute.kt"
           decode "$PAYLOAD/ScheduleInputDialogs.kt.gz.b64" "$ROOT/ui/clean/ScheduleInputDialogs.kt"
@@ -134,6 +134,7 @@ jobs:
           rm -rf .github/v203-payload
           rm -f .github/workflows/v2.0.3-real-compose-scheduler.yml
           rm -f .github/workflows/export-clean-ui-source.yml
+          rm -f .github/workflows/v203-payload-diagnostic.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
