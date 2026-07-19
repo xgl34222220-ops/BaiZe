@@ -33,7 +33,10 @@ jobs:
           }
           PAYLOAD=.github/v203-payload
           ROOT=v2/app/src/main/java/io/github/xgl34222220/baize
+          set +o pipefail
           cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 --decode --ignore-garbage | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
+          set -o pipefail
+          echo '9cee949edca4e31042ddd215522fb0ec3d151cb3354e7ae83269d5d063477026  v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt' | sha256sum -c -
           decode "$PAYLOAD/CleanContract.kt.gz.b64" "$ROOT/ui/clean/CleanContract.kt"
           decode "$PAYLOAD/CleanRoute.kt.gz.b64" "$ROOT/ui/clean/CleanRoute.kt"
           decode "$PAYLOAD/ScheduleInputDialogs.kt.gz.b64" "$ROOT/ui/clean/ScheduleInputDialogs.kt"
