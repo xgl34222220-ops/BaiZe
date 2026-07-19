@@ -9,6 +9,9 @@ HASH_FILE="$MODDIR/app/baize.apk.sha256"
 INSTALLED_HASH="$STATE_DIR/installed-app.sha256"
 CONFIG="$STATE_DIR/config.conf"
 
+# Do not expose a stale WebUI left by an older same-ID installation.
+rm -rf "$MODDIR/webroot" "$MODDIR/webui" "$MODDIR/www" "$MODDIR/ksu-webui" 2>/dev/null || true
+
 mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
 chmod 0700 "$STATE_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null
@@ -78,7 +81,7 @@ scheduler_ready=0
   echo "rules_ready=$rules_ready"
   echo "cleaner_ready=$cleaner_ready"
   echo "scheduler_ready=$scheduler_ready"
-  echo "module_version=2.0.0-alpha12"
+  echo "module_version=2.0.1"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"

@@ -4,6 +4,9 @@ MODDIR=${0%/*}
 APP_ID="io.github.xgl34222220.baize"
 APK="$MODDIR/app/baize.apk"
 
+# The module action always enters the native App; legacy WebUI assets are unsupported.
+rm -rf "$MODDIR/webroot" "$MODDIR/webui" "$MODDIR/www" "$MODDIR/ksu-webui" 2>/dev/null || true
+
 install_app() {
   [ -f "$APK" ] || return 1
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0

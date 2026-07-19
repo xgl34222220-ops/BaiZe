@@ -9,7 +9,14 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 正式版"
+# The native App is the only control surface. Some module managers preserve files from an
+# older same-ID installation, so delete every known legacy WebUI directory explicitly.
+for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/baize_v2"; do
+  rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
+done
+
+ui_print "- 安装白泽 v2.0.1 App 接管版"
+ui_print "- 原生 App 已接管全部清理与定时设置，旧 WebUI 将被彻底移除"
 ui_print "- C 原生高速扫描：应用缓存、完整深度规则与卸载残留"
 ui_print "- 缓存、安装包、深度清理与卸载残留均只消费扫描快照，不重复扫描"
 ui_print "- MIUIx / Material 双界面，支持 Monet、明暗模式、AMOLED、玻璃与模糊"
