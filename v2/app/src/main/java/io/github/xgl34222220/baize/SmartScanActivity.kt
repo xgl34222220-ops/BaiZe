@@ -111,9 +111,17 @@ class SmartScanActivity : AppCompatActivity() {
     }
 
     private fun startSmartScan() {
-        val cache = cacheService ?: return
-        val profiles = profileService ?: return
-        if (running) return
+        if (running) {
+            binding.summaryText.text = "智能扫描任务仍在运行，请先停止或等待完成"
+            return
+        }
+        val cache = cacheService
+        val profiles = profileService
+        if (cache == null || profiles == null) {
+            binding.summaryText.text = "Root 扫描引擎尚未全部连接，请稍后重试"
+            bindServices()
+            return
+        }
         resetSnapshots()
         running = true
         renderRunning(true)
@@ -136,6 +144,11 @@ class SmartScanActivity : AppCompatActivity() {
                         val safeJob = async { JSONObject(profiles.scanProfile("safe", optionsJson())) }
                         cacheJob.await() to safeJob.await()
                     }
+                }
+                val busy = listOf(cacheJson, safeJson).firstOrNull { it.optString("error") == "busy" }
+                if (busy != null) {
+                    binding.summaryText.text = busy.optString("message", "当前已有扫描或清理任务正在运行")
+                    return@launch
                 }
                 if (cacheJson.has("error")) failed++ else {
                     cacheSnapshotId = cacheJson.optString("snapshotId")
@@ -195,9 +208,21 @@ class SmartScanActivity : AppCompatActivity() {
     }
 
     private fun cleanSnapshots() {
-        val cache = cacheService ?: return
-        val profiles = profileService ?: return
-        if (running) return
+        if (running) {
+            binding.summaryText.text = "智能扫描任务仍在运行，请先停止或等待完成"
+            return
+        }
+        if (totalSafe <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank())) {
+            binding.summaryText.text = "没有可用的扫描快照，请先重新扫描"
+            return
+        }
+        val cache = cacheService
+        val profiles = profileService
+        if (cache == null || profiles == null) {
+            binding.summaryText.text = "Root 清理引擎尚未全部连接，请稍后重试"
+            bindServices()
+            return
+        }
         running = true
         renderRunning(true)
         binding.summaryText.text = "正在使用智能扫描快照一键清理…"
@@ -221,6 +246,7 @@ class SmartScanActivity : AppCompatActivity() {
                     val json = JSONObject(withContext(Dispatchers.IO) {
                         cache.cleanSelected(cacheSnapshotId, selectAll, JSONArray(whitelist.toList()).toString())
                     })
+                    if (json.has("error")) throw IllegalStateException(json.optString("message", "缓存快照清理失败"))
                     deletedBytes += json.optLong("deletedBytes")
                     deletedFiles += json.optLong("deletedFiles")
                     deletedDirectories += json.optLong("deletedDirectories")
@@ -234,6 +260,7 @@ class SmartScanActivity : AppCompatActivity() {
                         val json = JSONObject(withContext(Dispatchers.IO) {
                             profiles.cleanProfileSelected(safeSnapshotId, selectAll, optionsJson())
                         })
+                        if (json.has("error")) throw IllegalStateException(json.optString("message", "安全项目快照清理失败"))
                         deletedBytes += json.optLong("deletedBytes")
                         deletedFiles += json.optLong("deletedFiles")
                         deletedDirectories += json.optLong("deletedDirectories")

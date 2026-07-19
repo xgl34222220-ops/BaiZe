@@ -392,7 +392,16 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
+    private fun showTaskBusy(message: String = "当前已有扫描或清理任务正在运行，请先停止或等待完成") {
+        dashboardState.value = dashboardState.value.copy(taskPhase = message)
+        toast(message)
+    }
+
     private fun runApkScan() {
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         val service = rootService
         if (service == null) {
             pendingModuleTask = "apk-scan"
@@ -408,7 +417,10 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runModuleUtilityTask(service: IProfileRootService, mode: String) {
-        if (dashboardState.value.running) return
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         dashboardState.value = dashboardState.value.copy(
             running = true,
             taskPhase = if (mode == "apk-scan") "正在扫描 APK 安装包…" else "正在执行清理任务…"
@@ -433,6 +445,12 @@ class MiuixDashboardActivity : ComponentActivity() {
                 return@launch
             }
             val json = response.getOrThrow()
+            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
+                val message = json.optString("message", "当前已有扫描或清理任务正在运行")
+                dashboardState.value = dashboardState.value.copy(running = false, taskPhase = message)
+                toast(message)
+                return@launch
+            }
             updateRawLogFromResponse(json)
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
@@ -458,6 +476,10 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runSmartClean() {
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
         val service = rootService
         if (service == null) {
@@ -474,7 +496,10 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runModuleClean(service: IProfileRootService) {
-        if (dashboardState.value.running) return
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         clearSnapshotHandles()
         dashboardState.value = dashboardState.value.copy(
             running = true,
@@ -502,6 +527,12 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             val json = response.getOrThrow()
+            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
+                val message = json.optString("message", "当前已有扫描或清理任务正在运行")
+                dashboardState.value = dashboardState.value.copy(running = false, taskPhase = message)
+                toast(message)
+                return@launch
+            }
             updateRawLogFromResponse(json)
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
@@ -558,7 +589,10 @@ class MiuixDashboardActivity : ComponentActivity() {
             connectServices()
             return
         }
-        if (dashboardState.value.running) return
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         clearSnapshotHandles()
         val started = SystemClock.elapsedRealtime()
         dashboardState.value = dashboardState.value.copy(
@@ -588,6 +622,15 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             val (cacheJson, safeJson) = pair.getOrThrow()
+            val busy = listOf(cacheJson, safeJson).firstOrNull {
+                it.optString("error") == "busy" || it.optInt("exitCode") == 3
+            }
+            if (busy != null) {
+                val message = busy.optString("message", "当前已有扫描或清理任务正在运行")
+                dashboardState.value = dashboardState.value.copy(running = false, taskPhase = message)
+                toast(message)
+                return@launch
+            }
             val cacheOk = !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
             val safeOk = safeJson.optBoolean("success") && !safeJson.optBoolean("cancelled")
             if (cacheOk) {
@@ -639,7 +682,10 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun cleanNativeSnapshots() {
-        if (dashboardState.value.running) return
+        if (dashboardState.value.running) {
+            showTaskBusy()
+            return
+        }
         if (!hasUsableScanSnapshots()) {
             clearSnapshotHandles()
             dashboardState.value = dashboardState.value.copy(

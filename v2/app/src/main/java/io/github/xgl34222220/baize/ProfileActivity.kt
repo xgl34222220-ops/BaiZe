@@ -227,7 +227,15 @@ class ProfileActivity : ComponentActivity() {
     }
 
     private fun scan() {
-        if (taskRunning || service == null) return
+        if (taskRunning) {
+            screenState = screenState.copy(summaryText = "当前任务仍在执行，请先停止或等待完成")
+            return
+        }
+        if (service == null) {
+            screenState = screenState.copy(summaryText = "Root 服务尚未连接，正在重新连接…")
+            connect()
+            return
+        }
         if (requiresModuleAuthorization()) runAuthorizedModuleScan() else runNativeDetailScan()
     }
 
@@ -429,14 +437,29 @@ class ProfileActivity : ComponentActivity() {
     }
 
     private fun stopTask() {
-        if (!taskRunning) return
+        if (!taskRunning) {
+            screenState = screenState.copy(summaryText = "当前没有正在运行的任务")
+            return
+        }
         service?.cancelCurrentTask()
         screenState = screenState.copy(summaryText = "正在安全停止当前任务…")
     }
 
     private fun quickClean() {
-        val root = service ?: return
-        if (taskRunning || !quickCleanReady) return
+        if (taskRunning) {
+            screenState = screenState.copy(summaryText = "当前任务仍在执行，请先停止或等待完成")
+            return
+        }
+        if (!quickCleanReady) {
+            screenState = screenState.copy(summaryText = "没有可用的扫描快照，请先完成扫描")
+            return
+        }
+        val root = service
+        if (root == null) {
+            screenState = screenState.copy(summaryText = "Root 服务尚未连接，正在重新连接…")
+            connect()
+            return
+        }
         taskRunning = true
         screenState = screenState.copy(
             running = true,
