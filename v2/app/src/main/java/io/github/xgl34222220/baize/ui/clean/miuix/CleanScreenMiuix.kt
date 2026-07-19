@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -41,6 +43,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +66,10 @@ import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryUiItem
 import io.github.xgl34222220.baize.ui.clean.CleanUiActions
 import io.github.xgl34222220.baize.ui.clean.CleanUiState
+import io.github.xgl34222220.baize.ui.clean.IntValueDialog
+import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
+import io.github.xgl34222220.baize.ui.clean.formatHours
+import io.github.xgl34222220.baize.ui.clean.formatMinutes
 
 private data class MiuixQuickAction(
     val icon: ImageVector,
@@ -75,6 +84,29 @@ fun CleanScreenMiuix(
     actions: CleanUiActions
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var showDailyTimeDialog by remember { mutableStateOf(false) }
+    var showDailyGraceDialog by remember { mutableStateOf(false) }
+
+    if (showDailyTimeDialog) {
+        TimeValueDialog(
+            initialHour = state.dailyHour,
+            initialMinute = state.dailyMinute,
+            onDismiss = { showDailyTimeDialog = false },
+            onConfirm = actions.onDailyTimeChanged
+        )
+    }
+    if (showDailyGraceDialog) {
+        IntValueDialog(
+            title = "设置补做窗口",
+            description = "到达每日时间后，如果仍在亮屏、低电量或未充电，调度器会在这个窗口内继续等待。",
+            initialValue = state.dailyGraceMinutes,
+            range = 15..720,
+            suffix = "分钟",
+            onDismiss = { showDailyGraceDialog = false },
+            onConfirm = actions.onDailyGraceChanged
+        )
+    }
+
     val quickActions = listOf(
         MiuixQuickAction(Icons.Rounded.Search, "垃圾扫描", "生成快照，不立即删除", actions.onScan),
         MiuixQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK / APKS / XAPK", actions.onApkScan),
@@ -108,13 +140,20 @@ fun CleanScreenMiuix(
             ) {
                 MiuixMasterSwitchRow(
                     title = "自动清理",
-                    subtitle = if (state.automaticCleaningEnabled) "按各类别周期自动执行" else "已关闭，手动工具仍可使用",
+                    subtitle = if (state.automaticCleaningEnabled) state.scheduleSummary else "已关闭，手动工具仍可使用",
                     checked = state.automaticCleaningEnabled,
                     onCheckedChange = actions.onAutomaticCleaningChanged
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
+                MiuixDailyScheduleRow(
+                    state = state,
+                    actions = actions,
+                    onEditTime = { showDailyTimeDialog = true },
+                    onEditGrace = { showDailyGraceDialog = true }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
                 state.categories.forEachIndexed { index, item ->
-                    MiuixCategoryRow(item, actions)
+                    MiuixCategoryRow(item, actions, state.dailyEnabled)
                     if (index != state.categories.lastIndex) {
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 59.dp),
@@ -363,10 +402,71 @@ private fun MiuixMasterSwitchRow(
 }
 
 @Composable
+private fun MiuixDailyScheduleRow(
+    state: CleanUiState,
+    actions: CleanUiActions,
+    onEditTime: () -> Unit,
+    onEditGrace: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MiuixIconTile(Icons.Rounded.CalendarMonth)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text("每日固定时间", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (state.dailyEnabled) "每天 ${state.dailyTimeText}，替代各类别小时周期"
+                    else "关闭时按每个类别的独立小时周期执行",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            MiuixSuperSwitch(state.dailyEnabled, actions.onDailyScheduleChanged)
+        }
+        if (state.dailyEnabled) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier.padding(start = 58.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MiuixScheduleValueButton(
+                    title = "执行时间",
+                    value = state.dailyTimeText,
+                    modifier = Modifier.weight(1f),
+                    onClick = onEditTime
+                )
+                MiuixScheduleValueButton(
+                    title = "补做窗口",
+                    value = formatMinutes(state.dailyGraceMinutes),
+                    modifier = Modifier.weight(1f),
+                    onClick = onEditGrace
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MiuixCategoryRow(
     item: CleanCategoryUiItem,
-    actions: CleanUiActions
+    actions: CleanUiActions,
+    dailyMode: Boolean
 ) {
+    var showIntervalDialog by remember(item.id, item.intervalHours) { mutableStateOf(false) }
+    if (showIntervalDialog) {
+        IntValueDialog(
+            title = "${item.title}执行周期",
+            description = "输入 1–720 小时。可设置 100、300、720 小时等任意整数周期。",
+            initialValue = item.intervalHours,
+            range = 1..720,
+            suffix = "小时",
+            onDismiss = { showIntervalDialog = false },
+            onConfirm = { actions.onCategoryIntervalChanged(item.id, it) }
+        )
+    }
+
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MiuixIconTile(categoryIcon(item.id))
@@ -416,7 +516,60 @@ private fun MiuixCategoryRow(
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier
+                    .padding(start = 58.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
+                    .clickable(onClick = { showIntervalDialog = true })
+                    .padding(horizontal = 13.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.Edit,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "精确周期：${item.intervalHours} 小时",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (dailyMode) "每日模式开启时暂不使用，关闭后恢复"
+                        else "约 ${formatHours(item.intervalHours)}执行一次",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 9.sp
+                    )
+                }
+                Text("修改", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
         }
+    }
+}
+
+@Composable
+private fun MiuixScheduleValueButton(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Black)
     }
 }
 

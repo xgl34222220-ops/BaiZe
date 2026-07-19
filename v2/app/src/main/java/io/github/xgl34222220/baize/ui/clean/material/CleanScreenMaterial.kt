@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -41,6 +43,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -54,6 +60,10 @@ import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryUiItem
 import io.github.xgl34222220.baize.ui.clean.CleanUiActions
 import io.github.xgl34222220.baize.ui.clean.CleanUiState
+import io.github.xgl34222220.baize.ui.clean.IntValueDialog
+import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
+import io.github.xgl34222220.baize.ui.clean.formatHours
+import io.github.xgl34222220.baize.ui.clean.formatMinutes
 
 private data class MaterialQuickAction(
     val icon: ImageVector,
@@ -68,6 +78,29 @@ fun CleanScreenMaterial(
     actions: CleanUiActions
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var showDailyTimeDialog by remember { mutableStateOf(false) }
+    var showDailyGraceDialog by remember { mutableStateOf(false) }
+
+    if (showDailyTimeDialog) {
+        TimeValueDialog(
+            initialHour = state.dailyHour,
+            initialMinute = state.dailyMinute,
+            onDismiss = { showDailyTimeDialog = false },
+            onConfirm = actions.onDailyTimeChanged
+        )
+    }
+    if (showDailyGraceDialog) {
+        IntValueDialog(
+            title = "设置补做窗口",
+            description = "到达每日时间后，如果执行条件暂时不满足，会在此窗口内继续等待。",
+            initialValue = state.dailyGraceMinutes,
+            range = 15..720,
+            suffix = "分钟",
+            onDismiss = { showDailyGraceDialog = false },
+            onConfirm = actions.onDailyGraceChanged
+        )
+    }
+
     val quickActions = listOf(
         MaterialQuickAction(Icons.Rounded.Search, "垃圾扫描", "只扫描并生成可清理快照", actions.onScan),
         MaterialQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK、APKS 与 XAPK", actions.onApkScan),
@@ -119,8 +152,16 @@ fun CleanScreenMaterial(
                 }
             }
         }
+        item {
+            MaterialDailyScheduleCard(
+                state = state,
+                actions = actions,
+                onEditTime = { showDailyTimeDialog = true },
+                onEditGrace = { showDailyGraceDialog = true }
+            )
+        }
         items(state.categories, key = { it.id.name }) { item ->
-            MaterialCategoryCard(item, actions)
+            MaterialCategoryCard(item, actions, state.dailyEnabled)
         }
         item {
             Card(
@@ -286,10 +327,74 @@ private fun MaterialCleanOverview(state: CleanUiState) {
 }
 
 @Composable
+private fun MaterialDailyScheduleCard(
+    state: CleanUiState,
+    actions: CleanUiActions,
+    onEditTime: () -> Unit,
+    onEditGrace: () -> Unit
+) {
+    Card(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(48.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.CalendarMonth, contentDescription = null)
+                    }
+                }
+                Spacer(Modifier.size(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("每日固定时间", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        if (state.dailyEnabled) "每天 ${state.dailyTimeText}，替代各类别独立周期"
+                        else "关闭时按各类别的小时周期执行",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+                Switch(checked = state.dailyEnabled, onCheckedChange = actions.onDailyScheduleChanged)
+            }
+            if (state.dailyEnabled) {
+                HorizontalDivider(Modifier.padding(vertical = 14.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = onEditTime, modifier = Modifier.weight(1f)) {
+                        Text("时间 ${state.dailyTimeText}", fontWeight = FontWeight.Bold)
+                    }
+                    FilledTonalButton(onClick = onEditGrace, modifier = Modifier.weight(1f)) {
+                        Text("补做 ${formatMinutes(state.dailyGraceMinutes)}", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MaterialCategoryCard(
     item: CleanCategoryUiItem,
-    actions: CleanUiActions
+    actions: CleanUiActions,
+    dailyMode: Boolean
 ) {
+    var showIntervalDialog by remember(item.id, item.intervalHours) { mutableStateOf(false) }
+    if (showIntervalDialog) {
+        IntValueDialog(
+            title = "${item.title}执行周期",
+            description = "输入 1–720 小时，可直接设置数百小时。",
+            initialValue = item.intervalHours,
+            range = 1..720,
+            suffix = "小时",
+            onDismiss = { showIntervalDialog = false },
+            onConfirm = { actions.onCategoryIntervalChanged(item.id, it) }
+        )
+    }
+
     Card(
         modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -331,11 +436,18 @@ private fun MaterialCategoryCard(
             if (item.enabled) {
                 HorizontalDivider(Modifier.padding(vertical = 14.dp))
                 Text(
-                    "执行周期：${formatHours(item.intervalHours)}",
+                    "执行周期：${item.intervalHours} 小时 · ${formatHours(item.intervalHours)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
+                if (dailyMode) {
+                    Text(
+                        "每日模式开启时暂不使用，关闭每日模式后自动恢复",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 10.sp
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1, 6, 12, 24).forEach { hours ->
@@ -353,6 +465,15 @@ private fun MaterialCategoryCard(
                             Text("${hours}h", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+                Spacer(Modifier.height(9.dp))
+                OutlinedButton(
+                    onClick = { showIntervalDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(8.dp))
+                    Text("精确输入 1–720 小时", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -388,9 +509,4 @@ private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.RULES -> Icons.Rounded.Rule
     CleanCategoryId.FRAGMENTS -> Icons.Rounded.AutoAwesome
     CleanCategoryId.DEEP -> Icons.Rounded.Security
-}
-
-private fun formatHours(hours: Int): String = when {
-    hours % 24 == 0 -> "${hours / 24} 天"
-    else -> "$hours 小时"
 }
