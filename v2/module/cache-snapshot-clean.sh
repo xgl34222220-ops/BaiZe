@@ -153,8 +153,8 @@ wait_with_stop() {
 find_snapshot_files() {
   target=$1 output=$2 max_bytes=$3 min_days=$4
   if [ "$min_days" -gt 0 ]; then
-    # The state file is written only after scanning completes. -newer therefore protects every file
-    # created or modified after that scan, while -mtime keeps the configured retention period.
+    # cache_scan.env is created only after scanning completes. Files created or modified later are
+    # newer than this state file and therefore cannot be selected by the old snapshot.
     find "$target" -xdev -mindepth 1 -type f ! -size "+${max_bytes}c" ! -newer "$CACHE_SCAN_STATE" -mtime "+$((min_days - 1))" -print0 >"$output" 2>/dev/null &
   else
     find "$target" -xdev -mindepth 1 -type f ! -size "+${max_bytes}c" ! -newer "$CACHE_SCAN_STATE" -print0 >"$output" 2>/dev/null &
@@ -268,7 +268,9 @@ while IFS= read -r target || [ -n "$target" ]; do
   list="$TMP_DIR/cache-clean.$current.files0"
   remaining="$TMP_DIR/cache-clean.$current.remaining0"
   : >"$list"
-  if ! find_snapshot_files "$target" "$list" "$max_file_bytes" "$min_age_days"; then
+  if find_snapshot_files "$target" "$list" "$max_file_bytes" "$min_age_days"; then
+    :
+  else
     find_code=$?
     if [ "$find_code" -eq 9 ] || should_stop; then code=9; break; fi
     errors=$((errors + 1))
@@ -280,9 +282,11 @@ while IFS= read -r target || [ -n "$target" ]; do
   if [ "$count" -gt 0 ]; then
     estimated=$(bytes_from_list "$list")
     case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
-    if ! delete_file_list "$list"; then
+    if delete_file_list "$list"; then
+      :
+    else
       delete_code=$?
-      [ "$delete_code" -eq 9 ] || should_stop && code=9
+      if [ "$delete_code" -eq 9 ] || should_stop; then code=9; fi
     fi
     existing_files_to_list "$list" "$remaining"
     remain=$(count_nul "$remaining")
