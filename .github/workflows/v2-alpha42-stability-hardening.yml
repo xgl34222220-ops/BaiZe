@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -29,9 +29,6 @@ jobs:
           ref: v2-alpha42-stability-hardening
           fetch-depth: 0
           show-progress: false
-
-      - name: Apply Alpha 42 stability hardening
-        run: python3 v2/scripts/apply-alpha42-stability-hardening.py
 
       - name: Validate stability architecture and shell
         run: |
@@ -78,17 +75,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
           unzip -p "$ZIP" app/baize.apk.sha256 | grep -Eq '^[0-9a-f]{64}$'
-
-      - name: Commit verified source
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A v2
-          if ! git diff --cached --quiet; then
-            git commit -m 'Harden Alpha 42 runtime, logs and appearance state'
-            git push origin HEAD:v2-alpha42-stability-hardening
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
