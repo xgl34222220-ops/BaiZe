@@ -27,65 +27,70 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          def replace_exact(path: str, old: str, new: str, expected: int = 1):
-              file = Path(path)
-              text = file.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != expected:
-                  raise SystemExit(f'{path}: expected {expected} occurrences of {old!r}, found {count}')
-              file.write_text(text.replace(old, new, expected), encoding='utf-8')
+          app_path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt')
+          app = app_path.read_text(encoding='utf-8')
 
-          app = 'v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt'
-          replace_exact(
-              app,
-              '''AnimatedPageHost(
-                        page = page,
-                        style = UiStyle.MATERIAL,
-                        modifier = Modifier.fillMaxSize()
-                    )''',
-              '''AnimatedPageHost(
-                        page = page,
-                        style = UiStyle.MATERIAL,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                    )'''
-          )
-          replace_exact(
-              app,
-              '''AnimatedPageHost(
-                            page = page,
-                            style = UiStyle.MIUIX,
-                            modifier = Modifier.fillMaxSize()
-                        )''',
-              '''AnimatedPageHost(
-                            page = page,
-                            style = UiStyle.MIUIX,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .statusBarsPadding()
-                        )'''
-          )
+          patterns = [
+              (
+                  r'(style = UiStyle\.MATERIAL,\n\s*)modifier = Modifier\.fillMaxSize\(\)',
+                  r'\1modifier = Modifier\n                            .fillMaxSize()\n                            .statusBarsPadding()'
+              ),
+              (
+                  r'(style = UiStyle\.MIUIX,\n\s*)modifier = Modifier\.fillMaxSize\(\)',
+                  r'\1modifier = Modifier\n                                .fillMaxSize()\n                                .statusBarsPadding()'
+              ),
+          ]
+          for pattern, replacement in patterns:
+              app, count = re.subn(pattern, replacement, app, count=1)
+              if count != 1:
+                  raise SystemExit(f'page host inset anchor matched {count} times: {pattern}')
+          if app.count('.statusBarsPadding()') != 2:
+              raise SystemExit('expected exactly two global page-host status bar paddings')
+          app_path.write_text(app, encoding='utf-8')
 
-          replace_exact('v2/app/build.gradle.kts', 'versionCode = 22330', 'versionCode = 22340')
-          replace_exact('v2/app/build.gradle.kts', 'versionName = "2.0.3"', 'versionName = "2.0.4"')
-          replace_exact('v2/module/module.prop', 'version=v2.0.3', 'version=v2.0.4')
-          replace_exact('v2/module/module.prop', 'versionCode=22330', 'versionCode=22340')
-          replace_exact(
-              'v2/module/module.prop',
-              'description=白泽 v2.0.3：原生 App 全面接管清理与 1-720 小时/每日定时，移除旧 WebUI，并保留快照与完整安全保护。',
-              'description=白泽 v2.0.4：统一修复所有原生页面的状态栏安全区，保留完整自动清理、快照与安全保护。'
-          )
-          replace_exact('v2/scripts/package-module.sh', 'BaiZe-v2.0.3-Module.zip', 'BaiZe-v2.0.4-Module.zip')
-          replace_exact('v2/scripts/package-module.sh', "^version=v2.0.3$", "^version=v2.0.4$")
-          replace_exact('v2/scripts/package-module.sh', "^versionCode=22330$", "^versionCode=22340$")
-          replace_exact('v2/scripts/package-module.sh', '白泽 v2.0.3 原生调度完整版模块', '白泽 v2.0.4 状态栏安全区修正版模块')
+          gradle = Path('v2/app/build.gradle.kts')
+          text = gradle.read_text(encoding='utf-8')
+          text, code_count = re.subn(r'versionCode\s*=\s*22330', 'versionCode = 22340', text, count=1)
+          text, name_count = re.subn(r'versionName\s*=\s*"2\.0\.3"', 'versionName = "2.0.4"', text, count=1)
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f'App version anchors: code={code_count}, name={name_count}')
+          gradle.write_text(text, encoding='utf-8')
+
+          prop = Path('v2/module/module.prop')
+          lines = prop.read_text(encoding='utf-8').splitlines()
+          values = {
+              'version': 'v2.0.4',
+              'versionCode': '22340',
+              'description': '白泽 v2.0.4：统一修复所有原生页面的状态栏安全区，保留完整自动清理、快照与安全保护。',
+          }
+          seen = set()
+          output = []
+          for line in lines:
+              key = line.split('=', 1)[0] if '=' in line else ''
+              if key in values:
+                  output.append(f'{key}={values[key]}')
+                  seen.add(key)
+              else:
+                  output.append(line)
+          if seen != set(values):
+              raise SystemExit(f'module.prop keys missing: {set(values) - seen}')
+          prop.write_text('\n'.join(output) + '\n', encoding='utf-8')
+
+          package = Path('v2/scripts/package-module.sh')
+          text = package.read_text(encoding='utf-8')
+          if text.count('v2.0.3') < 3 or text.count('22330') != 1:
+              raise SystemExit('unexpected package-module version anchors')
+          text = text.replace('v2.0.3', 'v2.0.4').replace('22330', '22340')
+          text = text.replace('原生调度完整版模块', '状态栏安全区修正版模块')
+          package.write_text(text, encoding='utf-8')
 
           notes = Path('RELEASE_NOTES_V2.md')
           note_text = notes.read_text(encoding='utf-8')
           header = '''# 白泽 v2.0.4\n\n- 修复 MIUIx 与 Material 所有主页面内容侵入状态栏、时间和挖孔区域的问题。\n- 页面背景继续延伸至系统栏，标题、按钮和列表统一从状态栏安全区下方开始。\n- 保留 v2.0.3 的每日定时、1–720 小时精确周期与 App 全面接管。\n\n'''
-          notes.write_text(header + note_text, encoding='utf-8')
+          if not note_text.startswith('# 白泽 v2.0.4'):
+              notes.write_text(header + note_text, encoding='utf-8')
           PY
           git diff --check
 
@@ -130,8 +135,8 @@ jobs:
           unzip -p "$ZIP" module.prop | grep -qx 'version=v2.0.4'
           unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22340'
           test "$(grep -c 'statusBarsPadding()' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt)" -eq 2
-          grep -q 'style = UiStyle.MATERIAL' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
-          grep -q 'style = UiStyle.MIUIX' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -A4 'style = UiStyle.MATERIAL' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
+          grep -A4 'style = UiStyle.MIUIX' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "versionCode='22340' versionName='2.0.4'"
           if unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
             echo '模块包中仍存在 WebUI 目录' >&2
