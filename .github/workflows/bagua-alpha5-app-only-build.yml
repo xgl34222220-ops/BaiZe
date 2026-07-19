@@ -58,14 +58,27 @@ jobs:
           done
 
       - name: Build native App
+        id: app_build
+        continue-on-error: true
         working-directory: work
-        run: gradle --no-daemon :app:assembleDebug
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha5.log
+
+      - name: Print compiler diagnostics
+        if: steps.app_build.outcome != 'success'
+        working-directory: work
+        run: |
+          echo '===== COMPILER DIAGNOSTICS ====='
+          grep -E '(^e: | error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot infer|No parameter)' build-alpha5.log | tail -n 160 || tail -n 200 build-alpha5.log
 
       - name: Package integrated module
+        if: steps.app_build.outcome == 'success'
         working-directory: work
         run: bash scripts/package-module.sh
 
       - name: Verify integrated artifacts
+        if: steps.app_build.outcome == 'success'
         working-directory: work
         run: |
           set -e
@@ -83,13 +96,19 @@ jobs:
           aapt dump badging "$APK" | grep -q "application-label:'八卦'"
           test -s dist/BaGua-v0.5.0-alpha.5-SHA256.txt
 
-      - name: Upload App-only build
+      - name: Upload App-only build and diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BaGua-v0.5.0-alpha.5-AppOnly
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
+            work/build-alpha5.log
             work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
             work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Source.zip
             work/dist/BaGua-v0.5.0-alpha.5-SHA256.txt
             work/module-src/app/bagua.apk
+
+      - name: Fail when native App build failed
+        if: steps.app_build.outcome != 'success'
+        run: exit 1
