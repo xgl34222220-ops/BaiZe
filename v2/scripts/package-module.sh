@@ -18,11 +18,12 @@ mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
 cp -a "$MODULE/." "$STAGE/"
 cp -a "$REPO/config" "$STAGE/config"
 
-# The source tree keeps the Alpha 42.5 entry for comparison, while the actual module always ships
-# the Alpha 42.6 router. Every clean mode is routed to a snapshot consumer and can never fall back
-# to the legacy rediscovery path.
+# Ship one tiny router and three dedicated executors. The runtime names all contain cleaner.sh so
+# every RootService recognizes a real cross-page task instead of deleting its progress as stale.
 cp -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.sh"
-rm -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.native.sh"
+cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
+cp -f "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
+rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/cleaner.native.sh"
 
 cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
 cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
@@ -31,7 +32,7 @@ sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/
 sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
 
 cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
-chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-scan.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/profile-snapshot-clean.sh"
+chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
 
@@ -49,15 +50,16 @@ rm -f "$OUTPUT"
 unzip -tq "$OUTPUT" >/dev/null
 unzip -l "$OUTPUT" | grep -q 'app/baize.apk'
 unzip -l "$OUTPUT" | grep -q 'cleaner.sh'
-unzip -l "$OUTPUT" | grep -q 'native-scan.sh'
+unzip -l "$OUTPUT" | grep -q 'native-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'cache-snapshot-clean.sh'
-unzip -l "$OUTPUT" | grep -q 'profile-snapshot-clean.sh'
+unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'cleaner.sh.compat'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_engine'
 unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'profile-snapshot-clean.sh'
+unzip -p "$OUTPUT" cleaner.sh | grep -q 'profile-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
+unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" module.prop | grep -q 'version=v2.0.0-alpha42.6'
 unzip -p "$OUTPUT" module.prop | grep -q 'versionCode=22260'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
