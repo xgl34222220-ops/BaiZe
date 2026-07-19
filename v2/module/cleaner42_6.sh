@@ -17,10 +17,10 @@ case "$MODE" in
     run_script "$MODDIR/cache-snapshot-clean.sh" "$MODE" "$TRIGGER"
     ;;
   deep-clean|corpse-clean)
-    run_script "$MODDIR/profile-snapshot-clean.sh" "$MODE" "$TRIGGER"
+    run_script "$MODDIR/profile-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
   cache-scan|deep-scan|corpse-scan)
-    run_script "$MODDIR/native-scan.sh" "$MODE" "$TRIGGER"
+    run_script "$MODDIR/native-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
   *)
     run_script "$MODDIR/cleaner.sh.compat" "$@"
