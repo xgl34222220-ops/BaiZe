@@ -30,6 +30,22 @@ jobs:
             | sed '1s/^[[:space:]]*//; $d' \
             | base64 -d | gzip -d > v2/scripts/app-scheduler-takeover-patch.py
           python3 v2/scripts/app-scheduler-takeover-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('v2/app/src/main/res/layout/activity_dashboard.xml')
+          text = path.read_text(encoding='utf-8')
+          patterns = [
+              r'''\n\s*<TextView\n\s*android:id="@\+id/dailyHourText"\n.*?android:visibility="gone" />''',
+              r'''\n\s*<com\.google\.android\.material\.slider\.Slider\n\s*android:id="@\+id/dailyHourSlider"\n.*?android:visibility="gone" />''',
+          ]
+          for pattern in patterns:
+              text, count = re.subn(pattern, '', text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'expected one obsolete daily control, found {count}')
+          path.write_text(text, encoding='utf-8')
+          PY
           git diff --check
 
       - name: Set up JDK 17
@@ -89,7 +105,7 @@ jobs:
           ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
           grep -q 'daily_schedule_minute' v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
           grep -q 'MAX_HOURS = 720' v2/app/src/main/java/io/github/xgl34222220/baize/ui/MiuixScheduleRow.kt
-          grep -q '每日固定时刻' v2/app/src/main/res/layout/activity_dashboard.xml
+          grep -q '每日固定时间' v2/app/src/main/res/layout/activity_dashboard.xml
           grep -q 'rm -rf.*webroot' v2/module/customize.sh
           sha256sum "$ZIP" | tee "$ZIP.sha256"
 
