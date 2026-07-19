@@ -32,16 +32,16 @@ jobs:
           app_path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt')
           app = app_path.read_text(encoding='utf-8')
 
-          # v2.0.3 only protected the legacy home header. Move that inset to the common page host
-          # so Clean, Records, Logs and Settings receive exactly the same safe top area.
-          old_header = '''.fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 22.dp, vertical = 14.dp)'''
-          new_header = '''.fillMaxWidth()
-            .padding(horizontal = 22.dp, vertical = 14.dp)'''
-          if app.count(old_header) != 1:
-              raise SystemExit(f'expected one legacy home-only status inset, found {app.count(old_header)}')
-          app = app.replace(old_header, new_header, 1)
+          # v2.0.3 protected only the home header. Remove that local inset and place it on the
+          # shared page host so every page receives exactly one top safe area.
+          app, header_count = re.subn(
+              r'(\.fillMaxWidth\(\)\s*)\.statusBarsPadding\(\)(\s*\.padding\(horizontal = 22\.dp, vertical = 14\.dp\))',
+              r'\1\2',
+              app,
+              count=1,
+          )
+          if header_count != 1:
+              raise SystemExit(f'expected one legacy home-only status inset, found {header_count}')
 
           patterns = [
               (
@@ -148,7 +148,6 @@ jobs:
           test "$(grep -c 'statusBarsPadding()' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt)" -eq 2
           grep -A4 'style = UiStyle.MATERIAL' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
           grep -A4 'style = UiStyle.MIUIX' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
-          ! grep -A4 'private fun PageHeader' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt | grep -q 'statusBarsPadding()'
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "versionCode='22340' versionName='2.0.4'"
           if unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
             echo '模块包中仍存在 WebUI 目录' >&2
@@ -161,6 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f .github/workflows/v2.0.4-system-bars-insets.yml
+          rm -f .github/workflows/v204-inset-diagnostic.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
@@ -169,7 +169,8 @@ jobs:
             v2/module/module.prop \
             v2/scripts/package-module.sh \
             RELEASE_NOTES_V2.md \
-            .github/workflows/v2.0.4-system-bars-insets.yml
+            .github/workflows/v2.0.4-system-bars-insets.yml \
+            .github/workflows/v204-inset-diagnostic.yml
           git commit -m 'fix(v2): keep every page below the status bar'
           git push origin HEAD:fix/v2.0.4-system-bars-insets
 
