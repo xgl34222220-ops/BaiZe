@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2-Alpha42.8-Snapshot-Clean-UI-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha42.9-Smart-Scan-Compose-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -65,8 +65,8 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q 'version=v2.0.0-alpha42.8'
-unzip -p "$OUTPUT" module.prop | grep -q 'versionCode=22280'
+unzip -p "$OUTPUT" module.prop | grep -q 'version=v2.0.0-alpha42.9'
+unzip -p "$OUTPUT" module.prop | grep -q 'versionCode=22290'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成 Alpha 42.8 快照清理闭环与统一主题模块：$OUTPUT"
+echo "已生成 Alpha 42.9 智能扫描 Compose 与任务状态修复模块：$OUTPUT"
