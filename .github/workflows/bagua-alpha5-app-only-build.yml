@@ -3,6 +3,8 @@ name: Build BaGua Alpha 5 App-only
 on:
   push:
     branches: [bagua-alpha5-app-only]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
