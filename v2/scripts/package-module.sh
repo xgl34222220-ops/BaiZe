@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2-Alpha42.6-Unified-Snapshot-Clean-Module.zip"
+OUTPUT="$OUT/BaiZe-v2-Alpha42.7-Secondary-Scan-Pages-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -18,8 +18,7 @@ mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
 cp -a "$MODULE/." "$STAGE/"
 cp -a "$REPO/config" "$STAGE/config"
 
-# Ship one tiny router and three dedicated executors. The runtime names all contain cleaner.sh so
-# every RootService recognizes a real cross-page task instead of deleting its progress as stale.
+# Keep the verified Alpha 42.6 snapshot engine and ship the Alpha 42.7 App navigation fix.
 cp -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.sh"
 cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
 cp -f "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
@@ -60,8 +59,8 @@ unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'profile-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q 'version=v2.0.0-alpha42.6'
-unzip -p "$OUTPUT" module.prop | grep -q 'versionCode=22260'
+unzip -p "$OUTPUT" module.prop | grep -q 'version=v2.0.0-alpha42.7'
+unzip -p "$OUTPUT" module.prop | grep -q 'versionCode=22270'
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成 Alpha 42.6 统一快照清理模块：$OUTPUT"
+echo "已生成 Alpha 42.7 二级扫描页面修复模块：$OUTPUT"
