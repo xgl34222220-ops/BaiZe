@@ -58,17 +58,32 @@ jobs:
           gradle-version: '8.13'
 
       - name: Build native App
+        id: app_build
         working-directory: v2
         shell: bash
         run: |
           set +e
           gradle --no-daemon --console=plain :app:assembleDebug > /tmp/alpha42-2-build.log 2>&1
           status=$?
-          if [ "$status" -ne 0 ]; then
-            grep -nE '(^| )e: |error: |Exception|FAILURE:' /tmp/alpha42-2-build.log | tail -n 180 || true
-            tail -n 220 /tmp/alpha42-2-build.log
-          fi
-          exit "$status"
+          grep -nE '(^| )e: |error: |Exception|FAILURE:' /tmp/alpha42-2-build.log | tail -n 220 > /tmp/alpha42-2-errors.log || true
+          tail -n 260 /tmp/alpha42-2-build.log >> /tmp/alpha42-2-errors.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload compiler diagnostics
+        if: steps.app_build.outputs.status != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alpha42.2-compiler-diagnostics
+          path: |
+            /tmp/alpha42-2-errors.log
+            /tmp/alpha42-2-build.log
+
+      - name: Fail on compiler error
+        if: steps.app_build.outputs.status != '0'
+        run: |
+          cat /tmp/alpha42-2-errors.log
+          exit 1
 
       - name: Package and verify module
         working-directory: v2
