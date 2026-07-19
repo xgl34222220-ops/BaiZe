@@ -38,12 +38,38 @@ enum class KolorStyle(val label: String) {
 }
 
 @Immutable
+data class AccentOption(
+    val id: String,
+    val label: String,
+    val argb: Int
+)
+
+val AccentOptions = listOf(
+    AccentOption("default", "白泽蓝", 0xFF3975F4.toInt()),
+    AccentOption("red", "朱红", 0xFFC70018.toInt()),
+    AccentOption("pink", "玫粉", 0xFFC50056.toInt()),
+    AccentOption("purple", "曜紫", 0xFFAF00C7.toInt()),
+    AccentOption("deep_purple", "深紫", 0xFF7900F5.toInt()),
+    AccentOption("indigo", "靛蓝", 0xFF1559F4.toInt()),
+    AccentOption("blue", "湖蓝", 0xFF0A79B8.toInt()),
+    AccentOption("light_blue", "青蓝", 0xFF0080A0.toInt())
+)
+
+fun accentOptionFor(argb: Int): AccentOption =
+    AccentOptions.firstOrNull { it.argb == argb } ?: AccentOptions.first()
+
+@Immutable
 data class AppearanceSettings(
     val uiStyle: UiStyle = UiStyle.MIUIX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val seedArgb: Int = 0xFF3975F4.toInt(),
+    val seedArgb: Int = AccentOptions.first().argb,
     val kolorStyle: KolorStyle = KolorStyle.VIBRANT,
+    val monetEnabled: Boolean = false,
     val amoledBlack: Boolean = false,
     val blurEnabled: Boolean = true,
-    val glassEnabled: Boolean = true
-)
+    val glassEnabled: Boolean = true,
+    val floatingDock: Boolean = true
+) {
+    val accent: AccentOption
+        get() = accentOptionFor(seedArgb)
+}
