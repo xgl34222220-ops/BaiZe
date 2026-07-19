@@ -573,7 +573,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Haze Glass · Alpha 42",
+                "Miuix × Haze Glass · v${BuildConfig.VERSION_NAME}",
                 actions.refresh
             )
         }

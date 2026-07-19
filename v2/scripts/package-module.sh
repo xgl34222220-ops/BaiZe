@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.0.1-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.0.2-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -67,12 +67,12 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.0.1$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22310$'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.0.2$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22320$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
 fi
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
 
-echo "已生成白泽 v2.0.1 App 接管版模块：$OUTPUT"
+echo "已生成白泽 v2.0.2 App 接管版模块：$OUTPUT"

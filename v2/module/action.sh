@@ -28,4 +28,4 @@ if ! pm path "$APP_ID" >/dev/null 2>&1; then
 fi
 
 am force-stop "$APP_ID" >/dev/null 2>&1
-am start -n "$APP_ID/.DashboardActivity" >/dev/null 2>&1
+am start -n "$APP_ID/.MiuixDashboardActivity" >/dev/null 2>&1 || monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
