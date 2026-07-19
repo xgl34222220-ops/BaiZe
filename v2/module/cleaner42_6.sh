@@ -16,6 +16,9 @@ case "$MODE" in
   cache-clean)
     run_script "$MODDIR/cache-snapshot-clean.sh" "$MODE" "$TRIGGER"
     ;;
+  apk-scan)
+    run_script "$MODDIR/apk-scanner.sh" "$MODE" "$TRIGGER"
+    ;;
   apk-clean)
     run_script "$MODDIR/apk-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
