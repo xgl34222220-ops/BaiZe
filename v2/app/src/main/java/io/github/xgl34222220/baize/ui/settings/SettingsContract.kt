@@ -20,10 +20,12 @@ data class SettingsUiState(
         get() = buildList {
             add(appearance.uiStyle.label)
             add(appearance.themeMode.label)
+            add(if (appearance.monetEnabled) "Monet" else appearance.accent.label)
             add(appearance.kolorStyle.label)
             if (appearance.amoledBlack) add("AMOLED")
             if (appearance.glassEnabled) add("玻璃")
-            if (appearance.blurEnabled) add("模糊")
+            if (appearance.blurEnabled && appearance.glassEnabled) add("模糊")
+            add(if (appearance.floatingDock) "悬浮底栏" else "贴底底栏")
         }.joinToString(" · ")
 
     val serviceHealthy: Boolean
