@@ -1,0 +1,42 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDebugResValues
+> Task :app:dataBindingMergeDependencyArtifactsDebug
+> Task :app:generateDebugResources
+> Task :app:compileDebugAidl
+> Task :app:packageDebugResources
+> Task :app:generateDebugBuildConfig
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:mergeDebugResources
+> Task :app:processDebugMainManifest
+> Task :app:dataBindingGenBaseClassesDebug FAILED
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_4-1784465560280.json
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:dataBindingGenBaseClassesDebug'.
+> Found data binding error(s):
+  
+  ERROR: <TextView id='@+id/dailyHourText'> conflicts with another tag that has the same ID file://app/src/main/res/layout/activity_dashboard.xml Line:563
+  ERROR: <com.google.android.material.slider.Slider id='@+id/dailyHourSlider'> conflicts with another tag that has the same ID file://app/src/main/res/layout/activity_dashboard.xml Line:581
+  ERROR: <TextView id='@+id/dailyHourText'> conflicts with another tag that has the same ID file://app/src/main/res/layout/activity_dashboard.xml Line:626
+  ERROR: <com.google.android.material.slider.Slider id='@+id/dailyHourSlider'> conflicts with another tag that has the same ID file://app/src/main/res/layout/activity_dashboard.xml Line:632
+
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 29s
+14 actionable tasks: 14 executed
