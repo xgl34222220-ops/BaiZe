@@ -1,0 +1,31 @@
+name: Export active Clean UI source
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/export-clean-ui-source.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.0.1-app-scheduler-takeover
+      - name: Export active launcher and clean UI sources
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/source
+          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt /tmp/source/
+          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt /tmp/source/
+          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean /tmp/source/clean
+          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings /tmp/source/settings
+          cp -a v2/module/scheduler.sh /tmp/source/
+          cp -a v2/module/config.conf /tmp/source/ 2>/dev/null || true
+          tar -C /tmp -czf active-clean-ui-source.tar.gz source
+      - uses: actions/upload-artifact@v4
+        with:
+          name: active-clean-ui-source
+          path: active-clean-ui-source.tar.gz
