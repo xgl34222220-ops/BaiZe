@@ -28,10 +28,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +80,7 @@ class ApkScanActivity : ComponentActivity() {
     private var serviceBound = false
     private var pollJob: Job? = null
     private var screenState by mutableStateOf(ApkScanUiState())
+    private var showCleanConfirm by mutableStateOf(false)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -83,7 +88,7 @@ class ApkScanActivity : ComponentActivity() {
             serviceBound = true
             screenState = screenState.copy(
                 connected = true,
-                status = "Root 安装包扫描引擎已连接",
+                status = "Root 安装包扫描与快照清理引擎已连接",
                 phase = if (screenState.running) screenState.phase else "点击下方按钮开始扫描"
             )
             recoverRunningTask()
@@ -113,9 +118,31 @@ class ApkScanActivity : ComponentActivity() {
                         state = screenState,
                         onBack = ::finish,
                         onScan = ::startScan,
+                        onClean = { showCleanConfirm = true },
                         onStop = ::stopTask,
                         onReconnect = ::connectService
                     )
+                    if (showCleanConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showCleanConfirm = false },
+                            title = { Text("清理刚才扫描到的安装包？") },
+                            text = {
+                                Text(
+                                    "只删除当前扫描快照中的 ${screenState.totalFiles} 个安装包，不会重新扫描。" +
+                                        "扫描后新增或修改的文件、白名单路径、软链接和异常路径会自动跳过。"
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showCleanConfirm = false
+                                    cleanSnapshot()
+                                }) { Text("立即清理") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showCleanConfirm = false }) { Text("取消") }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -134,7 +161,7 @@ class ApkScanActivity : ComponentActivity() {
         if (service != null || serviceBound) return
         screenState = screenState.copy(
             connected = false,
-            status = "正在连接 Root 安装包扫描引擎…",
+            status = "正在连接 Root 安装包引擎…",
             phase = "连接完成后即可开始扫描"
         )
         runCatching {
@@ -156,7 +183,7 @@ class ApkScanActivity : ComponentActivity() {
 
     private fun startScan() {
         if (screenState.running) {
-            screenState = screenState.copy(phase = "安装包扫描仍在运行，请先停止或等待完成")
+            screenState = screenState.copy(phase = "安装包任务仍在运行，请先停止或等待完成")
             return
         }
         val root = service
@@ -168,8 +195,12 @@ class ApkScanActivity : ComponentActivity() {
 
         screenState = screenState.copy(
             running = true,
+            operation = "scan",
             phase = "正在扫描 APK / APKS / XAPK…",
             items = emptyList(),
+            totalFiles = 0,
+            totalBytes = 0,
+            cleanReady = false,
             output = ""
         )
         startPolling()
@@ -196,33 +227,108 @@ class ApkScanActivity : ComponentActivity() {
             }
 
             val latest = json.optJSONObject("latest") ?: JSONObject()
-            val items = parseItems(json.optJSONArray("otherDetails"))
+            val parsedItems = parseItems(json.optJSONArray("otherDetails"))
             val success = json.optBoolean("success")
             val cancelled = json.optBoolean("cancelled")
+            val totalFiles = latest.optLong("files", parsedItems.sumOf { it.files }).coerceAtLeast(0L)
+            val totalBytes = latest.optLong("bytes", parsedItems.sumOf { it.bytes }).coerceAtLeast(0L)
             val result = latest.optString("result").ifBlank {
                 when {
                     cancelled -> "安装包扫描已停止"
-                    success && items.isEmpty() -> "没有发现超过保留期的安装包"
-                    success -> "安装包扫描完成，发现 ${items.sumOf { it.files }} 项"
+                    success && totalFiles <= 0 -> "没有发现超过保留期的安装包"
+                    success -> "安装包扫描完成，可清理 ${Formatter.formatFileSize(this@ApkScanActivity, totalBytes)}"
                     else -> json.optString("message", "安装包扫描失败")
                 }
             }
             screenState = screenState.copy(
                 running = false,
+                operation = "",
                 phase = result,
-                items = items,
+                items = parsedItems,
+                totalFiles = totalFiles,
+                totalBytes = totalBytes,
+                cleanReady = success && !cancelled && totalFiles > 0,
                 output = json.optString("output").trim().takeLast(6000)
             )
         }
     }
 
+    private fun cleanSnapshot() {
+        if (screenState.running || !screenState.cleanReady) return
+        val root = service
+        if (root == null) {
+            screenState = screenState.copy(phase = "Root 服务尚未连接，正在重新连接…")
+            connectService()
+            return
+        }
+
+        screenState = screenState.copy(
+            running = true,
+            operation = "clean",
+            phase = "正在清理刚才扫描到的安装包，不会重新扫描…"
+        )
+        startPolling()
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(root.runModuleTask("apk-clean")) }
+            }
+            pollJob?.cancel()
+            if (response.isFailure) {
+                screenState = screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = "安装包清理失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                )
+                return@launch
+            }
+
+            val json = response.getOrThrow()
+            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
+                screenState = screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = json.optString("message", "当前已有其他扫描或清理任务正在运行")
+                )
+                return@launch
+            }
+            val latest = json.optJSONObject("latest") ?: JSONObject()
+            val success = json.optBoolean("success") && !json.optBoolean("cancelled")
+            val result = latest.optString("result").ifBlank {
+                when {
+                    json.optBoolean("cancelled") -> "安装包清理已停止，扫描快照仍保留"
+                    success -> "安装包快照清理完成"
+                    else -> json.optString("message", "安装包清理失败")
+                }
+            }
+            screenState = if (success) {
+                screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = result,
+                    items = emptyList(),
+                    totalFiles = 0,
+                    totalBytes = 0,
+                    cleanReady = false,
+                    output = json.optString("output").trim().takeLast(6000)
+                )
+            } else {
+                screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = result,
+                    output = json.optString("output").trim().takeLast(6000)
+                )
+            }
+        }
+    }
+
     private fun stopTask() {
         if (!screenState.running) {
-            screenState = screenState.copy(phase = "当前没有正在运行的安装包扫描")
+            screenState = screenState.copy(phase = "当前没有正在运行的安装包任务")
             return
         }
         service?.cancelCurrentTask()
-        screenState = screenState.copy(phase = "正在安全停止安装包扫描…")
+        screenState = screenState.copy(phase = "正在安全停止安装包任务…")
     }
 
     private fun recoverRunningTask() {
@@ -237,7 +343,10 @@ class ApkScanActivity : ComponentActivity() {
                 screenState = screenState.copy(phase = "当前已有其他扫描或清理任务正在运行")
                 return@launch
             }
-            screenState = screenState.copy(running = true)
+            screenState = screenState.copy(
+                running = true,
+                operation = if (operation.contains("clean", true)) "clean" else "scan"
+            )
             renderTaskState(state)
             startPolling()
         }
@@ -264,7 +373,7 @@ class ApkScanActivity : ComponentActivity() {
         screenState = screenState.copy(
             running = true,
             phase = buildString {
-                append(json.optString("phase", "正在扫描安装包"))
+                append(json.optString("phase", if (screenState.operation == "clean") "正在清理安装包" else "正在扫描安装包"))
                 if (total > 0) append(" · $current/$total")
                 if (path.isNotBlank()) append("\n").append(path.takeLast(96))
                 if (json.optBoolean("cancelRequested")) append("\n正在停止…")
@@ -294,9 +403,13 @@ class ApkScanActivity : ComponentActivity() {
 private data class ApkScanUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
+    val operation: String = "",
     val status: String = "正在等待 Root 服务…",
     val phase: String = "准备扫描安装包",
     val items: List<ApkScanItem> = emptyList(),
+    val totalFiles: Long = 0,
+    val totalBytes: Long = 0,
+    val cleanReady: Boolean = false,
     val output: String = ""
 )
 
@@ -313,9 +426,11 @@ private fun ApkScanScreen(
     state: ApkScanUiState,
     onBack: () -> Unit,
     onScan: () -> Unit,
+    onClean: () -> Unit,
     onStop: () -> Unit,
     onReconnect: () -> Unit
 ) {
+    val context = LocalContext.current
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -344,7 +459,7 @@ private fun ApkScanScreen(
                     )
                     Text("安装包扫描", fontSize = 30.sp, fontWeight = FontWeight.Black)
                     Text(
-                        "查找 APK、APKS 与 XAPK，不在进入页面时自动扫描",
+                        "扫描一次，确认后只清理当前快照",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
                     )
@@ -368,10 +483,7 @@ private fun ApkScanScreen(
                         Box(
                             modifier = Modifier
                                 .size(54.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    RoundedCornerShape(18.dp)
-                                ),
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -392,6 +504,17 @@ private fun ApkScanScreen(
                         }
                     }
                     if (state.running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+
+                    if (state.cleanReady && !state.running) {
+                        Button(onClick = onClean, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                "一键清理 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}"
+                            )
+                        }
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = onScan,
@@ -429,7 +552,11 @@ private fun ApkScanScreen(
                 )
                 Text("扫描结果", fontSize = 26.sp, fontWeight = FontWeight.Black)
                 Text(
-                    if (state.items.isEmpty()) "完成扫描后在这里查看安装包路径、数量与大小" else "发现 ${state.items.sumOf { it.files }} 项安装包",
+                    if (state.items.isEmpty()) {
+                        "完成扫描后在这里查看安装包路径、数量与大小"
+                    } else {
+                        "发现 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}"
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -445,7 +572,7 @@ private fun ApkScanScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                 ) {
                     Text(
-                        if (state.running) "正在扫描，请稍候…" else "尚未生成安装包扫描结果",
+                        if (state.running) "任务正在执行，请稍候…" else "尚未生成安装包扫描结果",
                         modifier = Modifier.padding(22.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -485,6 +612,7 @@ private fun ApkScanScreen(
 
 @Composable
 private fun ApkResultCard(item: ApkScanItem) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -492,10 +620,7 @@ private fun ApkResultCard(item: ApkScanItem) {
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.Top
-        ) {
+        Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
             Icon(
                 Icons.Rounded.Folder,
                 contentDescription = null,
@@ -506,7 +631,7 @@ private fun ApkResultCard(item: ApkScanItem) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${item.files} 项 · ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, item.bytes)}" +
+                    "${item.files} 项 · ${Formatter.formatFileSize(context, item.bytes)}" +
                         if (item.errors > 0) " · 异常 ${item.errors}" else "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
