@@ -6,6 +6,11 @@ on:
     paths:
       - 'v2/**'
       - '.github/workflows/v2-alpha42-9-smart-scan-compose.yml'
+  pull_request:
+    branches: [v2-alpha42-8-snapshot-clean-ui]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-9-smart-scan-compose.yml'
   workflow_dispatch:
 
 permissions:
