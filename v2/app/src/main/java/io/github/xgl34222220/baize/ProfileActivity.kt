@@ -45,6 +45,7 @@ class ProfileActivity : AppCompatActivity() {
             service = IProfileRootService.Stub.asInterface(binder)
             bindingRequested = true
             renderConnected()
+            recoverRemoteOrLatestState()
             renderActionState()
         }
 
@@ -93,6 +94,13 @@ class ProfileActivity : AppCompatActivity() {
         binding.statusText.text = "正在连接 Root 原生清理引擎"
         renderActionState()
         connect()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::binding.isInitialized && service != null && !taskRunning) {
+            recoverRemoteOrLatestState()
+        }
     }
 
     private fun rootIntent(): Intent = Intent(this, BaiZeProfileRootService::class.java)
@@ -148,9 +156,16 @@ class ProfileActivity : AppCompatActivity() {
             setTaskUi(false)
             result.onSuccess { raw ->
                 val json = JSONObject(raw)
+                if (json.optString("error") == "busy") {
+                    binding.summaryText.text = "检测到后台任务，正在恢复执行状态…"
+                    recoverRemoteOrLatestState()
+                    return@onSuccess
+                }
                 val output = json.optString("output").lineSequence().filter { it.isNotBlank() }.takeLast(6).joinToString("\n")
                 val success = json.optBoolean("success")
-                quickCleanReady = success && !json.optBoolean("cancelled")
+                val latest = json.optJSONObject("latest") ?: JSONObject()
+                val discovered = latest.optLong("files", latest.optLong("regular_files", 0L)).coerceAtLeast(0L)
+                quickCleanReady = success && !json.optBoolean("cancelled") && discovered > 0L
                 binding.summaryText.text = buildString {
                     append(
                         when {
@@ -161,7 +176,8 @@ class ProfileActivity : AppCompatActivity() {
                     )
                     append(" · ${json.optLong("elapsedMs")}ms")
                     if (output.isNotBlank()) append("\n").append(output)
-                    if (quickCleanReady) append("\n已完成安全校验，可直接一键清理。")
+                    if (quickCleanReady) append("\n发现 $discovered 项安全内容，可直接一键清理。")
+                    else if (success && discovered == 0L) append("\n没有发现可清理的安全项目。")
                 }
                 binding.resultSection.visibility = if (quickCleanReady) View.VISIBLE else View.GONE
                 binding.resultsList.visibility = View.GONE
@@ -353,6 +369,97 @@ class ProfileActivity : AppCompatActivity() {
                 binding.summaryText.text = "清理失败：${it.message ?: it.javaClass.simpleName}"
             }
         }
+    }
+
+    private fun recoverRemoteOrLatestState() {
+        val root = service ?: return
+        if (!requiresModuleAuthorization() || taskRunning) return
+        lifecycleScope.launch {
+            val task = runCatching {
+                withContext(Dispatchers.IO) { JSONObject(root.getTaskState()) }
+            }.getOrNull()
+            if (task?.optBoolean("running") == true) {
+                taskRunning = true
+                quickCleanReady = false
+                binding.resultSection.visibility = View.GONE
+                setTaskUi(true)
+                renderRemoteTaskState(task)
+                startRecoveryPolling()
+            } else {
+                restoreAuthorizedScanResult()
+            }
+        }
+    }
+
+    private fun startRecoveryPolling() {
+        pollJob?.cancel()
+        pollJob = lifecycleScope.launch {
+            while (isActive && taskRunning) {
+                val task = runCatching {
+                    withContext(Dispatchers.IO) { service?.getTaskState()?.let(::JSONObject) }
+                }.getOrNull()
+                if (task?.optBoolean("running") == true) {
+                    renderRemoteTaskState(task)
+                    delay(500L)
+                    continue
+                }
+
+                taskRunning = false
+                setTaskUi(false)
+                restoreAuthorizedScanResult()
+                break
+            }
+        }
+    }
+
+    private fun renderRemoteTaskState(json: JSONObject) {
+        binding.summaryText.text = buildString {
+            append(json.optString("phase", "后台任务正在执行"))
+            val current = json.optInt("progress_current", json.optInt("current"))
+            val totalState = json.optInt("progress_total", json.optInt("total"))
+            if (totalState > 0) append(" · $current/$totalState")
+            val path = json.optString("current_path", json.optString("currentPath"))
+            if (path.isNotBlank()) append("\n").append(path.takeLast(92))
+            if (json.optBoolean("cancelRequested")) append("\n正在安全停止…")
+        }
+    }
+
+    private suspend fun restoreAuthorizedScanResult() {
+        if (!requiresModuleAuthorization()) return
+        val root = service ?: return
+        val state = runCatching {
+            withContext(Dispatchers.IO) { JSONObject(root.getModuleState()) }
+        }.getOrNull() ?: return
+        val latest = state.optJSONObject("latest") ?: return
+        if (latest.optString("mode") != scanMode(profile)) {
+            renderActionState()
+            return
+        }
+
+        val files = latest.optLong("files", latest.optLong("regular_files", 0L)).coerceAtLeast(0L)
+        val errors = latest.optLong("errors", 0L).coerceAtLeast(0L)
+        val result = latest.optString("result").trim()
+        quickCleanReady = files > 0L
+        binding.resultsList.visibility = View.GONE
+        binding.pageText.visibility = View.GONE
+        binding.previousButton.visibility = View.GONE
+        binding.nextButton.visibility = View.GONE
+        binding.resultSection.visibility = if (quickCleanReady) View.VISIBLE else View.GONE
+        binding.cleanButton.text = if (quickCleanReady) quickCleanLabel(profile, files.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        else "扫描后可一键清理"
+        binding.selectionText.text = when (profile) {
+            "deep" -> "已恢复最近一次深度扫描授权；只会清理低风险与允许的中风险项目。"
+            "corpses" -> "已恢复最近一次卸载残留扫描授权；删除前会再次核对安装状态。"
+            else -> "已恢复最近一次安全扫描结果。"
+        }
+        binding.summaryText.text = buildString {
+            append("已恢复最近一次${profileTitle(profile)}扫描结果")
+            if (files > 0L) append("\n发现 $files 项，可直接一键清理")
+            else append("\n没有发现可清理项目")
+            if (errors > 0L) append(" · 异常 $errors")
+            if (result.isNotBlank()) append("\n").append(result)
+        }
+        renderActionState()
     }
 
     private fun startPolling() {

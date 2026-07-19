@@ -351,8 +351,8 @@ fun BaiZeMiuixApp(
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
                             BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
                             BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
-                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions)
-                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions)
+                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Records }
+                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions) { page = BaiZePage.Records }
                         }
                     }
                     MaterialFloatingDock(
@@ -379,8 +379,8 @@ fun BaiZeMiuixApp(
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
                                 BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
                                 BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
-                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions)
-                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions)
+                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Records }
+                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions) { page = BaiZePage.Records }
                             }
                         }
                     }

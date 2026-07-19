@@ -11,13 +11,14 @@ import io.github.xgl34222220.baize.ui.logs.miuix.LogsScreenMiuix
 fun LogsRoute(
     style: UiStyle,
     dashboard: DashboardUiState,
-    dashboardActions: DashboardActions
+    dashboardActions: DashboardActions,
+    onOpenDetails: () -> Unit
 ) {
     val state = dashboard.toLogsUiState()
     val actions = LogsUiActions(
         onRefresh = dashboardActions.refresh,
         onReconnect = dashboardActions.reconnect,
-        onOpenAudit = dashboardActions.audit,
+        onOpenAudit = onOpenDetails,
         onOpenCrashDiagnostics = dashboardActions.crash,
         onClearRawLog = dashboardActions.clearRawLog,
         onClearTaskLogs = dashboardActions.clearHistory

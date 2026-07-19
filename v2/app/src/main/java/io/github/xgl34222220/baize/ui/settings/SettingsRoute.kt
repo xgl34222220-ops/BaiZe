@@ -15,7 +15,8 @@ fun SettingsRoute(
     dashboard: DashboardUiState,
     scheduler: SchedulerUiState,
     appearance: AppearanceSettings,
-    dashboardActions: DashboardActions
+    dashboardActions: DashboardActions,
+    onOpenDetails: () -> Unit
 ) {
     val state = dashboard.toSettingsUiState(scheduler, appearance)
     val actions = SettingsUiActions(
@@ -24,7 +25,7 @@ fun SettingsRoute(
         onOpenAppearance = dashboardActions.theme,
         onOpenWhitelist = dashboardActions.whitelist,
         onReconnect = dashboardActions.reconnect,
-        onOpenAudit = dashboardActions.audit,
+        onOpenAudit = onOpenDetails,
         onOpenCrashDiagnostics = dashboardActions.crash
     )
 
