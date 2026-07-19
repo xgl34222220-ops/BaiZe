@@ -9,9 +9,10 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.4 C 原生高速扫描版"
-ui_print "- 深度规则、应用缓存与卸载残留扫描优先使用 arm64 C 引擎"
-ui_print "- 删除、授权快照、高风险保护与异常回退继续沿用稳定 Shell 引擎"
+ui_print "- 安装白泽 v2 Alpha 42.5 缓存快照修复版"
+ui_print "- 应用缓存扫描、深度规则与卸载残留优先使用 arm64 C 引擎"
+ui_print "- 缓存一键清理只消费刚才的扫描快照，不再重新扫描全机"
+ui_print "- 退出页面可恢复真实进度，停止请求会传递给模块任务"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 
 mkdir -p "$STATE_DIR"
@@ -23,6 +24,15 @@ chmod 0700 "$STATE_DIR"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
+
+# Alpha 42.4 以前可能留下只有 running.env、但实际进程已不存在的假忙状态。
+# 刷入新版本时只清理任务运行态与旧格式缓存快照，不动用户配置、白名单和历史。
+touch "$STATE_DIR/stop" 2>/dev/null
+pkill -f '/data/adb/modules/baize_v2/cleaner.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
+rm -rf "$STATE_DIR/run.lock"
+rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
+rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv"
 
 # v1 and v2 use different module IDs. Copy the user's configuration once, stop the old scheduler,
 # then remove the legacy module and its state completely so future flashes have no duplicate module,
