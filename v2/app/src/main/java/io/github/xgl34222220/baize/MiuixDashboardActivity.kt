@@ -502,6 +502,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             val json = response.getOrThrow()
+            updateRawLogFromResponse(json)
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
             val cancelled = json.optBoolean("cancelled")
