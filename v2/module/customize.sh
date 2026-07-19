@@ -7,17 +7,20 @@ OLD_UPDATE="/data/adb/modules_update/safesweep"
 OLD_STATE="/data/adb/safesweep"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
+NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.2 辅助清理页面双皮肤版"
-ui_print "- 清理中心与深度清理页面已跟随 Material / Miuix 外观"
-ui_print "- 内置原生 App、完整清理引擎、真实调度器与规则库"
+ui_print "- 安装白泽 v2 Alpha 42.3 C 原生扫描预览版"
+ui_print "- 卸载残留扫描优先使用 arm64 C 引擎，异常时自动回退 Shell"
+ui_print "- 删除、授权快照、高风险保护与其他清理功能继续沿用稳定引擎"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
 
 [ -f "$APK" ] || abort "! 模块包中缺少 app/baize.apk"
-[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少一键清理引擎"
+[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少清理入口"
+[ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
+[ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
@@ -49,7 +52,7 @@ fi
 
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
