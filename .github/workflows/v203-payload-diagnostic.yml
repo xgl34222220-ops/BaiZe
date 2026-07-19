@@ -1,0 +1,77 @@
+name: Diagnose v2.0.3 scheduler payload
+
+on:
+  pull_request:
+    branches: [v2]
+    paths:
+      - '.github/workflows/v203-payload-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.0.1-app-scheduler-takeover
+          fetch-depth: 0
+      - name: Validate payload and replacement anchors
+        shell: bash
+        run: |
+          set +e
+          exec > >(tee v203-diagnostic.log) 2>&1
+          echo '== payload files =='
+          ls -l .github/v203-payload
+          status=0
+          for src in .github/v203-payload/*.gz.b64; do
+            echo "== testing $src =="
+            wc -c "$src"
+            base64 -d "$src" > /tmp/payload.gz
+            rc=$?
+            echo "base64 rc=$rc"
+            [ "$rc" -eq 0 ] || status=1
+            gzip -t /tmp/payload.gz
+            rc=$?
+            echo "gzip rc=$rc"
+            [ "$rc" -eq 0 ] || status=1
+            if [ "$rc" -eq 0 ]; then
+              gzip -dc /tmp/payload.gz > /tmp/decoded.kt
+              wc -l -c /tmp/decoded.kt
+              head -n 2 /tmp/decoded.kt
+            fi
+          done
+          echo '== replacement anchors =='
+          python3 - <<'PY'
+          from pathlib import Path
+          checks = [
+              ('v2/app/build.gradle.kts', 'versionCode = 22320'),
+              ('v2/app/build.gradle.kts', 'versionName = "2.0.2"'),
+              ('v2/module/module.prop', 'version=v2.0.2'),
+              ('v2/module/module.prop', 'versionCode=22320'),
+              ('v2/module/module.prop', 'description=白泽 v2.0.2：'),
+              ('v2/module/service.sh', 'module_version=2.0.1'),
+              ('v2/scripts/package-module.sh', 'BaiZe-v2.0.2-Module.zip'),
+              ('v2/scripts/package-module.sh', '^version=v2.0.2$'),
+              ('v2/scripts/package-module.sh', '^versionCode=22320$'),
+              ('v2/scripts/package-module.sh', '白泽 v2.0.2 App 接管版模块'),
+          ]
+          failed = False
+          for path, needle in checks:
+              text = Path(path).read_text(encoding='utf-8')
+              count = text.count(needle)
+              print(f'{path}: {needle!r} -> {count}')
+              if count != 1:
+                  failed = True
+          raise SystemExit(1 if failed else 0)
+          PY
+          rc=$?
+          echo "anchor check rc=$rc"
+          [ "$rc" -eq 0 ] || status=1
+          echo "FINAL_STATUS=$status"
+          exit "$status"
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v203-payload-diagnostic
+          path: v203-diagnostic.log
