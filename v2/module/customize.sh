@@ -9,9 +9,10 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-ui_print "- 安装白泽 v2 Alpha 42.7 二级扫描页面修复版"
-ui_print "- 缓存、深度规则与卸载残留均为：扫描一次 → 持久快照 → 直接清理"
-ui_print "- 一键清理不会再回退旧引擎，也不会重新跑规则或重新发现全机目标"
+ui_print "- 安装白泽 v2 Alpha 42.8 快照清理闭环与统一主题版"
+ui_print "- 应用缓存与安装包均为：扫描一次 → 保存快照 → 一键清理"
+ui_print "- 安装包清理只消费刚才扫描到的文件，不会再次扫描共享存储"
+ui_print "- 应用缓存页面跟随 MIUIx、Monet、明暗模式与 AMOLED 设置"
 ui_print "- 退出页面可恢复真实进度；停止请求会传递给当前模块进程"
 ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
 
@@ -22,24 +23,24 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少清理总入口"
 [ -f "$MODPATH/native-cleaner.sh" ] || abort "! 模块包中缺少原生扫描执行器"
 [ -f "$MODPATH/cache-snapshot-clean.sh" ] || abort "! 模块包中缺少缓存快照执行器"
+[ -f "$MODPATH/apk-cleaner.sh" ] || abort "! 模块包中缺少安装包快照执行器"
 [ -f "$MODPATH/profile-cleaner.sh" ] || abort "! 模块包中缺少深度/残留快照执行器"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
-# Stop any Alpha 42.5 task and remove its old-format authorization files. User configuration,
-# whitelist, history and reports are retained. Old snapshots cannot be reused because they do not
-# contain the target/whitelist/rule hashes required by Alpha 42.6.
 touch "$STATE_DIR/stop" 2>/dev/null
 pkill -f '/data/adb/modules/baize_v2/cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/native-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/cache-snapshot-clean.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR/run.lock"
 rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv"
+rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
 rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
 
@@ -68,7 +69,7 @@ fi
 
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
 
 install_app() {
