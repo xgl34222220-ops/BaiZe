@@ -35,8 +35,8 @@ jobs:
           # v2.0.3 protected only the home header. Remove that local inset and place it on the
           # shared page host so every page receives exactly one top safe area.
           app, header_count = re.subn(
-              r'(\.fillMaxWidth\(\)\s*)\.statusBarsPadding\(\)(\s*\.padding\(horizontal = 22\.dp, vertical = 14\.dp\))',
-              r'\1\2',
+              r'\.fillMaxWidth\(\)\s*\.statusBarsPadding\(\)\s*\.padding\(horizontal = 22\.dp, vertical = 14\.dp\)',
+              '.fillMaxWidth()\n            .padding(horizontal = 22.dp, vertical = 14.dp)',
               app,
               count=1,
           )
