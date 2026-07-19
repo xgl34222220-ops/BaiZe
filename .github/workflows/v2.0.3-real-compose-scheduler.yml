@@ -29,11 +29,11 @@ jobs:
             src=$1
             dst=$2
             mkdir -p "$(dirname "$dst")"
-            base64 -d "$src" | gzip -d > "$dst"
+            base64 --decode --ignore-garbage "$src" | gzip -d > "$dst"
           }
           PAYLOAD=.github/v203-payload
           ROOT=v2/app/src/main/java/io/github/xgl34222220/baize
-          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 -d | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
+          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 --decode --ignore-garbage | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
           decode "$PAYLOAD/CleanContract.kt.gz.b64" "$ROOT/ui/clean/CleanContract.kt"
           decode "$PAYLOAD/CleanRoute.kt.gz.b64" "$ROOT/ui/clean/CleanRoute.kt"
           decode "$PAYLOAD/ScheduleInputDialogs.kt.gz.b64" "$ROOT/ui/clean/ScheduleInputDialogs.kt"
@@ -42,6 +42,18 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+
+          kotlin_files = [
+              'v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/ScheduleInputDialogs.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt',
+              'v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt',
+          ]
+          for path in kotlin_files:
+              file = Path(path)
+              file.write_text(file.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
 
           def replace(path: str, old: str, new: str, count: int = 1):
               file = Path(path)
