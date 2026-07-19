@@ -17,9 +17,6 @@ on:
       - '.github/workflows/v2-alpha41-appearance-dual-ui.yml'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,9 +26,6 @@ jobs:
           ref: v2-alpha41-appearance-dual-ui
           fetch-depth: 0
           show-progress: false
-
-      - name: Apply Alpha 41 appearance dual UI
-        run: python3 v2/scripts/apply-alpha41-appearance-dual-ui.py
 
       - name: Validate appearance architecture and shell
         run: |
@@ -47,6 +41,7 @@ jobs:
           grep -q 'system_accent1_500' v2/app/src/main/java/io/github/xgl34222220/baize/ui/theme/BaiZeTheme.kt
           grep -q 'floating = appearance.floatingDock' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           ! test -e v2/app/src/main/res/layout/activity_theme_settings.xml
+          ! test -e v2/scripts/apply-alpha41-appearance-dual-ui.py
           grep -q 'version=v2.0.0-alpha41' v2/module/module.prop
 
       - uses: actions/setup-java@v4
@@ -77,17 +72,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'cleaner.sh'
           unzip -l "$ZIP" | grep -q 'scheduler.sh'
-
-      - name: Commit verified source
-        if: github.event_name == 'push'
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A v2
-          if ! git diff --cached --quiet; then
-            git commit -m 'Add dual-skin Compose appearance settings'
-            git push origin HEAD:v2-alpha41-appearance-dual-ui
-          fi
 
       - uses: actions/upload-artifact@v4
         with:
