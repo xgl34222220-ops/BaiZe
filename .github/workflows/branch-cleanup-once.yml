@@ -1,0 +1,55 @@
+name: Remove obsolete branches once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/branch-cleanup-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Delete every branch except main and v2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -u
+          report=branch-cleanup-report.txt
+          : > "$report"
+          printf 'Branch cleanup executed at %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$report"
+          printf 'Kept:\n- main\n- v2\n\nDeleted:\n' >> "$report"
+
+          failed=0
+          while IFS= read -r branch; do
+            case "$branch" in
+              main|v2) continue ;;
+            esac
+            encoded=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$branch")
+            if gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$encoded" >/dev/null 2>&1; then
+              printf -- '- %s\n' "$branch" >> "$report"
+            else
+              printf -- '- FAILED: %s\n' "$branch" >> "$report"
+              failed=1
+            fi
+          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' | sort)
+
+          printf '\nRemaining:\n' >> "$report"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/branches?per_page=100" --jq '.[].name' | sort | sed 's/^/- /' >> "$report"
+          cat "$report"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$report"
+          git commit -m 'chore: record branch cleanup [skip ci]'
+          git push origin HEAD:main
+          exit "$failed"
