@@ -14,17 +14,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/v2.0.1-app-scheduler-takeover
-      - name: Export active launcher and clean UI sources
+      - name: Export active native App sources
         run: |
           set -euo pipefail
-          mkdir -p /tmp/source
-          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt /tmp/source/
-          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt /tmp/source/
-          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean /tmp/source/clean
-          cp -a v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings /tmp/source/settings
-          cp -a v2/module/scheduler.sh /tmp/source/
-          cp -a v2/module/config.conf /tmp/source/ 2>/dev/null || true
-          tar -C /tmp -czf active-clean-ui-source.tar.gz source
+          tar -czf active-clean-ui-source.tar.gz \
+            v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui \
+            v2/module/scheduler.sh \
+            v2/module/action.sh \
+            v2/module/customize.sh \
+            v2/app/src/main/AndroidManifest.xml
       - uses: actions/upload-artifact@v4
         with:
           name: active-clean-ui-source
