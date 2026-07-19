@@ -1,0 +1,95 @@
+name: BaiZe v2 Alpha 41 Appearance Dual UI
+
+on:
+  push:
+    branches: [v2-alpha41-appearance-dual-ui]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha41-appearance-dual-ui.yml'
+  pull_request:
+    branches: [v2-alpha40-haze-motion-cleanup]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha41-appearance-dual-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha41-appearance-dual-ui
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply Alpha 41 appearance dual UI
+        run: python3 v2/scripts/apply-alpha41-appearance-dual-ui.py
+
+      - name: Validate appearance architecture and shell
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'data class AppearanceSettings' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          grep -q 'val monetEnabled: Boolean' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          grep -q 'val floatingDock: Boolean' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          grep -q 'fun AppearanceScreenMaterial' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/material/AppearanceScreenMaterial.kt
+          grep -q 'fun AppearanceScreenMiuix' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/miuix/AppearanceScreenMiuix.kt
+          grep -q 'system_accent1_500' v2/app/src/main/java/io/github/xgl34222220/baize/ui/theme/BaiZeTheme.kt
+          grep -q 'floating = appearance.floatingDock' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          ! test -e v2/app/src/main/res/layout/activity_theme_settings.xml
+          grep -q 'version=v2.0.0-alpha41' v2/module/module.prop
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha41-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha41'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'scheduler.sh'
+
+      - name: Commit verified source
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A v2
+          if ! git diff --cached --quiet; then
+            git commit -m 'Add dual-skin Compose appearance settings'
+            git push origin HEAD:v2-alpha41-appearance-dual-ui
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha41-Appearance-Dual-UI
+          path: v2/dist/BaiZe-v2-Alpha41-Module.zip
