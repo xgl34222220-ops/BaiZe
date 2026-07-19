@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0-alpha42.8
-versionCode=22280
+version=v2.0.0-alpha42.9
+versionCode=22290
 author=惜故里丶
-description=安装包与应用缓存均为扫描快照后一键清理；应用缓存页面跟随统一 MIUIx、Monet 与明暗主题。
+description=智能扫描迁移统一 Compose 主题；清理阶段显示真实任务进度并隐藏过期操作按钮，安装包与缓存继续只消费扫描快照。
