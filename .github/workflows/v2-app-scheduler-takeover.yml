@@ -1,0 +1,111 @@
+name: BaiZe v2 App Scheduler Takeover
+
+on:
+  push:
+    branches: [fix/v2.0.1-app-scheduler-takeover]
+    paths:
+      - '.github/workflows/v2-app-scheduler-takeover.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout takeover branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/v2.0.1-app-scheduler-takeover
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply App-only scheduler patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat <<'PATCH_B64' | base64 -d | gzip -d > v2/scripts/app-scheduler-takeover-patch.py
+          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
+          PATCH_B64
+          python3 v2/scripts/app-scheduler-takeover-patch.py
+          git diff --check
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package App-only module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify native App takeover
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=v2/dist/BaiZe-v2.0.1-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.0.1'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22310'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          grep -q 'daily_schedule_minute' v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'MAX_HOURS = 720' v2/app/src/main/java/io/github/xgl34222220/baize/ui/MiuixScheduleRow.kt
+          grep -q '每日固定时刻' v2/app/src/main/res/layout/activity_dashboard.xml
+          grep -q 'rm -rf.*webroot' v2/module/customize.sh
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Commit verified source and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f v2/scripts/app-scheduler-takeover-patch.py
+          rm -f .github/workflows/v2-app-scheduler-takeover.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            v2/app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/MiuixScheduleRow.kt \
+            v2/app/src/main/res/layout/activity_dashboard.xml \
+            v2/module/customize.sh \
+            v2/module/service.sh \
+            v2/module/action.sh \
+            v2/scripts/package-module.sh \
+            v2/app/build.gradle.kts \
+            v2/module/module.prop \
+            RELEASE_NOTES_V2.md \
+            .github/workflows/v2-app-scheduler-takeover.yml
+          git commit -m 'fix(v2): let the native app take over scheduling'
+          git push origin HEAD:fix/v2.0.1-app-scheduler-takeover
+
+      - name: Upload v2.0.1 test module
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.0.1-App-Scheduler-Takeover
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.0.1-Module.zip
+            v2/dist/BaiZe-v2.0.1-Module.zip.sha256
