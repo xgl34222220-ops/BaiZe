@@ -86,6 +86,7 @@ jobs:
           set -e
           ZIP=dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
           APK=module-src/app/bagua.apk
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/bagua.apk'
           unzip -l "$ZIP" | grep -q 'scripts/install-app.sh'
@@ -93,9 +94,9 @@ jobs:
           ! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
           unzip -p "$ZIP" module.prop | grep -q '^version=0.5.0-alpha.5$'
           unzip -p "$ZIP" module.prop | grep -q '^versionCode=105$'
-          aapt dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
-          aapt dump badging "$APK" | grep -q "versionCode='105'"
-          aapt dump badging "$APK" | grep -q "application-label:'八卦'"
+          "$AAPT" dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
+          "$AAPT" dump badging "$APK" | grep -q "versionCode='105'"
+          "$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
           test -s dist/BaGua-v0.5.0-alpha.5-SHA256.txt
 
       - name: Upload App-only build and diagnostics
