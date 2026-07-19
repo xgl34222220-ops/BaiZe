@@ -8,14 +8,14 @@ import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Alpha 42.4 cache scanner bridge.
- * Discovery and directory measurement run in the module's arm64 C engine. Cleaning still goes
- * through the mature module cleaner so the existing safety checks and history format remain intact.
+ * Alpha 42.5 cache task bridge.
+ *
+ * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
+ * launches the task and exposes those files to the UI, so leaving the page never loses progress.
  */
 class BaiZeRootService : RootService() {
     private data class CacheItem(
@@ -33,19 +33,34 @@ class BaiZeRootService : RootService() {
 
     @Volatile private var snapshotId = ""
     @Volatile private var snapshotCreatedAt = 0L
+    @Volatile private var snapshotFiles = 0L
+    @Volatile private var snapshotBytes = 0L
+    @Volatile private var snapshotWhitelisted = 0
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
     private val binder = object : IBaiZeRootService.Stub() {
-        override fun ping(): String = JSONObject()
-            .put("uid", Process.myUid())
-            .put("root", Process.myUid() == 0)
-            .put("engine", "native-c-arm64-cache-v42.4")
-            .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
-            .put("snapshotReady", snapshotValid(snapshotId))
-            .toString()
+        override fun ping(): String {
+            val ready = restoreSnapshotFromDisk()
+            return JSONObject()
+                .put("uid", Process.myUid())
+                .put("root", Process.myUid() == 0)
+                .put("engine", "native-c-arm64-cache-v42.5")
+                .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
+                .put("snapshotReady", ready)
+                .put("snapshotId", if (ready) snapshotId else "")
+                .put("snapshotItems", if (ready) synchronized(resultLock) { items.size } else 0)
+                .put("snapshotFiles", if (ready) snapshotFiles else 0L)
+                .put("snapshotBytes", if (ready) snapshotBytes else 0L)
+                .put("snapshotWhitelisted", if (ready) snapshotWhitelisted else 0)
+                .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
+                .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
+                .put("taskRunning", moduleTaskAlive())
+                .toString()
+        }
 
         override fun scanCandidates(whitelistJson: String?): String {
+            if (moduleTaskAlive()) return busy("cache-scan")
             if (!running.compareAndSet(false, true)) return busy("cache-scan")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
@@ -62,8 +77,9 @@ class BaiZeRootService : RootService() {
             }
         }
 
-        override fun getResultPage(snapshotId: String?, offset: Int, limit: Int): String {
-            val id = snapshotId.orEmpty()
+        override fun getResultPage(requestedSnapshotId: String?, offset: Int, limit: Int): String {
+            restoreSnapshotFromDisk()
+            val id = requestedSnapshotId.orEmpty()
             if (!snapshotValid(id)) {
                 return JSONObject()
                     .put("error", "snapshot_expired")
@@ -103,19 +119,27 @@ class BaiZeRootService : RootService() {
         override fun cleanSelected(snapshotId: String?, selectionJson: String?, whitelistJson: String?): String =
             JSONObject()
                 .put("error", "module_clean_required")
-                .put("message", "请使用模块一键清理执行二次安全校验")
+                .put("message", "请使用扫描快照一键清理")
                 .toString()
 
         override fun getTaskState(): String {
-            val runningState = readEnv(File(STATE_DIR, "running.env"))
-            if (runningState.length() > 0) {
-                return runningState
-                    .put("running", true)
-                    .put("cancelRequested", cancelled.get())
-                    .toString()
+            val alive = moduleTaskAlive()
+            if (alive) {
+                val runningState = readEnv(File(STATE_DIR, "running.env"))
+                if (runningState.length() > 0) {
+                    return runningState
+                        .put("running", true)
+                        .put("cancelRequested", cancelled.get())
+                        .toString()
+                }
+            } else {
+                repairStaleTaskFiles()
             }
             return runCatching {
-                JSONObject(taskStateJson).put("cancelRequested", cancelled.get()).toString()
+                JSONObject(taskStateJson)
+                    .put("running", running.get())
+                    .put("cancelRequested", cancelled.get())
+                    .toString()
             }.getOrDefault(taskStateJson)
         }
 
@@ -145,6 +169,7 @@ class BaiZeRootService : RootService() {
         taskStateJson = JSONObject()
             .put("running", true)
             .put("operation", "native-cache-scan")
+            .put("mode", "cache-scan")
             .put("phase", "正在启动 C 原生缓存扫描")
             .put("elapsedMs", 0)
             .toString()
@@ -168,6 +193,7 @@ class BaiZeRootService : RootService() {
         val elapsed = SystemClock.elapsedRealtime() - started
         if (code != 0) {
             val wasCancelled = code == 9 || cancelled.get()
+            if (code == 3) return busy("cache-scan")
             val result = JSONObject()
                 .put("cancelled", wasCancelled)
                 .put(
@@ -180,23 +206,90 @@ class BaiZeRootService : RootService() {
             return result.toString()
         }
 
-        val parsed = parseItems(File(stateDir, "cache_scan.items.tsv"))
-        val newSnapshot = UUID.randomUUID().toString()
-        synchronized(resultLock) { items = parsed }
-        snapshotId = newSnapshot
-        snapshotCreatedAt = System.currentTimeMillis()
-        val latest = readEnv(File(stateDir, "latest.env"))
+        if (!restoreSnapshotFromDisk(force = true)) {
+            return JSONObject()
+                .put("error", "snapshot_missing")
+                .put("message", "扫描完成但快照未生成，请查看原始日志")
+                .put("elapsedMs", elapsed)
+                .toString()
+        }
         return JSONObject()
             .put("cancelled", false)
             .put("elapsedMs", elapsed)
-            .put("snapshotId", newSnapshot)
+            .put("snapshotId", snapshotId)
             .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
-            .put("totalCandidates", parsed.size)
-            .put("whitelisted", latest.optInt("whitelisted", 0))
-            .put("totalFiles", latest.optLong("regular_files", 0L))
-            .put("totalBytes", latest.optLong("bytes", 0L))
-            .put("engine", latest.optString("engine", "native-c-arm64"))
+            .put("totalCandidates", synchronized(resultLock) { items.size })
+            .put("whitelisted", snapshotWhitelisted)
+            .put("totalFiles", snapshotFiles)
+            .put("totalBytes", snapshotBytes)
+            .put("engine", "native-c-arm64")
             .toString()
+    }
+
+    private fun restoreSnapshotFromDisk(force: Boolean = false): Boolean {
+        val stateFile = File(STATE_DIR, "cache_scan.env")
+        val itemFile = File(STATE_DIR, "cache_scan.items.tsv")
+        val targetFile = File(STATE_DIR, "cache_scan.targets")
+        if (!stateFile.isFile || !itemFile.isFile || !targetFile.isFile) {
+            clearSnapshotMemory()
+            return false
+        }
+        val state = readEnv(stateFile)
+        val id = state.optString("snapshot_id").trim()
+        val epochSeconds = state.optLong("epoch", 0L)
+        val createdAt = epochSeconds * 1_000L
+        val age = System.currentTimeMillis() - createdAt
+        if (id.isBlank() || createdAt <= 0L || age !in 0..SNAPSHOT_MAX_AGE_MS) {
+            clearSnapshotMemory()
+            return false
+        }
+        if (!force && id == snapshotId && snapshotValid(id)) return true
+
+        val parsed = parseItems(itemFile)
+        val expected = state.optInt("items", parsed.size).coerceAtLeast(0)
+        if (expected > 0 && parsed.isEmpty()) {
+            clearSnapshotMemory()
+            return false
+        }
+        synchronized(resultLock) { items = parsed }
+        snapshotId = id
+        snapshotCreatedAt = createdAt
+        snapshotFiles = state.optLong("files", 0L).coerceAtLeast(0L)
+        snapshotBytes = state.optLong("bytes", 0L).coerceAtLeast(0L)
+        snapshotWhitelisted = readEnv(File(STATE_DIR, "latest.env")).optInt("whitelisted", 0).coerceAtLeast(0)
+        return true
+    }
+
+    private fun clearSnapshotMemory() {
+        synchronized(resultLock) { items = emptyList() }
+        snapshotId = ""
+        snapshotCreatedAt = 0L
+        snapshotFiles = 0L
+        snapshotBytes = 0L
+        snapshotWhitelisted = 0
+    }
+
+    private fun moduleTaskAlive(): Boolean {
+        val lockDir = File(STATE_DIR, "run.lock")
+        val pid = File(lockDir, "pid").takeIf { it.isFile }
+            ?.readText()
+            ?.trim()
+            ?.toIntOrNull()
+            ?: return false
+        if (pid <= 1) return false
+        val proc = File("/proc/$pid")
+        if (!proc.exists()) return false
+        val cmdline = runCatching {
+            File(proc, "cmdline").readBytes().toString(Charsets.UTF_8).replace('\u0000', ' ')
+        }.getOrDefault("")
+        return cmdline.contains("baize_v2") &&
+            (cmdline.contains("cleaner.sh") || cmdline.contains("baize_engine"))
+    }
+
+    private fun repairStaleTaskFiles() {
+        val lockDir = File(STATE_DIR, "run.lock")
+        if (lockDir.exists() && !moduleTaskAlive()) runCatching { lockDir.deleteRecursively() }
+        runCatching { File(STATE_DIR, "running.env").delete() }
     }
 
     private fun writePackageWhitelist(file: File, raw: String) {
@@ -238,17 +331,20 @@ class BaiZeRootService : RootService() {
     }
 
     private fun snapshotValid(id: String): Boolean =
-        id.isNotBlank() && id == snapshotId && System.currentTimeMillis() - snapshotCreatedAt in 0..SNAPSHOT_MAX_AGE_MS
+        id.isNotBlank() && id == snapshotId &&
+            System.currentTimeMillis() - snapshotCreatedAt in 0..SNAPSHOT_MAX_AGE_MS
 
     private fun readEnv(file: File): JSONObject {
         val result = JSONObject()
         if (!file.isFile) return result
-        file.forEachLine { raw ->
-            val line = raw.trim()
-            if (line.isBlank() || line.startsWith("#") || !line.contains('=')) return@forEachLine
-            val key = line.substringBefore('=').trim()
-            val value = line.substringAfter('=').trim()
-            result.put(key, value.toLongOrNull() ?: value)
+        runCatching {
+            file.forEachLine { raw ->
+                val line = raw.trim()
+                if (line.isBlank() || line.startsWith("#") || !line.contains('=')) return@forEachLine
+                val key = line.substringBefore('=').trim()
+                val value = line.substringAfter('=').trim()
+                result.put(key, value.toLongOrNull() ?: value)
+            }
         }
         return result
     }
@@ -261,7 +357,7 @@ class BaiZeRootService : RootService() {
     private fun busy(operation: String): String = JSONObject()
         .put("error", "busy")
         .put("operation", operation)
-        .put("message", "已有任务正在运行")
+        .put("message", "已有扫描或清理任务正在运行")
         .toString()
 
     private fun idleState(): String = JSONObject()
@@ -273,7 +369,7 @@ class BaiZeRootService : RootService() {
     companion object {
         private const val MODULE_DIR = "/data/adb/modules/baize_v2"
         private const val STATE_DIR = "/data/adb/baize-v2"
-        private const val SNAPSHOT_MAX_AGE_MS = 30L * 60L * 1000L
+        private const val SNAPSHOT_MAX_AGE_MS = 30L * 60L * 1_000L
         private val PACKAGE_NAME = Regex("""^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_-]+)+$""")
     }
 }
