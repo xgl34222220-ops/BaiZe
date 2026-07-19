@@ -15,7 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Alpha 42.5 cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
- * launches the task and exposes those files to the UI, so leaving the page never loses progress.
+ * launches the task and exposes those files to every UI entry, so leaving a page never loses the
+ * real progress and every clean action consumes the same on-disk snapshot without rediscovery.
  */
 class BaiZeRootService : RootService() {
     private data class CacheItem(
@@ -25,6 +26,13 @@ class BaiZeRootService : RootService() {
         val bytes: Long,
         val directories: Long,
         val path: String
+    )
+
+    private data class CleanReport(
+        val cleanedCandidates: Int,
+        val deletedFiles: Long,
+        val deletedBytes: Long,
+        val failures: Int
     )
 
     private val running = AtomicBoolean(false)
@@ -116,11 +124,42 @@ class BaiZeRootService : RootService() {
                 .toString()
         }
 
-        override fun cleanSelected(snapshotId: String?, selectionJson: String?, whitelistJson: String?): String =
-            JSONObject()
-                .put("error", "module_clean_required")
-                .put("message", "请使用扫描快照一键清理")
-                .toString()
+        override fun cleanSelected(
+            requestedSnapshotId: String?,
+            selectionJson: String?,
+            whitelistJson: String?
+        ): String {
+            if (moduleTaskAlive()) return busy("cache-clean")
+            if (!restoreSnapshotFromDisk() || !snapshotValid(requestedSnapshotId.orEmpty())) {
+                return JSONObject()
+                    .put("error", "snapshot_expired")
+                    .put("message", "缓存扫描快照已失效，不会自动重新扫描")
+                    .toString()
+            }
+            val allSafe = runCatching {
+                JSONObject(selectionJson.orEmpty()).optBoolean("__all_safe__", false)
+            }.getOrDefault(false)
+            if (!allSafe) {
+                return JSONObject()
+                    .put("error", "selection_required")
+                    .put("message", "没有授权清理当前缓存快照")
+                    .toString()
+            }
+            if (!running.compareAndSet(false, true)) return busy("cache-clean")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                runSnapshotClean(whitelistJson.orEmpty(), started)
+            } catch (error: Throwable) {
+                JSONObject()
+                    .put("error", "cache_snapshot_clean_failed")
+                    .put("message", error.message ?: error.javaClass.simpleName)
+                    .toString()
+            } finally {
+                running.set(false)
+                taskStateJson = idleState()
+            }
+        }
 
         override fun getTaskState(): String {
             val alive = moduleTaskAlive()
@@ -179,16 +218,7 @@ class BaiZeRootService : RootService() {
             .redirectOutput(appLog)
             .start()
 
-        while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
-            if (cancelled.get()) runCatching { File(stateDir, "stop").writeText("1\n") }
-            val state = readEnv(File(stateDir, "running.env"))
-            taskStateJson = state
-                .put("running", true)
-                .put("operation", "native-cache-scan")
-                .put("elapsedMs", SystemClock.elapsedRealtime() - started)
-                .toString()
-        }
-
+        pollModuleProcess(process, stateDir, started, "native-cache-scan")
         val code = process.exitValue()
         val elapsed = SystemClock.elapsedRealtime() - started
         if (code != 0) {
@@ -224,6 +254,88 @@ class BaiZeRootService : RootService() {
             .put("totalBytes", snapshotBytes)
             .put("engine", "native-c-arm64")
             .toString()
+    }
+
+    private fun runSnapshotClean(whitelistJson: String, started: Long): String {
+        val cleaner = File(MODULE_DIR, "cleaner.sh")
+        if (!cleaner.isFile) {
+            return JSONObject()
+                .put("error", "cleaner_missing")
+                .put("message", "缓存快照清理入口缺失，请重新刷入完整模块")
+                .toString()
+        }
+
+        val stateDir = File(STATE_DIR).apply { mkdirs() }
+        File(stateDir, "stop").delete()
+        writePackageWhitelist(File(stateDir, "native-cache-packages.conf"), whitelistJson)
+        val beforeCount = synchronized(resultLock) { items.size }
+        val logDir = File(stateDir, "logs").apply { mkdirs() }
+        val appLog = File(logDir, "app-cache-clean-${System.currentTimeMillis()}.log")
+        taskStateJson = JSONObject()
+            .put("running", true)
+            .put("operation", "cache-snapshot-clean")
+            .put("mode", "cache-clean")
+            .put("phase", "正在清理刚才的缓存扫描快照")
+            .put("elapsedMs", 0)
+            .toString()
+
+        val process = ProcessBuilder("/system/bin/sh", cleaner.absolutePath, "cache-clean", "app")
+            .redirectErrorStream(true)
+            .redirectOutput(appLog)
+            .start()
+
+        pollModuleProcess(process, stateDir, started, "cache-snapshot-clean")
+        val code = process.exitValue()
+        val elapsed = SystemClock.elapsedRealtime() - started
+        val wasCancelled = code == 9 || cancelled.get()
+        val latest = readEnv(File(stateDir, "latest.env"))
+        val report = parseCleanReport(File(stateDir, "reports/latest.tsv"))
+        val output = tailText(appLog, 6_000)
+        val message = latest.optString("result").ifBlank {
+            when {
+                wasCancelled -> "缓存快照清理已停止"
+                code == 0 -> "缓存快照清理完成"
+                else -> output.lineSequence().filter { it.isNotBlank() }.lastOrNull()
+                    ?: "缓存快照清理失败（代码 $code）"
+            }
+        }
+
+        if (code == 3) return busy("cache-clean")
+        if (code == 0 && !wasCancelled) clearSnapshotMemory()
+        val result = JSONObject()
+            .put("success", code == 0)
+            .put("cancelled", wasCancelled)
+            .put("elapsedMs", elapsed)
+            .put("deletedBytes", latest.optLong("bytes", report.deletedBytes).coerceAtLeast(0L))
+            .put("deletedFiles", latest.optLong("files", report.deletedFiles).coerceAtLeast(0L))
+            .put("deletedDirectories", 0L)
+            .put(
+                "cleanedCandidates",
+                if (report.cleanedCandidates > 0) report.cleanedCandidates
+                else if (code == 0) beforeCount else 0
+            )
+            .put("failures", latest.optInt("errors", report.failures).coerceAtLeast(0))
+            .put("message", message)
+            .put("output", output)
+        if (code != 0 && !wasCancelled) result.put("error", "cache_clean_exit_$code")
+        return result.toString()
+    }
+
+    private fun pollModuleProcess(
+        process: java.lang.Process,
+        stateDir: File,
+        started: Long,
+        operation: String
+    ) {
+        while (!process.waitFor(200, TimeUnit.MILLISECONDS)) {
+            if (cancelled.get()) runCatching { File(stateDir, "stop").writeText("1\n") }
+            val state = readEnv(File(stateDir, "running.env"))
+            taskStateJson = state
+                .put("running", true)
+                .put("operation", operation)
+                .put("elapsedMs", SystemClock.elapsedRealtime() - started)
+                .toString()
+        }
     }
 
     private fun restoreSnapshotFromDisk(force: Boolean = false): Boolean {
@@ -282,8 +394,12 @@ class BaiZeRootService : RootService() {
         val cmdline = runCatching {
             File(proc, "cmdline").readBytes().toString(Charsets.UTF_8).replace('\u0000', ' ')
         }.getOrDefault("")
-        return cmdline.contains("baize_v2") &&
-            (cmdline.contains("cleaner.sh") || cmdline.contains("baize_engine"))
+        return cmdline.contains("baize_v2") && (
+            cmdline.contains("cleaner.sh") ||
+                cmdline.contains("cleaner.native.sh") ||
+                cmdline.contains("cache-snapshot-clean.sh") ||
+                cmdline.contains("baize_engine")
+            )
     }
 
     private fun repairStaleTaskFiles() {
@@ -328,6 +444,31 @@ class BaiZeRootService : RootService() {
                 )
             }
         }.sortedWith(compareByDescending<CacheItem> { it.bytes }.thenBy { it.packageName }.thenBy { it.path })
+    }
+
+    private fun parseCleanReport(file: File): CleanReport {
+        if (!file.isFile) return CleanReport(0, 0L, 0L, 0)
+        var candidates = 0
+        var files = 0L
+        var bytes = 0L
+        var failures = 0
+        runCatching {
+            file.forEachLine { raw ->
+                val columns = raw.split('\t', limit = 6)
+                if (columns.size < 6 || columns[0] == "action") return@forEachLine
+                val items = columns[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                val itemBytes = columns[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                when (columns[0]) {
+                    "cleaned" -> {
+                        if (items > 0L) candidates += 1
+                        files += items
+                        bytes += itemBytes
+                    }
+                    "failed" -> failures += items.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                }
+            }
+        }
+        return CleanReport(candidates, files, bytes, failures)
     }
 
     private fun snapshotValid(id: String): Boolean =
