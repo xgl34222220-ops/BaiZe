@@ -24,12 +24,7 @@ jobs:
 
           apk = Path('v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt')
           text = apk.read_text()
-          needle = 'import androidx.compose.foundation.layout.statusBarsPadding\n'
-          addition = needle + 'import androidx.compose.foundation.layout.weight\n'
-          if 'import androidx.compose.foundation.layout.weight\n' not in text:
-              if needle not in text:
-                  raise SystemExit('ApkScanActivity import anchor missing')
-              text = text.replace(needle, addition, 1)
+          text = text.replace('import androidx.compose.foundation.layout.weight\n', '')
           apk.write_text(text)
 
           customize = Path('v2/module/customize.sh')
@@ -48,5 +43,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt v2/module/customize.sh
-          git commit -m "fix(app): complete secondary scan page source"
+          git commit -m "fix(app): remove invalid Compose weight import"
           git push origin HEAD:v2-alpha42-7-secondary-scan-pages
