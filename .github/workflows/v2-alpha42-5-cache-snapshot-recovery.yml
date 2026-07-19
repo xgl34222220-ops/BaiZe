@@ -29,13 +29,15 @@ jobs:
       - name: Validate sources and version
         run: |
           sh -n cleaner.sh notify.sh service.sh
-          sh -n v2/module/cleaner.sh v2/module/customize.sh v2/module/service.sh v2/module/action.sh
+          sh -n v2/module/cleaner.sh v2/module/cache-snapshot-clean.sh
+          sh -n v2/module/customize.sh v2/module/service.sh v2/module/action.sh
           sh -n v2/scripts/build-native.sh v2/scripts/package-module.sh
           python3 v2/scripts/validate-rules.py
           grep -q 'version=v2.0.0-alpha42.5' v2/module/module.prop
           grep -q 'versionCode=22250' v2/module/module.prop
           grep -q 'cache_scan.env' v2/module/cleaner.sh
-          grep -q '正在清理刚才扫描到的缓存' v2/module/cleaner.sh
+          grep -q '! -newer "$CACHE_SCAN_STATE"' v2/module/cache-snapshot-clean.sh
+          grep -q 'cache-snapshot-clean.sh' v2/scripts/package-module.sh
           grep -q 'snapshotReady' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
           grep -q '不会重新扫描' v2/app/src/main/java/io/github/xgl34222220/baize/CacheActivity.kt
 
@@ -55,7 +57,7 @@ jobs:
             echo "===== scan trace ====="
             tail -n 100 "$TEST/scan.trace" 2>/dev/null || true
             echo "===== clean trace ====="
-            tail -n 160 "$TEST/clean.trace" 2>/dev/null || true
+            tail -n 180 "$TEST/clean.trace" 2>/dev/null || true
             echo "===== remaining files ====="
             find "$TEST" -maxdepth 9 -printf '%y %TY-%Tm-%Td %TH:%TM:%TS %p\n' 2>/dev/null || true
             for file in "$TEST/state/cache_scan.env" "$TEST/state/cache_scan.targets" "$TEST/state/cache_scan.items.tsv" "$TEST/state/latest.env" "$TEST/state/logs/latest.log"; do
@@ -95,6 +97,7 @@ jobs:
           grep -q '^mode=cache-scan$' "$TEST/state/latest.env"
 
           # This file did not exist during the scan and must survive snapshot cleaning.
+          sleep 0.1
           printf 'new-after-scan' > "$TEST/data/user/0/com.example.cache/cache/new.bin"
 
           BAIZE_NATIVE_TEST=1 \
@@ -102,7 +105,7 @@ jobs:
           BAIZE_DATA_ROOT="$TEST/data" \
           BAIZE_MEDIA_ROOT="$TEST/media" \
           BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
-            bash -x v2/module/cleaner.sh cache-clean ci >"$TEST/clean.trace" 2>&1
+            bash -x v2/module/cache-snapshot-clean.sh cache-clean ci >"$TEST/clean.trace" 2>&1
 
           test ! -e "$TEST/data/user/0/com.example.cache/cache/a.bin"
           test ! -e "$TEST/data/user/0/com.example.cache/cache/sub/b.bin"
@@ -149,7 +152,7 @@ jobs:
 
           cat > "$TEST/fakebin/find" <<'SCRIPT'
           #!/usr/bin/env bash
-          sleep 1
+          sleep 3
           exec /usr/bin/find "$@"
           SCRIPT
           chmod +x "$TEST/fakebin/find"
@@ -161,7 +164,7 @@ jobs:
           BAIZE_DATA_ROOT="$TEST/data" \
           BAIZE_MEDIA_ROOT="$TEST/media" \
           BAIZE_PACKAGE_WHITELIST="$TEST/state/native-cache-packages.conf" \
-            bash v2/module/cleaner.sh cache-clean ci > "$TEST/clean.out" 2>&1 &
+            bash v2/module/cache-snapshot-clean.sh cache-clean ci > "$TEST/clean.out" 2>&1 &
           task_pid=$!
           set -e
           for _ in $(seq 1 40); do
@@ -235,7 +238,10 @@ jobs:
           unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.5'
           unzip -p "$ZIP" module.prop | grep -q 'versionCode=22250'
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.native.sh'
+          unzip -l "$ZIP" | grep -q 'cache-snapshot-clean.sh'
           unzip -l "$ZIP" | grep -q 'cleaner.sh.compat'
+          unzip -p "$ZIP" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
           unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
           unzip -p "$ZIP" bin/arm64-v8a/baize_engine > /tmp/baize_engine_android
           file /tmp/baize_engine_android | grep -q 'ARM aarch64'
