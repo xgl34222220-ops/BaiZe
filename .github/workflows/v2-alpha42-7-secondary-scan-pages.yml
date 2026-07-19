@@ -6,6 +6,11 @@ on:
     paths:
       - 'v2/**'
       - '.github/workflows/v2-alpha42-7-secondary-scan-pages.yml'
+  pull_request:
+    branches: [v2-alpha42-6-unified-snapshot-clean]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-7-secondary-scan-pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -68,7 +73,6 @@ jobs:
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -p "$ZIP" app/baize.apk > /tmp/baize.apk
           unzip -l /tmp/baize.apk | grep -q 'AndroidManifest.xml'
-          strings /tmp/baize.apk | grep -q 'ApkScanActivity' || true
           sha256sum "$ZIP"
 
       - uses: actions/upload-artifact@v4
