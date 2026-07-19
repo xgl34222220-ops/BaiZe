@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,8 @@ fun LogsScreenMiuix(
     ) {
         item { MiuixLogsHeader(state.logs.isNotEmpty(), actions) }
         item { MiuixRuntimeOverview(state) }
+        item { MiuixSectionTitle("RAW OUTPUT", "模块原始输出", "直接读取 cleaner.sh 最近一次真实输出") }
+        item { MiuixRawLogCard(state, actions) }
         item { MiuixSectionTitle("DIAGNOSTICS", "诊断工具", "服务恢复、清理明细与崩溃记录") }
         item { MiuixDiagnostics(actions) }
         item { MiuixSectionTitle("RUNTIME LOGS", "最近运行日志", "由真实任务记录和当前服务状态生成") }
@@ -273,6 +276,50 @@ private fun MiuixStatePill(label: String, positive: Boolean) {
         fontSize = 9.sp,
         fontWeight = FontWeight.Black
     )
+}
+
+@Composable
+private fun MiuixRawLogCard(state: LogsUiState, actions: LogsUiActions) {
+    val visible = state.rawLog.lineSequence().toList().takeLast(36).joinToString("\n")
+    MiuixGroupSurface {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (state.hasRawLog) state.rawLogName.ifBlank { "最近模块任务.log" } else "暂无模块原始日志",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (state.hasRawLog) "显示最后 36 行，不使用任务摘要代替" else "执行模块扫描或清理后自动读取",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 9.sp
+                    )
+                }
+                MiuixHeaderButton(
+                    icon = Icons.Rounded.DeleteForever,
+                    description = "清空原始日志",
+                    enabled = state.hasRawLog,
+                    onClick = actions.onClearRawLog
+                )
+            }
+            if (visible.isNotBlank()) {
+                Spacer(Modifier.height(13.dp))
+                Text(
+                    visible,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
+                        .padding(13.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    lineHeight = 14.sp
+                )
+            }
+        }
+    }
 }
 
 @Composable

@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.ui.appearance
 
 import android.content.Context
 import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -57,25 +58,62 @@ class AppearanceRepository(private val context: Context) {
             )
         }
 
-    suspend fun setUiStyle(value: UiStyle) = edit { it[Keys.uiStyle] = value.name }
+    suspend fun setUiStyle(value: UiStyle) =
+        edit { it[Keys.uiStyle] = value.name }
 
-    suspend fun setThemeMode(value: ThemeMode) = edit { it[Keys.themeMode] = value.storageValue }
+    suspend fun setThemeMode(value: ThemeMode) {
+        edit { it[Keys.themeMode] = value.storageValue }
+        ThemeManager.setMode(context, value.storageValue)
+    }
 
-    suspend fun setSeedArgb(value: Int) = edit { it[Keys.seedArgb] = value }
+    suspend fun setSeedArgb(value: Int) {
+        val accent = accentOptionFor(value)
+        edit { it[Keys.seedArgb] = accent.argb }
+        ThemeManager.setPalette(context, accent.id)
+    }
 
-    suspend fun setKolorStyle(value: KolorStyle) = edit { it[Keys.kolorStyle] = value.name }
+    suspend fun setKolorStyle(value: KolorStyle) {
+        edit { it[Keys.kolorStyle] = value.name }
+        ThemeManager.setMonetStyle(
+            context,
+            when (value) {
+                KolorStyle.SOFT -> "tonal_spot"
+                KolorStyle.VIBRANT -> "vibrant"
+                KolorStyle.NEUTRAL -> "neutral"
+            }
+        )
+    }
 
-    suspend fun setMonetEnabled(enabled: Boolean) = edit { it[Keys.monetEnabled] = enabled }
+    suspend fun setMonetEnabled(enabled: Boolean) {
+        edit { it[Keys.monetEnabled] = enabled }
+        ThemeManager.setMonet(context, enabled)
+    }
 
-    suspend fun setAmoledBlack(enabled: Boolean) = edit { it[Keys.amoledBlack] = enabled }
+    suspend fun setAmoledBlack(enabled: Boolean) {
+        edit { it[Keys.amoledBlack] = enabled }
+        ThemeManager.setAmoled(context, enabled)
+    }
 
-    suspend fun setBlurEnabled(enabled: Boolean) = edit { it[Keys.blurEnabled] = enabled }
+    suspend fun setBlurEnabled(enabled: Boolean) {
+        edit { it[Keys.blurEnabled] = enabled }
+        ThemeManager.setBlur(context, enabled)
+    }
 
-    suspend fun setGlassEnabled(enabled: Boolean) = edit { it[Keys.glassEnabled] = enabled }
+    suspend fun setGlassEnabled(enabled: Boolean) {
+        edit { preferences ->
+            preferences[Keys.glassEnabled] = enabled
+            if (!enabled) preferences[Keys.blurEnabled] = false
+        }
+        ThemeManager.setGlass(context, enabled)
+        if (!enabled) ThemeManager.setBlur(context, false)
+    }
 
-    suspend fun setFloatingDock(enabled: Boolean) = edit { it[Keys.floatingDock] = enabled }
+    suspend fun setFloatingDock(enabled: Boolean) {
+        edit { it[Keys.floatingDock] = enabled }
+        ThemeManager.setFloatingDock(context, enabled)
+    }
 
-    private suspend inline fun edit(crossinline block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+    private suspend inline fun edit(crossinline block: (MutablePreferences) -> Unit) {
         context.appearanceDataStore.edit { preferences -> block(preferences) }
     }
 

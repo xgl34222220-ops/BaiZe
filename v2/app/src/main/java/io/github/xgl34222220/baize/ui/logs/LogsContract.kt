@@ -34,6 +34,8 @@ data class LogsUiState(
     val schedulerText: String,
     val device: String,
     val android: String,
+    val rawLogName: String,
+    val rawLog: String,
     val logs: List<LogUiItem>
 ) {
     val errorCount: Int
@@ -41,6 +43,9 @@ data class LogsUiState(
 
     val healthy: Boolean
         get() = connected && ready && errorCount == 0
+
+    val hasRawLog: Boolean
+        get() = rawLog.isNotBlank()
 }
 
 data class LogsUiActions(
@@ -48,6 +53,7 @@ data class LogsUiActions(
     val onReconnect: () -> Unit,
     val onOpenAudit: () -> Unit,
     val onOpenCrashDiagnostics: () -> Unit,
+    val onClearRawLog: () -> Unit,
     val onClearTaskLogs: () -> Unit
 )
 
@@ -60,6 +66,8 @@ fun DashboardUiState.toLogsUiState(): LogsUiState = LogsUiState(
     schedulerText = schedulerText,
     device = device,
     android = android,
+    rawLogName = rawLogName,
+    rawLog = rawLog,
     logs = history.mapIndexed { index, item ->
         val message = when {
             item.categories.isNotEmpty() -> item.categories.take(3).joinToString(" · ") { detail ->

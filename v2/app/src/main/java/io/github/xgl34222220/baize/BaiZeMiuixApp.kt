@@ -153,6 +153,8 @@ data class DashboardUiState(
     val whitelistCount: Int = 0,
     val recentApps: List<AppJunkUiItem> = emptyList(),
     val recentJunk: List<GeneralJunkUiItem> = emptyList(),
+    val rawLogName: String = "",
+    val rawLog: String = "",
     val history: List<HistoryUiItem> = emptyList()
 )
 
@@ -297,6 +299,7 @@ data class DashboardActions(
     val updateScheduler: (SchedulerUiState) -> Unit,
     val saveScheduler: (SchedulerUiState) -> Unit,
     val clearHistory: () -> Unit,
+    val clearRawLog: () -> Unit,
     val whitelist: () -> Unit,
     val theme: () -> Unit,
     val reconnect: () -> Unit,
@@ -323,7 +326,10 @@ fun BaiZeMiuixApp(
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
             val hazeState = rememberHazeState(
-                blurEnabled = appearance.blurEnabled && appearance.glassEnabled
+                blurEnabled = appearance.uiStyle == UiStyle.MIUIX &&
+                    appearance.blurEnabled &&
+                    appearance.glassEnabled &&
+                    !amoled
             )
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
             val miuixNavItems = remember {
@@ -567,7 +573,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Haze Glass · Alpha 41",
+                "Miuix × Haze Glass · Alpha 42",
                 actions.refresh
             )
         }

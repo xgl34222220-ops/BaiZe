@@ -111,6 +111,10 @@ class BaiZeProfileRootService : RootService() {
 
         override fun clearTaskHistory(): String = clearTaskHistoryJson()
 
+        override fun getRawLog(maxChars: Int): String = rawLogJson(maxChars)
+
+        override fun clearRawLogs(): String = clearRawLogsJson()
+
         override fun recordNativeTask(taskJson: String?): String = recordNativeTaskJson(taskJson.orEmpty())
 
         override fun getSchedulerConfig(): String = configJson()
@@ -203,6 +207,7 @@ class BaiZeProfileRootService : RootService() {
             .put("totals", totals)
             .put("latest", latest)
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
+            .put("logName", log.name)
             .put("appDetails", appDetails)
             .put("otherDetails", otherDetailsJson(latestReport))
             .put("message", when (code) {
@@ -822,6 +827,44 @@ class BaiZeProfileRootService : RootService() {
             temporary.copyTo(file, overwrite = true)
             temporary.delete()
         }
+    }
+
+    private fun rawLogJson(maxChars: Int): String {
+        val safeLimit = maxChars.coerceIn(2_000, 64_000)
+        val logDir = File(STATE_DIR, "logs")
+        val latest = logDir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.extension.equals("log", ignoreCase = true) }
+            ?.maxByOrNull { it.lastModified() }
+        if (latest == null) {
+            return JSONObject()
+                .put("success", true)
+                .put("name", "")
+                .put("text", "")
+                .toString()
+        }
+        return JSONObject()
+            .put("success", true)
+            .put("name", latest.name)
+            .put("modified", latest.lastModified())
+            .put("text", tailText(latest, safeLimit))
+            .toString()
+    }
+
+    private fun clearRawLogsJson(): String {
+        val logDir = File(STATE_DIR, "logs")
+        var removed = 0
+        var failed = 0
+        logDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("log", ignoreCase = true) }
+            ?.forEach { file ->
+                if (runCatching { file.delete() }.getOrDefault(false)) removed += 1 else failed += 1
+            }
+        return JSONObject()
+            .put("success", failed == 0)
+            .put("removed", removed)
+            .put("failed", failed)
+            .toString()
     }
 
     private fun ensureConfig() {

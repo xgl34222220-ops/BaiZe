@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,8 @@ fun LogsScreenMaterial(
         ) {
             item { MaterialLogsHeader(state.logs.isNotEmpty(), actions) }
             item { MaterialRuntimeOverview(state) }
+            item { MaterialSectionTitle("RAW OUTPUT", "模块原始输出") }
+            item { MaterialRawLogCard(state, actions) }
             item { MaterialSectionTitle("DIAGNOSTICS", "诊断工具") }
             item { MaterialDiagnosticActions(actions) }
             item { MaterialSectionTitle("RUNTIME LOGS", "最近运行日志") }
@@ -238,6 +241,54 @@ private fun MaterialStateChip(label: String, positive: Boolean) {
             fontSize = 9.sp,
             fontWeight = FontWeight.Bold
         )
+    }
+}
+
+@Composable
+private fun MaterialRawLogCard(state: LogsUiState, actions: LogsUiActions) {
+    val visible = state.rawLog.lineSequence().toList().takeLast(36).joinToString("\n")
+    Card(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (state.hasRawLog) state.rawLogName.ifBlank { "最近模块任务.log" } else "暂无模块原始日志",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        if (state.hasRawLog) "显示最后 36 行真实 cleaner.sh 输出" else "执行模块扫描或清理后自动读取",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = actions.onClearRawLog,
+                    enabled = state.hasRawLog
+                ) {
+                    Icon(Icons.Rounded.DeleteForever, contentDescription = "清空原始日志")
+                }
+            }
+            if (visible.isNotBlank()) {
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Text(
+                        visible,
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
+        }
     }
 }
 

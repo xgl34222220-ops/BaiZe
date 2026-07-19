@@ -19,6 +19,7 @@ fun LogsRoute(
         onReconnect = dashboardActions.reconnect,
         onOpenAudit = dashboardActions.audit,
         onOpenCrashDiagnostics = dashboardActions.crash,
+        onClearRawLog = dashboardActions.clearRawLog,
         onClearTaskLogs = dashboardActions.clearHistory
     )
 

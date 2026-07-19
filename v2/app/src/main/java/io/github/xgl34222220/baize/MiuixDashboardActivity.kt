@@ -59,6 +59,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var safeSnapshotId = ""
     private var cacheSnapshotCount = 0
     private var safeSnapshotCount = 0
+    private var snapshotExpiresAtElapsed = 0L
 
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
     private var schedulerState = androidx.compose.runtime.mutableStateOf(SchedulerUiState())
@@ -128,6 +129,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
                     clearHistory = { confirmClearHistory() },
+                    clearRawLog = { confirmClearRawLogs() },
                     whitelist = { startActivity(Intent(this, WhitelistActivity::class.java)) },
                     theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
@@ -157,7 +159,11 @@ class MiuixDashboardActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         updateStorage()
-        if (rootService != null) refreshAll()
+        if (rootService != null) {
+            refreshAll()
+        } else {
+            connectPrimaryService()
+        }
     }
 
     private fun refreshAll() {
@@ -166,6 +172,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         loadScheduler()
         refreshModuleState()
         refreshHistory()
+        refreshRawLog()
         refreshWhitelist()
     }
 
@@ -326,6 +333,50 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
+    private fun updateRawLogFromResponse(json: JSONObject) {
+        val output = json.optString("output").trimEnd()
+        if (output.isBlank()) return
+        dashboardState.value = dashboardState.value.copy(
+            rawLogName = json.optString("logName").ifBlank { "本次模块任务.log" },
+            rawLog = output.takeLast(RAW_LOG_LIMIT)
+        )
+    }
+
+    private fun refreshRawLog() {
+        val service = rootService ?: return
+        lifecycleScope.launch {
+            val json = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.getRawLog(RAW_LOG_LIMIT)) }.getOrNull()
+            } ?: return@launch
+            if (!json.optBoolean("success", true)) return@launch
+            dashboardState.value = dashboardState.value.copy(
+                rawLogName = json.optString("name"),
+                rawLog = json.optString("text").takeLast(RAW_LOG_LIMIT)
+            )
+        }
+    }
+
+    private fun confirmClearRawLogs() {
+        val service = rootService ?: return toast("Root 服务尚未连接")
+        AlertDialog.Builder(this)
+            .setTitle("清空原始日志？")
+            .setMessage("只删除 /data/adb/baize-v2/logs 中的模块输出，不影响清理历史和累计统计。")
+            .setNegativeButton("取消", null)
+            .setPositiveButton("清空") { _, _ ->
+                lifecycleScope.launch {
+                    val json = withContext(Dispatchers.IO) {
+                        runCatching { JSONObject(service.clearRawLogs()) }.getOrNull()
+                    }
+                    val success = json?.optBoolean("success") == true
+                    if (success) {
+                        dashboardState.value = dashboardState.value.copy(rawLogName = "", rawLog = "")
+                    }
+                    toast(if (success) "原始日志已清空" else "原始日志清空失败")
+                }
+            }
+            .show()
+    }
+
     private fun updateStorage() {
         runCatching {
             val stat = StatFs(dataDir.absolutePath)
@@ -382,6 +433,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 return@launch
             }
             val json = response.getOrThrow()
+            updateRawLogFromResponse(json)
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
             val cancelled = json.optBoolean("cancelled")
@@ -554,6 +606,11 @@ class MiuixDashboardActivity : ComponentActivity() {
             val cancelled = cacheJson.optBoolean("cancelled") || safeJson.optBoolean("cancelled")
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val successfulScan = (cacheOk || safeOk) && !cancelled
+            if (successfulScan && total > 0) {
+                snapshotExpiresAtElapsed = SystemClock.elapsedRealtime() + SNAPSHOT_TTL_MS
+            } else {
+                clearSnapshotHandles()
+            }
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 scanCompleted = successfulScan,
@@ -583,6 +640,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun cleanNativeSnapshots() {
         if (dashboardState.value.running) return
         if (!hasUsableScanSnapshots()) {
+            clearSnapshotHandles()
             dashboardState.value = dashboardState.value.copy(
                 scanCompleted = false,
                 taskPhase = "没有可用扫描快照，请先执行安全扫描"
@@ -781,15 +839,18 @@ class MiuixDashboardActivity : ComponentActivity() {
         NativeNotifier.showTaskResult(this, title, summary, detail)
     }
 
-    private fun hasUsableScanSnapshots(): Boolean =
-        (cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0) ||
+    private fun hasUsableScanSnapshots(): Boolean {
+        if (snapshotExpiresAtElapsed <= SystemClock.elapsedRealtime()) return false
+        return (cacheSnapshotId.isNotBlank() && cacheSnapshotCount > 0) ||
             (safeSnapshotId.isNotBlank() && safeSnapshotCount > 0)
+    }
 
     private fun clearSnapshotHandles() {
         cacheSnapshotId = ""
         safeSnapshotId = ""
         cacheSnapshotCount = 0
         safeSnapshotCount = 0
+        snapshotExpiresAtElapsed = 0L
     }
 
     private fun clearScanResult() {
@@ -1135,5 +1196,7 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_RUN_SMART_CLEAN = "io.github.xgl34222220.baize.RUN_SMART_CLEAN"
+        private const val SNAPSHOT_TTL_MS = 30L * 60L * 1000L
+        private const val RAW_LOG_LIMIT = 16_000
     }
 }
