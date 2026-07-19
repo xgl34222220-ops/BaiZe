@@ -224,6 +224,10 @@ data class SchedulerUiState(
     val fragmentHours: Int = 12,
     val deepEnabled: Boolean = false,
     val deepHours: Int = 168,
+    val dailyEnabled: Boolean = false,
+    val dailyHour: Int = 3,
+    val dailyMinute: Int = 30,
+    val dailyGraceMinutes: Int = 240,
     val screenOffOnly: Boolean = true,
     val chargingOnly: Boolean = false,
     val idleOnly: Boolean = false,
@@ -247,6 +251,10 @@ data class SchedulerUiState(
         .put("schedule_fragment_hours", fragmentHours.coerceIn(1, 720))
         .put("schedule_deep_enabled", deepEnabled.flag())
         .put("schedule_deep_hours", deepHours.coerceIn(1, 720))
+        .put("daily_schedule_enabled", dailyEnabled.flag())
+        .put("daily_schedule_hour", dailyHour.coerceIn(0, 23))
+        .put("daily_schedule_minute", dailyMinute.coerceIn(0, 59))
+        .put("daily_grace_minutes", dailyGraceMinutes.coerceIn(15, 720))
         .put("screen_off_only", screenOffOnly.flag())
         .put("charging_only", chargingOnly.flag())
         .put("device_idle_only", idleOnly.flag())
@@ -270,6 +278,10 @@ data class SchedulerUiState(
             fragmentHours = json.optInt("schedule_fragment_hours", 12).coerceIn(1, 720),
             deepEnabled = json.optInt("schedule_deep_enabled", 0) == 1,
             deepHours = json.optInt("schedule_deep_hours", 168).coerceIn(1, 720),
+            dailyEnabled = json.optInt("daily_schedule_enabled", 0) == 1,
+            dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
+            dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
+            dailyGraceMinutes = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720),
             screenOffOnly = json.optInt("screen_off_only", 1) == 1,
             chargingOnly = json.optInt("charging_only", 0) == 1,
             idleOnly = json.optInt("device_idle_only", 0) == 1,

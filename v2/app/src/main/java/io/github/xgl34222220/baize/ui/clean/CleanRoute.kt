@@ -37,6 +37,15 @@ fun CleanRoute(
         onCategoryIntervalChanged = { id, hours ->
             dashboardActions.updateScheduler(scheduler.withCategoryInterval(id, hours))
         },
+        onDailyScheduleChanged = { enabled ->
+            dashboardActions.updateScheduler(scheduler.withDailySchedule(enabled))
+        },
+        onDailyTimeChanged = { hour, minute ->
+            dashboardActions.updateScheduler(scheduler.withDailyTime(hour, minute))
+        },
+        onDailyGraceChanged = { minutes ->
+            dashboardActions.updateScheduler(scheduler.withDailyGrace(minutes))
+        },
         onApkPackagesChanged = { enabled ->
             dashboardActions.updateScheduler(scheduler.copy(apkPackagesEnabled = enabled))
         },

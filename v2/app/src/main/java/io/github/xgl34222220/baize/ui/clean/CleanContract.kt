@@ -29,18 +29,35 @@ data class CleanUiState(
     val serviceText: String,
     val automaticCleaningEnabled: Boolean,
     val categories: List<CleanCategoryUiItem>,
+    val dailyEnabled: Boolean,
+    val dailyHour: Int,
+    val dailyMinute: Int,
+    val dailyGraceMinutes: Int,
     val apkPackagesEnabled: Boolean,
     val apkPackageDays: Int,
     val saving: Boolean
 ) {
     val enabledCategoryCount: Int
         get() = categories.count { it.enabled }
+
+    val dailyTimeText: String
+        get() = "%02d:%02d".format(dailyHour, dailyMinute)
+
+    val scheduleSummary: String
+        get() = if (dailyEnabled) {
+            "每天 $dailyTimeText · 补做 ${formatMinutes(dailyGraceMinutes)}"
+        } else {
+            "各类别独立周期"
+        }
 }
 
 data class CleanUiActions(
     val onAutomaticCleaningChanged: (Boolean) -> Unit,
     val onCategoryEnabledChanged: (CleanCategoryId, Boolean) -> Unit,
     val onCategoryIntervalChanged: (CleanCategoryId, Int) -> Unit,
+    val onDailyScheduleChanged: (Boolean) -> Unit,
+    val onDailyTimeChanged: (hour: Int, minute: Int) -> Unit,
+    val onDailyGraceChanged: (minutes: Int) -> Unit,
     val onApkPackagesChanged: (Boolean) -> Unit,
     val onSave: () -> Unit,
     val onScan: () -> Unit,
@@ -98,6 +115,10 @@ fun SchedulerUiState.toCleanUiState(
             intervalHours = deepHours
         )
     ),
+    dailyEnabled = dailyEnabled,
+    dailyHour = dailyHour,
+    dailyMinute = dailyMinute,
+    dailyGraceMinutes = dailyGraceMinutes,
     apkPackagesEnabled = apkPackagesEnabled,
     apkPackageDays = apkPackageDays,
     saving = saving
@@ -129,4 +150,24 @@ fun SchedulerUiState.withCategoryInterval(
         CleanCategoryId.FRAGMENTS -> copy(fragmentHours = safeHours)
         CleanCategoryId.DEEP -> copy(deepHours = safeHours)
     }
+}
+
+fun SchedulerUiState.withDailySchedule(enabled: Boolean): SchedulerUiState =
+    copy(dailyEnabled = enabled)
+
+fun SchedulerUiState.withDailyTime(hour: Int, minute: Int): SchedulerUiState =
+    copy(dailyHour = hour.coerceIn(0, 23), dailyMinute = minute.coerceIn(0, 59))
+
+fun SchedulerUiState.withDailyGrace(minutes: Int): SchedulerUiState =
+    copy(dailyGraceMinutes = minutes.coerceIn(15, 720))
+
+internal fun formatHours(hours: Int): String = when {
+    hours % 24 == 0 -> "${hours / 24} 天"
+    else -> "$hours 小时"
+}
+
+internal fun formatMinutes(minutes: Int): String = when {
+    minutes % 60 == 0 -> "${minutes / 60} 小时"
+    minutes > 60 -> "${minutes / 60} 小时 ${minutes % 60} 分"
+    else -> "$minutes 分钟"
 }
