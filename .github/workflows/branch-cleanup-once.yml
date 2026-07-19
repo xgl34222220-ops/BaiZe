@@ -5,12 +5,15 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/branch-cleanup-once.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   cleanup:
+    if: github.repository == 'xgl34222220-ops/BaiZe'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
