@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -28,18 +29,16 @@ class AppearanceRepository(private val context: Context) {
         val legacyAccent = stringPreferencesKey(ThemeManager.KEY_ACCENT)
         val kolorStyle = stringPreferencesKey("theme_kolor_style")
         val legacyMonetStyle = stringPreferencesKey(ThemeManager.KEY_MONET_STYLE)
+        val monetEnabled = booleanPreferencesKey(ThemeManager.KEY_MONET)
         val amoledBlack = booleanPreferencesKey(ThemeManager.KEY_AMOLED)
         val blurEnabled = booleanPreferencesKey(ThemeManager.KEY_BLUR)
         val glassEnabled = booleanPreferencesKey(ThemeManager.KEY_GLASS)
+        val floatingDock = booleanPreferencesKey(ThemeManager.KEY_FLOATING_DOCK)
     }
 
     val settings: Flow<AppearanceSettings> = context.appearanceDataStore.data
         .catch { error ->
-            if (error is IOException) {
-                emit(androidx.datastore.preferences.core.emptyPreferences())
-            } else {
-                throw error
-            }
+            if (error is IOException) emit(emptyPreferences()) else throw error
         }
         .map { preferences ->
             AppearanceSettings(
@@ -50,48 +49,36 @@ class AppearanceRepository(private val context: Context) {
                 kolorStyle = KolorStyle.fromStorage(
                     preferences[Keys.kolorStyle] ?: preferences[Keys.legacyMonetStyle]
                 ),
+                monetEnabled = preferences[Keys.monetEnabled] ?: false,
                 amoledBlack = preferences[Keys.amoledBlack] ?: false,
                 blurEnabled = preferences[Keys.blurEnabled] ?: true,
-                glassEnabled = preferences[Keys.glassEnabled] ?: true
+                glassEnabled = preferences[Keys.glassEnabled] ?: true,
+                floatingDock = preferences[Keys.floatingDock] ?: true
             )
         }
 
-    suspend fun setUiStyle(value: UiStyle) {
-        context.appearanceDataStore.edit { it[Keys.uiStyle] = value.name }
+    suspend fun setUiStyle(value: UiStyle) = edit { it[Keys.uiStyle] = value.name }
+
+    suspend fun setThemeMode(value: ThemeMode) = edit { it[Keys.themeMode] = value.storageValue }
+
+    suspend fun setSeedArgb(value: Int) = edit { it[Keys.seedArgb] = value }
+
+    suspend fun setKolorStyle(value: KolorStyle) = edit { it[Keys.kolorStyle] = value.name }
+
+    suspend fun setMonetEnabled(enabled: Boolean) = edit { it[Keys.monetEnabled] = enabled }
+
+    suspend fun setAmoledBlack(enabled: Boolean) = edit { it[Keys.amoledBlack] = enabled }
+
+    suspend fun setBlurEnabled(enabled: Boolean) = edit { it[Keys.blurEnabled] = enabled }
+
+    suspend fun setGlassEnabled(enabled: Boolean) = edit { it[Keys.glassEnabled] = enabled }
+
+    suspend fun setFloatingDock(enabled: Boolean) = edit { it[Keys.floatingDock] = enabled }
+
+    private suspend inline fun edit(crossinline block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        context.appearanceDataStore.edit { preferences -> block(preferences) }
     }
 
-    suspend fun setThemeMode(value: ThemeMode) {
-        context.appearanceDataStore.edit { it[Keys.themeMode] = value.storageValue }
-    }
-
-    suspend fun setSeedArgb(value: Int) {
-        context.appearanceDataStore.edit { it[Keys.seedArgb] = value }
-    }
-
-    suspend fun setKolorStyle(value: KolorStyle) {
-        context.appearanceDataStore.edit { it[Keys.kolorStyle] = value.name }
-    }
-
-    suspend fun setAmoledBlack(enabled: Boolean) {
-        context.appearanceDataStore.edit { it[Keys.amoledBlack] = enabled }
-    }
-
-    suspend fun setBlurEnabled(enabled: Boolean) {
-        context.appearanceDataStore.edit { it[Keys.blurEnabled] = enabled }
-    }
-
-    suspend fun setGlassEnabled(enabled: Boolean) {
-        context.appearanceDataStore.edit { it[Keys.glassEnabled] = enabled }
-    }
-
-    private fun legacyAccentToArgb(id: String?): Int = when (id) {
-        "red" -> 0xFFC70018.toInt()
-        "pink" -> 0xFFC50056.toInt()
-        "purple" -> 0xFFAF00C7.toInt()
-        "deep_purple" -> 0xFF7900F5.toInt()
-        "indigo" -> 0xFF1559F4.toInt()
-        "blue" -> 0xFF0A79B8.toInt()
-        "light_blue" -> 0xFF0080A0.toInt()
-        else -> 0xFF3975F4.toInt()
-    }
+    private fun legacyAccentToArgb(id: String?): Int =
+        AccentOptions.firstOrNull { it.id == id }?.argb ?: AccentOptions.first().argb
 }
