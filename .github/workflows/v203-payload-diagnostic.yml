@@ -15,60 +15,61 @@ jobs:
         with:
           ref: fix/v2.0.1-app-scheduler-takeover
           fetch-depth: 0
-      - name: Validate payload and replacement anchors
+      - name: Trace exact apply step
         shell: bash
         run: |
           set +e
           exec > >(tee v203-diagnostic.log) 2>&1
-          echo '== payload files =='
-          ls -l .github/v203-payload
-          status=0
-          for src in .github/v203-payload/*.gz.b64; do
-            echo "== testing $src =="
-            wc -c "$src"
-            base64 -d "$src" > /tmp/payload.gz
-            rc=$?
-            echo "base64 rc=$rc"
-            [ "$rc" -eq 0 ] || status=1
-            gzip -t /tmp/payload.gz
-            rc=$?
-            echo "gzip rc=$rc"
-            [ "$rc" -eq 0 ] || status=1
-            if [ "$rc" -eq 0 ]; then
-              gzip -dc /tmp/payload.gz > /tmp/decoded.kt
-              wc -l -c /tmp/decoded.kt
-              head -n 2 /tmp/decoded.kt
-            fi
+          set -x
+          PAYLOAD=.github/v203-payload
+          ROOT=v2/app/src/main/java/io/github/xgl34222220/baize
+          mkdir -p "$ROOT/ui/clean/miuix" "$ROOT/ui/clean/material"
+
+          cat "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part1" "$PAYLOAD/BaiZeMiuixApp.kt.gz.b64.part2" | base64 -d | gzip -d > "$ROOT/BaiZeMiuixApp.kt"
+          echo "BaiZe decode rc=${PIPESTATUS[*]}"
+
+          for spec in \
+            "CleanContract.kt.gz.b64|$ROOT/ui/clean/CleanContract.kt" \
+            "CleanRoute.kt.gz.b64|$ROOT/ui/clean/CleanRoute.kt" \
+            "ScheduleInputDialogs.kt.gz.b64|$ROOT/ui/clean/ScheduleInputDialogs.kt" \
+            "CleanScreenMiuix.kt.gz.b64|$ROOT/ui/clean/miuix/CleanScreenMiuix.kt" \
+            "CleanScreenMaterial.kt.gz.b64|$ROOT/ui/clean/material/CleanScreenMaterial.kt"; do
+            src=${spec%%|*}
+            dst=${spec#*|}
+            base64 -d "$PAYLOAD/$src" | gzip -d > "$dst"
+            echo "$src rc=${PIPESTATUS[*]}"
+            wc -l -c "$dst"
           done
-          echo '== replacement anchors =='
+
           python3 - <<'PY'
           from pathlib import Path
-          checks = [
-              ('v2/app/build.gradle.kts', 'versionCode = 22320'),
-              ('v2/app/build.gradle.kts', 'versionName = "2.0.2"'),
-              ('v2/module/module.prop', 'version=v2.0.2'),
-              ('v2/module/module.prop', 'versionCode=22320'),
-              ('v2/module/module.prop', 'description=白泽 v2.0.2：'),
-              ('v2/module/service.sh', 'module_version=2.0.1'),
-              ('v2/scripts/package-module.sh', 'BaiZe-v2.0.2-Module.zip'),
-              ('v2/scripts/package-module.sh', '^version=v2.0.2$'),
-              ('v2/scripts/package-module.sh', '^versionCode=22320$'),
-              ('v2/scripts/package-module.sh', '白泽 v2.0.2 App 接管版模块'),
-          ]
-          failed = False
-          for path, needle in checks:
-              text = Path(path).read_text(encoding='utf-8')
-              count = text.count(needle)
-              print(f'{path}: {needle!r} -> {count}')
-              if count != 1:
-                  failed = True
-          raise SystemExit(1 if failed else 0)
+
+          def replace(path: str, old: str, new: str, count: int = 1):
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              actual = text.count(old)
+              print(f'REPLACE {path}: {old!r} count={actual}')
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrences of {old!r}, found {actual}')
+              file.write_text(text.replace(old, new, count), encoding='utf-8')
+
+          replace('v2/app/build.gradle.kts', 'versionCode = 22320', 'versionCode = 22330')
+          replace('v2/app/build.gradle.kts', 'versionName = "2.0.2"', 'versionName = "2.0.3"')
+          replace('v2/module/module.prop', 'version=v2.0.2', 'version=v2.0.3')
+          replace('v2/module/module.prop', 'versionCode=22320', 'versionCode=22330')
+          replace('v2/module/module.prop', 'description=白泽 v2.0.2：', 'description=白泽 v2.0.3：')
+          replace('v2/module/service.sh', 'module_version=2.0.1', 'module_version=2.0.3')
+          replace('v2/scripts/package-module.sh', 'BaiZe-v2.0.2-Module.zip', 'BaiZe-v2.0.3-Module.zip')
+          replace('v2/scripts/package-module.sh', '^version=v2.0.2$', '^version=v2.0.3$')
+          replace('v2/scripts/package-module.sh', '^versionCode=22320$', '^versionCode=22330$')
+          replace('v2/scripts/package-module.sh', '白泽 v2.0.2 App 接管版模块', '白泽 v2.0.3 原生调度完整版模块')
           PY
-          rc=$?
-          echo "anchor check rc=$rc"
-          [ "$rc" -eq 0 ] || status=1
-          echo "FINAL_STATUS=$status"
-          exit "$status"
+          py_rc=$?
+          echo "python rc=$py_rc"
+          git diff --check
+          diff_rc=$?
+          echo "git diff check rc=$diff_rc"
+          exit $(( py_rc != 0 || diff_rc != 0 ))
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
