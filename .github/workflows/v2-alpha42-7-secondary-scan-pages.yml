@@ -1,0 +1,77 @@
+name: BaiZe v2 Alpha 42.7 Secondary Scan Pages
+
+on:
+  push:
+    branches: [v2-alpha42-7-secondary-scan-pages]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-7-secondary-scan-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-7-secondary-scan-pages
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Validate secondary page routing
+        run: |
+          grep -q 'onScan = { context.startActivity(Intent(context, SmartScanActivity::class.java)) }' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt
+          grep -q 'onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) }' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt
+          grep -q '<activity android:name=".ApkScanActivity"' v2/app/src/main/AndroidManifest.xml
+          grep -q 'runModuleTask("apk-scan")' v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt
+          grep -q '不在进入页面时自动扫描' v2/app/src/main/java/io/github/xgl34222220/baize/ApkScanActivity.kt
+          grep -q 'versionCode = 22270' v2/app/build.gradle.kts
+          grep -q 'version=v2.0.0-alpha42.7' v2/module/module.prop
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/cleaner42_6.sh v2/module/native-scan.sh v2/module/cache-snapshot-clean.sh v2/module/profile-snapshot-clean.sh
+          sh -n v2/module/customize.sh v2/module/service.sh v2/module/action.sh v2/scripts/build-native.sh v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build arm64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha42.7-Secondary-Scan-Pages-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.7'
+          unzip -p "$ZIP" module.prop | grep -q 'versionCode=22270'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -p "$ZIP" app/baize.apk > /tmp/baize.apk
+          unzip -l /tmp/baize.apk | grep -q 'AndroidManifest.xml'
+          strings /tmp/baize.apk | grep -q 'ApkScanActivity' || true
+          sha256sum "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.7-Secondary-Scan-Pages
+          path: v2/dist/BaiZe-v2-Alpha42.7-Secondary-Scan-Pages-Module.zip
