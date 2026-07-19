@@ -1,0 +1,295 @@
+name: BaiZe v2 Alpha 42.6 Unified Snapshot Clean
+
+on:
+  push:
+    branches: [v2-alpha42-6-unified-snapshot-clean]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-6-unified-snapshot-clean.yml'
+  pull_request:
+    branches: [v2-alpha42-5-cache-snapshot-recovery]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-6-unified-snapshot-clean.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-6-unified-snapshot-clean
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Validate sources and routing
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/cleaner42_6.sh
+          sh -n v2/module/native-scan.sh
+          sh -n v2/module/cache-snapshot-clean.sh
+          sh -n v2/module/profile-snapshot-clean.sh
+          sh -n v2/module/customize.sh v2/module/service.sh v2/module/action.sh
+          sh -n v2/scripts/build-native.sh v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'version=v2.0.0-alpha42.6' v2/module/module.prop
+          grep -q 'versionCode=22260' v2/module/module.prop
+          grep -q 'versionCode = 22260' v2/app/build.gradle.kts
+          grep -A3 'deep-clean|corpse-clean' v2/module/cleaner42_6.sh | grep -q 'profile-cleaner.sh'
+          grep -A2 'cache-scan|deep-scan|corpse-scan' v2/module/cleaner42_6.sh | grep -q 'native-cleaner.sh'
+          ! grep -A3 'deep-clean|corpse-clean' v2/module/cleaner42_6.sh | grep -q 'cleaner.sh.compat'
+          grep -q '不会自动重新扫描' v2/module/profile-snapshot-clean.sh
+
+      - name: Build host native scanner
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize_engine_host
+
+      - name: Test deep scan snapshot clean without rediscovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-deep-snapshot
+          TARGET=/data/user/0/com.baize.ci.deep/cache
+          sudo rm -rf "$TARGET" "$TEST"
+          sudo mkdir -p "$TARGET/sub" "$TEST/state/reports"
+          sudo chmod -R 0777 /data/user/0/com.baize.ci.deep "$TEST"
+          printf 'old-deep-a' > "$TARGET/a.bin"
+          printf 'old-deep-b' > "$TARGET/sub/b.bin"
+          touch -d '10 minutes ago' "$TARGET/a.bin" "$TARGET/sub/b.bin"
+          printf '%s\n' "$TARGET" > "$TEST/deep.rules"
+          printf 'max_file_mb=256\ndeep_high_risk_enabled=0\nnative_scanner_enabled=1\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT=/data \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_DEEP_RULES="$TEST/deep.rules" \
+            bash v2/module/native-scan.sh deep-scan ci > "$TEST/scan.out"
+
+          test -s "$TEST/state/deep_scan.env"
+          test -s "$TEST/state/deep_scan.targets"
+          grep -q '^snapshot_id=' "$TEST/state/deep_scan.env"
+          grep -q '^targets_sha=' "$TEST/state/deep_scan.env"
+          grep -q '^rules_sha=' "$TEST/state/deep_scan.env"
+          grep -q '^mode=deep-scan$' "$TEST/state/latest.env"
+
+          sleep 1
+          printf 'new-after-deep-scan' > "$TARGET/new.bin"
+
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT=/data \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_DEEP_RULES="$TEST/deep.rules" \
+            bash v2/module/profile-snapshot-clean.sh deep-clean ci > "$TEST/clean.out"
+
+          test ! -e "$TARGET/a.bin"
+          test ! -e "$TARGET/sub/b.bin"
+          test -f "$TARGET/new.bin"
+          test ! -e "$TEST/state/deep_scan.env"
+          test ! -e "$TEST/state/deep_scan.targets"
+          grep -q '^mode=deep-clean$' "$TEST/state/latest.env"
+          grep -q '扫描快照:' "$TEST/clean.out"
+          ! grep -q '执行深度规则' "$TEST/clean.out"
+          ! grep -q '原生深度规则扫描' "$TEST/clean.out"
+
+      - name: Test corpse snapshot and reinstall protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-corpse-snapshot
+          TARGET="$TEST/media/0/Android/data/com.baize.removed"
+          rm -rf "$TEST"
+          mkdir -p "$TARGET/cache" "$TEST/state/reports" "$TEST/installed"
+          printf 'old-corpse' > "$TARGET/cache/old.bin"
+          touch -d '10 minutes ago' "$TARGET/cache/old.bin"
+          : > "$TEST/installed/0.txt"
+          printf 'max_file_mb=256\nnative_scanner_enabled=1\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_INSTALLED_ROOT="$TEST/installed" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+            bash v2/module/native-scan.sh corpse-scan ci
+
+          test -s "$TEST/state/corpse_scan.env"
+          test -s "$TEST/state/corpse_scan.targets"
+          sleep 1
+          printf 'new-after-corpse-scan' > "$TARGET/cache/new.bin"
+
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_INSTALLED_ROOT="$TEST/installed" \
+            bash v2/module/profile-snapshot-clean.sh corpse-clean ci
+
+          test ! -e "$TARGET/cache/old.bin"
+          test -f "$TARGET/cache/new.bin"
+          grep -q '^mode=corpse-clean$' "$TEST/state/latest.env"
+
+          # A package that is installed after scanning must make the whole authorized target safe.
+          TEST2=/tmp/baize-corpse-reinstall
+          TARGET2="$TEST2/media/0/Android/data/com.baize.reinstalled"
+          rm -rf "$TEST2"
+          mkdir -p "$TARGET2" "$TEST2/state/reports" "$TEST2/installed"
+          printf 'must-survive' > "$TARGET2/data.bin"
+          touch -d '10 minutes ago' "$TARGET2/data.bin"
+          : > "$TEST2/installed/0.txt"
+          printf 'max_file_mb=256\nnative_scanner_enabled=1\n' > "$TEST2/state/config.conf"
+          : > "$TEST2/state/whitelist.conf"
+          : > "$TEST2/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST2/state" \
+          BAIZE_MEDIA_ROOT="$TEST2/media" \
+          BAIZE_INSTALLED_ROOT="$TEST2/installed" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+            bash v2/module/native-scan.sh corpse-scan ci
+          printf 'com.baize.reinstalled\n' > "$TEST2/installed/0.txt"
+          BAIZE_STATE_DIR="$TEST2/state" \
+          BAIZE_MEDIA_ROOT="$TEST2/media" \
+          BAIZE_INSTALLED_ROOT="$TEST2/installed" \
+            bash v2/module/profile-snapshot-clean.sh corpse-clean ci
+          test -f "$TARGET2/data.bin"
+          grep -q '应用已重新安装' "$TEST2/state/reports/latest.tsv"
+
+      - name: Test profile stop and snapshot retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-profile-stop
+          TARGET=/data/user/0/com.baize.ci.stop/cache
+          sudo rm -rf "$TARGET" "$TEST"
+          sudo mkdir -p "$TARGET" "$TEST/state/reports" "$TEST/fakebin"
+          sudo chmod -R 0777 /data/user/0/com.baize.ci.stop "$TEST"
+          for index in $(seq 1 160); do
+            mkdir -p "$TARGET/d$index"
+            printf 'old-%s' "$index" > "$TARGET/d$index/f$index.bin"
+          done
+          find "$TARGET" -type f -exec touch -d '10 minutes ago' {} +
+          printf '%s\n' "$TARGET" > "$TEST/deep.rules"
+          printf 'max_file_mb=256\ndeep_high_risk_enabled=0\nnative_scanner_enabled=1\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT=/data \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_DEEP_RULES="$TEST/deep.rules" \
+            bash v2/module/native-scan.sh deep-scan ci
+
+          cat > "$TEST/fakebin/find" <<'SCRIPT'
+          #!/usr/bin/env bash
+          sleep 2
+          exec /usr/bin/find "$@"
+          SCRIPT
+          chmod +x "$TEST/fakebin/find"
+
+          set +e
+          PATH="$TEST/fakebin:$PATH" \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT=/data \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_DEEP_RULES="$TEST/deep.rules" \
+            bash v2/module/profile-snapshot-clean.sh deep-clean ci > "$TEST/clean.out" 2>&1 &
+          task_pid=$!
+          set -e
+          for _ in $(seq 1 50); do
+            test -f "$TEST/state/running.env" && break
+            sleep 0.1
+          done
+          touch "$TEST/state/stop"
+          set +e
+          wait "$task_pid"
+          code=$?
+          set -e
+          test "$code" -eq 9
+          test -s "$TEST/state/deep_scan.env"
+          test -s "$TEST/state/deep_scan.targets"
+          test ! -e "$TEST/state/run.lock"
+          test ! -e "$TEST/state/running.env"
+          grep -q '快照清理已停止' "$TEST/clean.out"
+
+      - name: Test stale lock recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST=/tmp/baize-unified-stale-lock
+          TARGET=/data/user/0/com.baize.ci.lock/cache
+          sudo rm -rf "$TARGET" "$TEST"
+          sudo mkdir -p "$TARGET" "$TEST/state/run.lock" "$TEST/state/reports"
+          sudo chmod -R 0777 /data/user/0/com.baize.ci.lock "$TEST"
+          printf 'old' > "$TARGET/a.bin"
+          touch -d '10 minutes ago' "$TARGET/a.bin"
+          printf '%s\n' "$TARGET" > "$TEST/deep.rules"
+          printf 'max_file_mb=256\ndeep_high_risk_enabled=0\nnative_scanner_enabled=1\n' > "$TEST/state/config.conf"
+          : > "$TEST/state/whitelist.conf"
+          : > "$TEST/state/native-cache-packages.conf"
+          printf '%s\n' "$$" > "$TEST/state/run.lock/pid"
+          printf 'mode=deep-scan\nphase=死亡任务\n' > "$TEST/state/running.env"
+
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_DATA_ROOT=/data \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+          BAIZE_DEEP_RULES="$TEST/deep.rules" \
+            bash v2/module/native-scan.sh deep-scan ci
+          grep -q '^mode=deep-scan$' "$TEST/state/latest.env"
+          test ! -e "$TEST/state/run.lock"
+          test ! -e "$TEST/state/running.env"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build arm64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha42.6-Unified-Snapshot-Clean-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.6'
+          unzip -p "$ZIP" module.prop | grep -q 'versionCode=22260'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'native-cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'profile-cleaner.sh'
+          unzip -p "$ZIP" cleaner.sh | grep -A3 'deep-clean|corpse-clean' | grep -q 'profile-cleaner.sh'
+          unzip -p "$ZIP" cleaner.sh | grep -A2 'cache-scan|deep-scan|corpse-scan' | grep -q 'native-cleaner.sh'
+          unzip -p "$ZIP" bin/arm64-v8a/baize_engine > /tmp/baize_engine_android
+          file /tmp/baize_engine_android | grep -q 'ARM aarch64'
+          sha256sum "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.6-Unified-Snapshot-Clean
+          path: v2/dist/BaiZe-v2-Alpha42.6-Unified-Snapshot-Clean-Module.zip

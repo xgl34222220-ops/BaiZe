@@ -1,0 +1,95 @@
+name: BaiZe v2 Alpha 33 UI Step 1
+
+on:
+  push:
+    branches: [v2-alpha33-ui-step1]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha33-ui-step1.yml'
+  pull_request:
+    branches: [v2-alpha32]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha33-ui-step1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha33-ui-step1
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply distinct Material and Miuix shells
+        run: python3 v2/scripts/apply-alpha33-shell-fix.py
+
+      - name: Validate architecture and shell
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'enum class UiStyle' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          grep -q 'preferencesDataStore' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceRepository.kt
+          grep -q 'class AppearanceViewModel' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceViewModel.kt
+          grep -q 'DynamicMaterialTheme' v2/app/src/main/java/io/github/xgl34222220/baize/ui/theme/BaiZeTheme.kt
+          grep -q 'HomeScreenMaterial' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt
+          grep -q 'HomeScreenMiuix' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt
+          grep -q 'MaterialFloatingDock' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'uiStyleRow' v2/app/src/main/res/layout/activity_theme_settings.xml
+          grep -q 'version=v2.0.0-alpha33' v2/module/module.prop
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha33-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha33'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'scheduler.sh'
+
+      - name: Commit verified shell split
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt v2/ALPHA33-UI-STEP1.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'Differentiate Material and Miuix app shells'
+            git push origin HEAD:v2-alpha33-ui-step1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha33-UI-Step1
+          path: v2/dist/BaiZe-v2-Alpha33-Module.zip

@@ -1,0 +1,76 @@
+name: BaiZe v2 Alpha 34 Miuix Liquid
+
+on:
+  push:
+    branches: [v2-alpha33-ui-step2-miuix-liquid]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha34-miuix-liquid.yml'
+  pull_request:
+    branches: [v2-alpha33-ui-step1]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha34-miuix-liquid.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha33-ui-step2-miuix-liquid
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Validate UI architecture and shell
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'fun MiuixLiquidDock' v2/app/src/main/java/io/github/xgl34222220/baize/ui/miuix/MiuixLiquidComponents.kt
+          grep -q 'Miuix × Liquid Glass · Alpha 34' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'selectedIndex = page.ordinal' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'version=v2.0.0-alpha34' v2/module/module.prop
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha34-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha34'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'scheduler.sh'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha34-Miuix-Liquid
+          path: v2/dist/BaiZe-v2-Alpha34-Module.zip

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".BaiZeApplication"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_baize"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/ic_baize"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BaiZe"
+        android:usesCleartextTraffic="false">
+
+        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".ProfileActivity" android:exported="false" />
+        <activity android:name=".CacheActivity" android:exported="false" />
+        <activity android:name=".SmartScanActivity" android:exported="false" />
+        <activity android:name=".ApkScanActivity" android:exported="false" />
+        <activity android:name=".CleanCenterActivity" android:exported="false" />
+        <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ThemeSettingsActivity" android:exported="false" />
+        <activity android:name=".DashboardActivity" android:exported="false" />
+
+        <activity
+            android:name=".MiuixDashboardActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".root.BaiZeRootService"
+            android:exported="false" />
+        <service
+            android:name=".root.BaiZeProfileRootService"
+            android:exported="false" />
+    </application>
+
+</manifest>

@@ -1,0 +1,114 @@
+name: BaiZe v2 Alpha 19
+
+on:
+  push:
+    branches: [v2-alpha19]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha19.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Alpha 19 branch
+        uses: actions/checkout@v4
+        with:
+          ref: v2-alpha19
+          fetch-depth: 0
+
+      - name: Apply Alpha 19 integration patch
+        if: ${{ hashFiles('v2/scripts/alpha19-source-patch.py') != '' }}
+        run: |
+          set -o pipefail
+          python3 v2/scripts/alpha19-source-patch.py 2>&1 | tee v2/alpha19-patch.log
+
+      - name: Validate cleaning rules
+        run: python3 v2/scripts/validate-rules.py
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        id: app_build
+        continue-on-error: true
+        working-directory: v2
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha19.log
+
+      - name: Package integrated module
+        if: steps.app_build.outcome == 'success'
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify Alpha 19 WebUI-native clean center
+        if: steps.app_build.outcome == 'success'
+        working-directory: v2
+        run: |
+          ZIP=dist/BaiZe-v2-Alpha19-Module.zip
+          unzip -tq "$ZIP"
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh'
+          unzip -l "$ZIP" | grep -q 'scheduler.sh'
+          unzip -l "$ZIP" | grep -q 'config/deep.rules'
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha19'
+          grep -q 'android:id="@+id/pageContent"' app/src/main/res/layout/activity_clean_center.xml
+          grep -q 'android:id="@+id/quickCleanButton"' app/src/main/res/layout/activity_clean_center.xml
+          grep -q 'DAILY CLEAN' app/src/main/res/layout/activity_clean_center.xml
+          grep -q 'MANUAL TOOLS' app/src/main/res/layout/activity_clean_center.xml
+          grep -q '?attr/colorOnSurface' app/src/main/res/layout/activity_clean_center.xml
+          ! grep -q '@color/baize_text_' app/src/main/res/layout/activity_clean_center.xml
+          ! grep -q 'bg_app_gradient' app/src/main/res/layout/activity_clean_center.xml
+          grep -q 'WindowInsetsCompat.Type.systemBars' app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt
+          grep -q 'EXTRA_RUN_SMART_CLEAN' app/src/main/java/io/github/xgl34222220/baize/DashboardActivity.kt
+          grep -q 'if (activity is CleanCenterActivity) return' app/src/main/java/io/github/xgl34222220/baize/Alpha7UiPolish.kt
+          test "$(unzip -p "$ZIP" config/deep.rules | sha256sum | awk '{print $1}')" = '73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
+
+      - name: Commit verified Alpha 19 sources
+        if: steps.app_build.outcome == 'success' && hashFiles('v2/scripts/alpha19-source-patch.py') != ''
+        run: |
+          rm -f v2/scripts/alpha19-source-patch.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finalize Alpha 19 WebUI-native clean center redesign'
+          git pull --rebase origin v2-alpha19
+          git push origin HEAD:v2-alpha19
+
+      - name: Upload module and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha19
+          if-no-files-found: warn
+          path: |
+            v2/alpha19-patch.log
+            v2/build-alpha19.log
+            v2/dist/BaiZe-v2-Alpha19-Module.zip
+
+      - name: Fail when app build failed
+        if: steps.app_build.outcome != 'success'
+        run: exit 1

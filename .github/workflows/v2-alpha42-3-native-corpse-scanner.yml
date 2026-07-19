@@ -1,0 +1,109 @@
+name: BaiZe v2 Alpha 42.3 Native Corpse Scanner
+
+on:
+  push:
+    branches: [v2-alpha42-3-native-corpse-scanner]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-3-native-corpse-scanner.yml'
+  pull_request:
+    branches: [v2-alpha42-2-compose-aux-ui]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-3-native-corpse-scanner.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-3-native-corpse-scanner
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Validate shell and native source
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/module/cleaner.sh v2/scripts/build-native.sh v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'version=v2.0.0-alpha42.3' v2/module/module.prop
+          grep -q 'versionCode=22230' v2/module/module.prop
+          grep -q 'scan-corpses' v2/native/baize_engine.c
+          grep -q 'cleaner.sh.compat' v2/scripts/package-module.sh
+
+      - name: Test native corpse scanner fixture
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine.c -o /tmp/baize_engine_host
+          TEST=/tmp/baize-native-test
+          rm -rf "$TEST"
+          mkdir -p "$TEST/media/0/Android/data/com.example.installed/cache"
+          mkdir -p "$TEST/media/0/Android/data/com.old.app/cache/deep"
+          mkdir -p "$TEST/media/0/Android/obb/com.empty.game"
+          mkdir -p "$TEST/media/0/Android/media/com.protected.app/files"
+          mkdir -p "$TEST/state" "$TEST/installed"
+          printf 'abc' > "$TEST/media/0/Android/data/com.old.app/cache/a.bin"
+          printf '12345' > "$TEST/media/0/Android/data/com.old.app/cache/deep/b.bin"
+          printf 'secret' > "$TEST/media/0/Android/media/com.protected.app/files/x"
+          printf 'com.example.installed\n' > "$TEST/installed/0.txt"
+          cp config/default.conf "$TEST/state/config.conf"
+          printf '%s\n' "$TEST/media/0/Android/media/com.protected.app" > "$TEST/state/whitelist.conf"
+          BAIZE_NATIVE_TEST=1 \
+          BAIZE_STATE_DIR="$TEST/state" \
+          BAIZE_MEDIA_ROOT="$TEST/media" \
+          BAIZE_INSTALLED_ROOT="$TEST/installed" \
+          BAIZE_NATIVE_ENGINE=/tmp/baize_engine_host \
+            sh v2/module/cleaner.sh corpse-scan ci
+          grep -q '^engine=native-c-arm64$' "$TEST/state/latest.env"
+          grep -q '^files=3$' "$TEST/state/latest.env"
+          grep -q '/com.old.app$' "$TEST/state/corpse_scan.targets"
+          grep -q '/com.empty.game$' "$TEST/state/corpse_scan.targets"
+          ! grep -q '/com.example.installed$' "$TEST/state/corpse_scan.targets"
+          ! grep -q '/com.protected.app$' "$TEST/state/corpse_scan.targets"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build arm64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha42.3-Native-Corpse-Scanner-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.3'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -l "$ZIP" | grep -q 'cleaner.sh.compat'
+          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
+          unzip -p "$ZIP" bin/arm64-v8a/baize_engine > /tmp/baize_engine_android
+          file /tmp/baize_engine_android | grep -q 'ARM aarch64'
+          sha256sum "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.3-Native-Corpse-Scanner
+          path: v2/dist/BaiZe-v2-Alpha42.3-Native-Corpse-Scanner-Module.zip

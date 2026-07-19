@@ -1,0 +1,90 @@
+name: BaiZe v2 Alpha 42.9 Smart Scan Compose
+
+on:
+  push:
+    branches: [v2-alpha42-9-smart-scan-compose]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-9-smart-scan-compose.yml'
+  pull_request:
+    branches: [v2-alpha42-8-snapshot-clean-ui]
+    paths:
+      - 'v2/**'
+      - '.github/workflows/v2-alpha42-9-smart-scan-compose.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha42-9-smart-scan-compose
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Validate smart scan Compose state flow
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/cleaner42_6.sh
+          sh -n v2/module/native-scan.sh
+          sh -n v2/module/cache-snapshot-clean.sh
+          sh -n v2/module/profile-snapshot-clean.sh
+          sh -n v2/module/apk-snapshot-scan.sh
+          sh -n v2/module/apk-snapshot-clean.sh
+          sh -n v2/module/customize.sh v2/module/service.sh v2/module/action.sh
+          sh -n v2/scripts/build-native.sh v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          FILE=v2/app/src/main/java/io/github/xgl34222220/baize/SmartScanActivity.kt
+          grep -q 'class SmartScanActivity : ComponentActivity' "$FILE"
+          grep -q 'BaiZeTheme(appearance)' "$FILE"
+          grep -q '正在清理扫描快照' "$FILE"
+          grep -q 'getTaskState()' "$FILE"
+          grep -q 'Text("重新扫描", maxLines = 1)' "$FILE"
+          grep -q 'Text("停止当前任务", maxLines = 1)' "$FILE"
+          ! grep -q 'ActivitySmartScanBinding' "$FILE"
+          grep -q 'versionCode = 22290' v2/app/build.gradle.kts
+          grep -q 'version=v2.0.0-alpha42.9' v2/module/module.prop
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build arm64 native engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha42.9-Smart-Scan-Compose-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha42.9'
+          unzip -p "$ZIP" module.prop | grep -q 'versionCode=22290'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -p "$ZIP" app/baize.apk > /tmp/baize.apk
+          unzip -l /tmp/baize.apk | grep -q 'AndroidManifest.xml'
+          sha256sum "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha42.9-Smart-Scan-Compose
+          path: v2/dist/BaiZe-v2-Alpha42.9-Smart-Scan-Compose-Module.zip

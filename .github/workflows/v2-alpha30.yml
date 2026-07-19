@@ -1,0 +1,84 @@
+name: BaiZe v2 Alpha 30
+
+on:
+  push:
+    branches: [v2-alpha30]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha30.yml'
+  pull_request:
+    branches: [v2-alpha29]
+    paths:
+      - 'v2/**'
+      - 'cleaner.sh'
+      - 'notify.sh'
+      - 'service.sh'
+      - 'config/**'
+      - '.github/workflows/v2-alpha30.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2-alpha30
+          fetch-depth: 0
+
+      - name: Validate cleaner and UI changes
+        run: |
+          sh -n cleaner.sh notify.sh service.sh
+          sh -n v2/module/action.sh v2/module/customize.sh v2/module/service.sh v2/module/uninstall.sh
+          sh -n v2/scripts/package-module.sh
+          python3 v2/scripts/validate-rules.py
+          grep -q 'apk-scan' cleaner.sh
+          grep -q '^run_apk_packages()' cleaner.sh
+          grep -q 'clean_apk_packages=1' config/default.conf
+          grep -q 'otherDetailsJson' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          grep -q 'GeneralJunkUiItem' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'ResultSurface' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'isAmoledActive' v2/app/src/main/java/io/github/xgl34222220/baize/ThemeManager.kt
+          grep -q 'version=v2.0.0-alpha30' v2/module/module.prop
+          grep -q 'versionCode = 21000' v2/app/build.gradle.kts
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build native App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        working-directory: v2
+        run: |
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2-Alpha30-Module.zip
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -q 'version=v2.0.0-alpha30'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          unzip -p "$ZIP" cleaner.sh | grep -q '^run_apk_packages()'
+          unzip -p "$ZIP" config/default.conf | grep -q 'clean_apk_packages=1'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2-Alpha30
+          path: v2/dist/BaiZe-v2-Alpha30-Module.zip
