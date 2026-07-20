@@ -1,0 +1,25 @@
+name: Export BaiZe Alpha 8 workspace
+
+on:
+  pull_request:
+    branches: [feat/v2.1.0-alpha7-system-cache]
+    paths:
+      - '.github/workflows/export-alpha8-workspace.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v2.1.0-alpha8-file-organizer
+          fetch-depth: 0
+      - name: Pack workspace
+        run: |
+          set -euo pipefail
+          tar -czf BaiZe-alpha8-workspace.tar.gz v2 config cleaner.sh notify.sh service.sh RELEASE_NOTES_V2.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-alpha8-workspace
+          path: BaiZe-alpha8-workspace.tar.gz
