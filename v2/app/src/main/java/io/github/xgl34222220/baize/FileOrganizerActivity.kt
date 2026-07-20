@@ -20,8 +20,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.rememberScrollState
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -88,7 +88,11 @@ class FileOrganizerActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             bound = false
-            state = state.copy(connected = false, running = false, status = "Root 服务已断开，请重新进入页面")
+            state = state.copy(
+                connected = false,
+                running = false,
+                status = "Root 服务已断开，请重新进入页面"
+            )
         }
     }
 
@@ -130,20 +134,27 @@ class FileOrganizerActivity : ComponentActivity() {
         state = state.copy(status = "正在连接 Root 文件归类服务…")
         runCatching {
             RootService.bind(
-                Intent(this, BaiZeProfileRootService::class.java).addCategory(RootService.CATEGORY_DAEMON_MODE),
+                Intent(this, BaiZeProfileRootService::class.java)
+                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
                 connection
             )
             bound = true
         }.onFailure {
             bound = false
-            state = state.copy(status = "Root 服务启动失败：${it.message ?: it.javaClass.simpleName}")
+            state = state.copy(
+                status = "Root 服务启动失败：${it.message ?: it.javaClass.simpleName}"
+            )
         }
     }
 
     private fun saveSchedule() {
         FileOrganizerWorker.saveAndSchedule(this, schedule)
         schedule = FileOrganizerWorker.loadSettings(this)
-        scheduleSavedText = if (schedule.enabled) "已保存：每 ${schedule.intervalHours} 小时自动归类" else "定时归类已关闭"
+        scheduleSavedText = if (schedule.enabled) {
+            "已保存：每 ${schedule.intervalHours} 小时自动归类"
+        } else {
+            "定时归类已关闭"
+        }
     }
 
     private fun oneTapOrganize() {
@@ -151,18 +162,24 @@ class FileOrganizerActivity : ComponentActivity() {
         if (state.running) return
         state = state.copy(
             running = true,
-            status = "正在扫描内部存储根目录、下载与 QQ/TIM 接收目录…",
+            status = "正在扫描内部存储、公共下载和所有应用用户文件目录…",
             lastTotal = 0,
             lastBytes = 0L
         )
+
         lifecycleScope.launch {
             val scan = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(root.scanFileOrganizer()) }.getOrElse {
-                    JSONObject().put("error", "scan_failed").put("message", it.message ?: it.javaClass.simpleName)
+                    JSONObject()
+                        .put("error", "scan_failed")
+                        .put("message", it.message ?: it.javaClass.simpleName)
                 }
             }
             if (scan.has("error")) {
-                state = state.copy(running = false, status = scan.optString("message", "文件归类扫描失败"))
+                state = state.copy(
+                    running = false,
+                    status = scan.optString("message", "文件归类扫描失败")
+                )
                 return@launch
             }
             if (scan.optBoolean("cancelled")) {
@@ -176,7 +193,7 @@ class FileOrganizerActivity : ComponentActivity() {
             if (snapshotId.isBlank() || total == 0) {
                 state = state.copy(
                     running = false,
-                    status = "一键归类完成：没有需要移动的散落文件",
+                    status = "一键归类完成：没有需要移动的新文件",
                     lastTotal = 0,
                     lastBytes = 0L
                 )
@@ -190,13 +207,23 @@ class FileOrganizerActivity : ComponentActivity() {
             )
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    JSONObject(root.applyFileOrganizer(snapshotId, JSONObject().put("all", true).toString()))
+                    JSONObject(
+                        root.applyFileOrganizer(
+                            snapshotId,
+                            JSONObject().put("all", true).toString()
+                        )
+                    )
                 }.getOrElse {
-                    JSONObject().put("error", "apply_failed").put("message", it.message ?: it.javaClass.simpleName)
+                    JSONObject()
+                        .put("error", "apply_failed")
+                        .put("message", it.message ?: it.javaClass.simpleName)
                 }
             }
             if (result.has("error")) {
-                state = state.copy(running = false, status = result.optString("message", "文件归类失败"))
+                state = state.copy(
+                    running = false,
+                    status = result.optString("message", "文件归类失败")
+                )
                 return@launch
             }
 
@@ -206,7 +233,9 @@ class FileOrganizerActivity : ComponentActivity() {
             val bytes = result.optLong("bytes")
             state = state.copy(
                 running = false,
-                status = "一键归类完成：移动 $moved/$total 个 · 跳过 $skipped 个 · 失败 $failed 个 · ${Formatter.formatFileSize(this@FileOrganizerActivity, bytes)}",
+                status = "一键归类完成：移动 $moved/$total 个 · 跳过 $skipped 个 · 失败 $failed 个 · ${
+                    Formatter.formatFileSize(this@FileOrganizerActivity, bytes)
+                }",
                 undoAvailable = result.optBoolean("undoAvailable"),
                 lastTotal = total,
                 lastBytes = bytes
@@ -221,17 +250,24 @@ class FileOrganizerActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(root.undoFileOrganizer()) }.getOrElse {
-                    JSONObject().put("error", "undo_failed").put("message", it.message ?: it.javaClass.simpleName)
+                    JSONObject()
+                        .put("error", "undo_failed")
+                        .put("message", it.message ?: it.javaClass.simpleName)
                 }
             }
             if (result.has("error")) {
-                state = state.copy(running = false, status = result.optString("message", "撤销失败"))
+                state = state.copy(
+                    running = false,
+                    status = result.optString("message", "撤销失败")
+                )
                 return@launch
             }
             state = state.copy(
                 running = false,
                 undoAvailable = result.optBoolean("undoAvailable"),
-                status = "撤销完成：恢复 ${result.optInt("restored")} 个 · 跳过 ${result.optInt("skipped")} 个 · 失败 ${result.optInt("failed")} 个"
+                status = "撤销完成：恢复 ${result.optInt("restored")} 个 · 跳过 ${
+                    result.optInt("skipped")
+                } 个 · 失败 ${result.optInt("failed")} 个"
             )
         }
     }
@@ -270,7 +306,11 @@ private fun FileOrganizerScreen(
                 title = {
                     Column {
                         Text("文件归类", fontWeight = FontWeight.Black, fontSize = 24.sp)
-                        Text("一键归类与定时归类", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "全应用一键归类与定时归类",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 navigationIcon = {
@@ -278,21 +318,31 @@ private fun FileOrganizerScreen(
                         Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(padding),
             contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 36.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
                     shape = RoundedCornerShape(28.dp)
                 ) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(
+                        Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 Icons.Rounded.FolderCopy,
@@ -302,26 +352,43 @@ private fun FileOrganizerScreen(
                             )
                             Spacer(Modifier.size(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(state.status, fontWeight = FontWeight.Black, fontSize = 18.sp)
                                 Text(
-                                    "点一次自动扫描并归类，无需再确认。范围包括内部存储根目录的散落文件、Download、QQ/TIM 接收目录及可读取的应用下载目录。",
+                                    state.status,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 18.sp
+                                )
+                                Text(
+                                    "点一次自动扫描并直接归类。Telegram、NagramX、浏览器、网盘等应用不再依赖单独写死路径。",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
                                     lineHeight = 18.sp
                                 )
                             }
-                            if (state.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            if (state.running) {
+                                CircularProgressIndicator(
+                                    Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
                         }
+
                         Button(
                             onClick = if (state.running) onStop else onOneTap,
                             enabled = state.connected,
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                             shape = RoundedCornerShape(18.dp)
                         ) {
-                            Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.AutoAwesome, contentDescription = null)
+                            Icon(
+                                if (state.running) Icons.Rounded.Stop else Icons.Rounded.AutoAwesome,
+                                contentDescription = null
+                            )
                             Spacer(Modifier.size(8.dp))
-                            Text(if (state.running) "停止当前任务" else "一键归类全部散落文件", fontWeight = FontWeight.Black)
+                            Text(
+                                if (state.running) "停止当前任务" else "一键归类所有应用下载",
+                                fontWeight = FontWeight.Black
+                            )
                         }
+
                         OutlinedButton(
                             onClick = onUndo,
                             enabled = state.connected && !state.running && state.undoAvailable,
@@ -338,7 +405,14 @@ private fun FileOrganizerScreen(
 
             item { SourceCard() }
             item { DestinationCard() }
-            item { ScheduleCard(schedule, scheduleSavedText, onScheduleChange, onSaveSchedule) }
+            item {
+                ScheduleCard(
+                    schedule,
+                    scheduleSavedText,
+                    onScheduleChange,
+                    onSaveSchedule
+                )
+            }
         }
     }
 }
@@ -346,14 +420,23 @@ private fun FileOrganizerScreen(
 @Composable
 private fun SourceCard() {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("从哪里归类", fontWeight = FontWeight.Black, fontSize = 19.sp)
-            Text("内部存储根目录", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Column(
+            Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("扫描范围", fontWeight = FontWeight.Black, fontSize = 19.sp)
             Text(
-                "只处理根目录中直接散落的文件，不递归搬动 Android、DCIM、Documents、Movies 等正常文件夹。另会扫描 Download、QQfile_recv、TIMfile_recv 和应用下载目录。",
+                "内部存储 + 全部应用用户文件",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "包括根目录散落文件、公共 Download/接收目录，以及每个应用的 Android/media/<包名> 和 Android/data/<包名>/files。应用缓存、数据库、缩略图、贴纸和临时文件会跳过。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 18.sp
@@ -366,19 +449,38 @@ private fun SourceCard() {
 private fun DestinationCard() {
     val categories = listOf("图片", "视频", "音频", "文档", "安装包", "压缩包", "电子书", "其他")
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Text("归类到哪里", fontWeight = FontWeight.Black, fontSize = 19.sp)
-            Text("内部存储 / BaiZe归类", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            Text("按类型移动到对应子目录；遇到同名文件直接跳过，不覆盖。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            Text(
+                "内部存储 / BaiZe归类",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "按类型移动到对应子目录；遇到同名文件直接跳过，不覆盖。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
             Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 categories.forEach { category ->
-                    FilterChip(selected = false, onClick = {}, label = { Text(category) })
+                    FilterChip(
+                        selected = false,
+                        onClick = {},
+                        label = { Text(category) }
+                    )
                 }
             }
         }
@@ -394,21 +496,40 @@ private fun ScheduleCard(
 ) {
     val intervals = listOf(6, 12, 24, 72, 168)
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("定时归类", fontWeight = FontWeight.Black, fontSize = 19.sp)
-                    Text("定时任务同样自动扫描并直接归类", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text(
+                        "定时任务使用相同的全应用扫描范围",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
                 }
-                Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) })
+                Switch(
+                    checked = schedule.enabled,
+                    onCheckedChange = { onChange(schedule.copy(enabled = it)) }
+                )
             }
+
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 intervals.forEach { hours ->
@@ -416,23 +537,48 @@ private fun ScheduleCard(
                         selected = schedule.intervalHours == hours,
                         onClick = { onChange(schedule.copy(intervalHours = hours)) },
                         label = {
-                            Text(when (hours) {
-                                24 -> "每天"
-                                72 -> "每3天"
-                                168 -> "每周"
-                                else -> "${hours}小时"
-                            })
+                            Text(
+                                when (hours) {
+                                    24 -> "每天"
+                                    72 -> "每3天"
+                                    168 -> "每周"
+                                    else -> "${hours}小时"
+                                }
+                            )
                         }
                     )
                 }
             }
+
             HorizontalDivider()
-            SettingSwitch("仅充电时执行", schedule.chargingOnly) { onChange(schedule.copy(chargingOnly = it)) }
-            SettingSwitch("仅息屏时执行", schedule.screenOffOnly) { onChange(schedule.copy(screenOffOnly = it)) }
-            Text("上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(schedule.lastResult, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (savedText.isNotBlank()) Text(savedText, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            Button(onClick = onSave, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            SettingSwitch("仅充电时执行", schedule.chargingOnly) {
+                onChange(schedule.copy(chargingOnly = it))
+            }
+            SettingSwitch("仅息屏时执行", schedule.screenOffOnly) {
+                onChange(schedule.copy(screenOffOnly = it))
+            }
+            Text(
+                "上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                schedule.lastResult,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (savedText.isNotBlank()) {
+                Text(
+                    savedText,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Button(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
                 Text("保存定时归类", fontWeight = FontWeight.Black)
             }
         }
@@ -440,7 +586,11 @@ private fun ScheduleCard(
 }
 
 @Composable
-private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
         Switch(checked = checked, onCheckedChange = onCheckedChange)
