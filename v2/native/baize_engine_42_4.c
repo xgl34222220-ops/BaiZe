@@ -19,7 +19,7 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "43.1-alpha2-one-pass"
+#define ENGINE_VERSION "43.2-alpha3-path-index"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;
@@ -49,6 +49,10 @@ typedef struct {
 } Totals;
 
 static StrVec g_whitelist = {0}, g_package_whitelist = {0}, g_installed_index = {0};
+static uint64_t g_whitelist_index_queries;
+static uint64_t g_whitelist_ancestor_hits;
+static uint64_t g_whitelist_descendant_hits;
+static uint64_t g_whitelist_pruned_subtrees;
 static time_t g_started;
 static uint64_t g_started_ms;
 static uint64_t g_last_progress_ms;
@@ -76,7 +80,7 @@ static uint64_t monotonic_ms(void) {
     if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
     return (uint64_t)ts.tv_sec * 1000U + (uint64_t)ts.tv_nsec / 1000000U;
 }
-static bool vec_contains_sorted(const StrVec *a, const char *value) {
+static size_t vec_lower_bound(const StrVec *a, const char *value) {
     size_t low = 0, high = a ? a->n : 0;
     while (low < high) {
         size_t mid = low + (high - low) / 2U;
@@ -84,7 +88,11 @@ static bool vec_contains_sorted(const StrVec *a, const char *value) {
         if (cmp < 0) low = mid + 1U;
         else high = mid;
     }
-    return a && low < a->n && strcmp(a->v[low], value) == 0;
+    return low;
+}
+static bool vec_contains_sorted(const StrVec *a, const char *value) {
+    size_t position = vec_lower_bound(a, value);
+    return a && position < a->n && strcmp(a->v[position], value) == 0;
 }
 static void mark_first_result(Totals *totals) {
     if (!totals || totals->first_result_ms != 0U || g_started_ms == 0U) return;
@@ -123,6 +131,10 @@ static void atomic_progress(const Options *o, const char *mode, const char *phas
     fclose(f);
     rename(tmp, o->progress_path);
 }
+static void normalize_index_path(char *path) {
+    size_t length = path ? strlen(path) : 0U;
+    while (length > 1U && path[length - 1U] == '/') path[--length] = '\0';
+}
 static void load_lines(const char *path, StrVec *out, bool paths_only) {
     if (!path) return;
     FILE *f = fopen(path, "r");
@@ -136,6 +148,7 @@ static void load_lines(const char *path, StrVec *out, bool paths_only) {
         while (e > p && isspace((unsigned char)e[-1])) *--e = '\0';
         if (!*p || *p == '#') continue;
         if (paths_only && *p != '/') continue;
+        if (paths_only) normalize_index_path(p);
         vec_add(out, p);
     }
     free(line);
@@ -146,12 +159,45 @@ static bool path_relation(const char *a, const char *b) {
     size_t n = strlen(a);
     return strcmp(a, b) == 0 || (strncmp(a, b, n) == 0 && b[n] == '/');
 }
-static bool whitelist_conflict(const char *target) {
-    for (size_t i = 0; i < g_whitelist.n; i++) {
-        const char *p = g_whitelist.v[i];
-        if (strcmp(p, "/") == 0 || path_relation(p, target) || path_relation(target, p)) return true;
+enum {
+    WHITELIST_NONE = 0U,
+    WHITELIST_ANCESTOR = 1U,
+    WHITELIST_DESCENDANT = 2U
+};
+static unsigned whitelist_relation(const char *target) {
+    g_whitelist_index_queries++;
+    if (!target || target[0] != '/' || g_whitelist.n == 0U) return WHITELIST_NONE;
+    char normalized[PATH_MAX];
+    int written = snprintf(normalized, sizeof(normalized), "%s", target);
+    if (written < 0 || (size_t)written >= sizeof(normalized)) return WHITELIST_NONE;
+    normalize_index_path(normalized);
+    if (vec_contains_sorted(&g_whitelist, "/") || vec_contains_sorted(&g_whitelist, normalized)) {
+        g_whitelist_ancestor_hits++;
+        return WHITELIST_ANCESTOR;
     }
-    return false;
+    char prefix[PATH_MAX];
+    written = snprintf(prefix, sizeof(prefix), "%s", normalized);
+    if (written < 0 || (size_t)written >= sizeof(prefix)) return WHITELIST_NONE;
+    char *cursor = prefix + 1;
+    while ((cursor = strchr(cursor, '/')) != NULL) {
+        *cursor = '\0';
+        bool protected = vec_contains_sorted(&g_whitelist, prefix);
+        *cursor = '/';
+        if (protected) {
+            g_whitelist_ancestor_hits++;
+            return WHITELIST_ANCESTOR;
+        }
+        cursor++;
+    }
+    size_t position = vec_lower_bound(&g_whitelist, normalized);
+    if (position < g_whitelist.n && path_relation(normalized, g_whitelist.v[position])) {
+        g_whitelist_descendant_hits++;
+        return WHITELIST_DESCENDANT;
+    }
+    return WHITELIST_NONE;
+}
+static bool whitelist_conflict(const char *target) {
+    return whitelist_relation(target) != WHITELIST_NONE;
 }
 static bool package_whitelisted(const char *pkg) {
     return pkg && vec_contains_sorted(&g_package_whitelist, pkg);
@@ -284,7 +330,7 @@ static void write_summary_path(const char *path, const Totals *t) {
     uint64_t visited = t->visited_files + t->visited_dirs;
     uint64_t throughput = elapsed_ms > 0U ? visited * 1000U / elapsed_ms : 0U;
     fprintf(f,
-        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nvisited_files=%" PRIu64 "\nvisited_dirs=%" PRIu64 "\npackage_index_entries=%" PRIu64 "\npackage_index_files=%" PRIu64 "\npackage_lookups=%" PRIu64 "\nfirst_result_ms=%" PRIu64 "\none_pass_app_dirs=%" PRIu64 "\none_pass_installed_dirs=%" PRIu64 "\none_pass_orphan_dirs=%" PRIu64 "\nelapsed_ms=%" PRIu64 "\nitems_per_second=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
+        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nvisited_files=%" PRIu64 "\nvisited_dirs=%" PRIu64 "\npackage_index_entries=%" PRIu64 "\npackage_index_files=%" PRIu64 "\npackage_lookups=%" PRIu64 "\nfirst_result_ms=%" PRIu64 "\none_pass_app_dirs=%" PRIu64 "\none_pass_installed_dirs=%" PRIu64 "\none_pass_orphan_dirs=%" PRIu64 "\nwhitelist_index_entries=%" PRIu64 "\nwhitelist_index_queries=%" PRIu64 "\nwhitelist_ancestor_hits=%" PRIu64 "\nwhitelist_descendant_hits=%" PRIu64 "\npruned_subtrees=%" PRIu64 "\nelapsed_ms=%" PRIu64 "\nitems_per_second=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
         t->files, t->bytes, t->dirs, t->empty_dirs, t->skipped, t->errors,
         t->protected_items, t->protected_bytes, t->candidates, t->targets,
         t->risk_low, t->risk_medium, t->risk_high, t->risk_critical,
@@ -292,7 +338,9 @@ static void write_summary_path(const char *path, const Totals *t) {
         t->visited_files, t->visited_dirs, t->package_index_entries,
         t->package_index_files, t->package_lookups, t->first_result_ms,
         t->one_pass_app_dirs, t->one_pass_installed_dirs, t->one_pass_orphan_dirs,
-        elapsed_ms, throughput, ENGINE_VERSION);
+        (uint64_t)g_whitelist.n, g_whitelist_index_queries,
+        g_whitelist_ancestor_hits, g_whitelist_descendant_hits,
+        g_whitelist_pruned_subtrees, elapsed_ms, throughput, ENGINE_VERSION);
     fclose(f);
 }
 static void write_summary(const Options *o, const Totals *t) {
@@ -452,9 +500,17 @@ static bool write_nul_u64(FILE *file, uint64_t value) {
 }
 static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o, int days,
                               FILE *manifest, const char *pkg, const char *category,
-                              Stats *stats, unsigned depth) {
+                              Stats *stats, bool may_contain_whitelist, unsigned depth) {
     if (depth > 512U) { stats->incomplete = true; return -1; }
     if (stop_requested(o)) return 9;
+    if (depth > 0U && may_contain_whitelist) {
+        unsigned relation = whitelist_relation(path);
+        if ((relation & WHITELIST_ANCESTOR) != 0U) {
+            g_whitelist_pruned_subtrees++;
+            return 0;
+        }
+        may_contain_whitelist = (relation & WHITELIST_DESCENDANT) != 0U;
+    }
     struct stat st;
     if (lstat(path, &st) != 0) { stats->incomplete = true; return -1; }
     if (S_ISLNK(st.st_mode)) return 0;
@@ -491,7 +547,8 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
         char child[PATH_MAX];
         int written = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
         if (written < 0 || (size_t)written >= sizeof(child)) { stats->incomplete = true; continue; }
-        int code = snapshot_cache_rec(child, root_dev, o, days, manifest, pkg, category, stats, depth + 1U);
+        int code = snapshot_cache_rec(child, root_dev, o, days, manifest, pkg, category,
+                                      stats, may_contain_whitelist, depth + 1U);
         if (code == 9) { closedir(dir); return 9; }
     }
     closedir(dir);
@@ -500,13 +557,15 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
     return 0;
 }
 static int snapshot_cache_tree(const char *path, const Options *o, const char *pkg,
-                               const char *category, FILE *manifest, Stats *stats) {
+                               const char *category, FILE *manifest, Stats *stats,
+                               bool may_contain_whitelist) {
     memset(stats, 0, sizeof(*stats));
     struct stat root;
     if (lstat(path, &root) != 0 || !S_ISDIR(root.st_mode) || S_ISLNK(root.st_mode)) return -1;
     FILE *temporary = tmpfile();
     if (!temporary) return -1;
-    int code = snapshot_cache_rec(path, root.st_dev, o, o->min_age_days, temporary, pkg, category, stats, 0U);
+    int code = snapshot_cache_rec(path, root.st_dev, o, o->min_age_days, temporary,
+                                  pkg, category, stats, may_contain_whitelist, 0U);
     if (code == 0 && !stats->oversized && !stats->mount_conflict && !stats->incomplete && stats->files > 0U) {
         rewind(temporary);
         char buffer[16384];
@@ -527,14 +586,16 @@ static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *it
                             const char *path, uint64_t current) {
     if (!is_dir_nofollow(path)) return;
     atomic_progress(o, "cache-scan", "C 原生应用缓存扫描", current, 0, path);
-    if (package_whitelisted(pkg) || whitelist_conflict(path)) {
+    unsigned relation = whitelist_relation(path);
+    if (package_whitelisted(pkg) || (relation & WHITELIST_ANCESTOR) != 0U) {
         totals->skipped++;
         totals->whitelisted++;
         report_row(rep, "skipped", "protected", category, 0, 0, path);
         return;
     }
     Stats stats;
-    int code = snapshot_cache_tree(path, o, pkg, category, manifest, &stats);
+    int code = snapshot_cache_tree(path, o, pkg, category, manifest, &stats,
+                                   (relation & WHITELIST_DESCENDANT) != 0U);
     if (code == 9) return;
     if (code < 0 || stats.incomplete) totals->errors++;
     totals->visited_files += stats.visited_files;

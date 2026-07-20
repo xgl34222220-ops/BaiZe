@@ -215,6 +215,11 @@ PACKAGE_LOOKUPS=$(summary_number package_lookups)
 FIRST_RESULT_MS=$(summary_number first_result_ms)
 ENGINE_ELAPSED_MS=$(summary_number elapsed_ms)
 ITEMS_PER_SECOND=$(summary_number items_per_second)
+WHITELIST_INDEX_ENTRIES=$(summary_number whitelist_index_entries)
+WHITELIST_INDEX_QUERIES=$(summary_number whitelist_index_queries)
+WHITELIST_ANCESTOR_HITS=$(summary_number whitelist_ancestor_hits)
+WHITELIST_DESCENDANT_HITS=$(summary_number whitelist_descendant_hits)
+PRUNED_SUBTREES=$(summary_number pruned_subtrees)
 TOTAL_ITEMS=$((FILES + EMPTY_DIRS))
 END_EPOCH=$(date +%s)
 ELAPSED=$((END_EPOCH - START_EPOCH))
@@ -251,7 +256,12 @@ else
         echo "first_result_ms=$FIRST_RESULT_MS"
         echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
         echo "items_per_second=$ITEMS_PER_SECOND"
-        echo "engine=native-c-arm64-indexed"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/corpse_scan.env"
       chmod 0600 "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets" 2>/dev/null
       ;;
@@ -279,7 +289,12 @@ else
         echo "first_result_ms=$FIRST_RESULT_MS"
         echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
         echo "items_per_second=$ITEMS_PER_SECOND"
-        echo "engine=native-c-arm64-indexed"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/deep_scan.env"
       chmod 0600 "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets" 2>/dev/null
       ;;
@@ -316,7 +331,12 @@ else
         echo "first_result_ms=$FIRST_RESULT_MS"
         echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
         echo "items_per_second=$ITEMS_PER_SECOND"
-        echo "engine=native-c-arm64-indexed"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
       } >"$CACHE_SCAN_STATE"
       chmod 0600 "$CACHE_SCAN_STATE" "$CACHE_SCAN_TARGETS" "$CACHE_SCAN_ITEMS" "$CACHE_SCAN_MANIFEST" 2>/dev/null
       if [ "$CACHE_PREFIX" = "cache_scan" ]; then
@@ -363,8 +383,13 @@ fi
   echo "first_result_ms=$FIRST_RESULT_MS"
   echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
   echo "items_per_second=$ITEMS_PER_SECOND"
+  echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+  echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+  echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+  echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+  echo "pruned_subtrees=$PRUNED_SUBTREES"
   echo "elapsed=$ELAPSED"
-  echo "engine=native-c-arm64-indexed"
+  echo "engine=native-c-arm64-path-index"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 

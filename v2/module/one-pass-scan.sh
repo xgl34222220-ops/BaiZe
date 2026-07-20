@@ -105,7 +105,7 @@ set_phase() {
     echo "progress_current=0"
     echo "progress_total=0"
     echo "current_path="
-    echo "engine=native-c-arm64-one-pass"
+    echo "engine=native-c-arm64-one-pass-path-index"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -189,6 +189,11 @@ INDEX_LOOKUPS=$(summary_number "$CACHE_SUMMARY" package_lookups)
 ONE_APP_DIRS=$(summary_number "$CACHE_SUMMARY" one_pass_app_dirs)
 ONE_INSTALLED=$(summary_number "$CACHE_SUMMARY" one_pass_installed_dirs)
 ONE_ORPHAN=$(summary_number "$CACHE_SUMMARY" one_pass_orphan_dirs)
+WL_INDEX_ENTRIES=$(summary_number "$CACHE_SUMMARY" whitelist_index_entries)
+WL_INDEX_QUERIES=$(summary_number "$CACHE_SUMMARY" whitelist_index_queries)
+WL_ANCESTOR_HITS=$(summary_number "$CACHE_SUMMARY" whitelist_ancestor_hits)
+WL_DESCENDANT_HITS=$(summary_number "$CACHE_SUMMARY" whitelist_descendant_hits)
+WL_PRUNED_SUBTREES=$(summary_number "$CACHE_SUMMARY" pruned_subtrees)
 
 R_FILES=$(summary_number "$CORPSE_SUMMARY" files)
 R_BYTES=$(summary_number "$CORPSE_SUMMARY" bytes)
@@ -238,10 +243,15 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
   echo "one_pass_app_dirs=$ONE_APP_DIRS"
   echo "one_pass_installed_dirs=$ONE_INSTALLED"
   echo "one_pass_orphan_dirs=$ONE_ORPHAN"
+  echo "whitelist_index_entries=$WL_INDEX_ENTRIES"
+  echo "whitelist_index_queries=$WL_INDEX_QUERIES"
+  echo "whitelist_ancestor_hits=$WL_ANCESTOR_HITS"
+  echo "whitelist_descendant_hits=$WL_DESCENDANT_HITS"
+  echo "pruned_subtrees=$WL_PRUNED_SUBTREES"
   echo "first_result_ms=$C_FIRST"
   echo "engine_elapsed_ms=$C_ELAPSED"
   echo "items_per_second=$C_RATE"
-  echo "engine=native-c-arm64-one-pass"
+  echo "engine=native-c-arm64-one-pass-path-index"
 } >"$CACHE_STATE"
 chmod 0600 "$CACHE_STATE" "$CACHE_TARGETS" "$CACHE_ITEMS" "$CACHE_MANIFEST" 2>/dev/null
 
@@ -266,10 +276,15 @@ corpse_snapshot_id="${scan_epoch}-$(printf '%s' "$corpse_targets_sha" | cut -c1-
   echo "one_pass_app_dirs=$ONE_APP_DIRS"
   echo "one_pass_installed_dirs=$ONE_INSTALLED"
   echo "one_pass_orphan_dirs=$ONE_ORPHAN"
+  echo "whitelist_index_entries=$WL_INDEX_ENTRIES"
+  echo "whitelist_index_queries=$WL_INDEX_QUERIES"
+  echo "whitelist_ancestor_hits=$WL_ANCESTOR_HITS"
+  echo "whitelist_descendant_hits=$WL_DESCENDANT_HITS"
+  echo "pruned_subtrees=$WL_PRUNED_SUBTREES"
   echo "first_result_ms=$R_FIRST"
   echo "engine_elapsed_ms=$R_ELAPSED"
   echo "items_per_second=$R_RATE"
-  echo "engine=native-c-arm64-one-pass"
+  echo "engine=native-c-arm64-one-pass-path-index"
 } >"$CORPSE_STATE"
 chmod 0600 "$CORPSE_STATE" "$CORPSE_TARGETS" 2>/dev/null
 
@@ -335,20 +350,26 @@ END_EPOCH=$(date +%s)
   echo "one_pass_app_dirs=$ONE_APP_DIRS"
   echo "one_pass_installed_dirs=$ONE_INSTALLED"
   echo "one_pass_orphan_dirs=$ONE_ORPHAN"
+  echo "whitelist_index_entries=$WL_INDEX_ENTRIES"
+  echo "whitelist_index_queries=$WL_INDEX_QUERIES"
+  echo "whitelist_ancestor_hits=$WL_ANCESTOR_HITS"
+  echo "whitelist_descendant_hits=$WL_DESCENDANT_HITS"
+  echo "pruned_subtrees=$WL_PRUNED_SUBTREES"
   echo "first_result_ms=$PRIMARY_FIRST"
   echo "engine_elapsed_ms=$PRIMARY_ELAPSED"
   echo "items_per_second=$PRIMARY_RATE"
   echo "elapsed=$((END_EPOCH - START_EPOCH))"
-  echo "engine=native-c-arm64-one-pass"
+  echo "engine=native-c-arm64-one-pass-path-index"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 cp -f "$PRIMARY_REPORT" "$REPORT_DIR/latest.tsv"
 {
   echo "----------------------------------------"
   echo "$RESULT"
-  echo "原生引擎: C arm64 43.1 Alpha 2 外部目录 One-pass"
+  echo "原生引擎: C arm64 43.2 Alpha 3 路径索引 One-pass"
   echo "Android/data 顶级目录: $ONE_APP_DIRS | 已安装: $ONE_INSTALLED | 残留: $ONE_ORPHAN"
   echo "共享索引: $INDEX_ENTRIES 项 / $INDEX_FILES 个用户文件 / $INDEX_LOOKUPS 次查询"
+  echo "路径索引: $WL_INDEX_ENTRIES 项 / $WL_INDEX_QUERIES 次查询 / $WL_PRUNED_SUBTREES 个子树提前剪枝"
   echo "缓存候选: $C_CANDIDATES / $C_SPACE | 残留候选: $R_CANDIDATES / $R_SPACE"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"

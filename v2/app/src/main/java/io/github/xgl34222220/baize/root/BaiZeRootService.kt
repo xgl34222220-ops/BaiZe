@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v2.1.0 Alpha 2 One-pass cache task bridge.
+ * v2.1.0 Alpha 3 path-indexed One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -52,6 +52,11 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotOnePassAppDirs = 0L
     @Volatile private var snapshotOnePassInstalledDirs = 0L
     @Volatile private var snapshotOnePassOrphanDirs = 0L
+    @Volatile private var snapshotWhitelistIndexEntries = 0L
+    @Volatile private var snapshotWhitelistIndexQueries = 0L
+    @Volatile private var snapshotWhitelistAncestorHits = 0L
+    @Volatile private var snapshotWhitelistDescendantHits = 0L
+    @Volatile private var snapshotPrunedSubtrees = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -61,7 +66,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.1-alpha2-one-pass")
+                .put("engine", "native-c-arm64-cache-v43.2-alpha3-path-index")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -77,6 +82,11 @@ class BaiZeRootService : RootService() {
                 .put("onePassAppDirs", if (ready) snapshotOnePassAppDirs else 0L)
                 .put("onePassInstalledDirs", if (ready) snapshotOnePassInstalledDirs else 0L)
                 .put("onePassOrphanDirs", if (ready) snapshotOnePassOrphanDirs else 0L)
+                .put("whitelistIndexEntries", if (ready) snapshotWhitelistIndexEntries else 0L)
+                .put("whitelistIndexQueries", if (ready) snapshotWhitelistIndexQueries else 0L)
+                .put("whitelistAncestorHits", if (ready) snapshotWhitelistAncestorHits else 0L)
+                .put("whitelistDescendantHits", if (ready) snapshotWhitelistDescendantHits else 0L)
+                .put("prunedSubtrees", if (ready) snapshotPrunedSubtrees else 0L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -276,7 +286,12 @@ class BaiZeRootService : RootService() {
             .put("onePassAppDirs", snapshotOnePassAppDirs)
             .put("onePassInstalledDirs", snapshotOnePassInstalledDirs)
             .put("onePassOrphanDirs", snapshotOnePassOrphanDirs)
-            .put("engine", "native-c-arm64-indexed")
+            .put("whitelistIndexEntries", snapshotWhitelistIndexEntries)
+            .put("whitelistIndexQueries", snapshotWhitelistIndexQueries)
+            .put("whitelistAncestorHits", snapshotWhitelistAncestorHits)
+            .put("whitelistDescendantHits", snapshotWhitelistDescendantHits)
+            .put("prunedSubtrees", snapshotPrunedSubtrees)
+            .put("engine", "native-c-arm64-path-index")
             .toString()
     }
 
@@ -402,6 +417,11 @@ class BaiZeRootService : RootService() {
         snapshotOnePassAppDirs = state.optLong("one_pass_app_dirs", latest.optLong("one_pass_app_dirs", 0L)).coerceAtLeast(0L)
         snapshotOnePassInstalledDirs = state.optLong("one_pass_installed_dirs", latest.optLong("one_pass_installed_dirs", 0L)).coerceAtLeast(0L)
         snapshotOnePassOrphanDirs = state.optLong("one_pass_orphan_dirs", latest.optLong("one_pass_orphan_dirs", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistIndexEntries = state.optLong("whitelist_index_entries", latest.optLong("whitelist_index_entries", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistIndexQueries = state.optLong("whitelist_index_queries", latest.optLong("whitelist_index_queries", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistAncestorHits = state.optLong("whitelist_ancestor_hits", latest.optLong("whitelist_ancestor_hits", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistDescendantHits = state.optLong("whitelist_descendant_hits", latest.optLong("whitelist_descendant_hits", 0L)).coerceAtLeast(0L)
+        snapshotPrunedSubtrees = state.optLong("pruned_subtrees", latest.optLong("pruned_subtrees", 0L)).coerceAtLeast(0L)
         return true
     }
 
@@ -412,6 +432,19 @@ class BaiZeRootService : RootService() {
         snapshotFiles = 0L
         snapshotBytes = 0L
         snapshotWhitelisted = 0
+        snapshotVisitedFiles = 0L
+        snapshotVisitedDirs = 0L
+        snapshotFirstResultMs = 0L
+        snapshotEngineElapsedMs = 0L
+        snapshotItemsPerSecond = 0L
+        snapshotOnePassAppDirs = 0L
+        snapshotOnePassInstalledDirs = 0L
+        snapshotOnePassOrphanDirs = 0L
+        snapshotWhitelistIndexEntries = 0L
+        snapshotWhitelistIndexQueries = 0L
+        snapshotWhitelistAncestorHits = 0L
+        snapshotWhitelistDescendantHits = 0L
+        snapshotPrunedSubtrees = 0L
     }
 
     private fun moduleTaskAlive(): Boolean {

@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.1.0-alpha2
-versionCode=22402
+version=v2.1.0-alpha3
+versionCode=22403
 author=惜故里丶
-description=白泽 v2.1.0 Alpha 2：Android/data 单次枚举，同时生成应用缓存与卸载残留独立快照。
+description=白泽 v2.1.0 Alpha 3：路径白名单索引、受保护子树提前剪枝与 One-pass 双快照。

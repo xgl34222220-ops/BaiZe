@@ -15,7 +15,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 安装白泽 v2.1.0 Alpha 2 One-pass 预览版"
+ui_print "- 安装白泽 v2.1.0 Alpha 3 路径索引预览版"
 ui_print "- 原生 App 已接管全部清理与定时设置，旧 WebUI 将被彻底移除"
 ui_print "- C 原生高速扫描：应用缓存、完整深度规则与卸载残留"
 ui_print "- 缓存、安装包、深度清理与卸载残留均只消费扫描快照，不重复扫描"
