@@ -101,7 +101,7 @@ set_phase() {
     echo "progress_current=$current"
     echo "progress_total=$total"
     printf 'current_path=%s\n' "$path" | tr '\r\n' '  '
-    echo "engine=apk-snapshot-v42.8"
+    echo "engine=apk-snapshot-v2.1.1-generic-roots"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -137,25 +137,50 @@ file_size() {
 human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
 should_stop() { [ -f "$STOP_FILE" ]; }
 
-DAYS=$(get_uint apk_package_days 30 0 365)
+CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)
+# 手动安装包扫描必须展示当前能找到的全部安装包；保留期只用于自动任务。
+if [ "$TRIGGER" = "manual" ]; then DAYS=0; else DAYS=$CONFIG_DAYS; fi
 MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 ROOTS_FILE="$TMP_DIR/apk-roots"
 : >"$ROOTS_FILE"
 
+append_root() {
+  root=${1%/}
+  [ -d "$root" ] || return 0
+  grep -Fqx "$root" "$ROOTS_FILE" 2>/dev/null || printf '%s\n' "$root" >>"$ROOTS_FILE"
+}
+
+# v2.1.1 不再按 QQ、Telegram、NagramX 等包名逐个维护白名单。
+# 公共自建目录、Android/media 全部应用目录，以及 Android/data/<包名> 下常见用户文件根都会纳入。
 for userdir in "$MEDIA_ROOT"/[0-9]*; do
   [ -d "$userdir" ] || continue
-  for root in \
-    "$userdir/Download" \
-    "$userdir/Documents" \
-    "$userdir/Tencent/QQfile_recv" \
-    "$userdir/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
-    "$userdir/Android/data/com.tencent.mm/MicroMsg/Download" \
-    "$userdir/UCDownloads" \
-    "$userdir/Quark/Download" \
-    "$userdir/BaiduNetdisk"; do
-    [ -d "$root" ] && printf '%s\n' "$root" >>"$ROOTS_FILE"
+
+  # 应用在共享存储根目录创建的自定义下载目录。排除体量巨大的标准媒体目录与白泽目标目录。
+  for top in "$userdir"/*; do
+    [ -d "$top" ] || continue
+    name=${top##*/}
+    case "$name" in
+      Android|DCIM|Pictures|Movies|Music|Podcasts|Ringtones|Alarms|Notifications|Audiobooks|BaiZe归类|LOST.DIR) continue ;;
+    esac
+    append_root "$top"
   done
+
+  # Telegram、NagramX 以及其他遵循 Android 标准的应用媒体目录。
+  append_root "$userdir/Android/media"
+
+  # 标准应用外部 files 目录和少量仍直接写在包目录下的用户下载子目录。
+  for pkgdir in "$userdir"/Android/data/*; do
+    [ -d "$pkgdir" ] || continue
+    append_root "$pkgdir/files"
+    append_root "$pkgdir/Download"
+    append_root "$pkgdir/Downloads"
+    append_root "$pkgdir/Documents"
+    append_root "$pkgdir/Telegram"
+    append_root "$pkgdir/Tencent/QQfile_recv"
+    append_root "$pkgdir/Tencent/Timfile_recv"
+  done
+
 done
 
 root_total=$(wc -l <"$ROOTS_FILE" 2>/dev/null | tr -d ' ')
@@ -164,22 +189,49 @@ root_current=0
 protected=0
 errors=0
 
+collect_candidates() {
+  root=$1
+  output=$2
+  depth=${3:-8}
+  : >"$output"
+  if [ "$DAYS" -eq 0 ]; then
+    find "$root" -xdev -mindepth 1 -maxdepth "$depth" \
+      \( -type d \( -iname cache -o -iname code_cache -o -iname no_backup -o -iname databases -o -iname shared_prefs -o -iname lib -o -iname tmp -o -iname temp -o -iname thumbnails -o -iname .thumbnails \) -prune \) -o \
+      \( -type f ! -size "+${MAX_FILE_BYTES}c" \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) -print0 \) \
+      2>/dev/null >"$output"
+  else
+    find "$root" -xdev -mindepth 1 -maxdepth "$depth" \
+      \( -type d \( -iname cache -o -iname code_cache -o -iname no_backup -o -iname databases -o -iname shared_prefs -o -iname lib -o -iname tmp -o -iname temp -o -iname thumbnails -o -iname .thumbnails \) -prune \) -o \
+      \( -type f -mtime "+$DAYS" ! -size "+${MAX_FILE_BYTES}c" \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) -print0 \) \
+      2>/dev/null >"$output"
+  fi
+}
+
+# 先处理直接散落在内部存储根目录的安装包，不递归整个共享存储。
+for userdir in "$MEDIA_ROOT"/[0-9]*; do
+  [ -d "$userdir" ] || continue
+  should_stop && handle_signal
+  set_phase "正在扫描内部存储根目录" 0 "$root_total" "$userdir"
+  LIST="$TMP_DIR/apk-root-files.${userdir##*/}.targets"
+  collect_candidates "$userdir" "$LIST" 1
+  while IFS= read -r -d '' candidate; do
+    should_stop && handle_signal
+    if [ -L "$candidate" ] || path_conflicts_whitelist "$candidate"; then
+      protected=$((protected + 1))
+      continue
+    fi
+    printf '%s\0' "$candidate" >>"$TARGETS_TMP"
+  done <"$LIST"
+  rm -f "$LIST"
+done
+
 while IFS= read -r root || [ -n "$root" ]; do
   [ -d "$root" ] || continue
   root_current=$((root_current + 1))
   should_stop && handle_signal
-  set_phase "正在扫描安装包目录" "$root_current" "$root_total" "$root"
+  set_phase "正在扫描全应用下载目录" "$root_current" "$root_total" "$root"
   LIST="$TMP_DIR/apk-root.$root_current.targets"
-  : >"$LIST"
-  if [ "$DAYS" -eq 0 ]; then
-    find "$root" -xdev -mindepth 1 -maxdepth 5 -type f ! -size "+${MAX_FILE_BYTES}c" \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
-      -print0 2>/dev/null >"$LIST"
-  else
-    find "$root" -xdev -mindepth 1 -maxdepth 5 -type f -mtime "+$DAYS" ! -size "+${MAX_FILE_BYTES}c" \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
-      -print0 2>/dev/null >"$LIST"
-  fi
+  collect_candidates "$root" "$LIST" 8
 
   while IFS= read -r -d '' candidate; do
     should_stop && handle_signal
@@ -215,13 +267,14 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "package_days=$DAYS"
+  echo "configured_package_days=$CONFIG_DAYS"
   echo "bytes=$bytes"
   echo "files=$files"
-  echo "engine=apk-snapshot-v42.8"
+  echo "engine=apk-snapshot-v2.1.1-generic-roots"
 } >"$STATE_FILE"
 chmod 0600 "$STATE_FILE" "$TARGETS_FILE" 2>/dev/null
 
-result="安装包扫描完成，可清理 $(human_bytes "$bytes")"
+result="安装包扫描完成，发现 $files 个 / $(human_bytes "$bytes")"
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
@@ -255,14 +308,14 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "deep_progress_current=$root_current"
   echo "deep_progress_total=$root_total"
   echo "elapsed=$elapsed"
-  echo "engine=apk-snapshot-v42.8"
+  echo "engine=apk-snapshot-v2.1.1-generic-roots"
   echo "result=$result"
 } >"$STATE_DIR/latest.env"
 {
   echo "----------------------------------------"
   echo "$result"
   echo "扫描快照: $snapshot_id"
-  echo "安装包: $files 个 / $(human_bytes "$bytes")"
+  echo "扫描根目录: $root_total | 手动扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否)"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
@@ -272,7 +325,7 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 
 echo "$result"
-echo "扫描快照: $snapshot_id | 安装包: $files 个 | 受保护: $protected | 耗时: ${elapsed}s"
+echo "扫描快照: $snapshot_id | 安装包: $files 个 | 扫描根: $root_total | 受保护: $protected | 耗时: ${elapsed}s"
 cleanup_lock
 trap - EXIT INT TERM
 exit 0
