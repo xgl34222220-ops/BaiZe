@@ -56,7 +56,9 @@ class ThemeSettingsActivity : ComponentActivity() {
                             onAmoledBlack = appearanceViewModel::setAmoledBlack,
                             onGlassEnabled = appearanceViewModel::setGlassEnabled,
                             onBlurEnabled = appearanceViewModel::setBlurEnabled,
-                            onFloatingDock = appearanceViewModel::setFloatingDock
+                            onFloatingDock = appearanceViewModel::setFloatingDock,
+                            onRefreshRateMode = appearanceViewModel::setRefreshRateMode,
+                            onAdaptiveSmoothMode = appearanceViewModel::setAdaptiveSmoothMode
                         )
                     )
                 }

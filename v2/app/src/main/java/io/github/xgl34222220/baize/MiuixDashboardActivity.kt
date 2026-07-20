@@ -27,6 +27,7 @@ import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.BaiZeRootService
 import io.github.xgl34222220.baize.root.IBaiZeRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
+import io.github.xgl34222220.baize.root.ITaskProgressCallback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -55,6 +56,13 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var pendingScanAfterConnect: Boolean? = null
     private var pendingModuleTask: String? = null
     private var pollJob: Job? = null
+    private var taskCallbackRegistered = false
+    private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
+        override fun onTaskProgress(stateJson: String?) {
+            val json = runCatching { JSONObject(stateJson.orEmpty()) }.getOrNull() ?: return
+            runOnUiThread { renderTaskState(json) }
+        }
+    }
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
     private var cacheSnapshotCount = 0
@@ -68,6 +76,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             rootService = IProfileRootService.Stub.asInterface(binder)
             profileBound = true
+            taskCallbackRegistered = runCatching { rootService?.registerTaskProgressCallback(taskProgressCallback); true }.getOrDefault(false)
             updateConnectionState()
             refreshAll()
             runPendingActionsIfReady()
@@ -76,6 +85,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             rootService = null
             profileBound = false
+            taskCallbackRegistered = false
             pollJob?.cancel()
             updateConnectionState()
             scheduleServiceRecovery(
@@ -1102,7 +1112,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         val service = rootService ?: return
         lifecycleScope.launch {
             val json = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.getTaskHistory(100)) }.getOrNull()
+                runCatching { JSONObject(service.getTaskHistoryPage(0, 30)) }.getOrNull()
             } ?: return@launch
             if (!json.optBoolean("success")) return@launch
             val array = json.optJSONArray("entries")
@@ -1266,6 +1276,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     override fun onDestroy() {
+        if (taskCallbackRegistered) runCatching { rootService?.unregisterTaskProgressCallback(taskProgressCallback) }
+
         pollJob?.cancel()
         if (profileBound) runCatching { RootService.unbind(profileConnection) }
         if (cacheBound) runCatching { RootService.unbind(cacheConnection) }

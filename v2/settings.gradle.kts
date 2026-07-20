@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "BaiZeV2"
 include(":app")
+include(":macrobenchmark")

@@ -56,6 +56,7 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.AppearanceUiActions
 import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.appearance.RefreshRateMode
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 
@@ -142,6 +143,30 @@ fun AppearanceScreenMiuix(
                         onSelected = actions.onKolorStyle
                     )
                 }
+            }
+        }
+        item { MiuixSectionTitle("PERFORMANCE", "刷新率与流畅度", "高刷优先，并在掉帧、发热和省电时自动降级") }
+        item {
+            MiuixGroup {
+                Column(Modifier.padding(vertical = 14.dp)) {
+                    Text("刷新率策略", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Text("当前：${settings.refreshRateMode.label}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    Spacer(Modifier.height(10.dp))
+                    MiuixSegmentRow(
+                        values = RefreshRateMode.entries,
+                        selected = settings.refreshRateMode,
+                        label = { it.label },
+                        onSelected = actions.onRefreshRateMode
+                    )
+                }
+                MiuixDivider()
+                MiuixSwitchRow(
+                    icon = Icons.Rounded.PhoneAndroid,
+                    title = "自适应流畅模式",
+                    description = "滚动掉帧、设备发热或省电时暂停 Haze 与重动画",
+                    checked = settings.adaptiveSmoothMode,
+                    onCheckedChange = actions.onAdaptiveSmoothMode
+                )
             }
         }
         item { MiuixSectionTitle("EFFECTS", "显示效果", "玻璃、Haze 模糊与底栏形态") }
@@ -275,7 +300,7 @@ private fun MiuixPreviewHero(settings: AppearanceSettings) {
                 fontWeight = FontWeight.Black
             )
             Text(
-                "${if (settings.glassEnabled) "玻璃开启" else "实心材质"} · ${if (settings.blurEnabled && settings.glassEnabled) "Haze 模糊" else "无模糊"} · ${if (settings.floatingDock) "悬浮底栏" else "贴底底栏"}",
+                "${if (settings.glassEnabled) "玻璃开启" else "实心材质"} · ${if (settings.blurEnabled && settings.glassEnabled) "Haze 模糊" else "无模糊"} · ${settings.refreshRateMode.label} · ${if (settings.adaptiveSmoothMode) "自适应流畅" else "固定特效"}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
             )

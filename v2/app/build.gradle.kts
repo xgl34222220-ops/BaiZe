@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseKeystorePath = providers.environmentVariable("BAIZE_KEYSTORE_PATH")
+val releaseKeystorePassword = providers.environmentVariable("BAIZE_KEYSTORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("BAIZE_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("BAIZE_KEY_PASSWORD")
+
 android {
     namespace = "io.github.xgl34222220.baize"
     compileSdk = 36
@@ -12,8 +17,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22501
-        versionName = "2.1.1"
+        versionCode = 22600
+        versionName = "2.2.0"
     }
 
     buildFeatures {
@@ -32,8 +37,24 @@ android {
         jvmTarget = "17"
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseKeystorePath.isPresent) {
+                storeFile = file(releaseKeystorePath.get())
+                storePassword = releaseKeystorePassword.orNull
+                keyAlias = releaseKeyAlias.orNull
+                keyPassword = releaseKeyPassword.orNull
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName(if (releaseKeystorePath.isPresent) "release" else "debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -59,6 +80,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.1")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.10.2")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")

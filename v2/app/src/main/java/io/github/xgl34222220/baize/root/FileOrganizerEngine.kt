@@ -9,8 +9,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -78,29 +80,25 @@ class FileOrganizerEngine(
     fun scan(progress: (Progress) -> Unit): String {
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
-        val sources = discoverSourceRoots(started, progress)
-        if (cancelled.get()) {
-            return JSONObject().put("cancelled", true).put("message", "文件归类扫描已停止").toString()
-        }
-
         val items = LinkedHashMap<String, PlannedMove>()
-        sources.forEachIndexed { index, source ->
-            if (cancelled.get() || items.size >= MAX_ITEMS || elapsed(started) >= SCAN_BUDGET_MS) {
-                return@forEachIndexed
+        val indexed = collectSharedIndex(started, items, progress)
+        val sourceCount: Int
+        val coverage: JSONArray
+        if (indexed != null) {
+            sourceCount = indexed.first
+            coverage = indexed.second
+        } else {
+            val sources = discoverSourceRoots(started, progress)
+            if (cancelled.get()) {
+                return JSONObject().put("cancelled", true).put("message", "文件归类扫描已停止").toString()
             }
-            progress(
-                Progress(
-                    phase = when (source.policy) {
-                        SourcePolicy.TOP_LEVEL_ONLY -> "正在读取内部存储根目录"
-                        SourcePolicy.FULL_DOWNLOAD_TREE -> "正在读取下载与接收目录"
-                        SourcePolicy.APP_USER_FILES -> "正在读取应用用户文件目录"
-                    },
-                    current = index + 1,
-                    total = sources.size,
-                    path = displayPath(source.directory.path)
-                )
-            )
-            collectSource(source, started, items, progress)
+            sourceCount = sources.size
+            coverage = JSONArray()
+            sources.forEachIndexed { index, source ->
+                if (cancelled.get() || items.size >= MAX_ITEMS || elapsed(started) >= SCAN_BUDGET_MS) return@forEachIndexed
+                progress(Progress("正在读取兼容来源目录", index + 1, sources.size, displayPath(source.directory.path)))
+                collectSource(source, started, items, progress)
+            }
         }
 
         val immutable = items.values.sortedWith(
@@ -110,7 +108,7 @@ class FileOrganizerEngine(
         )
         val id = UUID.randomUUID().toString()
         val truncated = immutable.size >= MAX_ITEMS || elapsed(started) >= SCAN_BUDGET_MS
-        snapshot = Snapshot(id, System.currentTimeMillis(), sources.size, truncated, immutable)
+        snapshot = Snapshot(id, System.currentTimeMillis(), sourceCount, truncated, immutable)
 
         val categoryCounts = JSONObject()
         val sourceCounts = JSONObject()
@@ -127,7 +125,8 @@ class FileOrganizerEngine(
             .put("success", true)
             .put("snapshotId", id)
             .put("expiresInMs", SNAPSHOT_TTL_MS)
-            .put("roots", sources.size)
+            .put("roots", sourceCount)
+            .put("coverage", coverage)
             .put("total", immutable.size)
             .put("totalBytes", totalBytes)
             .put("truncated", truncated)
@@ -337,6 +336,106 @@ class FileOrganizerEngine(
             .put("detailTruncated", detailTruncated)
             .put("details", details)
             .toString()
+    }
+
+    private fun collectSharedIndex(
+        started: Long,
+        out: MutableMap<String, PlannedMove>,
+        progress: (Progress) -> Unit
+    ): Pair<Int, JSONArray>? {
+        val script = File("/data/adb/modules/baize_v2/storage-index.sh")
+        if (!script.isFile) return null
+        progress(Progress("正在建立全应用共享存储索引", 0, 0, displayPath(script.path)))
+        val process = runCatching {
+            ProcessBuilder("/system/bin/sh", script.path, "refresh", "organizer")
+                .redirectErrorStream(true)
+                .start()
+        }.getOrNull() ?: return null
+        while (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
+            if (cancelled.get() || elapsed(started) >= SCAN_BUDGET_MS) {
+                process.destroy()
+                return null
+            }
+        }
+        if (process.exitValue() != 0) return null
+        val index = File(stateDir, "index/storage-files.nul")
+        if (!index.isFile) return null
+        val roots = LinkedHashSet<String>()
+        var visited = 0
+        forEachNulPath(index) { rawPath ->
+            if (cancelled.get() || out.size >= MAX_ITEMS || elapsed(started) >= SCAN_BUDGET_MS) return@forEachNulPath false
+            val file = File(rawPath)
+            if (!file.isFile || isSymlink(file) || skipFile(file)) return@forEachNulPath true
+            val descriptor = indexedSource(file.path) ?: return@forEachNulPath true
+            if (descriptor.policy == SourcePolicy.APP_USER_FILES && !isAppUserFile(file, canonical(file))) return@forEachNulPath true
+            roots += canonical(descriptor.directory)
+            val userId = userIdForPath(file.path) ?: return@forEachNulPath true
+            addPlannedMove(file, canonical(descriptor.directory), descriptor.group, userId, out)
+            visited += 1
+            if (visited % 250 == 0) progress(Progress("正在复用共享索引生成归类计划", visited, 0, displayPath(file.path)))
+            true
+        }
+        return roots.size to coverageJson()
+    }
+
+    private fun indexedSource(path: String): SourceRoot? {
+        val mediaRoot = mediaUserRoot(path) ?: return null
+        val relative = canonical(File(path)).removePrefix(canonical(mediaRoot) + "/")
+        if (!relative.contains('/')) return SourceRoot(mediaRoot, "内部存储根目录", SourcePolicy.TOP_LEVEL_ONLY)
+        val parts = relative.split('/')
+        if (parts.size >= 3 && parts[0] == "Android" && parts[1] == "media") {
+            val root = File(mediaRoot, "Android/media/${parts[2]}")
+            return SourceRoot(root, "${parts[2]} · 应用媒体", SourcePolicy.APP_USER_FILES)
+        }
+        if (parts.size >= 4 && parts[0] == "Android" && parts[1] == "data") {
+            val packageName = parts[2]
+            val filesIndex = parts.indexOf("files")
+            val root = if (filesIndex == 3) File(mediaRoot, "Android/data/$packageName/files")
+            else File(mediaRoot, "Android/data/$packageName")
+            return SourceRoot(root, "$packageName · 应用文件", SourcePolicy.APP_USER_FILES)
+        }
+        val root = File(mediaRoot, parts.first())
+        return SourceRoot(root, sourceGroup(root.path), SourcePolicy.FULL_DOWNLOAD_TREE)
+    }
+
+    private fun forEachNulPath(file: File, block: (String) -> Boolean) {
+        FileInputStream(file).use { input ->
+            val buffer = ByteArrayOutputStream(256)
+            while (true) {
+                val value = input.read()
+                if (value < 0) {
+                    if (buffer.size() > 0) block(buffer.toString(Charsets.UTF_8.name()))
+                    break
+                }
+                if (value == 0) {
+                    val keepGoing = block(buffer.toString(Charsets.UTF_8.name()))
+                    buffer.reset()
+                    if (!keepGoing) break
+                } else if (buffer.size() < 16_384) {
+                    buffer.write(value)
+                }
+            }
+        }
+    }
+
+    private fun coverageJson(): JSONArray {
+        val result = JSONArray()
+        val file = File(stateDir, "index/coverage.tsv")
+        if (!file.isFile) return result
+        file.useLines { lines ->
+            lines.drop(1).take(300).forEach { raw ->
+                val columns = raw.split('\t', limit = 6)
+                if (columns.size < 5) return@forEach
+                result.put(JSONObject()
+                    .put("status", columns[0])
+                    .put("group", columns[1])
+                    .put("files", columns[2].toLongOrNull() ?: 0L)
+                    .put("bytes", columns[3].toLongOrNull() ?: 0L)
+                    .put("path", columns[4])
+                    .put("reason", columns.getOrNull(5).orEmpty()))
+            }
+        }
+        return result
     }
 
     private fun discoverSourceRoots(started: Long, progress: (Progress) -> Unit): List<SourceRoot> {

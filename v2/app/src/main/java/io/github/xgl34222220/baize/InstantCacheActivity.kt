@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.IBinder
 import android.util.LruCache
@@ -91,6 +92,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.io.File
 
 /**
  * PackageManager cache-only tool. The package catalog and icons are loaded away from the main
@@ -554,7 +557,7 @@ private fun InstantCacheAppRow(
             Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            PackageIcon(packageName = app.packageName)
+            PackageIcon(packageName = app.packageName, label = app.label)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -589,7 +592,7 @@ private fun InstantCacheAppRow(
 }
 
 @Composable
-private fun PackageIcon(packageName: String) {
+private fun PackageIcon(packageName: String, label: String) {
     val context = LocalContext.current.applicationContext
     val bitmap by produceState<Bitmap?>(
         initialValue = AppIconCache.get(packageName),
@@ -614,25 +617,55 @@ private fun PackageIcon(packageName: String) {
                 contentScale = ContentScale.Fit
             )
         } else {
-            Icon(Icons.Rounded.Apps, null, tint = MaterialTheme.colorScheme.primary)
+            Text(label.trim().firstOrNull()?.uppercase() ?: "?", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
         }
     }
 }
 
 private object AppIconCache {
     private const val ICON_PX = 96
+    private const val MAX_DISK_FILES = 220
     private val cache = object : LruCache<String, Bitmap>(96) {}
 
     @Synchronized
-    fun get(packageName: String): Bitmap? = cache.get(packageName)
+    fun get(packageName: String): Bitmap? = cache.snapshot().entries
+        .firstOrNull { it.key.startsWith("$packageName:") }
+        ?.value
 
     fun load(context: Context, packageName: String): Bitmap? {
-        get(packageName)?.let { return it }
+        val info = runCatching { context.packageManager.getApplicationInfo(packageName, 0) }.getOrNull() ?: return null
+        val packageInfo = runCatching { context.packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+        val key = "$packageName:${packageInfo?.lastUpdateTime ?: info.sourceDir.hashCode()}"
+        synchronized(this) { cache.get(key) }?.let { return it }
+
+        val directory = File(context.cacheDir, "app-icons-v2").apply { mkdirs() }
+        val disk = File(directory, sha256(key) + ".png")
+        val fromDisk = runCatching { if (disk.isFile) BitmapFactory.decodeFile(disk.path) else null }.getOrNull()
+        if (fromDisk != null) {
+            synchronized(this) { cache.put(key, fromDisk) }
+            disk.setLastModified(System.currentTimeMillis())
+            return fromDisk
+        }
+
         val bitmap = runCatching {
-            context.packageManager.getApplicationIcon(packageName)
+            context.packageManager.getApplicationIcon(info)
                 .toBitmap(width = ICON_PX, height = ICON_PX, config = Bitmap.Config.ARGB_8888)
         }.getOrNull() ?: return null
-        synchronized(this) { cache.put(packageName, bitmap) }
+        synchronized(this) { cache.put(key, bitmap) }
+        runCatching {
+            val temp = File(directory, disk.name + ".tmp")
+            temp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (!temp.renameTo(disk)) {
+                temp.copyTo(disk, overwrite = true)
+                temp.delete()
+            }
+            directory.listFiles()?.filter(File::isFile)?.sortedByDescending(File::lastModified)
+                ?.drop(MAX_DISK_FILES)?.forEach(File::delete)
+        }
         return bitmap
     }
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }

@@ -35,6 +35,10 @@ class AppearanceViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setFloatingDock(enabled: Boolean) = launch { repository.setFloatingDock(enabled) }
 
+    fun setRefreshRateMode(value: RefreshRateMode) = launch { repository.setRefreshRateMode(value) }
+
+    fun setAdaptiveSmoothMode(enabled: Boolean) = launch { repository.setAdaptiveSmoothMode(enabled) }
+
     private fun launch(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
     }

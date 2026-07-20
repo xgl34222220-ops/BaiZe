@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -7,6 +8,8 @@
     <application
         android:name=".BaiZeApplication"
         android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:largeHeap="false"
         android:icon="@mipmap/ic_baize"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_baize"
@@ -37,10 +40,12 @@
 
         <service
             android:name=".root.BaiZeRootService"
-            android:exported="false" />
+            android:exported="false"
+            tools:ignore="Instantiatable" />
         <service
             android:name=".root.BaiZeProfileRootService"
-            android:exported="false" />
+            android:exported="false"
+            tools:ignore="Instantiatable" />
     </application>
 
 </manifest>

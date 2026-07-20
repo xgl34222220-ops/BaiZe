@@ -122,7 +122,7 @@ fun HistoryScreenMiuix(
         }
 
         item(key = "records-title", contentType = "title") {
-            SectionTitle("CLEAN HISTORY", "最近任务", "最多保留最近 100 次任务明细")
+            SectionTitle("CLEAN HISTORY", "最近任务", "服务端分页读取；当前显示最近 30 次任务")
         }
 
         if (state.records.isEmpty()) {

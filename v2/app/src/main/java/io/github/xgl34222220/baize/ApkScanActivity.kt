@@ -63,6 +63,7 @@ import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
+import io.github.xgl34222220.baize.root.ITaskProgressCallback
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +80,13 @@ class ApkScanActivity : ComponentActivity() {
     private var service: IProfileRootService? = null
     private var serviceBound = false
     private var pollJob: Job? = null
+    private var taskCallbackRegistered = false
+    private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
+        override fun onTaskProgress(stateJson: String?) {
+            val state = runCatching { JSONObject(stateJson.orEmpty()) }.getOrNull() ?: return
+            runOnUiThread { if (state.optBoolean("running")) renderTaskState(state) }
+        }
+    }
     private var screenState by mutableStateOf(ApkScanUiState())
     private var showCleanConfirm by mutableStateOf(false)
 
@@ -86,6 +94,7 @@ class ApkScanActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = IProfileRootService.Stub.asInterface(binder)
             serviceBound = true
+            taskCallbackRegistered = runCatching { service?.registerTaskProgressCallback(taskProgressCallback); true }.getOrDefault(false)
             screenState = screenState.copy(
                 connected = true,
                 status = "Root 安装包扫描与快照清理引擎已连接",
@@ -97,6 +106,7 @@ class ApkScanActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             serviceBound = false
+            taskCallbackRegistered = false
             pollJob?.cancel()
             screenState = screenState.copy(
                 connected = false,
@@ -151,6 +161,7 @@ class ApkScanActivity : ComponentActivity() {
 
     override fun onDestroy() {
         pollJob?.cancel()
+        if (taskCallbackRegistered) runCatching { service?.unregisterTaskProgressCallback(taskProgressCallback) }
         if (serviceBound) runCatching { RootService.unbind(connection) }
         serviceBound = false
         service = null
@@ -228,6 +239,7 @@ class ApkScanActivity : ComponentActivity() {
 
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val parsedItems = parseItems(json.optJSONArray("otherDetails"))
+            val coverage = parseCoverage(json.optJSONArray("coverage"))
             val success = json.optBoolean("success")
             val cancelled = json.optBoolean("cancelled")
             val totalFiles = latest.optLong("files", parsedItems.sumOf { it.files }).coerceAtLeast(0L)
@@ -245,6 +257,7 @@ class ApkScanActivity : ComponentActivity() {
                 operation = "",
                 phase = result,
                 items = parsedItems,
+                coverage = coverage,
                 totalFiles = totalFiles,
                 totalBytes = totalBytes,
                 cleanReady = success && !cancelled && totalFiles > 0,
@@ -361,7 +374,7 @@ class ApkScanActivity : ComponentActivity() {
                     runCatching { JSONObject(root.getTaskState()) }.getOrNull()
                 }
                 if (state != null && state.optBoolean("running")) renderTaskState(state)
-                delay(350)
+                delay(if (taskCallbackRegistered) 1800 else 350)
             }
         }
     }
@@ -379,6 +392,21 @@ class ApkScanActivity : ComponentActivity() {
                 if (json.optBoolean("cancelRequested")) append("\n正在停止…")
             }
         )
+    }
+
+    private fun parseCoverage(array: JSONArray?): List<ScanCoverageItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(ScanCoverageItem(
+                status = item.optString("status"),
+                group = item.optString("group"),
+                files = item.optLong("files", 0L),
+                bytes = item.optLong("bytes", 0L),
+                path = item.optString("path"),
+                reason = item.optString("reason")
+            ))
+        }
     }
 
     private fun parseItems(array: JSONArray?): List<ApkScanItem> = buildList {
@@ -407,10 +435,20 @@ private data class ApkScanUiState(
     val status: String = "正在等待 Root 服务…",
     val phase: String = "准备扫描安装包",
     val items: List<ApkScanItem> = emptyList(),
+    val coverage: List<ScanCoverageItem> = emptyList(),
     val totalFiles: Long = 0,
     val totalBytes: Long = 0,
     val cleanReady: Boolean = false,
     val output: String = ""
+)
+
+private data class ScanCoverageItem(
+    val status: String,
+    val group: String,
+    val files: Long,
+    val bytes: Long,
+    val path: String,
+    val reason: String
 )
 
 private data class ApkScanItem(
@@ -536,6 +574,30 @@ private fun ApkScanScreen(
                             Spacer(Modifier.size(8.dp))
                             Text(if (state.running) "停止" else "重新连接")
                         }
+                    }
+                }
+            }
+        }
+
+        if (state.coverage.isNotEmpty()) {
+            item {
+                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    Text("SCAN COVERAGE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("扫描覆盖报告", fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Text("已扫描 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源；可直接查看未读取原因", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            items(state.coverage.take(40), key = { "${it.group}|${it.path}" }) { item ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                ) {
+                    Column(Modifier.padding(15.dp)) {
+                        Text("${if (item.status == "scanned") "✓" else "!"} ${item.group}", fontWeight = FontWeight.Bold)
+                        Text("${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text(item.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (item.reason.isNotBlank()) Text(item.reason, color = MaterialTheme.colorScheme.error, fontSize = 10.sp)
                     }
                 }
             }
