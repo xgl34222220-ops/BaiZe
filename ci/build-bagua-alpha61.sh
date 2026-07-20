@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$PWD"
-trap 'rc=$?; mkdir -p "$ROOT_DIR/work"; printf "exit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > "$ROOT_DIR/work/alpha61-error.txt"; [ -f "$ROOT_DIR/status-test.txt" ] && cp "$ROOT_DIR/status-test.txt" "$ROOT_DIR/work/status-test-failed.txt" || true; exit "$rc"' ERR
+trap 'rc=$?; mkdir -p "$ROOT_DIR/work"; printf "exit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > "$ROOT_DIR/work/alpha62-error.txt"; [ -f "$ROOT_DIR/status-test.txt" ] && cp "$ROOT_DIR/status-test.txt" "$ROOT_DIR/work/status-test-failed.txt" || true; exit "$rc"' ERR
 
 rm -rf work bagua-alpha5-source.zip status-test.txt
 cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
@@ -17,6 +17,7 @@ base64 -d ci/bagua-alpha6-patch.py.gz.b64 | gzip -d > ci/patch-bagua-alpha6.py
 echo "dde1a731ccb9678ee2fe24c8af90048522ff0397e28e8a527a4aff3efd26ba61  ci/patch-bagua-alpha6.py" | sha256sum -c -
 python3 ci/patch-bagua-alpha6.py work
 python3 ci/patch-bagua-alpha61.py work
+python3 ci/patch-bagua-alpha62.py work
 
 cd work
 C=app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
@@ -27,12 +28,13 @@ for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.s
   bash -n "$f"
 done
 ! grep -Fq 'trimIndent().replace("\n", "; ")' "$C"
-grep -Fq '""".trimIndent()' "$C"
+! grep -Fq 'exec sh "${'$'}SCRIPT"' "$C"
+grep -Fq 'sh "${'$'}SCRIPT"' "$C"
 grep -q 'accessIssue = "command_failed"' "$C"
-grep -q '模块检测命令执行失败' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
-grep -q 'versionName = "0.6.1-alpha.6.1"' app/build.gradle.kts
-grep -q '^version=0.6.1-alpha.6.1$' module-src/module.prop
-grep -q '^versionCode=108$' module-src/module.prop
+grep -q 'COMMAND_ERROR' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+grep -q 'versionName = "0.6.2-alpha.6.2"' app/build.gradle.kts
+grep -q '^version=0.6.2-alpha.6.2$' module-src/module.prop
+grep -q '^versionCode=109$' module-src/module.prop
 
 sudo rm -rf /data/adb/modules/bagua /data/adb/modules_update/bagua /data/adb/bagua
 sudo mkdir -p /data/adb/modules
@@ -52,28 +54,30 @@ if [ -z "$SCRIPT" ]; then
   done
 fi
 [ -n "$SCRIPT" ] || { echo ERROR=module_not_installed; exit 127; }
-exec sh "$SCRIPT" status
+sh "$SCRIPT" status
 ' > ../status-test.txt
 test -s ../status-test.txt
+grep -q '^NAME=八卦$' ../status-test.txt
+grep -q '^VERSION=0.6.2-alpha.6.2$' ../status-test.txt
 
 set -o pipefail
-gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha61.log
+gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha62.log
 bash scripts/package-module.sh
 
-ZIP=dist/BaGua-v0.6.1-alpha.6.1-AppOnly.zip
+ZIP=dist/BaGua-v0.6.2-alpha.6.2-AppOnly.zip
 APK=module-src/app/bagua.apk
 AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
 unzip -tq "$ZIP"
 unzip -l "$ZIP" | grep -q 'app/bagua.apk'
 unzip -l "$ZIP" | grep -q 'scripts/bagua.sh'
 ! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
-unzip -p "$ZIP" module.prop | grep -q '^version=0.6.1-alpha.6.1$'
-unzip -p "$ZIP" module.prop | grep -q '^versionCode=108$'
+unzip -p "$ZIP" module.prop | grep -q '^version=0.6.2-alpha.6.2$'
+unzip -p "$ZIP" module.prop | grep -q '^versionCode=109$'
 "$AAPT" dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
-"$AAPT" dump badging "$APK" | grep -q "versionCode='108'"
-"$AAPT" dump badging "$APK" | grep -q "versionName='0.6.1-alpha.6.1'"
+"$AAPT" dump badging "$APK" | grep -q "versionCode='109'"
+"$AAPT" dump badging "$APK" | grep -q "versionName='0.6.2-alpha.6.2'"
 "$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
-test -s dist/BaGua-v0.6.1-alpha.6.1-SHA256.txt
+test -s dist/BaGua-v0.6.2-alpha.6.2-SHA256.txt
 
 mkdir -p split
 split -b 2M -d -a 2 "$ZIP" split/module.part.
@@ -85,6 +89,6 @@ done
 cat split/module.part.0* > split/reconstructed.zip
 cmp -s split/reconstructed.zip "$ZIP"
 rm split/reconstructed.zip
-cp dist/BaGua-v0.6.1-alpha.6.1-AppOnly-Source.zip split/
-cp dist/BaGua-v0.6.1-alpha.6.1-SHA256.txt split/
+cp dist/BaGua-v0.6.2-alpha.6.2-AppOnly-Source.zip split/
+cp dist/BaGua-v0.6.2-alpha.6.2-SHA256.txt split/
 cp ../status-test.txt split/
