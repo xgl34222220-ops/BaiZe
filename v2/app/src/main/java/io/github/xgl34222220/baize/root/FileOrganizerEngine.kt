@@ -16,9 +16,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Root-side immutable file organizer plan.
  *
- * Binder responses are deliberately bounded: scan returns only a summary and the first preview
- * page, while apply/undo detail arrays are capped. The complete move plan remains inside the Root
- * process so large QQ/TIM receive folders never overflow Binder's transaction buffer.
+ * Binder responses are bounded. The complete move plan remains inside the Root process, while the
+ * App only receives a small summary. Alpha 11 also treats regular files placed directly in
+ * /data/media/<user> as organizer sources without recursively sweeping unrelated top-level folders.
  */
 class FileOrganizerEngine(
     private val cancelled: AtomicBoolean,
@@ -66,17 +66,32 @@ class FileOrganizerEngine(
     fun scan(progress: (Progress) -> Unit): String {
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
-        val roots = discoverDownloadRoots(started, progress)
+        val mediaRoots = mediaUserRoots()
+        val downloadRoots = discoverDownloadRoots(started, progress)
         if (cancelled.get()) {
             return JSONObject().put("cancelled", true).put("message", "文件归类扫描已停止").toString()
         }
 
         val items = LinkedHashMap<String, PlannedMove>()
-        for ((index, root) in roots.withIndex()) {
-            if (cancelled.get() || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) break
-            progress(Progress("正在读取下载目录", index + 1, roots.size, displayPath(root.path)))
+        val sourceCount = mediaRoots.size + downloadRoots.size
+
+        mediaRoots.forEachIndexed { index, root ->
+            if (cancelled.get() || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) return@forEachIndexed
+            progress(Progress("正在读取内部存储根目录", index + 1, sourceCount, displayPath(root.path)))
+            collectTopLevelMediaFiles(root, started, items, progress)
+        }
+
+        downloadRoots.forEachIndexed { index, root ->
+            if (cancelled.get() || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) return@forEachIndexed
+            progress(
+                Progress(
+                    "正在读取下载与接收目录",
+                    mediaRoots.size + index + 1,
+                    sourceCount,
+                    displayPath(root.path)
+                )
+            )
             collectFiles(root, started, items, progress)
-            if (items.size >= MAX_ITEMS) break
         }
 
         val immutable = items.values.sortedWith(
@@ -86,7 +101,7 @@ class FileOrganizerEngine(
         )
         val id = UUID.randomUUID().toString()
         val truncated = immutable.size >= MAX_ITEMS || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS
-        snapshot = Snapshot(id, System.currentTimeMillis(), roots.size, truncated, immutable)
+        snapshot = Snapshot(id, System.currentTimeMillis(), sourceCount, truncated, immutable)
 
         val categoryCounts = JSONObject()
         val sourceCounts = JSONObject()
@@ -103,7 +118,7 @@ class FileOrganizerEngine(
             .put("success", true)
             .put("snapshotId", id)
             .put("expiresInMs", SNAPSHOT_TTL_MS)
-            .put("roots", roots.size)
+            .put("roots", sourceCount)
             .put("total", immutable.size)
             .put("totalBytes", totalBytes)
             .put("truncated", truncated)
@@ -118,12 +133,12 @@ class FileOrganizerEngine(
 
     fun page(snapshotId: String, offset: Int, limit: Int): String {
         val current = validSnapshot(snapshotId)
-            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新扫描")
+            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新执行一键归类")
         val safeOffset = offset.coerceIn(0, current.items.size)
         val safeLimit = limit.coerceIn(1, MAX_PAGE_SIZE)
         val end = (safeOffset + safeLimit).coerceAtMost(current.items.size)
         val array = JSONArray()
-        current.items.subList(safeOffset, end).forEach { item -> array.put(itemJson(item)) }
+        current.items.subList(safeOffset, end).forEach { array.put(itemJson(it)) }
         return JSONObject()
             .put("success", true)
             .put("snapshotId", current.id)
@@ -138,14 +153,14 @@ class FileOrganizerEngine(
 
     fun apply(snapshotId: String, selectionJson: String, progress: (Progress) -> Unit): String {
         val current = validSnapshot(snapshotId)
-            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新扫描")
+            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新执行一键归类")
         val selection = parseSelection(selectionJson)
         val selected = if (selection.all) {
             current.items.filterNot { it.id in selection.excludedIds }
         } else {
             current.items.filter { it.id in selection.ids }
         }
-        if (selected.isEmpty()) return error("empty_selection", "没有选择需要归类的文件")
+        if (selected.isEmpty()) return error("empty_selection", "没有需要归类的文件")
 
         val moves = JSONArray()
         val details = JSONArray()
@@ -156,11 +171,8 @@ class FileOrganizerEngine(
         var bytes = 0L
 
         fun appendDetail(item: PlannedMove, action: String, reason: String) {
-            if (details.length() < MAX_RESULT_DETAILS) {
-                details.put(detail(item, action, reason))
-            } else {
-                detailTruncated = true
-            }
+            if (details.length() < MAX_RESULT_DETAILS) details.put(detail(item, action, reason))
+            else detailTruncated = true
         }
 
         for ((index, item) in selected.withIndex()) {
@@ -253,7 +265,7 @@ class FileOrganizerEngine(
                 !destination.isFile -> "归类后的文件已不存在"
                 isSymlink(destination) -> "符号链接不允许撤销"
                 expected.isBlank() || fingerprint(destination) != expected -> "归类后的文件已发生变化"
-                !allowedDownloadSource(source.path) -> "原路径不再属于允许的下载目录"
+                !allowedOrganizerSource(source.path) -> "原路径不再属于允许的归类来源"
                 else -> null
             }
             if (reason != null) {
@@ -281,9 +293,8 @@ class FileOrganizerEngine(
                     true
                 }
             }.getOrDefault(false)
-            if (ok) {
-                restored += 1
-            } else {
+            if (ok) restored += 1
+            else {
                 failed += 1
                 remaining.put(move)
                 appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
@@ -303,13 +314,16 @@ class FileOrganizerEngine(
             .toString()
     }
 
+    private fun mediaUserRoots(): List<File> =
+        File("/data/media").listFiles()
+            ?.filter { it.isDirectory && it.name.all(Char::isDigit) && !isSymlink(it) }
+            ?.sortedBy { it.path }
+            .orEmpty()
+
     private fun discoverDownloadRoots(started: Long, progress: (Progress) -> Unit): List<File> {
         val roots = LinkedHashMap<String, File>()
         val scanBases = mutableListOf<Pair<File, Int>>()
-
-        File("/data/media").listFiles()
-            ?.filter { it.isDirectory && it.name.all(Char::isDigit) }
-            ?.forEach { scanBases += it to 8 }
+        mediaUserRoots().forEach { scanBases += it to 8 }
 
         listOf(File("/data/user"), File("/data/user_de")).forEach { base ->
             base.listFiles()
@@ -346,6 +360,23 @@ class FileOrganizerEngine(
         return roots.values.sortedBy { it.path }
     }
 
+    private fun collectTopLevelMediaFiles(
+        mediaRoot: File,
+        started: Long,
+        out: MutableMap<String, PlannedMove>,
+        progress: (Progress) -> Unit
+    ) {
+        val rootPath = canonical(mediaRoot)
+        val userId = userIdForPath("$rootPath/") ?: return
+        val files = mediaRoot.listFiles()?.filter { it.isFile && !isSymlink(it) }.orEmpty()
+        files.forEachIndexed { index, file ->
+            if (cancelled.get() || out.size >= MAX_ITEMS || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) return
+            if (skipFile(file)) return@forEachIndexed
+            if (index % 100 == 0) progress(Progress("正在读取内部存储根目录文件", index + 1, files.size, displayPath(file.path)))
+            addPlannedMove(file, rootPath, "内部存储根目录", userId, out)
+        }
+    }
+
     private fun collectFiles(
         root: File,
         started: Long,
@@ -354,7 +385,6 @@ class FileOrganizerEngine(
     ) {
         val rootPath = canonical(root)
         val userId = userIdForPath(rootPath) ?: return
-        val destinationBase = File("/data/media/$userId/BaiZe归类")
         val sourceGroup = sourceGroup(rootPath)
         val stack = ArrayDeque<Pair<File, Int>>()
         stack.add(root to 0)
@@ -374,29 +404,40 @@ class FileOrganizerEngine(
             if (!file.isFile || skipFile(file)) continue
             visited += 1
             if (visited % 200 == 0) progress(Progress("正在建立不可变归类计划", out.size, MAX_ITEMS, displayPath(path)))
-            val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: continue
-            val statFingerprint = fingerprint(sourceStat)
-            val category = category(file.name)
-            val destination = File(File(destinationBase, category), file.name)
-            val id = sha256Text("$path\u0000$statFingerprint")
-            out.putIfAbsent(
-                id,
-                PlannedMove(
-                    id = id,
-                    source = path,
-                    sourceRoot = rootPath,
-                    sourceGroup = sourceGroup,
-                    destination = destination.path,
-                    category = category,
-                    name = file.name,
-                    bytes = file.length().coerceAtLeast(0L),
-                    fingerprint = statFingerprint,
-                    sourceUid = sourceStat.st_uid,
-                    sourceGid = sourceStat.st_gid,
-                    sourceMode = sourceStat.st_mode
-                )
-            )
+            addPlannedMove(file, rootPath, sourceGroup, userId, out)
         }
+    }
+
+    private fun addPlannedMove(
+        file: File,
+        sourceRoot: String,
+        sourceGroup: String,
+        userId: Int,
+        out: MutableMap<String, PlannedMove>
+    ) {
+        val path = canonical(file)
+        val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: return
+        val statFingerprint = fingerprint(sourceStat)
+        val category = category(file.name)
+        val destination = File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
+        val id = sha256Text("$path\u0000$statFingerprint")
+        out.putIfAbsent(
+            id,
+            PlannedMove(
+                id = id,
+                source = path,
+                sourceRoot = sourceRoot,
+                sourceGroup = sourceGroup,
+                destination = destination.path,
+                category = category,
+                name = file.name,
+                bytes = file.length().coerceAtLeast(0L),
+                fingerprint = statFingerprint,
+                sourceUid = sourceStat.st_uid,
+                sourceGid = sourceStat.st_gid,
+                sourceMode = sourceStat.st_mode
+            )
+        )
     }
 
     private fun validatePlannedMove(item: PlannedMove, source: File, destination: File): String? {
@@ -404,7 +445,7 @@ class FileOrganizerEngine(
         if (sourcePath != item.source) return "源路径已变化"
         if (!source.isFile) return "文件已不存在"
         if (isSymlink(source)) return "符号链接受保护"
-        if (!allowedDownloadSource(sourcePath)) return "源文件不再属于下载或接收目录"
+        if (!allowedOrganizerSource(sourcePath)) return "源文件不再属于允许的归类来源"
         if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
         if (destination.exists()) return "归类目录已有同名文件"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
@@ -533,8 +574,10 @@ class FileOrganizerEngine(
         return path.split('/').any(::isDownloadDirectoryName)
     }
 
-    private fun allowedDownloadSource(path: String): Boolean =
-        allowedDownloadRoot(path.substringBeforeLast('/', path))
+    private fun allowedOrganizerSource(path: String): Boolean {
+        if (MEDIA_ROOT_FILE.matches(path)) return true
+        return allowedDownloadRoot(path.substringBeforeLast('/', path))
+    }
 
     private fun shouldPruneDiscovery(path: String, name: String): Boolean {
         val lower = name.lowercase()
@@ -564,7 +607,8 @@ class FileOrganizerEngine(
             "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "dng", "raw" -> "图片"
             "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "3gp", "ts" -> "视频"
             "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "wma", "amr" -> "音频"
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "md", "odt", "ods", "odp" -> "文档"
+            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "md",
+            "odt", "ods", "odp", "log", "json", "xml", "yaml", "yml", "conf", "ini" -> "文档"
             "apk", "apks", "xapk", "apkm", "aab" -> "安装包"
             "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "tgz", "tbz2" -> "压缩包"
             "epub", "mobi", "azw", "azw3", "fb2", "cbz", "cbr", "djvu" -> "电子书"
@@ -573,6 +617,7 @@ class FileOrganizerEngine(
     }
 
     private fun sourceGroup(path: String): String {
+        if (MEDIA_ROOT_FILE.matches(path)) return "内部存储根目录"
         val lower = path.lowercase()
         if (lower.contains("/qqfile_recv/") || lower.endsWith("/qqfile_recv")) return "QQ 接收文件"
         if (lower.contains("/timfile_recv/") || lower.endsWith("/timfile_recv")) return "TIM 接收文件"
@@ -582,9 +627,9 @@ class FileOrganizerEngine(
     }
 
     private fun userIdForPath(path: String): Int? {
-        val media = Regex("^/data/media/(\\d+)/").find("$path/")?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val media = Regex("^/data/media/(\\d+)(?:/|$)").find(path)?.groupValues?.getOrNull(1)?.toIntOrNull()
         if (media != null) return media
-        return Regex("^/data/(?:user|user_de)/(\\d+)/").find("$path/")?.groupValues?.getOrNull(1)?.toIntOrNull()
+        return Regex("^/data/(?:user|user_de)/(\\d+)(?:/|$)").find(path)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 
     private fun fingerprint(file: File): String = runCatching {
@@ -648,6 +693,7 @@ class FileOrganizerEngine(
 
     companion object {
         private val ID_PATTERN = Regex("^[a-f0-9]{64}$")
+        private val MEDIA_ROOT_FILE = Regex("^/data/media/\\d+/[^/]+$")
         private val DOWNLOAD_DIRECTORY_NAMES = setOf(
             "download", "downloads", "下载",
             "qqfile_recv", "qqmy_file_recv", "qqfile_receive",
