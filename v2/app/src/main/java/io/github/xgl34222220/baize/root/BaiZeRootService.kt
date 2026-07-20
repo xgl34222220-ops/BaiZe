@@ -80,7 +80,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.6-alpha7-system-cache")
+                .put("engine", "native-c-arm64-cache-v43.7-alpha8-organizer")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")

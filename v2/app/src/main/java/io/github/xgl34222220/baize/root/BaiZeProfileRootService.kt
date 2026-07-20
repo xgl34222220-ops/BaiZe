@@ -29,6 +29,9 @@ class BaiZeProfileRootService : RootService() {
     private val instantCacheEngine by lazy {
         InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
     }
+    private val fileOrganizerEngine by lazy {
+        FileOrganizerEngine(cancelled, File(STATE_DIR))
+    }
 
     @Volatile
     private var taskStateJson: String = idleState()
@@ -41,7 +44,7 @@ class BaiZeProfileRootService : RootService() {
             .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
-            .put("engine", "module-auto-cleaner-v8+native-audit")
+            .put("engine", "module-auto-cleaner-v9+organizer")
             .toString()
 
         override fun getProfileCatalog(): String = engine.catalog()
@@ -134,6 +137,54 @@ class BaiZeProfileRootService : RootService() {
                 instantCacheEngine.run(requestJson.orEmpty(), started)
             } catch (error: Throwable) {
                 failure("instant_cache_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun scanFileOrganizer(): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-scan")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.scan { progress ->
+                    updateOrganizerState("file-organizer-scan", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_scan_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-apply")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
+                    updateOrganizerState("file-organizer-apply", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_apply_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun undoFileOrganizer(): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-undo")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.undo { progress ->
+                    updateOrganizerState("file-organizer-undo", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_undo_failed", error)
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
@@ -975,6 +1026,22 @@ class BaiZeProfileRootService : RootService() {
             .put("deletedBytes", progress.bytes)
             .put("deletedFiles", progress.files)
             .put("failures", progress.failures)
+            .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
+            .toString()
+    }
+
+    private fun updateOrganizerState(
+        operation: String,
+        progress: FileOrganizerEngine.Progress,
+        started: Long
+    ) {
+        taskStateJson = JSONObject()
+            .put("running", true)
+            .put("operation", operation)
+            .put("phase", progress.phase)
+            .put("current", progress.current)
+            .put("total", progress.total)
+            .put("currentPath", progress.path)
             .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
             .toString()
     }

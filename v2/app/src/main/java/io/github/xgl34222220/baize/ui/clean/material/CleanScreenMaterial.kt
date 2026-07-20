@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderDelete
+import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Search
@@ -66,9 +67,6 @@ import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
 import io.github.xgl34222220.baize.ui.clean.formatHours
 import io.github.xgl34222220.baize.ui.clean.formatMinutes
-import io.github.xgl34222220.baize.ui.clean.scanRateText
-import io.github.xgl34222220.baize.ui.clean.scanWorkerModeLabel
-import io.github.xgl34222220.baize.ui.clean.scanWorkerReasonLabel
 
 private data class MaterialQuickAction(
     val icon: ImageVector,
@@ -110,6 +108,7 @@ fun CleanScreenMaterial(
         MaterialQuickAction(Icons.Rounded.Search, "垃圾扫描", "只扫描并生成可清理快照", actions.onScan),
         MaterialQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK、APKS 与 XAPK", actions.onApkScan),
         MaterialQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
+        MaterialQuickAction(Icons.Rounded.FolderCopy, "文件归类", "扫描所有下载目录并按类型整理", actions.onFileOrganizer),
         MaterialQuickAction(Icons.Rounded.DeleteSweep, "深度清理", "扫描日志、临时文件与常见残留", actions.onDeepClean),
         MaterialQuickAction(Icons.Rounded.FolderDelete, "卸载残留", "扫描无主 data、obb 与 media 目录", actions.onCorpses),
         MaterialQuickAction(Icons.Rounded.Rule, "清理明细", "查看规则、范围与最近命中", actions.onAudit)
@@ -217,14 +216,6 @@ fun CleanScreenMaterial(
         }
         item {
             MaterialSectionHeader(
-                eyebrow = "SCAN PERFORMANCE",
-                title = "扫描性能策略",
-                subtitle = "按本机真实吞吐选择串行或双工作进程"
-            )
-        }
-        item { MaterialScanPerformanceCard(state, actions) }
-        item {
-            MaterialSectionHeader(
                 eyebrow = "MANUAL TOOLS",
                 title = "手动清理工具",
                 subtitle = "直接执行扫描、深度清理或查看规则明细"
@@ -251,97 +242,6 @@ fun CleanScreenMaterial(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MaterialScanPerformanceCard(
-    state: CleanUiState,
-    actions: CleanUiActions
-) {
-    val performance = state.scanPerformance
-    Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Text("扫描工作进程", fontWeight = FontWeight.Black, fontSize = 18.sp)
-            Text(
-                scanWorkerReasonLabel(performance.workerReason),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(0, 1, 2).forEach { mode ->
-                    if (state.scanRootWorkers == mode) {
-                        FilledTonalButton(
-                            onClick = { actions.onScanWorkerModeChanged(mode) },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp)
-                        ) {
-                            Text(scanWorkerModeLabel(mode), fontSize = 11.sp, maxLines = 1)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = { actions.onScanWorkerModeChanged(mode) },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 4.dp)
-                        ) {
-                            Text(scanWorkerModeLabel(mode), fontSize = 11.sp, maxLines = 1)
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
-            MaterialPerformanceMetric("本次实际", if (performance.actualWorkers == 2) "双工作进程" else "串行")
-            MaterialPerformanceMetric("本机推荐", if (performance.recommendedWorkers == 2) "双工作进程" else "串行")
-            MaterialPerformanceMetric("串行吞吐", scanRateText(performance.serialRate))
-            MaterialPerformanceMetric("双进程吞吐", scanRateText(performance.parallelRate))
-            MaterialPerformanceMetric(
-                "并发提升",
-                if (performance.serialRate > 0 && performance.parallelRate > 0) {
-                    val prefix = if (performance.parallelGainPercent > 0) "+" else ""
-                    "$prefix${performance.parallelGainPercent}%"
-                } else "等待对比样本"
-            )
-            MaterialPerformanceMetric(
-                "学习进度",
-                if (performance.successfulRuns > 0) {
-                    "${performance.successfulRuns} 次 · 下次复测 ${performance.nextProbeRun.takeIf { it > 0 } ?: "待定"}"
-                } else "下一次自动扫描开始学习"
-            )
-            TextButton(
-                onClick = actions.onResetScanPerformance,
-                enabled = performance.available,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("清除基准并重新学习")
-            }
-            Text(
-                "修改策略后点击上方“保存自动清理设置”才会写入模块。固定双进程只影响扫描，不改变快照清理逻辑。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun MaterialPerformanceMetric(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        Spacer(Modifier.weight(1f))
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
 

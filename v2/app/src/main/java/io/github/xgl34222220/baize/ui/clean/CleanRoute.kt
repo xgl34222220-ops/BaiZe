@@ -7,6 +7,7 @@ import io.github.xgl34222220.baize.ApkScanActivity
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.InstantCacheActivity
+import io.github.xgl34222220.baize.FileOrganizerActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.SmartScanActivity
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
@@ -25,8 +26,7 @@ fun CleanRoute(
         engineReady = dashboard.ready,
         running = dashboard.running,
         scanSnapshotReady = dashboard.scanCompleted,
-        serviceText = dashboard.serviceText,
-        scanPerformance = dashboard.scanPerformance
+        serviceText = dashboard.serviceText
     )
 
     val actions = CleanUiActions(
@@ -51,14 +51,11 @@ fun CleanRoute(
         onApkPackagesChanged = { enabled ->
             dashboardActions.updateScheduler(scheduler.copy(apkPackagesEnabled = enabled))
         },
-        onScanWorkerModeChanged = { mode ->
-            dashboardActions.updateScheduler(scheduler.copy(scanRootWorkers = mode.coerceIn(0, 2)))
-        },
-        onResetScanPerformance = dashboardActions.resetScanPerformance,
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = { context.startActivity(Intent(context, SmartScanActivity::class.java)) },
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
         onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
+        onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
         onAudit = dashboardActions.audit

@@ -280,7 +280,7 @@ data class SchedulerUiState(
         .put("max_file_mb", maxFileMb.coerceIn(16, 2048))
         .put("clean_apk_packages", apkPackagesEnabled.flag())
         .put("apk_package_days", apkPackageDays.coerceIn(0, 365))
-        .put("scan_root_workers", scanRootWorkers.coerceIn(0, 2))
+        .put("scan_root_workers", 0)
 
     companion object {
         fun fromJson(json: JSONObject) = SchedulerUiState(
@@ -308,7 +308,7 @@ data class SchedulerUiState(
             maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
             apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
             apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
-            scanRootWorkers = json.optInt("scan_root_workers", 0).coerceIn(0, 2)
+            scanRootWorkers = 0
         )
     }
 }

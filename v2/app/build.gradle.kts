@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22407
-        versionName = "2.1.0-alpha7"
+        versionCode = 22408
+        versionName = "2.1.0-alpha8"
     }
 
     buildFeatures {
