@@ -1,4 +1,4 @@
-name: Build BaGua Alpha 5 App-only
+name: Build BaGua Alpha 5.1 Root Fix
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bagua-alpha5-app-only-${{ github.ref }}
+  group: bagua-alpha51-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct and expand BaGua source
+      - name: Reconstruct, patch and expand BaGua source
         run: |
           set -e
           cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
@@ -30,6 +30,7 @@ jobs:
           unzip -q bagua-alpha5-source.zip -d work
           sed -i 's/fun setSkin(/fun applySkin(/; s/fun setThemeMode(/fun applyThemeMode(/; s/fun setAmoled(/fun applyAmoled(/; s/fun setMonet(/fun applyMonet(/' work/app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
           sed -i 's/controller::setSkin/controller::applySkin/g; s/controller::setThemeMode/controller::applyThemeMode/g; s/controller::setAmoled/controller::applyAmoled/g; s/controller::setMonet/controller::applyMonet/g' work/app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+          python3 ci/patch-bagua-alpha51.py work
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -48,13 +49,17 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Validate App-only source
+      - name: Validate Root fix and App-only source
         run: |
           set -e
           cd work
           test ! -d module-src/webroot
           test ! -d module-src/webui
           test ! -d module-src/www
+          grep -q 'accessIssue = "root_required"' app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
+          grep -q 'Shell.FLAG_MOUNT_MASTER' app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
+          grep -q '重新请求 Root 并检测' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+          grep -q 'versionName = "0.5.1-alpha.5.1"' app/build.gradle.kts
           for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.sh module-src/action.sh module-src/uninstall.sh module-src/scripts/*.sh; do
             bash -n "$f"
           done
@@ -65,14 +70,14 @@ jobs:
         working-directory: work
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha5.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha51.log
 
       - name: Print compiler diagnostics
         if: steps.app_build.outcome != 'success'
         working-directory: work
         run: |
           echo '===== COMPILER DIAGNOSTICS ====='
-          grep -E '(^e: | error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot infer|No parameter)' build-alpha5.log | tail -n 160 || tail -n 200 build-alpha5.log
+          grep -E '(^e: | error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot infer|No parameter)' build-alpha51.log | tail -n 180 || tail -n 220 build-alpha51.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
@@ -84,7 +89,7 @@ jobs:
         working-directory: work
         run: |
           set -e
-          ZIP=dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
+          ZIP=dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip
           APK=module-src/app/bagua.apk
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           unzip -tq "$ZIP"
@@ -92,24 +97,25 @@ jobs:
           unzip -l "$ZIP" | grep -q 'scripts/install-app.sh'
           unzip -l "$ZIP" | grep -q 'scripts/bagua.sh'
           ! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
-          unzip -p "$ZIP" module.prop | grep -q '^version=0.5.0-alpha.5$'
-          unzip -p "$ZIP" module.prop | grep -q '^versionCode=105$'
+          unzip -p "$ZIP" module.prop | grep -q '^version=0.5.1-alpha.5.1$'
+          unzip -p "$ZIP" module.prop | grep -q '^versionCode=106$'
           "$AAPT" dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
-          "$AAPT" dump badging "$APK" | grep -q "versionCode='105'"
+          "$AAPT" dump badging "$APK" | grep -q "versionCode='106'"
+          "$AAPT" dump badging "$APK" | grep -q "versionName='0.5.1-alpha.5.1'"
           "$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
-          test -s dist/BaGua-v0.5.0-alpha.5-SHA256.txt
+          test -s dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt
 
-      - name: Upload App-only build and diagnostics
+      - name: Upload Alpha 5.1 build and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua-v0.5.0-alpha.5-AppOnly
+          name: BaGua-v0.5.1-alpha.5.1-RootFix
           if-no-files-found: warn
           path: |
-            work/build-alpha5.log
-            work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Module.zip
-            work/dist/BaGua-v0.5.0-alpha.5-AppOnly-Source.zip
-            work/dist/BaGua-v0.5.0-alpha.5-SHA256.txt
+            work/build-alpha51.log
+            work/dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip
+            work/dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip
+            work/dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt
             work/module-src/app/bagua.apk
 
       - name: Fail when native App build failed
