@@ -1,0 +1,40 @@
++        if (moves.length() > 0) persistUndo(moves) else undoFile().delete()
++        snapshot = null
++        return JSONObject()
++            .put("success", failed == 0)
++            .put("cancelled", cancelled.get())
++            .put("moved", moved)
++            .put("skipped", skipped)
++            .put("failed", failed)
++            .put("bytes", bytes)
++            .put("undoAvailable", moves.length() > 0)
++            .put("details", details)
++            .toString()
++    }
++
++    fun undo(progress: (Progress) -> Unit): String {
++        val record = readUndo()
++            ?: return error("undo_missing", "没有可撤销的文件归类记录")
++        val moves = record.optJSONArray("moves") ?: JSONArray()
++        if (moves.length() == 0) return error("undo_missing", "没有可撤销的文件归类记录")
++
++        val remaining = JSONArray()
++        val details = JSONArray()
++        var restored = 0
++        var skipped = 0
++        var failed = 0
++
++        for (index in moves.length() - 1 downTo 0) {
++            if (cancelled.get()) {
++                for (rest in 0..index) remaining.put(moves.optJSONObject(rest))
++                break
++            }
++            val move = moves.optJSONObject(index) ?: continue
++            val source = File(move.optString("source"))
++            val destination = File(move.optString("destination"))
++            progress(Progress("正在撤销文件归类", moves.length() - index, moves.length(), displayPath(destination.path)))
++
++            val expected = move.optString("destinationFingerprint")
++            val reason = when {
++                source.exists() -> "原位置已存在同名文件"
++                !destination.isFile -> "归类后的文件已不存在"
