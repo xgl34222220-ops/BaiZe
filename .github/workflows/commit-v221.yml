@@ -20,3 +20,4 @@ jobs:
           git add -A
           git commit -m 'fix: apply v2.2.1 generated sources'
           git push origin HEAD:fix/v2.2.1-logs-icons
+      - run: echo v2.2.1-hotfix-commit-complete
