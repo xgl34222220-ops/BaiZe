@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.1.0-alpha6-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.1.0-alpha7-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -77,8 +77,8 @@ unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha6$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22406$'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha7$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22407$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1

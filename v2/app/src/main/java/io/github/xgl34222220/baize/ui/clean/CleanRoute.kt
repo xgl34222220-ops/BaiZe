@@ -6,6 +6,7 @@ import androidx.compose.ui.platform.LocalContext
 import io.github.xgl34222220.baize.ApkScanActivity
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
+import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.SmartScanActivity
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
@@ -57,6 +58,7 @@ fun CleanRoute(
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = { context.startActivity(Intent(context, SmartScanActivity::class.java)) },
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
+        onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
         onAudit = dashboardActions.audit

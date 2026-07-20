@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.1.0-alpha6
-versionCode=22406
+version=v2.1.0-alpha7
+versionCode=22407
 author=惜故里丶
-description=白泽 v2.1.0 Alpha 6：原生 App 展示并控制本机扫描策略，可重置基准重新学习。
+description=白泽 v2.1.0 Alpha 7：新增与精准快照分离的手动系统即时清缓存工具。

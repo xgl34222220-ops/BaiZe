@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -113,6 +114,7 @@ fun CleanScreenMiuix(
     val quickActions = listOf(
         MiuixQuickAction(Icons.Rounded.Search, "垃圾扫描", "生成快照，不立即删除", actions.onScan),
         MiuixQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK / APKS / XAPK", actions.onApkScan),
+        MiuixQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
         MiuixQuickAction(Icons.Rounded.DeleteSweep, "深度清理", "日志、临时文件和常见残留", actions.onDeepClean),
         MiuixQuickAction(Icons.Rounded.FolderDelete, "卸载残留", "无主 data、obb 与 media 目录", actions.onCorpses),
         MiuixQuickAction(Icons.Rounded.Rule, "清理明细", "规则范围和最近命中", actions.onAudit)

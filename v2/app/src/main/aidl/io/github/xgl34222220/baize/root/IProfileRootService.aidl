@@ -17,6 +17,7 @@ interface IProfileRootService {
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
     String resetScanWorkerProfile();
+    String clearPackageCaches(String requestJson);
 
     String getInstalledPackageCatalog();
     String getWhitelistPackages();

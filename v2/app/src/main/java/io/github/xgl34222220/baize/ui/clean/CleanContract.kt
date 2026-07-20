@@ -67,6 +67,7 @@ data class CleanUiActions(
     val onSave: () -> Unit,
     val onScan: () -> Unit,
     val onApkScan: () -> Unit,
+    val onInstantCache: () -> Unit,
     val onDeepClean: () -> Unit,
     val onCorpses: () -> Unit,
     val onAudit: () -> Unit

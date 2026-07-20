@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -108,6 +109,7 @@ fun CleanScreenMaterial(
     val quickActions = listOf(
         MaterialQuickAction(Icons.Rounded.Search, "垃圾扫描", "只扫描并生成可清理快照", actions.onScan),
         MaterialQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK、APKS 与 XAPK", actions.onApkScan),
+        MaterialQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
         MaterialQuickAction(Icons.Rounded.DeleteSweep, "深度清理", "扫描日志、临时文件与常见残留", actions.onDeepClean),
         MaterialQuickAction(Icons.Rounded.FolderDelete, "卸载残留", "扫描无主 data、obb 与 media 目录", actions.onCorpses),
         MaterialQuickAction(Icons.Rounded.Rule, "清理明细", "查看规则、范围与最近命中", actions.onAudit)

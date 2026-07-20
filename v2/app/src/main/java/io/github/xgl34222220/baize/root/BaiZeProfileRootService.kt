@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Persistent root service for the Alpha 6 automatic module path and advanced native audits.
+ * Persistent root service for the Alpha 7 automatic module path, audits and explicit cache-only requests.
  *
  * Ordinary users call [runModuleTask] with `clean` or `scan`. The complete v1 cleaner performs
  * discovery and cleaning in one task, so the UI never asks the user to open every category and
@@ -26,6 +26,9 @@ class BaiZeProfileRootService : RootService() {
     private val cancelled = AtomicBoolean(false)
     private val taskRunning = AtomicBoolean(false)
     private val engine by lazy { NativeProfileEngine(this, cancelled) }
+    private val instantCacheEngine by lazy {
+        InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
+    }
 
     @Volatile
     private var taskStateJson: String = idleState()
@@ -122,6 +125,20 @@ class BaiZeProfileRootService : RootService() {
         override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
 
         override fun resetScanWorkerProfile(): String = resetScanWorkerProfileJson()
+
+        override fun clearPackageCaches(requestJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("instant-cache")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                instantCacheEngine.run(requestJson.orEmpty(), started)
+            } catch (error: Throwable) {
+                failure("instant_cache_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
 
         override fun getInstalledPackageCatalog(): String =
             this@BaiZeProfileRootService.installedPackageCatalogJson()
