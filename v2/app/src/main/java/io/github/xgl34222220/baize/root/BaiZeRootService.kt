@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v2.1.0 Alpha 4 bounded-parallel path-indexed One-pass cache task bridge.
+ * v2.1.0 Alpha 5 adaptive-worker path-indexed One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -62,6 +62,15 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotInternalWorkerMs = 0L
     @Volatile private var snapshotExternalWorkerMs = 0L
     @Volatile private var snapshotParallelOverlapMilli = 1000L
+    @Volatile private var snapshotWorkerPolicy = "auto"
+    @Volatile private var snapshotWorkerReason = "none"
+    @Volatile private var snapshotRecommendedWorkers = 1L
+    @Volatile private var snapshotParallelGainPercent = 0L
+    @Volatile private var snapshotWorkerProfileRuns = 0L
+    @Volatile private var snapshotSerialProfileRate = 0L
+    @Volatile private var snapshotParallelProfileRate = 0L
+    @Volatile private var snapshotNextProbeRun = 0L
+    @Volatile private var snapshotParallelBlockedUntil = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -71,7 +80,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.3-alpha4-bounded-parallel")
+                .put("engine", "native-c-arm64-cache-v43.4-alpha5-adaptive-workers")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -97,6 +106,15 @@ class BaiZeRootService : RootService() {
                 .put("internalWorkerMs", if (ready) snapshotInternalWorkerMs else 0L)
                 .put("externalWorkerMs", if (ready) snapshotExternalWorkerMs else 0L)
                 .put("parallelOverlapMilli", if (ready) snapshotParallelOverlapMilli else 1000L)
+                .put("workerPolicy", if (ready) snapshotWorkerPolicy else "auto")
+                .put("workerReason", if (ready) snapshotWorkerReason else "none")
+                .put("recommendedWorkers", if (ready) snapshotRecommendedWorkers else 1L)
+                .put("parallelGainPercent", if (ready) snapshotParallelGainPercent else 0L)
+                .put("workerProfileRuns", if (ready) snapshotWorkerProfileRuns else 0L)
+                .put("serialProfileRate", if (ready) snapshotSerialProfileRate else 0L)
+                .put("parallelProfileRate", if (ready) snapshotParallelProfileRate else 0L)
+                .put("nextProbeRun", if (ready) snapshotNextProbeRun else 0L)
+                .put("parallelBlockedUntil", if (ready) snapshotParallelBlockedUntil else 0L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -306,7 +324,16 @@ class BaiZeRootService : RootService() {
             .put("internalWorkerMs", snapshotInternalWorkerMs)
             .put("externalWorkerMs", snapshotExternalWorkerMs)
             .put("parallelOverlapMilli", snapshotParallelOverlapMilli)
-            .put("engine", "native-c-arm64-bounded-parallel-path-index")
+            .put("workerPolicy", snapshotWorkerPolicy)
+            .put("workerReason", snapshotWorkerReason)
+            .put("recommendedWorkers", snapshotRecommendedWorkers)
+            .put("parallelGainPercent", snapshotParallelGainPercent)
+            .put("workerProfileRuns", snapshotWorkerProfileRuns)
+            .put("serialProfileRate", snapshotSerialProfileRate)
+            .put("parallelProfileRate", snapshotParallelProfileRate)
+            .put("nextProbeRun", snapshotNextProbeRun)
+            .put("parallelBlockedUntil", snapshotParallelBlockedUntil)
+            .put("engine", "native-c-arm64-adaptive-worker-path-index")
             .toString()
     }
 
@@ -442,6 +469,15 @@ class BaiZeRootService : RootService() {
         snapshotInternalWorkerMs = state.optLong("internal_worker_ms", latest.optLong("internal_worker_ms", 0L)).coerceAtLeast(0L)
         snapshotExternalWorkerMs = state.optLong("external_worker_ms", latest.optLong("external_worker_ms", 0L)).coerceAtLeast(0L)
         snapshotParallelOverlapMilli = state.optLong("parallel_overlap_milli", latest.optLong("parallel_overlap_milli", 1000L)).coerceAtLeast(0L)
+        snapshotWorkerPolicy = state.optString("worker_policy", latest.optString("worker_policy", "auto"))
+        snapshotWorkerReason = state.optString("worker_reason", latest.optString("worker_reason", "none"))
+        snapshotRecommendedWorkers = state.optLong("recommended_workers", latest.optLong("recommended_workers", 1L)).coerceIn(1L, 2L)
+        snapshotParallelGainPercent = state.optLong("parallel_gain_percent", latest.optLong("parallel_gain_percent", 0L))
+        snapshotWorkerProfileRuns = state.optLong("worker_profile_runs", latest.optLong("worker_profile_runs", 0L)).coerceAtLeast(0L)
+        snapshotSerialProfileRate = state.optLong("serial_profile_rate", latest.optLong("serial_profile_rate", 0L)).coerceAtLeast(0L)
+        snapshotParallelProfileRate = state.optLong("parallel_profile_rate", latest.optLong("parallel_profile_rate", 0L)).coerceAtLeast(0L)
+        snapshotNextProbeRun = state.optLong("next_probe_run", latest.optLong("next_probe_run", 0L)).coerceAtLeast(0L)
+        snapshotParallelBlockedUntil = state.optLong("parallel_blocked_until", latest.optLong("parallel_blocked_until", 0L)).coerceAtLeast(0L)
         return true
     }
 
@@ -470,6 +506,15 @@ class BaiZeRootService : RootService() {
         snapshotInternalWorkerMs = 0L
         snapshotExternalWorkerMs = 0L
         snapshotParallelOverlapMilli = 1000L
+        snapshotWorkerPolicy = "auto"
+        snapshotWorkerReason = "none"
+        snapshotRecommendedWorkers = 1L
+        snapshotParallelGainPercent = 0L
+        snapshotWorkerProfileRuns = 0L
+        snapshotSerialProfileRate = 0L
+        snapshotParallelProfileRate = 0L
+        snapshotNextProbeRun = 0L
+        snapshotParallelBlockedUntil = 0L
     }
 
     private fun moduleTaskAlive(): Boolean {

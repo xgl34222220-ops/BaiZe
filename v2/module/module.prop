@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.1.0-alpha4
-versionCode=22404
+version=v2.1.0-alpha5
+versionCode=22405
 author=惜故里丶
-description=白泽 v2.1.0 Alpha 4：内部/外部根目录有限并发、原子快照发布与路径索引 One-pass。
+description=白泽 v2.1.0 Alpha 5：按本机历史吞吐自适应选择串行/双工作进程，保留原子快照与路径索引 One-pass。

@@ -13,7 +13,7 @@
 
 ## 版本
 
-- 模块：`v2.1.0-alpha4`
+- 模块：`v2.1.0-alpha5`
 - App：`2.1.0-alpha4`
 - versionCode：`22404`
 - 原生引擎：`43.3-alpha4-bounded-parallel`

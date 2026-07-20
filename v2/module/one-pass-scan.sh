@@ -17,6 +17,7 @@ LOCK_DIR="$STATE_DIR/run.lock"
 RUNNING_FILE="$STATE_DIR/running.env"
 STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
+WORKER_PROFILE="$STATE_DIR/root-worker-profile.env"
 NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$MODDIR/bin/arm64-v8a/baize_engine}
 CACHE_PREFIX=${BAIZE_CACHE_PREFIX:-cache_scan}
 case "$CACHE_PREFIX" in cache_scan|cache_auto) ;; *) echo "无效的缓存快照命名空间" >&2; exit 2 ;; esac
@@ -116,7 +117,7 @@ set_phase() {
     echo "progress_current=0"
     echo "progress_total=0"
     echo "current_path="
-    echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+    echo "engine=native-c-arm64-one-pass-path-index-adaptive-workers"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -144,9 +145,81 @@ min_positive() {
   [ "$b" -le 0 ] 2>/dev/null && { echo "$a"; return; }
   [ "$a" -le "$b" ] && echo "$a" || echo "$b"
 }
+profile_number() {
+  value=$(env_value "$WORKER_PROFILE" "$1")
+  case "$value" in ''|*[!0-9]*) value=${2:-0} ;; esac
+  echo "$value"
+}
+profile_integer() {
+  value=$(env_value "$WORKER_PROFILE" "$1")
+  case "$value" in ''|-) value=${2:-0} ;; *[!0-9-]*|--*|-*-*) value=${2:-0} ;; esac
+  echo "$value"
+}
+profile_text() {
+  value=$(env_value "$WORKER_PROFILE" "$1")
+  [ -n "$value" ] && echo "$value" || echo "${2:-}"
+}
+load_worker_profile() {
+  PROFILE_SERIAL_SAMPLES=$(profile_number serial_samples 0)
+  PROFILE_SERIAL_RATE=$(profile_number serial_rate 0)
+  PROFILE_SERIAL_WALL_MS=$(profile_number serial_wall_ms 0)
+  PROFILE_SERIAL_ITEMS=$(profile_number serial_items 0)
+  PROFILE_PARALLEL_SAMPLES=$(profile_number parallel_samples 0)
+  PROFILE_PARALLEL_RATE=$(profile_number parallel_rate 0)
+  PROFILE_PARALLEL_WALL_MS=$(profile_number parallel_wall_ms 0)
+  PROFILE_PARALLEL_ITEMS=$(profile_number parallel_items 0)
+  PROFILE_SUCCESSFUL_RUNS=$(profile_number successful_runs 0)
+  PROFILE_LAST_PROBE_RUN=$(profile_number last_probe_run 0)
+  PROFILE_LAST_ITEMS=$(profile_number last_items 0)
+  PROFILE_LAST_WORKERS=$(profile_number last_workers 1)
+  PROFILE_RECOMMENDED=$(profile_number recommended_workers 1)
+  PROFILE_GAIN_PERCENT=$(profile_integer parallel_gain_percent 0)
+  PROFILE_PARALLEL_FAILURES=$(profile_number parallel_failures 0)
+  PROFILE_BLOCKED_UNTIL=$(profile_number parallel_blocked_until 0)
+  PROFILE_LAST_DECISION=$(profile_text last_decision none)
+  PROFILE_UPDATED_EPOCH=$(profile_number updated_epoch 0)
+}
+write_worker_profile() {
+  tmp="$WORKER_PROFILE.tmp.$$"
+  {
+    echo "profile_version=1"
+    echo "serial_samples=$PROFILE_SERIAL_SAMPLES"
+    echo "serial_rate=$PROFILE_SERIAL_RATE"
+    echo "serial_wall_ms=$PROFILE_SERIAL_WALL_MS"
+    echo "serial_items=$PROFILE_SERIAL_ITEMS"
+    echo "parallel_samples=$PROFILE_PARALLEL_SAMPLES"
+    echo "parallel_rate=$PROFILE_PARALLEL_RATE"
+    echo "parallel_wall_ms=$PROFILE_PARALLEL_WALL_MS"
+    echo "parallel_items=$PROFILE_PARALLEL_ITEMS"
+    echo "successful_runs=$PROFILE_SUCCESSFUL_RUNS"
+    echo "last_probe_run=$PROFILE_LAST_PROBE_RUN"
+    echo "next_probe_run=$((PROFILE_LAST_PROBE_RUN + PARALLEL_REPROBE_RUNS))"
+    echo "last_items=$PROFILE_LAST_ITEMS"
+    echo "last_workers=$PROFILE_LAST_WORKERS"
+    echo "recommended_workers=$PROFILE_RECOMMENDED"
+    echo "parallel_gain_percent=$PROFILE_GAIN_PERCENT"
+    echo "parallel_failures=$PROFILE_PARALLEL_FAILURES"
+    echo "parallel_blocked_until=$PROFILE_BLOCKED_UNTIL"
+    echo "last_decision=$PROFILE_LAST_DECISION"
+    echo "updated_epoch=$PROFILE_UPDATED_EPOCH"
+  } >"$tmp"
+  chmod 0600 "$tmp" 2>/dev/null
+  mv -f "$tmp" "$WORKER_PROFILE"
+}
+calculate_profile_gain() {
+  if [ "$PROFILE_SERIAL_RATE" -gt 0 ] && [ "$PROFILE_PARALLEL_RATE" -gt 0 ]; then
+    PROFILE_GAIN_PERCENT=$(((PROFILE_PARALLEL_RATE - PROFILE_SERIAL_RATE) * 100 / PROFILE_SERIAL_RATE))
+  else
+    PROFILE_GAIN_PERCENT=0
+  fi
+}
 choose_root_workers() {
   requested=${BAIZE_ROOT_WORKERS:-$(get_config_uint scan_root_workers 0 0 2)}
   case "$requested" in 0|1|2) ;; *) requested=0 ;; esac
+  PARALLEL_MIN_ITEMS=$(get_config_uint scan_parallel_min_items 5000 100 10000000)
+  PARALLEL_MIN_GAIN=$(get_config_uint scan_parallel_min_gain_percent 15 5 50)
+  PARALLEL_REPROBE_RUNS=$(get_config_uint scan_parallel_reprobe_runs 6 2 50)
+  PARALLEL_COOLDOWN_HOURS=$(get_config_uint scan_parallel_failure_cooldown_hours 24 1 168)
   cpu_count=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null)
   case "$cpu_count" in ''|*[!0-9]*) cpu_count=1 ;; esac
   mem_kb=$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
@@ -158,17 +231,117 @@ choose_root_workers() {
   for userdir in "$MEDIA_ROOT"/[0-9]*; do
     [ -d "$userdir/Android/data" ] && { has_external=1; break; }
   done
-  if [ "$requested" = "0" ]; then
-    if [ "$cpu_count" -ge 4 ] && [ "$mem_kb" -ge 524288 ] && [ "$has_internal" = "1" ] && [ "$has_external" = "1" ]; then
-      echo 2
-    else
-      echo 1
-    fi
-  elif [ "$requested" = "2" ] && { [ "$has_internal" != "1" ] || [ "$has_external" != "1" ]; }; then
-    echo 1
-  else
-    echo "$requested"
+  PARALLEL_ELIGIBLE=0
+  [ "$cpu_count" -ge 4 ] && [ "$mem_kb" -ge 524288 ] && [ "$has_internal" = "1" ] && [ "$has_external" = "1" ] && PARALLEL_ELIGIBLE=1
+  load_worker_profile
+  ROOT_WORKERS=1
+  WORKER_POLICY=auto
+  WORKER_REASON=auto_bootstrap_serial
+  RECOMMENDED_WORKERS=$PROFILE_RECOMMENDED
+  [ "$RECOMMENDED_WORKERS" = "2" ] || RECOMMENDED_WORKERS=1
+  now_epoch=$(date +%s)
+  if [ "$requested" = "1" ]; then
+    WORKER_POLICY=manual
+    WORKER_REASON=manual_serial
+    RECOMMENDED_WORKERS=1
+    return
   fi
+  if [ "$requested" = "2" ]; then
+    WORKER_POLICY=manual
+    if [ "$has_internal" = "1" ] && [ "$has_external" = "1" ]; then
+      ROOT_WORKERS=2
+      WORKER_REASON=manual_parallel
+      RECOMMENDED_WORKERS=2
+    else
+      WORKER_REASON=manual_parallel_unavailable
+      RECOMMENDED_WORKERS=1
+    fi
+    return
+  fi
+  if [ "$PARALLEL_ELIGIBLE" != "1" ]; then
+    WORKER_REASON=auto_not_eligible
+    RECOMMENDED_WORKERS=1
+    return
+  fi
+  if [ "$PROFILE_BLOCKED_UNTIL" -gt "$now_epoch" ]; then
+    WORKER_REASON=auto_parallel_cooldown
+    RECOMMENDED_WORKERS=1
+    return
+  fi
+  if [ "$PROFILE_SERIAL_SAMPLES" -le 0 ]; then
+    WORKER_REASON=auto_bootstrap_serial
+    RECOMMENDED_WORKERS=1
+    return
+  fi
+  if [ "$PROFILE_LAST_ITEMS" -lt "$PARALLEL_MIN_ITEMS" ]; then
+    WORKER_REASON=auto_small_workload
+    RECOMMENDED_WORKERS=1
+    return
+  fi
+  if [ "$PROFILE_PARALLEL_SAMPLES" -le 0 ]; then
+    ROOT_WORKERS=2
+    WORKER_REASON=auto_parallel_probe
+    RECOMMENDED_WORKERS=1
+    return
+  fi
+  calculate_profile_gain
+  if [ "$PROFILE_GAIN_PERCENT" -ge "$PARALLEL_MIN_GAIN" ]; then RECOMMENDED_WORKERS=2; else RECOMMENDED_WORKERS=1; fi
+  runs_since_probe=$((PROFILE_SUCCESSFUL_RUNS - PROFILE_LAST_PROBE_RUN))
+  if [ "$runs_since_probe" -ge "$PARALLEL_REPROBE_RUNS" ]; then
+    if [ "$RECOMMENDED_WORKERS" = "2" ]; then
+      ROOT_WORKERS=1
+      WORKER_REASON=auto_serial_reprobe
+    else
+      ROOT_WORKERS=2
+      WORKER_REASON=auto_parallel_reprobe
+    fi
+  elif [ "$RECOMMENDED_WORKERS" = "2" ]; then
+    ROOT_WORKERS=2
+    WORKER_REASON=auto_parallel_faster
+  else
+    ROOT_WORKERS=1
+    WORKER_REASON=auto_serial_faster
+  fi
+}
+prepare_worker_profile_success() {
+  measured_items=$((C_VISITED_FILES + C_VISITED_DIRS))
+  measured_rate=$C_RATE
+  measured_wall=$PARALLEL_WALL_MS
+  PROFILE_SUCCESSFUL_RUNS=$((PROFILE_SUCCESSFUL_RUNS + 1))
+  PROFILE_LAST_ITEMS=$measured_items
+  PROFILE_LAST_WORKERS=$ROOT_WORKERS
+  PROFILE_LAST_DECISION=$WORKER_REASON
+  PROFILE_UPDATED_EPOCH=$(date +%s)
+  if [ "$ROOT_WORKERS" = "2" ]; then
+    PROFILE_PARALLEL_SAMPLES=$((PROFILE_PARALLEL_SAMPLES + 1))
+    if [ "$PROFILE_PARALLEL_RATE" -gt 0 ]; then PROFILE_PARALLEL_RATE=$(((PROFILE_PARALLEL_RATE * 3 + measured_rate) / 4)); else PROFILE_PARALLEL_RATE=$measured_rate; fi
+    if [ "$PROFILE_PARALLEL_WALL_MS" -gt 0 ]; then PROFILE_PARALLEL_WALL_MS=$(((PROFILE_PARALLEL_WALL_MS * 3 + measured_wall) / 4)); else PROFILE_PARALLEL_WALL_MS=$measured_wall; fi
+    PROFILE_PARALLEL_ITEMS=$measured_items
+    PROFILE_PARALLEL_FAILURES=0
+    PROFILE_BLOCKED_UNTIL=0
+  else
+    PROFILE_SERIAL_SAMPLES=$((PROFILE_SERIAL_SAMPLES + 1))
+    if [ "$PROFILE_SERIAL_RATE" -gt 0 ]; then PROFILE_SERIAL_RATE=$(((PROFILE_SERIAL_RATE * 3 + measured_rate) / 4)); else PROFILE_SERIAL_RATE=$measured_rate; fi
+    if [ "$PROFILE_SERIAL_WALL_MS" -gt 0 ]; then PROFILE_SERIAL_WALL_MS=$(((PROFILE_SERIAL_WALL_MS * 3 + measured_wall) / 4)); else PROFILE_SERIAL_WALL_MS=$measured_wall; fi
+    PROFILE_SERIAL_ITEMS=$measured_items
+  fi
+  case "$WORKER_REASON" in *probe*) PROFILE_LAST_PROBE_RUN=$PROFILE_SUCCESSFUL_RUNS ;; esac
+  calculate_profile_gain
+  if [ "$PROFILE_LAST_ITEMS" -ge "$PARALLEL_MIN_ITEMS" ] && [ "$PROFILE_SERIAL_SAMPLES" -gt 0 ] && [ "$PROFILE_PARALLEL_SAMPLES" -gt 0 ] && [ "$PROFILE_GAIN_PERCENT" -ge "$PARALLEL_MIN_GAIN" ]; then
+    PROFILE_RECOMMENDED=2
+  else
+    PROFILE_RECOMMENDED=1
+  fi
+  PROFILE_NEXT_PROBE_RUN=$((PROFILE_LAST_PROBE_RUN + PARALLEL_REPROBE_RUNS))
+}
+record_parallel_failure() {
+  [ "$ROOT_WORKERS" = "2" ] || return 0
+  PROFILE_PARALLEL_FAILURES=$((PROFILE_PARALLEL_FAILURES + 1))
+  PROFILE_BLOCKED_UNTIL=$(($(date +%s) + PARALLEL_COOLDOWN_HOURS * 3600))
+  PROFILE_RECOMMENDED=1
+  PROFILE_LAST_DECISION=auto_parallel_failed
+  PROFILE_UPDATED_EPOCH=$(date +%s)
+  write_worker_profile
 }
 write_parallel_progress() {
   internal_phase=$(env_value "$INTERNAL_PROGRESS" phase)
@@ -190,7 +363,7 @@ write_parallel_progress() {
     echo "root_workers=2"
     echo "internal_worker_pid=$INTERNAL_PID"
     echo "external_worker_pid=$EXTERNAL_PID"
-    echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+    echo "engine=native-c-arm64-one-pass-path-index-adaptive-workers"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -225,7 +398,7 @@ write_combined_cache_summary() {
     echo "whitelist_index_entries=$whitelist_index_entries"; echo "whitelist_index_queries=$whitelist_index_queries"
     echo "whitelist_ancestor_hits=$whitelist_ancestor_hits"; echo "whitelist_descendant_hits=$whitelist_descendant_hits"
     echo "pruned_subtrees=$pruned_subtrees"; echo "elapsed_ms=$wall_ms"; echo "items_per_second=$items_per_second"
-    echo "engine=native-c-arm64"; echo "version=43.3-alpha4-bounded-parallel"
+    echo "engine=native-c-arm64"; echo "version=43.4-alpha5-adaptive-workers"
   } >"$output"
 }
 
@@ -250,7 +423,7 @@ MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 cache_days=$(get_config_uint app_cache_days 0 0 365)
 external_days=$(get_config_uint external_cache_days 0 0 365)
 [ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
-ROOT_WORKERS=$(choose_root_workers)
+choose_root_workers
 PARALLEL_WALL_MS=0
 INTERNAL_WORKER_MS=0
 EXTERNAL_WORKER_MS=0
@@ -332,6 +505,7 @@ if [ "$ROOT_WORKERS" = "2" ]; then
   [ "$PARALLEL_WALL_MS" -ge 0 ] 2>/dev/null || PARALLEL_WALL_MS=0
   if [ "$WORKER_FAILURE_TRIGGERED" = "1" ] || { [ "$internal_code" -ne 0 ] && [ "$internal_code" -ne 9 ]; } || { [ "$external_code" -ne 0 ] && [ "$external_code" -ne 9 ]; }; then
     echo "有限并发扫描失败：内部=$internal_code 外部=$external_code；旧快照保持不变" >>"$LOG_FILE"
+    record_parallel_failure
     exit 8
   fi
   if [ "$internal_code" -eq 9 ] || [ "$external_code" -eq 9 ]; then
@@ -419,6 +593,8 @@ R_FIRST=$(summary_number "$CORPSE_SUMMARY" first_result_ms)
 R_ELAPSED=$(summary_number "$CORPSE_SUMMARY" elapsed_ms)
 R_RATE=$(summary_number "$CORPSE_SUMMARY" items_per_second)
 
+prepare_worker_profile_success
+
 scan_epoch=$(date +%s)
 mv -f "$CACHE_TARGETS_TMP" "$CACHE_TARGETS" || { echo "无法发布缓存目标快照" >&2; exit 8; }
 mv -f "$CACHE_ITEMS_TMP" "$CACHE_ITEMS" || { echo "无法发布缓存项目快照" >&2; exit 8; }
@@ -464,7 +640,16 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
   echo "internal_worker_ms=$INTERNAL_WORKER_MS"
   echo "external_worker_ms=$EXTERNAL_WORKER_MS"
   echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
-  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+  echo "worker_policy=$WORKER_POLICY"
+  echo "worker_reason=$WORKER_REASON"
+  echo "recommended_workers=$PROFILE_RECOMMENDED"
+  echo "parallel_gain_percent=$PROFILE_GAIN_PERCENT"
+  echo "worker_profile_runs=$PROFILE_SUCCESSFUL_RUNS"
+  echo "serial_profile_rate=$PROFILE_SERIAL_RATE"
+  echo "parallel_profile_rate=$PROFILE_PARALLEL_RATE"
+  echo "next_probe_run=$PROFILE_NEXT_PROBE_RUN"
+  echo "parallel_blocked_until=$PROFILE_BLOCKED_UNTIL"
+  echo "engine=native-c-arm64-one-pass-path-index-adaptive-workers"
 } >"$CACHE_STATE"
 chmod 0600 "$CACHE_STATE" "$CACHE_TARGETS" "$CACHE_ITEMS" "$CACHE_MANIFEST" 2>/dev/null
 
@@ -502,9 +687,19 @@ corpse_snapshot_id="${scan_epoch}-$(printf '%s' "$corpse_targets_sha" | cut -c1-
   echo "internal_worker_ms=$INTERNAL_WORKER_MS"
   echo "external_worker_ms=$EXTERNAL_WORKER_MS"
   echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
-  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+  echo "worker_policy=$WORKER_POLICY"
+  echo "worker_reason=$WORKER_REASON"
+  echo "recommended_workers=$PROFILE_RECOMMENDED"
+  echo "parallel_gain_percent=$PROFILE_GAIN_PERCENT"
+  echo "worker_profile_runs=$PROFILE_SUCCESSFUL_RUNS"
+  echo "serial_profile_rate=$PROFILE_SERIAL_RATE"
+  echo "parallel_profile_rate=$PROFILE_PARALLEL_RATE"
+  echo "next_probe_run=$PROFILE_NEXT_PROBE_RUN"
+  echo "parallel_blocked_until=$PROFILE_BLOCKED_UNTIL"
+  echo "engine=native-c-arm64-one-pass-path-index-adaptive-workers"
 } >"$CORPSE_STATE"
 chmod 0600 "$CORPSE_STATE" "$CORPSE_TARGETS" 2>/dev/null
+write_worker_profile
 
 if [ "$CACHE_PREFIX" = "cache_scan" ]; then
   printf 'package\tcategory\tfiles\tbytes\n' >"$REPORT_DIR/apps-latest.tsv"
@@ -581,19 +776,29 @@ END_EPOCH=$(date +%s)
   echo "internal_worker_ms=$INTERNAL_WORKER_MS"
   echo "external_worker_ms=$EXTERNAL_WORKER_MS"
   echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
+  echo "worker_policy=$WORKER_POLICY"
+  echo "worker_reason=$WORKER_REASON"
+  echo "recommended_workers=$PROFILE_RECOMMENDED"
+  echo "parallel_gain_percent=$PROFILE_GAIN_PERCENT"
+  echo "worker_profile_runs=$PROFILE_SUCCESSFUL_RUNS"
+  echo "serial_profile_rate=$PROFILE_SERIAL_RATE"
+  echo "parallel_profile_rate=$PROFILE_PARALLEL_RATE"
+  echo "next_probe_run=$PROFILE_NEXT_PROBE_RUN"
+  echo "parallel_blocked_until=$PROFILE_BLOCKED_UNTIL"
   echo "elapsed=$((END_EPOCH - START_EPOCH))"
-  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+  echo "engine=native-c-arm64-one-pass-path-index-adaptive-workers"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 cp -f "$PRIMARY_REPORT" "$REPORT_DIR/latest.tsv"
 {
   echo "----------------------------------------"
   echo "$RESULT"
-  echo "原生引擎: C arm64 43.3 Alpha 4 路径索引/有限并发 One-pass"
+  echo "原生引擎: C arm64 43.4 Alpha 5 自适应根目录 One-pass"
   echo "Android/data 顶级目录: $ONE_APP_DIRS | 已安装: $ONE_INSTALLED | 残留: $ONE_ORPHAN"
   echo "共享索引: $INDEX_ENTRIES 项 / $INDEX_FILES 个用户文件 / $INDEX_LOOKUPS 次查询"
   echo "路径索引: $WL_INDEX_ENTRIES 项 / $WL_INDEX_QUERIES 次查询 / $WL_PRUNED_SUBTREES 个子树提前剪枝"
-  echo "根目录工作进程: $ROOT_WORKERS | 墙钟 ${PARALLEL_WALL_MS}ms | 内部 ${INTERNAL_WORKER_MS}ms | 外部 ${EXTERNAL_WORKER_MS}ms | 重叠系数 ${PARALLEL_OVERLAP_MILLI}‰"
+  echo "根目录策略: $WORKER_REASON | 本次 $ROOT_WORKERS 个 | 推荐 $PROFILE_RECOMMENDED 个 | 双进程增益 ${PROFILE_GAIN_PERCENT}%"
+  echo "扫描耗时: 墙钟 ${PARALLEL_WALL_MS}ms | 内部 ${INTERNAL_WORKER_MS}ms | 外部 ${EXTERNAL_WORKER_MS}ms | 重叠系数 ${PARALLEL_OVERLAP_MILLI}‰"
   echo "缓存候选: $C_CANDIDATES / $C_SPACE | 残留候选: $R_CANDIDATES / $R_SPACE"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
@@ -606,7 +811,7 @@ if [ "${BAIZE_SUPPRESS_SCAN_HISTORY:-0}" != "1" ]; then
 fi
 
 echo "$RESULT"
-echo "One-pass: Android/data 只枚举一次 | 工作进程 $ROOT_WORKERS | 应用目录 $ONE_APP_DIRS | 已安装 $ONE_INSTALLED | 残留 $ONE_ORPHAN"
+echo "One-pass: Android/data 只枚举一次 | 策略 $WORKER_REASON | 本次 $ROOT_WORKERS | 推荐 $PROFILE_RECOMMENDED | 应用目录 $ONE_APP_DIRS | 已安装 $ONE_INSTALLED | 残留 $ONE_ORPHAN"
 cleanup_lock
 trap - EXIT INT TERM
 exit 0
