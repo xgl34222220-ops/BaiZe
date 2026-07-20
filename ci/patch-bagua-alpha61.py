@@ -31,7 +31,7 @@ old = '''                } else {
 '''
 new = '''                } else if (s.accessIssue == "command_failed") {
                     SectionCard("检测异常") {
-                        StatusCard("模块检测命令执行失败", "模块并非未安装。请重新检测；仍失败时前往诊断中心导出报告。", Icons.Outlined.Warning, true)
+                        StatusCard("模块检测命令执行失败", "模块并非未安装。请重新检测；仍失败时前往诊断中心导出报告。", Icons.Outlined.Info, true)
                         Spacer(Modifier.height(12.dp))
                         Button(onClick = controller::refreshAll, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Outlined.Refresh, null); Spacer(Modifier.width(8.dp)); Text("重新检测")
