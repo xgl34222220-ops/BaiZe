@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.1.0-alpha8-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.1.0-alpha9-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -16,11 +16,9 @@ OUTPUT="$OUT/BaiZe-v2.1.0-alpha8-Module.zip"
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
 cp -a "$MODULE/." "$STAGE/"
-# App-only package: never ship WebUI assets, including stale source directories.
 rm -rf "$STAGE/webroot" "$STAGE/webui" "$STAGE/www" "$STAGE/ksu-webui"
 cp -a "$REPO/config" "$STAGE/config"
 
-# Ship dedicated cache, APK, deep/corpse snapshot executors behind one stable task router.
 cp -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.sh"
 cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
 cp -f "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
@@ -77,17 +75,16 @@ unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha8$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22408$'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha9$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22409$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
 fi
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
-
 unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -q 'clean-cache-snapshot'
 if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache|xargs[[:space:]].*rm'; then
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.1.0 Alpha 8 文件归类与空项目修复模块：$OUTPUT"
+echo "已生成白泽 v2.1.0 Alpha 9 文件归类界面与定时归类模块：$OUTPUT"
