@@ -5,6 +5,9 @@ on:
     branches:
       - release/v2.1.0
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
