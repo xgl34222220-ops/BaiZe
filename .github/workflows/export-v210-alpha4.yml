@@ -1,0 +1,17 @@
+name: Export Alpha 4
+on:
+  pull_request:
+    branches: [perf/v2.1.0-alpha3-path-pruning]
+    paths: ['.github/workflows/export-v210-alpha4.yml']
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/v2.1.0-alpha4-limited-parallel
+      - run: tar -czf alpha4-source.tar.gz v2 config cleaner.sh notify.sh service.sh RELEASE_NOTES_V2.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alpha4-source
+          path: alpha4-source.tar.gz
