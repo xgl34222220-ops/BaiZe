@@ -1,0 +1,112 @@
+name: BaiZe v2.1.0 Alpha 8 Final Build
+
+on:
+  pull_request:
+    branches: [feat/v2.1.0-alpha7-system-cache]
+    paths:
+      - '.github/workflows/v2.1.0-alpha8-final-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v2.1.0-alpha8-file-organizer
+          fetch-depth: 0
+
+      - name: Apply verified source patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed '$d' .github/alpha8-direct/part-00.patch > /tmp/alpha8-main.patch
+          find .github/alpha8-direct -maxdepth 1 -type f -name 'part-*.patch' ! -name 'part-00.patch' ! -name 'part-13-*' -print | sort | xargs cat >> /tmp/alpha8-main.patch
+          cat .github/alpha8-direct/part-13-*.patch > /tmp/alpha8-ownership.patch
+          echo 'fc81491b41627df9fbe5097ba65081b6316c27f4fceb5b34f2b3970ccefb34f2  /tmp/alpha8-main.patch' | sha256sum -c -
+          echo 'ec75f91f18681e6e7ac8e5d1f2736c8e402b2b1cb59118b54ba8dcd0d313158b  /tmp/alpha8-ownership.patch' | sha256sum -c -
+          git apply --check /tmp/alpha8-main.patch
+          git apply /tmp/alpha8-main.patch
+          git apply --check /tmp/alpha8-ownership.patch
+          git apply /tmp/alpha8-ownership.patch
+          sed -i 's|^description=.*|description=白泽 v2.1.0 Alpha 8：全下载目录文件归类、空项目修复与自动扫描策略。|' v2/module/module.prop
+          git diff --check
+          sh -n v2/module/one-pass-scan.sh
+          sh -n v2/scripts/package-module.sh
+
+      - name: Verify exact implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '449bc80339ddea6afa6437a6bf982e13c0f405859bc7e969e0e016f7064bed0b  v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt' | sha256sum -c -
+          echo '36418aab5a9e5f3e4fef475b93c0f8f44f223eb4d05de40e13eea822bca86cba  v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt' | sha256sum -c -
+          echo 'b16a950be40e4349a967520d66e7688f636e712e3f5c234c6111fbceb8426a55  v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt' | sha256sum -c -
+          ! grep -R -n -E '扫描工作进程|扫描性能策略|固定双进程|固定串行|onScanWorkerModeChanged|onResetScanPerformance' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean
+          grep -q 'put("scan_root_workers", 0)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'walkProtectedEmptyShells' v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+          grep -q 'normalizeSharedOwnership' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          grep -q 'restoreOriginalMetadata' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          ! grep -q 'AlertDialog' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package and verify module
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd v2
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2.1.0-alpha8-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.1.0-alpha8'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22408'
+          unzip -p "$ZIP" module.prop | grep -q 'Alpha 8'
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Commit verified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/alpha8-direct .github/alpha8-payload alpha8-diagnostics
+          rm -f .github/alpha8-direct-marker.txt
+          rm -f .github/workflows/export-alpha8-workspace.yml
+          rm -f .github/workflows/v2.1.0-alpha8-file-organizer.yml
+          rm -f .github/workflows/v2.1.0-alpha8-final-build.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(v2): organize all download roots and fix empty items'
+          git push origin HEAD:feat/v2.1.0-alpha8-file-organizer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.1.0-alpha8-File-Organizer
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.1.0-alpha8-Module.zip
+            v2/dist/BaiZe-v2.1.0-alpha8-Module.zip.sha256
