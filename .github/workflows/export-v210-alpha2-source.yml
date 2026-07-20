@@ -1,8 +1,8 @@
 name: Export BaiZe v2.1.0 Alpha 2 source
 
 on:
-  push:
-    branches: [perf/v2.1.0-alpha2-external-one-pass]
+  pull_request:
+    branches: [perf/v2.1.0-one-pass-scanner]
     paths:
       - '.github/workflows/export-v210-alpha2-source.yml'
   workflow_dispatch:
