@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v2.1.0 indexed cache task bridge.
+ * v2.1.0 Alpha 2 One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -49,6 +49,9 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotFirstResultMs = 0L
     @Volatile private var snapshotEngineElapsedMs = 0L
     @Volatile private var snapshotItemsPerSecond = 0L
+    @Volatile private var snapshotOnePassAppDirs = 0L
+    @Volatile private var snapshotOnePassInstalledDirs = 0L
+    @Volatile private var snapshotOnePassOrphanDirs = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -58,7 +61,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.0-alpha1-index")
+                .put("engine", "native-c-arm64-cache-v43.1-alpha2-one-pass")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -71,6 +74,9 @@ class BaiZeRootService : RootService() {
                 .put("firstResultMs", if (ready) snapshotFirstResultMs else 0L)
                 .put("engineElapsedMs", if (ready) snapshotEngineElapsedMs else 0L)
                 .put("itemsPerSecond", if (ready) snapshotItemsPerSecond else 0L)
+                .put("onePassAppDirs", if (ready) snapshotOnePassAppDirs else 0L)
+                .put("onePassInstalledDirs", if (ready) snapshotOnePassInstalledDirs else 0L)
+                .put("onePassOrphanDirs", if (ready) snapshotOnePassOrphanDirs else 0L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -267,6 +273,9 @@ class BaiZeRootService : RootService() {
             .put("firstResultMs", snapshotFirstResultMs)
             .put("engineElapsedMs", snapshotEngineElapsedMs)
             .put("itemsPerSecond", snapshotItemsPerSecond)
+            .put("onePassAppDirs", snapshotOnePassAppDirs)
+            .put("onePassInstalledDirs", snapshotOnePassInstalledDirs)
+            .put("onePassOrphanDirs", snapshotOnePassOrphanDirs)
             .put("engine", "native-c-arm64-indexed")
             .toString()
     }
@@ -390,6 +399,9 @@ class BaiZeRootService : RootService() {
         snapshotFirstResultMs = state.optLong("first_result_ms", latest.optLong("first_result_ms", 0L)).coerceAtLeast(0L)
         snapshotEngineElapsedMs = state.optLong("engine_elapsed_ms", latest.optLong("engine_elapsed_ms", 0L)).coerceAtLeast(0L)
         snapshotItemsPerSecond = state.optLong("items_per_second", latest.optLong("items_per_second", 0L)).coerceAtLeast(0L)
+        snapshotOnePassAppDirs = state.optLong("one_pass_app_dirs", latest.optLong("one_pass_app_dirs", 0L)).coerceAtLeast(0L)
+        snapshotOnePassInstalledDirs = state.optLong("one_pass_installed_dirs", latest.optLong("one_pass_installed_dirs", 0L)).coerceAtLeast(0L)
+        snapshotOnePassOrphanDirs = state.optLong("one_pass_orphan_dirs", latest.optLong("one_pass_orphan_dirs", 0L)).coerceAtLeast(0L)
         return true
     }
 

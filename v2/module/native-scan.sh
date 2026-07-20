@@ -25,6 +25,9 @@ CACHE_SCAN_ITEMS="$STATE_DIR/$CACHE_PREFIX.items.tsv"
 CACHE_SCAN_MANIFEST="$STATE_DIR/$CACHE_PREFIX.manifest0"
 
 case "$MODE" in cache-scan|deep-scan|corpse-scan) ;; *) echo "不支持的原生扫描模式：$MODE" >&2; exit 2 ;; esac
+if { [ "$MODE" = "cache-scan" ] && [ "$CACHE_PREFIX" = "cache_scan" ]; } || [ "$MODE" = "corpse-scan" ]; then
+  exec "$MODDIR/one-pass-scan.sh" "$MODE" "$TRIGGER"
+fi
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
