@@ -172,7 +172,7 @@ jobs:
           rm split/reconstructed.zip
           cp dist/BaGua-v0.6.0-alpha.6-AppOnly-Source.zip split/
           cp dist/BaGua-v0.6.0-alpha.6-SHA256.txt split/
-          cp diagnostic-test.txt split/
+          cp ../diagnostic-test.txt split/
 
       - name: Upload module part 00
         if: steps.app_build.outcome == 'success'
