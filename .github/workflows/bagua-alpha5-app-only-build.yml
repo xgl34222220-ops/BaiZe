@@ -89,10 +89,12 @@ jobs:
             work/module-src/app/bagua.apk
           if-no-files-found: error
 
-      - name: Upload build log
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua61-build-log
-          path: work/build-alpha61.log
+          name: BaGua61-diagnostics
+          path: |
+            work/build-alpha61.log
+            work/alpha61-error.txt
           if-no-files-found: warn
