@@ -1,6 +1,0 @@
-# Alpha 7 Android build diagnostics
-
-e: file:///home/runner/work/BaiZe/BaiZe/v2/app/src/main/java/io/github/xgl34222220/baize/InstantCacheActivity.kt:30:43 Cannot access 'val RowColumnParentData?.weight: Float': it is internal in file.
-FAILURE: Build failed with an exception.
-* What went wrong:
-   > Compilation error. See log for more details
