@@ -1,0 +1,106 @@
+name: One-time obsolete branch cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-time-branch-cleanup.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close superseded PRs and delete unused branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const defaultBranch = 'main';
+
+            const openPulls = await github.paginate(
+              github.rest.pulls.list,
+              { owner, repo, state: 'open', per_page: 100 }
+            );
+
+            const keep = new Set([defaultBranch]);
+            const closedPulls = [];
+            const retainedPulls = [];
+
+            for (const pull of openPulls) {
+              if (!pull.head.repo || pull.head.repo.full_name !== `${owner}/${repo}`) {
+                retainedPulls.push(`#${pull.number} (外部仓库)`);
+                continue;
+              }
+
+              let includedInMain = false;
+              try {
+                const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                  owner,
+                  repo,
+                  basehead: `${pull.head.sha}...${defaultBranch}`
+                });
+                includedInMain = ['ahead', 'identical'].includes(comparison.data.status);
+              } catch (error) {
+                core.warning(`无法判断 PR #${pull.number}: ${error.message}`);
+              }
+
+              if (includedInMain) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pull.number,
+                  body: '该分支的提交已经包含在 `main` 正式版中，仓库清理时自动关闭此历史 PR。'
+                });
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: pull.number,
+                  state: 'closed'
+                });
+                closedPulls.push(`#${pull.number} ${pull.head.ref}`);
+              } else {
+                keep.add(pull.head.ref);
+                retainedPulls.push(`#${pull.number} ${pull.head.ref}`);
+              }
+            }
+
+            const branches = await github.paginate(
+              github.rest.repos.listBranches,
+              { owner, repo, per_page: 100 }
+            );
+
+            const deleted = [];
+            const failed = [];
+            for (const branch of branches) {
+              if (keep.has(branch.name)) continue;
+              try {
+                await github.rest.git.deleteRef({
+                  owner,
+                  repo,
+                  ref: `heads/${branch.name}`
+                });
+                deleted.push(branch.name);
+              } catch (error) {
+                failed.push(`${branch.name}: ${error.message}`);
+                core.warning(`删除 ${branch.name} 失败: ${error.message}`);
+              }
+            }
+
+            await core.summary
+              .addHeading('白泽分支清理结果')
+              .addRaw(`保留分支：${[...keep].map(v => `\`${v}\``).join('、')}\n\n`)
+              .addRaw(`关闭历史 PR：${closedPulls.length ? closedPulls.join('、') : '无'}\n\n`)
+              .addRaw(`删除分支（${deleted.length}）：${deleted.length ? deleted.map(v => `\`${v}\``).join('、') : '无'}\n\n`)
+              .addRaw(`保留未合并 PR：${retainedPulls.length ? retainedPulls.join('、') : '无'}\n\n`)
+              .addRaw(`失败（${failed.length}）：${failed.length ? failed.join('；') : '无'}\n`)
+              .write();
+
+            core.setOutput('deleted_count', deleted.length);
+            core.setOutput('closed_pr_count', closedPulls.length);
+            core.setOutput('failed_count', failed.length);
+            if (failed.length) core.setFailed(`有 ${failed.length} 个分支删除失败`);
