@@ -69,7 +69,21 @@ jobs:
 
       - name: Build Android App
         working-directory: v2
-        run: gradle --no-daemon :app:assembleDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug > alpha9-gradle.log 2>&1
+          code=$?
+          tail -n 160 alpha9-gradle.log
+          exit "$code"
+
+      - name: Upload Android build failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-alpha9-build-failure-log
+          path: v2/alpha9-gradle.log
+          if-no-files-found: error
 
       - name: Package Alpha 9 module
         working-directory: v2
