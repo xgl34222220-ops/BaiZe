@@ -165,8 +165,8 @@ jobs:
           mkdir -p split
           split -b 2M -d -a 2 dist/BaGua-v0.6.0-alpha.6-AppOnly.zip split/module.part.
           count=$(find split -name 'module.part.*' -type f | wc -l)
-          test "$count" -le 8
-          for n in 00 01 02 03 04 05 06 07; do [ -f "split/module.part.$n" ] || : > "split/module.part.$n"; done
+          test "$count" -le 12
+          for n in 00 01 02 03 04 05 06 07 08 09 10 11; do [ -f "split/module.part.$n" ] || : > "split/module.part.$n"; done
           cat split/module.part.0* > split/reconstructed.zip
           cmp -s split/reconstructed.zip dist/BaGua-v0.6.0-alpha.6-AppOnly.zip
           rm split/reconstructed.zip
@@ -206,6 +206,22 @@ jobs:
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with: {name: BaGua60-part-07, path: work/split/module.part.07, if-no-files-found: error}
+      - name: Upload module part 08
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with: {name: BaGua60-part-08, path: work/split/module.part.08, if-no-files-found: error}
+      - name: Upload module part 09
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with: {name: BaGua60-part-09, path: work/split/module.part.09, if-no-files-found: error}
+      - name: Upload module part 10
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with: {name: BaGua60-part-10, path: work/split/module.part.10, if-no-files-found: error}
+      - name: Upload module part 11
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with: {name: BaGua60-part-11, path: work/split/module.part.11, if-no-files-found: error}
 
       - name: Upload source and checksums
         if: steps.app_build.outcome == 'success'
