@@ -29,4 +29,12 @@ if 'QQ接收:公共目录' not in g:
     g = g.replace(anchor, addition, 1)
 generator.write_text(g)
 
-print("v2.2.0 round-2 shared-index fixes applied")
+# AIDL requires an explicit import for a second interface in the same package.
+aidl = root / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl"
+a = aidl.read_text()
+callback_import = "import io.github.xgl34222220.baize.root.ITaskProgressCallback;\n\n"
+if callback_import not in a:
+    a = a.replace("package io.github.xgl34222220.baize.root;\n\n", "package io.github.xgl34222220.baize.root;\n\n" + callback_import, 1)
+aidl.write_text(a)
+
+print("v2.2.0 round-2 shared-index and AIDL fixes applied")
