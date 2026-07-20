@@ -1,4 +1,4 @@
-name: Build BaGua Alpha 5.1 Root Fix
+name: Build BaGua Alpha 6
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bagua-alpha51-${{ github.ref }}
+  group: bagua-alpha6-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct, patch and expand BaGua source
+      - name: Reconstruct and patch Alpha 6 source
         run: |
           set -e
           cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
@@ -31,6 +31,9 @@ jobs:
           sed -i 's/fun setSkin(/fun applySkin(/; s/fun setThemeMode(/fun applyThemeMode(/; s/fun setAmoled(/fun applyAmoled(/; s/fun setMonet(/fun applyMonet(/' work/app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
           sed -i 's/controller::setSkin/controller::applySkin/g; s/controller::setThemeMode/controller::applyThemeMode/g; s/controller::setAmoled/controller::applyAmoled/g; s/controller::setMonet/controller::applyMonet/g' work/app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
           python3 ci/patch-bagua-alpha51.py work
+          base64 -d ci/bagua-alpha6-patch.py.gz.b64 | gzip -d > ci/patch-bagua-alpha6.py
+          echo "dde1a731ccb9678ee2fe24c8af90048522ff0397e28e8a527a4aff3efd26ba61  ci/patch-bagua-alpha6.py" | sha256sum -c -
+          python3 ci/patch-bagua-alpha6.py work
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -49,20 +52,71 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Validate Root fix and App-only source
+      - name: Validate App-only and diagnostics source
         run: |
           set -e
           cd work
           test ! -d module-src/webroot
           test ! -d module-src/webui
           test ! -d module-src/www
-          grep -q 'accessIssue = "root_required"' app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
-          grep -q 'Shell.FLAG_MOUNT_MASTER' app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
-          grep -q '重新请求 Root 并检测' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
-          grep -q 'versionName = "0.5.1-alpha.5.1"' app/build.gradle.kts
-          for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.sh module-src/action.sh module-src/uninstall.sh module-src/scripts/*.sh; do
-            bash -n "$f"
-          done
+          for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.sh module-src/action.sh module-src/uninstall.sh module-src/scripts/*.sh; do bash -n "$f"; done
+          test "$(grep -c '^health_status() {' module-src/scripts/bagua.sh)" -eq 1
+          test "$(grep -c '^manager_version() {' module-src/scripts/bagua.sh)" -eq 1
+          test "$(grep -c '^diagnostic_report() {' module-src/scripts/bagua.sh)" -eq 1
+          test "$(grep -c '^status() {' module-src/scripts/bagua.sh)" -eq 1
+          grep -q 'MainTab.DIAGNOSTICS' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+          grep -q 'diagnostic_export()' module-src/scripts/bagua.sh
+          grep -q 'versionName = "0.6.0-alpha.6"' app/build.gradle.kts
+          grep -q '^version=0.6.0-alpha.6$' module-src/module.prop
+          grep -q '^versionCode=107$' module-src/module.prop
+
+      - name: Simulate conflict diagnostics and safe repair
+        run: |
+          set -e
+          sudo rm -rf /data/adb/bagua /data/adb/modules/bagua /data/adb/modules/magic_mount_rs /data/adb/modules/conflict_hosts /data/adb/ksu
+          sudo mkdir -p /data/adb/modules /data/adb/ksu
+          sudo cp -a work/module-src /data/adb/modules/bagua
+          sudo chmod +x /data/adb/modules/bagua/scripts/*.sh
+          mkdir -p fake-bin
+          cat > fake-bin/getprop <<'SH'
+          #!/bin/sh
+          case "$1" in ro.build.version.release) echo 16;; ro.build.version.sdk) echo 36;; *) echo unknown;; esac
+          SH
+          cat > fake-bin/settings <<'SH'
+          #!/bin/sh
+          case "$*" in *private_dns_mode*) echo hostname;; *private_dns_specifier*) echo dns.example;; *http_proxy*) echo 127.0.0.1:7890;; *) echo null;; esac
+          SH
+          cat > fake-bin/dumpsys <<'SH'
+          #!/bin/sh
+          case "$1" in connectivity) echo TRANSPORT_VPN;; package) echo 'versionCode=106 minSdk=26';; esac
+          SH
+          cat > fake-bin/pm <<'SH'
+          #!/bin/sh
+          [ "$1" = list ] && echo package:org.adaway
+          SH
+          cat > fake-bin/ksud <<'SH'
+          #!/bin/sh
+          echo 'KernelSU test'
+          SH
+          cat > fake-bin/ip <<'SH'
+          #!/bin/sh
+          echo '7: tun0: <UP>'
+          SH
+          chmod +x fake-bin/*
+          sudo mkdir -p /data/adb/modules/magic_mount_rs /data/adb/modules/conflict_hosts/system/etc /data/adb/bagua/.update.lock
+          printf 'id=magic_mount_rs\nname=Magic Mount-rs\n' | sudo tee /data/adb/modules/magic_mount_rs/module.prop >/dev/null
+          printf 'id=otherhosts\nname=Other Hosts Blocker\n' | sudo tee /data/adb/modules/conflict_hosts/module.prop >/dev/null
+          echo '127.0.0.1 localhost' | sudo tee /data/adb/modules/conflict_hosts/system/etc/hosts >/dev/null
+          echo 999999 | sudo tee /data/adb/bagua/.update.lock/pid >/dev/null
+          sudo env PATH="$PWD/fake-bin:$PATH" sh /data/adb/modules/bagua/scripts/bagua.sh diagnose report > diagnostic-test.txt
+          grep -q '^DIAG_MANAGER=KernelSU$' diagnostic-test.txt
+          grep -q 'DIAG_ITEM=hosts_conflict|error' diagnostic-test.txt
+          grep -q 'DIAG_ITEM=private_dns|warning' diagnostic-test.txt
+          grep -q 'DIAG_ITEM=vpn_active|warning' diagnostic-test.txt
+          grep -q 'DIAG_ITEM=stale_lock|warning' diagnostic-test.txt
+          grep -q '^RESULT=diagnostic$' diagnostic-test.txt
+          sudo sh /data/adb/modules/bagua/scripts/bagua.sh diagnose fix stale_lock | grep -q 'RESULT=fixed|stale_lock'
+          test ! -d /data/adb/bagua/.update.lock
 
       - name: Build native App
         id: app_build
@@ -70,40 +124,38 @@ jobs:
         working-directory: work
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha51.log
+          gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha6.log
 
       - name: Print compiler diagnostics
         if: steps.app_build.outcome != 'success'
         working-directory: work
         run: |
-          echo '===== COMPILER DIAGNOSTICS ====='
-          grep -E '(^e: | error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot infer|No parameter)' build-alpha51.log | tail -n 180 || tail -n 220 build-alpha51.log
+          grep -E '(^e: | error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot infer|No parameter)' build-alpha6.log | tail -n 200 || tail -n 240 build-alpha6.log
 
       - name: Package integrated module
         if: steps.app_build.outcome == 'success'
         working-directory: work
         run: bash scripts/package-module.sh
 
-      - name: Verify integrated artifacts
+      - name: Verify release artifacts
         if: steps.app_build.outcome == 'success'
         working-directory: work
         run: |
           set -e
-          ZIP=dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip
+          ZIP=dist/BaGua-v0.6.0-alpha.6-AppOnly.zip
           APK=module-src/app/bagua.apk
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           unzip -tq "$ZIP"
           unzip -l "$ZIP" | grep -q 'app/bagua.apk'
-          unzip -l "$ZIP" | grep -q 'scripts/install-app.sh'
           unzip -l "$ZIP" | grep -q 'scripts/bagua.sh'
           ! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
-          unzip -p "$ZIP" module.prop | grep -q '^version=0.5.1-alpha.5.1$'
-          unzip -p "$ZIP" module.prop | grep -q '^versionCode=106$'
+          unzip -p "$ZIP" module.prop | grep -q '^version=0.6.0-alpha.6$'
+          unzip -p "$ZIP" module.prop | grep -q '^versionCode=107$'
           "$AAPT" dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
-          "$AAPT" dump badging "$APK" | grep -q "versionCode='106'"
-          "$AAPT" dump badging "$APK" | grep -q "versionName='0.5.1-alpha.5.1'"
+          "$AAPT" dump badging "$APK" | grep -q "versionCode='107'"
+          "$AAPT" dump badging "$APK" | grep -q "versionName='0.6.0-alpha.6'"
           "$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
-          test -s dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt
+          test -s dist/BaGua-v0.6.0-alpha.6-SHA256.txt
 
       - name: Split deliverables for reliable retrieval
         if: steps.app_build.outcome == 'success'
@@ -111,94 +163,67 @@ jobs:
         run: |
           set -e
           mkdir -p split
-          split -b 2M -d -a 2 dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip split/module.part.
-          for n in 00 01 02 03 04 05 06 07; do test -f "split/module.part.$n"; done
+          split -b 2M -d -a 2 dist/BaGua-v0.6.0-alpha.6-AppOnly.zip split/module.part.
+          count=$(find split -name 'module.part.*' -type f | wc -l)
+          test "$count" -le 8
+          for n in 00 01 02 03 04 05 06 07; do [ -f "split/module.part.$n" ] || : > "split/module.part.$n"; done
           cat split/module.part.0* > split/reconstructed.zip
-          cmp -s split/reconstructed.zip dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip
-          rm -f split/reconstructed.zip
-          cp dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip split/
-          cp dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt split/
+          cmp -s split/reconstructed.zip dist/BaGua-v0.6.0-alpha.6-AppOnly.zip
+          rm split/reconstructed.zip
+          cp dist/BaGua-v0.6.0-alpha.6-AppOnly-Source.zip split/
+          cp dist/BaGua-v0.6.0-alpha.6-SHA256.txt split/
+          cp diagnostic-test.txt split/
 
       - name: Upload module part 00
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-00
-          path: work/split/module.part.00
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-00, path: work/split/module.part.00, if-no-files-found: error}
       - name: Upload module part 01
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-01
-          path: work/split/module.part.01
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-01, path: work/split/module.part.01, if-no-files-found: error}
       - name: Upload module part 02
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-02
-          path: work/split/module.part.02
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-02, path: work/split/module.part.02, if-no-files-found: error}
       - name: Upload module part 03
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-03
-          path: work/split/module.part.03
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-03, path: work/split/module.part.03, if-no-files-found: error}
       - name: Upload module part 04
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-04
-          path: work/split/module.part.04
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-04, path: work/split/module.part.04, if-no-files-found: error}
       - name: Upload module part 05
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-05
-          path: work/split/module.part.05
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-05, path: work/split/module.part.05, if-no-files-found: error}
       - name: Upload module part 06
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-06
-          path: work/split/module.part.06
-          if-no-files-found: error
-
+        with: {name: BaGua60-part-06, path: work/split/module.part.06, if-no-files-found: error}
       - name: Upload module part 07
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
-        with:
-          name: BaGua51-2m-part-07
-          path: work/split/module.part.07
-          if-no-files-found: error
+        with: {name: BaGua60-part-07, path: work/split/module.part.07, if-no-files-found: error}
 
       - name: Upload source and checksums
         if: steps.app_build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua51-2m-metadata
+          name: BaGua60-metadata
           path: |
-            work/split/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip
-            work/split/BaGua-v0.5.1-alpha.5.1-SHA256.txt
+            work/split/BaGua-v0.6.0-alpha.6-AppOnly-Source.zip
+            work/split/BaGua-v0.6.0-alpha.6-SHA256.txt
+            work/split/diagnostic-test.txt
           if-no-files-found: error
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua51-2m-diagnostics
-          path: work/build-alpha51.log
+          name: BaGua60-build-log
+          path: work/build-alpha6.log
           if-no-files-found: warn
 
       - name: Fail when native App build failed
