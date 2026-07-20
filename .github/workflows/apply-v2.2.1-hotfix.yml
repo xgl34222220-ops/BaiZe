@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   apply:
@@ -20,16 +20,25 @@ jobs:
           fetch-depth: 0
       - name: Apply hotfix sources
         run: python3 tools/apply-v221-hotfix.py
-      - name: Commit hotfix branch
+      - name: Export modified sources
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          if git diff --quiet; then
-            echo 'hotfix already applied'
-            exit 0
-          fi
-          git add -A
-          git commit -m 'fix(v2.2.1): write scan logs and show real app icons'
-          git push origin HEAD:fix/v2.2.1-logs-icons
+          mkdir -p /tmp/v221-hotfix
+          git diff --binary > /tmp/v221-hotfix/v2.2.1.patch
+          for file in \
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/common/AppPackageIcon.kt \
+            v2/app/build.gradle.kts v2/module/module.prop v2/module/customize.sh \
+            v2/scripts/package-module.sh .github/workflows/v2.2.0-core-rework.yml \
+            RELEASE_NOTES_V2.2.1.md; do
+            mkdir -p "/tmp/v221-hotfix/$(dirname "$file")"
+            cp "$file" "/tmp/v221-hotfix/$file"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.2.1-generated-sources
+          if-no-files-found: error
+          path: /tmp/v221-hotfix
