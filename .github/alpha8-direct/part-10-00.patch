@@ -1,0 +1,84 @@
+             .toString()
+ 
+         override fun getProfileCatalog(): String = engine.catalog()
+@@ -140,6 +143,54 @@ class BaiZeProfileRootService : RootService() {
+             }
+         }
+ 
++        override fun scanFileOrganizer(): String {
++            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-scan")
++            cancelled.set(false)
++            val started = SystemClock.elapsedRealtime()
++            return try {
++                fileOrganizerEngine.scan { progress ->
++                    updateOrganizerState("file-organizer-scan", progress, started)
++                }
++            } catch (error: Throwable) {
++                failure("file_organizer_scan_failed", error)
++            } finally {
++                taskRunning.set(false)
++                taskStateJson = idleState()
++            }
++        }
++
++        override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String {
++            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-apply")
++            cancelled.set(false)
++            val started = SystemClock.elapsedRealtime()
++            return try {
++                fileOrganizerEngine.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
++                    updateOrganizerState("file-organizer-apply", progress, started)
++                }
++            } catch (error: Throwable) {
++                failure("file_organizer_apply_failed", error)
++            } finally {
++                taskRunning.set(false)
++                taskStateJson = idleState()
++            }
++        }
++
++        override fun undoFileOrganizer(): String {
++            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-undo")
++            cancelled.set(false)
++            val started = SystemClock.elapsedRealtime()
++            return try {
++                fileOrganizerEngine.undo { progress ->
++                    updateOrganizerState("file-organizer-undo", progress, started)
++                }
++            } catch (error: Throwable) {
++                failure("file_organizer_undo_failed", error)
++            } finally {
++                taskRunning.set(false)
++                taskStateJson = idleState()
++            }
++        }
++
+         override fun getInstalledPackageCatalog(): String =
+             this@BaiZeProfileRootService.installedPackageCatalogJson()
+ 
+@@ -979,6 +1030,22 @@ class BaiZeProfileRootService : RootService() {
+             .toString()
+     }
+ 
++    private fun updateOrganizerState(
++        operation: String,
++        progress: FileOrganizerEngine.Progress,
++        started: Long
++    ) {
++        taskStateJson = JSONObject()
++            .put("running", true)
++            .put("operation", operation)
++            .put("phase", progress.phase)
++            .put("current", progress.current)
++            .put("total", progress.total)
++            .put("currentPath", progress.path)
++            .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
++            .toString()
++    }
++
+     private fun failure(code: String, error: Throwable): String = JSONObject()
+         .put("error", code)
+         .put("message", error.message ?: error.javaClass.simpleName)
+diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+index 01729bb..bac680a 100644
+--- a/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
