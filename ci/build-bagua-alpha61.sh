@@ -18,7 +18,7 @@ echo "dde1a731ccb9678ee2fe24c8af90048522ff0397e28e8a527a4aff3efd26ba61  ci/patch
 python3 ci/patch-bagua-alpha6.py work
 python3 ci/patch-bagua-alpha61.py work
 python3 ci/patch-bagua-alpha62.py work
-cat ci/bagua-alpha7-patch.b64.part00 ci/bagua-alpha7-patch.b64.part01 ci/bagua-alpha7-patch.b64.part02 | base64 -d | gzip -d > ci/patch-bagua-alpha7.py
+cat ci/patch-bagua-alpha7.py.part00 ci/patch-bagua-alpha7.py.part01 ci/patch-bagua-alpha7.py.part02 > ci/patch-bagua-alpha7.py
 echo "efe62e780835545c21e52710a341519d1d95f2e883878a08b3752b5283bb7e9a  ci/patch-bagua-alpha7.py" | sha256sum -c -
 python3 ci/patch-bagua-alpha7.py work
 
