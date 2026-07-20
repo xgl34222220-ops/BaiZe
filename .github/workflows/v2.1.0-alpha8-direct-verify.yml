@@ -74,7 +74,7 @@ jobs:
           grep -q 'Android/media' "$ENGINE"
           grep -q 'BaiZe归类' "$ENGINE"
           grep -q '归类所选' "$UI"
-          grep -q '撤销上一次归类' "$UI"
+          grep -q 'undoFileOrganizer' "$UI"
           grep -q 'FileOrganizerActivity' "$MANIFEST"
           ! grep -q 'sourcePathJson' "$UI"
 
