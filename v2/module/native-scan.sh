@@ -17,8 +17,17 @@ STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 DEEP_RULES=${BAIZE_DEEP_RULES:-$MODDIR/config/deep.rules}
 NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$MODDIR/bin/arm64-v8a/baize_engine}
+CACHE_PREFIX=${BAIZE_CACHE_PREFIX:-cache_scan}
+case "$CACHE_PREFIX" in cache_scan|cache_auto) ;; *) echo "无效的缓存快照命名空间" >&2; exit 2 ;; esac
+CACHE_SCAN_STATE="$STATE_DIR/$CACHE_PREFIX.env"
+CACHE_SCAN_TARGETS="$STATE_DIR/$CACHE_PREFIX.targets"
+CACHE_SCAN_ITEMS="$STATE_DIR/$CACHE_PREFIX.items.tsv"
+CACHE_SCAN_MANIFEST="$STATE_DIR/$CACHE_PREFIX.manifest0"
 
 case "$MODE" in cache-scan|deep-scan|corpse-scan) ;; *) echo "不支持的原生扫描模式：$MODE" >&2; exit 2 ;; esac
+if { [ "$MODE" = "cache-scan" ] && [ "$CACHE_PREFIX" = "cache_scan" ]; } || [ "$MODE" = "corpse-scan" ]; then
+  exec "$MODDIR/one-pass-scan.sh" "$MODE" "$TRIGGER"
+fi
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
@@ -40,27 +49,14 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-scan.sh*|*profile-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-scan.sh*|*cache-transaction.sh*|*profile-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
 
-if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
-  case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
-  if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null && pid_is_baize_task "$old_pid"; then
-    echo "已有扫描或清理任务正在运行"
-    exit 3
-  fi
-  rm -rf -- "$LOCK_DIR" 2>/dev/null
-  rm -f "$RUNNING_FILE" 2>/dev/null
-  mkdir "$LOCK_DIR" 2>/dev/null || { echo "无法恢复任务锁，请重试"; exit 4; }
-fi
-printf '%s\n' "$$" >"$LOCK_DIR/pid"
-TMP_DIR="$LOCK_DIR/tmp"
-mkdir -p "$TMP_DIR"
-
+LOCK_OWNED=0
 cleanup_lock() {
+  [ "$LOCK_OWNED" = "1" ] || return 0
   rm -f "$RUNNING_FILE" 2>/dev/null
   rm -rf -- "$LOCK_DIR" 2>/dev/null
 }
@@ -70,15 +66,36 @@ handle_signal() {
   cleanup_lock
   exit 9
 }
-trap cleanup_lock EXIT
-trap handle_signal INT TERM
-rm -f "$STOP_FILE"
+
+if [ "${BAIZE_LOCK_HELD:-0}" = "1" ]; then
+  [ -d "$LOCK_DIR" ] || { echo "缓存事务锁已丢失" >&2; exit 4; }
+else
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+    case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
+    if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null && pid_is_baize_task "$old_pid"; then
+      echo "已有扫描或清理任务正在运行"
+      exit 3
+    fi
+    rm -rf -- "$LOCK_DIR" 2>/dev/null
+    rm -f "$RUNNING_FILE" 2>/dev/null
+    mkdir "$LOCK_DIR" 2>/dev/null || { echo "无法恢复任务锁，请重试"; exit 4; }
+  fi
+  LOCK_OWNED=1
+  printf '%s\n' "$$" >"$LOCK_DIR/pid"
+  trap cleanup_lock EXIT
+  trap handle_signal INT TERM
+  rm -f "$STOP_FILE"
+fi
+TMP_DIR="$LOCK_DIR/tmp"
+mkdir -p "$TMP_DIR"
 
 START_EPOCH=$(date +%s)
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-$MODE.tsv"
 TARGETS_TMP="$TMP_DIR/$MODE.targets"
-ITEMS_TMP="$TMP_DIR/cache-scan.items.tsv"
+ITEMS_TMP="$TMP_DIR/$CACHE_PREFIX.items.tsv"
+MANIFEST_TMP="$TMP_DIR/$CACHE_PREFIX.manifest0"
 SUMMARY_FILE="$TMP_DIR/native-summary.env"
 LOG_FILE="$LOG_DIR/$STAMP-$MODE.log"
 INSTALLED_ROOT=${BAIZE_INSTALLED_ROOT:-$TMP_DIR/installed}
@@ -155,7 +172,7 @@ case "$MODE" in
       --targets "$TARGETS_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
   cache-scan)
-    rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv"
+    rm -f "$CACHE_SCAN_STATE" "$CACHE_SCAN_TARGETS" "$CACHE_SCAN_ITEMS" "$CACHE_SCAN_MANIFEST"
     cache_days=$(get_config_uint app_cache_days 0 0 365)
     external_days=$(get_config_uint external_cache_days 0 0 365)
     [ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
@@ -163,13 +180,13 @@ case "$MODE" in
     "$NATIVE_ENGINE" scan-cache --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" \
       --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" --min-age-days "$cache_days" \
       --max-file-bytes "$MAX_FILE_BYTES" --report "$REPORT_FILE" --targets "$TARGETS_TMP" \
-      --items "$ITEMS_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
+      --items "$ITEMS_TMP" --manifest "$MANIFEST_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
 esac
 
 if [ "$code" -ne 0 ] && [ "$code" -ne 9 ]; then
   echo "C 原生扫描器失败，代码 $code" >>"$LOG_FILE"
-  rm -f "$REPORT_FILE" "$TARGETS_TMP" "$ITEMS_TMP" "$SUMMARY_FILE"
+  rm -f "$REPORT_FILE" "$TARGETS_TMP" "$ITEMS_TMP" "$MANIFEST_TMP" "$SUMMARY_FILE"
   exit "$code"
 fi
 
@@ -190,6 +207,19 @@ RISK_CRITICAL=$(summary_number risk_critical)
 MOUNT_ITEMS=$(summary_number mount_items)
 TRUNCATED=$(summary_number truncated)
 WHITELISTED=$(summary_number whitelisted)
+VISITED_FILES=$(summary_number visited_files)
+VISITED_DIRS=$(summary_number visited_dirs)
+PACKAGE_INDEX_ENTRIES=$(summary_number package_index_entries)
+PACKAGE_INDEX_FILES=$(summary_number package_index_files)
+PACKAGE_LOOKUPS=$(summary_number package_lookups)
+FIRST_RESULT_MS=$(summary_number first_result_ms)
+ENGINE_ELAPSED_MS=$(summary_number elapsed_ms)
+ITEMS_PER_SECOND=$(summary_number items_per_second)
+WHITELIST_INDEX_ENTRIES=$(summary_number whitelist_index_entries)
+WHITELIST_INDEX_QUERIES=$(summary_number whitelist_index_queries)
+WHITELIST_ANCESTOR_HITS=$(summary_number whitelist_ancestor_hits)
+WHITELIST_DESCENDANT_HITS=$(summary_number whitelist_descendant_hits)
+PRUNED_SUBTREES=$(summary_number pruned_subtrees)
 TOTAL_ITEMS=$((FILES + EMPTY_DIRS))
 END_EPOCH=$(date +%s)
 ELAPSED=$((END_EPOCH - START_EPOCH))
@@ -198,7 +228,7 @@ snapshot_id=""
 
 if [ "$code" -eq 9 ]; then
   RESULT="原生扫描已停止"
-  rm -f "$TARGETS_TMP" "$ITEMS_TMP"
+  rm -f "$TARGETS_TMP" "$ITEMS_TMP" "$MANIFEST_TMP"
 else
   scan_epoch=$(date +%s)
   targets_sha=$(file_sha "$TARGETS_TMP")
@@ -218,7 +248,20 @@ else
         echo "files=$TOTAL_ITEMS"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/corpse_scan.env"
       chmod 0600 "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets" 2>/dev/null
       ;;
@@ -238,19 +281,40 @@ else
         echo "files=$TOTAL_ITEMS"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/deep_scan.env"
       chmod 0600 "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets" 2>/dev/null
       ;;
     cache-scan)
       RESULT="应用缓存原生扫描完成，可清理 $SPACE"
-      mv -f "$TARGETS_TMP" "$STATE_DIR/cache_scan.targets"
-      mv -f "$ITEMS_TMP" "$STATE_DIR/cache_scan.items.tsv"
-      targets_sha=$(file_sha "$STATE_DIR/cache_scan.targets")
+      mv -f "$TARGETS_TMP" "$CACHE_SCAN_TARGETS"
+      mv -f "$ITEMS_TMP" "$CACHE_SCAN_ITEMS"
+      mv -f "$MANIFEST_TMP" "$CACHE_SCAN_MANIFEST"
+      targets_sha=$(file_sha "$CACHE_SCAN_TARGETS")
+      items_sha=$(file_sha "$CACHE_SCAN_ITEMS")
+      manifest_sha=$(file_sha "$CACHE_SCAN_MANIFEST")
+      snapshot_id="${scan_epoch}-$(printf '%s' "$manifest_sha" | cut -c1-16)"
       {
         echo "epoch=$scan_epoch"
         echo "snapshot_id=$snapshot_id"
         echo "targets_sha=$targets_sha"
+        echo "items_sha=$items_sha"
+        echo "manifest_sha=$manifest_sha"
+        echo "manifest_format=nul-v2"
+        echo "manifest_items=$FILES"
         echo "whitelist_sha=$(file_sha "$WHITELIST")"
         echo "package_whitelist_sha=$(file_sha "$PACKAGE_WHITELIST")"
         echo "min_age_days=$cache_days"
@@ -259,13 +323,28 @@ else
         echo "files=$FILES"
         echo "items=$CANDIDATES"
         echo "targets=$TARGET_COUNT"
-        echo "engine=native-c-arm64"
-      } >"$STATE_DIR/cache_scan.env"
-      chmod 0600 "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" 2>/dev/null
-      printf 'package\tcategory\tfiles\tbytes\n' >"$REPORT_DIR/apps-latest.tsv"
-      printf 'package\tcategory\tfiles\tbytes\terrors\tsample_path\n' >"$REPORT_DIR/app-items-latest.tsv"
-      awk -F '\t' 'NR==1{next}{print $1"\t"$2"\t"$3"\t"$4}' "$STATE_DIR/cache_scan.items.tsv" >>"$REPORT_DIR/apps-latest.tsv"
-      awk -F '\t' 'NR==1{next}{print $1"\t"$2"\t"$3"\t"$4"\t0\t"$6}' "$STATE_DIR/cache_scan.items.tsv" >>"$REPORT_DIR/app-items-latest.tsv"
+        echo "visited_files=$VISITED_FILES"
+        echo "visited_dirs=$VISITED_DIRS"
+        echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+        echo "package_index_files=$PACKAGE_INDEX_FILES"
+        echo "package_lookups=$PACKAGE_LOOKUPS"
+        echo "first_result_ms=$FIRST_RESULT_MS"
+        echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+        echo "items_per_second=$ITEMS_PER_SECOND"
+        echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+        echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+        echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+        echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+        echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "engine=native-c-arm64-path-index"
+      } >"$CACHE_SCAN_STATE"
+      chmod 0600 "$CACHE_SCAN_STATE" "$CACHE_SCAN_TARGETS" "$CACHE_SCAN_ITEMS" "$CACHE_SCAN_MANIFEST" 2>/dev/null
+      if [ "$CACHE_PREFIX" = "cache_scan" ]; then
+        printf 'package\tcategory\tfiles\tbytes\n' >"$REPORT_DIR/apps-latest.tsv"
+        printf 'package\tcategory\tfiles\tbytes\terrors\tsample_path\n' >"$REPORT_DIR/app-items-latest.tsv"
+        awk -F '\t' 'NR==1{next}{print $1"\t"$2"\t"$3"\t"$4}' "$CACHE_SCAN_ITEMS" >>"$REPORT_DIR/apps-latest.tsv"
+        awk -F '\t' 'NR==1{next}{print $1"\t"$2"\t"$3"\t"$4"\t0\t"$6}' "$CACHE_SCAN_ITEMS" >>"$REPORT_DIR/app-items-latest.tsv"
+      fi
       ;;
   esac
 fi
@@ -296,8 +375,21 @@ fi
   echo "deep_progress_current=$TARGET_COUNT"
   echo "deep_progress_total=$TARGET_COUNT"
   echo "whitelisted=$WHITELISTED"
+  echo "visited_files=$VISITED_FILES"
+  echo "visited_dirs=$VISITED_DIRS"
+  echo "package_index_entries=$PACKAGE_INDEX_ENTRIES"
+  echo "package_index_files=$PACKAGE_INDEX_FILES"
+  echo "package_lookups=$PACKAGE_LOOKUPS"
+  echo "first_result_ms=$FIRST_RESULT_MS"
+  echo "engine_elapsed_ms=$ENGINE_ELAPSED_MS"
+  echo "items_per_second=$ITEMS_PER_SECOND"
+  echo "whitelist_index_entries=$WHITELIST_INDEX_ENTRIES"
+  echo "whitelist_index_queries=$WHITELIST_INDEX_QUERIES"
+  echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
+  echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
+  echo "pruned_subtrees=$PRUNED_SUBTREES"
   echo "elapsed=$ELAPSED"
-  echo "engine=native-c-arm64"
+  echo "engine=native-c-arm64-path-index"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 
@@ -305,20 +397,23 @@ fi
 {
   echo "----------------------------------------"
   echo "$RESULT"
-  echo "原生引擎: C arm64 42.6"
-  echo "候选: $CANDIDATES | 文件: $FILES | 目录: $DIRS | 受保护: $PROTECTED_ITEMS | 跳过: $SKIPPED | 错误: $ERRORS | 耗时: ${ELAPSED}s"
+  echo "原生引擎: C arm64 43.0 Alpha 1 共享索引"
+  echo "候选: $CANDIDATES | 文件: $FILES | 目录: $DIRS | 访问: $((VISITED_FILES + VISITED_DIRS)) | 吞吐: ${ITEMS_PER_SECOND}/s | 首项: ${FIRST_RESULT_MS}ms | 耗时: ${ENGINE_ELAPSED_MS}ms"
+  [ "$MODE" = "corpse-scan" ] && echo "安装包索引: $PACKAGE_INDEX_ENTRIES 项 / $PACKAGE_INDEX_FILES 个用户文件 / $PACKAGE_LOOKUPS 次内存查询"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 
-case "$MODE" in corpse-scan) history_name="卸载残留" ;; deep-scan) history_name="深度规则" ;; cache-scan) history_name="应用缓存" ;; esac
-history_category="$history_name|$BYTES|$TOTAL_ITEMS"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-  "$(date '+%Y-%m-%d %H:%M:%S')" "$MODE" "$BYTES" "$TOTAL_ITEMS" "$EMPTY_DIRS" "$ERRORS" \
-  "$RESULT" "$TRIGGER" "$history_category" "$snapshot_id" >>"$HISTORY_FILE"
-tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+if [ "${BAIZE_SUPPRESS_SCAN_HISTORY:-0}" != "1" ]; then
+  case "$MODE" in corpse-scan) history_name="卸载残留" ;; deep-scan) history_name="深度规则" ;; cache-scan) history_name="应用缓存" ;; esac
+  history_category="$history_name|$BYTES|$TOTAL_ITEMS"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$MODE" "$BYTES" "$TOTAL_ITEMS" "$EMPTY_DIRS" "$ERRORS" \
+    "$RESULT" "$TRIGGER" "$history_category" "$snapshot_id" >>"$HISTORY_FILE"
+  tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+fi
 
 echo "$RESULT"
-echo "原生引擎: C arm64 | 候选: $CANDIDATES | 文件: $FILES | 受保护: $PROTECTED_ITEMS | 耗时: ${ELAPSED}s"
+echo "原生引擎: C arm64 共享索引 | 候选: $CANDIDATES | 首项: ${FIRST_RESULT_MS}ms | 吞吐: ${ITEMS_PER_SECOND}/s | 耗时: ${ENGINE_ELAPSED_MS}ms"
 cleanup_lock
 trap - EXIT INT TERM
 [ "$code" -eq 9 ] && exit 9

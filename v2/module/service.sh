@@ -9,6 +9,9 @@ HASH_FILE="$MODDIR/app/baize.apk.sha256"
 INSTALLED_HASH="$STATE_DIR/installed-app.sha256"
 CONFIG="$STATE_DIR/config.conf"
 
+# Do not expose a stale WebUI left by an older same-ID installation.
+rm -rf "$MODDIR/webroot" "$MODDIR/webui" "$MODDIR/www" "$MODDIR/ksu-webui" 2>/dev/null || true
+
 mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
 chmod 0700 "$STATE_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null
@@ -28,13 +31,7 @@ install_app() {
   INSTALL_MODE="updated"
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
-
-  INSTALL_MODE="reinstalled"
-  if pm path "$APP_ID" >/dev/null 2>&1; then
-    pm uninstall --user 0 "$APP_ID" >/dev/null 2>&1 || pm uninstall "$APP_ID" >/dev/null 2>&1
-  fi
-  pm install -d --user 0 "$APK" >/dev/null 2>&1 && return 0
-  pm install -d "$APK" >/dev/null 2>&1 && return 0
+  INSTALL_MODE="failed-preserved"
   return 1
 }
 
@@ -56,7 +53,7 @@ if [ "$need_install" = "1" ]; then
     [ -n "$bundle_hash" ] && printf '%s\n' "$bundle_hash" > "$INSTALLED_HASH"
     chmod 0600 "$INSTALLED_HASH"
   else
-    install_result="failed"
+    install_result="$INSTALL_MODE"
   fi
 fi
 
@@ -78,7 +75,7 @@ scheduler_ready=0
   echo "rules_ready=$rules_ready"
   echo "cleaner_ready=$cleaner_ready"
   echo "scheduler_ready=$scheduler_ready"
-  echo "module_version=2.0.0-alpha12"
+  echo "module_version=2.1.0-alpha6"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"

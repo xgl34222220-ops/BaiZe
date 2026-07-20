@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Alpha 42.5 cache task bridge.
+ * v2.1.0 Alpha 6 performance-panel adaptive-worker path-indexed One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -44,6 +44,33 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotFiles = 0L
     @Volatile private var snapshotBytes = 0L
     @Volatile private var snapshotWhitelisted = 0
+    @Volatile private var snapshotVisitedFiles = 0L
+    @Volatile private var snapshotVisitedDirs = 0L
+    @Volatile private var snapshotFirstResultMs = 0L
+    @Volatile private var snapshotEngineElapsedMs = 0L
+    @Volatile private var snapshotItemsPerSecond = 0L
+    @Volatile private var snapshotOnePassAppDirs = 0L
+    @Volatile private var snapshotOnePassInstalledDirs = 0L
+    @Volatile private var snapshotOnePassOrphanDirs = 0L
+    @Volatile private var snapshotWhitelistIndexEntries = 0L
+    @Volatile private var snapshotWhitelistIndexQueries = 0L
+    @Volatile private var snapshotWhitelistAncestorHits = 0L
+    @Volatile private var snapshotWhitelistDescendantHits = 0L
+    @Volatile private var snapshotPrunedSubtrees = 0L
+    @Volatile private var snapshotRootWorkers = 1L
+    @Volatile private var snapshotParallelWallMs = 0L
+    @Volatile private var snapshotInternalWorkerMs = 0L
+    @Volatile private var snapshotExternalWorkerMs = 0L
+    @Volatile private var snapshotParallelOverlapMilli = 1000L
+    @Volatile private var snapshotWorkerPolicy = "auto"
+    @Volatile private var snapshotWorkerReason = "none"
+    @Volatile private var snapshotRecommendedWorkers = 1L
+    @Volatile private var snapshotParallelGainPercent = 0L
+    @Volatile private var snapshotWorkerProfileRuns = 0L
+    @Volatile private var snapshotSerialProfileRate = 0L
+    @Volatile private var snapshotParallelProfileRate = 0L
+    @Volatile private var snapshotNextProbeRun = 0L
+    @Volatile private var snapshotParallelBlockedUntil = 0L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -53,7 +80,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v42.5")
+                .put("engine", "native-c-arm64-cache-v43.7-alpha8-organizer")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -61,6 +88,33 @@ class BaiZeRootService : RootService() {
                 .put("snapshotFiles", if (ready) snapshotFiles else 0L)
                 .put("snapshotBytes", if (ready) snapshotBytes else 0L)
                 .put("snapshotWhitelisted", if (ready) snapshotWhitelisted else 0)
+                .put("visitedFiles", if (ready) snapshotVisitedFiles else 0L)
+                .put("visitedDirs", if (ready) snapshotVisitedDirs else 0L)
+                .put("firstResultMs", if (ready) snapshotFirstResultMs else 0L)
+                .put("engineElapsedMs", if (ready) snapshotEngineElapsedMs else 0L)
+                .put("itemsPerSecond", if (ready) snapshotItemsPerSecond else 0L)
+                .put("onePassAppDirs", if (ready) snapshotOnePassAppDirs else 0L)
+                .put("onePassInstalledDirs", if (ready) snapshotOnePassInstalledDirs else 0L)
+                .put("onePassOrphanDirs", if (ready) snapshotOnePassOrphanDirs else 0L)
+                .put("whitelistIndexEntries", if (ready) snapshotWhitelistIndexEntries else 0L)
+                .put("whitelistIndexQueries", if (ready) snapshotWhitelistIndexQueries else 0L)
+                .put("whitelistAncestorHits", if (ready) snapshotWhitelistAncestorHits else 0L)
+                .put("whitelistDescendantHits", if (ready) snapshotWhitelistDescendantHits else 0L)
+                .put("prunedSubtrees", if (ready) snapshotPrunedSubtrees else 0L)
+                .put("rootWorkers", if (ready) snapshotRootWorkers else 1L)
+                .put("parallelWallMs", if (ready) snapshotParallelWallMs else 0L)
+                .put("internalWorkerMs", if (ready) snapshotInternalWorkerMs else 0L)
+                .put("externalWorkerMs", if (ready) snapshotExternalWorkerMs else 0L)
+                .put("parallelOverlapMilli", if (ready) snapshotParallelOverlapMilli else 1000L)
+                .put("workerPolicy", if (ready) snapshotWorkerPolicy else "auto")
+                .put("workerReason", if (ready) snapshotWorkerReason else "none")
+                .put("recommendedWorkers", if (ready) snapshotRecommendedWorkers else 1L)
+                .put("parallelGainPercent", if (ready) snapshotParallelGainPercent else 0L)
+                .put("workerProfileRuns", if (ready) snapshotWorkerProfileRuns else 0L)
+                .put("serialProfileRate", if (ready) snapshotSerialProfileRate else 0L)
+                .put("parallelProfileRate", if (ready) snapshotParallelProfileRate else 0L)
+                .put("nextProbeRun", if (ready) snapshotNextProbeRun else 0L)
+                .put("parallelBlockedUntil", if (ready) snapshotParallelBlockedUntil else 0L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -252,7 +306,34 @@ class BaiZeRootService : RootService() {
             .put("whitelisted", snapshotWhitelisted)
             .put("totalFiles", snapshotFiles)
             .put("totalBytes", snapshotBytes)
-            .put("engine", "native-c-arm64")
+            .put("visitedFiles", snapshotVisitedFiles)
+            .put("visitedDirs", snapshotVisitedDirs)
+            .put("firstResultMs", snapshotFirstResultMs)
+            .put("engineElapsedMs", snapshotEngineElapsedMs)
+            .put("itemsPerSecond", snapshotItemsPerSecond)
+            .put("onePassAppDirs", snapshotOnePassAppDirs)
+            .put("onePassInstalledDirs", snapshotOnePassInstalledDirs)
+            .put("onePassOrphanDirs", snapshotOnePassOrphanDirs)
+            .put("whitelistIndexEntries", snapshotWhitelistIndexEntries)
+            .put("whitelistIndexQueries", snapshotWhitelistIndexQueries)
+            .put("whitelistAncestorHits", snapshotWhitelistAncestorHits)
+            .put("whitelistDescendantHits", snapshotWhitelistDescendantHits)
+            .put("prunedSubtrees", snapshotPrunedSubtrees)
+            .put("rootWorkers", snapshotRootWorkers)
+            .put("parallelWallMs", snapshotParallelWallMs)
+            .put("internalWorkerMs", snapshotInternalWorkerMs)
+            .put("externalWorkerMs", snapshotExternalWorkerMs)
+            .put("parallelOverlapMilli", snapshotParallelOverlapMilli)
+            .put("workerPolicy", snapshotWorkerPolicy)
+            .put("workerReason", snapshotWorkerReason)
+            .put("recommendedWorkers", snapshotRecommendedWorkers)
+            .put("parallelGainPercent", snapshotParallelGainPercent)
+            .put("workerProfileRuns", snapshotWorkerProfileRuns)
+            .put("serialProfileRate", snapshotSerialProfileRate)
+            .put("parallelProfileRate", snapshotParallelProfileRate)
+            .put("nextProbeRun", snapshotNextProbeRun)
+            .put("parallelBlockedUntil", snapshotParallelBlockedUntil)
+            .put("engine", "native-c-arm64-adaptive-worker-path-index")
             .toString()
     }
 
@@ -368,7 +449,35 @@ class BaiZeRootService : RootService() {
         snapshotCreatedAt = createdAt
         snapshotFiles = state.optLong("files", 0L).coerceAtLeast(0L)
         snapshotBytes = state.optLong("bytes", 0L).coerceAtLeast(0L)
-        snapshotWhitelisted = readEnv(File(STATE_DIR, "latest.env")).optInt("whitelisted", 0).coerceAtLeast(0)
+        val latest = readEnv(File(STATE_DIR, "latest.env"))
+        snapshotWhitelisted = latest.optInt("whitelisted", 0).coerceAtLeast(0)
+        snapshotVisitedFiles = state.optLong("visited_files", latest.optLong("visited_files", 0L)).coerceAtLeast(0L)
+        snapshotVisitedDirs = state.optLong("visited_dirs", latest.optLong("visited_dirs", 0L)).coerceAtLeast(0L)
+        snapshotFirstResultMs = state.optLong("first_result_ms", latest.optLong("first_result_ms", 0L)).coerceAtLeast(0L)
+        snapshotEngineElapsedMs = state.optLong("engine_elapsed_ms", latest.optLong("engine_elapsed_ms", 0L)).coerceAtLeast(0L)
+        snapshotItemsPerSecond = state.optLong("items_per_second", latest.optLong("items_per_second", 0L)).coerceAtLeast(0L)
+        snapshotOnePassAppDirs = state.optLong("one_pass_app_dirs", latest.optLong("one_pass_app_dirs", 0L)).coerceAtLeast(0L)
+        snapshotOnePassInstalledDirs = state.optLong("one_pass_installed_dirs", latest.optLong("one_pass_installed_dirs", 0L)).coerceAtLeast(0L)
+        snapshotOnePassOrphanDirs = state.optLong("one_pass_orphan_dirs", latest.optLong("one_pass_orphan_dirs", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistIndexEntries = state.optLong("whitelist_index_entries", latest.optLong("whitelist_index_entries", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistIndexQueries = state.optLong("whitelist_index_queries", latest.optLong("whitelist_index_queries", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistAncestorHits = state.optLong("whitelist_ancestor_hits", latest.optLong("whitelist_ancestor_hits", 0L)).coerceAtLeast(0L)
+        snapshotWhitelistDescendantHits = state.optLong("whitelist_descendant_hits", latest.optLong("whitelist_descendant_hits", 0L)).coerceAtLeast(0L)
+        snapshotPrunedSubtrees = state.optLong("pruned_subtrees", latest.optLong("pruned_subtrees", 0L)).coerceAtLeast(0L)
+        snapshotRootWorkers = state.optLong("root_workers", latest.optLong("root_workers", 1L)).coerceIn(1L, 2L)
+        snapshotParallelWallMs = state.optLong("parallel_wall_ms", latest.optLong("parallel_wall_ms", 0L)).coerceAtLeast(0L)
+        snapshotInternalWorkerMs = state.optLong("internal_worker_ms", latest.optLong("internal_worker_ms", 0L)).coerceAtLeast(0L)
+        snapshotExternalWorkerMs = state.optLong("external_worker_ms", latest.optLong("external_worker_ms", 0L)).coerceAtLeast(0L)
+        snapshotParallelOverlapMilli = state.optLong("parallel_overlap_milli", latest.optLong("parallel_overlap_milli", 1000L)).coerceAtLeast(0L)
+        snapshotWorkerPolicy = state.optString("worker_policy", latest.optString("worker_policy", "auto"))
+        snapshotWorkerReason = state.optString("worker_reason", latest.optString("worker_reason", "none"))
+        snapshotRecommendedWorkers = state.optLong("recommended_workers", latest.optLong("recommended_workers", 1L)).coerceIn(1L, 2L)
+        snapshotParallelGainPercent = state.optLong("parallel_gain_percent", latest.optLong("parallel_gain_percent", 0L))
+        snapshotWorkerProfileRuns = state.optLong("worker_profile_runs", latest.optLong("worker_profile_runs", 0L)).coerceAtLeast(0L)
+        snapshotSerialProfileRate = state.optLong("serial_profile_rate", latest.optLong("serial_profile_rate", 0L)).coerceAtLeast(0L)
+        snapshotParallelProfileRate = state.optLong("parallel_profile_rate", latest.optLong("parallel_profile_rate", 0L)).coerceAtLeast(0L)
+        snapshotNextProbeRun = state.optLong("next_probe_run", latest.optLong("next_probe_run", 0L)).coerceAtLeast(0L)
+        snapshotParallelBlockedUntil = state.optLong("parallel_blocked_until", latest.optLong("parallel_blocked_until", 0L)).coerceAtLeast(0L)
         return true
     }
 
@@ -379,6 +488,33 @@ class BaiZeRootService : RootService() {
         snapshotFiles = 0L
         snapshotBytes = 0L
         snapshotWhitelisted = 0
+        snapshotVisitedFiles = 0L
+        snapshotVisitedDirs = 0L
+        snapshotFirstResultMs = 0L
+        snapshotEngineElapsedMs = 0L
+        snapshotItemsPerSecond = 0L
+        snapshotOnePassAppDirs = 0L
+        snapshotOnePassInstalledDirs = 0L
+        snapshotOnePassOrphanDirs = 0L
+        snapshotWhitelistIndexEntries = 0L
+        snapshotWhitelistIndexQueries = 0L
+        snapshotWhitelistAncestorHits = 0L
+        snapshotWhitelistDescendantHits = 0L
+        snapshotPrunedSubtrees = 0L
+        snapshotRootWorkers = 1L
+        snapshotParallelWallMs = 0L
+        snapshotInternalWorkerMs = 0L
+        snapshotExternalWorkerMs = 0L
+        snapshotParallelOverlapMilli = 1000L
+        snapshotWorkerPolicy = "auto"
+        snapshotWorkerReason = "none"
+        snapshotRecommendedWorkers = 1L
+        snapshotParallelGainPercent = 0L
+        snapshotWorkerProfileRuns = 0L
+        snapshotSerialProfileRate = 0L
+        snapshotParallelProfileRate = 0L
+        snapshotNextProbeRun = 0L
+        snapshotParallelBlockedUntil = 0L
     }
 
     private fun moduleTaskAlive(): Boolean {

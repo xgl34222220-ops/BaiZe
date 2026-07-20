@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.BuildConfig
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
@@ -142,7 +143,7 @@ private fun MaterialPageHeader(onRefresh: () -> Unit) {
             Spacer(Modifier.height(5.dp))
             Text("白泽", style = MaterialTheme.typography.headlineLarge)
             Text(
-                "Material 3 清理概览 · Alpha 36",
+                "Material 3 清理概览 · v${BuildConfig.VERSION_NAME}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )

@@ -121,6 +121,20 @@ import kotlin.math.roundToInt
 
 private val SuccessGreen = Color(0xFF2DBE87)
 
+data class ScanPerformanceUiState(
+    val available: Boolean = false,
+    val workerPolicy: String = "auto",
+    val workerReason: String = "not_measured",
+    val actualWorkers: Int = 1,
+    val recommendedWorkers: Int = 1,
+    val parallelGainPercent: Int = 0,
+    val serialRate: Long = 0,
+    val parallelRate: Long = 0,
+    val successfulRuns: Int = 0,
+    val nextProbeRun: Int = 0,
+    val parallelBlockedUntil: Long = 0
+)
+
 data class DashboardUiState(
     val connected: Boolean = false,
     val ready: Boolean = false,
@@ -155,7 +169,8 @@ data class DashboardUiState(
     val recentJunk: List<GeneralJunkUiItem> = emptyList(),
     val rawLogName: String = "",
     val rawLog: String = "",
-    val history: List<HistoryUiItem> = emptyList()
+    val history: List<HistoryUiItem> = emptyList(),
+    val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
 )
 
 data class AppJunkUiItem(
@@ -224,6 +239,10 @@ data class SchedulerUiState(
     val fragmentHours: Int = 12,
     val deepEnabled: Boolean = false,
     val deepHours: Int = 168,
+    val dailyEnabled: Boolean = false,
+    val dailyHour: Int = 3,
+    val dailyMinute: Int = 30,
+    val dailyGraceMinutes: Int = 240,
     val screenOffOnly: Boolean = true,
     val chargingOnly: Boolean = false,
     val idleOnly: Boolean = false,
@@ -233,6 +252,7 @@ data class SchedulerUiState(
     val maxFileMb: Int = 256,
     val apkPackagesEnabled: Boolean = true,
     val apkPackageDays: Int = 30,
+    val scanRootWorkers: Int = 0,
     val saving: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -247,6 +267,10 @@ data class SchedulerUiState(
         .put("schedule_fragment_hours", fragmentHours.coerceIn(1, 720))
         .put("schedule_deep_enabled", deepEnabled.flag())
         .put("schedule_deep_hours", deepHours.coerceIn(1, 720))
+        .put("daily_schedule_enabled", dailyEnabled.flag())
+        .put("daily_schedule_hour", dailyHour.coerceIn(0, 23))
+        .put("daily_schedule_minute", dailyMinute.coerceIn(0, 59))
+        .put("daily_grace_minutes", dailyGraceMinutes.coerceIn(15, 720))
         .put("screen_off_only", screenOffOnly.flag())
         .put("charging_only", chargingOnly.flag())
         .put("device_idle_only", idleOnly.flag())
@@ -256,6 +280,7 @@ data class SchedulerUiState(
         .put("max_file_mb", maxFileMb.coerceIn(16, 2048))
         .put("clean_apk_packages", apkPackagesEnabled.flag())
         .put("apk_package_days", apkPackageDays.coerceIn(0, 365))
+        .put("scan_root_workers", 0)
 
     companion object {
         fun fromJson(json: JSONObject) = SchedulerUiState(
@@ -270,6 +295,10 @@ data class SchedulerUiState(
             fragmentHours = json.optInt("schedule_fragment_hours", 12).coerceIn(1, 720),
             deepEnabled = json.optInt("schedule_deep_enabled", 0) == 1,
             deepHours = json.optInt("schedule_deep_hours", 168).coerceIn(1, 720),
+            dailyEnabled = json.optInt("daily_schedule_enabled", 0) == 1,
+            dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
+            dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
+            dailyGraceMinutes = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720),
             screenOffOnly = json.optInt("screen_off_only", 1) == 1,
             chargingOnly = json.optInt("charging_only", 0) == 1,
             idleOnly = json.optInt("device_idle_only", 0) == 1,
@@ -278,7 +307,8 @@ data class SchedulerUiState(
             notifyZero = json.optInt("notify_zero_result", 0) == 1,
             maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
             apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
-            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365)
+            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
+            scanRootWorkers = 0
         )
     }
 }
@@ -303,6 +333,7 @@ data class DashboardActions(
     val whitelist: () -> Unit,
     val theme: () -> Unit,
     val reconnect: () -> Unit,
+    val resetScanPerformance: () -> Unit,
     val crash: () -> Unit
 )
 
@@ -345,7 +376,9 @@ fun BaiZeMiuixApp(
                     AnimatedPageHost(
                         page = page,
                         style = UiStyle.MATERIAL,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
                     ) { targetPage ->
                         when (targetPage) {
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
@@ -373,7 +406,9 @@ fun BaiZeMiuixApp(
                         AnimatedPageHost(
                             page = page,
                             style = UiStyle.MIUIX,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
                         ) { targetPage ->
                             when (targetPage) {
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
@@ -526,7 +561,6 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
     Row(
         Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
             .padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -573,7 +607,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Haze Glass · Alpha 42",
+                "Miuix × Haze Glass · v${BuildConfig.VERSION_NAME}",
                 actions.refresh
             )
         }
