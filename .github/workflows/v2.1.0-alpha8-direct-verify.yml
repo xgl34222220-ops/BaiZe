@@ -64,7 +64,7 @@ jobs:
           grep -q 'fingerprint(source) != item.fingerprint' "$ENGINE"
           grep -q 'Os.lstat' "$ENGINE"
           grep -q 'Os.rename' "$ENGINE"
-          grep -q 'digest_mismatch' "$ENGINE"
+          grep -q 'sha256(source) != sha256(temp)' "$ENGINE"
           grep -q 'destination.exists()' "$ENGINE"
           grep -q 'organizer-last.json' "$ENGINE"
           grep -q '/data/media' "$ENGINE"
