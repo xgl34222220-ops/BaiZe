@@ -1,9 +1,9 @@
 name: Apply BaiZe v2.2.1 Hotfix
 
 on:
-  push:
+  pull_request_target:
     branches: [main]
-    paths: ['.github/workflows/apply-v2.2.1-hotfix.yml']
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   apply:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'fix/v2.2.1-logs-icons'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
