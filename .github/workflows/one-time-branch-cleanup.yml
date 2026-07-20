@@ -1,4 +1,4 @@
-name: One-time obsolete branch cleanup
+name: One-time obsolete branch cleanup final pass
 
 on:
   push:
