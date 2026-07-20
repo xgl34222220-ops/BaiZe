@@ -1,4 +1,4 @@
-name: Build BaGua Alpha 6.1
+name: Build BaGua Alpha 6.2
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bagua-alpha61-${{ github.ref }}
+  group: bagua-alpha62-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,53 +38,53 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Build and verify Alpha 6.1
+      - name: Build and verify Alpha 6.2
         run: bash ci/build-bagua-alpha61.sh
 
       - name: Upload part 00
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-00, path: work/split/module.part.00, if-no-files-found: error}
+        with: {name: BaGua62-part-00, path: work/split/module.part.00, if-no-files-found: error}
       - name: Upload part 01
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-01, path: work/split/module.part.01, if-no-files-found: error}
+        with: {name: BaGua62-part-01, path: work/split/module.part.01, if-no-files-found: error}
       - name: Upload part 02
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-02, path: work/split/module.part.02, if-no-files-found: error}
+        with: {name: BaGua62-part-02, path: work/split/module.part.02, if-no-files-found: error}
       - name: Upload part 03
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-03, path: work/split/module.part.03, if-no-files-found: error}
+        with: {name: BaGua62-part-03, path: work/split/module.part.03, if-no-files-found: error}
       - name: Upload part 04
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-04, path: work/split/module.part.04, if-no-files-found: error}
+        with: {name: BaGua62-part-04, path: work/split/module.part.04, if-no-files-found: error}
       - name: Upload part 05
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-05, path: work/split/module.part.05, if-no-files-found: error}
+        with: {name: BaGua62-part-05, path: work/split/module.part.05, if-no-files-found: error}
       - name: Upload part 06
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-06, path: work/split/module.part.06, if-no-files-found: error}
+        with: {name: BaGua62-part-06, path: work/split/module.part.06, if-no-files-found: error}
       - name: Upload part 07
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-07, path: work/split/module.part.07, if-no-files-found: error}
+        with: {name: BaGua62-part-07, path: work/split/module.part.07, if-no-files-found: error}
       - name: Upload part 08
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-08, path: work/split/module.part.08, if-no-files-found: error}
+        with: {name: BaGua62-part-08, path: work/split/module.part.08, if-no-files-found: error}
       - name: Upload part 09
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-09, path: work/split/module.part.09, if-no-files-found: error}
+        with: {name: BaGua62-part-09, path: work/split/module.part.09, if-no-files-found: error}
       - name: Upload part 10
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-10, path: work/split/module.part.10, if-no-files-found: error}
+        with: {name: BaGua62-part-10, path: work/split/module.part.10, if-no-files-found: error}
       - name: Upload part 11
         uses: actions/upload-artifact@v4
-        with: {name: BaGua61-part-11, path: work/split/module.part.11, if-no-files-found: error}
+        with: {name: BaGua62-part-11, path: work/split/module.part.11, if-no-files-found: error}
 
       - name: Upload metadata
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua61-metadata
+          name: BaGua62-metadata
           path: |
-            work/split/BaGua-v0.6.1-alpha.6.1-AppOnly-Source.zip
-            work/split/BaGua-v0.6.1-alpha.6.1-SHA256.txt
+            work/split/BaGua-v0.6.2-alpha.6.2-AppOnly-Source.zip
+            work/split/BaGua-v0.6.2-alpha.6.2-SHA256.txt
             work/split/status-test.txt
             work/module-src/app/bagua.apk
           if-no-files-found: error
@@ -93,8 +93,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua61-diagnostics
+          name: BaGua62-diagnostics
           path: |
-            work/build-alpha61.log
-            work/alpha61-error.txt
+            work/build-alpha62.log
+            work/alpha62-error.txt
           if-no-files-found: warn
