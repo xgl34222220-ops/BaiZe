@@ -16,6 +16,11 @@ interface IProfileRootService {
     String recordNativeTask(String taskJson);
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
+    String resetScanWorkerProfile();
+    String clearPackageCaches(String requestJson);
+    String scanFileOrganizer();
+    String applyFileOrganizer(String snapshotId, String selectionJson);
+    String undoFileOrganizer();
 
     String getInstalledPackageCatalog();
     String getWhitelistPackages();

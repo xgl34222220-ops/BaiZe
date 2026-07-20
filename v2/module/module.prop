@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.0.0
-versionCode=22300
+version=v2.1.0
+versionCode=22500
 author=惜故里丶
-description=白泽 v2 正式版：C 原生高速扫描、持久快照一键清理、MIUIx/Material 双界面、Monet/AMOLED 主题、自动清理与完整安全保护。
+description=白泽 v2.1.0：原生 MIUIx 界面、智能清理、一键归类所有应用下载、撤销与定时任务。

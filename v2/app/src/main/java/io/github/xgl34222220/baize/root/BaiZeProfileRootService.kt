@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Persistent root service for the Alpha 6 automatic module path and advanced native audits.
+ * Persistent root service for the Alpha 7 automatic module path, audits and explicit cache-only requests.
  *
  * Ordinary users call [runModuleTask] with `clean` or `scan`. The complete v1 cleaner performs
  * discovery and cleaning in one task, so the UI never asks the user to open every category and
@@ -26,6 +26,12 @@ class BaiZeProfileRootService : RootService() {
     private val cancelled = AtomicBoolean(false)
     private val taskRunning = AtomicBoolean(false)
     private val engine by lazy { NativeProfileEngine(this, cancelled) }
+    private val instantCacheEngine by lazy {
+        InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
+    }
+    private val fileOrganizerEngine by lazy {
+        FileOrganizerEngine(cancelled, File(STATE_DIR))
+    }
 
     @Volatile
     private var taskStateJson: String = idleState()
@@ -38,7 +44,7 @@ class BaiZeProfileRootService : RootService() {
             .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
-            .put("engine", "module-auto-cleaner-v8+native-audit")
+            .put("engine", "module-auto-cleaner-v9+organizer")
             .toString()
 
         override fun getProfileCatalog(): String = engine.catalog()
@@ -120,6 +126,70 @@ class BaiZeProfileRootService : RootService() {
         override fun getSchedulerConfig(): String = configJson()
 
         override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
+
+        override fun resetScanWorkerProfile(): String = resetScanWorkerProfileJson()
+
+        override fun clearPackageCaches(requestJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("instant-cache")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                instantCacheEngine.run(requestJson.orEmpty(), started)
+            } catch (error: Throwable) {
+                failure("instant_cache_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun scanFileOrganizer(): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-scan")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.scan { progress ->
+                    updateOrganizerState("file-organizer-scan", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_scan_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-apply")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
+                    updateOrganizerState("file-organizer-apply", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_apply_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
+
+        override fun undoFileOrganizer(): String {
+            if (!taskRunning.compareAndSet(false, true)) return busy("file-organizer-undo")
+            cancelled.set(false)
+            val started = SystemClock.elapsedRealtime()
+            return try {
+                fileOrganizerEngine.undo { progress ->
+                    updateOrganizerState("file-organizer-undo", progress, started)
+                }
+            } catch (error: Throwable) {
+                failure("file_organizer_undo_failed", error)
+            } finally {
+                taskRunning.set(false)
+                taskStateJson = idleState()
+            }
+        }
 
         override fun getInstalledPackageCatalog(): String =
             this@BaiZeProfileRootService.installedPackageCatalogJson()
@@ -206,6 +276,7 @@ class BaiZeProfileRootService : RootService() {
             .put("output", output)
             .put("totals", totals)
             .put("latest", latest)
+            .put("scanPerformance", scanPerformanceJson())
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("logName", log.name)
             .put("appDetails", appDetails)
@@ -384,6 +455,7 @@ class BaiZeProfileRootService : RootService() {
             .put("module", module)
             .put("totals", totals)
             .put("latest", latest)
+            .put("scanPerformance", scanPerformanceJson())
             .put(
                 "appDetails",
                 appDetailsJson(
@@ -394,6 +466,53 @@ class BaiZeProfileRootService : RootService() {
             .put("otherDetails", otherDetailsJson(File(stateDir, "reports/latest.tsv")))
             .put("running", running)
             .put("config", configJsonObject())
+            .toString()
+    }
+
+    private fun scanPerformanceJson(): JSONObject {
+        val stateDir = File(STATE_DIR)
+        val cache = readEnv(File(stateDir, "cache_scan.env"))
+        val profile = readEnv(File(stateDir, "root-worker-profile.env"))
+        val config = configJsonObject()
+        val requestedMode = config.optInt("scan_root_workers", 0).coerceIn(0, 2)
+        val actualWorkers = cache.optInt("root_workers", profile.optInt("last_workers", 1)).coerceIn(1, 2)
+        val recommendedWorkers = profile.optInt("recommended_workers", 1).coerceIn(1, 2)
+        val hasProfile = profile.length() > 0
+        val reason = if (hasProfile) {
+            cache.optString("worker_reason").ifBlank {
+                profile.optString("last_decision", "not_measured")
+            }
+        } else {
+            "not_measured"
+        }
+        return JSONObject()
+            .put("available", hasProfile)
+            .put("requestedMode", requestedMode)
+            .put("workerPolicy", if (requestedMode == 0) "auto" else "manual")
+            .put("workerReason", reason)
+            .put("actualWorkers", actualWorkers)
+            .put("recommendedWorkers", recommendedWorkers)
+            .put("parallelGainPercent", profile.optInt("parallel_gain_percent", 0))
+            .put("serialRate", profile.optLong("serial_rate", 0L).coerceAtLeast(0L))
+            .put("parallelRate", profile.optLong("parallel_rate", 0L).coerceAtLeast(0L))
+            .put("successfulRuns", profile.optInt("successful_runs", 0).coerceAtLeast(0))
+            .put("nextProbeRun", profile.optInt("next_probe_run", 0).coerceAtLeast(0))
+            .put("parallelBlockedUntil", profile.optLong("parallel_blocked_until", 0L).coerceAtLeast(0L))
+            .put("lastUpdatedEpoch", profile.optLong("updated_epoch", 0L).coerceAtLeast(0L))
+    }
+
+    private fun resetScanWorkerProfileJson(): String = runCatching {
+        val profile = File(STATE_DIR, "root-worker-profile.env")
+        val deleted = !profile.exists() || profile.delete()
+        if (!deleted) error("无法删除本机性能基准")
+        JSONObject()
+            .put("success", true)
+            .put("message", "性能基准已清除，下次自动扫描将从串行重新学习")
+            .toString()
+    }.getOrElse { error ->
+        JSONObject()
+            .put("success", false)
+            .put("error", error.message ?: error.javaClass.simpleName)
             .toString()
     }
 
@@ -911,6 +1030,22 @@ class BaiZeProfileRootService : RootService() {
             .toString()
     }
 
+    private fun updateOrganizerState(
+        operation: String,
+        progress: FileOrganizerEngine.Progress,
+        started: Long
+    ) {
+        taskStateJson = JSONObject()
+            .put("running", true)
+            .put("operation", operation)
+            .put("phase", progress.phase)
+            .put("current", progress.current)
+            .put("total", progress.total)
+            .put("currentPath", progress.path)
+            .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
+            .toString()
+    }
+
     private fun failure(code: String, error: Throwable): String = JSONObject()
         .put("error", code)
         .put("message", error.message ?: error.javaClass.simpleName)
@@ -958,6 +1093,11 @@ class BaiZeProfileRootService : RootService() {
             "min_battery" to 0..100,
             "max_battery_temp" to 30..60,
             "max_run_minutes" to 5..180,
+            "scan_root_workers" to 0..2,
+            "scan_parallel_min_items" to 100..10_000_000,
+            "scan_parallel_min_gain_percent" to 5..50,
+            "scan_parallel_reprobe_runs" to 2..50,
+            "scan_parallel_failure_cooldown_hours" to 1..168,
             "schedule_cache_enabled" to 0..1,
             "schedule_cache_hours" to 1..720,
             "schedule_empty_enabled" to 0..1,

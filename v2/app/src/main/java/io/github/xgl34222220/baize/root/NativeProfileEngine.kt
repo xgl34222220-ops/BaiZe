@@ -690,10 +690,56 @@ internal class NativeProfileEngine(
             }
             visitor(file, false)
             if (!file.isDirectory || node.depth >= maxDepth) continue
-            if (file != root && pruneShared && prune(file)) continue
+            if (file != root && pruneShared && prune(file)) {
+                // The protected subtree is never scanned for files or ordinary rules. We only
+                // inspect directory shells so genuinely empty descendants can still be offered
+                // as empty-directory candidates. The protected root itself is retained.
+                walkProtectedEmptyShells(
+                    protectedRoot = file,
+                    currentDepth = node.depth,
+                    maxDepth = maxDepth,
+                    deadline = deadline,
+                    visitor = visitor
+                )
+                continue
+            }
             stack.add(Node(file, node.depth, true))
             val children = file.listFiles() ?: continue
             for (child in children) stack.add(Node(child, node.depth + 1, false))
+        }
+    }
+
+    private fun walkProtectedEmptyShells(
+        protectedRoot: File,
+        currentDepth: Int,
+        maxDepth: Int,
+        deadline: Long,
+        visitor: (File, Boolean) -> Unit
+    ) {
+        val stack = ArrayDeque<Node>()
+        val children = protectedRoot.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory && !isSymlink(child)) {
+                stack.add(Node(child, currentDepth + 1, false))
+            }
+        }
+        while (stack.isNotEmpty()) {
+            if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) return
+            val node = stack.removeLast()
+            val file = node.file
+            if (!file.exists() || !file.isDirectory || isSymlink(file)) continue
+            if (node.post) {
+                visitor(file, true)
+                continue
+            }
+            stack.add(Node(file, node.depth, true))
+            if (node.depth >= maxDepth) continue
+            val nested = file.listFiles() ?: continue
+            for (child in nested) {
+                if (child.isDirectory && !isSymlink(child)) {
+                    stack.add(Node(child, node.depth + 1, false))
+                }
+            }
         }
     }
 
