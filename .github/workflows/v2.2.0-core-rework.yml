@@ -15,39 +15,22 @@ permissions:
 
 concurrency:
   group: baize-v220-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  rework-build-test-package:
+  build-test-package-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ github.token }}
-
-      - name: Apply deterministic v2.2.0 rework
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/apply_v220_rework.py
-          python3 tools/fix_v220_round2.py
-          git diff --check
-          if ! git diff --quiet; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add v2 tools .github RELEASE_NOTES_V2.2.0.md 2>/dev/null || git add v2 tools .github
-            git commit -m 'feat(v2.2.0): apply unified index performance and release rework'
-            if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
-              git push origin "HEAD:${GITHUB_REF_NAME}"
-            fi
-          fi
 
       - name: Verify source invariants
         shell: bash
         run: |
           set -euo pipefail
+          git diff --check
           sh -n v2/module/storage-index.sh
           sh -n v2/module/apk-snapshot-scan.sh
           sh -n v2/module/apk-snapshot-clean.sh
@@ -61,7 +44,8 @@ jobs:
           grep -q 'apk-snapshot-v2.2-shared-index' v2/module/apk-snapshot-scan.sh
           grep -q 'registerTaskProgressCallback' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
           grep -q 'DisplayPerformanceController.install' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeApplication.kt
-          grep -q 'src/main/baseline-prof.txt' <(find v2/app -type f)
+          test -s v2/app/src/main/baseline-prof.txt
+          test -s v2/macrobenchmark/src/main/java/io/github/xgl34222220/baize/macrobenchmark/BaiZeBenchmark.kt
 
       - name: Test shared index coverage with QQ Telegram NagramX fixtures
         shell: bash
@@ -82,9 +66,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           data = Path('/tmp/baize-index-test/state/index/storage-files.nul').read_bytes().split(b'\0')
-          paths = {p.decode() for p in data if p}
+          names = {Path(p.decode()).name for p in data if p}
           required = {'qq-test.apk', 'telegram-test.apks', 'nagramx-test.xapk'}
-          names = {Path(p).name for p in paths}
           missing = required - names
           assert not missing, f'missing indexed fixtures: {missing}; got {sorted(names)}'
           coverage = Path('/tmp/baize-index-test/state/index/coverage.tsv').read_text()
@@ -147,11 +130,20 @@ jobs:
         run: sh scripts/build-native.sh
 
       - name: Build signed release app and benchmark APK
+        id: android_build
         working-directory: v2
         shell: bash
         run: |
           set -o pipefail
           gradle --no-daemon :app:assembleRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+
+      - name: Upload Android build failure log
+        if: failure() && steps.android_build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.2.0-android-build-failure
+          if-no-files-found: warn
+          path: v2/android-build.log
 
       - name: Verify release APK and baseline profile
         shell: bash
