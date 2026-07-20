@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.1.0-alpha10
-versionCode=22410
+version=v2.1.0-alpha11
+versionCode=22411
 author=惜故里丶
-description=白泽 v2.1.0 Alpha 10：修复大量文件 Binder 崩溃，支持 QQ/TIM 接收目录与服务端完整归类计划。
+description=白泽 v2.1.0 Alpha 11：内部存储根目录散落文件归类，手动操作改为无需确认的一键归类。
