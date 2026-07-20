@@ -5,6 +5,8 @@ on:
     branches: [bagua-alpha5-app-only]
     paths:
       - '.github/workflows/bagua-alpha61-build.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
