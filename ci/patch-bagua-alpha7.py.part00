@@ -1,0 +1,95 @@
+from pathlib import Path
+import sys
+root = Path(sys.argv[1] if len(sys.argv) > 1 else 'work')
+
+# Version bump globally on text files
+for p in root.rglob('*'):
+    if not p.is_file() or p.suffix.lower() in {'.apk','.zip','.png','.jpg','.jpeg','.webp'}:
+        continue
+    try:
+        t=p.read_text()
+    except UnicodeDecodeError:
+        continue
+    nt=t.replace('0.6.2-alpha.6.2','0.7.0-alpha.7')
+    nt=nt.replace('versionCode = 109','versionCode = 110')
+    nt=nt.replace('versionCode=109','versionCode=110')
+    nt=nt.replace('BaGua-v0.6.2-alpha.6.2','BaGua-v0.7.0-alpha.7')
+    if nt!=t:p.write_text(nt)
+
+# Add runtime synchronizer
+sync = root/'module-src/scripts/sync-runtime.sh'
+sync.write_text(r'''#!/system/bin/sh
+MODDIR=${0%/*}/..
+MODDIR=$(cd "$MODDIR" 2>/dev/null && pwd)
+PERSIST=/data/adb/bagua
+RUNTIME="$PERSIST/runtime"
+
+mkdir -p "$PERSIST" "$PERSIST/cache" "$PERSIST/backups" "$PERSIST/logs" \
+  "$RUNTIME/scripts" "$RUNTIME/config" "$RUNTIME/system/etc"
+
+# Record the manager's real module path for diagnostics only. The App bridge never
+# needs to enumerate /data/adb/modules, which may be hidden by Root app profiles.
+printf '%s\n' "$MODDIR" > "$PERSIST/module.path"
+
+copy_runtime() {
+  src="$1"; dst="$2"
+  [ -f "$src" ] || return 0
+  rm -f "$dst"
+  ln "$src" "$dst" 2>/dev/null || cp -f "$src" "$dst"
+}
+
+copy_runtime "$MODDIR/scripts/bagua.sh" "$RUNTIME/scripts/bagua.sh"
+copy_runtime "$MODDIR/scripts/install-app.sh" "$RUNTIME/scripts/install-app.sh"
+copy_runtime "$MODDIR/config/default.conf" "$RUNTIME/config/default.conf"
+copy_runtime "$MODDIR/config/sources.conf" "$RUNTIME/config/sources.conf"
+copy_runtime "$MODDIR/module.prop" "$RUNTIME/module.prop"
+
+# Persistent hosts is canonical. Re-link the module copy on every boot/update.
+ACTIVE="$PERSIST/hosts.active"
+MODULE_HOSTS="$MODDIR/system/etc/hosts"
+if [ ! -s "$ACTIVE" ]; then
+  if [ -s "$MODULE_HOSTS" ]; then cp -f "$MODULE_HOSTS" "$ACTIVE"
+  else
+    cat > "$ACTIVE" <<'HOSTSEOF'
+127.0.0.1 localhost
+::1 localhost
+# BaGua persistent hosts
+HOSTSEOF
+  fi
+fi
+rm -f "$RUNTIME/system/etc/hosts"
+ln "$ACTIVE" "$RUNTIME/system/etc/hosts" 2>/dev/null || cp -f "$ACTIVE" "$RUNTIME/system/etc/hosts"
+mkdir -p "$MODDIR/system/etc"
+rm -f "$MODULE_HOSTS"
+ln "$ACTIVE" "$MODULE_HOSTS" 2>/dev/null || cp -f "$ACTIVE" "$MODULE_HOSTS"
+
+cat > "$PERSIST/bridge.sh" <<'BRIDGEEOF'
+#!/system/bin/sh
+export BAGUA_MODDIR=/data/adb/bagua/runtime
+sh /data/adb/bagua/runtime/scripts/bagua.sh "$@"
+BRIDGEEOF
+
+chmod 0755 "$PERSIST/bridge.sh" "$RUNTIME/scripts/bagua.sh" "$RUNTIME/scripts/install-app.sh" 2>/dev/null || true
+chmod 0644 "$PERSIST/module.path" "$ACTIVE" "$RUNTIME/config/default.conf" "$RUNTIME/config/sources.conf" "$RUNTIME/module.prop" 2>/dev/null || true
+chown -R 0:0 "$RUNTIME" "$PERSIST/bridge.sh" "$PERSIST/module.path" "$ACTIVE" 2>/dev/null || true
+chcon u:object_r:system_file:s0 "$ACTIVE" 2>/dev/null || true
+
+echo 'RESULT=runtime_synced'
+''')
+
+# bagua.sh runtime-aware
+p=root/'module-src/scripts/bagua.sh'
+s=p.read_text()
+old='''SCRIPT_DIR=${0%/*}
+MODDIR=$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)
+PERSIST=/data/adb/bagua
+'''
+new='''SCRIPT_DIR=${0%/*}
+PERSIST=/data/adb/bagua
+if [ -n "${BAGUA_MODDIR:-}" ]; then
+  MODDIR="$BAGUA_MODDIR"
+else
+  MODDIR=$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)
+fi
+'''
+assert old in s
