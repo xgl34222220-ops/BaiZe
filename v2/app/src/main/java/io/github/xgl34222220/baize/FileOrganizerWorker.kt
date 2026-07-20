@@ -18,7 +18,6 @@ import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
-import org.json.JSONArray
 import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
@@ -26,7 +25,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-data class FileOrganizerScheduleSettings(
+internal data class FileOrganizerScheduleSettings(
     val enabled: Boolean = false,
     val intervalHours: Int = 24,
     val chargingOnly: Boolean = false,
@@ -66,18 +65,13 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             }
 
             val snapshotId = scan.optString("snapshotId")
-            val items = scan.optJSONArray("items") ?: JSONArray()
-            val ids = JSONArray()
-            for (index in 0 until items.length()) {
-                val id = items.optJSONObject(index)?.optString("id").orEmpty()
-                if (id.isNotBlank()) ids.put(id)
-            }
-            if (snapshotId.isBlank() || ids.length() == 0) {
+            val total = scan.optInt("total")
+            if (snapshotId.isBlank() || total == 0) {
                 writeResult(applicationContext, "扫描完成，没有需要归类的新文件")
                 return Result.success()
             }
 
-            val request = JSONObject().put("ids", ids).toString()
+            val request = JSONObject().put("all", true).toString()
             val applied = runCatching { JSONObject(session.service.applyFileOrganizer(snapshotId, request)) }.getOrElse {
                 writeResult(applicationContext, "归类失败：${it.message ?: it.javaClass.simpleName}")
                 return Result.retry()
@@ -91,7 +85,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             val skipped = applied.optInt("skipped")
             val failed = applied.optInt("failed")
             val size = Formatter.formatFileSize(applicationContext, applied.optLong("bytes"))
-            writeResult(applicationContext, "已归类 $moved 个文件 · $size；跳过 $skipped 个，失败 $failed 个")
+            writeResult(applicationContext, "已归类 $moved/$total 个文件 · $size；跳过 $skipped 个，失败 $failed 个")
             if (failed == 0) Result.success() else Result.retry()
         } finally {
             session.close()
@@ -173,7 +167,8 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
                 .build()
             val request = PeriodicWorkRequestBuilder<FileOrganizerWorker>(
                 safe.intervalHours.toLong(), TimeUnit.HOURS, 15, TimeUnit.MINUTES
-            ).setInitialDelay(safe.intervalHours.toLong(), TimeUnit.HOURS)
+            )
+                .setInitialDelay(safe.intervalHours.toLong(), TimeUnit.HOURS)
                 .setConstraints(constraints)
                 .build()
             workManager.enqueueUniquePeriodicWork(UNIQUE_WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
