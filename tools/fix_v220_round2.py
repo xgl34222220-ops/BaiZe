@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 
 root = Path(__file__).resolve().parents[1]
 script = root / "v2/module/storage-index.sh"
@@ -37,4 +38,11 @@ if callback_import not in a:
     a = a.replace("package io.github.xgl34222220.baize.root;\n\n", "package io.github.xgl34222220.baize.root;\n\n" + callback_import, 1)
 aidl.write_text(a)
 
-print("v2.2.0 round-2 shared-index and AIDL fixes applied")
+# The generator can be executed repeatedly by push and pull_request runs. Collapse duplicate
+# Compose stability annotations so every data class has exactly one @Immutable marker.
+ui = root / "v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt"
+u = ui.read_text()
+u = re.sub(r'(?:@Immutable\s*\n){2,}(?=data class )', '@Immutable\n', u)
+ui.write_text(u)
+
+print("v2.2.0 round-2 index, AIDL and immutable fixes applied")
