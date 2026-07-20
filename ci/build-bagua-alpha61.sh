@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+rm -rf work bagua-alpha5-source.zip status-test.txt
+cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
+echo "ef766b71e62939064643ae66f1b7beeca82cd83d072e6fbd41762425c0e1408e  bagua-alpha5-source.zip" | sha256sum -c -
+unzip -tq bagua-alpha5-source.zip
+unzip -q bagua-alpha5-source.zip -d work
+
+sed -i 's/fun setSkin(/fun applySkin(/; s/fun setThemeMode(/fun applyThemeMode(/; s/fun setAmoled(/fun applyAmoled(/; s/fun setMonet(/fun applyMonet(/' work/app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
+sed -i 's/controller::setSkin/controller::applySkin/g; s/controller::setThemeMode/controller::applyThemeMode/g; s/controller::setAmoled/controller::applyAmoled/g; s/controller::setMonet/controller::applyMonet/g' work/app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+python3 ci/patch-bagua-alpha51.py work
+base64 -d ci/bagua-alpha6-patch.py.gz.b64 | gzip -d > ci/patch-bagua-alpha6.py
+echo "dde1a731ccb9678ee2fe24c8af90048522ff0397e28e8a527a4aff3efd26ba61  ci/patch-bagua-alpha6.py" | sha256sum -c -
+python3 ci/patch-bagua-alpha6.py work
+python3 ci/patch-bagua-alpha61.py work
+
+cd work
+C=app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt
+test ! -d module-src/webroot
+test ! -d module-src/webui
+test ! -d module-src/www
+for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.sh module-src/action.sh module-src/uninstall.sh module-src/scripts/*.sh; do
+  bash -n "$f"
+done
+! grep -Fq 'trimIndent().replace("\n", "; ")' "$C"
+grep -Fq '""".trimIndent()' "$C"
+grep -q 'accessIssue = "command_failed"' "$C"
+grep -q '模块检测命令执行失败' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
+grep -q 'versionName = "0.6.1-alpha.6.1"' app/build.gradle.kts
+grep -q '^version=0.6.1-alpha.6.1$' module-src/module.prop
+grep -q '^versionCode=108$' module-src/module.prop
+
+sudo rm -rf /data/adb/modules/bagua /data/adb/modules_update/bagua /data/adb/bagua
+sudo mkdir -p /data/adb/modules
+sudo cp -a module-src /data/adb/modules/bagua
+sudo chmod +x /data/adb/modules/bagua/scripts/*.sh
+sudo sh /data/adb/modules/bagua/scripts/bagua.sh status > ../status-test.txt
+grep -q '^INSTALLED=1$' ../status-test.txt
+grep -q '^VERSION=0.6.1-alpha.6.1$' ../status-test.txt
+
+set -o pipefail
+gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha61.log
+bash scripts/package-module.sh
+
+ZIP=dist/BaGua-v0.6.1-alpha.6.1-AppOnly.zip
+APK=module-src/app/bagua.apk
+AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+unzip -tq "$ZIP"
+unzip -l "$ZIP" | grep -q 'app/bagua.apk'
+unzip -l "$ZIP" | grep -q 'scripts/bagua.sh'
+! unzip -l "$ZIP" | grep -Ei 'webroot|webui|/www/'
+unzip -p "$ZIP" module.prop | grep -q '^version=0.6.1-alpha.6.1$'
+unzip -p "$ZIP" module.prop | grep -q '^versionCode=108$'
+"$AAPT" dump badging "$APK" | grep -q "package: name='io.github.xgl34222220.bagua'"
+"$AAPT" dump badging "$APK" | grep -q "versionCode='108'"
+"$AAPT" dump badging "$APK" | grep -q "versionName='0.6.1-alpha.6.1'"
+"$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
+test -s dist/BaGua-v0.6.1-alpha.6.1-SHA256.txt
+
+mkdir -p split
+split -b 2M -d -a 2 "$ZIP" split/module.part.
+count=$(find split -name 'module.part.*' -type f | wc -l)
+test "$count" -le 12
+for n in 00 01 02 03 04 05 06 07 08 09 10 11; do
+  [ -f "split/module.part.$n" ] || : > "split/module.part.$n"
+done
+cat split/module.part.0* > split/reconstructed.zip
+cmp -s split/reconstructed.zip "$ZIP"
+rm split/reconstructed.zip
+cp dist/BaGua-v0.6.1-alpha.6.1-AppOnly-Source.zip split/
+cp dist/BaGua-v0.6.1-alpha.6.1-SHA256.txt split/
+cp ../status-test.txt split/
