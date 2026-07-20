@@ -28,8 +28,8 @@ for f in module-src/customize.sh module-src/post-fs-data.sh module-src/service.s
   bash -n "$f"
 done
 ! grep -Fq 'trimIndent().replace("\n", "; ")' "$C"
-! grep -Fq 'exec sh "${'$'}SCRIPT"' "$C"
-grep -Fq 'sh "${'$'}SCRIPT"' "$C"
+! grep -Fq '                exec sh "' "$C"
+grep -Fq '                sh "' "$C"
 grep -q 'accessIssue = "command_failed"' "$C"
 grep -q 'COMMAND_ERROR' app/src/main/java/io/github/xgl34222220/bagua/Screens.kt
 grep -q 'versionName = "0.6.2-alpha.6.2"' app/build.gradle.kts
