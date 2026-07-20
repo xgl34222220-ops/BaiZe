@@ -1,0 +1,210 @@
+name: BaiZe v2.2.0 Core Rework
+
+on:
+  push:
+    branches:
+      - feat/v2.2.0-core-rework
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v220-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rework-build-test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Apply deterministic v2.2.0 rework
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/apply_v220_rework.py
+          git diff --check
+          if ! git diff --quiet; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add v2 tools .github RELEASE_NOTES_V2.2.0.md 2>/dev/null || git add v2 tools .github
+            git commit -m 'feat(v2.2.0): apply unified index performance and release rework'
+            if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
+              git push origin "HEAD:${GITHUB_REF_NAME}"
+            fi
+          fi
+
+      - name: Verify source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n v2/module/storage-index.sh
+          sh -n v2/module/apk-snapshot-scan.sh
+          sh -n v2/module/apk-snapshot-clean.sh
+          sh -n v2/module/one-pass-scan.sh
+          sh -n v2/scripts/package-module.sh
+          grep -q 'versionName = "2.2.0"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 22600' v2/app/build.gradle.kts
+          grep -qx 'version=v2.2.0' v2/module/module.prop
+          grep -qx 'versionCode=22600' v2/module/module.prop
+          grep -q 'baize-storage-index-v2.2' v2/module/storage-index.sh
+          grep -q 'apk-snapshot-v2.2-shared-index' v2/module/apk-snapshot-scan.sh
+          grep -q 'registerTaskProgressCallback' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+          grep -q 'DisplayPerformanceController.install' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeApplication.kt
+          grep -q 'src/main/baseline-prof.txt' <(find v2/app -type f)
+
+      - name: Test shared index coverage with QQ Telegram NagramX fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/baize-index-test
+          mkdir -p \
+            /tmp/baize-index-test/media/0/Tencent/QQfile_recv \
+            /tmp/baize-index-test/media/0/Android/media/org.telegram.messenger/Telegram \
+            /tmp/baize-index-test/media/0/Android/data/nu.gpu.nagramx/files/Download \
+            /tmp/baize-index-test/state
+          printf apk > /tmp/baize-index-test/media/0/Tencent/QQfile_recv/qq-test.apk
+          printf apks > /tmp/baize-index-test/media/0/Android/media/org.telegram.messenger/Telegram/telegram-test.apks
+          printf xapk > /tmp/baize-index-test/media/0/Android/data/nu.gpu.nagramx/files/Download/nagramx-test.xapk
+          BAIZE_STATE_DIR=/tmp/baize-index-test/state \
+          BAIZE_MEDIA_ROOT=/tmp/baize-index-test/media \
+          sh v2/module/storage-index.sh refresh ci
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path('/tmp/baize-index-test/state/index/storage-files.nul').read_bytes().split(b'\0')
+          paths = {p.decode() for p in data if p}
+          required = {'qq-test.apk', 'telegram-test.apks', 'nagramx-test.xapk'}
+          names = {Path(p).name for p in paths}
+          missing = required - names
+          assert not missing, f'missing indexed fixtures: {missing}; got {sorted(names)}'
+          coverage = Path('/tmp/baize-index-test/state/index/coverage.tsv').read_text()
+          assert 'QQfile_recv' in coverage
+          assert 'org.telegram.messenger' in coverage
+          assert 'nu.gpu.nagramx' in coverage
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Prepare release signing
+        env:
+          BAIZE_KEYSTORE_B64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          GENERIC_KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          BAIZE_STORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          GENERIC_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          BAIZE_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS }}
+          GENERIC_ALIAS: ${{ secrets.KEY_ALIAS }}
+          BAIZE_KEY_PASSWORD_SECRET: ${{ secrets.BAIZE_KEY_PASSWORD }}
+          GENERIC_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY_B64="${BAIZE_KEYSTORE_B64:-${GENERIC_KEYSTORE_B64:-}}"
+          STORE_PASS="${BAIZE_STORE_PASSWORD:-${GENERIC_STORE_PASSWORD:-}}"
+          KEY_ALIAS_VALUE="${BAIZE_ALIAS:-${GENERIC_ALIAS:-}}"
+          KEY_PASS="${BAIZE_KEY_PASSWORD_SECRET:-${GENERIC_KEY_PASSWORD:-}}"
+          if [[ -n "$KEY_B64" && -n "$STORE_PASS" && -n "$KEY_ALIAS_VALUE" && -n "$KEY_PASS" ]]; then
+            printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/baize-release.jks"
+            echo "BAIZE_KEYSTORE_PATH=$RUNNER_TEMP/baize-release.jks" >> "$GITHUB_ENV"
+            echo "BAIZE_KEYSTORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS_VALUE" >> "$GITHUB_ENV"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
+            echo 'BAIZE_SIGNING_MODE=release-keystore' >> "$GITHUB_ENV"
+          else
+            if [[ "$GITHUB_REF" == refs/heads/main ]]; then
+              echo '正式发布缺少四项签名 Secrets' >&2
+              exit 1
+            fi
+            echo 'BAIZE_SIGNING_MODE=debug-fallback-for-pr' >> "$GITHUB_ENV"
+          fi
+
+      - name: Build ARM64 scanner
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed release app and benchmark APK
+        working-directory: v2
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+
+      - name: Verify release APK and baseline profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=v2/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          test -s v2/app/src/main/baseline-prof.txt
+          unzip -l "$APK" | grep -Eq 'baseline.prof|baseline.profm|dexopt/baseline'
+          echo "Signing mode: ${BAIZE_SIGNING_MODE:-unknown}"
+
+      - name: Package v2.2.0 module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify final module
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=v2/dist/BaiZe-v2.2.0-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.2.0'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22600'
+          unzip -p "$ZIP" storage-index.sh | grep -q 'baize-storage-index-v2.2'
+          unzip -p "$ZIP" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
+          unzip -p "$ZIP" app/baize.apk.sha256 | grep -Eq '^[a-f0-9]{64}$'
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Upload v2.2.0 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.2.0-Unified-Index-Performance
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.2.0-Module.zip
+            v2/dist/BaiZe-v2.2.0-Module.zip.sha256
+            v2/app/build/outputs/apk/release/app-release.apk
+            v2/android-build.log
+
+      - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v2.2.0
+          ZIP=v2/dist/BaiZe-v2.2.0-Module.zip
+          SHA=v2/dist/BaiZe-v2.2.0-Module.zip.sha256
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title '白泽 v2.2.0' --notes-file RELEASE_NOTES_V2.2.0.md
+            gh release upload "$TAG" "$ZIP" "$SHA" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$SHA" --target "$GITHUB_SHA" --title '白泽 v2.2.0' --notes-file RELEASE_NOTES_V2.2.0.md --latest
+          fi
