@@ -75,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,6 +122,7 @@ import kotlin.math.roundToInt
 
 private val SuccessGreen = Color(0xFF2DBE87)
 
+@Immutable
 data class ScanPerformanceUiState(
     val available: Boolean = false,
     val workerPolicy: String = "auto",
@@ -135,6 +137,7 @@ data class ScanPerformanceUiState(
     val parallelBlockedUntil: Long = 0
 )
 
+@Immutable
 data class DashboardUiState(
     val connected: Boolean = false,
     val ready: Boolean = false,
@@ -173,6 +176,7 @@ data class DashboardUiState(
     val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
 )
 
+@Immutable
 data class AppJunkUiItem(
     val packageName: String,
     val label: String,
@@ -183,6 +187,7 @@ data class AppJunkUiItem(
     val categories: List<AppJunkCategoryUiItem> = emptyList()
 )
 
+@Immutable
 data class AppJunkCategoryUiItem(
     val name: String,
     val files: Long,
@@ -191,6 +196,7 @@ data class AppJunkCategoryUiItem(
     val samplePath: String
 )
 
+@Immutable
 data class GeneralJunkUiItem(
     val name: String,
     val files: Long,
@@ -199,6 +205,7 @@ data class GeneralJunkUiItem(
     val samplePath: String
 )
 
+@Immutable
 data class HistoryUiItem(
     val title: String,
     val time: String,
@@ -213,12 +220,14 @@ data class HistoryUiItem(
     val apps: List<HistoryAppUiItem> = emptyList()
 )
 
+@Immutable
 data class HistoryCategoryUiItem(
     val name: String,
     val bytes: Long,
     val files: Long
 )
 
+@Immutable
 data class HistoryAppUiItem(
     val packageName: String,
     val label: String,
@@ -227,6 +236,7 @@ data class HistoryAppUiItem(
     val files: Long
 )
 
+@Immutable
 data class SchedulerUiState(
     val enabled: Boolean = true,
     val cacheEnabled: Boolean = true,
@@ -356,11 +366,12 @@ fun BaiZeMiuixApp(
         CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
+            val runtimeDegraded = io.github.xgl34222220.baize.performance.PerformanceRuntime.degraded.value
             val hazeState = rememberHazeState(
                 blurEnabled = appearance.uiStyle == UiStyle.MIUIX &&
                     appearance.blurEnabled &&
                     appearance.glassEnabled &&
-                    !amoled
+                    !amoled && !(appearance.adaptiveSmoothMode && runtimeDegraded)
             )
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
             val miuixNavItems = remember {
@@ -381,11 +392,11 @@ fun BaiZeMiuixApp(
                             .statusBarsPadding()
                     ) { targetPage ->
                         when (targetPage) {
-                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Clean }
-                            BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state, scheduler, actions)
-                            BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state, actions)
-                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state, actions) { page = BaiZePage.Records }
-                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state, scheduler, appearance, actions) { page = BaiZePage.Records }
+                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), actions) { page = BaiZePage.Clean }
+                            BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state.forCleanPage(), scheduler, actions)
+                            BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
+                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state.forLogsPage(), actions) { page = BaiZePage.Records }
+                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                         }
                     }
                     MaterialFloatingDock(
@@ -411,11 +422,11 @@ fun BaiZeMiuixApp(
                                 .statusBarsPadding()
                         ) { targetPage ->
                             when (targetPage) {
-                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Clean }
-                                BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state, scheduler, actions)
-                                BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state, actions)
-                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state, actions) { page = BaiZePage.Records }
-                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state, scheduler, appearance, actions) { page = BaiZePage.Records }
+                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), actions) { page = BaiZePage.Clean }
+                                BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state.forCleanPage(), scheduler, actions)
+                                BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
+                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state.forLogsPage(), actions) { page = BaiZePage.Records }
+                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                             }
                         }
                     }
@@ -446,10 +457,11 @@ private fun AnimatedPageHost(
         contentKey = { it },
         transitionSpec = {
             val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-            val enterDuration = if (style == UiStyle.MIUIX) 300 else 250
-            val exitDuration = if (style == UiStyle.MIUIX) 210 else 170
-            val enterDivisor = if (style == UiStyle.MIUIX) 8 else 11
-            val exitDivisor = if (style == UiStyle.MIUIX) 13 else 16
+            val degraded = io.github.xgl34222220.baize.performance.PerformanceRuntime.degraded.value
+            val enterDuration = if (degraded) 90 else if (style == UiStyle.MIUIX) 210 else 180
+            val exitDuration = if (degraded) 70 else if (style == UiStyle.MIUIX) 140 else 120
+            val enterDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 14 else 18
+            val exitDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 20 else 24
 
             (fadeIn(tween(enterDuration)) + slideInHorizontally(tween(enterDuration)) { width ->
                 direction * width / enterDivisor
@@ -607,7 +619,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix × Haze Glass · v${BuildConfig.VERSION_NAME}",
+                "Miuix · ${io.github.xgl34222220.baize.performance.PerformanceRuntime.statusLine()} · v${BuildConfig.VERSION_NAME}",
                 actions.refresh
             )
         }
@@ -962,3 +974,46 @@ private fun formatElapsedUi(seconds: Long): String = when {
     seconds >= 60 -> "${seconds / 60}分${seconds % 60}秒"
     else -> "${seconds}秒"
 }
+
+
+private fun DashboardUiState.forHomePage(): DashboardUiState = copy(
+    rawLogName = "", rawLog = "", history = emptyList()
+)
+
+private fun DashboardUiState.forCleanPage(): DashboardUiState = copy(
+    rawLogName = "", rawLog = "", history = emptyList(), lifetimeRuns = 0,
+    lifetimeReleased = 0, lifetimeFiles = 0, lifetimeEmptyFiles = 0,
+    lifetimeEmptyDirs = 0, lifetimeFragments = 0, lifetimeElapsed = 0
+)
+
+private fun DashboardUiState.forHistoryPage(): DashboardUiState = DashboardUiState(
+    lastReleased = lastReleased,
+    scanCompleted = scanCompleted,
+    scanBytes = scanBytes,
+    scanFiles = scanFiles,
+    scanEmptyFiles = scanEmptyFiles,
+    scanEmptyDirs = scanEmptyDirs,
+    scanFragments = scanFragments,
+    scanErrors = scanErrors,
+    scanElapsed = scanElapsed,
+    lifetimeRuns = lifetimeRuns,
+    lifetimeReleased = lifetimeReleased,
+    lifetimeFiles = lifetimeFiles,
+    lifetimeEmptyFiles = lifetimeEmptyFiles,
+    lifetimeEmptyDirs = lifetimeEmptyDirs,
+    lifetimeFragments = lifetimeFragments,
+    lifetimeElapsed = lifetimeElapsed,
+    recentApps = recentApps,
+    recentJunk = recentJunk,
+    history = history
+)
+
+private fun DashboardUiState.forLogsPage(): DashboardUiState = DashboardUiState(
+    connected = connected, ready = ready, running = running, serviceText = serviceText,
+    taskPhase = taskPhase, rawLogName = rawLogName, rawLog = rawLog
+)
+
+private fun DashboardUiState.forSettingsPage(): DashboardUiState = DashboardUiState(
+    connected = connected, ready = ready, running = running, serviceText = serviceText,
+    taskPhase = taskPhase, whitelistCount = whitelistCount, scanPerformance = scanPerformance
+)

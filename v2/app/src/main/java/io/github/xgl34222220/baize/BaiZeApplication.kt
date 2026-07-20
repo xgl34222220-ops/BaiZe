@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import com.topjohnwu.superuser.Shell
+import io.github.xgl34222220.baize.performance.DisplayPerformanceController
 
 class BaiZeApplication : Application() {
     override fun onCreate() {
@@ -9,6 +10,7 @@ class BaiZeApplication : Application() {
         CrashRecorder.install(this)
         ThemeManager.install(this)
         NativeNotifier.ensureChannel(this)
+        DisplayPerformanceController.install(this)
         Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(
             Shell.Builder.create()

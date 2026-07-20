@@ -56,6 +56,7 @@ import io.github.xgl34222220.baize.ui.appearance.AccentOptions
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.AppearanceUiActions
 import io.github.xgl34222220.baize.ui.appearance.KolorStyle
+import io.github.xgl34222220.baize.ui.appearance.RefreshRateMode
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 
@@ -135,6 +136,27 @@ fun AppearanceScreenMaterial(
                         selected = settings.kolorStyle,
                         label = { it.label },
                         onSelected = actions.onKolorStyle
+                    )
+                }
+            }
+            item { MaterialSectionTitle("PERFORMANCE", "刷新率与流畅度") }
+            item {
+                MaterialChoiceCard {
+                    Text("刷新率策略", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    MaterialSegmentRow(
+                        values = RefreshRateMode.entries,
+                        selected = settings.refreshRateMode,
+                        label = { it.label },
+                        onSelected = actions.onRefreshRateMode
+                    )
+                    HorizontalDivider(Modifier.padding(top = 14.dp))
+                    MaterialSwitchRow(
+                        icon = Icons.Rounded.PhoneAndroid,
+                        title = "自适应流畅模式",
+                        description = "掉帧、发热或省电时自动停用模糊与重动画",
+                        checked = settings.adaptiveSmoothMode,
+                        onCheckedChange = actions.onAdaptiveSmoothMode
                     )
                 }
             }
@@ -245,7 +267,9 @@ private fun MaterialPreview(settings: AppearanceSettings) {
                     "玻璃${if (settings.glassEnabled) "开启" else "关闭"}",
                     "模糊${if (settings.blurEnabled && settings.glassEnabled) "开启" else "关闭"}",
                     if (settings.amoledBlack) "AMOLED" else null,
-                    if (settings.floatingDock) "悬浮底栏" else "贴底底栏"
+                    if (settings.floatingDock) "悬浮底栏" else "贴底底栏",
+                    settings.refreshRateMode.label,
+                    if (settings.adaptiveSmoothMode) "自适应流畅" else null
                 ).joinToString(" · "),
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
                 fontSize = 11.sp

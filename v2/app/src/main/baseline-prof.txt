@@ -1,0 +1,9 @@
+HSPLio/github/xgl34222220/baize/MiuixDashboardActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLio/github/xgl34222220/baize/BaiZeApplication;->onCreate()V
+HSPLio/github/xgl34222220/baize/performance/DisplayPerformanceController;->onActivityResumed(Landroid/app/Activity;)V
+HSPLio/github/xgl34222220/baize/ui/home/HomeRouteKt;->HomeRoute
+HSPLio/github/xgl34222220/baize/ui/history/HistoryRouteKt;->HistoryRoute
+HSPLio/github/xgl34222220/baize/ui/clean/CleanRouteKt;->CleanRoute
+Lio/github/xgl34222220/baize/root/BaiZeProfileRootService;
+Lio/github/xgl34222220/baize/InstantCacheActivity;
+Lio/github/xgl34222220/baize/ApkScanActivity;

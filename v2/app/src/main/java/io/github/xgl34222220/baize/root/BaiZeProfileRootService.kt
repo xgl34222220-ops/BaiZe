@@ -3,6 +3,7 @@ package io.github.xgl34222220.baize.root
 import android.content.Intent
 import android.os.IBinder
 import android.os.Process
+import android.os.RemoteCallbackList
 import android.os.SystemClock
 import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONArray
@@ -25,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class BaiZeProfileRootService : RootService() {
     private val cancelled = AtomicBoolean(false)
     private val taskRunning = AtomicBoolean(false)
+    private val progressCallbacks = RemoteCallbackList<ITaskProgressCallback>()
+    @Volatile private var lastCallbackAt = 0L
     private val engine by lazy { NativeProfileEngine(this, cancelled) }
     private val instantCacheEngine by lazy {
         InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
@@ -62,6 +65,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -84,6 +88,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -108,12 +113,17 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
         override fun getModuleState(): String = moduleState()
 
         override fun getTaskHistory(limit: Int): String = taskHistoryJson(limit)
+
+        override fun getTaskHistoryPage(offset: Int, limit: Int): String = taskHistoryPageJson(offset, limit)
+
+        override fun getScanCoverage(): String = scanCoverageJson().toString()
 
         override fun clearTaskHistory(): String = clearTaskHistoryJson()
 
@@ -140,6 +150,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -156,6 +167,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -172,6 +184,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -188,6 +201,7 @@ class BaiZeProfileRootService : RootService() {
             } finally {
                 taskRunning.set(false)
                 taskStateJson = idleState()
+                publishTaskState(true)
             }
         }
 
@@ -210,6 +224,16 @@ class BaiZeProfileRootService : RootService() {
             return runCatching {
                 JSONObject(taskStateJson).put("cancelRequested", cancelled.get()).toString()
             }.getOrDefault(taskStateJson)
+        }
+
+        override fun registerTaskProgressCallback(callback: ITaskProgressCallback?) {
+            if (callback == null) return
+            progressCallbacks.register(callback)
+            runCatching { callback.onTaskProgress(getTaskState()) }
+        }
+
+        override fun unregisterTaskProgressCallback(callback: ITaskProgressCallback?) {
+            if (callback != null) progressCallbacks.unregister(callback)
         }
 
         override fun cancelCurrentTask() {
@@ -255,6 +279,7 @@ class BaiZeProfileRootService : RootService() {
                 .put("phase", phase)
                 .put("elapsedMs", SystemClock.elapsedRealtime() - started)
                 .toString()
+            publishTaskState()
         }
 
         val code = process.exitValue()
@@ -281,6 +306,7 @@ class BaiZeProfileRootService : RootService() {
             .put("logName", log.name)
             .put("appDetails", appDetails)
             .put("otherDetails", otherDetailsJson(latestReport))
+            .put("coverage", scanCoverageJson())
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
                 3 -> "已有其他任务正在运行"
@@ -464,6 +490,7 @@ class BaiZeProfileRootService : RootService() {
                 )
             )
             .put("otherDetails", otherDetailsJson(File(stateDir, "reports/latest.tsv")))
+            .put("coverage", scanCoverageJson())
             .put("running", running)
             .put("config", configJsonObject())
             .toString()
@@ -568,6 +595,43 @@ class BaiZeProfileRootService : RootService() {
             .put("lifetimeElapsed", totals.optLong("elapsed", 0L).coerceAtLeast(0L))
             .put("entries", entries)
             .toString()
+    }
+
+    private fun taskHistoryPageJson(offset: Int, requestedLimit: Int): String {
+        val source = JSONObject(taskHistoryJson(100))
+        val entries = source.optJSONArray("entries") ?: JSONArray()
+        val safeOffset = offset.coerceIn(0, entries.length())
+        val safeLimit = requestedLimit.coerceIn(1, 30)
+        val end = (safeOffset + safeLimit).coerceAtMost(entries.length())
+        val page = JSONArray()
+        for (index in safeOffset until end) page.put(entries.optJSONObject(index))
+        return source.put("entries", page)
+            .put("offset", safeOffset)
+            .put("nextOffset", end)
+            .put("total", entries.length())
+            .put("hasMore", end < entries.length())
+            .put("count", page.length())
+            .toString()
+    }
+
+    private fun scanCoverageJson(): JSONArray {
+        val result = JSONArray()
+        val file = File(STATE_DIR, "index/coverage.tsv")
+        if (!file.isFile) return result
+        file.useLines { lines ->
+            lines.drop(1).take(300).forEach { raw ->
+                val columns = raw.split('	', limit = 6)
+                if (columns.size < 5) return@forEach
+                result.put(JSONObject()
+                    .put("status", columns[0])
+                    .put("group", columns[1])
+                    .put("files", columns[2].toLongOrNull() ?: 0L)
+                    .put("bytes", columns[3].toLongOrNull() ?: 0L)
+                    .put("path", columns[4])
+                    .put("reason", columns.getOrNull(5).orEmpty()))
+            }
+        }
+        return result
     }
 
     private fun parseHistoryCategoryDetails(raw: String): JSONArray {
@@ -1028,6 +1092,7 @@ class BaiZeProfileRootService : RootService() {
             .put("failures", progress.failures)
             .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
             .toString()
+        publishTaskState()
     }
 
     private fun updateOrganizerState(
@@ -1044,6 +1109,20 @@ class BaiZeProfileRootService : RootService() {
             .put("currentPath", progress.path)
             .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
             .toString()
+        publishTaskState()
+    }
+
+    private fun publishTaskState(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastCallbackAt < 220L) return
+        lastCallbackAt = now
+        val state = taskStateJson
+        val count = progressCallbacks.beginBroadcast()
+        try {
+            for (index in 0 until count) runCatching { progressCallbacks.getBroadcastItem(index).onTaskProgress(state) }
+        } finally {
+            progressCallbacks.finishBroadcast()
+        }
     }
 
     private fun failure(code: String, error: Throwable): String = JSONObject()

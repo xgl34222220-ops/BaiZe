@@ -23,6 +23,17 @@ enum class ThemeMode(val storageValue: String, val label: String) {
     }
 }
 
+enum class RefreshRateMode(val label: String) {
+    SYSTEM("跟随系统"),
+    HIGH("高刷优先"),
+    STANDARD("60Hz 省电");
+
+    companion object {
+        fun fromStorage(value: String?): RefreshRateMode =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: HIGH
+    }
+}
+
 enum class KolorStyle(val label: String) {
     SOFT("柔和"),
     VIBRANT("鲜艳"),
@@ -68,7 +79,9 @@ data class AppearanceSettings(
     val amoledBlack: Boolean = false,
     val blurEnabled: Boolean = true,
     val glassEnabled: Boolean = true,
-    val floatingDock: Boolean = true
+    val floatingDock: Boolean = true,
+    val refreshRateMode: RefreshRateMode = RefreshRateMode.HIGH,
+    val adaptiveSmoothMode: Boolean = true
 ) {
     val accent: AccentOption
         get() = accentOptionFor(seedArgb)

@@ -10,6 +10,8 @@ interface IProfileRootService {
     String runModuleTask(String mode);
     String getModuleState();
     String getTaskHistory(int limit);
+    String getTaskHistoryPage(int offset, int limit);
+    String getScanCoverage();
     String clearTaskHistory();
     String getRawLog(int maxChars);
     String clearRawLogs();
@@ -27,5 +29,7 @@ interface IProfileRootService {
     String saveWhitelistPackages(String packagesJson);
 
     String getTaskState();
+    void registerTaskProgressCallback(ITaskProgressCallback callback);
+    void unregisterTaskProgressCallback(ITaskProgressCallback callback);
     void cancelCurrentTask();
 }

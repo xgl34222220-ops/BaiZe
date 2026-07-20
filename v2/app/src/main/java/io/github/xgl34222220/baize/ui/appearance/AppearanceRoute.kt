@@ -14,7 +14,9 @@ data class AppearanceUiActions(
     val onAmoledBlack: (Boolean) -> Unit,
     val onGlassEnabled: (Boolean) -> Unit,
     val onBlurEnabled: (Boolean) -> Unit,
-    val onFloatingDock: (Boolean) -> Unit
+    val onFloatingDock: (Boolean) -> Unit,
+    val onRefreshRateMode: (RefreshRateMode) -> Unit,
+    val onAdaptiveSmoothMode: (Boolean) -> Unit
 )
 
 @Composable

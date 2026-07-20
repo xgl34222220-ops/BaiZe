@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.xgl34222220.baize.ThemeManager
+import io.github.xgl34222220.baize.performance.DisplayPerformanceController
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -35,6 +36,8 @@ class AppearanceRepository(private val context: Context) {
         val blurEnabled = booleanPreferencesKey(ThemeManager.KEY_BLUR)
         val glassEnabled = booleanPreferencesKey(ThemeManager.KEY_GLASS)
         val floatingDock = booleanPreferencesKey(ThemeManager.KEY_FLOATING_DOCK)
+        val refreshRateMode = stringPreferencesKey("refresh_rate_mode")
+        val adaptiveSmoothMode = booleanPreferencesKey("adaptive_smooth_mode")
     }
 
     val settings: Flow<AppearanceSettings> = context.appearanceDataStore.data
@@ -54,7 +57,9 @@ class AppearanceRepository(private val context: Context) {
                 amoledBlack = preferences[Keys.amoledBlack] ?: false,
                 blurEnabled = preferences[Keys.blurEnabled] ?: true,
                 glassEnabled = preferences[Keys.glassEnabled] ?: true,
-                floatingDock = preferences[Keys.floatingDock] ?: true
+                floatingDock = preferences[Keys.floatingDock] ?: true,
+                refreshRateMode = RefreshRateMode.fromStorage(preferences[Keys.refreshRateMode]),
+                adaptiveSmoothMode = preferences[Keys.adaptiveSmoothMode] ?: true
             )
         }
 
@@ -111,6 +116,16 @@ class AppearanceRepository(private val context: Context) {
     suspend fun setFloatingDock(enabled: Boolean) {
         edit { it[Keys.floatingDock] = enabled }
         ThemeManager.setFloatingDock(context, enabled)
+    }
+
+    suspend fun setRefreshRateMode(value: RefreshRateMode) {
+        edit { it[Keys.refreshRateMode] = value.name }
+        DisplayPerformanceController.setRefreshRateMode(value)
+    }
+
+    suspend fun setAdaptiveSmoothMode(enabled: Boolean) {
+        edit { it[Keys.adaptiveSmoothMode] = enabled }
+        DisplayPerformanceController.setAdaptiveSmoothMode(enabled)
     }
 
     private suspend inline fun edit(crossinline block: (MutablePreferences) -> Unit) {
