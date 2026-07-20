@@ -1,0 +1,22 @@
+name: Commit v2.2.1 sources
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/commit-v221.yml']
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.2.1-logs-icons
+          fetch-depth: 0
+      - run: python3 tools/apply-v221-hotfix.py
+      - run: |
+          git config user.name github-actions-bot
+          git config user.email actions@github.com
+          git add -A
+          git commit -m 'fix: apply v2.2.1 generated sources'
+          git push origin HEAD:fix/v2.2.1-logs-icons
