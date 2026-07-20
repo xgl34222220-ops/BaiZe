@@ -1,0 +1,57 @@
+name: BaiZe Alpha 8 Compile Diagnostics
+
+on:
+  pull_request:
+    branches: [feat/v2.1.0-alpha7-system-cache]
+    paths:
+      - '.github/workflows/v2.1.0-alpha8-compile-diagnostics.yml'
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v2.1.0-alpha8-file-organizer
+
+      - name: Apply Alpha 8 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed '$d' .github/alpha8-direct/part-00.patch > /tmp/alpha8-main.patch
+          find .github/alpha8-direct -maxdepth 1 -type f -name 'part-*.patch' ! -name 'part-00.patch' ! -name 'part-13-*' -print | sort | xargs cat >> /tmp/alpha8-main.patch
+          cat .github/alpha8-direct/part-13-*.patch > /tmp/alpha8-ownership.patch
+          git apply /tmp/alpha8-main.patch
+          git apply /tmp/alpha8-ownership.patch
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Capture Android compile output
+        working-directory: v2
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug > ../alpha8-gradle.log 2>&1
+          code=$?
+          echo "$code" > ../alpha8-gradle.exit
+          tail -n 200 ../alpha8-gradle.log
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-alpha8-compile-diagnostics
+          path: |
+            alpha8-gradle.log
+            alpha8-gradle.exit
