@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v2.1.0 Alpha 3 path-indexed One-pass cache task bridge.
+ * v2.1.0 Alpha 4 bounded-parallel path-indexed One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -57,6 +57,11 @@ class BaiZeRootService : RootService() {
     @Volatile private var snapshotWhitelistAncestorHits = 0L
     @Volatile private var snapshotWhitelistDescendantHits = 0L
     @Volatile private var snapshotPrunedSubtrees = 0L
+    @Volatile private var snapshotRootWorkers = 1L
+    @Volatile private var snapshotParallelWallMs = 0L
+    @Volatile private var snapshotInternalWorkerMs = 0L
+    @Volatile private var snapshotExternalWorkerMs = 0L
+    @Volatile private var snapshotParallelOverlapMilli = 1000L
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -66,7 +71,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.2-alpha3-path-index")
+                .put("engine", "native-c-arm64-cache-v43.3-alpha4-bounded-parallel")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")
@@ -87,6 +92,11 @@ class BaiZeRootService : RootService() {
                 .put("whitelistAncestorHits", if (ready) snapshotWhitelistAncestorHits else 0L)
                 .put("whitelistDescendantHits", if (ready) snapshotWhitelistDescendantHits else 0L)
                 .put("prunedSubtrees", if (ready) snapshotPrunedSubtrees else 0L)
+                .put("rootWorkers", if (ready) snapshotRootWorkers else 1L)
+                .put("parallelWallMs", if (ready) snapshotParallelWallMs else 0L)
+                .put("internalWorkerMs", if (ready) snapshotInternalWorkerMs else 0L)
+                .put("externalWorkerMs", if (ready) snapshotExternalWorkerMs else 0L)
+                .put("parallelOverlapMilli", if (ready) snapshotParallelOverlapMilli else 1000L)
                 .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
@@ -291,7 +301,12 @@ class BaiZeRootService : RootService() {
             .put("whitelistAncestorHits", snapshotWhitelistAncestorHits)
             .put("whitelistDescendantHits", snapshotWhitelistDescendantHits)
             .put("prunedSubtrees", snapshotPrunedSubtrees)
-            .put("engine", "native-c-arm64-path-index")
+            .put("rootWorkers", snapshotRootWorkers)
+            .put("parallelWallMs", snapshotParallelWallMs)
+            .put("internalWorkerMs", snapshotInternalWorkerMs)
+            .put("externalWorkerMs", snapshotExternalWorkerMs)
+            .put("parallelOverlapMilli", snapshotParallelOverlapMilli)
+            .put("engine", "native-c-arm64-bounded-parallel-path-index")
             .toString()
     }
 
@@ -422,6 +437,11 @@ class BaiZeRootService : RootService() {
         snapshotWhitelistAncestorHits = state.optLong("whitelist_ancestor_hits", latest.optLong("whitelist_ancestor_hits", 0L)).coerceAtLeast(0L)
         snapshotWhitelistDescendantHits = state.optLong("whitelist_descendant_hits", latest.optLong("whitelist_descendant_hits", 0L)).coerceAtLeast(0L)
         snapshotPrunedSubtrees = state.optLong("pruned_subtrees", latest.optLong("pruned_subtrees", 0L)).coerceAtLeast(0L)
+        snapshotRootWorkers = state.optLong("root_workers", latest.optLong("root_workers", 1L)).coerceIn(1L, 2L)
+        snapshotParallelWallMs = state.optLong("parallel_wall_ms", latest.optLong("parallel_wall_ms", 0L)).coerceAtLeast(0L)
+        snapshotInternalWorkerMs = state.optLong("internal_worker_ms", latest.optLong("internal_worker_ms", 0L)).coerceAtLeast(0L)
+        snapshotExternalWorkerMs = state.optLong("external_worker_ms", latest.optLong("external_worker_ms", 0L)).coerceAtLeast(0L)
+        snapshotParallelOverlapMilli = state.optLong("parallel_overlap_milli", latest.optLong("parallel_overlap_milli", 1000L)).coerceAtLeast(0L)
         return true
     }
 
@@ -445,6 +465,11 @@ class BaiZeRootService : RootService() {
         snapshotWhitelistAncestorHits = 0L
         snapshotWhitelistDescendantHits = 0L
         snapshotPrunedSubtrees = 0L
+        snapshotRootWorkers = 1L
+        snapshotParallelWallMs = 0L
+        snapshotInternalWorkerMs = 0L
+        snapshotExternalWorkerMs = 0L
+        snapshotParallelOverlapMilli = 1000L
     }
 
     private fun moduleTaskAlive(): Boolean {

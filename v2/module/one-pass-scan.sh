@@ -46,6 +46,16 @@ pid_is_baize_task() {
 }
 
 LOCK_OWNED=0
+WORKER_PIDS=""
+stop_workers() {
+  : >"$STOP_FILE" 2>/dev/null
+  for worker_pid in $WORKER_PIDS; do
+    [ "$worker_pid" -gt 1 ] 2>/dev/null || continue
+    child_pids=$(cat "/proc/$worker_pid/task/$worker_pid/children" 2>/dev/null)
+    for child_pid in $child_pids; do kill "$child_pid" 2>/dev/null || true; done
+    kill "$worker_pid" 2>/dev/null || true
+  done
+}
 cleanup_lock() {
   [ "$LOCK_OWNED" = "1" ] || return 0
   rm -f "$RUNNING_FILE" 2>/dev/null
@@ -54,6 +64,7 @@ cleanup_lock() {
 handle_signal() {
   trap - EXIT INT TERM
   : >"$STOP_FILE" 2>/dev/null
+  stop_workers
   cleanup_lock
   exit 9
 }
@@ -105,7 +116,7 @@ set_phase() {
     echo "progress_current=0"
     echo "progress_total=0"
     echo "current_path="
-    echo "engine=native-c-arm64-one-pass-path-index"
+    echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -122,8 +133,102 @@ summary_number() { value=$(summary_value "$1" "$2"); case "$value" in ''|*[!0-9]
 file_sha() { [ -f "$1" ] && sha256sum "$1" 2>/dev/null | awk 'NR==1{print $1}' || echo missing; }
 human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
 
-rm -f "$CACHE_STATE" "$CACHE_TARGETS" "$CACHE_ITEMS" "$CACHE_MANIFEST"
-rm -f "$CORPSE_STATE" "$CORPSE_TARGETS"
+monotonic_ms() {
+  awk 'NR==1 { printf "%.0f\n", $1 * 1000 }' /proc/uptime 2>/dev/null || echo 0
+}
+env_value() { file=$1 key=$2; sed -n "s/^$key=//p" "$file" 2>/dev/null | tail -n 1; }
+max2() { [ "$1" -ge "$2" ] 2>/dev/null && echo "$1" || echo "$2"; }
+min_positive() {
+  a=$1 b=$2
+  [ "$a" -le 0 ] 2>/dev/null && { echo "$b"; return; }
+  [ "$b" -le 0 ] 2>/dev/null && { echo "$a"; return; }
+  [ "$a" -le "$b" ] && echo "$a" || echo "$b"
+}
+choose_root_workers() {
+  requested=${BAIZE_ROOT_WORKERS:-$(get_config_uint scan_root_workers 0 0 2)}
+  case "$requested" in 0|1|2) ;; *) requested=0 ;; esac
+  cpu_count=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null)
+  case "$cpu_count" in ''|*[!0-9]*) cpu_count=1 ;; esac
+  mem_kb=$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
+  case "$mem_kb" in ''|*[!0-9]*) mem_kb=0 ;; esac
+  has_internal=0
+  [ -d "$DATA_ROOT/user" ] && has_internal=1
+  [ -d "$DATA_ROOT/user_de" ] && has_internal=1
+  has_external=0
+  for userdir in "$MEDIA_ROOT"/[0-9]*; do
+    [ -d "$userdir/Android/data" ] && { has_external=1; break; }
+  done
+  if [ "$requested" = "0" ]; then
+    if [ "$cpu_count" -ge 4 ] && [ "$mem_kb" -ge 524288 ] && [ "$has_internal" = "1" ] && [ "$has_external" = "1" ]; then
+      echo 2
+    else
+      echo 1
+    fi
+  elif [ "$requested" = "2" ] && { [ "$has_internal" != "1" ] || [ "$has_external" != "1" ]; }; then
+    echo 1
+  else
+    echo "$requested"
+  fi
+}
+write_parallel_progress() {
+  internal_phase=$(env_value "$INTERNAL_PROGRESS" phase)
+  external_phase=$(env_value "$EXTERNAL_PROGRESS" phase)
+  internal_path=$(env_value "$INTERNAL_PROGRESS" current_path)
+  external_path=$(env_value "$EXTERNAL_PROGRESS" current_path)
+  [ -n "$internal_phase" ] || internal_phase="等待内部存储工作进程"
+  [ -n "$external_phase" ] || external_phase="等待外部存储工作进程"
+  current_path=$external_path
+  [ -n "$current_path" ] || current_path=$internal_path
+  tmp="$RUNNING_FILE.tmp.$$"
+  {
+    echo "mode=$MODE"
+    echo "phase=有限并发：内部[$internal_phase] 外部[$external_phase]"
+    echo "started=$START_EPOCH"
+    echo "progress_current=0"
+    echo "progress_total=0"
+    echo "current_path=$current_path"
+    echo "root_workers=2"
+    echo "internal_worker_pid=$INTERNAL_PID"
+    echo "external_worker_pid=$EXTERNAL_PID"
+    echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
+  } >"$tmp"
+  mv -f "$tmp" "$RUNNING_FILE"
+}
+write_combined_cache_summary() {
+  internal=$1 external=$2 output=$3 wall_ms=$4
+  sum_key() { a=$(summary_number "$internal" "$1"); b=$(summary_number "$external" "$1"); echo $((a + b)); }
+  files=$(sum_key files); bytes=$(sum_key bytes); dirs=$(sum_key dirs); empty_dirs=$(sum_key empty_dirs)
+  skipped=$(sum_key skipped); errors=$(sum_key errors); protected_items=$(sum_key protected_items)
+  protected_bytes=$(sum_key protected_bytes); candidates=$(sum_key candidates); targets=$(sum_key targets)
+  risk_low=$(sum_key risk_low); risk_medium=$(sum_key risk_medium); risk_high=$(sum_key risk_high); risk_critical=$(sum_key risk_critical)
+  mount_items=$(sum_key mount_items); truncated=$(sum_key truncated); whitelisted=$(sum_key whitelisted)
+  visited_files=$(sum_key visited_files); visited_dirs=$(sum_key visited_dirs)
+  package_lookups=$(sum_key package_lookups)
+  one_pass_app_dirs=$(sum_key one_pass_app_dirs); one_pass_installed_dirs=$(sum_key one_pass_installed_dirs); one_pass_orphan_dirs=$(sum_key one_pass_orphan_dirs)
+  whitelist_index_queries=$(sum_key whitelist_index_queries); whitelist_ancestor_hits=$(sum_key whitelist_ancestor_hits)
+  whitelist_descendant_hits=$(sum_key whitelist_descendant_hits); pruned_subtrees=$(sum_key pruned_subtrees)
+  package_index_entries=$(max2 "$(summary_number "$internal" package_index_entries)" "$(summary_number "$external" package_index_entries)")
+  package_index_files=$(max2 "$(summary_number "$internal" package_index_files)" "$(summary_number "$external" package_index_files)")
+  whitelist_index_entries=$(max2 "$(summary_number "$internal" whitelist_index_entries)" "$(summary_number "$external" whitelist_index_entries)")
+  first_result_ms=$(min_positive "$(summary_number "$internal" first_result_ms)" "$(summary_number "$external" first_result_ms)")
+  visited=$((visited_files + visited_dirs))
+  [ "$wall_ms" -gt 0 ] 2>/dev/null && items_per_second=$((visited * 1000 / wall_ms)) || items_per_second=0
+  {
+    echo "files=$files"; echo "bytes=$bytes"; echo "dirs=$dirs"; echo "empty_dirs=$empty_dirs"
+    echo "skipped=$skipped"; echo "errors=$errors"; echo "protected_items=$protected_items"; echo "protected_bytes=$protected_bytes"
+    echo "candidates=$candidates"; echo "targets=$targets"; echo "risk_low=$risk_low"; echo "risk_medium=$risk_medium"
+    echo "risk_high=$risk_high"; echo "risk_critical=$risk_critical"; echo "mount_items=$mount_items"; echo "truncated=$truncated"
+    echo "whitelisted=$whitelisted"; echo "visited_files=$visited_files"; echo "visited_dirs=$visited_dirs"
+    echo "package_index_entries=$package_index_entries"; echo "package_index_files=$package_index_files"; echo "package_lookups=$package_lookups"
+    echo "first_result_ms=$first_result_ms"; echo "one_pass_app_dirs=$one_pass_app_dirs"
+    echo "one_pass_installed_dirs=$one_pass_installed_dirs"; echo "one_pass_orphan_dirs=$one_pass_orphan_dirs"
+    echo "whitelist_index_entries=$whitelist_index_entries"; echo "whitelist_index_queries=$whitelist_index_queries"
+    echo "whitelist_ancestor_hits=$whitelist_ancestor_hits"; echo "whitelist_descendant_hits=$whitelist_descendant_hits"
+    echo "pruned_subtrees=$pruned_subtrees"; echo "elapsed_ms=$wall_ms"; echo "items_per_second=$items_per_second"
+    echo "engine=native-c-arm64"; echo "version=43.3-alpha4-bounded-parallel"
+  } >"$output"
+}
+
 set_phase "正在建立所有 Android 用户的安装包共享索引"
 if [ -z "${BAIZE_INSTALLED_ROOT:-}" ]; then
   found_users=0
@@ -145,29 +250,132 @@ MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 cache_days=$(get_config_uint app_cache_days 0 0 365)
 external_days=$(get_config_uint external_cache_days 0 0 365)
 [ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
+ROOT_WORKERS=$(choose_root_workers)
+PARALLEL_WALL_MS=0
+INTERNAL_WORKER_MS=0
+EXTERNAL_WORKER_MS=0
+PARALLEL_OVERLAP_MILLI=1000
+CACHE_REPORT_WORK="$TMP_DIR/cache-report.tsv"
+CORPSE_REPORT_WORK="$TMP_DIR/corpse-report.tsv"
+rm -f "$CACHE_REPORT_WORK" "$CORPSE_REPORT_WORK" "$CACHE_TARGETS_TMP" "$CACHE_ITEMS_TMP" \
+      "$CACHE_MANIFEST_TMP" "$CACHE_SUMMARY" "$CORPSE_TARGETS_TMP" "$CORPSE_SUMMARY"
 
-set_phase "正在单次枚举 Android/data 并生成双快照"
-code=0
-"$NATIVE_ENGINE" scan-external-one-pass \
-  --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" --installed-root "$INSTALLED_ROOT" \
-  --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
-  --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
-  --report "$CACHE_REPORT" --targets "$CACHE_TARGETS_TMP" --items "$CACHE_ITEMS_TMP" \
-  --manifest "$CACHE_MANIFEST_TMP" --summary "$CACHE_SUMMARY" \
-  --corpse-report "$CORPSE_REPORT" --corpse-targets "$CORPSE_TARGETS_TMP" \
-  --corpse-summary "$CORPSE_SUMMARY" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
+if [ "$ROOT_WORKERS" = "2" ]; then
+  set_phase "正在以 2 个受控工作进程扫描互不重叠根目录"
+  mkdir -p "$TMP_DIR/empty-media" "$TMP_DIR/empty-data"
+  INTERNAL_REPORT="$TMP_DIR/internal-cache.tsv"
+  INTERNAL_TARGETS="$TMP_DIR/internal-cache.targets"
+  INTERNAL_ITEMS="$TMP_DIR/internal-cache.items.tsv"
+  INTERNAL_MANIFEST="$TMP_DIR/internal-cache.manifest0"
+  INTERNAL_SUMMARY="$TMP_DIR/internal-cache.env"
+  INTERNAL_PROGRESS="$TMP_DIR/internal-progress.env"
+  INTERNAL_CODE="$TMP_DIR/internal.code"
+  EXTERNAL_REPORT="$TMP_DIR/external-cache.tsv"
+  EXTERNAL_TARGETS="$TMP_DIR/external-cache.targets"
+  EXTERNAL_ITEMS="$TMP_DIR/external-cache.items.tsv"
+  EXTERNAL_MANIFEST="$TMP_DIR/external-cache.manifest0"
+  EXTERNAL_SUMMARY="$TMP_DIR/external-cache.env"
+  EXTERNAL_PROGRESS="$TMP_DIR/external-progress.env"
+  EXTERNAL_CODE="$TMP_DIR/external.code"
+  EXTERNAL_CORPSE_REPORT="$TMP_DIR/external-corpse.tsv"
+  EXTERNAL_CORPSE_TARGETS="$TMP_DIR/external-corpse.targets"
+  EXTERNAL_CORPSE_SUMMARY="$TMP_DIR/external-corpse.env"
+  rm -f "$INTERNAL_CODE" "$EXTERNAL_CODE" "$INTERNAL_PROGRESS" "$EXTERNAL_PROGRESS"
+  PARALLEL_STARTED_MS=$(monotonic_ms)
+  (
+    worker_code=0
+    "$NATIVE_ENGINE" scan-cache \
+      --data-root "$DATA_ROOT" --media-root "$TMP_DIR/empty-media" \
+      --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
+      --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+      --report "$INTERNAL_REPORT" --targets "$INTERNAL_TARGETS" --items "$INTERNAL_ITEMS" \
+      --manifest "$INTERNAL_MANIFEST" --summary "$INTERNAL_SUMMARY" \
+      --progress "$INTERNAL_PROGRESS" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || worker_code=$?
+    echo "$worker_code" >"$INTERNAL_CODE"
+  ) &
+  INTERNAL_PID=$!
+  (
+    worker_code=0
+    "$NATIVE_ENGINE" scan-external-one-pass \
+      --data-root "$TMP_DIR/empty-data" --media-root "$MEDIA_ROOT" --installed-root "$INSTALLED_ROOT" \
+      --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
+      --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+      --report "$EXTERNAL_REPORT" --targets "$EXTERNAL_TARGETS" --items "$EXTERNAL_ITEMS" \
+      --manifest "$EXTERNAL_MANIFEST" --summary "$EXTERNAL_SUMMARY" \
+      --corpse-report "$EXTERNAL_CORPSE_REPORT" --corpse-targets "$EXTERNAL_CORPSE_TARGETS" \
+      --corpse-summary "$EXTERNAL_CORPSE_SUMMARY" --progress "$EXTERNAL_PROGRESS" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || worker_code=$?
+    echo "$worker_code" >"$EXTERNAL_CODE"
+  ) &
+  EXTERNAL_PID=$!
+  WORKER_PIDS="$INTERNAL_PID $EXTERNAL_PID"
+  WORKER_FAILURE_TRIGGERED=0
+  while [ ! -f "$INTERNAL_CODE" ] || [ ! -f "$EXTERNAL_CODE" ]; do
+    if [ -f "$INTERNAL_CODE" ]; then
+      internal_early=$(cat "$INTERNAL_CODE" 2>/dev/null)
+      case "$internal_early" in 0|9) ;; *) WORKER_FAILURE_TRIGGERED=1; : >"$STOP_FILE" ;; esac
+    fi
+    if [ -f "$EXTERNAL_CODE" ]; then
+      external_early=$(cat "$EXTERNAL_CODE" 2>/dev/null)
+      case "$external_early" in 0|9) ;; *) WORKER_FAILURE_TRIGGERED=1; : >"$STOP_FILE" ;; esac
+    fi
+    write_parallel_progress
+    sleep 0.2
+  done
+  wait "$INTERNAL_PID" 2>/dev/null || true
+  wait "$EXTERNAL_PID" 2>/dev/null || true
+  WORKER_PIDS=""
+  internal_code=$(cat "$INTERNAL_CODE" 2>/dev/null); external_code=$(cat "$EXTERNAL_CODE" 2>/dev/null)
+  case "$internal_code" in ''|*[!0-9]*) internal_code=70 ;; esac
+  case "$external_code" in ''|*[!0-9]*) external_code=70 ;; esac
+  PARALLEL_ENDED_MS=$(monotonic_ms)
+  PARALLEL_WALL_MS=$((PARALLEL_ENDED_MS - PARALLEL_STARTED_MS))
+  [ "$PARALLEL_WALL_MS" -ge 0 ] 2>/dev/null || PARALLEL_WALL_MS=0
+  if [ "$WORKER_FAILURE_TRIGGERED" = "1" ] || { [ "$internal_code" -ne 0 ] && [ "$internal_code" -ne 9 ]; } || { [ "$external_code" -ne 0 ] && [ "$external_code" -ne 9 ]; }; then
+    echo "有限并发扫描失败：内部=$internal_code 外部=$external_code；旧快照保持不变" >>"$LOG_FILE"
+    exit 8
+  fi
+  if [ "$internal_code" -eq 9 ] || [ "$external_code" -eq 9 ]; then
+    echo "联合扫描已停止"
+    exit 9
+  fi
+  INTERNAL_WORKER_MS=$(summary_number "$INTERNAL_SUMMARY" elapsed_ms)
+  EXTERNAL_WORKER_MS=$(summary_number "$EXTERNAL_SUMMARY" elapsed_ms)
+  if [ "$PARALLEL_WALL_MS" -gt 0 ]; then
+    PARALLEL_OVERLAP_MILLI=$(((INTERNAL_WORKER_MS + EXTERNAL_WORKER_MS) * 1000 / PARALLEL_WALL_MS))
+  fi
+  awk 'FNR == 1 && NR != 1 {next} {print}' "$INTERNAL_REPORT" "$EXTERNAL_REPORT" >"$CACHE_REPORT_WORK"
+  cat "$INTERNAL_TARGETS" "$EXTERNAL_TARGETS" >"$CACHE_TARGETS_TMP"
+  awk 'FNR == 1 && NR != 1 {next} {print}' "$INTERNAL_ITEMS" "$EXTERNAL_ITEMS" >"$CACHE_ITEMS_TMP"
+  cat "$INTERNAL_MANIFEST" "$EXTERNAL_MANIFEST" >"$CACHE_MANIFEST_TMP"
+  cp -f "$EXTERNAL_CORPSE_REPORT" "$CORPSE_REPORT_WORK"
+  cp -f "$EXTERNAL_CORPSE_TARGETS" "$CORPSE_TARGETS_TMP"
+  cp -f "$EXTERNAL_CORPSE_SUMMARY" "$CORPSE_SUMMARY"
+  write_combined_cache_summary "$INTERNAL_SUMMARY" "$EXTERNAL_SUMMARY" "$CACHE_SUMMARY" "$PARALLEL_WALL_MS"
+else
+  set_phase "正在串行枚举内部缓存与 Android/data 双快照"
+  SERIAL_STARTED_MS=$(monotonic_ms)
+  code=0
+  "$NATIVE_ENGINE" scan-external-one-pass \
+    --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" --installed-root "$INSTALLED_ROOT" \
+    --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
+    --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+    --report "$CACHE_REPORT_WORK" --targets "$CACHE_TARGETS_TMP" --items "$CACHE_ITEMS_TMP" \
+    --manifest "$CACHE_MANIFEST_TMP" --summary "$CACHE_SUMMARY" \
+    --corpse-report "$CORPSE_REPORT_WORK" --corpse-targets "$CORPSE_TARGETS_TMP" \
+    --corpse-summary "$CORPSE_SUMMARY" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
+  SERIAL_ENDED_MS=$(monotonic_ms)
+  PARALLEL_WALL_MS=$((SERIAL_ENDED_MS - SERIAL_STARTED_MS))
+  [ "$PARALLEL_WALL_MS" -ge 0 ] 2>/dev/null || PARALLEL_WALL_MS=0
+  if [ "$code" -ne 0 ] && [ "$code" -ne 9 ]; then
+    echo "C 原生 One-pass 扫描器失败，代码 $code；旧快照保持不变" >>"$LOG_FILE"
+    exit "$code"
+  fi
+  [ "$code" -ne 9 ] || { echo "联合扫描已停止"; exit 9; }
+  EXTERNAL_WORKER_MS=$(summary_number "$CACHE_SUMMARY" elapsed_ms)
+fi
 
-if [ "$code" -ne 0 ] && [ "$code" -ne 9 ]; then
-  echo "C 原生 One-pass 扫描器失败，代码 $code" >>"$LOG_FILE"
-  rm -f "$CACHE_REPORT" "$CORPSE_REPORT" "$CACHE_TARGETS_TMP" "$CACHE_ITEMS_TMP" \
-        "$CACHE_MANIFEST_TMP" "$CACHE_SUMMARY" "$CORPSE_TARGETS_TMP" "$CORPSE_SUMMARY"
-  exit "$code"
-fi
-if [ "$code" -eq 9 ]; then
-  echo "联合扫描已停止"
-  rm -f "$CACHE_TARGETS_TMP" "$CACHE_ITEMS_TMP" "$CACHE_MANIFEST_TMP" "$CORPSE_TARGETS_TMP"
-  exit 9
-fi
+mv -f "$CACHE_REPORT_WORK" "$CACHE_REPORT" || { echo "无法发布缓存扫描报告" >&2; exit 8; }
+mv -f "$CORPSE_REPORT_WORK" "$CORPSE_REPORT" || { echo "无法发布残留扫描报告" >&2; exit 8; }
 
 C_FILES=$(summary_number "$CACHE_SUMMARY" files)
 C_BYTES=$(summary_number "$CACHE_SUMMARY" bytes)
@@ -212,9 +420,9 @@ R_ELAPSED=$(summary_number "$CORPSE_SUMMARY" elapsed_ms)
 R_RATE=$(summary_number "$CORPSE_SUMMARY" items_per_second)
 
 scan_epoch=$(date +%s)
-mv -f "$CACHE_TARGETS_TMP" "$CACHE_TARGETS"
-mv -f "$CACHE_ITEMS_TMP" "$CACHE_ITEMS"
-mv -f "$CACHE_MANIFEST_TMP" "$CACHE_MANIFEST"
+mv -f "$CACHE_TARGETS_TMP" "$CACHE_TARGETS" || { echo "无法发布缓存目标快照" >&2; exit 8; }
+mv -f "$CACHE_ITEMS_TMP" "$CACHE_ITEMS" || { echo "无法发布缓存项目快照" >&2; exit 8; }
+mv -f "$CACHE_MANIFEST_TMP" "$CACHE_MANIFEST" || { echo "无法发布缓存清单快照" >&2; exit 8; }
 cache_targets_sha=$(file_sha "$CACHE_TARGETS")
 cache_items_sha=$(file_sha "$CACHE_ITEMS")
 cache_manifest_sha=$(file_sha "$CACHE_MANIFEST")
@@ -251,11 +459,16 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
   echo "first_result_ms=$C_FIRST"
   echo "engine_elapsed_ms=$C_ELAPSED"
   echo "items_per_second=$C_RATE"
-  echo "engine=native-c-arm64-one-pass-path-index"
+  echo "root_workers=$ROOT_WORKERS"
+  echo "parallel_wall_ms=$PARALLEL_WALL_MS"
+  echo "internal_worker_ms=$INTERNAL_WORKER_MS"
+  echo "external_worker_ms=$EXTERNAL_WORKER_MS"
+  echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
+  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
 } >"$CACHE_STATE"
 chmod 0600 "$CACHE_STATE" "$CACHE_TARGETS" "$CACHE_ITEMS" "$CACHE_MANIFEST" 2>/dev/null
 
-mv -f "$CORPSE_TARGETS_TMP" "$CORPSE_TARGETS"
+mv -f "$CORPSE_TARGETS_TMP" "$CORPSE_TARGETS" || { echo "无法发布卸载残留目标快照" >&2; exit 8; }
 corpse_targets_sha=$(file_sha "$CORPSE_TARGETS")
 corpse_snapshot_id="${scan_epoch}-$(printf '%s' "$corpse_targets_sha" | cut -c1-16)"
 {
@@ -284,7 +497,12 @@ corpse_snapshot_id="${scan_epoch}-$(printf '%s' "$corpse_targets_sha" | cut -c1-
   echo "first_result_ms=$R_FIRST"
   echo "engine_elapsed_ms=$R_ELAPSED"
   echo "items_per_second=$R_RATE"
-  echo "engine=native-c-arm64-one-pass-path-index"
+  echo "root_workers=$ROOT_WORKERS"
+  echo "parallel_wall_ms=$PARALLEL_WALL_MS"
+  echo "internal_worker_ms=$INTERNAL_WORKER_MS"
+  echo "external_worker_ms=$EXTERNAL_WORKER_MS"
+  echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
+  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
 } >"$CORPSE_STATE"
 chmod 0600 "$CORPSE_STATE" "$CORPSE_TARGETS" 2>/dev/null
 
@@ -358,18 +576,24 @@ END_EPOCH=$(date +%s)
   echo "first_result_ms=$PRIMARY_FIRST"
   echo "engine_elapsed_ms=$PRIMARY_ELAPSED"
   echo "items_per_second=$PRIMARY_RATE"
+  echo "root_workers=$ROOT_WORKERS"
+  echo "parallel_wall_ms=$PARALLEL_WALL_MS"
+  echo "internal_worker_ms=$INTERNAL_WORKER_MS"
+  echo "external_worker_ms=$EXTERNAL_WORKER_MS"
+  echo "parallel_overlap_milli=$PARALLEL_OVERLAP_MILLI"
   echo "elapsed=$((END_EPOCH - START_EPOCH))"
-  echo "engine=native-c-arm64-one-pass-path-index"
+  echo "engine=native-c-arm64-one-pass-path-index-bounded-parallel"
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 cp -f "$PRIMARY_REPORT" "$REPORT_DIR/latest.tsv"
 {
   echo "----------------------------------------"
   echo "$RESULT"
-  echo "原生引擎: C arm64 43.2 Alpha 3 路径索引 One-pass"
+  echo "原生引擎: C arm64 43.3 Alpha 4 路径索引/有限并发 One-pass"
   echo "Android/data 顶级目录: $ONE_APP_DIRS | 已安装: $ONE_INSTALLED | 残留: $ONE_ORPHAN"
   echo "共享索引: $INDEX_ENTRIES 项 / $INDEX_FILES 个用户文件 / $INDEX_LOOKUPS 次查询"
   echo "路径索引: $WL_INDEX_ENTRIES 项 / $WL_INDEX_QUERIES 次查询 / $WL_PRUNED_SUBTREES 个子树提前剪枝"
+  echo "根目录工作进程: $ROOT_WORKERS | 墙钟 ${PARALLEL_WALL_MS}ms | 内部 ${INTERNAL_WORKER_MS}ms | 外部 ${EXTERNAL_WORKER_MS}ms | 重叠系数 ${PARALLEL_OVERLAP_MILLI}‰"
   echo "缓存候选: $C_CANDIDATES / $C_SPACE | 残留候选: $R_CANDIDATES / $R_SPACE"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
@@ -382,7 +606,7 @@ if [ "${BAIZE_SUPPRESS_SCAN_HISTORY:-0}" != "1" ]; then
 fi
 
 echo "$RESULT"
-echo "One-pass: Android/data 只枚举一次 | 应用目录 $ONE_APP_DIRS | 已安装 $ONE_INSTALLED | 残留 $ONE_ORPHAN"
+echo "One-pass: Android/data 只枚举一次 | 工作进程 $ROOT_WORKERS | 应用目录 $ONE_APP_DIRS | 已安装 $ONE_INSTALLED | 残留 $ONE_ORPHAN"
 cleanup_lock
 trap - EXIT INT TERM
 exit 0

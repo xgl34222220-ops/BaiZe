@@ -75,7 +75,7 @@ scheduler_ready=0
   echo "rules_ready=$rules_ready"
   echo "cleaner_ready=$cleaner_ready"
   echo "scheduler_ready=$scheduler_ready"
-  echo "module_version=2.1.0-alpha3"
+  echo "module_version=2.1.0-alpha4"
 } > "$STATE.tmp"
 mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE"

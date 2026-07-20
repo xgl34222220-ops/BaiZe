@@ -19,7 +19,7 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "43.2-alpha3-path-index"
+#define ENGINE_VERSION "43.3-alpha4-bounded-parallel"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;

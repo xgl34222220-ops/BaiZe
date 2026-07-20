@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.1.0-alpha3-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.1.0-alpha4-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -71,11 +71,14 @@ unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'scan-external-one-pass'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'one_pass_app_dirs'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'whitelist_index_queries'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
+unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
+unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'parallel_overlap_milli'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha3$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22403$'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha4$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22404$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
@@ -87,4 +90,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.1.0 Alpha 3 路径索引性能预览模块：$OUTPUT"
+echo "已生成白泽 v2.1.0 Alpha 4 有限并发性能预览模块：$OUTPUT"
