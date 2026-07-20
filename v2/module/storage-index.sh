@@ -53,11 +53,13 @@ add_root() {
 for userdir in "$MEDIA_ROOT"/[0-9]*; do
   [ -d "$userdir" ] || continue
   add_root "内部存储根目录" 1 "$userdir"
+  add_root "QQ接收:公共目录" 12 "$userdir/Tencent/QQfile_recv"
+  add_root "TIM接收:公共目录" 12 "$userdir/Tencent/Timfile_recv"
   for top in "$userdir"/*; do
     [ -d "$top" ] || continue
     name=${top##*/}
     case "$name" in
-      Android|DCIM|Pictures|Movies|Music|Podcasts|Ringtones|Alarms|Notifications|Audiobooks|BaiZe归类|LOST.DIR) continue ;;
+      Android|Tencent|DCIM|Pictures|Movies|Music|Podcasts|Ringtones|Alarms|Notifications|Audiobooks|BaiZe归类|LOST.DIR) continue ;;
     esac
     add_root "共享下载目录:$name" 12 "$top"
   done
