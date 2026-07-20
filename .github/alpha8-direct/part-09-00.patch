@@ -1,0 +1,68 @@
++    private fun allowedDownloadSource(path: String): Boolean =
++        allowedDownloadRoot(path.substringBeforeLast('/', path))
++
++    private fun shouldPruneDiscovery(path: String, name: String): Boolean {
++        val lower = name.lowercase()
++        if (lower in setOf("cache", "code_cache", "databases", "shared_prefs", "lib", "oat", "no_backup")) return true
++        if (path.contains("/Android/obb/")) return true
++        return false
++    }
++
++    private fun isDownloadDirectoryName(name: String): Boolean {
++        val normalized = name.trim().lowercase()
++        return normalized == "download" || normalized == "downloads" || normalized == "下载"
++    }
++
++    private fun skipFile(file: File): Boolean {
++        val name = file.name.lowercase()
++        if (name.startsWith(".") && name !in setOf(".epub", ".pdf")) return true
++        return name == ".nomedia" || name.endsWith(".lock") || name.endsWith(".lck") ||
++            name.endsWith(".db") || name.endsWith(".sqlite") || name.endsWith(".sqlite3") ||
++            name.endsWith("-wal") || name.endsWith("-shm") || name.endsWith(".journal") ||
++            name.endsWith(".part") || name.endsWith(".partial") || name.endsWith(".crdownload") ||
++            name.endsWith(".download") || name.endsWith(".tmp") || name.endsWith(".temp")
++    }
++
++    private fun category(name: String): String {
++        val extension = name.substringAfterLast('.', "").lowercase()
++        return when (extension) {
++            "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "dng", "raw" -> "图片"
++            "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "3gp", "ts" -> "视频"
++            "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "wma", "amr" -> "音频"
++            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "md", "odt", "ods", "odp" -> "文档"
++            "apk", "apks", "xapk", "apkm", "aab" -> "安装包"
++            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "tgz", "tbz2" -> "压缩包"
++            "epub", "mobi", "azw", "azw3", "fb2", "cbz", "cbr", "djvu" -> "电子书"
++            else -> "其他"
++        }
++    }
++
++    private fun sourceGroup(path: String): String {
++        val packageName = Regex("/Android/(?:data|media)/([^/]+)/").find("$path/")?.groupValues?.getOrNull(1)
++            ?: Regex("/data/(?:user|user_de)/\\d+/([^/]+)/").find("$path/")?.groupValues?.getOrNull(1)
++        return packageName ?: "公共下载"
++    }
++
++    private fun userIdForPath(path: String): Int? {
++        val media = Regex("^/data/media/(\\d+)/").find("$path/")?.groupValues?.getOrNull(1)?.toIntOrNull()
++        if (media != null) return media
++        return Regex("^/data/(?:user|user_de)/(\\d+)/").find("$path/")?.groupValues?.getOrNull(1)?.toIntOrNull()
++    }
++
++    private fun fingerprint(file: File): String = runCatching {
++        val stat = Os.lstat(file.path)
++        "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}"
++    }.getOrDefault("")
++
++    private fun isSymlink(file: File): Boolean = runCatching {
++        OsConstants.S_ISLNK(Os.lstat(file.path).st_mode)
++    }.getOrDefault(true)
++
++    private fun canonical(file: File): String =
++        runCatching { file.canonicalFile.path }.getOrDefault(file.absoluteFile.normalize().path)
++
++    private fun displayPath(path: String): String = path
++        .replace(Regex("^/data/media/\\d+"), "内部存储")
++        .replace(Regex("^/data/(?:user|user_de)/\\d+/([^/]+)"), "应用私有/$1")
++
++    private fun sha256(file: File): String {
