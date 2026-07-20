@@ -1,0 +1,73 @@
++++ b/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+@@ -690,13 +690,59 @@ internal class NativeProfileEngine(
+             }
+             visitor(file, false)
+             if (!file.isDirectory || node.depth >= maxDepth) continue
+-            if (file != root && pruneShared && prune(file)) continue
++            if (file != root && pruneShared && prune(file)) {
++                // The protected subtree is never scanned for files or ordinary rules. We only
++                // inspect directory shells so genuinely empty descendants can still be offered
++                // as empty-directory candidates. The protected root itself is retained.
++                walkProtectedEmptyShells(
++                    protectedRoot = file,
++                    currentDepth = node.depth,
++                    maxDepth = maxDepth,
++                    deadline = deadline,
++                    visitor = visitor
++                )
++                continue
++            }
+             stack.add(Node(file, node.depth, true))
+             val children = file.listFiles() ?: continue
+             for (child in children) stack.add(Node(child, node.depth + 1, false))
+         }
+     }
+ 
++    private fun walkProtectedEmptyShells(
++        protectedRoot: File,
++        currentDepth: Int,
++        maxDepth: Int,
++        deadline: Long,
++        visitor: (File, Boolean) -> Unit
++    ) {
++        val stack = ArrayDeque<Node>()
++        val children = protectedRoot.listFiles() ?: return
++        for (child in children) {
++            if (child.isDirectory && !isSymlink(child)) {
++                stack.add(Node(child, currentDepth + 1, false))
++            }
++        }
++        while (stack.isNotEmpty()) {
++            if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) return
++            val node = stack.removeLast()
++            val file = node.file
++            if (!file.exists() || !file.isDirectory || isSymlink(file)) continue
++            if (node.post) {
++                visitor(file, true)
++                continue
++            }
++            stack.add(Node(file, node.depth, true))
++            if (node.depth >= maxDepth) continue
++            val nested = file.listFiles() ?: continue
++            for (child in nested) {
++                if (child.isDirectory && !isSymlink(child)) {
++                    stack.add(Node(child, node.depth + 1, false))
++                }
++            }
++        }
++    }
++
+     private fun expand(rawRule: String): List<File> {
+         val raw = rawRule.substringBefore('|').substringBefore('#').trim()
+         if (!safeRuleSyntax(raw)) return emptyList()
+diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+index e78258c..b0823c5 100644
+--- a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
++++ b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+@@ -80,7 +80,7 @@ class BaiZeRootService : RootService() {
+             return JSONObject()
+                 .put("uid", Process.myUid())
+                 .put("root", Process.myUid() == 0)
+-                .put("engine", "native-c-arm64-cache-v43.6-alpha7-system-cache")
++                .put("engine", "native-c-arm64-cache-v43.7-alpha8-organizer")
+                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
