@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal data class FileOrganizerScheduleSettings(
+data class FileOrganizerScheduleSettings(
     val enabled: Boolean = false,
     val intervalHours: Int = 24,
     val chargingOnly: Boolean = false,
