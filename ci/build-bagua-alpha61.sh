@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$PWD"
+trap 'rc=$?; mkdir -p "$ROOT_DIR/work"; printf "exit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > "$ROOT_DIR/work/alpha61-error.txt"; exit "$rc"' ERR
+
 rm -rf work bagua-alpha5-source.zip status-test.txt
 cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
 echo "ef766b71e62939064643ae66f1b7beeca82cd83d072e6fbd41762425c0e1408e  bagua-alpha5-source.zip" | sha256sum -c -
