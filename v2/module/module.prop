@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.2.0
-versionCode=22600
+version=v2.2.1
+versionCode=22601
 author=惜故里丶
-description=白泽 v2.2.0：统一存储索引、全应用下载覆盖、AIDL 进度推送、高刷与自适应流畅模式。
+description=白泽 v2.2.1：修复安全扫描日志与记录页真实应用图标。
