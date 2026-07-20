@@ -25,7 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum .github/alpha8-direct/part-*.patch
-          find .github/alpha8-direct -maxdepth 1 -type f -name 'part-*.patch' ! -name 'part-13-*' -print | sort | xargs cat > /tmp/alpha8-main.patch
+          sed '$d' .github/alpha8-direct/part-00.patch > /tmp/alpha8-main.patch
+          find .github/alpha8-direct -maxdepth 1 -type f -name 'part-*.patch' ! -name 'part-00.patch' ! -name 'part-13-*' -print | sort | xargs cat >> /tmp/alpha8-main.patch
           cat .github/alpha8-direct/part-13-*.patch > /tmp/alpha8-ownership.patch
           wc -c /tmp/alpha8-main.patch /tmp/alpha8-ownership.patch
           echo 'fc81491b41627df9fbe5097ba65081b6316c27f4fceb5b34f2b3970ccefb34f2  /tmp/alpha8-main.patch' | sha256sum -c -
