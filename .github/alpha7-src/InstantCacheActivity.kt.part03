@@ -1,0 +1,130 @@
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    InstantCacheFilter.entries.forEach { item ->
+                        FilterChip(
+                            selected = filter == item,
+                            onClick = { filter = item },
+                            label = { Text(item.title) },
+                            enabled = !state.running
+                        )
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("当前显示 ${visible.size} 个", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = { onSelectVisible(visible.map { it.packageName }) },
+                        enabled = visible.isNotEmpty() && !state.running
+                    ) { Text("选择当前") }
+                    TextButton(onClick = onClearSelection, enabled = state.selected.isNotEmpty() && !state.running) {
+                        Text("清空")
+                    }
+                }
+            }
+            if (state.loading) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else if (visible.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("没有匹配的应用", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else {
+                items(visible, key = { it.packageName }) { app ->
+                    InstantCacheAppRow(
+                        app = app,
+                        selected = app.packageName in state.selected,
+                        enabled = !state.running,
+                        onClick = { onToggle(app.packageName) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoticeCard(icon: ImageVector, title: String, text: String, warning: Boolean) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (warning) MaterialTheme.colorScheme.tertiaryContainer
+            else MaterialTheme.colorScheme.secondaryContainer
+        ),
+        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+            Icon(icon, null, Modifier.size(22.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(title, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(4.dp))
+                Text(text, fontSize = 12.sp, lineHeight = 18.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InstantCacheAppRow(
+    app: InstantCacheApp,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
+                modifier = Modifier.size(42.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Apps, null) }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        app.label,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (app.system) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text("系统", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 9.sp)
+                        }
+                    }
+                }
+                Text(
+                    app.packageName,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Checkbox(checked = selected, onCheckedChange = { onClick() }, enabled = enabled)
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .04f))
+    }
+}
