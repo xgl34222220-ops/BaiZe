@@ -1,0 +1,172 @@
++                        enabled = state.connected && !state.running && state.selected.isNotEmpty(),
++                        modifier = Modifier.fillMaxWidth().height(56.dp),
++                        shape = RoundedCornerShape(20.dp)
++                    ) {
++                        Icon(Icons.Rounded.CheckCircle, contentDescription = null)
++                        Spacer(Modifier.size(8.dp))
++                        Text("归类所选 ${state.selected.size} 个文件", fontWeight = FontWeight.Black)
++                    }
++                }
++            }
++        }
++    }
++}
++
++@Composable
++private fun LazyColumnLikeChipRow(
++    categories: List<String>,
++    selected: String,
++    onCategory: (String) -> Unit
++) {
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.spacedBy(6.dp)
++    ) {
++        categories.take(5).forEach { category ->
++            FilterChip(
++                selected = selected == category,
++                onClick = { onCategory(category) },
++                label = { Text(category, fontSize = 10.sp) }
++            )
++        }
++    }
++    Row(
++        modifier = Modifier.fillMaxWidth(),
++        horizontalArrangement = Arrangement.spacedBy(6.dp)
++    ) {
++        categories.drop(5).forEach { category ->
++            FilterChip(
++                selected = selected == category,
++                onClick = { onCategory(category) },
++                label = { Text(category, fontSize = 10.sp) }
++            )
++        }
++    }
++}
+diff --git a/v2/app/src/main/AndroidManifest.xml b/v2/app/src/main/AndroidManifest.xml
+index 5d1a74d..4286e1c 100644
+--- a/v2/app/src/main/AndroidManifest.xml
++++ b/v2/app/src/main/AndroidManifest.xml
+@@ -20,6 +20,7 @@
+         <activity android:name=".SmartScanActivity" android:exported="false" />
+         <activity android:name=".ApkScanActivity" android:exported="false" />
+         <activity android:name=".InstantCacheActivity" android:exported="false" />
++        <activity android:name=".FileOrganizerActivity" android:exported="false" />
+         <activity android:name=".CleanCenterActivity" android:exported="false" />
+         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
+         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
+diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+new file mode 100644
+index 0000000..227c8cb
+--- /dev/null
++++ b/v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+@@ -0,0 +1,537 @@
++package io.github.xgl34222220.baize.root
++
++import android.os.SystemClock
++import android.system.ErrnoException
++import android.system.Os
++import android.system.OsConstants
++import org.json.JSONArray
++import org.json.JSONObject
++import java.io.File
++import java.io.FileInputStream
++import java.io.FileOutputStream
++import java.security.MessageDigest
++import java.util.UUID
++import java.util.concurrent.atomic.AtomicBoolean
++
++/**
++ * Explicit file organizer for download trees.
++ *
++ * It discovers directories named Download / Downloads / 下载 across public storage,
++ * Android/data, Android/media and root-readable app-private storage. A scan only creates an
++ * in-memory immutable move plan. Applying a plan revalidates lstat fingerprints and never
++ * overwrites an existing destination. The last successful batch can be undone.
++ */
++class FileOrganizerEngine(
++    private val cancelled: AtomicBoolean,
++    private val stateDir: File = File("/data/adb/baize-v2")
++) {
++    data class Progress(
++        val phase: String,
++        val current: Int = 0,
++        val total: Int = 0,
++        val path: String = ""
++    )
++
++    private data class PlannedMove(
++        val id: String,
++        val source: String,
++        val sourceRoot: String,
++        val sourceGroup: String,
++        val destination: String,
++        val category: String,
++        val name: String,
++        val bytes: Long,
++        val fingerprint: String
++    )
++
++    private data class Snapshot(
++        val id: String,
++        val createdAt: Long,
++        val items: List<PlannedMove>
++    )
++
++    @Volatile
++    private var snapshot: Snapshot? = null
++
++    fun scan(progress: (Progress) -> Unit): String {
++        cancelled.set(false)
++        val started = SystemClock.elapsedRealtime()
++        val roots = discoverDownloadRoots(started, progress)
++        if (cancelled.get()) {
++            return JSONObject().put("cancelled", true).put("message", "文件归类扫描已停止").toString()
++        }
++
++        val items = LinkedHashMap<String, PlannedMove>()
++        for ((index, root) in roots.withIndex()) {
++            if (cancelled.get() || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) break
++            progress(Progress("正在读取下载目录", index, roots.size, displayPath(root.path)))
++            collectFiles(root, started, items, progress)
++            if (items.size >= MAX_ITEMS) break
++        }
++
++        val id = UUID.randomUUID().toString()
++        val immutable = items.values.sortedWith(
++            compareBy<PlannedMove> { it.category }.thenBy { it.sourceGroup }.thenBy { it.name.lowercase() }
++        )
++        snapshot = Snapshot(id, System.currentTimeMillis(), immutable)
++
++        val array = JSONArray()
++        immutable.forEach { item ->
++            array.put(
++                JSONObject()
++                    .put("id", item.id)
++                    .put("name", item.name)
++                    .put("category", item.category)
++                    .put("bytes", item.bytes)
++                    .put("sourceGroup", item.sourceGroup)
++                    .put("sourceDisplay", displayPath(item.source))
++                    .put("destinationName", File(item.destination).name)
++            )
++        }
++        return JSONObject()
++            .put("success", true)
++            .put("snapshotId", id)
++            .put("expiresInMs", SNAPSHOT_TTL_MS)
++            .put("roots", roots.size)
++            .put("total", immutable.size)
++            .put("truncated", immutable.size >= MAX_ITEMS || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS)
++            .put("elapsedMs", SystemClock.elapsedRealtime() - started)
++            .put("items", array)
++            .toString()
++    }
++
++    fun apply(snapshotId: String, selectionJson: String, progress: (Progress) -> Unit): String {
++        val current = validSnapshot(snapshotId)
++            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新扫描")
++        val selectedIds = parseSelection(selectionJson)
++        if (selectedIds.isEmpty()) return error("empty_selection", "没有选择需要归类的文件")
++
++        val selected = current.items.filter { it.id in selectedIds }

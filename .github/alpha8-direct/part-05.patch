@@ -1,0 +1,125 @@
++    onSelectAll: (List<String>) -> Unit,
++    onCategory: (String) -> Unit,
++    onApply: () -> Unit,
++    onUndo: () -> Unit,
++    onStop: () -> Unit
++) {
++    val categories = listOf("全部", "图片", "视频", "音频", "文档", "安装包", "压缩包", "电子书", "其他")
++    val visible = if (state.category == "全部") state.items else state.items.filter { it.category == state.category }
++    val visibleIds = visible.map { it.id }
++
++    Scaffold(
++        topBar = {
++            TopAppBar(
++                title = {
++                    Column {
++                        Text("文件归类", fontWeight = FontWeight.Black)
++                        Text("所有下载目录 · 不覆盖同名文件", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
++                    }
++                },
++                navigationIcon = {
++                    IconButton(onClick = onBack) {
++                        Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
++                    }
++                },
++                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
++            )
++        }
++    ) { padding ->
++        LazyColumn(
++            modifier = Modifier
++                .fillMaxSize()
++                .background(MaterialTheme.colorScheme.background)
++                .padding(padding),
++            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
++            verticalArrangement = Arrangement.spacedBy(10.dp)
++        ) {
++            item {
++                Card(
++                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
++                    shape = RoundedCornerShape(24.dp)
++                ) {
++                    Column(Modifier.padding(18.dp)) {
++                        Row(verticalAlignment = Alignment.CenterVertically) {
++                            Icon(Icons.Rounded.FolderCopy, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
++                            Spacer(Modifier.size(12.dp))
++                            Column(Modifier.weight(1f)) {
++                                Text(state.status, fontWeight = FontWeight.Bold)
++                                Text(
++                                    "扫描公共 Download、应用自建下载目录、Android/data、Android/media 及 Root 可读取的应用私有下载子目录。扫描后变化的文件会自动跳过。",
++                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                                    fontSize = 11.sp,
++                                    lineHeight = 16.sp
++                                )
++                            }
++                            if (state.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
++                        }
++                        Spacer(Modifier.height(14.dp))
++                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
++                            Button(onClick = onScan, enabled = state.connected && !state.running, modifier = Modifier.weight(1f)) {
++                                Icon(Icons.Rounded.Refresh, contentDescription = null)
++                                Spacer(Modifier.size(6.dp))
++                                Text("扫描下载目录")
++                            }
++                            OutlinedButton(onClick = onUndo, enabled = state.connected && !state.running && state.undoAvailable) {
++                                Icon(Icons.Rounded.Restore, contentDescription = null)
++                                Spacer(Modifier.size(6.dp))
++                                Text("撤销")
++                            }
++                            if (state.running) {
++                                OutlinedButton(onClick = onStop) {
++                                    Icon(Icons.Rounded.Stop, contentDescription = null)
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++
++            if (state.items.isNotEmpty()) {
++                item {
++                    LazyColumnLikeChipRow(categories, state.category, onCategory)
++                }
++                item {
++                    Row(verticalAlignment = Alignment.CenterVertically) {
++                        Text("${visible.size} 个文件 · 已选 ${state.selected.size}", fontWeight = FontWeight.Bold)
++                        Spacer(Modifier.weight(1f))
++                        Text(
++                            if (visibleIds.isNotEmpty() && visibleIds.all { it in state.selected }) "取消本页" else "选择本页",
++                            color = MaterialTheme.colorScheme.primary,
++                            modifier = Modifier.clickable { onSelectAll(visibleIds) }.padding(8.dp),
++                            fontWeight = FontWeight.Bold
++                        )
++                    }
++                }
++                items(visible, key = { it.id }) { item ->
++                    Card(
++                        modifier = Modifier.fillMaxWidth().clickable { onToggle(item.id) },
++                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
++                        shape = RoundedCornerShape(20.dp)
++                    ) {
++                        Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
++                            Checkbox(checked = item.id in state.selected, onCheckedChange = { onToggle(item.id) })
++                            Column(Modifier.weight(1f)) {
++                                Text(item.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
++                                Text(
++                                    "${item.category} · ${item.sourceGroup} · ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, item.bytes)}",
++                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                                    fontSize = 11.sp,
++                                    maxLines = 1,
++                                    overflow = TextOverflow.Ellipsis
++                                )
++                                Text(
++                                    item.sourceDisplay,
++                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                                    fontSize = 9.sp,
++                                    maxLines = 1,
++                                    overflow = TextOverflow.Ellipsis
++                                )
++                            }
++                        }
++                    }
++                }
++                item {
++                    Button(
++                        onClick = onApply,
