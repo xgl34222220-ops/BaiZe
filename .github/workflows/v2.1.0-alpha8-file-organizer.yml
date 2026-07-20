@@ -20,49 +20,48 @@ jobs:
           ref: feat/v2.1.0-alpha8-file-organizer
           fetch-depth: 0
 
-      - name: Decode Alpha 8 payload
+      - name: Apply direct Alpha 8 source patches
         shell: bash
         run: |
           set -euo pipefail
-          wc -c .github/alpha8-payload/part*
-          cat .github/alpha8-payload/part* > /tmp/alpha8.b64
-          base64 -d /tmp/alpha8.b64 > /tmp/alpha8.tar.gz
-          gzip -t /tmp/alpha8.tar.gz
-          tar -tzf /tmp/alpha8.tar.gz > /tmp/alpha8-files.txt
-          sed -n '1,40p' /tmp/alpha8-files.txt
-          tar -xzf /tmp/alpha8.tar.gz
-
-      - name: Check Alpha 8 source formatting and shells
-        shell: bash
-        run: |
-          set -euo pipefail
+          find .github/alpha8-direct -maxdepth 1 -type f -name 'part-*.patch' ! -name 'part-13-*' -print | sort | xargs cat > /tmp/alpha8-main.patch
+          git apply --check /tmp/alpha8-main.patch
+          git apply /tmp/alpha8-main.patch
+          cat .github/alpha8-direct/part-13-*.patch > /tmp/alpha8-ownership.patch
+          git apply --check /tmp/alpha8-ownership.patch
+          git apply /tmp/alpha8-ownership.patch
           git diff --check
           sh -n v2/module/one-pass-scan.sh
           sh -n v2/scripts/package-module.sh
 
-      - name: Verify hidden automatic scan policy
+      - name: Verify exact Alpha 8 source
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -R -n -E '扫描工作进程|扫描性能策略|固定双进程|固定串行|onScanWorkerModeChanged|onResetScanPerformance' \
-            v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean
+          echo '449bc80339ddea6afa6437a6bf982e13c0f405859bc7e969e0e016f7064bed0b  v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt' | sha256sum -c -
+          echo '36418aab5a9e5f3e4fef475b93c0f8f44f223eb4d05de40e13eea822bca86cba  v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt' | sha256sum -c -
+          echo 'b16a950be40e4349a967520d66e7688f636e712e3f5c234c6111fbceb8426a55  v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt' | sha256sum -c -
+          echo 'efa8d8489417a841c411f00d4ce1dcbd9e22d60c3096e47935c50869a99e605c  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt' | sha256sum -c -
+          echo '94decf6efcbe809c577671b8981259eae4745d629b8e89455dc7bd369264dea3  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt' | sha256sum -c -
+          echo '8c2a3ac49cbff7141cebcd4816b2de3ce745daf2382c9e1ca0a551da0cf4e98d  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt' | sha256sum -c -
+
+      - name: Verify automatic policy and empty-directory fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -R -n -E '扫描工作进程|扫描性能策略|固定双进程|固定串行|onScanWorkerModeChanged|onResetScanPerformance' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean
           grep -q 'put("scan_root_workers", 0)' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'scanRootWorkers = 0' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'exec "$MODDIR/one-pass-scan.sh"' v2/module/native-scan.sh
           grep -q 'root-worker-profile.env' v2/module/one-pass-scan.sh
-
-      - name: Verify protected empty-directory shell check
-        shell: bash
-        run: |
-          set -euo pipefail
           ENGINE=v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt
+          grep -q 'walkProtectedEmptyShells' "$ENGINE"
           grep -q 'visitor(file, true)' "$ENGINE"
-          grep -q 'The subtree remains protected' "$ENGINE"
           grep -q 'target.isDirectory && isEmptyDirectory(target)' "$ENGINE"
           grep -q 'mounts.contains(path)' "$ENGINE"
           grep -q 'isSymlink(target)' "$ENGINE"
 
-      - name: Verify organizer authorization and move safety
+      - name: Verify organizer safety boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -76,8 +75,10 @@ jobs:
           grep -q 'fingerprint(source) != item.fingerprint' "$ENGINE"
           grep -q 'Os.lstat' "$ENGINE"
           grep -q 'Os.rename' "$ENGINE"
-          grep -q 'digest_mismatch' "$ENGINE"
+          grep -q 'sha256(source) != sha256(temp)' "$ENGINE"
           grep -q 'destination.exists()' "$ENGINE"
+          grep -q 'normalizeSharedOwnership' "$ENGINE"
+          grep -q 'restoreOriginalMetadata' "$ENGINE"
           grep -q 'organizer-last.json' "$ENGINE"
           grep -q '/data/user' "$ENGINE"
           grep -q '/data/user_de' "$ENGINE"
@@ -85,7 +86,7 @@ jobs:
           grep -q '/Android/media/' "$ENGINE"
           grep -q 'BaiZe归类' "$ENGINE"
           grep -q '归类所选' "$UI"
-          grep -q '撤销上一次归类' "$UI"
+          ! grep -q 'AlertDialog' "$UI"
           ! grep -q 'sourcePathJson' "$UI"
 
       - name: Set up JDK 17
@@ -137,7 +138,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .github/alpha8-payload
+          rm -rf .github/alpha8-direct .github/alpha8-payload
+          rm -f .github/alpha8-direct-marker.txt
           rm -f .github/workflows/export-alpha8-workspace.yml
           rm -f .github/workflows/v2.1.0-alpha8-file-organizer.yml
           git config user.name 'github-actions[bot]'
