@@ -64,7 +64,8 @@ private object IconStore {
     private val memory = object : LruCache<String, Bitmap>(128) {}
     private val keys = LinkedHashMap<String, String>()
 
-    @Synchronized fun get(packageName: String): Bitmap? = keys[packageName]?.let(memory::get)
+    @Synchronized
+    fun get(packageName: String): Bitmap? = keys[packageName]?.let(memory::get)
 
     fun load(context: Context, packageName: String): Bitmap? {
         val pm = context.packageManager
@@ -75,7 +76,10 @@ private object IconStore {
         val disk = File(dir, sha256(key) + ".png")
         val cached = runCatching { if (disk.isFile) BitmapFactory.decodeFile(disk.path) else null }.getOrNull()
         if (cached != null) {
-            synchronized(this) { memory.put(key, cached); keys[packageName] = key }
+            synchronized(this) {
+                memory.put(key, cached)
+                keys[packageName] = key
+            }
             return cached
         }
         val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return null
@@ -85,7 +89,10 @@ private object IconStore {
                 drawable.draw(Canvas(it))
             }
         }.getOrNull() ?: return null
-        synchronized(this) { memory.put(key, bitmap); keys[packageName] = key }
+        synchronized(this) {
+            memory.put(key, bitmap)
+            keys[packageName] = key
+        }
         runCatching { disk.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
         return bitmap
     }
@@ -93,14 +100,20 @@ private object IconStore {
     @Suppress("DEPRECATION")
     private fun appInfo(pm: PackageManager, packageName: String): ApplicationInfo? = runCatching {
         val flags = PackageManager.MATCH_DISABLED_COMPONENTS.toLong()
-        if (Build.VERSION.SDK_INT >= 33) pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(flags))
-        else pm.getApplicationInfo(packageName, flags.toInt())
+        if (Build.VERSION.SDK_INT >= 33) {
+            pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(flags))
+        } else {
+            pm.getApplicationInfo(packageName, flags.toInt())
+        }
     }.getOrNull()
 
     @Suppress("DEPRECATION")
     private fun updateTime(pm: PackageManager, packageName: String): Long = runCatching {
-        if (Build.VERSION.SDK_INT >= 33) pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0)).lastUpdateTime
-        else pm.getPackageInfo(packageName, 0).lastUpdateTime
+        if (Build.VERSION.SDK_INT >= 33) {
+            pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0L)).lastUpdateTime
+        } else {
+            pm.getPackageInfo(packageName, 0).lastUpdateTime
+        }
     }.getOrDefault(0L)
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
