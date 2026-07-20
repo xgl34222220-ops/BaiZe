@@ -1,0 +1,167 @@
+name: BaiZe v2.1.0 Alpha 7 System Instant Cache
+
+on:
+  pull_request:
+    branches: [perf/v2.1.0-alpha6-performance-panel]
+    paths:
+      - '.github/workflows/v2.1.0-alpha7-system-cache.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Alpha 7 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/v2.1.0-alpha7-system-cache
+          fetch-depth: 0
+
+      - name: Apply Alpha 7 source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/alpha7-src/InstantCacheActivity.kt.part* > \
+            v2/app/src/main/java/io/github/xgl34222220/baize/InstantCacheActivity.kt
+          cp .github/alpha7-src/InstantCacheEngine.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/InstantCacheEngine.kt
+          python3 .github/alpha7-src/apply_alpha7.py
+          sh -n v2/module/one-pass-scan.sh
+          sh -n v2/module/service.sh
+          sh -n v2/scripts/package-module.sh
+          git diff --check
+
+      - name: Verify explicit cache-only safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENGINE=v2/app/src/main/java/io/github/xgl34222220/baize/root/InstantCacheEngine.kt
+          ACTIVITY=v2/app/src/main/java/io/github/xgl34222220/baize/InstantCacheActivity.kt
+          AIDL=v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+          SERVICE=v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          grep -q 'clearPackageCaches(String requestJson)' "$AIDL"
+          grep -q 'override fun clearPackageCaches' "$SERVICE"
+          grep -q '"/system/bin/cmd", "package", "clear", "--cache-only"' "$ENGINE"
+          grep -q 'snapshotUsed.*false' "$ENGINE"
+          grep -q 'MAX_PACKAGES = 30' "$ENGINE"
+          grep -q 'cache_only_unsupported' "$ENGINE"
+          grep -q 'com.android.systemui' "$ENGINE"
+          ! grep -q '"/system/bin/sh", "-c"' "$ENGINE"
+          ! grep -Eq 'ProcessBuilder\([^)]*pm[^)]*clear([^)]|$)' "$ENGINE"
+          grep -q '与精准快照完全分离' "$ACTIVITY"
+          grep -q 'showConfirmation' "$ACTIVITY"
+          grep -q 'InstantCacheFilter.USER' "$ACTIVITY"
+          grep -q 'InstantCacheActivity' v2/app/src/main/AndroidManifest.xml
+          grep -q 'actions.onInstantCache' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
+          grep -q 'actions.onInstantCache' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
+          ! grep -R -E 'clearPackageCaches|instant-cache' v2/module/service.sh service.sh || true
+
+      - name: Build host scanner
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize-engine
+
+      - name: Recheck immutable snapshot safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK=/tmp/alpha7-snapshot
+          rm -rf "$WORK"
+          mkdir -p "$WORK/data/user/0/com.example.app/cache" "$WORK/media/0/Android/data/com.example.app/cache" "$WORK/out"
+          printf 'stable-original' > "$WORK/data/user/0/com.example.app/cache/stable.tmp"
+          printf 'will-change' > "$WORK/data/user/0/com.example.app/cache/changed.tmp"
+          printf 'external-stable' > "$WORK/media/0/Android/data/com.example.app/cache/external.tmp"
+          : > "$WORK/whitelist"
+          : > "$WORK/packages"
+          /tmp/baize-engine scan-cache \
+            --data-root "$WORK/data" --media-root "$WORK/media" \
+            --whitelist "$WORK/whitelist" --package-whitelist "$WORK/packages" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$WORK/out/scan.tsv" --targets "$WORK/out/targets" \
+            --items "$WORK/out/items.tsv" --manifest "$WORK/out/manifest0" \
+            --summary "$WORK/out/scan.env" --progress "$WORK/out/progress" --stop "$WORK/out/stop"
+          printf 'modified-after-scan' > "$WORK/data/user/0/com.example.app/cache/changed.tmp"
+          printf 'new-after-scan' > "$WORK/data/user/0/com.example.app/cache/new.tmp"
+          /tmp/baize-engine clean-cache-snapshot \
+            --data-root "$WORK/data" --media-root "$WORK/media" \
+            --whitelist "$WORK/whitelist" --package-whitelist "$WORK/packages" \
+            --manifest "$WORK/out/manifest0" --max-file-bytes 99999999 \
+            --report "$WORK/out/clean.tsv" --summary "$WORK/out/clean.env" \
+            --progress "$WORK/out/progress2" --stop "$WORK/out/stop2"
+          test ! -e "$WORK/data/user/0/com.example.app/cache/stable.tmp"
+          test ! -e "$WORK/media/0/Android/data/com.example.app/cache/external.tmp"
+          grep -qx 'modified-after-scan' "$WORK/data/user/0/com.example.app/cache/changed.tmp"
+          grep -qx 'new-after-scan' "$WORK/data/user/0/com.example.app/cache/new.tmp"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package Alpha 7 module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify Alpha 7 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=v2/dist/BaiZe-v2.1.0-alpha7-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.1.0-alpha7'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22407'
+          grep -q 'versionName = "2.1.0-alpha7"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 22407' v2/app/build.gradle.kts
+          grep -q 'clearPackageCaches' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+          grep -q '43.6-alpha7-system-cache' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Commit verified Alpha 7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/alpha7-src .github/alpha7-payload
+          rm -f .github/workflows/export-v210-alpha7.yml
+          rm -f .github/workflows/v2.1.0-alpha7-system-cache.yml
+          rm -f v2/.alpha7-seed v2/.alpha7-seed-2 v2/.alpha7-seed-3 v2/V2.1-ALPHA7-PLAN-COPY.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(v2): add explicit PackageManager cache-only tool'
+          git push origin HEAD:feat/v2.1.0-alpha7-system-cache
+
+      - name: Upload Alpha 7 module
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.1.0-alpha7-System-Cache
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.1.0-alpha7-Module.zip
+            v2/dist/BaiZe-v2.1.0-alpha7-Module.zip.sha256
