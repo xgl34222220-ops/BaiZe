@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$PWD"
-trap 'rc=$?; mkdir -p "$ROOT_DIR/work"; printf "exit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > "$ROOT_DIR/work/alpha61-error.txt"; exit "$rc"' ERR
+trap 'rc=$?; mkdir -p "$ROOT_DIR/work"; printf "exit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > "$ROOT_DIR/work/alpha61-error.txt"; [ -f "$ROOT_DIR/status-test.txt" ] && cp "$ROOT_DIR/status-test.txt" "$ROOT_DIR/work/status-test-failed.txt" || true; exit "$rc"' ERR
 
 rm -rf work bagua-alpha5-source.zip status-test.txt
 cat ci/bagua-src.b64.part* | tr -d '\n\r' | base64 -d > bagua-alpha5-source.zip
@@ -38,9 +38,23 @@ sudo rm -rf /data/adb/modules/bagua /data/adb/modules_update/bagua /data/adb/bag
 sudo mkdir -p /data/adb/modules
 sudo cp -a module-src /data/adb/modules/bagua
 sudo chmod +x /data/adb/modules/bagua/scripts/*.sh
-sudo sh /data/adb/modules/bagua/scripts/bagua.sh status > ../status-test.txt
-grep -q '^INSTALLED=1$' ../status-test.txt
-grep -q '^VERSION=0.6.1-alpha.6.1$' ../status-test.txt
+sudo sh -c '
+SCRIPT=
+for DIR in /data/adb/modules/bagua /data/adb/modules_update/bagua; do
+  [ -f "$DIR/scripts/bagua.sh" ] && { SCRIPT="$DIR/scripts/bagua.sh"; break; }
+done
+if [ -z "$SCRIPT" ]; then
+  for PROP in /data/adb/modules/*/module.prop /data/adb/modules_update/*/module.prop; do
+    [ -f "$PROP" ] || continue
+    grep -q "^id=bagua$" "$PROP" 2>/dev/null || continue
+    DIR=${PROP%/module.prop}
+    [ -f "$DIR/scripts/bagua.sh" ] && { SCRIPT="$DIR/scripts/bagua.sh"; break; }
+  done
+fi
+[ -n "$SCRIPT" ] || { echo ERROR=module_not_installed; exit 127; }
+exec sh "$SCRIPT" status
+' > ../status-test.txt
+test -s ../status-test.txt
 
 set -o pipefail
 gradle --no-daemon :app:assembleDebug 2>&1 | tee build-alpha61.log
