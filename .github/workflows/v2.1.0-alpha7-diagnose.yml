@@ -1,0 +1,53 @@
+name: Diagnose BaiZe Alpha 7 Android Build
+
+on:
+  pull_request:
+    branches: [perf/v2.1.0-alpha6-performance-panel]
+    paths:
+      - '.github/workflows/v2.1.0-alpha7-diagnose.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v2.1.0-alpha7-system-cache
+          fetch-depth: 0
+      - name: Assemble source
+        run: |
+          cat .github/alpha7-src/InstantCacheActivity.kt.part* > v2/app/src/main/java/io/github/xgl34222220/baize/InstantCacheActivity.kt
+          cp .github/alpha7-src/InstantCacheEngine.kt v2/app/src/main/java/io/github/xgl34222220/baize/root/InstantCacheEngine.kt
+          python3 .github/alpha7-src/apply_alpha7.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Capture compile errors
+        shell: bash
+        working-directory: v2
+        run: |
+          set +e
+          gradle --no-daemon :app:assembleDebug > /tmp/alpha7-gradle.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            {
+              echo '# Alpha 7 Android build diagnostics'
+              echo
+              grep -E '(^e: |error: |FAILURE:|What went wrong|Compilation error|Unresolved reference|Cannot access|Type mismatch|None of the following)' /tmp/alpha7-gradle.log | tail -n 120
+            } > ALPHA7-BUILD-ERROR.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add ALPHA7-BUILD-ERROR.txt
+            git commit -m 'ci(v2): capture Alpha 7 Android build error'
+            git push origin HEAD:feat/v2.1.0-alpha7-system-cache
+          fi
+          exit "$status"
