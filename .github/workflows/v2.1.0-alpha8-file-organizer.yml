@@ -28,7 +28,8 @@ jobs:
           cat .github/alpha8-payload/part* > /tmp/alpha8.b64
           base64 -d /tmp/alpha8.b64 > /tmp/alpha8.tar.gz
           gzip -t /tmp/alpha8.tar.gz
-          tar -tzf /tmp/alpha8.tar.gz | head -40
+          tar -tzf /tmp/alpha8.tar.gz > /tmp/alpha8-files.txt
+          sed -n '1,40p' /tmp/alpha8-files.txt
           tar -xzf /tmp/alpha8.tar.gz
 
       - name: Check Alpha 8 source formatting and shells
