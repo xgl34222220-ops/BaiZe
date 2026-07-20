@@ -1,9 +1,9 @@
 name: Export Alpha 5 baseline
 on:
-  workflow_dispatch:
-  push:
-    branches: [perf/v2.1.0-alpha4-limited-parallel]
+  pull_request:
+    branches: [perf/v2.1.0-alpha3-path-pruning]
     paths: ['.github/workflows/export-v210-alpha5.yml']
+  workflow_dispatch:
 jobs:
   export:
     runs-on: ubuntu-latest
