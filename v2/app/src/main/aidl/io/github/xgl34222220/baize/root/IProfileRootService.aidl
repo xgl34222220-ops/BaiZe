@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize.root;
 
+import io.github.xgl34222220.baize.root.ITaskProgressCallback;
+
 interface IProfileRootService {
     String ping();
     String getProfileCatalog();
