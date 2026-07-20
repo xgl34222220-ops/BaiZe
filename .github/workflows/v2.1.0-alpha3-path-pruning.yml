@@ -1,0 +1,218 @@
+name: BaiZe v2.1.0 Alpha 3 Path Index
+
+on:
+  pull_request:
+    branches: [perf/v2.1.0-alpha2-external-one-pass]
+    paths:
+      - '.github/workflows/v2.1.0-alpha3-path-pruning.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Alpha 3 branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/v2.1.0-alpha3-path-pruning
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply transparent Alpha 3 patch
+        run: |
+          set -euo pipefail
+          python3 .github/alpha3_apply.py
+          git diff --check
+          sh -n v2/module/native-scan.sh
+          sh -n v2/module/one-pass-scan.sh
+          sh -n v2/module/service.sh
+          sh -n v2/module/customize.sh
+          sh -n v2/scripts/build-native.sh
+          sh -n v2/scripts/package-module.sh
+
+      - name: Build host scanner
+        run: |
+          set -euo pipefail
+          gcc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Test indexed whitelist pruning
+        shell: bash
+        run: |
+          set -euo pipefail
+          W=/tmp/baize-alpha3-prune
+          rm -rf "$W"
+          mkdir -p "$W/data/user/0/com.example.app/cache/keep" "$W/media" "$W/out"
+          printf stable > "$W/data/user/0/com.example.app/cache/stable.tmp"
+          printf changed > "$W/data/user/0/com.example.app/cache/changed.tmp"
+          printf secret > "$W/data/user/0/com.example.app/cache/keep/secret.tmp"
+          : > "$W/packages"
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/baize-alpha3-prune')
+          lines = [f'/protected/fake/{index:05d}' for index in range(5000)]
+          lines.append(str(root / 'data/user/0/com.example.app/cache/keep') + '/')
+          (root / 'whitelist').write_text('\n'.join(lines) + '\n')
+          PY
+          /tmp/baize_engine scan-cache \
+            --data-root "$W/data" --media-root "$W/media" \
+            --whitelist "$W/whitelist" --package-whitelist "$W/packages" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$W/out/report.tsv" --targets "$W/out/targets" \
+            --items "$W/out/items.tsv" --manifest "$W/out/manifest0" \
+            --summary "$W/out/summary.env" --progress "$W/out/progress" --stop "$W/out/stop"
+          grep -qx 'files=2' "$W/out/summary.env"
+          grep -qx 'targets=1' "$W/out/summary.env"
+          grep -qx 'whitelist_index_entries=5001' "$W/out/summary.env"
+          grep -qx 'pruned_subtrees=1' "$W/out/summary.env"
+          grep -Eq '^whitelist_index_queries=[1-9][0-9]*$' "$W/out/summary.env"
+          grep -Eq '^whitelist_ancestor_hits=[1-9][0-9]*$' "$W/out/summary.env"
+          grep -Eq '^whitelist_descendant_hits=[1-9][0-9]*$' "$W/out/summary.env"
+          strings "$W/out/manifest0" | grep -q 'stable.tmp'
+          strings "$W/out/manifest0" | grep -q 'changed.tmp'
+          ! strings "$W/out/manifest0" | grep -q 'secret.tmp'
+
+      - name: Test exact-root protection
+        shell: bash
+        run: |
+          set -euo pipefail
+          W=/tmp/baize-alpha3-root
+          rm -rf "$W"
+          mkdir -p "$W/data/user/0/com.example.app/cache" "$W/media" "$W/out"
+          printf data > "$W/data/user/0/com.example.app/cache/item.tmp"
+          printf '%s/\n' "$W/data/user/0/com.example.app/cache" > "$W/whitelist"
+          : > "$W/packages"
+          /tmp/baize_engine scan-cache \
+            --data-root "$W/data" --media-root "$W/media" \
+            --whitelist "$W/whitelist" --package-whitelist "$W/packages" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$W/out/report.tsv" --targets "$W/out/targets" \
+            --items "$W/out/items.tsv" --manifest "$W/out/manifest0" \
+            --summary "$W/out/summary.env" --progress "$W/out/progress" --stop "$W/out/stop"
+          grep -qx 'targets=0' "$W/out/summary.env"
+          grep -qx 'whitelisted=1' "$W/out/summary.env"
+          test ! -s "$W/out/targets"
+
+      - name: Test One-pass dual snapshots and immutable clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          W=/tmp/baize-alpha3-onepass
+          rm -rf "$W"
+          mkdir -p "$W/data/user/0/com.example.app/cache" \
+                   "$W/media/0/Android/data/com.example.app/cache/keep" \
+                   "$W/media/0/Android/data/com.example.removed" \
+                   "$W/installed" "$W/out"
+          printf internal > "$W/data/user/0/com.example.app/cache/internal.tmp"
+          printf stable > "$W/media/0/Android/data/com.example.app/cache/stable.tmp"
+          printf changed > "$W/media/0/Android/data/com.example.app/cache/changed.tmp"
+          printf secret > "$W/media/0/Android/data/com.example.app/cache/keep/secret.tmp"
+          printf old > "$W/media/0/Android/data/com.example.removed/old.bin"
+          printf 'com.example.app\n' > "$W/installed/0.txt"
+          printf '%s/\n' "$W/media/0/Android/data/com.example.app/cache/keep" > "$W/whitelist"
+          : > "$W/packages"
+          /tmp/baize_engine scan-external-one-pass \
+            --data-root "$W/data" --media-root "$W/media" --installed-root "$W/installed" \
+            --whitelist "$W/whitelist" --package-whitelist "$W/packages" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$W/out/cache-report.tsv" --targets "$W/out/cache-targets" \
+            --items "$W/out/cache-items.tsv" --manifest "$W/out/cache-manifest0" \
+            --summary "$W/out/cache-summary.env" \
+            --corpse-report "$W/out/corpse-report.tsv" --corpse-targets "$W/out/corpse-targets" \
+            --corpse-summary "$W/out/corpse-summary.env" \
+            --progress "$W/out/progress" --stop "$W/out/stop"
+          grep -qx 'targets=2' "$W/out/cache-summary.env"
+          grep -qx 'targets=1' "$W/out/corpse-summary.env"
+          grep -qx 'one_pass_app_dirs=2' "$W/out/cache-summary.env"
+          grep -qx 'pruned_subtrees=1' "$W/out/cache-summary.env"
+          test "$(wc -l < "$W/out/corpse-targets")" -eq 1
+          grep -q 'com.example.removed' "$W/out/corpse-targets"
+          ! strings "$W/out/cache-manifest0" | grep -q 'secret.tmp'
+          printf modified-after-scan > "$W/media/0/Android/data/com.example.app/cache/changed.tmp"
+          printf new-after-scan > "$W/media/0/Android/data/com.example.app/cache/new.tmp"
+          /tmp/baize_engine clean-cache-snapshot \
+            --data-root "$W/data" --media-root "$W/media" \
+            --whitelist "$W/whitelist" --package-whitelist "$W/packages" \
+            --manifest "$W/out/cache-manifest0" --max-file-bytes 99999999 \
+            --report "$W/out/clean-report.tsv" --summary "$W/out/clean-summary.env" \
+            --progress "$W/out/clean-progress" --stop "$W/out/clean-stop"
+          test ! -e "$W/data/user/0/com.example.app/cache/internal.tmp"
+          test ! -e "$W/media/0/Android/data/com.example.app/cache/stable.tmp"
+          grep -qx 'modified-after-scan' "$W/media/0/Android/data/com.example.app/cache/changed.tmp"
+          grep -qx 'new-after-scan' "$W/media/0/Android/data/com.example.app/cache/new.tmp"
+          grep -qx 'secret' "$W/media/0/Android/data/com.example.app/cache/keep/secret.tmp"
+          grep -qx 'files=2' "$W/out/clean-summary.env"
+          grep -qx 'skipped=1' "$W/out/clean-summary.env"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package Alpha 3 module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify Alpha 3 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=v2/dist/BaiZe-v2.1.0-alpha3-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.1.0-alpha3'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22403'
+          unzip -p "$ZIP" native-cleaner.sh | grep -q 'whitelist_index_queries'
+          unzip -p "$ZIP" one-pass-scan.sh | grep -q 'pruned_subtrees'
+          grep -q 'versionName = "2.1.0-alpha3"' v2/app/build.gradle.kts
+          grep -q 'native-c-arm64-cache-v43.2-alpha3-path-index' \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+          strings v2/build/native/arm64-v8a/baize_engine | grep -q '43.2-alpha3-path-index'
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Commit verified Alpha 3 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/alpha3-payload
+          rm -f .github/alpha3_apply.py
+          rm -f .github/workflows/export-v210-alpha3-source.yml
+          rm -f .github/workflows/v2.1.0-alpha3-path-pruning.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'perf(v2): add indexed whitelist pruning and metrics'
+          git push origin HEAD:perf/v2.1.0-alpha3-path-pruning
+
+      - name: Upload Alpha 3 module
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.1.0-alpha3-Path-Index
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.1.0-alpha3-Module.zip
+            v2/dist/BaiZe-v2.1.0-alpha3-Module.zip.sha256
