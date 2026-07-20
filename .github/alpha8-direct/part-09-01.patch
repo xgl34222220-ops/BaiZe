@@ -35,37 +35,37 @@
 +        private const val MAX_FILE_DEPTH = 12
 +    }
 +}
-+diff --git a/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl b/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
-+index 91071c7..f2c9fef 100644
-+--- a/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
-++++ b/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
-+@@ -18,6 +18,9 @@ interface IProfileRootService {
-+     String saveSchedulerConfig(String configJson);
-+     String resetScanWorkerProfile();
-+     String clearPackageCaches(String requestJson);
-++    String scanFileOrganizer();
-++    String applyFileOrganizer(String snapshotId, String selectionJson);
-++    String undoFileOrganizer();
-+ 
-+     String getInstalledPackageCatalog();
-+     String getWhitelistPackages();
-+diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-+index f628558..f11d1de 100644
-+--- a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-++++ b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-+@@ -29,6 +29,9 @@ class BaiZeProfileRootService : RootService() {
-+     private val instantCacheEngine by lazy {
-+         InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
-+     }
-++    private val fileOrganizerEngine by lazy {
-++        FileOrganizerEngine(cancelled, File(STATE_DIR))
-++    }
-+ 
-+     @Volatile
-+     private var taskStateJson: String = idleState()
-+@@ -41,7 +44,7 @@ class BaiZeProfileRootService : RootService() {
-+             .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
-+             .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
-+             .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
-+-            .put("engine", "module-auto-cleaner-v8+native-audit")
-++            .put("engine", "module-auto-cleaner-v9+organizer")
+diff --git a/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl b/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+index 91071c7..f2c9fef 100644
+--- a/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
++++ b/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
+@@ -18,6 +18,9 @@ interface IProfileRootService {
+     String saveSchedulerConfig(String configJson);
+     String resetScanWorkerProfile();
+     String clearPackageCaches(String requestJson);
++    String scanFileOrganizer();
++    String applyFileOrganizer(String snapshotId, String selectionJson);
++    String undoFileOrganizer();
+ 
+     String getInstalledPackageCatalog();
+     String getWhitelistPackages();
+diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+index f628558..f11d1de 100644
+--- a/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
++++ b/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+@@ -29,6 +29,9 @@ class BaiZeProfileRootService : RootService() {
+     private val instantCacheEngine by lazy {
+         InstantCacheEngine(cancelled) { taskStateJson = it.toString() }
+     }
++    private val fileOrganizerEngine by lazy {
++        FileOrganizerEngine(cancelled, File(STATE_DIR))
++    }
+ 
+     @Volatile
+     private var taskStateJson: String = idleState()
+@@ -41,7 +44,7 @@ class BaiZeProfileRootService : RootService() {
+             .put("cleaner", File(MODULE_DIR, "cleaner.sh").isFile)
+             .put("deepRules", File(MODULE_DIR, "config/deep.rules").isFile)
+             .put("scheduler", File(MODULE_DIR, "service.sh").isFile)
+-            .put("engine", "module-auto-cleaner-v8+native-audit")
++            .put("engine", "module-auto-cleaner-v9+organizer")
