@@ -1,14 +1,19 @@
 package io.github.xgl34222220.baize
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.IBinder
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -40,13 +45,10 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,16 +62,22 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -85,10 +93,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Explicit PackageManager cache-only tool.
- *
- * This screen deliberately does not consume or create BaiZe scan snapshots. It operates only on
- * packages selected by the user after a second confirmation and is never called by the scheduler.
+ * PackageManager cache-only tool. The package catalog and icons are loaded away from the main
+ * thread. Icons are fetched lazily for visible rows and retained in a small memory cache so a list
+ * containing hundreds of applications can scroll without repeatedly decoding drawables.
  */
 class InstantCacheActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -172,13 +179,14 @@ class InstantCacheActivity : ComponentActivity() {
     private fun parseCatalog(raw: String?): List<InstantCacheApp> {
         if (raw.isNullOrBlank()) return emptyList()
         val array = runCatching { JSONObject(raw).optJSONArray("packages") }.getOrNull() ?: JSONArray()
-        val result = mutableListOf<InstantCacheApp>()
+        val result = ArrayList<InstantCacheApp>(array.length())
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
             val packageName = item.optString("packageName").trim()
             if (!PACKAGE_NAME.matches(packageName) || packageName in BLOCKED_PACKAGES) continue
             val appInfo = runCatching { packageManager.getApplicationInfo(packageName, 0) }.getOrNull()
-            val label = appInfo?.let { runCatching { packageManager.getApplicationLabel(it).toString() }.getOrNull() }
+            val label = appInfo
+                ?.let { runCatching { packageManager.getApplicationLabel(it).toString() }.getOrNull() }
                 ?.trim()
                 .orEmpty()
                 .ifBlank { packageName }
@@ -186,8 +194,11 @@ class InstantCacheActivity : ComponentActivity() {
                 info.flags.and(ApplicationInfo.FLAG_SYSTEM) != 0 &&
                     info.flags.and(ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
             } ?: false
-            val system = item.optBoolean("system") || localSystem
-            result += InstantCacheApp(packageName, label, system)
+            result += InstantCacheApp(
+                packageName = packageName,
+                label = label,
+                system = item.optBoolean("system") || localSystem
+            )
         }
         return result.distinctBy { it.packageName }
             .sortedWith(compareBy<InstantCacheApp> { it.system }.thenBy { it.label.lowercase() })
@@ -213,9 +224,7 @@ class InstantCacheActivity : ComponentActivity() {
         if (allSelected) {
             next.removeAll(visible.toSet())
         } else {
-            visible.forEach {
-                if (next.size < MAX_SELECTION) next += it
-            }
+            visible.forEach { if (next.size < MAX_SELECTION) next += it }
         }
         uiState = uiState.copy(
             selected = next,
@@ -323,8 +332,11 @@ private fun InstantCacheScreen(
                 InstantCacheFilter.SYSTEM -> app.system
                 InstantCacheFilter.ALL -> true
             }
-            groupMatches && (needle.isBlank() || app.label.lowercase().contains(needle) ||
-                app.packageName.lowercase().contains(needle))
+            groupMatches && (
+                needle.isBlank() ||
+                    app.label.lowercase().contains(needle) ||
+                    app.packageName.lowercase().contains(needle)
+                )
         }
     }
 
@@ -336,7 +348,7 @@ private fun InstantCacheScreen(
             text = {
                 Text(
                     "将立即调用 Android 系统清除所选 ${state.selected.size} 个应用的当前缓存。" +
-                        "这不是扫描快照；不会清除账号、设置或应用数据，但应用下次启动可能重新下载或生成缓存。"
+                        "不会清除账号、设置或应用数据，但应用下次启动可能重新生成缓存。"
                 )
             },
             confirmButton = {
@@ -371,25 +383,23 @@ private fun InstantCacheScreen(
         },
         bottomBar = {
             Surface(
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp,
+                tonalElevation = 1.dp,
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
-                    Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
                     Text(
-                        "已选择 ${state.selected.size}/30 个应用",
+                        "已选择 ${state.selected.size}/$MAX_VISIBLE_SELECTION 个应用",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
                     Button(
-                        onClick = {
-                            if (state.running) onStop() else showConfirmation = true
-                        },
+                        onClick = { if (state.running) onStop() else showConfirmation = true },
                         enabled = state.running || (state.connected && state.selected.isNotEmpty()),
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
                         colors = if (state.running) {
                             ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         } else ButtonDefaults.buttonColors()
@@ -410,19 +420,19 @@ private fun InstantCacheScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item {
+            item(contentType = "notice") {
                 NoticeCard(
                     icon = Icons.Rounded.Info,
-                    title = "与精准快照完全分离",
-                    text = "本工具不会先扫描，也不会进入后台自动清理。它只处理你本次明确选择的应用，并调用系统 cache-only 接口。",
+                    title = "系统 cache-only 接口",
+                    text = "仅处理本次明确选择的应用；应用图标按可见范围异步加载，不会阻塞列表滚动。",
                     warning = true
                 )
             }
             state.lastResult?.let { result ->
-                item {
+                item(contentType = "result") {
                     NoticeCard(
                         icon = Icons.Rounded.CheckCircle,
                         title = if (result.cancelled) "任务已停止" else "上次执行结果",
@@ -431,10 +441,10 @@ private fun InstantCacheScreen(
                     )
                 }
             }
-            item {
+            item(contentType = "status") {
                 Text(state.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-            item {
+            item(contentType = "search") {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -445,7 +455,7 @@ private fun InstantCacheScreen(
                     shape = RoundedCornerShape(18.dp)
                 )
             }
-            item {
+            item(contentType = "filters") {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -460,7 +470,7 @@ private fun InstantCacheScreen(
                     }
                 }
             }
-            item {
+            item(contentType = "selection") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("当前显示 ${visible.size} 个", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
@@ -468,25 +478,30 @@ private fun InstantCacheScreen(
                         onClick = { onSelectVisible(visible.map { it.packageName }) },
                         enabled = visible.isNotEmpty() && !state.running
                     ) { Text("选择当前") }
-                    TextButton(onClick = onClearSelection, enabled = state.selected.isNotEmpty() && !state.running) {
-                        Text("清空")
-                    }
+                    TextButton(
+                        onClick = onClearSelection,
+                        enabled = state.selected.isNotEmpty() && !state.running
+                    ) { Text("清空") }
                 }
             }
             if (state.loading) {
-                item {
+                item(contentType = "loading") {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 }
             } else if (visible.isEmpty()) {
-                item {
+                item(contentType = "empty") {
                     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text("没有匹配的应用", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
-                items(visible, key = { it.packageName }) { app ->
+                items(
+                    items = visible,
+                    key = { it.packageName },
+                    contentType = { "app" }
+                ) { app ->
                     InstantCacheAppRow(
                         app = app,
                         selected = app.packageName in state.selected,
@@ -499,23 +514,23 @@ private fun InstantCacheScreen(
     }
 }
 
+private const val MAX_VISIBLE_SELECTION = 30
+
 @Composable
 private fun NoticeCard(icon: ImageVector, title: String, text: String, warning: Boolean) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (warning) MaterialTheme.colorScheme.tertiaryContainer
-            else MaterialTheme.colorScheme.secondaryContainer
-        ),
-        shape = RoundedCornerShape(22.dp),
+    Surface(
+        color = if (warning) MaterialTheme.colorScheme.tertiaryContainer
+        else MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-            Icon(icon, null, Modifier.size(22.dp))
-            Spacer(Modifier.width(12.dp))
+        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
+            Icon(icon, null, Modifier.size(21.dp))
+            Spacer(Modifier.width(11.dp))
             Column {
                 Text(title, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(4.dp))
-                Text(text, fontSize = 12.sp, lineHeight = 18.sp)
+                Spacer(Modifier.height(3.dp))
+                Text(text, fontSize = 12.sp, lineHeight = 17.sp)
             }
         }
     }
@@ -528,22 +543,18 @@ private fun InstantCacheAppRow(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) scheme.primaryContainer.copy(alpha = .55f) else scheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, scheme.onSurface.copy(alpha = if (selected) .10f else .045f)),
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = .12f),
-                modifier = Modifier.size(42.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Apps, null) }
-            }
+            PackageIcon(packageName = app.packageName)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -558,7 +569,7 @@ private fun InstantCacheAppRow(
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer
+                            color = scheme.secondaryContainer
                         ) {
                             Text("系统", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 9.sp)
                         }
@@ -566,7 +577,7 @@ private fun InstantCacheAppRow(
                 }
                 Text(
                     app.packageName,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                     fontSize = 10.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -574,6 +585,54 @@ private fun InstantCacheAppRow(
             }
             Checkbox(checked = selected, onCheckedChange = { onClick() }, enabled = enabled)
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .04f))
+    }
+}
+
+@Composable
+private fun PackageIcon(packageName: String) {
+    val context = LocalContext.current.applicationContext
+    val bitmap by produceState<Bitmap?>(
+        initialValue = AppIconCache.get(packageName),
+        key1 = packageName
+    ) {
+        if (value == null) {
+            value = withContext(Dispatchers.IO) { AppIconCache.load(context, packageName) }
+        }
+    }
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
+            )
+        } else {
+            Icon(Icons.Rounded.Apps, null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+private object AppIconCache {
+    private const val ICON_PX = 96
+    private val cache = object : LruCache<String, Bitmap>(96) {}
+
+    @Synchronized
+    fun get(packageName: String): Bitmap? = cache.get(packageName)
+
+    fun load(context: Context, packageName: String): Bitmap? {
+        get(packageName)?.let { return it }
+        val bitmap = runCatching {
+            context.packageManager.getApplicationIcon(packageName)
+                .toBitmap(width = ICON_PX, height = ICON_PX, config = Bitmap.Config.ARGB_8888)
+        }.getOrNull() ?: return null
+        synchronized(this) { cache.put(packageName, bitmap) }
+        return bitmap
     }
 }
