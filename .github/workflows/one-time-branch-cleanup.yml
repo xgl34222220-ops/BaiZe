@@ -22,79 +22,96 @@ jobs:
             const repo = context.repo.repo;
             const defaultBranch = 'main';
 
+            async function runLimited(items, limit, task) {
+              const results = new Array(items.length);
+              let next = 0;
+              async function worker() {
+                while (true) {
+                  const index = next++;
+                  if (index >= items.length) return;
+                  try {
+                    results[index] = { ok: true, value: await task(items[index], index) };
+                  } catch (error) {
+                    results[index] = { ok: false, error };
+                  }
+                }
+              }
+              await Promise.all(Array.from({ length: Math.min(limit, items.length || 1) }, worker));
+              return results;
+            }
+
             const openPulls = await github.paginate(
               github.rest.pulls.list,
               { owner, repo, state: 'open', per_page: 100 }
             );
+            const localPulls = openPulls.filter(
+              pull => pull.head.repo && pull.head.repo.full_name === `${owner}/${repo}`
+            );
 
+            const comparisons = await runLimited(localPulls, 8, async pull => {
+              const comparison = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${pull.head.sha}...${defaultBranch}`
+              });
+              return {
+                pull,
+                included: ['ahead', 'identical'].includes(comparison.data.status)
+              };
+            });
+
+            const superseded = [];
             const keep = new Set([defaultBranch]);
-            const closedPulls = [];
             const retainedPulls = [];
-
-            for (const pull of openPulls) {
-              if (!pull.head.repo || pull.head.repo.full_name !== `${owner}/${repo}`) {
-                retainedPulls.push(`#${pull.number} (外部仓库)`);
-                continue;
-              }
-
-              let includedInMain = false;
-              try {
-                const comparison = await github.rest.repos.compareCommitsWithBasehead({
-                  owner,
-                  repo,
-                  basehead: `${pull.head.sha}...${defaultBranch}`
-                });
-                includedInMain = ['ahead', 'identical'].includes(comparison.data.status);
-              } catch (error) {
-                core.warning(`无法判断 PR #${pull.number}: ${error.message}`);
-              }
-
-              if (includedInMain) {
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: pull.number,
-                  body: '该分支的提交已经包含在 `main` 正式版中，仓库清理时自动关闭此历史 PR。'
-                });
-                await github.rest.pulls.update({
-                  owner,
-                  repo,
-                  pull_number: pull.number,
-                  state: 'closed'
-                });
-                closedPulls.push(`#${pull.number} ${pull.head.ref}`);
+            for (let index = 0; index < localPulls.length; index++) {
+              const pull = localPulls[index];
+              const result = comparisons[index];
+              if (result?.ok && result.value.included) {
+                superseded.push(pull);
               } else {
                 keep.add(pull.head.ref);
                 retainedPulls.push(`#${pull.number} ${pull.head.ref}`);
+                if (!result?.ok) core.warning(`无法判断 PR #${pull.number}: ${result?.error?.message || '未知错误'}`);
               }
             }
+
+            const closeResults = await runLimited(superseded, 8, async pull => {
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pull.number,
+                state: 'closed'
+              });
+              return `#${pull.number} ${pull.head.ref}`;
+            });
+            const closedPulls = closeResults.filter(v => v.ok).map(v => v.value);
+            closeResults.filter(v => !v.ok).forEach(v => core.warning(`关闭历史 PR 失败: ${v.error.message}`));
 
             const branches = await github.paginate(
               github.rest.repos.listBranches,
               { owner, repo, per_page: 100 }
             );
+            const candidates = branches.filter(branch => !keep.has(branch.name));
+            const deleteResults = await runLimited(candidates, 8, async branch => {
+              await github.rest.git.deleteRef({
+                owner,
+                repo,
+                ref: `heads/${branch.name}`
+              });
+              return branch.name;
+            });
 
-            const deleted = [];
-            const failed = [];
-            for (const branch of branches) {
-              if (keep.has(branch.name)) continue;
-              try {
-                await github.rest.git.deleteRef({
-                  owner,
-                  repo,
-                  ref: `heads/${branch.name}`
-                });
-                deleted.push(branch.name);
-              } catch (error) {
-                failed.push(`${branch.name}: ${error.message}`);
-                core.warning(`删除 ${branch.name} 失败: ${error.message}`);
-              }
-            }
+            const deleted = deleteResults.filter(v => v.ok).map(v => v.value);
+            const failed = deleteResults
+              .map((v, index) => ({ result: v, branch: candidates[index].name }))
+              .filter(v => !v.result.ok)
+              .map(v => `${v.branch}: ${v.result.error.message}`);
+            failed.forEach(message => core.warning(`删除失败 ${message}`));
 
             await core.summary
               .addHeading('白泽分支清理结果')
               .addRaw(`保留分支：${[...keep].map(v => `\`${v}\``).join('、')}\n\n`)
-              .addRaw(`关闭历史 PR：${closedPulls.length ? closedPulls.join('、') : '无'}\n\n`)
+              .addRaw(`关闭历史 PR（${closedPulls.length}）：${closedPulls.length ? closedPulls.join('、') : '无'}\n\n`)
               .addRaw(`删除分支（${deleted.length}）：${deleted.length ? deleted.map(v => `\`${v}\``).join('、') : '无'}\n\n`)
               .addRaw(`保留未合并 PR：${retainedPulls.length ? retainedPulls.join('、') : '无'}\n\n`)
               .addRaw(`失败（${failed.length}）：${failed.length ? failed.join('；') : '无'}\n`)
