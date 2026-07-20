@@ -1,0 +1,150 @@
+package io.github.xgl34222220.baize
+
+import android.content.ComponentName
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.ApplicationInfo
+import android.os.Bundle
+import android.os.IBinder
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.topjohnwu.superuser.ipc.RootService
+import io.github.xgl34222220.baize.root.BaiZeProfileRootService
+import io.github.xgl34222220.baize.root.IProfileRootService
+import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
+import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * Explicit PackageManager cache-only tool.
+ *
+ * This screen deliberately does not consume or create BaiZe scan snapshots. It operates only on
+ * packages selected by the user after a second confirmation and is never called by the scheduler.
+ */
+class InstantCacheActivity : ComponentActivity() {
+    private val appearanceViewModel: AppearanceViewModel by viewModels()
+    private var service: IProfileRootService? = null
+    private var serviceBound = false
+    private var uiState by mutableStateOf(InstantCacheUiState())
+
+    private val connection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            service = IProfileRootService.Stub.asInterface(binder)
+            serviceBound = true
+            uiState = uiState.copy(connected = true, status = "正在读取已安装应用…")
+            loadCatalog()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            service = null
+            serviceBound = false
+            uiState = uiState.copy(
+                connected = false,
+                running = false,
+                status = "Root 服务已断开，请返回后重试"
+            )
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        setContent {
+            val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
+            BaiZeTheme(appearance) {
+                InstantCacheScreen(
+                    state = uiState,
+                    onBack = ::finish,
+                    onToggle = ::togglePackage,
+                    onSelectVisible = ::selectVisible,
+                    onClearSelection = { uiState = uiState.copy(selected = emptySet()) },
+                    onRun = ::runInstantCache,
+                    onStop = { runCatching { service?.cancelCurrentTask() } }
+                )
+            }
+        }
+        bindRootService()
+    }
+
+    private fun bindRootService() {
+        uiState = uiState.copy(status = "正在连接 Root PackageManager 服务…")
+        runCatching {
+            RootService.bind(
+                Intent(this, BaiZeProfileRootService::class.java)
+                    .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                connection
+            )
+            serviceBound = true
+        }.onFailure {
+            serviceBound = false
+            uiState = uiState.copy(status = "Root 服务启动失败：${it.message ?: it.javaClass.simpleName}")
