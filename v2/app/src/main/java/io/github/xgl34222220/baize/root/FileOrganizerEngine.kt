@@ -14,12 +14,11 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Explicit file organizer for download trees.
+ * Root-side immutable file organizer plan.
  *
- * It discovers directories named Download / Downloads / 下载 across public storage,
- * Android/data, Android/media and root-readable app-private storage. A scan only creates an
- * in-memory immutable move plan. Applying a plan revalidates lstat fingerprints and never
- * overwrites an existing destination. The last successful batch can be undone.
+ * Binder responses are deliberately bounded: scan returns only a summary and the first preview
+ * page, while apply/undo detail arrays are capped. The complete move plan remains inside the Root
+ * process so large QQ/TIM receive folders never overflow Binder's transaction buffer.
  */
 class FileOrganizerEngine(
     private val cancelled: AtomicBoolean,
@@ -50,7 +49,15 @@ class FileOrganizerEngine(
     private data class Snapshot(
         val id: String,
         val createdAt: Long,
+        val roots: Int,
+        val truncated: Boolean,
         val items: List<PlannedMove>
+    )
+
+    private data class Selection(
+        val all: Boolean,
+        val ids: Set<String>,
+        val excludedIds: Set<String>
     )
 
     @Volatile
@@ -67,38 +74,64 @@ class FileOrganizerEngine(
         val items = LinkedHashMap<String, PlannedMove>()
         for ((index, root) in roots.withIndex()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS) break
-            progress(Progress("正在读取下载目录", index, roots.size, displayPath(root.path)))
+            progress(Progress("正在读取下载目录", index + 1, roots.size, displayPath(root.path)))
             collectFiles(root, started, items, progress)
             if (items.size >= MAX_ITEMS) break
         }
 
-        val id = UUID.randomUUID().toString()
         val immutable = items.values.sortedWith(
-            compareBy<PlannedMove> { it.category }.thenBy { it.sourceGroup }.thenBy { it.name.lowercase() }
+            compareBy<PlannedMove> { it.category }
+                .thenBy { it.sourceGroup }
+                .thenBy { it.name.lowercase() }
         )
-        snapshot = Snapshot(id, System.currentTimeMillis(), immutable)
+        val id = UUID.randomUUID().toString()
+        val truncated = immutable.size >= MAX_ITEMS || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS
+        snapshot = Snapshot(id, System.currentTimeMillis(), roots.size, truncated, immutable)
 
-        val array = JSONArray()
+        val categoryCounts = JSONObject()
+        val sourceCounts = JSONObject()
+        var totalBytes = 0L
         immutable.forEach { item ->
-            array.put(
-                JSONObject()
-                    .put("id", item.id)
-                    .put("name", item.name)
-                    .put("category", item.category)
-                    .put("bytes", item.bytes)
-                    .put("sourceGroup", item.sourceGroup)
-                    .put("sourceDisplay", displayPath(item.source))
-                    .put("destinationName", File(item.destination).name)
-            )
+            categoryCounts.put(item.category, categoryCounts.optInt(item.category) + 1)
+            sourceCounts.put(item.sourceGroup, sourceCounts.optInt(item.sourceGroup) + 1)
+            totalBytes += item.bytes
         }
+        val preview = JSONArray()
+        immutable.take(DEFAULT_PAGE_SIZE).forEach { preview.put(itemJson(it)) }
+
         return JSONObject()
             .put("success", true)
             .put("snapshotId", id)
             .put("expiresInMs", SNAPSHOT_TTL_MS)
             .put("roots", roots.size)
             .put("total", immutable.size)
-            .put("truncated", immutable.size >= MAX_ITEMS || SystemClock.elapsedRealtime() - started >= SCAN_BUDGET_MS)
+            .put("totalBytes", totalBytes)
+            .put("truncated", truncated)
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
+            .put("pageSize", DEFAULT_PAGE_SIZE)
+            .put("categoryCounts", categoryCounts)
+            .put("sourceCounts", sourceCounts)
+            .put("previewCount", preview.length())
+            .put("items", preview)
+            .toString()
+    }
+
+    fun page(snapshotId: String, offset: Int, limit: Int): String {
+        val current = validSnapshot(snapshotId)
+            ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新扫描")
+        val safeOffset = offset.coerceIn(0, current.items.size)
+        val safeLimit = limit.coerceIn(1, MAX_PAGE_SIZE)
+        val end = (safeOffset + safeLimit).coerceAtMost(current.items.size)
+        val array = JSONArray()
+        current.items.subList(safeOffset, end).forEach { item -> array.put(itemJson(item)) }
+        return JSONObject()
+            .put("success", true)
+            .put("snapshotId", current.id)
+            .put("offset", safeOffset)
+            .put("nextOffset", end)
+            .put("limit", safeLimit)
+            .put("total", current.items.size)
+            .put("hasMore", end < current.items.size)
             .put("items", array)
             .toString()
     }
@@ -106,28 +139,39 @@ class FileOrganizerEngine(
     fun apply(snapshotId: String, selectionJson: String, progress: (Progress) -> Unit): String {
         val current = validSnapshot(snapshotId)
             ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新扫描")
-        val selectedIds = parseSelection(selectionJson)
-        if (selectedIds.isEmpty()) return error("empty_selection", "没有选择需要归类的文件")
-
-        val selected = current.items.filter { it.id in selectedIds }
-        if (selected.isEmpty()) return error("empty_selection", "所选文件不属于当前归类计划")
+        val selection = parseSelection(selectionJson)
+        val selected = if (selection.all) {
+            current.items.filterNot { it.id in selection.excludedIds }
+        } else {
+            current.items.filter { it.id in selection.ids }
+        }
+        if (selected.isEmpty()) return error("empty_selection", "没有选择需要归类的文件")
 
         val moves = JSONArray()
         val details = JSONArray()
+        var detailTruncated = false
         var moved = 0
         var skipped = 0
         var failed = 0
         var bytes = 0L
 
+        fun appendDetail(item: PlannedMove, action: String, reason: String) {
+            if (details.length() < MAX_RESULT_DETAILS) {
+                details.put(detail(item, action, reason))
+            } else {
+                detailTruncated = true
+            }
+        }
+
         for ((index, item) in selected.withIndex()) {
             if (cancelled.get()) break
-            progress(Progress("正在归类 ${item.category}", index, selected.size, displayPath(item.source)))
+            progress(Progress("正在归类 ${item.category}", index + 1, selected.size, displayPath(item.source)))
             val source = File(item.source)
             val destination = File(item.destination)
             val reason = validatePlannedMove(item, source, destination)
             if (reason != null) {
                 skipped += 1
-                details.put(detail(item, "skipped", reason))
+                appendDetail(item, "skipped", reason)
                 continue
             }
 
@@ -145,20 +189,18 @@ class FileOrganizerEngine(
             if (result.getOrDefault(false)) {
                 moved += 1
                 bytes += item.bytes
-                val destinationFingerprint = fingerprint(destination)
                 moves.put(
                     JSONObject()
                         .put("source", item.source)
                         .put("destination", item.destination)
-                        .put("destinationFingerprint", destinationFingerprint)
+                        .put("destinationFingerprint", fingerprint(destination))
                         .put("sourceUid", item.sourceUid)
                         .put("sourceGid", item.sourceGid)
                         .put("sourceMode", item.sourceMode)
                 )
-                details.put(detail(item, "moved", ""))
             } else {
                 failed += 1
-                details.put(detail(item, "failed", result.exceptionOrNull()?.message ?: "移动失败"))
+                appendDetail(item, "failed", result.exceptionOrNull()?.message ?: "移动失败")
             }
         }
 
@@ -167,11 +209,13 @@ class FileOrganizerEngine(
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
+            .put("requested", selected.size)
             .put("moved", moved)
             .put("skipped", skipped)
             .put("failed", failed)
             .put("bytes", bytes)
             .put("undoAvailable", moves.length() > 0)
+            .put("detailTruncated", detailTruncated)
             .put("details", details)
             .toString()
     }
@@ -184,9 +228,14 @@ class FileOrganizerEngine(
 
         val remaining = JSONArray()
         val details = JSONArray()
+        var detailTruncated = false
         var restored = 0
         var skipped = 0
         var failed = 0
+
+        fun appendDetail(value: JSONObject) {
+            if (details.length() < MAX_RESULT_DETAILS) details.put(value) else detailTruncated = true
+        }
 
         for (index in moves.length() - 1 downTo 0) {
             if (cancelled.get()) {
@@ -210,7 +259,7 @@ class FileOrganizerEngine(
             if (reason != null) {
                 skipped += 1
                 remaining.put(move)
-                details.put(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", reason))
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", reason))
                 continue
             }
 
@@ -218,7 +267,7 @@ class FileOrganizerEngine(
             if (sourceParent?.isDirectory != true) {
                 skipped += 1
                 remaining.put(move)
-                details.put(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", "原目录已不存在"))
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", "原目录已不存在"))
                 continue
             }
             val ok = runCatching {
@@ -234,19 +283,14 @@ class FileOrganizerEngine(
             }.getOrDefault(false)
             if (ok) {
                 restored += 1
-                details.put(JSONObject().put("source", displayPath(source.path)).put("action", "restored"))
             } else {
                 failed += 1
                 remaining.put(move)
-                details.put(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
             }
         }
 
-        if (remaining.length() == 0) {
-            undoFile().delete()
-        } else {
-            persistUndo(remaining)
-        }
+        if (remaining.length() == 0) undoFile().delete() else persistUndo(remaining)
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
@@ -254,6 +298,7 @@ class FileOrganizerEngine(
             .put("skipped", skipped)
             .put("failed", failed)
             .put("undoAvailable", remaining.length() > 0)
+            .put("detailTruncated", detailTruncated)
             .put("details", details)
             .toString()
     }
@@ -263,15 +308,15 @@ class FileOrganizerEngine(
         val scanBases = mutableListOf<Pair<File, Int>>()
 
         File("/data/media").listFiles()
-            ?.filter { it.isDirectory && it.name.all { char -> char.isDigit() } }
-            ?.forEach { scanBases += it to 7 }
+            ?.filter { it.isDirectory && it.name.all(Char::isDigit) }
+            ?.forEach { scanBases += it to 8 }
 
         listOf(File("/data/user"), File("/data/user_de")).forEach { base ->
             base.listFiles()
-                ?.filter { it.isDirectory && it.name.all { char -> char.isDigit() } }
+                ?.filter { it.isDirectory && it.name.all(Char::isDigit) }
                 ?.forEach { user ->
-                    user.listFiles()?.filter { it.isDirectory }?.forEach { packageDir ->
-                        scanBases += packageDir to 6
+                    user.listFiles()?.filter(File::isDirectory)?.forEach { packageDir ->
+                        scanBases += packageDir to 7
                     }
                 }
         }
@@ -288,14 +333,14 @@ class FileOrganizerEngine(
                 val path = canonical(dir)
                 if (path.contains("/BaiZe归类/") || path.endsWith("/BaiZe归类")) continue
                 visited += 1
-                if (visited % 500 == 0) progress(Progress("正在发现全部下载目录", visited, 0, displayPath(path)))
+                if (visited % 500 == 0) progress(Progress("正在发现下载与接收目录", visited, 0, displayPath(path)))
                 if (isDownloadDirectoryName(dir.name) && allowedDownloadRoot(path)) {
                     roots.putIfAbsent(path, dir)
                     continue
                 }
                 if (depth >= depthLimit || shouldPruneDiscovery(path, dir.name)) continue
-                val children = dir.listFiles() ?: continue
-                children.filter { it.isDirectory && !isSymlink(it) }.forEach { stack.add(it to depth + 1) }
+                dir.listFiles()?.filter { it.isDirectory && !isSymlink(it) }
+                    ?.forEach { stack.add(it to depth + 1) }
             }
         }
         return roots.values.sortedBy { it.path }
@@ -323,13 +368,12 @@ class FileOrganizerEngine(
             if (!path.startsWith("$rootPath/") && path != rootPath) continue
             if (file.isDirectory) {
                 if (depth >= MAX_FILE_DEPTH) continue
-                val children = file.listFiles() ?: continue
-                children.forEach { stack.add(it to depth + 1) }
+                file.listFiles()?.forEach { stack.add(it to depth + 1) }
                 continue
             }
             if (!file.isFile || skipFile(file)) continue
             visited += 1
-            if (visited % 200 == 0) progress(Progress("正在建立不可变归类计划", visited, 0, displayPath(path)))
+            if (visited % 200 == 0) progress(Progress("正在建立不可变归类计划", out.size, MAX_ITEMS, displayPath(path)))
             val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: continue
             val statFingerprint = fingerprint(sourceStat)
             val category = category(file.name)
@@ -360,7 +404,7 @@ class FileOrganizerEngine(
         if (sourcePath != item.source) return "源路径已变化"
         if (!source.isFile) return "文件已不存在"
         if (isSymlink(source)) return "符号链接受保护"
-        if (!allowedDownloadSource(sourcePath)) return "源文件不再属于下载目录"
+        if (!allowedDownloadSource(sourcePath)) return "源文件不再属于下载或接收目录"
         if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
         if (destination.exists()) return "归类目录已有同名文件"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
@@ -413,13 +457,22 @@ class FileOrganizerEngine(
         return current
     }
 
-    private fun parseSelection(raw: String): Set<String> {
+    private fun parseSelection(raw: String): Selection {
         val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
-        val array = json.optJSONArray("ids") ?: JSONArray()
+        return Selection(
+            all = json.optBoolean("all", false),
+            ids = parseIds(json.optJSONArray("ids")),
+            excludedIds = parseIds(json.optJSONArray("excludeIds"))
+        )
+    }
+
+    private fun parseIds(array: JSONArray?): Set<String> {
         val result = LinkedHashSet<String>()
+        if (array == null) return result
         for (index in 0 until array.length()) {
             val id = array.optString(index)
-            if (id.matches(Regex("^[a-f0-9]{64}$"))) result += id
+            if (id.matches(ID_PATTERN)) result += id
+            if (result.size >= MAX_SELECTION_IDS) break
         }
         return result
     }
@@ -450,12 +503,12 @@ class FileOrganizerEngine(
         var parent = file.parentFile
         while (parent != null && canonical(parent).startsWith(root.path + "/")) {
             Os.chown(parent.path, owner.st_uid, owner.st_gid)
-            Os.chmod(parent.path, 0x1F8) // 0770
+            Os.chmod(parent.path, 0x1F8)
             if (canonical(parent) == root.path) break
             parent = parent.parentFile
         }
         Os.chown(file.path, owner.st_uid, owner.st_gid)
-        Os.chmod(file.path, 0x1B0) // 0660
+        Os.chmod(file.path, 0x1B0)
         true
     }.getOrDefault(false)
 
@@ -477,7 +530,7 @@ class FileOrganizerEngine(
     private fun allowedDownloadRoot(path: String): Boolean {
         if (!path.startsWith("/data/media/") && !path.startsWith("/data/user/") && !path.startsWith("/data/user_de/")) return false
         if (path.contains("/BaiZe归类/") || path.endsWith("/BaiZe归类")) return false
-        return path.split('/').any { segment -> isDownloadDirectoryName(segment) }
+        return path.split('/').any(::isDownloadDirectoryName)
     }
 
     private fun allowedDownloadSource(path: String): Boolean =
@@ -491,8 +544,8 @@ class FileOrganizerEngine(
     }
 
     private fun isDownloadDirectoryName(name: String): Boolean {
-        val normalized = name.trim().lowercase()
-        return normalized == "download" || normalized == "downloads" || normalized == "下载"
+        val normalized = name.trim().lowercase().replace('-', '_').replace(' ', '_')
+        return normalized in DOWNLOAD_DIRECTORY_NAMES
     }
 
     private fun skipFile(file: File): Boolean {
@@ -520,6 +573,9 @@ class FileOrganizerEngine(
     }
 
     private fun sourceGroup(path: String): String {
+        val lower = path.lowercase()
+        if (lower.contains("/qqfile_recv/") || lower.endsWith("/qqfile_recv")) return "QQ 接收文件"
+        if (lower.contains("/timfile_recv/") || lower.endsWith("/timfile_recv")) return "TIM 接收文件"
         val packageName = Regex("/Android/(?:data|media)/([^/]+)/").find("$path/")?.groupValues?.getOrNull(1)
             ?: Regex("/data/(?:user|user_de)/\\d+/([^/]+)/").find("$path/")?.groupValues?.getOrNull(1)
         return packageName ?: "公共下载"
@@ -567,23 +623,47 @@ class FileOrganizerEngine(
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
+    private fun itemJson(item: PlannedMove): JSONObject =
+        JSONObject()
+            .put("id", item.id)
+            .put("name", item.name.take(MAX_NAME_CHARS))
+            .put("category", item.category)
+            .put("bytes", item.bytes)
+            .put("sourceGroup", item.sourceGroup.take(MAX_GROUP_CHARS))
+            .put("sourceDisplay", displayPath(item.source).take(MAX_PATH_CHARS))
+            .put("destinationDisplay", displayPath(item.destination).take(MAX_PATH_CHARS))
+            .put("destinationName", File(item.destination).name.take(MAX_NAME_CHARS))
+
     private fun detail(item: PlannedMove, action: String, reason: String): JSONObject =
         JSONObject()
             .put("id", item.id)
-            .put("name", item.name)
+            .put("name", item.name.take(MAX_NAME_CHARS))
             .put("category", item.category)
-            .put("sourceGroup", item.sourceGroup)
+            .put("sourceGroup", item.sourceGroup.take(MAX_GROUP_CHARS))
             .put("action", action)
-            .put("reason", reason)
+            .put("reason", reason.take(160))
 
     private fun error(code: String, message: String): String =
         JSONObject().put("success", false).put("error", code).put("message", message).toString()
 
     companion object {
+        private val ID_PATTERN = Regex("^[a-f0-9]{64}$")
+        private val DOWNLOAD_DIRECTORY_NAMES = setOf(
+            "download", "downloads", "下载",
+            "qqfile_recv", "qqmy_file_recv", "qqfile_receive",
+            "timfile_recv", "tim_file_recv"
+        )
         private const val SNAPSHOT_TTL_MS = 30L * 60_000L
-        private const val DISCOVERY_BUDGET_MS = 45_000L
-        private const val SCAN_BUDGET_MS = 2L * 60_000L
-        private const val MAX_ITEMS = 5_000
+        private const val DISCOVERY_BUDGET_MS = 60_000L
+        private const val SCAN_BUDGET_MS = 3L * 60_000L
+        private const val MAX_ITEMS = 20_000
         private const val MAX_FILE_DEPTH = 12
+        private const val DEFAULT_PAGE_SIZE = 60
+        private const val MAX_PAGE_SIZE = 100
+        private const val MAX_SELECTION_IDS = 20_000
+        private const val MAX_RESULT_DETAILS = 40
+        private const val MAX_PATH_CHARS = 360
+        private const val MAX_NAME_CHARS = 160
+        private const val MAX_GROUP_CHARS = 80
     }
 }
