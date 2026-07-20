@@ -7,7 +7,6 @@ android {
     namespace = "io.github.xgl34222220.baize.macrobenchmark"
     compileSdk = 36
     targetProjectPath = ":app"
-
     defaultConfig {
         minSdk = 28
         targetSdk = 36
