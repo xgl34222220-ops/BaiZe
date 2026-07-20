@@ -1,0 +1,95 @@
+s=s.replace(old,new)
+s=s.replace('HOSTS="$MODDIR/system/etc/hosts"','HOSTS="$PERSIST/hosts.active"')
+
+# ensure persistent hosts exists
+anchor='''  [ -f "$STATE" ] || cat > "$STATE" <<STATEEOF
+LAST_UPDATE=never
+LAST_RESULT=idle
+RULE_COUNT=0
+SOURCE_COUNT=0
+PAUSED_UNTIL=0
+INDEX_VALID=0
+STATEEOF
+}
+'''
+repl='''  [ -f "$STATE" ] || cat > "$STATE" <<STATEEOF
+LAST_UPDATE=never
+LAST_RESULT=idle
+RULE_COUNT=0
+SOURCE_COUNT=0
+PAUSED_UNTIL=0
+INDEX_VALID=0
+STATEEOF
+  if [ ! -s "$HOSTS" ]; then
+    cat > "$HOSTS" <<HOSTSEOF
+127.0.0.1 localhost
+::1 localhost
+# BaGua persistent hosts
+HOSTSEOF
+    chmod 0644 "$HOSTS" 2>/dev/null || true
+  fi
+}
+'''
+assert anchor in s
+s=s.replace(anchor,repl)
+
+# More universal runtime bind, not limited to manager name
+start=s.index('ensure_runtime_mount() {')
+end=s.index('\nflush_dns() {', start)
+new_fn=r'''ensure_runtime_mount() {
+  [ -s "$HOSTS" ] || return 1
+  if cmp -s "$HOSTS" /system/etc/hosts 2>/dev/null && [ ! -f "$PERSIST/bind_mounted" ]; then
+    return 0
+  fi
+  if [ -f "$PERSIST/bind_mounted" ]; then
+    umount /system/etc/hosts >/dev/null 2>&1 || true
+  fi
+  if mount --bind "$HOSTS" /system/etc/hosts >/dev/null 2>&1; then
+    : > "$PERSIST/bind_mounted"
+    log INFO "persistent runtime bind mount active manager=$(detect_manager)"
+    return 0
+  fi
+  log WARN "persistent runtime bind mount failed manager=$(detect_manager)"
+  return 1
+}
+'''
+s=s[:start]+new_fn+s[end:]
+
+# runtime-aware installer diagnostic fix
+s=s.replace('''    app_missing|app_version_mismatch)
+      sh "$MODDIR/scripts/install-app.sh" && echo 'RESULT=fixed|app' || return 1
+      ;;''','''    app_missing|app_version_mismatch)
+      installer="$MODDIR/scripts/install-app.sh"
+      [ -f "$installer" ] || { echo 'ERROR=app_installer_missing'; return 1; }
+      sh "$installer" && echo 'RESULT=fixed|app' || return 1
+      ;;''')
+p.write_text(s)
+
+# customize/service/post-fs use bridge
+p=root/'module-src/customize.sh'; s=p.read_text()
+s=s.replace('set_perm_recursive "$MODPATH/scripts" 0 0 0755 0755','set_perm_recursive "$MODPATH/scripts" 0 0 0755 0755\nset_perm "$MODPATH/scripts/sync-runtime.sh" 0 0 0755')
+s=s.replace('''"$MODPATH/scripts/bagua.sh" init >/dev/null 2>&1 || true
+''','''"$MODPATH/scripts/sync-runtime.sh" >/dev/null 2>&1 || true
+[ -x "$PERSIST/bridge.sh" ] && "$PERSIST/bridge.sh" init >/dev/null 2>&1 || true
+''')
+p.write_text(s)
+
+p=root/'module-src/service.sh'; s=p.read_text()
+s=s.replace('CORE="$MODDIR/scripts/bagua.sh"','CORE=/data/adb/bagua/bridge.sh')
+s=s.replace('''# 安装或更新模块内置的原生 App。失败不影响去广告底层继续工作。
+"$MODDIR/scripts/install-app.sh" >/dev/null 2>&1 || touch "$PERSIST/app-install.pending"
+
+"$CORE" init >/dev/null 2>&1
+''','''# Refresh the persistent bridge before the App or service uses it.
+"$MODDIR/scripts/sync-runtime.sh" >/dev/null 2>&1 || true
+
+# 安装或更新模块内置的原生 App。失败不影响去广告底层继续工作。
+"$MODDIR/scripts/install-app.sh" >/dev/null 2>&1 || touch "$PERSIST/app-install.pending"
+
+[ -x "$CORE" ] || exit 1
+"$CORE" init >/dev/null 2>&1
+''')
+p.write_text(s)
+
+p=root/'module-src/post-fs-data.sh'; s=p.read_text()
+s=s.replace('''chmod 0755 "$MODDIR/scripts/bagua.sh" 2>/dev/null
