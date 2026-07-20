@@ -121,6 +121,8 @@ class BaiZeProfileRootService : RootService() {
 
         override fun saveSchedulerConfig(configJson: String?): String = saveConfig(configJson.orEmpty())
 
+        override fun resetScanWorkerProfile(): String = resetScanWorkerProfileJson()
+
         override fun getInstalledPackageCatalog(): String =
             this@BaiZeProfileRootService.installedPackageCatalogJson()
 
@@ -206,6 +208,7 @@ class BaiZeProfileRootService : RootService() {
             .put("output", output)
             .put("totals", totals)
             .put("latest", latest)
+            .put("scanPerformance", scanPerformanceJson())
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("logName", log.name)
             .put("appDetails", appDetails)
@@ -384,6 +387,7 @@ class BaiZeProfileRootService : RootService() {
             .put("module", module)
             .put("totals", totals)
             .put("latest", latest)
+            .put("scanPerformance", scanPerformanceJson())
             .put(
                 "appDetails",
                 appDetailsJson(
@@ -394,6 +398,53 @@ class BaiZeProfileRootService : RootService() {
             .put("otherDetails", otherDetailsJson(File(stateDir, "reports/latest.tsv")))
             .put("running", running)
             .put("config", configJsonObject())
+            .toString()
+    }
+
+    private fun scanPerformanceJson(): JSONObject {
+        val stateDir = File(STATE_DIR)
+        val cache = readEnv(File(stateDir, "cache_scan.env"))
+        val profile = readEnv(File(stateDir, "root-worker-profile.env"))
+        val config = configJsonObject()
+        val requestedMode = config.optInt("scan_root_workers", 0).coerceIn(0, 2)
+        val actualWorkers = cache.optInt("root_workers", profile.optInt("last_workers", 1)).coerceIn(1, 2)
+        val recommendedWorkers = profile.optInt("recommended_workers", 1).coerceIn(1, 2)
+        val hasProfile = profile.length() > 0
+        val reason = if (hasProfile) {
+            cache.optString("worker_reason").ifBlank {
+                profile.optString("last_decision", "not_measured")
+            }
+        } else {
+            "not_measured"
+        }
+        return JSONObject()
+            .put("available", hasProfile)
+            .put("requestedMode", requestedMode)
+            .put("workerPolicy", if (requestedMode == 0) "auto" else "manual")
+            .put("workerReason", reason)
+            .put("actualWorkers", actualWorkers)
+            .put("recommendedWorkers", recommendedWorkers)
+            .put("parallelGainPercent", profile.optInt("parallel_gain_percent", 0))
+            .put("serialRate", profile.optLong("serial_rate", 0L).coerceAtLeast(0L))
+            .put("parallelRate", profile.optLong("parallel_rate", 0L).coerceAtLeast(0L))
+            .put("successfulRuns", profile.optInt("successful_runs", 0).coerceAtLeast(0))
+            .put("nextProbeRun", profile.optInt("next_probe_run", 0).coerceAtLeast(0))
+            .put("parallelBlockedUntil", profile.optLong("parallel_blocked_until", 0L).coerceAtLeast(0L))
+            .put("lastUpdatedEpoch", profile.optLong("updated_epoch", 0L).coerceAtLeast(0L))
+    }
+
+    private fun resetScanWorkerProfileJson(): String = runCatching {
+        val profile = File(STATE_DIR, "root-worker-profile.env")
+        val deleted = !profile.exists() || profile.delete()
+        if (!deleted) error("无法删除本机性能基准")
+        JSONObject()
+            .put("success", true)
+            .put("message", "性能基准已清除，下次自动扫描将从串行重新学习")
+            .toString()
+    }.getOrElse { error ->
+        JSONObject()
+            .put("success", false)
+            .put("error", error.message ?: error.javaClass.simpleName)
             .toString()
     }
 
@@ -958,6 +1009,11 @@ class BaiZeProfileRootService : RootService() {
             "min_battery" to 0..100,
             "max_battery_temp" to 30..60,
             "max_run_minutes" to 5..180,
+            "scan_root_workers" to 0..2,
+            "scan_parallel_min_items" to 100..10_000_000,
+            "scan_parallel_min_gain_percent" to 5..50,
+            "scan_parallel_reprobe_runs" to 2..50,
+            "scan_parallel_failure_cooldown_hours" to 1..168,
             "schedule_cache_enabled" to 0..1,
             "schedule_cache_hours" to 1..720,
             "schedule_empty_enabled" to 0..1,

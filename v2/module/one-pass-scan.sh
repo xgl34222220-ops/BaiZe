@@ -398,7 +398,7 @@ write_combined_cache_summary() {
     echo "whitelist_index_entries=$whitelist_index_entries"; echo "whitelist_index_queries=$whitelist_index_queries"
     echo "whitelist_ancestor_hits=$whitelist_ancestor_hits"; echo "whitelist_descendant_hits=$whitelist_descendant_hits"
     echo "pruned_subtrees=$pruned_subtrees"; echo "elapsed_ms=$wall_ms"; echo "items_per_second=$items_per_second"
-    echo "engine=native-c-arm64"; echo "version=43.4-alpha5-adaptive-workers"
+    echo "engine=native-c-arm64"; echo "version=43.5-alpha6-performance-panel"
   } >"$output"
 }
 

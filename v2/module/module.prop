@@ -1,6 +1,6 @@
 id=baize_v2
 name=白泽 v2
-version=v2.1.0-alpha5
-versionCode=22405
+version=v2.1.0-alpha6
+versionCode=22406
 author=惜故里丶
-description=白泽 v2.1.0 Alpha 5：按本机历史吞吐自适应选择串行/双工作进程，保留原子快照与路径索引 One-pass。
+description=白泽 v2.1.0 Alpha 6：原生 App 展示并控制本机扫描策略，可重置基准重新学习。

@@ -16,6 +16,7 @@ interface IProfileRootService {
     String recordNativeTask(String taskJson);
     String getSchedulerConfig();
     String saveSchedulerConfig(String configJson);
+    String resetScanWorkerProfile();
 
     String getInstalledPackageCatalog();
     String getWhitelistPackages();

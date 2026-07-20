@@ -133,6 +133,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     whitelist = { startActivity(Intent(this, WhitelistActivity::class.java)) },
                     theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
+                    resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() }
                 ),
                 appearance = appearance
@@ -1036,6 +1037,22 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
+    private fun resetScanPerformance() {
+        val service = rootService ?: return toast("Root 服务尚未连接")
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.resetScanWorkerProfile()) }
+            }
+            val json = response.getOrNull()
+            val success = json?.optBoolean("success") == true
+            toast(
+                if (success) json?.optString("message").orEmpty().ifBlank { "性能基准已清除" }
+                else "重置失败：${json?.optString("error").orEmpty().ifBlank { response.exceptionOrNull()?.message ?: "未知错误" }}"
+            )
+            refreshModuleState()
+        }
+    }
+
     private fun refreshModuleState() {
         val service = rootService ?: return
         lifecycleScope.launch {
@@ -1044,6 +1061,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             } ?: return@launch
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
+            val performance = json.optJSONObject("scanPerformance") ?: JSONObject()
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
             val latestMode = latest.optString("mode")
@@ -1056,6 +1074,19 @@ class MiuixDashboardActivity : ComponentActivity() {
                 lastReleased = latestReleased,
                 recentApps = if (appDetails.isNotEmpty()) appDetails else dashboardState.value.recentApps,
                 recentJunk = if (otherDetails.isNotEmpty()) otherDetails else dashboardState.value.recentJunk,
+                scanPerformance = ScanPerformanceUiState(
+                    available = performance.optBoolean("available", false),
+                    workerPolicy = performance.optString("workerPolicy", "auto"),
+                    workerReason = performance.optString("workerReason", "not_measured"),
+                    actualWorkers = performance.optInt("actualWorkers", 1).coerceIn(1, 2),
+                    recommendedWorkers = performance.optInt("recommendedWorkers", 1).coerceIn(1, 2),
+                    parallelGainPercent = performance.optInt("parallelGainPercent", 0),
+                    serialRate = performance.optLong("serialRate", 0L).coerceAtLeast(0L),
+                    parallelRate = performance.optLong("parallelRate", 0L).coerceAtLeast(0L),
+                    successfulRuns = performance.optInt("successfulRuns", 0).coerceAtLeast(0),
+                    nextProbeRun = performance.optInt("nextProbeRun", 0).coerceAtLeast(0),
+                    parallelBlockedUntil = performance.optLong("parallelBlockedUntil", 0L).coerceAtLeast(0L)
+                ),
                 schedulerText = when (scheduler.optString("state", "waiting")) {
                     "running" -> "定时任务正在执行"
                     "completed" -> "最近定时任务已完成"

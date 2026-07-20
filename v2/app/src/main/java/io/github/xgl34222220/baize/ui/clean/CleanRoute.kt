@@ -24,7 +24,8 @@ fun CleanRoute(
         engineReady = dashboard.ready,
         running = dashboard.running,
         scanSnapshotReady = dashboard.scanCompleted,
-        serviceText = dashboard.serviceText
+        serviceText = dashboard.serviceText,
+        scanPerformance = dashboard.scanPerformance
     )
 
     val actions = CleanUiActions(
@@ -49,6 +50,10 @@ fun CleanRoute(
         onApkPackagesChanged = { enabled ->
             dashboardActions.updateScheduler(scheduler.copy(apkPackagesEnabled = enabled))
         },
+        onScanWorkerModeChanged = { mode ->
+            dashboardActions.updateScheduler(scheduler.copy(scanRootWorkers = mode.coerceIn(0, 2)))
+        },
+        onResetScanPerformance = dashboardActions.resetScanPerformance,
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = { context.startActivity(Intent(context, SmartScanActivity::class.java)) },
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },

@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * v2.1.0 Alpha 5 adaptive-worker path-indexed One-pass cache task bridge.
+ * v2.1.0 Alpha 6 performance-panel adaptive-worker path-indexed One-pass cache task bridge.
  *
  * The module owns the persistent task lock, progress file and scan snapshot. The RootService only
  * launches the task and exposes those files to every UI entry, so leaving a page never loses the
@@ -80,7 +80,7 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.4-alpha5-adaptive-workers")
+                .put("engine", "native-c-arm64-cache-v43.5-alpha6-performance-panel")
                 .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
                 .put("snapshotReady", ready)
                 .put("snapshotId", if (ready) snapshotId else "")

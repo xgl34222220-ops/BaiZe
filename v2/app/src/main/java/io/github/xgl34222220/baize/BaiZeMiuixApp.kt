@@ -121,6 +121,20 @@ import kotlin.math.roundToInt
 
 private val SuccessGreen = Color(0xFF2DBE87)
 
+data class ScanPerformanceUiState(
+    val available: Boolean = false,
+    val workerPolicy: String = "auto",
+    val workerReason: String = "not_measured",
+    val actualWorkers: Int = 1,
+    val recommendedWorkers: Int = 1,
+    val parallelGainPercent: Int = 0,
+    val serialRate: Long = 0,
+    val parallelRate: Long = 0,
+    val successfulRuns: Int = 0,
+    val nextProbeRun: Int = 0,
+    val parallelBlockedUntil: Long = 0
+)
+
 data class DashboardUiState(
     val connected: Boolean = false,
     val ready: Boolean = false,
@@ -155,7 +169,8 @@ data class DashboardUiState(
     val recentJunk: List<GeneralJunkUiItem> = emptyList(),
     val rawLogName: String = "",
     val rawLog: String = "",
-    val history: List<HistoryUiItem> = emptyList()
+    val history: List<HistoryUiItem> = emptyList(),
+    val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
 )
 
 data class AppJunkUiItem(
@@ -237,6 +252,7 @@ data class SchedulerUiState(
     val maxFileMb: Int = 256,
     val apkPackagesEnabled: Boolean = true,
     val apkPackageDays: Int = 30,
+    val scanRootWorkers: Int = 0,
     val saving: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -264,6 +280,7 @@ data class SchedulerUiState(
         .put("max_file_mb", maxFileMb.coerceIn(16, 2048))
         .put("clean_apk_packages", apkPackagesEnabled.flag())
         .put("apk_package_days", apkPackageDays.coerceIn(0, 365))
+        .put("scan_root_workers", scanRootWorkers.coerceIn(0, 2))
 
     companion object {
         fun fromJson(json: JSONObject) = SchedulerUiState(
@@ -290,7 +307,8 @@ data class SchedulerUiState(
             notifyZero = json.optInt("notify_zero_result", 0) == 1,
             maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
             apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
-            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365)
+            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
+            scanRootWorkers = json.optInt("scan_root_workers", 0).coerceIn(0, 2)
         )
     }
 }
@@ -315,6 +333,7 @@ data class DashboardActions(
     val whitelist: () -> Unit,
     val theme: () -> Unit,
     val reconnect: () -> Unit,
+    val resetScanPerformance: () -> Unit,
     val crash: () -> Unit
 )
 
