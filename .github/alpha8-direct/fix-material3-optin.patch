@@ -1,8 +1,10 @@
 diff --git a/v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt b/v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt
-index 47d280c..9ca0ec1 100644
+index 47d280c..f1f7f11 100644
 --- a/v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt
 +++ b/v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt
-@@ -41,6 +41,7 @@ import androidx.compose.material3.Checkbox
+@@ -40,6 +40,7 @@ import androidx.compose.material3.Card
+ import androidx.compose.material3.CardDefaults
+ import androidx.compose.material3.Checkbox
  import androidx.compose.material3.CircularProgressIndicator
 +import androidx.compose.material3.ExperimentalMaterial3Api
  import androidx.compose.material3.FilterChip
