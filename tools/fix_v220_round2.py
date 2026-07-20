@@ -56,4 +56,11 @@ if "compileOptions" not in m:
     )
 macro.write_text(m)
 
+# LargeTest is only a categorization annotation and is not needed by the benchmark runner.
+benchmark = root / "v2/macrobenchmark/src/main/java/io/github/xgl34222220/baize/macrobenchmark/BaiZeBenchmark.kt"
+b = benchmark.read_text()
+b = b.replace("import androidx.test.filters.LargeTest\n", "")
+b = b.replace("@LargeTest\n", "")
+benchmark.write_text(b)
+
 print("v2.2.0 round-2 index, AIDL, immutable and benchmark fixes applied")
