@@ -45,4 +45,15 @@ u = ui.read_text()
 u = re.sub(r'(?:@Immutable\s*\n){2,}(?=data class )', '@Immutable\n', u)
 ui.write_text(u)
 
-print("v2.2.0 round-2 index, AIDL and immutable fixes applied")
+# Macrobenchmark Java and Kotlin compilers must target the same bytecode level.
+macro = root / "v2/macrobenchmark/build.gradle.kts"
+m = macro.read_text()
+if "compileOptions" not in m:
+    m = m.replace(
+        "    defaultConfig {\n        minSdk = 28\n        targetSdk = 36\n        testInstrumentationRunner = \"androidx.test.runner.AndroidJUnitRunner\"\n    }\n",
+        "    defaultConfig {\n        minSdk = 28\n        targetSdk = 36\n        testInstrumentationRunner = \"androidx.test.runner.AndroidJUnitRunner\"\n    }\n\n    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = \"17\"\n    }\n",
+        1,
+    )
+macro.write_text(m)
+
+print("v2.2.0 round-2 index, AIDL, immutable and benchmark fixes applied")
