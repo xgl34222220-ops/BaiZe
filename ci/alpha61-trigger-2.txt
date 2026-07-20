@@ -1,0 +1,1 @@
+Trigger simplified BaGua Alpha 6.1 workflow.
