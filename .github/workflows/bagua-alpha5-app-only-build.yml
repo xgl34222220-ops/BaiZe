@@ -105,18 +105,78 @@ jobs:
           "$AAPT" dump badging "$APK" | grep -q "application-label:'八卦'"
           test -s dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt
 
-      - name: Upload Alpha 5.1 build and diagnostics
+      - name: Split deliverables for reliable retrieval
+        if: steps.app_build.outcome == 'success'
+        working-directory: work
+        run: |
+          set -e
+          mkdir -p split
+          split -b 4M -d -a 2 dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip split/module.part.
+          test -f split/module.part.00
+          test -f split/module.part.01
+          test -f split/module.part.02
+          test -f split/module.part.03
+          test -f split/module.part.04
+          cp dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip split/
+          cp dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt split/
+
+      - name: Upload module part 00
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-module-part-00
+          path: work/split/module.part.00
+          if-no-files-found: error
+
+      - name: Upload module part 01
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-module-part-01
+          path: work/split/module.part.01
+          if-no-files-found: error
+
+      - name: Upload module part 02
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-module-part-02
+          path: work/split/module.part.02
+          if-no-files-found: error
+
+      - name: Upload module part 03
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-module-part-03
+          path: work/split/module.part.03
+          if-no-files-found: error
+
+      - name: Upload module part 04
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-module-part-04
+          path: work/split/module.part.04
+          if-no-files-found: error
+
+      - name: Upload source and checksums
+        if: steps.app_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaGua51-metadata
+          path: |
+            work/split/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip
+            work/split/BaGua-v0.5.1-alpha.5.1-SHA256.txt
+          if-no-files-found: error
+
+      - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaGua-v0.5.1-alpha.5.1-RootFix
+          name: BaGua51-diagnostics
+          path: work/build-alpha51.log
           if-no-files-found: warn
-          path: |
-            work/build-alpha51.log
-            work/dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Module.zip
-            work/dist/BaGua-v0.5.1-alpha.5.1-AppOnly-Source.zip
-            work/dist/BaGua-v0.5.1-alpha.5.1-SHA256.txt
-            work/module-src/app/bagua.apk
 
       - name: Fail when native App build failed
         if: steps.app_build.outcome != 'success'
