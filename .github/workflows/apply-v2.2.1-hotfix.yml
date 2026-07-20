@@ -1,0 +1,34 @@
+name: Apply BaiZe v2.2.1 Hotfix
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/apply-v2.2.1-hotfix.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/v2.2.1-logs-icons
+          fetch-depth: 0
+      - name: Apply hotfix sources
+        run: python3 tools/apply-v221-hotfix.py
+      - name: Commit hotfix branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if git diff --quiet; then
+            echo 'hotfix already applied'
+            exit 0
+          fi
+          git add -A
+          git commit -m 'fix(v2.2.1): write scan logs and show real app icons'
+          git push origin HEAD:fix/v2.2.1-logs-icons
