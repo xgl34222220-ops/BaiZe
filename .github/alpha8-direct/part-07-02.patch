@@ -1,0 +1,42 @@
++                isSymlink(destination) -> "符号链接不允许撤销"
++                expected.isBlank() || fingerprint(destination) != expected -> "归类后的文件已发生变化"
++                !allowedDownloadSource(source.path) -> "原路径不再属于允许的下载目录"
++                else -> null
++            }
++            if (reason != null) {
++                skipped += 1
++                remaining.put(move)
++                details.put(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", reason))
++                continue
++            }
++
++            val ok = runCatching {
++                source.parentFile?.mkdirs()
++                moveVerified(destination, source)
++            }.getOrDefault(false)
++            if (ok) {
++                restored += 1
++                details.put(JSONObject().put("source", displayPath(source.path)).put("action", "restored"))
++            } else {
++                failed += 1
++                remaining.put(move)
++                details.put(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
++            }
++        }
++
++        if (remaining.length() == 0) {
++            undoFile().delete()
++        } else {
++            persistUndo(remaining)
++        }
++        return JSONObject()
++            .put("success", failed == 0)
++            .put("cancelled", cancelled.get())
++            .put("restored", restored)
++            .put("skipped", skipped)
++            .put("failed", failed)
++            .put("undoAvailable", remaining.length() > 0)
++            .put("details", details)
++            .toString()
++    }
++
