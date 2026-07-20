@@ -1,0 +1,209 @@
+name: BaiZe v2.1.0 Alpha 2 External One-pass
+
+on:
+  pull_request:
+    branches: [perf/v2.1.0-one-pass-scanner]
+    paths:
+      - '.github/workflows/v2.1.0-alpha2-one-pass.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Alpha 2 branch
+        uses: actions/checkout@v4
+        with:
+          ref: perf/v2.1.0-alpha2-external-one-pass
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Reconstruct and apply verified patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d .github/alpha2-patch/part00 > /tmp/alpha2.patch.gz
+          python3 - <<'PY'
+          from pathlib import Path
+          remainder = bytes.fromhex(Path('.github/alpha2-patch/part01.hex').read_text().strip())
+          with Path('/tmp/alpha2.patch.gz').open('ab') as output:
+              output.write(remainder)
+          PY
+          echo '05c84114e36a2faf3ea84df5cb953d2f6b3c7a1266c95de193878464826ea83b  /tmp/alpha2.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/alpha2.patch.gz > /tmp/alpha2.patch
+          echo '031eba9c20e0c2d06c3f6b4ea623ba2947789e6122b2a68e1db13d8ce0a05515  /tmp/alpha2.patch' | sha256sum -c -
+          patch -p1 < /tmp/alpha2.patch
+          git diff --check
+          sh -n v2/module/one-pass-scan.sh
+          sh -n v2/module/native-scan.sh
+          sh -n v2/module/customize.sh
+          sh -n v2/module/service.sh
+          sh -n v2/scripts/build-native.sh
+          sh -n v2/scripts/package-module.sh
+
+      - name: Test Android data single enumeration and dual snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK=/tmp/baize-alpha2-one-pass
+          rm -rf "$WORK"
+          mkdir -p "$WORK/media/0/Android/data" "$WORK/media/0/Android/obb" "$WORK/media/0/Android/media" \
+                   "$WORK/data/user/0" "$WORK/data/user_de/0" "$WORK/installed" "$WORK/out"
+          : > "$WORK/whitelist"
+          : > "$WORK/package-whitelist"
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/baize-alpha2-one-pass')
+          installed = []
+          for index in range(1000):
+              package = f'com.example.app{index}'
+              installed.append(package)
+              external = root / 'media/0/Android/data' / package / 'cache'
+              external.mkdir(parents=True)
+              (external / 'external.tmp').write_text('cache')
+          for index in range(100):
+              package = f'com.example.removed{index}'
+              target = root / 'media/0/Android/data' / package
+              target.mkdir(parents=True)
+              (target / 'old.bin').write_bytes(b'x' * 10)
+          for index in range(10):
+              package = f'com.example.obbremoved{index}'
+              target = root / 'media/0/Android/obb' / package
+              target.mkdir(parents=True)
+              (target / 'old.obb').write_bytes(b'o' * 20)
+          (root / 'installed/0.txt').write_text('\n'.join(installed) + '\n')
+          PY
+          gcc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o "$WORK/baize_engine"
+          "$WORK/baize_engine" scan-external-one-pass \
+            --data-root "$WORK/data" --media-root "$WORK/media" --installed-root "$WORK/installed" \
+            --whitelist "$WORK/whitelist" --package-whitelist "$WORK/package-whitelist" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$WORK/out/cache.tsv" --targets "$WORK/out/cache.targets" \
+            --items "$WORK/out/cache.items.tsv" --manifest "$WORK/out/cache.manifest0" \
+            --summary "$WORK/out/cache.env" --corpse-report "$WORK/out/corpse.tsv" \
+            --corpse-targets "$WORK/out/corpse.targets" --corpse-summary "$WORK/out/corpse.env" \
+            --progress "$WORK/out/progress" --stop "$WORK/out/stop"
+          grep -qx 'package_index_entries=1000' "$WORK/out/cache.env"
+          grep -qx 'one_pass_app_dirs=1100' "$WORK/out/cache.env"
+          grep -qx 'one_pass_installed_dirs=1000' "$WORK/out/cache.env"
+          grep -qx 'one_pass_orphan_dirs=100' "$WORK/out/cache.env"
+          grep -qx 'targets=1000' "$WORK/out/cache.env"
+          grep -qx 'targets=110' "$WORK/out/corpse.env"
+          test "$(wc -l < "$WORK/out/cache.targets")" -eq 1000
+          test "$(wc -l < "$WORK/out/corpse.targets")" -eq 110
+          ! grep -q 'com.example.removed' "$WORK/out/cache.targets"
+          ! grep -q 'com.example.app' "$WORK/out/corpse.targets"
+
+      - name: Recheck immutable snapshot boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK=/tmp/baize-alpha2-safety
+          rm -rf "$WORK"
+          mkdir -p "$WORK/media/0/Android/data/com.example.app/cache" \
+                   "$WORK/media/0/Android/data/com.example.removed/cache" \
+                   "$WORK/data/user/0" "$WORK/data/user_de/0" "$WORK/installed" "$WORK/out"
+          printf 'stable-original' > "$WORK/media/0/Android/data/com.example.app/cache/stable.tmp"
+          printf 'will-change' > "$WORK/media/0/Android/data/com.example.app/cache/changed.tmp"
+          printf 'orphan-data' > "$WORK/media/0/Android/data/com.example.removed/cache/orphan.tmp"
+          printf 'com.example.app\n' > "$WORK/installed/0.txt"
+          : > "$WORK/whitelist"
+          : > "$WORK/package-whitelist"
+          gcc -std=c11 -O2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o "$WORK/baize_engine"
+          "$WORK/baize_engine" scan-external-one-pass \
+            --data-root "$WORK/data" --media-root "$WORK/media" --installed-root "$WORK/installed" \
+            --whitelist "$WORK/whitelist" --package-whitelist "$WORK/package-whitelist" \
+            --min-age-days 0 --max-file-bytes 99999999 \
+            --report "$WORK/out/cache.tsv" --targets "$WORK/out/cache.targets" \
+            --items "$WORK/out/cache.items.tsv" --manifest "$WORK/out/cache.manifest0" \
+            --summary "$WORK/out/cache.env" --corpse-report "$WORK/out/corpse.tsv" \
+            --corpse-targets "$WORK/out/corpse.targets" --corpse-summary "$WORK/out/corpse.env" \
+            --progress "$WORK/out/progress" --stop "$WORK/out/stop"
+          printf 'modified-after-scan' > "$WORK/media/0/Android/data/com.example.app/cache/changed.tmp"
+          printf 'new-after-scan' > "$WORK/media/0/Android/data/com.example.app/cache/new.tmp"
+          "$WORK/baize_engine" clean-cache-snapshot \
+            --data-root "$WORK/data" --media-root "$WORK/media" \
+            --whitelist "$WORK/whitelist" --package-whitelist "$WORK/package-whitelist" \
+            --manifest "$WORK/out/cache.manifest0" --max-file-bytes 99999999 \
+            --report "$WORK/out/clean.tsv" --summary "$WORK/out/clean.env" \
+            --progress "$WORK/out/progress2" --stop "$WORK/out/stop2"
+          test ! -e "$WORK/media/0/Android/data/com.example.app/cache/stable.tmp"
+          grep -qx 'modified-after-scan' "$WORK/media/0/Android/data/com.example.app/cache/changed.tmp"
+          grep -qx 'new-after-scan' "$WORK/media/0/Android/data/com.example.app/cache/new.tmp"
+          grep -qx 'orphan-data' "$WORK/media/0/Android/data/com.example.removed/cache/orphan.tmp"
+          grep -qx 'files=1' "$WORK/out/clean.env"
+          grep -qx 'skipped=1' "$WORK/out/clean.env"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 engine
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build Android App
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Package Alpha 2 module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify Alpha 2 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP=v2/dist/BaiZe-v2.1.0-alpha2-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.1.0-alpha2'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22402'
+          unzip -p "$ZIP" one-pass-scan.sh | grep -q 'scan-external-one-pass'
+          unzip -p "$ZIP" one-pass-scan.sh | grep -q 'Android/data 只枚举一次'
+          strings v2/build/native/arm64-v8a/baize_engine | grep -q '43.1-alpha2-one-pass'
+          grep -q 'versionName = "2.1.0-alpha2"' v2/app/build.gradle.kts
+          grep -q 'native-c-arm64-cache-v43.1-alpha2-one-pass' \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeRootService.kt
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Commit verified Alpha 2 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/alpha2-patch
+          rm -f .github/workflows/export-v210-alpha2-source.yml
+          rm -f .github/workflows/v2.1.0-alpha2-one-pass.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'perf(v2): add external storage dual-snapshot one-pass scan'
+          git push origin HEAD:perf/v2.1.0-alpha2-external-one-pass
+
+      - name: Upload Alpha 2 module
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.1.0-alpha2-External-One-Pass
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.1.0-alpha2-Module.zip
+            v2/dist/BaiZe-v2.1.0-alpha2-Module.zip.sha256
