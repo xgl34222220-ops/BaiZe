@@ -1,0 +1,87 @@
++        } catch (error: ErrnoException) {
++            if (error.errno != OsConstants.EXDEV) throw error
++            copyAcrossFilesystems(source, destination)
++        }
++    }
++
++    private fun copyAcrossFilesystems(source: File, destination: File): Boolean {
++        val parent = destination.parentFile ?: return false
++        parent.mkdirs()
++        val temp = File(parent, ".${destination.name}.baize-${UUID.randomUUID()}.tmp")
++        if (temp.exists()) temp.delete()
++        try {
++            FileInputStream(source).use { input ->
++                FileOutputStream(temp).use { output ->
++                    input.copyTo(output, 1024 * 1024)
++                    output.fd.sync()
++                }
++            }
++            if (source.length() != temp.length()) return false
++            if (sha256(source) != sha256(temp)) return false
++            if (destination.exists()) return false
++            Os.rename(temp.path, destination.path)
++            if (!source.delete()) {
++                destination.delete()
++                return false
++            }
++            return true
++        } finally {
++            if (temp.exists()) temp.delete()
++        }
++    }
++
++    private fun validSnapshot(id: String): Snapshot? {
++        val current = snapshot ?: return null
++        if (current.id != id || System.currentTimeMillis() - current.createdAt > SNAPSHOT_TTL_MS) {
++            snapshot = null
++            return null
++        }
++        return current
++    }
++
++    private fun parseSelection(raw: String): Set<String> {
++        val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
++        val array = json.optJSONArray("ids") ?: JSONArray()
++        val result = LinkedHashSet<String>()
++        for (index in 0 until array.length()) {
++            val id = array.optString(index)
++            if (id.matches(Regex("^[a-f0-9]{64}$"))) result += id
++        }
++        return result
++    }
++
++    private fun persistUndo(moves: JSONArray) {
++        stateDir.mkdirs()
++        val file = undoFile()
++        val temp = File(stateDir, "${file.name}.tmp")
++        temp.writeText(JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves).toString())
++        if (!temp.renameTo(file)) {
++            file.delete()
++            temp.renameTo(file)
++        }
++        file.setReadable(true, true)
++        file.setWritable(true, true)
++    }
++
++    private fun readUndo(): JSONObject? = runCatching {
++        val file = undoFile()
++        if (!file.isFile) null else JSONObject(file.readText())
++    }.getOrNull()
++
++    private fun undoFile() = File(stateDir, "organizer-last.json")
++
++    private fun pruneEmptyParents(start: File?, stop: File) {
++        var current = start
++        val stopPath = canonical(stop)
++        while (current != null && canonical(current).startsWith("$stopPath/")) {
++            if (!current.delete()) break
++            current = current.parentFile
++        }
++    }
++
++    private fun allowedDownloadRoot(path: String): Boolean {
++        if (!path.startsWith("/data/media/") && !path.startsWith("/data/user/") && !path.startsWith("/data/user_de/")) return false
++        if (path.contains("/BaiZe归类/") || path.endsWith("/BaiZe归类")) return false
++        return path.split('/').any { segment -> isDownloadDirectoryName(segment) }
++    }
++
