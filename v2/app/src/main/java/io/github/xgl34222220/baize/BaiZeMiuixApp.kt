@@ -129,6 +129,7 @@ private val SuccessGreen = Color(0xFF2DBE87)
 @Immutable
 @Immutable
 @Immutable
+@Immutable
 data class ScanPerformanceUiState(
     val available: Boolean = false,
     val workerPolicy: String = "auto",
@@ -143,6 +144,7 @@ data class ScanPerformanceUiState(
     val parallelBlockedUntil: Long = 0
 )
 
+@Immutable
 @Immutable
 @Immutable
 @Immutable
@@ -195,6 +197,7 @@ data class DashboardUiState(
 @Immutable
 @Immutable
 @Immutable
+@Immutable
 data class AppJunkUiItem(
     val packageName: String,
     val label: String,
@@ -205,6 +208,7 @@ data class AppJunkUiItem(
     val categories: List<AppJunkCategoryUiItem> = emptyList()
 )
 
+@Immutable
 @Immutable
 @Immutable
 @Immutable
@@ -227,6 +231,7 @@ data class AppJunkCategoryUiItem(
 @Immutable
 @Immutable
 @Immutable
+@Immutable
 data class GeneralJunkUiItem(
     val name: String,
     val files: Long,
@@ -235,6 +240,7 @@ data class GeneralJunkUiItem(
     val samplePath: String
 )
 
+@Immutable
 @Immutable
 @Immutable
 @Immutable
@@ -263,12 +269,14 @@ data class HistoryUiItem(
 @Immutable
 @Immutable
 @Immutable
+@Immutable
 data class HistoryCategoryUiItem(
     val name: String,
     val bytes: Long,
     val files: Long
 )
 
+@Immutable
 @Immutable
 @Immutable
 @Immutable
@@ -284,6 +292,7 @@ data class HistoryAppUiItem(
     val files: Long
 )
 
+@Immutable
 @Immutable
 @Immutable
 @Immutable
