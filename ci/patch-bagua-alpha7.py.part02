@@ -1,0 +1,84 @@
+
+# Provide a fallback for KernelSU/APatch installations without a system metamodule.
+"$MODDIR/scripts/bagua.sh" mount >/dev/null 2>&1 || true
+''','''chmod 0755 "$MODDIR/scripts/bagua.sh" "$MODDIR/scripts/sync-runtime.sh" 2>/dev/null
+"$MODDIR/scripts/sync-runtime.sh" >/dev/null 2>&1 || true
+
+# Persistent bridge works even when the Root manager hides /data/adb/modules from Apps.
+[ -x "$PERSIST/bridge.sh" ] && "$PERSIST/bridge.sh" mount >/dev/null 2>&1 || true
+''')
+p.write_text(s)
+
+# uninstall removes runtime bridge but keeps user data
+p=root/'module-src/uninstall.sh'; s=p.read_text()
+s=s.replace('rm -f /data/adb/bagua/app.sha256 /data/adb/bagua/app-install.pending','rm -f /data/adb/bagua/app.sha256 /data/adb/bagua/app-install.pending /data/adb/bagua/bridge.sh /data/adb/bagua/module.path /data/adb/bagua/bind_mounted\nrm -rf /data/adb/bagua/runtime')
+p.write_text(s)
+
+# App uses persistent bridge first, fallback scanner second
+p=root/'app/src/main/java/io/github/xgl34222220/bagua/BaguaController.kt'; s=p.read_text()
+old='''            val script = """
+                SCRIPT=
+                for DIR in /data/adb/modules/bagua /data/adb/modules_update/bagua; do
+                  [ -f "${'$'}DIR/scripts/bagua.sh" ] && { SCRIPT="${'$'}DIR/scripts/bagua.sh"; break; }
+                done
+                if [ -z "${'$'}SCRIPT" ]; then
+                  for PROP in /data/adb/modules/*/module.prop /data/adb/modules_update/*/module.prop; do
+                    [ -f "${'$'}PROP" ] || continue
+                    grep -q '^id=bagua${'$'}' "${'$'}PROP" 2>/dev/null || continue
+                    DIR=${'$'}{PROP%/module.prop}
+                    [ -f "${'$'}DIR/scripts/bagua.sh" ] && { SCRIPT="${'$'}DIR/scripts/bagua.sh"; break; }
+                  done
+                fi
+                [ -n "${'$'}SCRIPT" ] || { echo ERROR=module_not_installed; exit 127; }
+                sh "${'$'}SCRIPT" ${args.joinToString(" ") { shellQuote(it) }}
+            """.trimIndent()
+'''
+new='''            val script = """
+                BRIDGE=/data/adb/bagua/bridge.sh
+                if [ -f "${'$'}BRIDGE" ]; then
+                  sh "${'$'}BRIDGE" ${args.joinToString(" ") { shellQuote(it) }}
+                else
+                  SCRIPT=
+                  for DIR in /data/adb/modules/bagua /data/adb/modules_update/bagua; do
+                    [ -f "${'$'}DIR/scripts/bagua.sh" ] && { SCRIPT="${'$'}DIR/scripts/bagua.sh"; break; }
+                  done
+                  if [ -z "${'$'}SCRIPT" ]; then
+                    for PROP in /data/adb/modules/*/module.prop /data/adb/modules_update/*/module.prop; do
+                      [ -f "${'$'}PROP" ] || continue
+                      grep -q '^id=bagua${'$'}' "${'$'}PROP" 2>/dev/null || continue
+                      DIR=${'$'}{PROP%/module.prop}
+                      [ -f "${'$'}DIR/scripts/bagua.sh" ] && { SCRIPT="${'$'}DIR/scripts/bagua.sh"; break; }
+                    done
+                  fi
+                  if [ -n "${'$'}SCRIPT" ]; then
+                    sh "${'$'}SCRIPT" ${args.joinToString(" ") { shellQuote(it) }}
+                  else
+                    echo ERROR=module_not_installed
+                  fi
+                fi
+            """.trimIndent()
+'''
+assert old in s
+s=s.replace(old,new)
+s=s.replace('''            "module_not_installed" -> "已获得 Root 权限，但没有找到八卦模块，请重新刷入模块包并重启。"''','''            "module_not_installed" -> "没有找到八卦持久桥接。请覆盖刷入当前版本模块并重启一次。"''')
+p.write_text(s)
+
+# Description/changelog
+p=root/'module-src/module.prop'; s=p.read_text();
+s=s.replace('description=原生 App-only｜兼容性与诊断中心｜Root/挂载/DNS/VPN/代理/冲突检测｜Material / Miuix 双界面','description=原生 App-only｜持久 Root 桥接｜不依赖模块目录可见性｜兼容 Magisk/KernelSU/APatch｜Material / Miuix 双界面')
+p.write_text(s)
+
+p=root/'module-src/CHANGELOG.md'; old=p.read_text(); p.write_text('''# 更新日志
+
+## 0.7.0-alpha.7
+
+- 新增 `/data/adb/bagua/bridge.sh` 持久 Root 桥接，不再要求 App 看见 `/data/adb/modules`
+- 模块运行核心、默认配置与 Hosts 状态同步到持久运行目录
+- App 优先通过固定桥接调用，Root 管理器隔离模块目录时仍可工作
+- Hosts 改为持久状态并支持运行时 bind mount，重启后自动重新同步模块副本
+- 卸载模块时删除桥接运行文件，但保留用户规则、白名单和历史
+
+'''+old)
+
+# package script already version bumped; ensure name exact
+print('patched alpha7')
