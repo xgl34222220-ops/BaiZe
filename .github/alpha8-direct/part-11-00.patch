@@ -1,0 +1,76 @@
+                 .put("snapshotReady", ready)
+                 .put("snapshotId", if (ready) snapshotId else "")
+diff --git a/v2/app/build.gradle.kts b/v2/app/build.gradle.kts
+index c6dea98..f95f127 100644
+--- a/v2/app/build.gradle.kts
++++ b/v2/app/build.gradle.kts
+@@ -12,8 +12,8 @@ android {
+         applicationId = "io.github.xgl34222220.baize"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 22407
+-        versionName = "2.1.0-alpha7"
++        versionCode = 22408
++        versionName = "2.1.0-alpha8"
+     }
+ 
+     buildFeatures {
+diff --git a/v2/module/module.prop b/v2/module/module.prop
+index 4cb7416..1e6b1d7 100644
+--- a/v2/module/module.prop
++++ b/v2/module/module.prop
+@@ -1,6 +1,6 @@
+ id=baize_v2
+ name=白泽 v2
+-version=v2.1.0-alpha7
+-versionCode=22407
++version=v2.1.0-alpha8
++versionCode=22408
+ author=惜故里丶
+ description=白泽 v2.1.0 Alpha 7：新增与精准快照分离的手动系统即时清缓存工具。
+diff --git a/v2/scripts/package-module.sh b/v2/scripts/package-module.sh
+index dd47b0f..92e5544 100644
+--- a/v2/scripts/package-module.sh
++++ b/v2/scripts/package-module.sh
+@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
+ STAGE="$ROOT/build/module-stage"
+ APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+ NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
+-OUTPUT="$OUT/BaiZe-v2.1.0-alpha7-Module.zip"
++OUTPUT="$OUT/BaiZe-v2.1.0-alpha8-Module.zip"
+ 
+ [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
+ [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
+@@ -77,8 +77,8 @@ unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
+ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
+ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
+ unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
+-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha7$'
+-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22407$'
++unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.1.0-alpha8$'
++unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22408$'
+ if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
+   echo "模块包中不允许包含 WebUI 资源" >&2
+   exit 1
+@@ -90,4 +90,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
+   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
+   exit 1
+ fi
+-echo "已生成白泽 v2.1.0 Alpha 6 原生性能策略面板模块：$OUTPUT"
++echo "已生成白泽 v2.1.0 Alpha 8 文件归类与空项目修复模块：$OUTPUT"
+diff --git a/v2/V2.1-ALPHA8-PLAN.md b/v2/V2.1-ALPHA8-PLAN.md
+index 4d83658..cbb4723 100644
+--- a/v2/V2.1-ALPHA8-PLAN.md
++++ b/v2/V2.1-ALPHA8-PLAN.md
+@@ -1,45 +1,24 @@
+ # 白泽 v2.1.0 Alpha 8
+ 
+-## 1. 扫描策略改回纯自动
++## 目标
+ 
+-- 清理页不再显示“扫描工作进程”策略卡片、吞吐、学习次数或手动串行/双进程选择。
+-- `scan_root_workers` 对普通用户固定保持自动模式；详细性能数据只保留在诊断日志中。
+-- 修复手动“垃圾扫描”绕过 `one-pass-scan.sh`，导致 `root-worker-profile.env` 永远没有样本的问题。
+-- 手动扫描和后台扫描都使用同一套自动策略与基准记录，避免 UI 显示与真实执行路径不一致。
++- 清理页不再暴露串行/双工作进程选择，始终由模块自动学习与回退。
++- 手动缓存扫描继续通过 `one-pass-scan.sh`，与后台扫描共用同一性能基准。
