@@ -69,6 +69,10 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-transaction.sh'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'scan-external-one-pass'
 unzip -p "$OUTPUT" storage-index.sh | grep -q 'baize-storage-index-v2.2'
+unzip -p "$OUTPUT" storage-index.sh | grep -q 'Android/media'
+unzip -p "$OUTPUT" storage-index.sh | grep -q 'Android/data'
+unzip -p "$OUTPUT" storage-index.sh | grep -q 'QQfile_recv'
+unzip -p "$OUTPUT" storage-index.sh | grep -q 'nu.gpu.nagramx\|Android/data'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'one_pass_app_dirs'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'whitelist_index_queries'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
@@ -78,9 +82,8 @@ unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.1.1-generic-roots'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'Android/media'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'Android/data'
+unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
+unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'storage-files.nul'
 unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.2.0$'
 unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22600$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
@@ -93,4 +96,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.2.0 热修复模块：$OUTPUT"
+echo "已生成白泽 v2.2.0 正式版模块：$OUTPUT"
