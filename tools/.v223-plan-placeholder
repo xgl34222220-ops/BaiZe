@@ -1,11 +1,40 @@
 from pathlib import Path
 
-path = Path(__file__).resolve().parents[1] / "v2/app/src/main/AndroidManifest.xml"
-text = path.read_text()
+root = Path(__file__).resolve().parents[1]
+
+manifest = root / "v2/app/src/main/AndroidManifest.xml"
+text = manifest.read_text()
 text = text.replace(
     '        <activity android:name=".ProfileActivity" android:exported="false" />',
     '        <activity\n            android:name=".ProfileActivity"\n            android:exported="false" />'
 )
 text = text.replace('    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n', '')
-path.write_text(text)
-print("manifest anchors normalized")
+manifest.write_text(text)
+
+history = root / "v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt"
+text = history.read_text()
+replacements = (
+    (
+        "import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings\n",
+        "import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings\nimport io.github.xgl34222220.baize.ui.common.AppPackageIcon\n"
+    ),
+    (
+        "icon = Icons.Rounded.Apps,\n                title = item.label,",
+        "icon = Icons.Rounded.Apps,\n                packageName = item.packageName,\n                title = item.label,"
+    ),
+    (
+        "private fun ResultHeader(\n    icon: ImageVector,\n    title: String,",
+        "private fun ResultHeader(\n    icon: ImageVector,\n    packageName: String? = null,\n    title: String,"
+    ),
+    (
+        "Row(verticalAlignment = Alignment.CenterVertically) {\n        IconTile(icon, error)\n        Spacer(Modifier.width(12.dp))",
+        "Row(verticalAlignment = Alignment.CenterVertically) {\n        if (packageName.isNullOrBlank()) IconTile(icon, error)\n        else AppPackageIcon(packageName, title, size = 50.dp, corner = 15.dp)\n        Spacer(Modifier.width(12.dp))"
+    ),
+)
+for old, new in replacements:
+    if old in text:
+        text = text.replace(old, new, 1)
+    elif new not in text:
+        raise SystemExit("history icon anchor missing")
+history.write_text(text)
+print("v2.2.3 manifest and history icon anchors prepared")
