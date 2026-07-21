@@ -1,5 +1,3 @@
-import org.gradle.api.tasks.Exec
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,9 +17,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22601
-        versionName = "2.2.1"
-        // Legacy CI compatibility markers: versionCode = 22600, versionName = "2.2.0"
+        versionCode = 23000
+        versionName = "2.3.0"
     }
 
     buildFeatures {
@@ -99,13 +96,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
-}
-
-val applyV221SourceHotfix = tasks.register<Exec>("applyV221SourceHotfix") {
-    workingDir(rootProject.projectDir.parentFile)
-    commandLine("python3", "tools/apply-v221-source-only.py")
-}
-
-tasks.configureEach {
-    if (name == "preBuild") dependsOn(applyV221SourceHotfix)
 }
