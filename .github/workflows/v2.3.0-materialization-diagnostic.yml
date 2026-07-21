@@ -1,0 +1,68 @@
+name: BaiZe v2.3.0 Materialization Diagnostic
+
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose-materialization:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v2.3.0-stabilization'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v2.3.0 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/v2.3.0-stabilization
+          fetch-depth: 0
+
+      - name: Run materialization and report tail
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set +e
+          LOG=/tmp/baize-v230-materialization.log
+          {
+            set -x
+            if [ -f tools/prepare-v230-materialization.py ]; then
+              python3 -m py_compile tools/prepare-v230-materialization.py
+              python3 tools/prepare-v230-materialization.py
+            fi
+            if [ -f tools/bootstrap-v230.py.gz.b64 ]; then
+              base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+              python3 -m py_compile /tmp/bootstrap-v230.py
+              python3 /tmp/bootstrap-v230.py
+            fi
+            if [ -f tools/finalize-v230.py.gz.b64 ]; then
+              base64 -d tools/finalize-v230.py.gz.b64 | gzip -d > /tmp/finalize-v230.py
+              python3 -m py_compile /tmp/finalize-v230.py
+              python3 /tmp/finalize-v230.py
+            fi
+            if [ -f tools/fix-v230-android-lint.py ]; then
+              python3 -m py_compile tools/fix-v230-android-lint.py
+              python3 tools/fix-v230-android-lint.py
+            fi
+            if [ -f tools/apply-v230-organizer-download-coverage.py ]; then
+              python3 -m py_compile tools/apply-v230-organizer-download-coverage.py
+              python3 tools/apply-v230-organizer-download-coverage.py
+            fi
+            git diff --check
+          } >"$LOG" 2>&1
+          code=$?
+          {
+            echo "BAIZE_V230_MATERIALIZATION run_id=$RUN_ID exit=$code"
+            echo
+            echo '```text'
+            tail -n 80 "$LOG" | sed -r 's/\x1B\[[0-9;]*[mK]//g'
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file /tmp/comment.md
+          exit "$code"
