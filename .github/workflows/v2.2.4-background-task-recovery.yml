@@ -33,8 +33,9 @@ jobs:
           python3 /tmp/finalize-v230.py
           python3 - <<'PY'
           from pathlib import Path
-          path = Path("v2/module/storage-index.sh")
-          lines = path.read_text().splitlines()
+
+          index = Path("v2/module/storage-index.sh")
+          lines = index.read_text().splitlines()
           fixed = []
           for line in lines:
               if line.startswith("add_root(){ group=$1 user=$2 volume=$3 depth=$4 root="):
@@ -42,10 +43,32 @@ jobs:
               elif line.startswith("add_user_root(){ user=$1 root=$2 volume=$3;"):
                   line = 'add_user_root(){ au_user=$1; au_root=$2; au_volume=$3; add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"; add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"; add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"; for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done; for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done; for au_pkg in "$au_root"/Android/data/*; do [ -d "$au_pkg" ] || continue; au_name=${au_pkg##*/}; add_root "应用文件:$au_name" "$au_user" "$au_volume" 12 "$au_pkg/files"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Download"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Downloads"; done; }'
               fixed.append(line)
-          text = "\n".join(fixed) + "\n"
-          if "ar_root=${5%/}" not in text or "au_root=$2" not in text:
-              raise SystemExit("storage-index ash isolation was not applied")
-          path.write_text(text)
+          index.write_text("\n".join(fixed) + "\n")
+
+          for name in ("storage-analyzer.sh", "duplicate-scanner.sh", "large-file-scanner.sh"):
+              path = Path("v2/module") / name
+              source = path.read_text().splitlines()
+              output = []
+              inserted = False
+              for line in source:
+                  output.append(line)
+                  if not inserted and line.startswith('OUT="$STATE_DIR/reports/'):
+                      output.append('mkdir -p "${OUT%/*}"')
+                      inserted = True
+              if not inserted:
+                  raise SystemExit(f"missing report output anchor: {name}")
+              path.write_text("\n".join(output) + "\n")
+
+          rules = Path("v2/module/rules-validator.sh")
+          source = rules.read_text()
+          source = source.replace(
+              'RULES="$MODDIR/config/deep.rules"\nMETA="$MODDIR/config/rules.meta.env"',
+              'RULES=${BAIZE_RULES_PATH:-$MODDIR/config/deep.rules}\nMETA=${BAIZE_RULES_META:-${RULES%/*}/rules.meta.env}',
+              1,
+          )
+          if "BAIZE_RULES_PATH" not in source:
+              raise SystemExit("rules path override was not applied")
+          rules.write_text(source)
           PY
           rm -f tools/bootstrap-v230.py.gz.b64 tools/finalize-v230.py.gz.b64 tools/apply-v230-native-path-safety.py.gz.b64
           git diff --check
@@ -64,6 +87,7 @@ jobs:
           grep -q 'run_due_group.*\$6' service.sh
           grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
           grep -q 'ar_root=${5%/}' v2/module/storage-index.sh
+          grep -q 'BAIZE_RULES_PATH' v2/module/rules-validator.sh
           ! grep -RIn 'com.google.android.material.color.utilities.Hct' v2/app/src/main/java
 
       - name: Install BusyBox ash
