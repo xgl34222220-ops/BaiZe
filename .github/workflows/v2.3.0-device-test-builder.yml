@@ -48,6 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cp v2/module/task-worker.sh /tmp/baize-task-worker.detached.sh
+          cp v2/scripts/package-module.sh /tmp/baize-package-module.detached.sh
           if [ -f tools/prepare-v230-materialization.py ]; then python3 tools/prepare-v230-materialization.py; fi
           if [ -f tools/bootstrap-v230.py.gz.b64 ]; then
             base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
@@ -61,6 +63,8 @@ jobs:
           fi
           if [ -f tools/fix-v230-android-lint.py ]; then python3 tools/fix-v230-android-lint.py; fi
           if [ -f tools/apply-v230-organizer-download-coverage.py ]; then python3 tools/apply-v230-organizer-download-coverage.py; fi
+          cp /tmp/baize-task-worker.detached.sh v2/module/task-worker.sh
+          cp /tmp/baize-package-module.detached.sh v2/scripts/package-module.sh
           python3 -m py_compile tools/apply-v230-detached-organizer.py
           python3 tools/apply-v230-detached-organizer.py
           git diff --check
@@ -90,9 +94,9 @@ jobs:
           grep -q 'organizer-last.json' "$ORGANIZER"
           grep -q 'discover_app_user_roots' "$INDEX"
           grep -q 'QQfile_recv' "$INDEX"
-          sh -n "$INDEX"
-          sh -n "$TASK_WORKER"
-          sh -n "$ORGANIZER"
+          bash -n "$INDEX"
+          bash -n "$TASK_WORKER"
+          bash -n "$ORGANIZER"
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -qx 'version=v2.3.0' v2/module/module.prop
 
