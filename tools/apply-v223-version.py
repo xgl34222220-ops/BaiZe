@@ -10,6 +10,19 @@ for old in (
     'versionCode = 22600\n        versionName = "2.2.0"',
 ):
     text = text.replace(old, 'versionCode = 22603\n        versionName = "2.2.3"')
+text = text.replace(
+    '''\nval applyV221SourceHotfix = tasks.register<Exec>("applyV221SourceHotfix") {
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine("python3", "tools/apply-v221-source-only.py")
+}
+
+tasks.configureEach {
+    if (name == "preBuild") dependsOn(applyV221SourceHotfix)
+}
+''',
+    "\n"
+)
+text = text.replace("import org.gradle.api.tasks.Exec\n\n", "")
 build.write_text(text)
 
 (root / "v2/module/module.prop").write_text(
