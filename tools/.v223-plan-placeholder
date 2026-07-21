@@ -1,1 +1,11 @@
-superseded-by-v2.2.3
+from pathlib import Path
+
+path = Path(__file__).resolve().parents[1] / "v2/app/src/main/AndroidManifest.xml"
+text = path.read_text()
+text = text.replace(
+    '        <activity android:name=".ProfileActivity" android:exported="false" />',
+    '        <activity\n            android:name=".ProfileActivity"\n            android:exported="false" />'
+)
+text = text.replace('    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />\n', '')
+path.write_text(text)
+print("manifest anchors normalized")
