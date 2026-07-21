@@ -6,6 +6,7 @@ MODE=${1:-clean}
 TRIGGER=${2:-app}
 TASK_ID=${3:-$(date +%s)-$$}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 RUNNING_FILE="$STATE_DIR/running.env"
 WORKER_FILE="$STATE_DIR/worker.env"
 LAUNCH_LOG="$STATE_DIR/logs/worker-$TASK_ID.log"
@@ -17,6 +18,7 @@ case "$MODE" in
   *) echo "不支持的独立任务模式：$MODE" >&2; exit 2 ;;
 esac
 
+[ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$CLEANER" ] || { echo "清理引擎缺失：$CLEANER" >&2; exit 5; }
 if [ -d "$LOCK_DIR" ]; then
   OLD_PID=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
@@ -44,11 +46,11 @@ TMP="$RUNNING_FILE.tmp.$$"
 mv -f "$TMP" "$RUNNING_FILE"
 
 if command -v setsid >/dev/null 2>&1; then
-  setsid /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+  setsid "$SHELL_BIN" "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
 elif command -v nohup >/dev/null 2>&1; then
-  nohup /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+  nohup "$SHELL_BIN" "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
 else
-  /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+  "$SHELL_BIN" "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
 fi
 PID=$!
 case "$PID" in ''|*[!0-9]*) rm -f "$RUNNING_FILE"; echo "无法启动独立 Root Worker" >&2; exit 6 ;; esac
