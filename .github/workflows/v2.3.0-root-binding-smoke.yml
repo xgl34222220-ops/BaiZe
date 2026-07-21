@@ -1,0 +1,43 @@
+name: BaiZe v2.3.0 Root Binding Smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/v2.3.0-stabilization]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-v230-root-binding-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-root-binding:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Verify materialization compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile tools/prepare-v230-materialization.py
+          python3 tools/prepare-v230-materialization.py
+          grep -q 'unsupported build version before v2.2.4 recovery patch' tools/apply-v224-background-recovery.py
+          git diff --check
+
+      - name: Verify scheduled organizer Root binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'withContext(Dispatchers.Main.immediate)' "$FILE"
+          grep -q 'Handler(Looper.getMainLooper())' "$FILE"
+          grep -q 'ROOT_BIND_ATTEMPTS = 3' "$FILE"
+          grep -q 'onBindingDied' "$FILE"
+          grep -q 'onNullBinding' "$FILE"
+          ! grep -q 'private suspend fun bindRootService(): RootSession = suspendCancellableCoroutine' "$FILE"
