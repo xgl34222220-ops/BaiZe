@@ -1,8 +1,11 @@
-BaiZe v2.3.0 QQ organizer and scheduled Root binding test build
-triggered: 2026-07-21T17:35:00Z
-publish: v2.3.0-qq-organizer-test
-mode: rolling-prerelease
+BaiZe v2.3.0 detached Root organizer lifecycle regression build
+triggered: 2026-07-21T17:50:00Z
+publish: v2.3.0-detached-root-organizer-test
+mode: independent-root-worker
 status-issue: 91
-device-test-builder: true
-shell-safe-storage-index: true
-obsolete-builder-retired: true
+requirements:
+- app only submits task
+- organizer continues after background or process death
+- re-entry restores progress and result
+- QQ browser attachment files move
+- cache directories remain untouched
