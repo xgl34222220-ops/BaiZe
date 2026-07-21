@@ -30,10 +30,10 @@ jobs:
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
-          base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >/tmp/apply-v230-native-path-safety.py
-          python3 -m py_compile /tmp/apply-v230-native-path-safety.py
-          python3 /tmp/apply-v230-native-path-safety.py
-          rm -f tools/apply-v230-native-path-safety.py.gz.b64
+          base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >tools/apply-v230-native-path-safety.py
+          python3 -m py_compile tools/apply-v230-native-path-safety.py
+          python3 tools/apply-v230-native-path-safety.py
+          rm -f tools/apply-v230-native-path-safety.py tools/apply-v230-native-path-safety.py.gz.b64
           git diff --check
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -q 'versionCode = 23000' v2/app/build.gradle.kts
