@@ -38,12 +38,17 @@ for old, new in replacements:
         raise SystemExit("history icon anchor missing")
 history.write_text(text)
 
-# The dashboard generator embeds Kotlin source inside Python triple-quoted strings. Keep the
-# two-character Kotlin escape instead of letting Python turn it into a physical line break.
-generator = root / "tools/apply-v223-dashboard-records.py"
-value = generator.read_text().replace(
+dashboard_generator = root / "tools/apply-v223-dashboard-records.py"
+value = dashboard_generator.read_text().replace(
     'taskPhase = "$resultLine\\n$detailLine"',
     'taskPhase = "$resultLine\\\\n$detailLine"'
 )
-generator.write_text(value)
-print("v2.2.3 manifest, history and generator escapes prepared")
+dashboard_generator.write_text(value)
+
+ui_generator = root / "tools/apply-v223-ui-records.py"
+value = ui_generator.read_text().replace(
+    "    if new in text:\n        return",
+    "    if new and new in text:\n        return"
+)
+ui_generator.write_text(value)
+print("v2.2.3 generator anchors and deletions prepared")
