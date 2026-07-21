@@ -29,6 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/.v223-plan-placeholder
           python3 tools/apply-v221-hotfix.py
           python3 tools/apply-v223-ui-records.py
           python3 tools/apply-v223-dashboard-records.py
@@ -39,6 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            tools/.v223-plan-placeholder \
             tools/apply-v221-hotfix.py \
             tools/apply-v223-ui-records.py \
             tools/apply-v223-dashboard-records.py \
