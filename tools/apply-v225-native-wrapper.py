@@ -108,7 +108,6 @@ rep(
 )
 path.write_text(text)
 
-# Show slowest directory in the dashboard after the task finishes.
 activity = root / "v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt"
 text = activity.read_text()
 old = """                if (files > 0L || errors > 0L || elapsed > 0L) {
@@ -136,5 +135,13 @@ if new not in text:
         raise SystemExit("dashboard slowest anchor missing")
     text = text.replace(old, new, 1)
 activity.write_text(text)
+
+# Earlier generator strings intentionally contain shell escapes. Normalize them after all generators run.
+for generated in (root / "cleaner.sh", path):
+    value = generated.read_text()
+    value = value.replace("tr '\r\n' '  '", r"tr '\r\n' '  '")
+    value = value.replace("printf 'deep_slowest_path=%s\n'", r"printf 'deep_slowest_path=%s\n'")
+    value = value.replace("printf 'slowest_path=%s\n'", r"printf 'slowest_path=%s\n'")
+    generated.write_text(value)
 
 print("v2.2.5 native wrapper metrics applied")
