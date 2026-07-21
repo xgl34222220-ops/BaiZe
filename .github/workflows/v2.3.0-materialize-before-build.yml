@@ -1,0 +1,81 @@
+name: BaiZe v2.3.0 Persist Materialized Source
+
+on:
+  pull_request_target:
+    types: [synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v230-persist-materialized-source
+  cancel-in-progress: false
+
+jobs:
+  persist-source:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'feat/v2.3.0-stabilization')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v2.3.0 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/v2.3.0-stabilization
+          fetch-depth: 0
+
+      - name: Materialize source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -f tools/prepare-v230-materialization.py ]; then
+            python3 -m py_compile tools/prepare-v230-materialization.py
+            python3 tools/prepare-v230-materialization.py
+          fi
+
+          if [ -f tools/bootstrap-v230.py.gz.b64 ]; then
+            base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+            python3 -m py_compile /tmp/bootstrap-v230.py
+            python3 /tmp/bootstrap-v230.py
+            rm -f tools/bootstrap-v230.py.gz.b64
+          fi
+
+          if [ -f tools/finalize-v230.py.gz.b64 ]; then
+            base64 -d tools/finalize-v230.py.gz.b64 | gzip -d > /tmp/finalize-v230.py
+            python3 -m py_compile /tmp/finalize-v230.py
+            python3 /tmp/finalize-v230.py
+            rm -f tools/finalize-v230.py.gz.b64
+          fi
+
+          if [ -f tools/fix-v230-android-lint.py ]; then
+            python3 -m py_compile tools/fix-v230-android-lint.py
+            python3 tools/fix-v230-android-lint.py
+          fi
+
+          if [ -f tools/apply-v230-organizer-download-coverage.py ]; then
+            python3 -m py_compile tools/apply-v230-organizer-download-coverage.py
+            python3 tools/apply-v230-organizer-download-coverage.py
+          fi
+
+          git diff --check
+          grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'discover_app_user_roots' v2/module/storage-index.sh
+          grep -q '"attachment", "attachments"' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+
+      - name: Commit final source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Source already materialized'
+            exit 0
+          fi
+          git commit -m "feat: persist final v2.3.0 organizer and Root source"
+          git push origin HEAD:feat/v2.3.0-stabilization
