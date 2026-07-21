@@ -3,5 +3,5 @@ name=白泽 v2
 version=v2.3.0
 versionCode=23000
 author=惜故里丶
-description=白泽 v2.3.0 全自动稳定化版：分钟级定时、Root Worker、自恢复调度、多用户与多存储适配。
+description=用于清理应用缓存、安装包、卸载残留和深度垃圾，并整理应用下载、接收、附件与导出文件。
 updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json
