@@ -1,5 +1,6 @@
 name: Materialize BaiZe v2.3.0 Branch
 
+# Registered on main; this ordinary update triggers the materialization job.
 on:
   push:
     branches: [main]
