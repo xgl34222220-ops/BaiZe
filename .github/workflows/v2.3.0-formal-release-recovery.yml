@@ -106,7 +106,10 @@ jobs:
           在 Magisk、KernelSU 或 APatch 中刷入 `BaiZe-v2.3.0-Module.zip` 并重启。App 未自动安装时，手动安装 `BaiZe-v2.3.0.apk`。
           EOF
 
-          OLD_RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id' 2>/dev/null || true)
+          OLD_RELEASE_ID=""
+          if OLD_RELEASE_JSON=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" 2>/dev/null); then
+            OLD_RELEASE_ID=$(printf '%s' "$OLD_RELEASE_JSON" | jq -r '.id // empty')
+          fi
           if [ -n "$OLD_RELEASE_ID" ]; then
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$OLD_RELEASE_ID" >>"$LOG" 2>&1 || report_failure '删除旧 Release'
           fi
