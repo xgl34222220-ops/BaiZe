@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# baize-storage-index-v2.2
+# baize-storage-index-v2.3
 set -u
 
 MODE=${1:-ensure}
@@ -50,6 +50,33 @@ add_root() {
   printf '%s\t%s\t%s\n' "$(safe_field "$group")" "$depth" "$root" >>"$ROOTS"
 }
 
+# Discover app-defined user download locations instead of assuming every app uses files/Download.
+# Only semantically user-facing directory names are accepted; cache/database/runtime directories remain excluded.
+discover_app_user_roots() {
+  package_root=$1
+  package_name=$2
+  [ -d "$package_root" ] || return 0
+  discovered="$TMP/discovered.$package_name.nul"
+  : >"$discovered"
+  find "$package_root" -xdev -mindepth 1 -maxdepth 8 -type d \
+    \( -iname download -o -iname downloads -o -iname downloaded -o -iname 下载 \
+       -o -iname received -o -iname receive -o -iname recv -o -iname file_recv \
+       -o -iname qqfile_recv -o -iname qqmy_file_recv -o -iname qqfile_receive \
+       -o -iname timfile_recv -o -iname tim_file_recv \
+       -o -iname attachment -o -iname attachments \
+       -o -iname export -o -iname exports -o -iname saved -o -iname shared \
+       -o -iname documents -o -iname document \) \
+    -print0 2>/dev/null >"$discovered"
+  while IFS= read -r -d '' candidate; do
+    lower=$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')
+    case "$lower" in
+      */cache|*/cache/*|*/code_cache|*/code_cache/*|*/databases|*/databases/*|*/shared_prefs|*/shared_prefs/*|*/no_backup|*/no_backup/*|*/tmp|*/tmp/*|*/temp|*/temp/*|*/thumbnails|*/thumbnails/*|*/.thumbnails|*/.thumbnails/*|*/crash|*/crash/*|*/crashes|*/crashes/*) continue ;;
+    esac
+    leaf=${candidate##*/}
+    add_root "应用用户文件:$package_name:$leaf" 14 "$candidate"
+  done <"$discovered"
+}
+
 for userdir in "$MEDIA_ROOT"/[0-9]*; do
   [ -d "$userdir" ] || continue
   add_root "内部存储根目录" 1 "$userdir"
@@ -64,7 +91,10 @@ for userdir in "$MEDIA_ROOT"/[0-9]*; do
     add_root "共享下载目录:$name" 12 "$top"
   done
   for pkg in "$userdir"/Android/media/*; do
-    [ -d "$pkg" ] && add_root "应用媒体:${pkg##*/}" 14 "$pkg"
+    [ -d "$pkg" ] || continue
+    package=${pkg##*/}
+    add_root "应用媒体:$package" 14 "$pkg"
+    discover_app_user_roots "$pkg" "$package.media"
   done
   for pkg in "$userdir"/Android/data/*; do
     [ -d "$pkg" ] || continue
@@ -76,6 +106,7 @@ for userdir in "$MEDIA_ROOT"/[0-9]*; do
     add_root "Telegram:$package" 12 "$pkg/Telegram"
     add_root "QQ接收:$package" 12 "$pkg/Tencent/QQfile_recv"
     add_root "TIM接收:$package" 12 "$pkg/Tencent/Timfile_recv"
+    discover_app_user_roots "$pkg" "$package"
   done
 done
 
@@ -121,7 +152,7 @@ mv -f "$COVERAGE_TMP" "$COVERAGE_FILE"
   echo "roots=$root_total"
   echo "files=$total_files"
   echo "bytes=$total_bytes"
-  echo "engine=baize-storage-index-v2.2"
+  echo "engine=baize-storage-index-v2.3"
 } >"$META_FILE"
 chmod 0600 "$INDEX_FILE" "$COVERAGE_FILE" "$META_FILE" 2>/dev/null
 
