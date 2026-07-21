@@ -3,3 +3,4 @@ source_run=29877161401
 source_sha=c1556911e44a7f8e5da8c67a681fa2156cc57c6b
 release_notes=purpose-only
 assets=module,apk,sha256
+retry=2
