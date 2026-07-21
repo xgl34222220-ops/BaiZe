@@ -53,14 +53,23 @@ for relative in ("res/values/themes.xml", "res/values-night/themes.xml"):
         )
     path.write_text(text)
 
+package_script = Path("v2/scripts/package-module.sh")
+text = package_script.read_text()
+text = text.replace("grep -q 'detached-root-shell'", "grep -q 'detached-root-worker-v2.3'")
+text = text.replace("grep -q 'baize-storage-index-v2.2'", "grep -q 'baize-storage-index-v3-multi-volume-incremental'")
+text = text.replace("grep -q '^version=v2.2.5$'", "grep -q '^version=v2.3.0$'")
+text = text.replace("grep -q '^versionCode=22605$'", "grep -q '^versionCode=23000$'")
+package_script.write_text(text)
+
 checks = {
     notifier: '@SuppressLint("MissingPermission")',
     manifest: 'tools:ignore="QueryAllPackagesPermission"',
     main / "res/values/themes.xml": 'tools:targetApi="29"',
     main / "res/values-night/themes.xml": 'tools:targetApi="27"',
+    package_script: "grep -q '^version=v2.3.0$'",
 }
 for path, marker in checks.items():
     if marker not in path.read_text():
-        raise SystemExit(f"lint fix missing in {path}")
+        raise SystemExit(f"v2.3.0 correction missing in {path}")
 
-print("Android lint fixes applied")
+print("Android lint and v2.3.0 packaging fixes applied")
