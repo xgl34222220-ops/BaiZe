@@ -1,0 +1,43 @@
+name: BaiZe v2.2.4 Generator Diagnostic
+
+on:
+  push:
+    branches: [fix/v2.2.4-background-task-recovery]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run source generators
+        id: generate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '=== v2.2.3 prep ==='
+            python3 tools/.v223-plan-placeholder
+            python3 tools/apply-v223-ui-records.py
+            python3 tools/apply-v223-dashboard-records.py
+            python3 tools/apply-v223-version.py
+            echo '=== v2.2.4 recovery ==='
+            python3 tools/apply-v224-background-recovery.py
+          } 2>&1 | tee v224-generator.log
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.2.4-generator-diagnostic
+          if-no-files-found: warn
+          path: |
+            v224-generator.log
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+            v2/app/build.gradle.kts
+            v2/module/module.prop
+      - name: Fail when generation failed
+        if: steps.generate.outcome == 'failure'
+        run: exit 1
