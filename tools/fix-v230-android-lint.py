@@ -65,7 +65,13 @@ package_script.write_text(text)
 thread_fix = Path("tools/apply-v230-file-organizer-thread-fix.py")
 runpy.run_path(thread_fix, run_name="__main__")
 thread_fix.unlink(missing_ok=True)
+
+organizer_coverage_fix = Path("tools/apply-v230-organizer-download-coverage.py")
+runpy.run_path(organizer_coverage_fix, run_name="__main__")
+
 file_organizer_worker = main / "java/io/github/xgl34222220/baize/FileOrganizerWorker.kt"
+file_organizer_engine = main / "java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt"
+storage_index = Path("v2/module/storage-index.sh")
 
 checks = {
     notifier: '@SuppressLint("MissingPermission")',
@@ -74,6 +80,8 @@ checks = {
     main / "res/values-night/themes.xml": 'tools:targetApi="27"',
     package_script: "grep -q '^version=v2.3.0$'",
     file_organizer_worker: "withContext(Dispatchers.Main.immediate)",
+    file_organizer_engine: '"attachment", "attachments"',
+    storage_index: "discover_app_user_roots",
 }
 for path, marker in checks.items():
     if marker not in path.read_text():
@@ -82,4 +90,4 @@ for path, marker in checks.items():
 if "unbindOnMainThread" not in file_organizer_worker.read_text():
     raise SystemExit("file organizer Root unbind is not main-thread safe")
 
-print("Android lint, packaging and file organizer main-thread fixes applied")
+print("Android lint, packaging, Root binding and organizer download coverage fixes applied")
