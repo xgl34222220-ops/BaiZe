@@ -1,4 +1,4 @@
-name: BaiZe v2.3.0 Detached Organizer Final Builder
+name: BaiZe v2.3.0 Safe Organizer Final Builder
 
 on:
   pull_request_target:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: baize-v230-detached-organizer-final-builder
+  group: baize-v230-safe-organizer-final-builder
   cancel-in-progress: true
 
 jobs:
@@ -29,11 +29,12 @@ jobs:
         shell: bash
         run: |
           cat >/tmp/status.md <<EOF
-          # BaiZe v2.3.0 独立 Root 归类最终构建
+          # BaiZe v2.3.0 安全归类最终构建
 
           - 运行编号：\`$RUN_ID\`
           - 状态：**building**
           - 源码提交：\`$HEAD_SHA\`
+          - 安全目标：禁止游戏贴图、资源包和 App 私有文件进入归类
           EOF
           gh issue edit 94 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
 
@@ -42,7 +43,7 @@ jobs:
           ref: feat/v2.3.0-stabilization
           fetch-depth: 0
 
-      - name: Materialize final detached organizer source
+      - name: Materialize final safe organizer source
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +69,7 @@ jobs:
           python3 tools/fix-v230-detached-organizer-kotlin.py
           git diff --check
 
-      - name: Verify independent Root ownership
+      - name: Verify independent Root ownership and safety gates
         shell: bash
         run: |
           set -euo pipefail
@@ -76,6 +77,7 @@ jobs:
           SCHEDULE=v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
           SERVICE=v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
           ENGINE=v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          ORGANIZER=v2/module/organizer-worker.sh
           grep -q 'runModuleTask("organize")' "$ACTIVITY"
           grep -q 'startOrganizerPoll(waitForStart = true)' "$ACTIVITY"
           grep -q 'runModuleTask("organize")' "$SCHEDULE"
@@ -83,46 +85,104 @@ jobs:
           grep -q 'organizer-result.env' "$SERVICE"
           grep -q 'Base64.decode' "$ENGINE"
           grep -q 'organizer-worker.sh' v2/module/task-worker.sh
-          grep -q 'build_fallback_index' v2/module/organizer-worker.sh
-          grep -q 'operation=module-organize' v2/module/organizer-worker.sh
+          grep -q 'build_fallback_index' "$ORGANIZER"
+          grep -q 'allowed_app_source' "$ORGANIZER"
+          grep -q 'is_suspicious_app_resource' "$ORGANIZER"
+          grep -q 'is_browser_package' "$ORGANIZER"
+          grep -q 'is_mail_package' "$ORGANIZER"
+          grep -q 'operation=module-organize' "$ORGANIZER"
           bash -n v2/module/storage-index.sh
           bash -n v2/module/task-worker.sh
-          bash -n v2/module/organizer-worker.sh
+          bash -n "$ORGANIZER"
 
-      - name: Run real detached filesystem regression
+      - name: Run hostile broad-index safety regression
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/baize-detached-final
+          ROOT=/tmp/baize-safe-organizer
           MOD="$ROOT/module"
           MEDIA="$ROOT/media"
           STATE="$ROOT/state"
           rm -rf "$ROOT"
           mkdir -p "$MOD" \
+            "$MEDIA/0/Download" \
             "$MEDIA/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
-            "$MEDIA/0/Android/data/com.example.browser/private/received" \
-            "$MEDIA/0/Android/data/com.example.mail/data/attachments" \
-            "$MEDIA/0/Android/data/com.example.browser/cache/Download"
-          cp v2/module/storage-index.sh "$MOD/storage-index.sh"
+            "$MEDIA/0/Android/data/com.android.chrome/files/Download" \
+            "$MEDIA/0/Android/data/com.google.android.gm/data/attachments" \
+            "$MEDIA/0/Android/data/com.android.chrome/cache/Download" \
+            "$MEDIA/0/Android/data/com.example.game/files/assets/textures" \
+            "$MEDIA/0/Android/data/com.example.game/files/Download" \
+            "$MEDIA/0/Android/media/com.example.game/textures"
           cp v2/module/organizer-worker.sh "$MOD/organizer-worker.sh"
-          chmod 0755 "$MOD/storage-index.sh" "$MOD/organizer-worker.sh"
+          chmod 0755 "$MOD/organizer-worker.sh"
+          cat >"$MOD/storage-index.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+          mkdir -p "$BAIZE_STATE_DIR/index"
+          find "$BAIZE_MEDIA_ROOT" -type f -print0 >"$BAIZE_STATE_DIR/index/storage-files.nul"
+          EOF
+          chmod 0755 "$MOD/storage-index.sh"
           sed -i 's|/system/bin/sh "$INDEXER"|/bin/bash "$INDEXER"|' "$MOD/organizer-worker.sh"
+          printf 'public-photo' >"$MEDIA/0/Download/user-photo.jpg"
           printf 'qq-module' >"$MEDIA/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv/LuoShu-Test.zip"
-          printf 'browser-apk' >"$MEDIA/0/Android/data/com.example.browser/private/received/browser-test.apk"
-          printf 'mail-pdf' >"$MEDIA/0/Android/data/com.example.mail/data/attachments/manual.pdf"
-          printf 'cache-file' >"$MEDIA/0/Android/data/com.example.browser/cache/Download/must-not-move.zip"
+          printf 'browser-apk' >"$MEDIA/0/Android/data/com.android.chrome/files/Download/browser-test.apk"
+          printf 'mail-pdf' >"$MEDIA/0/Android/data/com.google.android.gm/data/attachments/manual.pdf"
+          printf 'cache-file' >"$MEDIA/0/Android/data/com.android.chrome/cache/Download/must-not-move.zip"
+          printf 'game-texture' >"$MEDIA/0/Android/data/com.example.game/files/assets/textures/character.webp"
+          printf 'game-patch' >"$MEDIA/0/Android/data/com.example.game/files/Download/patch.png"
+          printf 'game-atlas' >"$MEDIA/0/Android/media/com.example.game/textures/ui-atlas.png"
           BAIZE_MEDIA_ROOT="$MEDIA" BAIZE_STATE_DIR="$STATE" \
-            bash "$MOD/organizer-worker.sh" organize ci final-regression
+            bash "$MOD/organizer-worker.sh" organize ci hostile-broad-index
+          test -f "$MEDIA/0/BaiZe归类/图片/user-photo.jpg"
           test -f "$MEDIA/0/BaiZe归类/压缩包/LuoShu-Test.zip"
           test -f "$MEDIA/0/BaiZe归类/安装包/browser-test.apk"
           test -f "$MEDIA/0/BaiZe归类/文档/manual.pdf"
-          test -f "$MEDIA/0/Android/data/com.example.browser/cache/Download/must-not-move.zip"
-          test ! -f "$MEDIA/0/BaiZe归类/压缩包/must-not-move.zip"
-          grep -qx 'requested=3' "$STATE/organizer-result.env"
-          grep -qx 'moved=3' "$STATE/organizer-result.env"
+          test -f "$MEDIA/0/Android/data/com.android.chrome/cache/Download/must-not-move.zip"
+          test -f "$MEDIA/0/Android/data/com.example.game/files/assets/textures/character.webp"
+          test -f "$MEDIA/0/Android/data/com.example.game/files/Download/patch.png"
+          test -f "$MEDIA/0/Android/media/com.example.game/textures/ui-atlas.png"
+          test ! -f "$MEDIA/0/BaiZe归类/图片/character.webp"
+          test ! -f "$MEDIA/0/BaiZe归类/图片/patch.png"
+          test ! -f "$MEDIA/0/BaiZe归类/图片/ui-atlas.png"
+          grep -qx 'requested=4' "$STATE/organizer-result.env"
+          grep -qx 'moved=4' "$STATE/organizer-result.env"
           grep -qx 'failed=0' "$STATE/organizer-result.env"
           grep -q 'sourceB64' "$STATE/organizer-last.json"
-          grep -q 'destinationB64' "$STATE/organizer-last.json"
+
+      - name: Run safe fallback discovery regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/baize-safe-fallback
+          MOD="$ROOT/module"
+          MEDIA="$ROOT/media"
+          STATE="$ROOT/state"
+          rm -rf "$ROOT"
+          mkdir -p "$MOD" \
+            "$MEDIA/0/Download" \
+            "$MEDIA/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
+            "$MEDIA/0/Android/data/com.example.game/files/Download"
+          cp v2/module/organizer-worker.sh "$MOD/organizer-worker.sh"
+          chmod 0755 "$MOD/organizer-worker.sh"
+          cat >"$MOD/storage-index.sh" <<'EOF'
+          #!/usr/bin/env bash
+          mkdir -p "$BAIZE_STATE_DIR/index"
+          : >"$BAIZE_STATE_DIR/index/storage-files.nul"
+          EOF
+          chmod 0755 "$MOD/storage-index.sh"
+          sed -i 's|/system/bin/sh "$INDEXER"|/bin/bash "$INDEXER"|' "$MOD/organizer-worker.sh"
+          printf 'public-doc' >"$MEDIA/0/Download/public-document.pdf"
+          printf 'qq-file' >"$MEDIA/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv/received.zip"
+          printf 'game-file' >"$MEDIA/0/Android/data/com.example.game/files/Download/game-resource.png"
+          BAIZE_MEDIA_ROOT="$MEDIA" BAIZE_STATE_DIR="$STATE" \
+            bash "$MOD/organizer-worker.sh" organize ci safe-fallback
+          test -f "$MEDIA/0/BaiZe归类/文档/public-document.pdf"
+          test -f "$MEDIA/0/BaiZe归类/压缩包/received.zip"
+          test -f "$MEDIA/0/Android/data/com.example.game/files/Download/game-resource.png"
+          test ! -f "$MEDIA/0/BaiZe归类/图片/game-resource.png"
+          grep -qx 'requested=2' "$STATE/organizer-result.env"
+          grep -qx 'moved=2' "$STATE/organizer-result.env"
+          grep -qx 'failed=0' "$STATE/organizer-result.env"
 
       - uses: actions/setup-java@v4
         with:
@@ -149,7 +209,7 @@ jobs:
           set -o pipefail
           gradle --no-daemon :app:assembleRelease 2>&1 | tee android-build.log
 
-      - name: Package and verify final test files
+      - name: Package and verify safe test files
         working-directory: v2
         shell: bash
         run: |
@@ -157,15 +217,16 @@ jobs:
           sh scripts/package-module.sh
           SOURCE_ZIP=dist/BaiZe-v2.3.0-Module.zip
           SOURCE_APK=app/build/outputs/apk/release/app-release.apk
-          MODULE=dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test-Module.zip
-          APK=dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test.apk
+          MODULE=dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test-Module.zip
+          APK=dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test.apk
           test -s "$SOURCE_ZIP"
           test -s "$SOURCE_APK"
           unzip -tq "$SOURCE_ZIP"
           unzip -p "$SOURCE_ZIP" module.prop | grep -qx 'version=v2.3.0'
           unzip -p "$SOURCE_ZIP" task-worker.sh | grep -q 'organizer-worker.sh'
-          unzip -p "$SOURCE_ZIP" organizer-worker.sh | grep -q 'build_fallback_index'
-          unzip -p "$SOURCE_ZIP" organizer-worker.sh | grep -q 'operation=module-organize'
+          unzip -p "$SOURCE_ZIP" organizer-worker.sh | grep -q 'is_suspicious_app_resource'
+          unzip -p "$SOURCE_ZIP" organizer-worker.sh | grep -q 'allowed_app_source'
+          unzip -p "$SOURCE_ZIP" organizer-worker.sh | grep -q 'com.tencent.mobileqq'
           cp "$SOURCE_ZIP" "$MODULE"
           cp "$SOURCE_APK" "$APK"
           sha256sum "$MODULE" >"$MODULE.sha256"
@@ -173,43 +234,42 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.3.0-Detached-Root-Organizer-Test-Final
+          name: BaiZe-v2.3.0-Safe-Root-Organizer-Test-Final
           if-no-files-found: error
           path: |
-            v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test-Module.zip
-            v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test-Module.zip.sha256
-            v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test.apk
-            v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test.apk.sha256
+            v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test-Module.zip
+            v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test-Module.zip.sha256
+            v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test.apk
+            v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test.apk.sha256
             v2/android-build.log
 
-      - name: Publish final rolling prerelease
+      - name: Publish safe rolling prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG=v2.3.0-detached-root-organizer-test
-          MODULE=v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test-Module.zip
-          APK=v2/dist/BaiZe-v2.3.0-Detached-Root-Organizer-Test.apk
+          TAG=v2.3.0-safe-root-organizer-test
+          MODULE=v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test-Module.zip
+          APK=v2/dist/BaiZe-v2.3.0-Safe-Root-Organizer-Test.apk
           cat >/tmp/notes.md <<'EOF'
-          # 白泽 v2.3.0 独立 Root 文件归类测试版
+          # 白泽 v2.3.0 安全 Root 文件归类测试版
 
-          - App 只负责提交任务，扫描、分类和移动全部由模块内独立 Root Worker 执行。
-          - 切后台、划掉最近任务、关闭页面或重新进入不会中断归类。
-          - 重新进入归类页自动恢复当前阶段、文件路径、进度和最终结果。
-          - 定时归类同样只提交给独立 Root Worker。
-          - 共享索引为空时自动切换独立 Root 兜底发现。
-          - 缓存、数据库、临时文件和缩略图目录继续排除。
+          - 修复游戏贴图、皮肤、图标和资源文件被误归类的问题。
+          - Android/data 与 Android/media 默认全部拒绝，只开放明确的 QQ 接收、浏览器下载、邮箱附件和 Telegram 用户媒体路径。
+          - 即使共享索引提供了游戏资源，移动前安全门仍会拒绝。
+          - 兜底扫描不再遍历所有 App，只扫描公共用户目录和明确支持的应用目录。
+          - App 切后台、划掉或被杀后，独立 Root Worker 仍继续运行。
 
-          测试方式：点一键归类后立刻返回桌面或划掉 App，稍后重新进入检查进度和结果。
+          安装前请先在旧版归类页执行“撤销上一次归类”，恢复已经误移动的游戏资源。
           EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title '白泽 v2.3.0 独立 Root 文件归类测试版' --notes-file /tmp/notes.md --prerelease
+            gh release edit "$TAG" --title '白泽 v2.3.0 安全 Root 文件归类测试版' --notes-file /tmp/notes.md --prerelease
             gh release upload "$TAG" "$MODULE" "$MODULE.sha256" "$APK" "$APK.sha256" --clobber
           else
             gh release create "$TAG" "$MODULE" "$MODULE.sha256" "$APK" "$APK.sha256" \
               --target feat/v2.3.0-stabilization \
-              --title '白泽 v2.3.0 独立 Root 文件归类测试版' \
+              --title '白泽 v2.3.0 安全 Root 文件归类测试版' \
               --notes-file /tmp/notes.md --prerelease
           fi
 
@@ -223,12 +283,13 @@ jobs:
         shell: bash
         run: |
           cat >/tmp/status.md <<EOF
-          # BaiZe v2.3.0 独立 Root 归类最终构建
+          # BaiZe v2.3.0 安全归类最终构建
 
           - 运行编号：\`$RUN_ID\`
           - 构建结果：**$RESULT**
           - 源码提交：\`$HEAD_SHA\`
-          - 预发行标签：\`v2.3.0-detached-root-organizer-test\`
-          - 文件回归：独立 Worker 移动 3 个，失败 0 个，缓存不移动
+          - 预发行标签：\`v2.3.0-safe-root-organizer-test\`
+          - 恶意宽索引回归：用户文件移动 4 个，游戏资源移动 0 个
+          - 安全兜底回归：用户文件移动 2 个，未知游戏目录移动 0 个
           EOF
           gh issue edit 94 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
