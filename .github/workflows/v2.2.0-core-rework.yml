@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: baize-v230-trusted-test-builder
@@ -20,6 +21,19 @@ jobs:
        github.event.pull_request.head.ref == 'feat/v2.3.0-stabilization')
     runs-on: ubuntu-latest
     steps:
+      - name: Report builder run identifier
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "BAIZE_V230_BUILDER run_id=$RUN_ID attempt=$RUN_ATTEMPT status=started head=$HEAD_SHA"
+
       - name: Checkout trusted v2.3.0 branch
         uses: actions/checkout@v4
         with:
@@ -211,3 +225,17 @@ jobs:
               --notes-file /tmp/baize-v230-test-notes.md \
               --prerelease
           fi
+
+      - name: Report builder completion
+        if: always() && github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          JOB_STATUS: ${{ job.status }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "BAIZE_V230_BUILDER run_id=$RUN_ID attempt=$RUN_ATTEMPT status=$JOB_STATUS head=$HEAD_SHA"
