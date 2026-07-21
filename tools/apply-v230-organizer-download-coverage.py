@@ -48,6 +48,7 @@ organizer.write_text(text)
 storage = root / "v2/module/storage-index.sh"
 source = storage.read_text()
 
+# Legacy readable storage-index implementation.
 if "discover_app_user_roots" not in source and "add_root() {" in source:
     anchor = '''add_root() {
   group=$1 depth=$2 root=${3%/}
@@ -102,6 +103,7 @@ discover_app_user_roots() {
     if data_anchor in source and "discover_app_user_roots \"$pkg\" \"$package\"" not in source:
         source = source.replace(data_anchor, data_new, 1)
 
+# Compact multi-user and removable-storage implementation.
 if "discover_app_user_roots" not in source and "add_user_root(){" in source:
     helper = '''
 discover_app_user_roots(){
@@ -129,39 +131,49 @@ discover_app_user_roots(){
 '''
     position = source.find("add_user_root(){")
     source = source[:position] + helper + source[position:]
-    lines = source.splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith("add_user_root(){") and "discover_app_user_roots" not in line:
-            closing = line.rfind("}")
-            if closing < 0:
-                raise SystemExit("compact add_user_root closing brace missing")
-            line = line[:closing].rstrip()
-            if not line.endswith(";"):
-                line += ";"
-            lines[index] = line + ' discover_app_user_roots "$user" "$volume" "$root"; }'
-            break
-    else:
-        raise SystemExit("compact add_user_root anchor not found")
-    source = "\n".join(lines) + "\n"
 
-# Repair the first v2.3.0 generator output, which accidentally referenced nonexistent au_* variables.
-source = source.replace(
-    'discover_app_user_roots "$au_user" "$au_volume" "$au_root"',
-    'discover_app_user_roots "$user" "$volume" "$root"',
-)
+# Shell variables are global on Android sh. Every compact helper must use a unique prefix.
+safe_add_root = 'add_root(){ ar_group=$1; ar_user=$2; ar_volume=$3; ar_depth=$4; ar_root=${5%/}; [ -d "$ar_root" ] || return 0; [ ! -L "$ar_root" ] || return 0; grep -Fq "$(printf \'\\t%s\\n\' "$ar_root")" "$ROOTS" 2>/dev/null && return 0; printf \'%s\\t%s\\t%s\\t%s\\t%s\\n\' "$(safe "$ar_group")" "$ar_user" "$(safe "$ar_volume")" "$ar_depth" "$ar_root" >>"$ROOTS"; }'
+safe_add_user_root = 'add_user_root(){ au_user=$1; au_root=$2; au_volume=$3; add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"; add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"; add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"; for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done; for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done; for au_pkg in "$au_root"/Android/data/*; do [ -d "$au_pkg" ] || continue; au_name=${au_pkg##*/}; add_root "应用文件:$au_name" "$au_user" "$au_volume" 12 "$au_pkg/files"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Download"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Downloads"; done; discover_app_user_roots "$au_user" "$au_volume" "$au_root"; }'
+
+lines = source.splitlines()
+compact_root_found = False
+compact_user_found = False
+for index, line in enumerate(lines):
+    if line.startswith("add_root(){"):
+        lines[index] = safe_add_root
+        compact_root_found = True
+    elif line.startswith("add_user_root(){"):
+        lines[index] = safe_add_user_root
+        compact_user_found = True
+if compact_root_found or compact_user_found:
+    if not (compact_root_found and compact_user_found):
+        raise SystemExit("compact storage index functions are incomplete")
+    source = "\n".join(lines) + "\n"
 
 if "discover_app_user_roots" not in source:
     raise SystemExit("application download discovery was not installed in storage index")
-if 'discover_app_user_roots "$au_user"' in source:
-    raise SystemExit("stale app discovery variables remain in storage index")
+if "add_user_root(){" in source:
+    required = (
+        'add_root(){ ar_group=$1; ar_user=$2; ar_volume=$3; ar_depth=$4; ar_root=',
+        'add_user_root(){ au_user=$1; au_root=$2; au_volume=$3;',
+        'discover_app_user_roots "$au_user" "$au_volume" "$au_root"',
+    )
+    for marker in required:
+        if marker not in source:
+            raise SystemExit(f"compact storage index safety marker missing: {marker}")
+    for stale in ('add_root(){ group=', 'add_user_root(){ user=', 'discover_app_user_roots "$user"'):
+        if stale in source:
+            raise SystemExit(f"unsafe compact storage index variables remain: {stale}")
+
 storage.write_text(source)
 
 checks = {
     organizer: '"attachment", "attachments"',
-    storage: 'discover_app_user_roots "$user" "$volume" "$root"',
+    storage: "discover_app_user_roots",
 }
 for path, marker in checks.items():
     if marker not in path.read_text():
         raise SystemExit(f"organizer download coverage marker missing in {path}")
 
-print("generic application download discovery and organizer source policy applied")
+print("generic application download discovery and shell-safe storage index applied")
