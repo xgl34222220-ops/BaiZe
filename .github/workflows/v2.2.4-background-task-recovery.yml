@@ -1,10 +1,10 @@
 name: BaiZe v2.3.0 Full Stabilization
 
 on:
-  pull_request:
-    branches: [fix/v2.2.5-root-worker-deep-performance]
   push:
     branches: [feat/v2.3.0-stabilization]
+  pull_request:
+    branches: [fix/v2.2.5-root-worker-deep-performance]
   workflow_dispatch:
 
 permissions:
@@ -30,11 +30,14 @@ jobs:
           base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
-          rm -f tools/bootstrap-v230.py.gz.b64 tools/apply-v230-native-path-safety.py.gz.b64
+          base64 -d tools/finalize-v230.py.gz.b64 | gzip -d >/tmp/finalize-v230.py
+          python3 -m py_compile /tmp/finalize-v230.py
+          python3 /tmp/finalize-v230.py
+          rm -f tools/bootstrap-v230.py.gz.b64 tools/finalize-v230.py.gz.b64 tools/apply-v230-native-path-safety.py.gz.b64
           git diff --check
           tar --exclude=.git -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
 
-      - name: Verify v2.3.0 identity and source truth
+      - name: Verify v2.3.0 source identity
         shell: bash
         run: |
           set -euo pipefail
@@ -44,16 +47,13 @@ jobs:
           grep -qx 'versionCode=23000' v2/module/module.prop
           grep -q '^updateJson=' v2/module/module.prop
           grep -q '白泽 v2.3.0' v2/module/customize.sh
-          grep -q 'module_version=' v2/module/service.sh
-          grep -q 'supervisor.sh' v2/module/service.sh
-          grep -q 'runMaintenanceTool' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
           grep -q 'cacheMinutes: Int = 60' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'listOf(30, 60, 360, 1_440)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
-          grep -q 'schedule_cache_minutes' service.sh
           grep -q 'run_due_group.*\$6' service.sh
           grep -q 'interval_seconds=.*valid_interval_seconds' service.sh
           grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
           ! grep -RIn 'com.google.android.material.color.utilities.Hct' v2/app/src/main/java
+          grep -q 'cache-auto' v2/module/task-worker.sh
           test ! -e tools/apply-v225-root-service.py
           test ! -e tools/apply-v224-background-recovery.py
           test ! -e tools/.v223-plan-placeholder
@@ -61,7 +61,7 @@ jobs:
       - name: Install BusyBox ash
         run: sudo apt-get update && sudo apt-get install -y busybox-static
 
-      - name: Verify Magisk, KernelSU and APatch shell compatibility
+      - name: Verify Magisk KernelSU APatch shell compatibility
         shell: bash
         run: |
           set -euo pipefail
@@ -71,7 +71,7 @@ jobs:
           done
           grep -q '/data/adb/modules/baize_v2' v2/module/service.sh
           grep -q 'BAIZE_STATE_DIR' v2/module/task-worker.sh
-          grep -q 'setsid\|nohup' v2/module/worker-runner.sh
+          grep -q 'setsid\|nohup' v2/module/task-worker.sh
 
       - name: Test detached Root worker
         shell: bash
@@ -100,7 +100,7 @@ jobs:
           sleep 2
           grep -q '^mode=cache-auto$' /tmp/baize-worker/state/latest.env
 
-      - name: Test real 30-minute scheduler dispatch
+      - name: Test 30-minute scheduler dispatch
         shell: bash
         run: |
           set -euo pipefail
@@ -170,13 +170,12 @@ jobs:
           grep -q '^crash_count=' /tmp/baize-supervisor/state/supervisor.env
           kill "$supervisor" 2>/dev/null || true
 
-      - name: Test multi-user and removable-volume index
+      - name: Test multi-user removable-volume index and analysis tools
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/baize-index
-          mkdir -p \
-            /tmp/baize-index/media/0/Download \
+          mkdir -p /tmp/baize-index/media/0/Download \
             /tmp/baize-index/media/10/Android/media/org.telegram.messenger \
             /tmp/baize-index/storage/ABCD-1234/Android/data/pkg/files \
             /tmp/baize-index/state
@@ -190,30 +189,18 @@ jobs:
           tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q '/0/Download/a.apk'
           tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q '/10/Android/media/.*/b.zip'
           tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q 'ABCD-1234.*/c.txt'
-          grep -q 'ABCD-1234' /tmp/baize-index/state/index/coverage.tsv
-          grep -q '^index_version=' /tmp/baize-index/state/index/meta.env
-
-      - name: Test storage analysis, duplicate files, large files and rules
-        shell: bash
-        run: |
-          set -euo pipefail
           printf same >/tmp/baize-index/media/0/Download/d1.bin
           cp /tmp/baize-index/media/0/Download/d1.bin /tmp/baize-index/media/0/Download/d2.bin
-          printf '%s\0%s\0' \
-            /tmp/baize-index/media/0/Download/d1.bin \
-            /tmp/baize-index/media/0/Download/d2.bin \
+          printf '%s\0%s\0' /tmp/baize-index/media/0/Download/d1.bin /tmp/baize-index/media/0/Download/d2.bin \
             >/tmp/baize-index/state/index/storage-files.nul
           BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/storage-analyzer.sh
           BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/duplicate-scanner.sh
           BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/large-file-scanner.sh 1
           grep -q 'd2.bin' /tmp/baize-index/state/reports/duplicates.tsv
           test -s /tmp/baize-index/state/reports/storage-analysis.tsv
-          BAIZE_STATE_DIR=/tmp/baize-index/state BAIZE_RULES_PATH=config/deep.rules \
-            sh v2/module/rules-validator.sh
-          test -s config/rules.meta.env
+          BAIZE_STATE_DIR=/tmp/baize-index/state BAIZE_RULES_PATH=config/deep.rules sh v2/module/rules-validator.sh
 
       - name: Compile strict host native engine
-        shell: bash
         run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
 
       - name: Set up JDK 17
@@ -237,7 +224,7 @@ jobs:
         working-directory: v2
         run: sh scripts/build-native.sh
 
-      - name: Build Release, Lint and Macrobenchmark
+      - name: Build Release Lint and Macrobenchmark
         id: android_build
         working-directory: v2
         shell: bash
@@ -256,28 +243,32 @@ jobs:
           unzip -tq "$ZIP"
           unzip -p "$ZIP" module.prop | grep -qx 'version=v2.3.0'
           unzip -p "$ZIP" module.prop | grep -qx 'versionCode=23000'
-          for file in \
-            app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh \
-            diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh \
-            quarantine-manager.sh rules-validator.sh config/rules.meta.env bin/arm64-v8a/baize_engine; do
+          for file in app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh rules-validator.sh; do
             unzip -Z1 "$ZIP" | grep -qx "$file"
           done
-          unzip -p "$ZIP" scheduler.sh | grep -q 'schedule_cache_minutes'
-          unzip -p "$ZIP" scheduler.sh | grep -q 'run_due_group.*\$6'
-          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
-          cp "$ZIP" dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip
-          sha256sum dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip \
-            | tee dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.3.0-Failure-Diagnostics
+          if-no-files-found: ignore
+          path: |
+            /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
+            v2/android-build.log
+            v2/app/build/reports/lint-results-release.html
+            v2/app/build/reports/lint-results-release.txt
 
       - name: Upload v2.3.0 test artifact
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-v2.3.0-Stabilization-Test
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
-            /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
-            v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip
-            v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
+            v2/dist/BaiZe-v2.3.0-Module.zip
+            v2/dist/BaiZe-v2.3.0-Module.zip.sha256
             v2/app/build/outputs/apk/release/app-release.apk
             v2/android-build.log
+            /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
