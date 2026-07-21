@@ -68,15 +68,36 @@ jobs:
           sha256sum "$ROOT/BaiZe-v2.3.0-Module.zip" > "$ROOT/BaiZe-v2.3.0-Module.zip.sha256"
           sha256sum "$ROOT/BaiZe-v2.3.0.apk" > "$ROOT/BaiZe-v2.3.0.apk.sha256"
 
-      - name: Publish formal release through REST API
+      - name: Publish formal release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_SHA: 'c1556911e44a7f8e5da8c67a681fa2156cc57c6b'
+          RUN_ID: ${{ github.run_id }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           ROOT=/tmp/baize-release
           TAG=v2.3.0
-          TARGET=feat/v2.3.0-stabilization
+          LOG=/tmp/release-publish.log
+          : >"$LOG"
+
+          report_failure() {
+            stage=$1
+            {
+              echo '# BaiZe v2.3.0 正式发布'
+              echo
+              echo "- 发布任务：\`$RUN_ID\`"
+              echo '- 状态：**failure**'
+              echo "- 失败阶段：$stage"
+              echo
+              echo '```text'
+              tail -n 100 "$LOG"
+              echo '```'
+            } >/tmp/status.md
+            gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md >/dev/null 2>&1 || true
+            exit 1
+          }
+
           cat >/tmp/release-notes.md <<'EOF'
           # 白泽 v2.3.0
 
@@ -87,36 +108,30 @@ jobs:
 
           OLD_RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id' 2>/dev/null || true)
           if [ -n "$OLD_RELEASE_ID" ]; then
-            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$OLD_RELEASE_ID"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$OLD_RELEASE_ID" >>"$LOG" 2>&1 || report_failure '删除旧 Release'
           fi
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1 || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >>"$LOG" 2>&1 || true
+
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$TAG" \
+            -f sha="$TAG_SHA" >>"$LOG" 2>&1 || report_failure '创建 v2.3.0 标签'
 
           jq -n \
             --arg tag "$TAG" \
-            --arg target "$TARGET" \
             --arg name '白泽 v2.3.0' \
             --arg body "$(cat /tmp/release-notes.md)" \
-            '{tag_name:$tag,target_commitish:$target,name:$name,body:$body,draft:false,prerelease:false,make_latest:"true"}' \
+            '{tag_name:$tag,name:$name,body:$body,draft:false,prerelease:false,make_latest:"true"}' \
             >/tmp/create-release.json
 
-          RELEASE_ID=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
-            --input /tmp/create-release.json --jq '.id')
-          test -n "$RELEASE_ID"
+          gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+            --input /tmp/create-release.json >>"$LOG" 2>&1 || report_failure '创建正式 Release'
 
-          upload_asset() {
-            file=$1
-            content_type=$2
-            name=${file##*/}
-            gh api -X POST \
-              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
-              -H "Content-Type: $content_type" \
-              --input "$file" >/dev/null
-          }
-
-          upload_asset "$ROOT/BaiZe-v2.3.0-Module.zip" application/zip
-          upload_asset "$ROOT/BaiZe-v2.3.0-Module.zip.sha256" text/plain
-          upload_asset "$ROOT/BaiZe-v2.3.0.apk" application/vnd.android.package-archive
-          upload_asset "$ROOT/BaiZe-v2.3.0.apk.sha256" text/plain
+          gh release upload "$TAG" \
+            "$ROOT/BaiZe-v2.3.0-Module.zip" \
+            "$ROOT/BaiZe-v2.3.0-Module.zip.sha256" \
+            "$ROOT/BaiZe-v2.3.0.apk" \
+            "$ROOT/BaiZe-v2.3.0.apk.sha256" \
+            --clobber >>"$LOG" 2>&1 || report_failure '上传正式版附件'
 
       - name: Verify and report
         env:
@@ -142,21 +157,5 @@ jobs:
           - 类型：正式版
           - 文件：模块 ZIP、APK、两份 SHA-256
           - 模块刷入说明：仅说明用途与操作入口
-          EOF
-          gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
-
-      - name: Report failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.run_id }}
-        shell: bash
-        run: |
-          cat >/tmp/status.md <<EOF
-          # BaiZe v2.3.0 正式发布
-
-          - 发布任务：\`$RUN_ID\`
-          - 状态：**failure**
-          - 成品与刷入说明校验已通过，失败发生在 GitHub Release 写入或资源上传阶段
           EOF
           gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
