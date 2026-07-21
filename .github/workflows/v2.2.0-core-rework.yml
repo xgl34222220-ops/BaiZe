@@ -178,3 +178,36 @@ jobs:
             v2/dist/BaiZe-v2.3.0-QQ-Organizer-Root-Test.apk
             v2/dist/BaiZe-v2.3.0-QQ-Organizer-Root-Test.apk.sha256
             v2/android-build.log
+
+      - name: Publish rolling test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=v2.3.0-qq-organizer-test
+          MODULE=v2/dist/BaiZe-v2.3.0-QQ-Organizer-Root-Test-Module.zip
+          MODULE_SHA="$MODULE.sha256"
+          APK=v2/dist/BaiZe-v2.3.0-QQ-Organizer-Root-Test.apk
+          APK_SHA="$APK.sha256"
+          cat > /tmp/baize-v230-test-notes.md <<'EOF'
+          # 白泽 v2.3.0 QQ 归类与定时 Root 测试版
+
+          - 修复定时归类从 WorkManager 后台线程连接不到 Root。
+          - RootService 绑定与解绑切换到 Android 主线程，并增加三次重试。
+          - 覆盖 `Android/data/com.tencent.mobileqq/Tencent/QQfile_recv`。
+          - 自动发现所有应用的下载、接收、附件、导出、文档和已保存目录。
+          - 排除缓存、数据库、临时文件和缩略图目录。
+
+          这是滚动测试构建，请先备份重要文件；归类后可使用撤销功能验证。
+          EOF
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title '白泽 v2.3.0 QQ 归类与定时 Root 测试版' --notes-file /tmp/baize-v230-test-notes.md --prerelease
+            gh release upload "$TAG" "$MODULE" "$MODULE_SHA" "$APK" "$APK_SHA" --clobber
+          else
+            gh release create "$TAG" "$MODULE" "$MODULE_SHA" "$APK" "$APK_SHA" \
+              --target feat/v2.3.0-stabilization \
+              --title '白泽 v2.3.0 QQ 归类与定时 Root 测试版' \
+              --notes-file /tmp/baize-v230-test-notes.md \
+              --prerelease
+          fi
