@@ -1,9 +1,10 @@
 BaiZe v2.3.0 detached Root organizer final lifecycle regression build
-triggered: 2026-07-21T18:25:00Z
+triggered: 2026-07-21T18:34:00Z
 publish: v2.3.0-detached-root-organizer-test
 mode: independent-root-worker
 materialization: preserve-detached-workers
 kotlin-fix: escaped-progress-newline
+package-diagnostic: issue-95
 final-builder-status: issue-94
 requirements:
 - app only submits task
