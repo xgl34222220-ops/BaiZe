@@ -1,270 +1,44 @@
-name: BaiZe v2.2.5 Root Worker and Deep Performance
+name: BaiZe v2.3.0 Source Materialization
 
 on:
   push:
     branches:
-      - fix/v2.2.5-root-worker-deep-performance
-  pull_request:
-    branches:
-      - fix/v2.2.4-background-task-recovery
+      - feat/v2.3.0-stabilization
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: baize-v225-${{ github.ref }}
-  cancel-in-progress: true
+  group: baize-v230-materialization
+  cancel-in-progress: false
 
 jobs:
-  build-test-package:
+  materialize:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: feat/v2.3.0-stabilization
 
-      - name: Apply v2.2.3 through v2.2.5 source changes
+      - name: Decode and apply final source
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/.v223-plan-placeholder
-          python3 tools/apply-v223-ui-records.py
-          python3 tools/apply-v223-dashboard-records.py
-          python3 tools/apply-v223-version.py
-          python3 tools/apply-v224-background-recovery.py
-          python3 tools/apply-v225-app-version.py
-          python3 tools/apply-v225-root-service.py
-          python3 tools/apply-v225-cleaner-performance.py
-          python3 tools/apply-v225-native-budget.py
-          python3 tools/apply-v225-native-wrapper.py
-
-      - name: Verify v2.2.5 invariants
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m py_compile \
-            tools/.v223-plan-placeholder \
-            tools/apply-v223-ui-records.py \
-            tools/apply-v223-dashboard-records.py \
-            tools/apply-v223-version.py \
-            tools/apply-v224-background-recovery.py \
-            tools/apply-v225-app-version.py \
-            tools/apply-v225-root-service.py \
-            tools/apply-v225-cleaner-performance.py \
-            tools/apply-v225-native-budget.py \
-            tools/apply-v225-native-wrapper.py
+          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+          python3 -m py_compile /tmp/bootstrap-v230.py
+          python3 /tmp/bootstrap-v230.py
+          rm -f tools/bootstrap-v230.py.gz.b64
           git diff --check
-          ACTIVITY=v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
-          SERVICE=v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-          ENGINE=v2/native/baize_engine_42_4.c
-          grep -q 'json.optBoolean("accepted")' "$ACTIVITY"
-          grep -q 'startRecoveredTaskPoll()' "$ACTIVITY"
-          grep -q '独立 Root Worker 已接管任务' "$ACTIVITY"
-          grep -q '最慢目录' "$ACTIVITY"
-          grep -q 'startDetachedModuleTask' "$SERVICE"
-          grep -q 'task-worker.sh' "$SERVICE"
-          grep -q 'worker_launch_timeout' "$SERVICE"
-          grep -q 'run_with_watchdog' cleaner.sh
-          grep -q 'app_task_max_minutes' cleaner.sh
-          grep -q 'deep_dir_timeout_seconds' cleaner.sh
-          grep -q 'deep_stage_limit_seconds' cleaner.sh
-          grep -q 'deep_slowest_path' cleaner.sh
-          grep -q 'dir_budget_ms' "$ENGINE"
-          grep -q 'global_budget_ms' "$ENGINE"
-          grep -q 'timed_out_dirs' "$ENGINE"
-          grep -q 'stat_tree_budgeted' "$ENGINE"
-          grep -q -- '--dir-budget-ms' v2/module/native-scan.sh
-          grep -q -- '--global-budget-ms' v2/module/native-scan.sh
-          grep -q '^app_task_max_minutes=20$' config/default.conf
-          grep -q '^deep_dir_timeout_seconds=8$' config/default.conf
-          grep -q '^deep_stage_limit_seconds=180$' config/default.conf
-          grep -q 'versionName = "2.2.5"' v2/app/build.gradle.kts
-          grep -q 'versionCode = 22605' v2/app/build.gradle.kts
-          grep -qx 'version=v2.2.5' v2/module/module.prop
-          grep -qx 'versionCode=22605' v2/module/module.prop
-          sh -n v2/module/task-worker.sh
-          sh -n v2/module/native-scan.sh
-          sh -n v2/scripts/package-module.sh
-          sh -n cleaner.sh
 
-      - name: Test detached worker launcher
+      - name: Commit real v2.3.0 source
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/baize-worker-test
-          mkdir -p /tmp/baize-worker-test/module /tmp/baize-worker-test/state
-          cp v2/module/task-worker.sh /tmp/baize-worker-test/module/task-worker.sh
-          cat > /tmp/baize-worker-test/module/cleaner.sh <<'SH'
-          #!/bin/sh
-          state=${BAIZE_STATE_DIR:?}
-          echo "mode=$1" > "$state/running.env"
-          echo "phase=fixture running" >> "$state/running.env"
-          echo "started=$(date +%s)" >> "$state/running.env"
-          sleep 5
-          echo "mode=$1" > "$state/latest.env"
-          echo "result=fixture complete" >> "$state/latest.env"
-          rm -f "$state/running.env"
-          SH
-          chmod +x /tmp/baize-worker-test/module/*.sh
-          BAIZE_STATE_DIR=/tmp/baize-worker-test/state \
-          BAIZE_SHELL_BIN=/bin/sh \
-            /bin/sh /tmp/baize-worker-test/module/task-worker.sh clean ci fixture-1
-          test -s /tmp/baize-worker-test/state/worker.env
-          pid=$(sed -n 's/^pid=//p' /tmp/baize-worker-test/state/worker.env)
-          test -n "$pid"
-          kill -0 "$pid"
-          grep -q '^worker=detached-root-shell$' /tmp/baize-worker-test/state/running.env
-          sleep 1
-          kill -0 "$pid"
-          kill "$pid" 2>/dev/null || true
-
-      - name: Test recovery ordering
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt').read_text()
-          profile = text.index('override fun onServiceConnected', text.index('profileConnection'))
-          recover = text.index('recoverRemoteTaskOrRefresh(runPendingActions = true)', profile)
-          assert text.find('runPendingActionsIfReady()', profile, recover) == -1
-          resume = text.index('override fun onResume()')
-          assert text.index('recoverRemoteTaskOrRefresh()', resume) < text.index('private fun refreshAll()', resume)
-          accepted = text.index('if (json.optBoolean("accepted"))')
-          assert text.index('startRecoveredTaskPoll()', accepted) < text.index('updateRawLogFromResponse(json)', accepted)
-          PY
-
-      - name: Test shared index coverage
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/baize-index-test
-          mkdir -p \
-            /tmp/baize-index-test/media/0/Tencent/QQfile_recv \
-            /tmp/baize-index-test/media/0/Android/media/org.telegram.messenger/Telegram \
-            /tmp/baize-index-test/media/0/Android/data/nu.gpu.nagramx/files/Download \
-            /tmp/baize-index-test/state
-          printf apk > /tmp/baize-index-test/media/0/Tencent/QQfile_recv/qq-test.apk
-          printf apks > /tmp/baize-index-test/media/0/Android/media/org.telegram.messenger/Telegram/telegram-test.apks
-          printf xapk > /tmp/baize-index-test/media/0/Android/data/nu.gpu.nagramx/files/Download/nagramx-test.xapk
-          BAIZE_STATE_DIR=/tmp/baize-index-test/state \
-          BAIZE_MEDIA_ROOT=/tmp/baize-index-test/media \
-          bash v2/module/storage-index.sh refresh ci
-          python3 - <<'PY'
-          from pathlib import Path
-          data = Path('/tmp/baize-index-test/state/index/storage-files.nul').read_bytes().split(b'\0')
-          names = {Path(p.decode()).name for p in data if p}
-          required = {'qq-test.apk', 'telegram-test.apks', 'nagramx-test.xapk'}
-          assert not (required - names), f'missing fixtures: {required - names}'
-          PY
-
-      - name: Compile host native engine and test global budget
-        shell: bash
-        run: |
-          set -euo pipefail
-          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wno-error=format-truncation v2/native/baize_engine_42_4.c -o /tmp/baize_engine_host
-          rm -rf /tmp/baize-deep-test
-          mkdir -p /tmp/baize-deep-test/root /tmp/baize-deep-test/out
-          for i in $(seq 1 4000); do printf x > "/tmp/baize-deep-test/root/file-$i"; done
-          printf '/tmp/baize-deep-test/root\n' > /tmp/baize-deep-test/rules
-          : > /tmp/baize-deep-test/whitelist
-          /tmp/baize_engine_host scan-deep \
-            --rules /tmp/baize-deep-test/rules \
-            --whitelist /tmp/baize-deep-test/whitelist \
-            --max-file-bytes 1048576 \
-            --allow-high-risk 1 \
-            --dir-budget-ms 1 \
-            --global-budget-ms 100 \
-            --report /tmp/baize-deep-test/out/report.tsv \
-            --targets /tmp/baize-deep-test/out/targets.tsv \
-            --summary /tmp/baize-deep-test/out/summary.env \
-            --progress /tmp/baize-deep-test/out/progress.env \
-            --stop /tmp/baize-deep-test/out/stop || test $? -eq 0
-          grep -q '^timed_out_dirs=' /tmp/baize-deep-test/out/summary.env
-          grep -q '^deep_stage_ms=' /tmp/baize-deep-test/out/summary.env
-          grep -q '^deep_slowest_path=' /tmp/baize-deep-test/out/summary.env
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform and NDK
-        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.13'
-
-      - name: Build ARM64 scanner
-        working-directory: v2
-        run: sh scripts/build-native.sh
-
-      - name: Build release app and benchmark APK
-        id: android_build
-        working-directory: v2
-        shell: bash
-        run: |
-          set -o pipefail
-          gradle --no-daemon :app:assembleRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
-
-      - name: Upload Android build failure log
-        if: failure() && steps.android_build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: BaiZe-v2.2.5-android-build-failure
-          if-no-files-found: warn
-          path: v2/android-build.log
-
-      - name: Verify release APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK=v2/app/build/outputs/apk/release/app-release.apk
-          test -s "$APK"
-          unzip -tq "$APK"
-          unzip -l "$APK" | grep -Eq 'baseline.prof|baseline.profm|dexopt/baseline'
-          unzip -Z1 "$APK" | grep -q '^classes.*dex$'
-
-      - name: Package module
-        working-directory: v2
-        run: sh scripts/package-module.sh
-
-      - name: Verify final module
-        shell: bash
-        run: |
-          set -euo pipefail
-          ZIP=v2/dist/BaiZe-v2.2.5-Module.zip
-          test -s "$ZIP"
-          unzip -tq "$ZIP"
-          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.2.5'
-          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22605'
-          unzip -l "$ZIP" | grep -q 'app/baize.apk'
-          unzip -l "$ZIP" | grep -q 'task-worker.sh'
-          unzip -p "$ZIP" task-worker.sh | grep -q 'detached-root-shell'
-          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
-          unzip -p "$ZIP" config/default.conf | grep -q '^deep_dir_timeout_seconds=8$'
-          unzip -p "$ZIP" config/default.conf | grep -q '^deep_stage_limit_seconds=180$'
-          unzip -p "$ZIP" cleaner.sh.compat | grep -q 'run_with_watchdog'
-          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
-          cp "$ZIP" v2/dist/BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test-Module.zip
-          sha256sum v2/dist/BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test-Module.zip \
-            | tee v2/dist/BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test-Module.zip.sha256
-
-      - name: Upload test artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test
-          if-no-files-found: error
-          path: |
-            v2/dist/BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test-Module.zip
-            v2/dist/BaiZe-v2.2.5-Root-Worker-Deep-Performance-Test-Module.zip.sha256
-            v2/app/build/outputs/apk/release/app-release.apk
-            v2/android-build.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: materialize v2.3.0 stabilization source"
+          git push origin HEAD:feat/v2.3.0-stabilization
