@@ -151,4 +151,19 @@ ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"'''
 customize_text = customize_text[:install_start] + install_copy + customize_text[install_end:]
 customize.write_text(customize_text)
 
-print("generic all-app user download policy and concise install copy applied")
+module_prop = root / "v2/module/module.prop"
+prop_lines = module_prop.read_text().splitlines()
+expected_description = "description=用于清理应用缓存、安装包、卸载残留和深度垃圾，并整理应用下载、接收、附件与导出文件。"
+updated_lines = []
+found_description = False
+for line in prop_lines:
+    if line.startswith("description="):
+        updated_lines.append(expected_description)
+        found_description = True
+    else:
+        updated_lines.append(line)
+if not found_description:
+    raise SystemExit("module.prop description anchor missing")
+module_prop.write_text("\n".join(updated_lines) + "\n")
+
+print("generic all-app policy, concise install copy and purpose-only module description applied")
