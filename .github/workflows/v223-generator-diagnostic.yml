@@ -1,0 +1,41 @@
+name: BaiZe v2.2.3 Generator Diagnostic
+
+on:
+  push:
+    branches: [fix/v2.2.3-records-icons-protected-review]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run generators and capture output
+        id: generate
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '=== manifest/history prep ==='
+            python3 tools/.v223-plan-placeholder
+            echo '=== ui records ==='
+            python3 tools/apply-v223-ui-records.py
+            echo '=== dashboard records ==='
+            python3 tools/apply-v223-dashboard-records.py
+            echo '=== version ==='
+            python3 tools/apply-v223-version.py
+          } 2>&1 | tee v223-generator.log
+      - name: Upload generator output
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.2.3-generator-diagnostic
+          if-no-files-found: error
+          path: v223-generator.log
+      - name: Fail when generator failed
+        if: steps.generate.outcome == 'failure'
+        run: exit 1
