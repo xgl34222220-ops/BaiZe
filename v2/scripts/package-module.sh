@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.2.0-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.3.0-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -33,10 +33,11 @@ sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/
 sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
 
 cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
-chmod 0755 "$STAGE/storage-index.sh"
+chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh"
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
+chmod 0755 "$STAGE/rules-validator.sh" "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
 chmod 0644 "$STAGE/app/baize.apk"
@@ -57,6 +58,8 @@ unzip -l "$OUTPUT" | grep -q 'cache-snapshot-clean.sh'
 unzip -l "$OUTPUT" | grep -q 'cache-transaction.sh'
 unzip -l "$OUTPUT" | grep -q 'one-pass-scan.sh'
 unzip -l "$OUTPUT" | grep -q 'storage-index.sh'
+unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
+unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-shell'
 unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'apk-scanner.sh'
 unzip -l "$OUTPUT" | grep -q 'apk-cleaner.sh'
@@ -84,8 +87,8 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'storage-files.nul'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.2.0$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=22600$'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.3.0$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=23000$'
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
@@ -96,4 +99,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.2.0 正式版模块：$OUTPUT"
+echo "已生成白泽 v2.3.0 稳定化模块：$OUTPUT"
