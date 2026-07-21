@@ -86,31 +86,19 @@ jobs:
           EOF
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            RELEASE_ID=$(gh release view "$TAG" --json databaseId --jq '.databaseId')
-            BODY=$(cat /tmp/release-notes.md)
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-              -f name='白泽 v2.3.0' \
-              -f body="$BODY" \
-              -f target_commitish="$HEAD_SHA" \
-              -F draft=false \
-              -F prerelease=false \
-              -f make_latest=true >/dev/null
-            gh release upload "$TAG" \
-              "$ROOT/BaiZe-v2.3.0-Module.zip" \
-              "$ROOT/BaiZe-v2.3.0-Module.zip.sha256" \
-              "$ROOT/BaiZe-v2.3.0.apk" \
-              "$ROOT/BaiZe-v2.3.0.apk.sha256" \
-              --clobber
+            gh release delete "$TAG" --yes --cleanup-tag
           else
-            gh release create "$TAG" \
-              "$ROOT/BaiZe-v2.3.0-Module.zip" \
-              "$ROOT/BaiZe-v2.3.0-Module.zip.sha256" \
-              "$ROOT/BaiZe-v2.3.0.apk" \
-              "$ROOT/BaiZe-v2.3.0.apk.sha256" \
-              --target "$HEAD_SHA" \
-              --title '白泽 v2.3.0' \
-              --notes-file /tmp/release-notes.md
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" >/dev/null 2>&1 || true
           fi
+
+          gh release create "$TAG" \
+            "$ROOT/BaiZe-v2.3.0-Module.zip" \
+            "$ROOT/BaiZe-v2.3.0-Module.zip.sha256" \
+            "$ROOT/BaiZe-v2.3.0.apk" \
+            "$ROOT/BaiZe-v2.3.0.apk.sha256" \
+            --target "$HEAD_SHA" \
+            --title '白泽 v2.3.0' \
+            --notes-file /tmp/release-notes.md
 
       - name: Verify and report
         env:
