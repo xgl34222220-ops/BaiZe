@@ -1,0 +1,39 @@
+name: BaiZe v2.3.0 Build Status Sync
+
+on:
+  workflow_run:
+    workflows: ["BaiZe v2.3.0 Trusted Test Builder"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update build status issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/status.md <<EOF
+          # BaiZe v2.3.0 测试构建状态
+
+          - 运行编号：\`$RUN_ID\`
+          - 尝试次数：\`$RUN_ATTEMPT\`
+          - 构建结果：**$CONCLUSION**
+          - 源码提交：\`$HEAD_SHA\`
+          - Actions：$RUN_URL
+          - 测试标签：\`v2.3.0-qq-organizer-test\`
+
+          成功后预发行版会包含模块 ZIP、独立 APK 及 SHA-256 文件。
+          EOF
+          gh issue edit 91 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
