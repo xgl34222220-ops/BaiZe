@@ -35,7 +35,11 @@ jobs:
         with:
           name: BaiZe-v2.2.3-generator-diagnostic
           if-no-files-found: error
-          path: v223-generator.log
+          path: |
+            v223-generator.log
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+            v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
       - name: Fail when generator failed
         if: steps.generate.outcome == 'failure'
         run: exit 1
