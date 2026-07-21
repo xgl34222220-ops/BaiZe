@@ -87,6 +87,36 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+append_tree_files() {
+  at_root=$1
+  [ -d "$at_root" ] || return 0
+  find "$at_root" -xdev -mindepth 1 -maxdepth 12 \
+    \( -type d \( \
+      -iname cache -o -iname code_cache -o -iname no_backup -o \
+      -iname databases -o -iname shared_prefs -o -iname lib -o \
+      -iname tmp -o -iname temp -o -iname thumbnails -o -iname .thumbnails -o \
+      -iname stickers -o -iname emoji -o -iname crash -o -iname crashes \
+    \) -prune \) -o \( -type f -print0 \) 2>/dev/null >>"$INDEX_FILE"
+}
+
+build_fallback_index() {
+  mkdir -p "${INDEX_FILE%/*}"
+  : >"$INDEX_FILE"
+  for fb_user_root in "$MEDIA_ROOT"/[0-9]*; do
+    [ -d "$fb_user_root" ] || continue
+    find "$fb_user_root" -xdev -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null >>"$INDEX_FILE"
+    for fb_pkg in "$fb_user_root"/Android/data/* "$fb_user_root"/Android/media/*; do
+      append_tree_files "$fb_pkg"
+    done
+    for fb_public in "$fb_user_root"/*; do
+      [ -d "$fb_public" ] || continue
+      case "${fb_public##*/}" in Android|BaiZe归类|LOST.DIR) continue ;; esac
+      append_tree_files "$fb_public"
+    done
+  done
+  chmod 0600 "$INDEX_FILE" 2>/dev/null || true
+}
+
 b64() {
   if command -v base64 >/dev/null 2>&1; then
     base64 | tr -d '\r\n'
@@ -154,14 +184,16 @@ rm -f "$STOP_FILE" "$RESULT_FILE"
 write_running "正在由独立 Root Worker 建立全应用索引" 0 0 ""
 
 if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$INDEXER" refresh organizer-detached >>"$LOG_FILE" 2>&1; then
-  if [ -f "$STOP_FILE" ]; then
-    write_result "文件归类已停止" 0 1 0 0 0 0 0
-    exit 9
-  fi
-  write_result "建立文件索引失败" 0 0 0 0 0 1 0
-  exit 8
+  echo "共享索引失败，切换独立 Root 兜底索引" >>"$LOG_FILE"
 fi
-[ -s "$INDEX_FILE" ] || { write_result "没有需要归类的新文件" 1 0 0 0 0 0 0; exit 0; }
+if [ ! -s "$INDEX_FILE" ]; then
+  write_running "共享索引为空，正在执行独立 Root 兜底发现" 0 0 "$MEDIA_ROOT"
+  build_fallback_index
+fi
+if [ ! -s "$INDEX_FILE" ]; then
+  write_result "没有需要归类的新文件" 1 0 0 0 0 0 0
+  exit 0
+fi
 
 TOTAL=$(tr '\000' '\n' <"$INDEX_FILE" 2>/dev/null | wc -l | tr -d ' ')
 case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
