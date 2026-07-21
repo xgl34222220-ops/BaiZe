@@ -48,10 +48,6 @@ organizer.write_text(text)
 storage = root / "v2/module/storage-index.sh"
 source = storage.read_text()
 
-old_helper = '''discover_app_user_roots() {
-  package_root=$1
-  package_name=$2'''
-
 if "discover_app_user_roots" not in source and "add_root() {" in source:
     anchor = '''add_root() {
   group=$1 depth=$2 root=${3%/}
@@ -142,19 +138,27 @@ discover_app_user_roots(){
             line = line[:closing].rstrip()
             if not line.endswith(";"):
                 line += ";"
-            lines[index] = line + ' discover_app_user_roots "$au_user" "$au_volume" "$au_root"; }'
+            lines[index] = line + ' discover_app_user_roots "$user" "$volume" "$root"; }'
             break
     else:
         raise SystemExit("compact add_user_root anchor not found")
     source = "\n".join(lines) + "\n"
 
+# Repair the first v2.3.0 generator output, which accidentally referenced nonexistent au_* variables.
+source = source.replace(
+    'discover_app_user_roots "$au_user" "$au_volume" "$au_root"',
+    'discover_app_user_roots "$user" "$volume" "$root"',
+)
+
 if "discover_app_user_roots" not in source:
     raise SystemExit("application download discovery was not installed in storage index")
+if 'discover_app_user_roots "$au_user"' in source:
+    raise SystemExit("stale app discovery variables remain in storage index")
 storage.write_text(source)
 
 checks = {
     organizer: '"attachment", "attachments"',
-    storage: "discover_app_user_roots",
+    storage: 'discover_app_user_roots "$user" "$volume" "$root"',
 }
 for path, marker in checks.items():
     if marker not in path.read_text():
