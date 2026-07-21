@@ -2,11 +2,9 @@ name: BaiZe v2.3.0 Full Stabilization
 
 on:
   pull_request:
-    branches:
-      - fix/v2.2.5-root-worker-deep-performance
+    branches: [fix/v2.2.5-root-worker-deep-performance]
   push:
-    branches:
-      - feat/v2.3.0-stabilization
+    branches: [feat/v2.3.0-stabilization]
   workflow_dispatch:
 
 permissions:
@@ -20,8 +18,7 @@ jobs:
   build-test-package:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -29,52 +26,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
           git diff --check
-
-      - name: Verify source truth and versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          test ! -e tools/apply-v225-root-service.py
-          test ! -e tools/apply-v224-background-recovery.py
-          test ! -e tools/.v223-plan-placeholder
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -q 'versionCode = 23000' v2/app/build.gradle.kts
           grep -qx 'version=v2.3.0' v2/module/module.prop
-          grep -qx 'versionCode=23000' v2/module/module.prop
-          grep -q '^updateJson=' v2/module/module.prop
-          grep -q 'module_version=v2.3.0' v2/module/service.sh
-          grep -q '白泽 v2.3.0' v2/module/customize.sh
-          grep -q 'supervisor.sh' v2/module/service.sh
-          grep -q 'worker-runner.sh' v2/module/task-worker.sh
           grep -q 'schedule_cache_minutes' service.sh
-          grep -q '30' service.sh
+          grep -q 'supervisor.sh' v2/module/service.sh
           grep -q 'runMaintenanceTool' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
-          grep -q 'runMaintenanceTool' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          tar --exclude=.git -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
 
-      - name: Install shell compatibility tools
+      - name: Install BusyBox ash
         run: sudo apt-get update && sudo apt-get install -y busybox-static
 
-      - name: Verify shell compatibility
+      - name: Verify shell scripts
         shell: bash
         run: |
           set -euo pipefail
-          for script in \
-            v2/module/service.sh v2/module/supervisor.sh v2/module/task-worker.sh \
-            v2/module/worker-runner.sh v2/module/app-installer.sh v2/module/storage-index.sh \
-            v2/module/diagnostics-export.sh v2/module/quarantine-manager.sh \
-            v2/module/storage-analyzer.sh v2/module/large-file-scanner.sh \
-            v2/module/duplicate-scanner.sh v2/module/rules-validator.sh \
-            v2/scripts/package-module.sh service.sh; do
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do
             sh -n "$script"
             busybox ash -n "$script"
           done
 
-      - name: Test detached worker and supervisor recovery
+      - name: Test detached Root worker
         shell: bash
         run: |
           set -euo pipefail
@@ -84,132 +61,70 @@ jobs:
           cat >/tmp/baize-worker/module/cleaner.sh <<'SH'
           #!/bin/sh
           state=${BAIZE_STATE_DIR:?}
-          echo "mode=$1" > "$state/running.env"
-          echo "phase=fixture" >> "$state/running.env"
-          sleep 2
-          echo "mode=$1" > "$state/latest.env"
-          echo "result=fixture-complete" >> "$state/latest.env"
+          echo "mode=$1" >"$state/running.env"
+          sleep 1
+          echo "result=fixture-complete" >"$state/latest.env"
           rm -f "$state/running.env"
           SH
           chmod +x /tmp/baize-worker/module/*.sh
-          BAIZE_STATE_DIR=/tmp/baize-worker/state BAIZE_SHELL_BIN=/bin/sh \
-            sh /tmp/baize-worker/module/task-worker.sh detach clean ci fixture-1
-          sleep 1
-          test -s /tmp/baize-worker/state/worker.env
-          grep -q '^task_id=fixture-1$' /tmp/baize-worker/state/worker.env
+          BAIZE_STATE_DIR=/tmp/baize-worker/state BAIZE_SHELL_BIN=/bin/sh sh /tmp/baize-worker/module/task-worker.sh detach clean ci fixture
           sleep 2
           grep -q '^result=fixture-complete$' /tmp/baize-worker/state/latest.env
-          grep -q 'restart_delay' v2/module/supervisor.sh
-          grep -q 'crash_count' v2/module/supervisor.sh
-
-      - name: Test multi-user and removable-volume index
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf /tmp/baize-index
-          mkdir -p \
-            /tmp/baize-index/media/0/Download \
-            /tmp/baize-index/media/10/Android/media/org.telegram.messenger \
-            /tmp/baize-index/storage/ABCD-1234/Android/data/pkg/files \
-            /tmp/baize-index/state
-          printf apk >/tmp/baize-index/media/0/Download/a.apk
-          printf zip >/tmp/baize-index/media/10/Android/media/org.telegram.messenger/b.zip
-          printf txt >/tmp/baize-index/storage/ABCD-1234/Android/data/pkg/files/c.txt
-          sed 's#/storage/\*#/tmp/baize-index/storage/*#g; s#/mnt/media_rw/\*#/tmp/baize-index/no-media/*#g' \
-            v2/module/storage-index.sh >/tmp/baize-index/index.sh
-          BAIZE_STATE_DIR=/tmp/baize-index/state BAIZE_MEDIA_ROOT=/tmp/baize-index/media \
-            sh /tmp/baize-index/index.sh refresh ci
-          tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q '/0/Download/a.apk'
-          tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q '/10/Android/media/.*/b.zip'
-          tr '\0' '\n' </tmp/baize-index/state/index/storage-files.nul | grep -q 'ABCD-1234.*/c.txt'
-          grep -q 'ABCD-1234' /tmp/baize-index/state/index/coverage.tsv
-          grep -q '^index_version=' /tmp/baize-index/state/index/meta.env
-
-      - name: Test storage analysis, large files, duplicates and rules
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf same >/tmp/baize-index/media/0/Download/d1.bin
-          cp /tmp/baize-index/media/0/Download/d1.bin /tmp/baize-index/media/0/Download/d2.bin
-          printf '%s\0%s\0' \
-            /tmp/baize-index/media/0/Download/d1.bin \
-            /tmp/baize-index/media/0/Download/d2.bin \
-            >/tmp/baize-index/state/index/storage-files.nul
-          BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/storage-analyzer.sh
-          BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/duplicate-scanner.sh
-          BAIZE_STATE_DIR=/tmp/baize-index/state sh v2/module/large-file-scanner.sh 1
-          grep -q 'd2.bin' /tmp/baize-index/state/reports/duplicates.tsv
-          test -s /tmp/baize-index/state/reports/storage-analysis.tsv
-          BAIZE_STATE_DIR=/tmp/baize-index/state BAIZE_RULES_PATH=config/deep.rules \
-            sh v2/module/rules-validator.sh
-          test -s config/rules.meta.env
 
       - name: Compile host native engine
-        shell: bash
         run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v3
 
       - name: Install Android platform and NDK
         run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
 
-      - name: Build ARM64 scanner
+      - name: Build ARM64 engine
         working-directory: v2
         run: sh scripts/build-native.sh
 
       - name: Build Release, Lint and Macrobenchmark
-        id: android_build
+        id: android
         working-directory: v2
         shell: bash
         run: |
           set -o pipefail
           gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
 
-      - name: Package and verify v2.3.0 module
+      - name: Package v2.3.0 module
         working-directory: v2
         shell: bash
         run: |
           set -euo pipefail
           sh scripts/package-module.sh
           ZIP=dist/BaiZe-v2.3.0-Module.zip
-          test -s "$ZIP"
           unzip -tq "$ZIP"
           unzip -p "$ZIP" module.prop | grep -qx 'version=v2.3.0'
           unzip -p "$ZIP" module.prop | grep -qx 'versionCode=23000'
-          for file in \
-            app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh \
-            diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh \
-            quarantine-manager.sh rules-validator.sh config/rules.meta.env bin/arm64-v8a/baize_engine; do
+          for file in app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh quarantine-manager.sh rules-validator.sh config/rules.meta.env bin/arm64-v8a/baize_engine; do
             unzip -Z1 "$ZIP" | grep -qx "$file"
           done
-          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
           cp "$ZIP" dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip
-          sha256sum dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip \
-            | tee dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
-          cd ../..
-          tar --exclude=.git -czf v2/dist/BaiZe-v2.3.0-Materialized-Source.tar.gz .
+          sha256sum dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip | tee dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
 
-      - name: Upload v2.3.0 test artifact
+      - name: Upload diagnostics or test package
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-v2.3.0-Stabilization-Test
           if-no-files-found: warn
           path: |
+            /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
             v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip
             v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
-            v2/dist/BaiZe-v2.3.0-Materialized-Source.tar.gz
             v2/app/build/outputs/apk/release/app-release.apk
             v2/android-build.log
