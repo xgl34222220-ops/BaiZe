@@ -1,8 +1,9 @@
 BaiZe v2.3.0 detached Root organizer lifecycle regression build
-triggered: 2026-07-21T18:02:00Z
+triggered: 2026-07-21T18:08:00Z
 publish: v2.3.0-detached-root-organizer-test
 mode: independent-root-worker
 materialization: preserve-detached-workers
+diagnostic: exact-filesystem-report
 status-issue: 91
 requirements:
 - app only submits task
