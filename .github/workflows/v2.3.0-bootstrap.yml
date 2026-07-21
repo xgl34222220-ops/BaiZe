@@ -1,0 +1,48 @@
+name: BaiZe v2.3.0 Source Materialization
+
+on:
+  push:
+    branches:
+      - feat/v2.3.0-stabilization
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v230-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/v2.3.0-stabilization
+
+      - name: Decode and apply v2.3.0 source materialization
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+          python3 -m py_compile /tmp/bootstrap-v230.py
+          python3 /tmp/bootstrap-v230.py
+          rm -f tools/bootstrap-v230.py.gz.b64
+          git diff --check
+
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: materialize v2.3.0 stabilization source"
+          git push origin HEAD:feat/v2.3.0-stabilization
