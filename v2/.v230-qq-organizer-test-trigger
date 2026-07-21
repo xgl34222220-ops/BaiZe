@@ -1,8 +1,8 @@
 BaiZe v2.3.0 QQ organizer and scheduled Root binding test build
-triggered: 2026-07-21T17:25:00Z
+triggered: 2026-07-21T17:35:00Z
 publish: v2.3.0-qq-organizer-test
 mode: rolling-prerelease
 status-issue: 91
 device-test-builder: true
-packaged-index-variable-fix: true
+shell-safe-storage-index: true
 obsolete-builder-retired: true
