@@ -1,10 +1,10 @@
-BaiZe v2.3.0 detached Root organizer lifecycle regression build
-triggered: 2026-07-21T18:16:00Z
+BaiZe v2.3.0 detached Root organizer final lifecycle regression build
+triggered: 2026-07-21T18:25:00Z
 publish: v2.3.0-detached-root-organizer-test
 mode: independent-root-worker
 materialization: preserve-detached-workers
-diagnostic: filesystem-and-android-compile
-status-issue: 91
+kotlin-fix: escaped-progress-newline
+final-builder-status: issue-94
 requirements:
 - app only submits task
 - organizer continues after background or process death
