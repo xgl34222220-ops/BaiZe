@@ -10,6 +10,7 @@ RUNNING_FILE="$STATE_DIR/running.env"
 WORKER_FILE="$STATE_DIR/worker.env"
 LAUNCH_LOG="$STATE_DIR/logs/worker-$TASK_ID.log"
 CLEANER="$MODDIR/cleaner.sh"
+LOCK_DIR="$STATE_DIR/run.lock"
 
 case "$MODE" in
   clean|scan|apk-scan|apk-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|cache-scan|cache-clean) ;;
@@ -17,6 +18,15 @@ case "$MODE" in
 esac
 
 [ -f "$CLEANER" ] || { echo "清理引擎缺失：$CLEANER" >&2; exit 5; }
+if [ -d "$LOCK_DIR" ]; then
+  OLD_PID=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+  case "$OLD_PID" in ''|*[!0-9]*) OLD_PID=0 ;; esac
+  if [ "$OLD_PID" -gt 1 ] && kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "已有扫描或清理任务正在运行" >&2
+    exit 3
+  fi
+fi
+
 mkdir -p "$STATE_DIR/logs"
 rm -f "$STATE_DIR/stop"
 STARTED=$(date +%s)
@@ -33,20 +43,16 @@ TMP="$RUNNING_FILE.tmp.$$"
 } >"$TMP"
 mv -f "$TMP" "$RUNNING_FILE"
 
-launch() {
-  if command -v setsid >/dev/null 2>&1; then
-    setsid /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
-  elif command -v nohup >/dev/null 2>&1; then
-    nohup /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
-  else
-    /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
-  fi
-  echo $!
-}
-
-PID=$(launch)
+if command -v setsid >/dev/null 2>&1; then
+  setsid /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+elif command -v nohup >/dev/null 2>&1; then
+  nohup /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+else
+  /system/bin/sh "$CLEANER" "$MODE" "$TRIGGER" </dev/null >>"$LAUNCH_LOG" 2>&1 &
+fi
+PID=$!
 case "$PID" in ''|*[!0-9]*) rm -f "$RUNNING_FILE"; echo "无法启动独立 Root Worker" >&2; exit 6 ;; esac
-sleep 0.15
+sleep 0.2
 if ! kill -0 "$PID" 2>/dev/null; then
   rm -f "$RUNNING_FILE"
   echo "独立 Root Worker 启动后立即退出" >&2
