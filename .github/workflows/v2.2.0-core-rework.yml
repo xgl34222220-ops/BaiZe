@@ -1,9 +1,9 @@
-name: BaiZe v2.2.2 Runtime Ledger Test
+name: BaiZe v2.2.3 Records Review Test
 
 on:
   push:
     branches:
-      - fix/v2.2.2-runtime-ledger
+      - fix/v2.2.3-records-icons-protected-review
   pull_request:
     branches:
       - main
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: baize-v222-${{ github.ref }}
+  group: baize-v223-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,30 +25,39 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Apply runtime logging fixes
+      - name: Apply v2.2.3 source changes
         shell: bash
         run: |
           set -euo pipefail
           python3 tools/apply-v221-hotfix.py
-          python3 tools/apply-v222-runtime-ledger.py
-          sed -i 's/^version=v2.2.2-test$/version=v2.2.2/' v2/module/module.prop
+          python3 tools/apply-v223-ui-records.py
+          python3 tools/apply-v223-dashboard-records.py
+          python3 tools/apply-v223-version.py
 
       - name: Verify source invariants
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile tools/apply-v221-hotfix.py tools/apply-v222-runtime-ledger.py
+          python3 -m py_compile \
+            tools/apply-v221-hotfix.py \
+            tools/apply-v223-ui-records.py \
+            tools/apply-v223-dashboard-records.py \
+            tools/apply-v223-version.py
           git diff --check
-          grep -q 'object RuntimeTaskLedger' v2/app/src/main/java/io/github/xgl34222220/baize/RuntimeTaskLedger.kt
-          grep -q 'persistNativeTaskWithRetry' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
-          grep -q 'RuntimeTaskLedger.merge' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
-          grep -q 'writeNativeScanTrace' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
-          grep -q 'Root 历史与 App 本地账本自动合并' v2/app/src/main/java/io/github/xgl34222220/baize/ui/logs/miuix/LogsScreenMiuix.kt
-          grep -q 'versionName = "2.2.2"' v2/app/build.gradle.kts
-          grep -q 'versionCode = 22602' v2/app/build.gradle.kts
-          grep -qx 'version=v2.2.2' v2/module/module.prop
-          grep -qx 'versionCode=22602' v2/module/module.prop
-          ! grep -q 'applyV221SourceHotfix' v2/app/build.gradle.kts
+          grep -q 'versionName = "2.2.3"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 22603' v2/app/build.gradle.kts
+          grep -qx 'version=v2.2.3' v2/module/module.prop
+          grep -qx 'versionCode=22603' v2/module/module.prop
+          grep -q 'QUERY_ALL_PACKAGES' v2/app/src/main/AndroidManifest.xml
+          grep -q 'ProtectedReviewActivity' v2/app/src/main/AndroidManifest.xml
+          grep -q 'PersistentAppIconStore' v2/app/src/main/java/io/github/xgl34222220/baize/ui/common/AppPackageIcon.kt
+          grep -q 'context.filesDir' v2/app/src/main/java/io/github/xgl34222220/baize/ui/common/AppPackageIcon.kt
+          grep -q 'AppPackageIconPreloader' v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
+          grep -q '异常与受保护项目' v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
+          grep -q 'lastTaskTime' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q 'last_protected_items' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          ! grep -q 'Logs("日志"' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          test -s v2/app/src/main/java/io/github/xgl34222220/baize/ProtectedReviewActivity.kt
           sh -n v2/scripts/package-module.sh
           sh -n v2/module/storage-index.sh
           sh -n v2/module/one-pass-scan.sh
@@ -110,7 +119,7 @@ jobs:
         if: failure() && steps.android_build.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.2.2-android-build-failure
+          name: BaiZe-v2.2.3-android-build-failure
           if-no-files-found: warn
           path: v2/android-build.log
 
@@ -122,10 +131,10 @@ jobs:
           test -s "$APK"
           unzip -l "$APK" | grep -Eq 'baseline.prof|baseline.profm|dexopt/baseline'
           for dex in $(unzip -Z1 "$APK" | grep '^classes.*dex$'); do unzip -p "$APK" "$dex"; done \
-            | strings > /tmp/baize-v222-strings.txt
-          grep -q 'baize_runtime_task_ledger_v1' /tmp/baize-v222-strings.txt
-          grep -q 'native-scan' /tmp/baize-v222-strings.txt
-          grep -q 'app-native-scan-' /tmp/baize-v222-strings.txt
+            | strings > /tmp/baize-v223-strings.txt
+          grep -q 'baize-app-icons' /tmp/baize-v223-strings.txt
+          grep -q '受保护项目复查' /tmp/baize-v223-strings.txt
+          grep -q 'last_protected_items' /tmp/baize-v223-strings.txt
 
       - name: Package module
         working-directory: v2
@@ -135,25 +144,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP=v2/dist/BaiZe-v2.2.2-Module.zip
+          ZIP=v2/dist/BaiZe-v2.2.3-Module.zip
           test -s "$ZIP"
           unzip -tq "$ZIP"
-          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.2.2'
-          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22602'
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.2.3'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=22603'
           unzip -l "$ZIP" | grep -q 'app/baize.apk'
           unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
           ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
-          cp "$ZIP" v2/dist/BaiZe-v2.2.2-Runtime-Logs-Test-Module.zip
-          sha256sum v2/dist/BaiZe-v2.2.2-Runtime-Logs-Test-Module.zip \
-            | tee v2/dist/BaiZe-v2.2.2-Runtime-Logs-Test-Module.zip.sha256
+          cp "$ZIP" v2/dist/BaiZe-v2.2.3-Records-Protected-Review-Test-Module.zip
+          sha256sum v2/dist/BaiZe-v2.2.3-Records-Protected-Review-Test-Module.zip \
+            | tee v2/dist/BaiZe-v2.2.3-Records-Protected-Review-Test-Module.zip.sha256
 
       - name: Upload test artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.2.2-Runtime-Logs-Test
+          name: BaiZe-v2.2.3-Records-Protected-Review-Test
           if-no-files-found: error
           path: |
-            v2/dist/BaiZe-v2.2.2-Runtime-Logs-Test-Module.zip
-            v2/dist/BaiZe-v2.2.2-Runtime-Logs-Test-Module.zip.sha256
+            v2/dist/BaiZe-v2.2.3-Records-Protected-Review-Test-Module.zip
+            v2/dist/BaiZe-v2.2.3-Records-Protected-Review-Test-Module.zip.sha256
             v2/app/build/outputs/apk/release/app-release.apk
             v2/android-build.log
