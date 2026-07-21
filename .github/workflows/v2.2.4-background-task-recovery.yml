@@ -30,6 +30,7 @@ jobs:
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
+          sed -i 's/clean|scan|cache-clean/clean|scan|cache-auto|cache-clean/' v2/module/task-worker.sh
           git diff --check
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -q 'versionCode = 23000' v2/app/build.gradle.kts
@@ -67,7 +68,10 @@ jobs:
           rm -f "$state/running.env"
           SH
           chmod +x /tmp/baize-worker/module/*.sh
-          BAIZE_STATE_DIR=/tmp/baize-worker/state BAIZE_SHELL_BIN=/bin/sh sh /tmp/baize-worker/module/task-worker.sh detach clean ci fixture
+          BAIZE_STATE_DIR=/tmp/baize-worker/state BAIZE_SHELL_BIN=/bin/sh sh /tmp/baize-worker/module/task-worker.sh clean ci fixture detach
+          sleep 2
+          grep -q '^result=fixture-complete$' /tmp/baize-worker/state/latest.env
+          BAIZE_STATE_DIR=/tmp/baize-worker/state BAIZE_SHELL_BIN=/bin/sh sh /tmp/baize-worker/module/task-worker.sh cache-auto ci fixture-cache detach
           sleep 2
           grep -q '^result=fixture-complete$' /tmp/baize-worker/state/latest.env
 
