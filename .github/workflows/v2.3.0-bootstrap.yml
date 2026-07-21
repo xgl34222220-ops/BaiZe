@@ -28,6 +28,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/prepare-v230-materialization.py
           base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
