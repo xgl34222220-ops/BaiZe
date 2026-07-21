@@ -30,13 +30,18 @@ jobs:
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
-          sed -i 's/clean|scan|cache-clean/clean|scan|cache-auto|cache-clean/' v2/module/task-worker.sh
+          base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >/tmp/apply-v230-native-path-safety.py
+          python3 -m py_compile /tmp/apply-v230-native-path-safety.py
+          python3 /tmp/apply-v230-native-path-safety.py
+          rm -f tools/apply-v230-native-path-safety.py.gz.b64
           git diff --check
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -q 'versionCode = 23000' v2/app/build.gradle.kts
           grep -qx 'version=v2.3.0' v2/module/module.prop
           grep -q 'schedule_cache_minutes' service.sh
           grep -q 'supervisor.sh' v2/module/service.sh
+          grep -q 'cache-auto' v2/module/task-worker.sh
+          grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
           grep -q 'runMaintenanceTool' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
           tar --exclude=.git -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
 
