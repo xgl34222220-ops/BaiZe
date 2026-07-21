@@ -33,6 +33,32 @@ jobs:
             python3 tools/apply-v225-native-budget.py
             python3 tools/apply-v225-native-wrapper.py
           } 2>&1 | tee v225-generator.log
+      - name: Trace invariant checks
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uxo pipefail
+          {
+            git diff --check
+            ACTIVITY=v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+            SERVICE=v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+            ENGINE=v2/native/baize_engine_42_4.c
+            grep -q 'json.optBoolean("accepted")' "$ACTIVITY"; echo accepted=$?
+            grep -q '最慢目录' "$ACTIVITY"; echo slow_ui=$?
+            grep -q 'startDetachedModuleTask' "$SERVICE"; echo detached_service=$?
+            grep -q 'worker_launch_timeout' "$SERVICE"; echo launch_timeout=$?
+            grep -q 'run_with_watchdog' cleaner.sh; echo watchdog=$?
+            grep -q 'deep_slowest_path' cleaner.sh; echo slow_path=$?
+            grep -q 'stat_tree_budgeted' "$ENGINE"; echo native_budget=$?
+            grep -q -- '--dir-budget-ms' v2/module/native-scan.sh; echo native_arg=$?
+            grep -q '^app_task_max_minutes=20$' config/default.conf; echo app_cap=$?
+            grep -q 'versionName = "2.2.5"' v2/app/build.gradle.kts; echo version=$?
+            grep -qx 'version=v2.2.5' v2/module/module.prop; echo module_version=$?
+            sh -n v2/module/task-worker.sh; echo worker_syntax=$?
+            sh -n v2/module/native-scan.sh; echo native_syntax=$?
+            sh -n v2/scripts/package-module.sh; echo package_syntax=$?
+            sh -n cleaner.sh; echo cleaner_syntax=$?
+          } 2>&1 | tee v225-invariants.log
       - name: Upload diagnostic
         uses: actions/upload-artifact@v4
         with:
@@ -40,6 +66,7 @@ jobs:
           if-no-files-found: warn
           path: |
             v225-generator.log
+            v225-invariants.log
             cleaner.sh
             config/default.conf
             v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
