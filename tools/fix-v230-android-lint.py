@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 main = Path("v2/app/src/main")
 
@@ -61,15 +62,24 @@ text = text.replace("grep -q '^version=v2.2.5$'", "grep -q '^version=v2.3.0$'")
 text = text.replace("grep -q '^versionCode=22605$'", "grep -q '^versionCode=23000$'")
 package_script.write_text(text)
 
+thread_fix = Path("tools/apply-v230-file-organizer-thread-fix.py")
+runpy.run_path(thread_fix, run_name="__main__")
+thread_fix.unlink(missing_ok=True)
+file_organizer_worker = main / "java/io/github/xgl34222220/baize/FileOrganizerWorker.kt"
+
 checks = {
     notifier: '@SuppressLint("MissingPermission")',
     manifest: 'tools:ignore="QueryAllPackagesPermission"',
     main / "res/values/themes.xml": 'tools:targetApi="29"',
     main / "res/values-night/themes.xml": 'tools:targetApi="27"',
     package_script: "grep -q '^version=v2.3.0$'",
+    file_organizer_worker: "withContext(Dispatchers.Main.immediate)",
 }
 for path, marker in checks.items():
     if marker not in path.read_text():
         raise SystemExit(f"v2.3.0 correction missing in {path}")
 
-print("Android lint and v2.3.0 packaging fixes applied")
+if "unbindOnMainThread" not in file_organizer_worker.read_text():
+    raise SystemExit("file organizer Root unbind is not main-thread safe")
+
+print("Android lint, packaging and file organizer main-thread fixes applied")
