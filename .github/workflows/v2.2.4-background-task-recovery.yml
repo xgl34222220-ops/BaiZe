@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Materialize v2.3.0 source
+      - name: Materialize base v2.3.0 source
         shell: bash
         run: |
           set -euo pipefail
@@ -30,20 +30,45 @@ jobs:
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
-          base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >tools/apply-v230-native-path-safety.py
-          python3 -m py_compile tools/apply-v230-native-path-safety.py
-          python3 tools/apply-v230-native-path-safety.py
-          rm -f tools/apply-v230-native-path-safety.py tools/apply-v230-native-path-safety.py.gz.b64
           git diff --check
+
+      - name: Apply native path safety
+        id: native_patch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          set -x
+          {
+            pwd
+            ls -la tools
+            base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >/tmp/apply-v230-native-path-safety.py
+            python3 -m py_compile /tmp/apply-v230-native-path-safety.py
+            python3 /tmp/apply-v230-native-path-safety.py
+            rm -f tools/apply-v230-native-path-safety.py.gz.b64
+            grep -q 'cache-auto' v2/module/task-worker.sh
+            grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
+          } 2>&1 | tee /tmp/native-path-safety.log
+
+      - name: Snapshot materialized source
+        if: always()
+        shell: bash
+        run: tar --exclude=.git -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
+
+      - name: Stop after native patch failure
+        if: steps.native_patch.outcome == 'failure'
+        run: exit 1
+
+      - name: Verify v2.3.0 identity
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
           grep -q 'versionCode = 23000' v2/app/build.gradle.kts
           grep -qx 'version=v2.3.0' v2/module/module.prop
           grep -q 'schedule_cache_minutes' service.sh
           grep -q 'supervisor.sh' v2/module/service.sh
-          grep -q 'cache-auto' v2/module/task-worker.sh
-          grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
           grep -q 'runMaintenanceTool' v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl
-          tar --exclude=.git -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
 
       - name: Install BusyBox ash
         run: sudo apt-get update && sudo apt-get install -y busybox-static
@@ -132,6 +157,7 @@ jobs:
           name: BaiZe-v2.3.0-Stabilization-Test
           if-no-files-found: warn
           path: |
+            /tmp/native-path-safety.log
             /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
             v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip
             v2/dist/BaiZe-v2.3.0-Stabilization-Test-Module.zip.sha256
