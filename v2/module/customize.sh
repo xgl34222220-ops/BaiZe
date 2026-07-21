@@ -15,7 +15,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 安装白泽 v2.1.0 Alpha 4 有限并发预览版"
+ui_print "- 安装白泽 v2.3.0 全自动稳定化版"
 ui_print "- 原生 App 已接管全部清理与定时设置，旧 WebUI 将被彻底移除"
 ui_print "- C 原生高速扫描：应用缓存、完整深度规则与卸载残留"
 ui_print "- 缓存、安装包、深度清理与卸载残留均只消费扫描快照，不重复扫描"
@@ -38,6 +38,8 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
+[ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+[ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
 touch "$STATE_DIR/stop" 2>/dev/null
@@ -84,6 +86,7 @@ chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/cust
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
+chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
