@@ -58,4 +58,9 @@ value = version_generator.read_text().replace(
     "build.write_text(text.rstrip() + \"\\n\")"
 )
 version_generator.write_text(value)
+
+v224_prep = root / "tools/.v224-generator-prep"
+if v224_prep.is_file():
+    exec(compile(v224_prep.read_text(), str(v224_prep), "exec"), {"__file__": str(v224_prep)})
+
 print("v2.2.3 generator anchors, deletions and formatting prepared")
