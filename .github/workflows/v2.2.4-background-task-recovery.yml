@@ -27,6 +27,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/prepare-v230-materialization.py
           base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           base64 -d tools/finalize-v230.py.gz.b64 | gzip -d >/tmp/finalize-v230.py
@@ -84,6 +85,8 @@ jobs:
           grep -qx 'versionCode=23000' v2/module/module.prop
           grep -q 'cacheMinutes: Int = 60' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
           grep -q 'listOf(30, 60, 360, 1_440)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
+          grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
           grep -q 'run_due_group.*\$6' service.sh
           grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
           grep -q '@SuppressLint("MissingPermission")' v2/app/src/main/java/io/github/xgl34222220/baize/NativeNotifier.kt
