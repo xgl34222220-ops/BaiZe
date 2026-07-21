@@ -1,6 +1,7 @@
 id=baize_v2
 name=白泽 v2
-version=v2.2.0
-versionCode=22600
+version=v2.3.0
+versionCode=23000
 author=惜故里丶
-description=白泽 v2.2.1 测试构建：修复安全扫描日志与记录页真实应用图标。
+description=白泽 v2.3.0 全自动稳定化版：分钟级定时、Root Worker、自恢复调度、多用户与多存储适配。
+updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json
