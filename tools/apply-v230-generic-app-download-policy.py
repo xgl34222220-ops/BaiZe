@@ -136,4 +136,19 @@ allowed_app_source() {
 replace_block("allowed_app_source() {", "is_public_user_path() {", policy, "generic app policy")
 
 worker.write_text(text)
-print("generic all-app user download policy applied")
+
+customize = root / "v2/module/customize.sh"
+customize_text = customize.read_text()
+install_start = customize_text.find('ui_print "')
+install_end = customize_text.find('\n\nmkdir -p "$STATE_DIR"', install_start)
+if install_start < 0 or install_end < 0:
+    raise SystemExit("module install description anchor missing")
+install_copy = '''ui_print "- 正在安装白泽 v2.3.0"
+ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
+ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
+ui_print "- 可整理应用下载、接收、附件与导出文件"
+ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"'''
+customize_text = customize_text[:install_start] + install_copy + customize_text[install_end:]
+customize.write_text(customize_text)
+
+print("generic all-app user download policy and concise install copy applied")
