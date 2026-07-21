@@ -1,14 +1,13 @@
-BaiZe v2.3.0 safe Root organizer regression build
-triggered: 2026-07-21T22:58:00Z
-publish: v2.3.0-safe-root-organizer-test
+BaiZe v2.3.0 all-app user download safe regression build
+triggered: 2026-07-21T23:03:00Z
+publish: v2.3.0-all-app-download-safe-test
 mode: independent-root-worker
-safety-policy: deny-app-private-by-default
-hostile-index-test: game-assets-must-stay
-fallback-test: known-user-roots-only
-final-builder-status: issue-94
+path-policy: all-packages-high-confidence-user-directories
+game-policy: package-category-and-resource-path-deny
+all-app-builder-status: issue-96
 requirements:
 - app only submits task
 - organizer continues after background or process death
-- game textures skins icons and resource packs never move
-- unknown Android data and media packages never move
-- QQ browser mail and public user files still move
+- unknown third-party Download received attachments export directories move
+- game textures resources and game Download patch files stay
+- cache database and temporary directories stay
