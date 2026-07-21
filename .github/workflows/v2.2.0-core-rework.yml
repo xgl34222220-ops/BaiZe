@@ -30,7 +30,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/.v223-plan-placeholder
-          python3 tools/apply-v221-hotfix.py
           python3 tools/apply-v223-ui-records.py
           python3 tools/apply-v223-dashboard-records.py
           python3 tools/apply-v223-version.py
@@ -41,7 +40,6 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             tools/.v223-plan-placeholder \
-            tools/apply-v221-hotfix.py \
             tools/apply-v223-ui-records.py \
             tools/apply-v223-dashboard-records.py \
             tools/apply-v223-version.py
@@ -59,6 +57,7 @@ jobs:
           grep -q 'lastTaskTime' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
           grep -q 'last_protected_items' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
           ! grep -q 'Logs("日志"' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          ! grep -q 'applyV221SourceHotfix' v2/app/build.gradle.kts
           test -s v2/app/src/main/java/io/github/xgl34222220/baize/ProtectedReviewActivity.kt
           sh -n v2/scripts/package-module.sh
           sh -n v2/module/storage-index.sh
