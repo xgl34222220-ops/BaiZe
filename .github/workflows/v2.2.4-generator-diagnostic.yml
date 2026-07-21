@@ -3,6 +3,8 @@ name: BaiZe v2.2.4 Generator Diagnostic
 on:
   push:
     branches: [fix/v2.2.4-background-task-recovery]
+  pull_request:
+    branches: [fix/v2.2.3-records-icons-protected-review]
   workflow_dispatch:
 
 permissions:
