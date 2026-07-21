@@ -1,6 +1,6 @@
 name: BaiZe v2.3.0 Source Materialization
 
-# Synchronize PR so the trusted main workflow can materialize the branch.
+# Synchronize the generated v2.3.0 source back to the stabilization branch.
 on:
   push:
     branches:
@@ -28,11 +28,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 tools/prepare-v230-materialization.py
-          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
-          python3 -m py_compile /tmp/bootstrap-v230.py
-          python3 /tmp/bootstrap-v230.py
-          rm -f tools/bootstrap-v230.py.gz.b64
+          WORKER=v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          ENGINE=v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          if grep -q 'withContext(Dispatchers.Main.immediate)' "$WORKER" \
+             && grep -q '"attachment", "attachments"' "$ENGINE" \
+             && grep -q 'discover_app_user_roots' v2/module/storage-index.sh; then
+            echo "v2.3.0 source is already materialized"
+          else
+            python3 tools/prepare-v230-materialization.py
+            base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
+            python3 -m py_compile /tmp/bootstrap-v230.py
+            python3 /tmp/bootstrap-v230.py
+            python3 tools/apply-v230-file-organizer-thread-fix.py
+            python3 tools/apply-v230-organizer-download-coverage.py
+          fi
+          grep -q 'withContext(Dispatchers.Main.immediate)' "$WORKER"
+          grep -q 'ROOT_BIND_ATTEMPTS = 3' "$WORKER"
+          grep -q '"attachment", "attachments"' "$ENGINE"
+          grep -q 'discover_app_user_roots' v2/module/storage-index.sh
           git diff --check
 
       - name: Commit materialized source
@@ -46,5 +59,5 @@ jobs:
             echo "No source changes to commit"
             exit 0
           fi
-          git commit -m "feat: materialize v2.3.0 stabilization source"
+          git commit -m "feat: materialize v2.3.0 organizer and Root fixes"
           git push origin HEAD:feat/v2.3.0-stabilization
