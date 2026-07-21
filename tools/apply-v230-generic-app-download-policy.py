@@ -75,7 +75,15 @@ build_fallback_index() {
 }'''
 replace_block("append_known_app_roots() {", "b64() {", fallback, "fallback discovery")
 
-policy = r'''has_user_file_segment() {
+policy = r'''is_private_runtime_path() {
+  normalized=$(normalized_path "$1")
+  case "$normalized" in
+    */cache/*|*/code_cache/*|*/no_backup/*|*/databases/*|*/database/*|*/shared_prefs/*|*/lib/*|*/tmp/*|*/temp/*|*/thumbnails/*|*/_thumbnails/*|*/crash/*|*/crashes/*|*/logs/*|*/log/*) return 0 ;;
+  esac
+  return 1
+}
+
+has_user_file_segment() {
   normalized=$(normalized_path "$1")
   case "$normalized" in
     */download/*|*/downloads/*|*/downloaded/*|*/下载/*|*/received/*|*/receive/*|*/recv/*|*/file_recv/*|*/qqfile_recv/*|*/qqmy_file_recv/*|*/qqfile_receive/*|*/timfile_recv/*|*/tim_file_recv/*|*/attachment/*|*/attachments/*|*/export/*|*/exports/*|*/saved/*|*/saved_files/*|*/document/*|*/documents/*|*/transfer/*|*/transfers/*|*/offline/*|*/telegram_documents/*|*/telegram_images/*|*/telegram_video/*|*/telegram_audio/*|*/telegram_files/*|*/nagram_documents/*|*/nagram_images/*|*/nagram_video/*|*/nagram_audio/*|*/nagramx_documents/*|*/nagramx_images/*|*/nagramx_video/*|*/nagramx_audio/*) return 0 ;;
@@ -107,6 +115,7 @@ is_game_package() {
 
 allowed_app_source() {
   package=$1 tail=$2 root_kind=$3
+  is_private_runtime_path "$tail" && return 1
   is_suspicious_app_resource "$tail" && return 1
   is_game_package "$package" && return 1
 
