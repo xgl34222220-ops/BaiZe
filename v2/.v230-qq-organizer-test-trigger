@@ -1,9 +1,9 @@
 BaiZe v2.3.0 QQ organizer and scheduled Root binding test build
-triggered: 2026-07-21T16:55:00Z
+triggered: 2026-07-21T17:00:00Z
 publish: v2.3.0-qq-organizer-test
 mode: rolling-prerelease
 report-run-id: builder-self-report
 materialization-diagnostic: true
 status-issue: 91
 persist-source-before-build: true
-coverage-diagnostic: exact
+coverage-diagnostic: issue-92
