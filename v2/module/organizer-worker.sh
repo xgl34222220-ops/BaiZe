@@ -95,8 +95,46 @@ append_tree_files() {
       -iname cache -o -iname code_cache -o -iname no_backup -o \
       -iname databases -o -iname shared_prefs -o -iname lib -o \
       -iname tmp -o -iname temp -o -iname thumbnails -o -iname .thumbnails -o \
-      -iname stickers -o -iname emoji -o -iname crash -o -iname crashes \
+      -iname stickers -o -iname emoji -o -iname crash -o -iname crashes -o \
+      -iname assets -o -iname resources -o -iname res -o -iname textures -o \
+      -iname sprites -o -iname shaders -o -iname bundles -o -iname streamingassets \
     \) -prune \) -o \( -type f -print0 \) 2>/dev/null >>"$INDEX_FILE"
+}
+
+append_known_app_roots() {
+  user_root=$1
+  for candidate in \
+    "$user_root/Android/data/com.tencent.mobileqq" \
+    "$user_root/Android/data/com.tencent.tim" \
+    "$user_root/Android/data/com.android.chrome" \
+    "$user_root/Android/data/com.chrome.beta" \
+    "$user_root/Android/data/com.chrome.dev" \
+    "$user_root/Android/data/org.mozilla.firefox" \
+    "$user_root/Android/data/org.mozilla.fenix" \
+    "$user_root/Android/data/com.microsoft.emmx" \
+    "$user_root/Android/data/com.sec.android.app.sbrowser" \
+    "$user_root/Android/data/com.heytap.browser" \
+    "$user_root/Android/data/com.coloros.browser" \
+    "$user_root/Android/data/com.oplus.browser" \
+    "$user_root/Android/data/com.mi.globalbrowser" \
+    "$user_root/Android/data/com.android.browser" \
+    "$user_root/Android/data/com.quark.browser" \
+    "$user_root/Android/data/com.UCMobile" \
+    "$user_root/Android/data/com.kiwibrowser.browser" \
+    "$user_root/Android/data/com.brave.browser" \
+    "$user_root/Android/data/com.google.android.gm" \
+    "$user_root/Android/data/com.tencent.androidqqmail" \
+    "$user_root/Android/data/com.microsoft.office.outlook" \
+    "$user_root/Android/data/com.android.email" \
+    "$user_root/Android/data/com.netease.mail" \
+    "$user_root/Android/data/com.netease.mobimail" \
+    "$user_root/Android/media/org.telegram.messenger" \
+    "$user_root/Android/media/org.telegram.messenger.web" \
+    "$user_root/Android/media/tw.nekomimi.nekogram" \
+    "$user_root/Android/media/nu.gpu.nagram" \
+    "$user_root/Android/media/nu.gpu.nagramx"; do
+    append_tree_files "$candidate"
+  done
 }
 
 build_fallback_index() {
@@ -105,14 +143,15 @@ build_fallback_index() {
   for fb_user_root in "$MEDIA_ROOT"/[0-9]*; do
     [ -d "$fb_user_root" ] || continue
     find "$fb_user_root" -xdev -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null >>"$INDEX_FILE"
-    for fb_pkg in "$fb_user_root"/Android/data/* "$fb_user_root"/Android/media/*; do
-      append_tree_files "$fb_pkg"
-    done
-    for fb_public in "$fb_user_root"/*; do
-      [ -d "$fb_public" ] || continue
-      case "${fb_public##*/}" in Android|BaiZe归类|LOST.DIR) continue ;; esac
+    for fb_public in \
+      "$fb_user_root/Download" "$fb_user_root/Downloads" "$fb_user_root/Documents" \
+      "$fb_user_root/DCIM" "$fb_user_root/Pictures" "$fb_user_root/Movies" \
+      "$fb_user_root/Music" "$fb_user_root/Podcasts" "$fb_user_root/Audiobooks" \
+      "$fb_user_root/Recordings" "$fb_user_root/Bluetooth" "$fb_user_root/Tencent" \
+      "$fb_user_root/Telegram" "$fb_user_root/Nagram" "$fb_user_root/NagramX"; do
       append_tree_files "$fb_public"
     done
+    append_known_app_roots "$fb_user_root"
   done
   chmod 0600 "$INDEX_FILE" 2>/dev/null || true
 }
@@ -144,10 +183,71 @@ category_for() {
   esac
 }
 
-has_user_directory_segment() {
-  normalized=$(printf '/%s/' "$1" | tr '[:upper:]' '[:lower:]' | tr '. -' '___')
+normalized_path() {
+  printf '/%s/' "$1" | tr '[:upper:]' '[:lower:]' | tr '. -' '___'
+}
+
+is_suspicious_app_resource() {
+  normalized=$(normalized_path "$1")
   case "$normalized" in
-    */download/*|*/downloads/*|*/downloaded/*|*/下载/*|*/received/*|*/receive/*|*/recv/*|*/file_recv/*|*/qqfile_recv/*|*/qqmy_file_recv/*|*/qqfile_receive/*|*/timfile_recv/*|*/tim_file_recv/*|*/attachment/*|*/attachments/*|*/export/*|*/exports/*|*/saved/*|*/shared/*|*/document/*|*/documents/*|*/transfer/*|*/transfers/*|*/offline/*|*/telegram/*|*/telegram_documents/*|*/telegram_files/*|*/nagram/*|*/nagramx/*) return 0 ;;
+    */assets/*|*/asset/*|*/resources/*|*/resource/*|*/res/*|*/textures/*|*/texture/*|*/sprites/*|*/sprite/*|*/atlases/*|*/atlas/*|*/shaders/*|*/shader/*|*/bundles/*|*/bundle/*|*/streamingassets/*|*/addressables/*|*/unitycache/*|*/unity/*|*/ue4game/*|*/unreal/*|*/cocos/*|*/il2cpp/*|*/gameassets/*|*/game_resources/*|*/levels/*|*/level/*|*/maps/*|*/map/*|*/skins/*|*/skin/*|*/icons/*|*/icon/*) return 0 ;;
+  esac
+  return 1
+}
+
+is_browser_package() {
+  case "$1" in
+    com.android.chrome|com.chrome.beta|com.chrome.dev|com.google.android.apps.chrome|org.mozilla.firefox|org.mozilla.fenix|com.microsoft.emmx|com.sec.android.app.sbrowser|com.heytap.browser|com.coloros.browser|com.oplus.browser|com.mi.globalbrowser|com.android.browser|com.quark.browser|com.UCMobile|com.kiwibrowser.browser|com.brave.browser) return 0 ;;
+  esac
+  return 1
+}
+
+is_mail_package() {
+  case "$1" in
+    com.google.android.gm|com.tencent.androidqqmail|com.microsoft.office.outlook|com.android.email|com.netease.mail|com.netease.mobimail) return 0 ;;
+  esac
+  return 1
+}
+
+is_telegram_package() {
+  case "$1" in
+    org.telegram.messenger|org.telegram.messenger.web|tw.nekomimi.nekogram|nu.gpu.nagram|nu.gpu.nagramx) return 0 ;;
+  esac
+  return 1
+}
+
+allowed_app_source() {
+  package=$1 tail=$2 root_kind=$3
+  is_suspicious_app_resource "$tail" && return 1
+
+  case "$package:$tail" in
+    com.tencent.mobileqq:Tencent/QQfile_recv/*|com.tencent.mobileqq:files/QQfile_recv/*|com.tencent.tim:Tencent/TIMfile_recv/*|com.tencent.tim:files/TIMfile_recv/*) return 0 ;;
+  esac
+
+  if is_browser_package "$package"; then
+    case "$tail" in
+      Download/*|Downloads/*|files/Download/*|files/Downloads/*|files/download/*|files/downloads/*|private/received/*|files/received/*) return 0 ;;
+    esac
+  fi
+
+  if is_mail_package "$package"; then
+    case "$tail" in
+      attachments/*|Attachments/*|files/attachments/*|files/Attachments/*|data/attachments/*|files/download/*|files/Download/*) return 0 ;;
+    esac
+  fi
+
+  if [ "$root_kind" = media ] && is_telegram_package "$package"; then
+    case "$tail" in
+      Telegram/Telegram\ Documents/*|Telegram/Telegram\ Images/*|Telegram/Telegram\ Video/*|Telegram/Telegram\ Audio/*|Telegram/Telegram\ Files/*|Nagram/Nagram\ Documents/*|Nagram/Nagram\ Images/*|Nagram/Nagram\ Video/*|Nagram/Nagram\ Audio/*|NagramX/NagramX\ Documents/*|NagramX/NagramX\ Images/*|NagramX/NagramX\ Video/*|NagramX/NagramX\ Audio/*) return 0 ;;
+    esac
+  fi
+
+  return 1
+}
+
+is_public_user_path() {
+  case "$1" in
+    Download/*|Downloads/*|Documents/*|DCIM/*|Pictures/*|Movies/*|Music/*|Podcasts/*|Audiobooks/*|Recordings/*|Bluetooth/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*|Telegram/*|Nagram/*|NagramX/*) return 0 ;;
   esac
   return 1
 }
@@ -161,13 +261,28 @@ allowed_source() {
   [ "$rest" != "$relative" ] || return 1
   case "$rest" in BaiZe归类/*|*/BaiZe归类/*) return 1 ;; esac
   case "$rest" in */*) ;; *) return 0 ;; esac
-  has_user_directory_segment "$rest" && return 0
+
   case "$rest" in
-    Android/media/*/*|Android/data/*/files/*)
-      [ "$category" != 其他 ] && return 0
+    Android/data/*/*)
+      app_part=${rest#Android/data/}
+      package=${app_part%%/*}
+      tail=${app_part#*/}
+      allowed_app_source "$package" "$tail" data
+      return $?
+      ;;
+    Android/media/*/*)
+      app_part=${rest#Android/media/}
+      package=${app_part%%/*}
+      tail=${app_part#*/}
+      allowed_app_source "$package" "$tail" media
+      return $?
+      ;;
+    Android/*)
+      return 1
       ;;
   esac
-  return 1
+
+  is_public_user_path "$rest"
 }
 
 skip_file() {
@@ -181,13 +296,13 @@ skip_file() {
 
 STARTED=$(date +%s)
 rm -f "$STOP_FILE" "$RESULT_FILE"
-write_running "正在由独立 Root Worker 建立全应用索引" 0 0 ""
+write_running "正在由独立 Root Worker 建立安全归类索引" 0 0 ""
 
 if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$INDEXER" refresh organizer-detached >>"$LOG_FILE" 2>&1; then
-  echo "共享索引失败，切换独立 Root 兜底索引" >>"$LOG_FILE"
+  echo "共享索引失败，切换独立 Root 安全兜底索引" >>"$LOG_FILE"
 fi
 if [ ! -s "$INDEX_FILE" ]; then
-  write_running "共享索引为空，正在执行独立 Root 兜底发现" 0 0 "$MEDIA_ROOT"
+  write_running "共享索引为空，正在执行安全兜底发现" 0 0 "$MEDIA_ROOT"
   build_fallback_index
 fi
 if [ ! -s "$INDEX_FILE" ]; then
@@ -268,7 +383,7 @@ if [ "$MOVED" -gt 0 ]; then
   mv -f "$UNDO_TMP" "$UNDO_FILE"
   chmod 0600 "$UNDO_FILE" 2>/dev/null || true
 else
-  rm -f "$UNDO_TMP" "$UNDO_FILE"
+  rm -f "$UNDO_TMP"
 fi
 
 if [ -f "$STOP_FILE" ]; then
@@ -280,5 +395,5 @@ if [ "$FAILED" -gt 0 ]; then
   exit 1
 fi
 write_result "文件归类完成" 1 0 "$REQUESTED" "$MOVED" "$SKIPPED" 0 "$BYTES"
-echo "独立 Root 文件归类完成：移动 $MOVED 个，跳过 $SKIPPED 个，失败 $FAILED 个" >>"$LOG_FILE"
+echo "独立 Root 安全归类完成：移动 $MOVED 个，跳过 $SKIPPED 个，失败 $FAILED 个" >>"$LOG_FILE"
 exit 0
