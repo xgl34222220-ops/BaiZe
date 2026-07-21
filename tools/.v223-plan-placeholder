@@ -51,4 +51,11 @@ value = ui_generator.read_text().replace(
     "    if new and new in text:\n        return"
 )
 ui_generator.write_text(value)
-print("v2.2.3 generator anchors and deletions prepared")
+
+version_generator = root / "tools/apply-v223-version.py"
+value = version_generator.read_text().replace(
+    "build.write_text(text)",
+    "build.write_text(text.rstrip() + \"\\n\")"
+)
+version_generator.write_text(value)
+print("v2.2.3 generator anchors, deletions and formatting prepared")
