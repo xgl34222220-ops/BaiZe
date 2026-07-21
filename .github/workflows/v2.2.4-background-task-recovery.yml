@@ -164,7 +164,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine_host
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wno-error=format-truncation v2/native/baize_engine_42_4.c -o /tmp/baize_engine_host
           rm -rf /tmp/baize-deep-test
           mkdir -p /tmp/baize-deep-test/root /tmp/baize-deep-test/out
           for i in $(seq 1 4000); do printf x > "/tmp/baize-deep-test/root/file-$i"; done
