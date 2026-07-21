@@ -167,7 +167,7 @@ jobs:
           BAIZE_STATE_DIR=/tmp/baize-supervisor/state sh /tmp/baize-supervisor/module/supervisor.sh & supervisor=$!
           sleep 14
           test "$(cat /tmp/baize-supervisor/state/count)" -ge 2
-          grep -q '^crash_count=' /tmp/baize-supervisor/state/supervisor.env
+          grep -q '^restart_count=' /tmp/baize-supervisor/state/supervisor.env
           kill "$supervisor" 2>/dev/null || true
 
       - name: Test multi-user removable-volume index and analysis tools
