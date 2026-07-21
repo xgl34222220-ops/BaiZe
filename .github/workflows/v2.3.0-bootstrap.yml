@@ -1,5 +1,6 @@
 name: BaiZe v2.3.0 Source Materialization
 
+# Synchronize PR so the trusted main workflow can materialize the branch.
 on:
   push:
     branches:
