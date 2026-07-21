@@ -1,10 +1,8 @@
 name: Materialize BaiZe v2.3.0 Branch
 
-# Registered on main; this ordinary update triggers the materialization job.
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: write
@@ -15,25 +13,35 @@ concurrency:
 
 jobs:
   materialize:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/v2.3.0-stabilization'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout v2.3.0 branch
+      - name: Checkout trusted v2.3.0 branch
         uses: actions/checkout@v4
         with:
           ref: feat/v2.3.0-stabilization
           fetch-depth: 0
 
       - name: Decode and apply source materialization
+        id: materialize
         shell: bash
         run: |
           set -euo pipefail
+          if [ ! -f tools/bootstrap-v230.py.gz.b64 ]; then
+            echo 'already_materialized=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
           python3 -m py_compile /tmp/bootstrap-v230.py
           python3 /tmp/bootstrap-v230.py
           rm -f tools/bootstrap-v230.py.gz.b64
           git diff --check
+          echo 'already_materialized=false' >> "$GITHUB_OUTPUT"
 
       - name: Commit materialized branch
+        if: steps.materialize.outputs.already_materialized == 'false'
         shell: bash
         run: |
           set -euo pipefail
