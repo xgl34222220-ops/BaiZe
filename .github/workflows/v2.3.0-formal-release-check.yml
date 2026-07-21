@@ -1,0 +1,79 @@
+name: BaiZe v2.3.0 Formal Release Check
+
+on:
+  push:
+    paths:
+      - '.release/v2.3.0-check-trigger'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect formal release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set +e
+          RELEASE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v2.3.0" 2>/tmp/release-error.log)
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            {
+              echo '# BaiZe v2.3.0 正式发布'
+              echo
+              echo "- 检查任务：\`$RUN_ID\`"
+              echo '- 状态：**release-not-found**'
+              echo
+              echo '```text'
+              cat /tmp/release-error.log
+              echo '```'
+            } >/tmp/status.md
+            gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
+            exit 1
+          fi
+
+          NAME=$(printf '%s' "$RELEASE" | jq -r '.name')
+          TAG=$(printf '%s' "$RELEASE" | jq -r '.tag_name')
+          DRAFT=$(printf '%s' "$RELEASE" | jq -r '.draft')
+          PRERELEASE=$(printf '%s' "$RELEASE" | jq -r '.prerelease')
+          IMMUTABLE=$(printf '%s' "$RELEASE" | jq -r '.immutable // false')
+          BODY=$(printf '%s' "$RELEASE" | jq -r '.body')
+          ASSETS=$(printf '%s' "$RELEASE" | jq -r '.assets[].name')
+          URL=$(printf '%s' "$RELEASE" | jq -r '.html_url')
+
+          ok=true
+          [ "$TAG" = v2.3.0 ] || ok=false
+          [ "$NAME" = '白泽 v2.3.0' ] || ok=false
+          [ "$DRAFT" = false ] || ok=false
+          [ "$PRERELEASE" = false ] || ok=false
+          printf '%s\n' "$ASSETS" | grep -qx 'BaiZe-v2.3.0-Module.zip' || ok=false
+          printf '%s\n' "$ASSETS" | grep -qx 'BaiZe-v2.3.0-Module.zip.sha256' || ok=false
+          printf '%s\n' "$ASSETS" | grep -qx 'BaiZe-v2.3.0.apk' || ok=false
+          printf '%s\n' "$ASSETS" | grep -qx 'BaiZe-v2.3.0.apk.sha256' || ok=false
+          printf '%s' "$BODY" | grep -q '白泽是 Android Root 垃圾清理与文件归类模块' || ok=false
+
+          {
+            echo '# BaiZe v2.3.0 正式发布'
+            echo
+            echo "- 检查任务：\`$RUN_ID\`"
+            echo "- 状态：**$([ "$ok" = true ] && echo success || echo incomplete)**"
+            echo "- 标签：\`$TAG\`"
+            echo "- 标题：$NAME"
+            echo "- 草稿：\`$DRAFT\`"
+            echo "- 预发行：\`$PRERELEASE\`"
+            echo "- 不可修改：\`$IMMUTABLE\`"
+            echo "- 地址：$URL"
+            echo '- 附件：'
+            printf '%s\n' "$ASSETS" | sed 's/^/  - `/' | sed 's/$/`/'
+            echo
+            echo '发布说明：'
+            echo
+            printf '%s\n' "$BODY"
+          } >/tmp/status.md
+          gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
+          [ "$ok" = true ]
