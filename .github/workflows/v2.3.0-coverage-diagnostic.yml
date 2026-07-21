@@ -94,5 +94,5 @@ jobs:
             tail -n 160 "$LOG" | sed -r 's/\x1B\[[0-9;]*[mK]//g'
             echo '```'
           } >/tmp/status.md
-          gh issue edit 91 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
+          gh issue edit 92 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
           exit "$code"
