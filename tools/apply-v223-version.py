@@ -4,7 +4,12 @@ root = Path(__file__).resolve().parents[1]
 
 build = root / "v2/app/build.gradle.kts"
 text = build.read_text()
-text = text.replace('versionCode = 22602\n        versionName = "2.2.2"', 'versionCode = 22603\n        versionName = "2.2.3"')
+for old in (
+    'versionCode = 22601\n        versionName = "2.2.1"',
+    'versionCode = 22602\n        versionName = "2.2.2"',
+    'versionCode = 22600\n        versionName = "2.2.0"',
+):
+    text = text.replace(old, 'versionCode = 22603\n        versionName = "2.2.3"')
 build.write_text(text)
 
 (root / "v2/module/module.prop").write_text(
@@ -17,7 +22,11 @@ build.write_text(text)
 )
 
 package = root / "v2/scripts/package-module.sh"
-value = package.read_text().replace("v2.2.2", "v2.2.3").replace("22602", "22603")
+value = package.read_text()
+for version in ("v2.2.0", "v2.2.1", "v2.2.2"):
+    value = value.replace(version, "v2.2.3")
+for code in ("22600", "22601", "22602"):
+    value = value.replace(code, "22603")
 package.write_text(value)
 
 (root / "RELEASE_NOTES_V2.2.3.md").write_text(
