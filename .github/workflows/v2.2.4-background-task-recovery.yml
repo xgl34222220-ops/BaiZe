@@ -45,6 +45,7 @@ jobs:
             base64 -d tools/apply-v230-native-path-safety.py.gz.b64 | gzip -d >/tmp/apply-v230-native-path-safety.py
             python3 -m py_compile /tmp/apply-v230-native-path-safety.py
             python3 /tmp/apply-v230-native-path-safety.py
+            sed -i 's/clean|scan|cache-clean|empty-clean/clean|scan|cache-auto|cache-clean|empty-clean/' v2/module/task-worker.sh
             rm -f tools/apply-v230-native-path-safety.py.gz.b64
             grep -q 'cache-auto' v2/module/task-worker.sh
             grep -q 'static bool path_join' v2/native/baize_engine_42_4.c
