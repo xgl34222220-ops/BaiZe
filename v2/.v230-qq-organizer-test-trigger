@@ -1,14 +1,14 @@
-BaiZe v2.3.0 detached Root organizer final lifecycle regression build
-triggered: 2026-07-21T18:34:00Z
-publish: v2.3.0-detached-root-organizer-test
+BaiZe v2.3.0 safe Root organizer regression build
+triggered: 2026-07-21T22:58:00Z
+publish: v2.3.0-safe-root-organizer-test
 mode: independent-root-worker
-materialization: preserve-detached-workers
-kotlin-fix: escaped-progress-newline
-package-diagnostic: issue-95
+safety-policy: deny-app-private-by-default
+hostile-index-test: game-assets-must-stay
+fallback-test: known-user-roots-only
 final-builder-status: issue-94
 requirements:
 - app only submits task
 - organizer continues after background or process death
-- re-entry restores progress and result
-- QQ browser attachment files move
-- cache directories remain untouched
+- game textures skins icons and resource packs never move
+- unknown Android data and media packages never move
+- QQ browser mail and public user files still move
