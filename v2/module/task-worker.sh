@@ -61,6 +61,12 @@ if ! kill -0 "$PID" 2>/dev/null; then
   exit 7
 fi
 
+# The cleaner may already have replaced running.env with its first phase. Reattach stable task metadata.
+if [ -f "$RUNNING_FILE" ]; then
+  grep -q '^task_id=' "$RUNNING_FILE" 2>/dev/null || echo "task_id=$TASK_ID" >>"$RUNNING_FILE"
+  grep -q '^worker=' "$RUNNING_FILE" 2>/dev/null || echo "worker=detached-root-shell" >>"$RUNNING_FILE"
+fi
+
 TMP_WORKER="$WORKER_FILE.tmp.$$"
 {
   echo "task_id=$TASK_ID"
@@ -68,6 +74,7 @@ TMP_WORKER="$WORKER_FILE.tmp.$$"
   echo "mode=$MODE"
   echo "trigger=$TRIGGER"
   echo "started=$STARTED"
+  echo "worker=detached-root-shell"
   echo "log=$LAUNCH_LOG"
 } >"$TMP_WORKER"
 mv -f "$TMP_WORKER" "$WORKER_FILE"
