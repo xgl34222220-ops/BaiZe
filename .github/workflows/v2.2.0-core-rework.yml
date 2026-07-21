@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/v2.2.2-runtime-ledger
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
