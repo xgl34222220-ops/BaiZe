@@ -136,12 +136,45 @@ if new not in text:
     text = text.replace(old, new, 1)
 activity.write_text(text)
 
-# Earlier generator strings intentionally contain shell escapes. Normalize them after all generators run.
 for generated in (root / "cleaner.sh", path):
     value = generated.read_text()
     value = value.replace("tr '\r\n' '  '", r"tr '\r\n' '  '")
     value = value.replace("printf 'deep_slowest_path=%s\n'", r"printf 'deep_slowest_path=%s\n'")
     value = value.replace("printf 'slowest_path=%s\n'", r"printf 'slowest_path=%s\n'")
     generated.write_text(value)
+
+# The native generator's first generic summary anchor is in scan_corpses; move deep timing to scan_deep.
+engine_path = root / "v2/native/baize_engine_42_4.c"
+engine = engine_path.read_text()
+wrong = """    closedir(users);
+    uint64_t stage_finished_ms = monotonic_ms();
+    g_deep_stage_ms = stage_finished_ms >= stage_started_ms ? stage_finished_ms - stage_started_ms : 0U;
+    if (rep) fclose(rep);
+"""
+if wrong in engine:
+    engine = engine.replace(wrong, """    closedir(users);
+    if (rep) fclose(rep);
+""", 1)
+deep_start = engine.index("static int scan_deep(const Options *o) {")
+deep_end = engine.index("\nint main(int argc, char **argv)", deep_start)
+deep_section = engine[deep_start:deep_end]
+anchor = """    if (rep) fclose(rep);
+    if (targets) fclose(targets);
+    write_summary(o, &t);
+    vec_free(&cand);
+"""
+replacement = """    uint64_t stage_finished_ms = monotonic_ms();
+    g_deep_stage_ms = stage_finished_ms >= stage_started_ms ? stage_finished_ms - stage_started_ms : 0U;
+    if (rep) fclose(rep);
+    if (targets) fclose(targets);
+    write_summary(o, &t);
+    vec_free(&cand);
+"""
+if "g_deep_stage_ms = stage_finished_ms" not in deep_section:
+    if anchor not in deep_section:
+        raise SystemExit("scan_deep final timing anchor missing")
+    deep_section = deep_section.replace(anchor, replacement, 1)
+engine = engine[:deep_start] + deep_section + engine[deep_end:]
+engine_path.write_text(engine)
 
 print("v2.2.5 native wrapper metrics applied")
