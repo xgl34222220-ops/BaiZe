@@ -1,55 +1,84 @@
-name: BaiZe v2.4.0 Source Export
+name: BaiZe v2.4.0 Source Materialization
 
 on:
   push:
     branches: [feat/v2.4.0-complete-hardening]
     paths:
       - '.github/workflows/v2.4.0-source-export.yml'
-      - '.v240-export-trigger'
   workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
-  group: baize-v240-source-export
+  group: baize-v240-source-materialization
   cancel-in-progress: true
 
 jobs:
-  export:
+  materialize:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout feature source
+      - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: feat/v2.4.0-complete-hardening
           fetch-depth: 0
-      - name: Create source archive
+
+      - name: Verify and extract reviewed source
         shell: bash
         run: |
           set -euo pipefail
-          ARCHIVE=/tmp/BaiZe-v2.4.0-source.tar.gz
-          tar --exclude=.git --exclude=v2/build --exclude=v2/app/build --exclude=v2/.gradle \
-            -czf "$ARCHIVE" .
-          sha256sum "$ARCHIVE" > /tmp/BaiZe-v2.4.0-source.tar.gz.sha256
-      - name: Upload source archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: BaiZe-v2.4.0-source
-          if-no-files-found: error
-          path: |
-            /tmp/BaiZe-v2.4.0-source.tar.gz
-            /tmp/BaiZe-v2.4.0-source.tar.gz.sha256
-      - name: Persist export result
+          test "$(find .v240-upload -maxdepth 1 -type f -name 'part-*' | wc -l | tr -d ' ')" = 12
+          for index in 00 01 02 03 04 05 06 07 08 09 10 11; do
+            test -s ".v240-upload/part-$index"
+          done
+          cat .v240-upload/part-* > /tmp/baize-v240-changes.b64
+          printf '%s  %s\n' '723bb5cfca9fc9a54f2bb6e51358dc088d1813335ebe52d2f4d4de1b7296a1a9' /tmp/baize-v240-changes.b64 | sha256sum -c -
+          base64 -d /tmp/baize-v240-changes.b64 > /tmp/baize-v240-changes.tar.gz
+          printf '%s  %s\n' '0d6fa2a122d748c27aa01e95a21b59f72e2603d308da84a3bf3c3f6863084452' /tmp/baize-v240-changes.tar.gz | sha256sum -c -
+          tar -tzf /tmp/baize-v240-changes.tar.gz | grep -qx 'service.sh'
+          tar -tzf /tmp/baize-v240-changes.tar.gz | grep -qx 'v2/tests/test-scheduler-fairness.sh'
+          tar -xzf /tmp/baize-v240-changes.tar.gz
+
+      - name: Verify shell and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y busybox-static
+          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          bash v2/tests/test-scheduler-fairness.sh
+          bash v2/tests/test-incremental-index.sh
+          bash v2/tests/test-organizer-transactions.sh
+          grep -q 'versionName = "2.4.0"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 24000' v2/app/build.gradle.kts
+          grep -qx 'version=v2.4.0' v2/module/module.prop
+          grep -qx 'versionCode=24000' v2/module/module.prop
+          git diff --check
+
+      - name: Commit reviewed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .v240-upload
+          rm -f .v240-export-result .v240-export-trigger
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A -- config service.sh v2 .v240-upload .v240-export-result .v240-export-trigger
+          git diff --cached --check
+          git commit -m 'feat(v2.4.0): complete scheduler, index and organizer hardening'
+          git push origin HEAD:feat/v2.4.0-complete-hardening
+
+      - name: Report materialization status
         if: always()
         env:
+          GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
-          set -euo pipefail
-          printf 'run_id=%s\nstatus=%s\nhead=%s\n' "$GITHUB_RUN_ID" "$JOB_STATUS" "$GITHUB_SHA" > .v240-export-result
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .v240-export-result
-          git commit -m 'build: record v2.4.0 source export' || exit 0
-          git push origin HEAD:feat/v2.4.0-complete-hardening
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" \
+            --body "BAIZE_V240_SOURCE_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
