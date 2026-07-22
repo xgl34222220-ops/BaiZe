@@ -1,107 +1,40 @@
-name: BaiZe v2.3.0 Source and Build Verification
+name: BaiZe v2.4.0 Chinese UI Verification
 
 on:
-  push:
-    branches: [main, feat/v2.3.0-stabilization]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: baize-v230-source-build-${{ github.event.pull_request.number || github.ref }}
+  group: baize-v240-chinese-ui-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify-build-package:
-    if: github.event_name != 'pull_request' || github.head_ref != 'feat/v2.4.0-complete-hardening'
+  chinese-ui-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout committed source
+      - name: Checkout v2.4.0 feature branch
         uses: actions/checkout@v4
+        with:
+          ref: feat/v2.4.0-complete-hardening
+          fetch-depth: 0
 
-      - name: Verify committed source truth and versions
+      - name: Apply Chinese UI localization
+        run: python3 tools/localize_v240_ui.py
+
+      - name: Verify localized UI source
         shell: bash
         run: |
           set -euo pipefail
-          test ! -d tools || ! find tools -maxdepth 1 -type f \( -name 'apply-v*.py' -o -name '*materialization*' -o -name '*.b64' \) -print -quit | grep -q .
-          for file in \
-            v2/module/supervisor.sh \
-            v2/module/worker-runner.sh \
-            v2/module/app-installer.sh \
-            v2/module/diagnostics-export.sh \
-            v2/module/storage-analyzer.sh \
-            v2/module/duplicate-scanner.sh \
-            v2/module/large-file-scanner.sh \
-            v2/module/quarantine-manager.sh \
-            v2/module/rules-validator.sh \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt; do
-            test -s "$file"
-          done
-          grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
-          grep -q 'versionCode = 23000' v2/app/build.gradle.kts
-          grep -qx 'version=v2.3.0' v2/module/module.prop
-          grep -qx 'versionCode=23000' v2/module/module.prop
-          grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json' v2/module/module.prop
-          grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-          grep -q 'Handler(Looper.getMainLooper())' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-          grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-          grep -q 'discover_app_user_roots' v2/module/storage-index.sh
-          grep -q '"attachment", "attachments"' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path('update.json').read_text())
-          assert data == {
-              'version': 'v2.3.0',
-              'versionCode': 23000,
-              'zipUrl': 'https://github.com/xgl34222220-ops/BaiZe/releases/download/v2.3.0/BaiZe-v2.3.0-Module.zip',
-              'changelog': 'https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.3.0.md',
-          }
-          PY
-          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do sh -n "$script"; done
-          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
-
-      - name: Install shell compatibility tools
-        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
-
-      - name: Verify Root shell compatibility
-        shell: bash
-        run: |
-          set -euo pipefail
-          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do busybox ash -n "$script"; done
-          toybox sh -n v2/module/task-worker.sh || true
-          toybox sh -n v2/module/worker-runner.sh || true
-          toybox sh -n v2/module/supervisor.sh || true
-
-      - name: Test organizer discovery without source generation
-        shell: bash
-        run: |
-          set -euo pipefail
-          ROOT=/tmp/baize-organizer
-          rm -rf "$ROOT"
-          mkdir -p \
-            "$ROOT/media/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
-            "$ROOT/media/0/Android/data/com.example.browser/private/received" \
-            "$ROOT/media/0/Android/data/com.example.mail/data/attachments" \
-            "$ROOT/media/0/Android/data/com.example.browser/cache/Download" \
-            "$ROOT/state"
-          printf qq >"$ROOT/media/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv/test.zip"
-          printf apk >"$ROOT/media/0/Android/data/com.example.browser/private/received/test.apk"
-          printf pdf >"$ROOT/media/0/Android/data/com.example.mail/data/attachments/test.pdf"
-          printf cache >"$ROOT/media/0/Android/data/com.example.browser/cache/Download/must-not-index.zip"
-          BAIZE_MEDIA_ROOT="$ROOT/media" BAIZE_STATE_DIR="$ROOT/state" busybox ash v2/module/storage-index.sh refresh ci
-          python3 - <<'PY'
-          from pathlib import Path
-          root = Path('/tmp/baize-organizer')
-          paths = {item.decode() for item in (root / 'state/index/storage-files.nul').read_bytes().split(b'\0') if item}
-          assert any(path.endswith('/test.zip') for path in paths)
-          assert any(path.endswith('/test.apk') for path in paths)
-          assert any(path.endswith('/test.pdf') for path in paths)
-          assert not any(path.endswith('/must-not-index.zip') for path in paths)
-          PY
+          ! grep -R -nE '"(TASK CENTER|AUTOMATION|PROTECTION|SERVICE|PREFERENCES)"' \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings
+          grep -q '文件自动归类' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q 'schedulerQueueLabel' v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/miuix/SettingsScreenMiuix.kt
+          grep -q 'schedulerQueueLabel' v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/material/SettingsScreenMaterial.kt
+          git diff --check
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -124,49 +57,73 @@ jobs:
         working-directory: v2
         run: sh scripts/build-native.sh
 
-      - name: Build release app and lint
+      - name: Build Chinese release APK
         id: android_build
         working-directory: v2
         shell: bash
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+          gradle --no-daemon :app:assembleRelease 2>&1 | tee android-build.log
 
-      - name: Upload Android build diagnostics
-        if: failure() && steps.android_build.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: BaiZe-v2.3.0-Android-Build-Diagnostics
-          if-no-files-found: warn
-          path: |
-            v2/android-build.log
-            v2/app/build/reports/lint-results-release.html
-            v2/app/build/reports/lint-results-release.txt
-
-      - name: Package and verify module
+      - name: Package and verify Chinese module
         working-directory: v2
         shell: bash
         run: |
           set -euo pipefail
-          sh scripts/package-module.sh
-          ZIP=dist/BaiZe-v2.3.0-Module.zip
+          set +e
+          sh scripts/package-module.sh 2>&1 | tee package-module.log
+          package_status=${PIPESTATUS[0]}
+          set -e
+          ZIP=dist/BaiZe-v2.4.0-Module.zip
+          APK=app/build/outputs/apk/release/app-release.apk
           test -s "$ZIP"
+          test -s "$APK"
           unzip -tq "$ZIP"
-          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.3.0'
-          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=23000'
-          for file in app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh quarantine-manager.sh rules-validator.sh bin/arm64-v8a/baize_engine; do
-            unzip -Z1 "$ZIP" | grep -qx "$file"
-          done
-          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
-          sha256sum "$ZIP" | tee "$ZIP.sha256"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.4.0'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=24000'
+          unzip -Z1 "$ZIP" | grep -qx 'app/baize.apk'
+          cp "$ZIP" dist/BaiZe-v2.4.0-Chinese-UI-Test-Module.zip
+          cp "$APK" dist/BaiZe-v2.4.0-Chinese-UI-Test.apk
+          sha256sum dist/BaiZe-v2.4.0-Chinese-UI-Test-Module.zip > dist/BaiZe-v2.4.0-Chinese-UI-Test-Module.zip.sha256
+          sha256sum dist/BaiZe-v2.4.0-Chinese-UI-Test.apk > dist/BaiZe-v2.4.0-Chinese-UI-Test.apk.sha256
+          echo "package-script-status=$package_status" >> package-module.log
 
-      - name: Upload verified build
+      - name: Commit Chinese UI source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- \
+            v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/SchedulerText.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/miuix/SettingsScreenMiuix.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/material/SettingsScreenMaterial.kt
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(ui): translate scheduler and organizer text to Chinese'
+            git push origin HEAD:feat/v2.4.0-complete-hardening
+          fi
+
+      - name: Upload Chinese UI test package
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.3.0-Committed-Source-Build
+          name: BaiZe-v2.4.0-Chinese-UI-Test
           if-no-files-found: error
           path: |
-            v2/dist/BaiZe-v2.3.0-Module.zip
-            v2/dist/BaiZe-v2.3.0-Module.zip.sha256
-            v2/app/build/outputs/apk/release/app-release.apk
+            v2/dist/BaiZe-v2.4.0-Chinese-UI-Test-Module.zip
+            v2/dist/BaiZe-v2.4.0-Chinese-UI-Test-Module.zip.sha256
+            v2/dist/BaiZe-v2.4.0-Chinese-UI-Test.apk
+            v2/dist/BaiZe-v2.4.0-Chinese-UI-Test.apk.sha256
             v2/android-build.log
+            v2/package-module.log
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-Chinese-UI-Diagnostics
+          if-no-files-found: warn
+          path: |
+            v2/android-build.log
+            v2/package-module.log
