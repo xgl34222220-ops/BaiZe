@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/unified-root-compile-diagnostics.yml'
       - '.diagnostics/unified-root-compile'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +15,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: baize-unified-root-kotlin-diagnostics
+  group: baize-unified-root-kotlin-diagnostics-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -59,4 +61,4 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
-          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_KOTLIN run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_KOTLIN run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA" || true
