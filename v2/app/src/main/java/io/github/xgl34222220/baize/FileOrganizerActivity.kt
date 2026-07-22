@@ -148,12 +148,55 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 
     private fun saveSchedule() {
+        val root = service
+        val previous = FileOrganizerWorker.loadSettings(this)
         FileOrganizerWorker.saveAndSchedule(this, schedule)
         schedule = FileOrganizerWorker.loadSettings(this)
-        scheduleSavedText = if (schedule.enabled) {
-            "已保存：每 ${schedule.intervalHours} 小时自动归类"
-        } else {
-            "定时归类已关闭"
+        if (root == null) {
+            scheduleSavedText = "计划已保存在 App，连接 Root 服务后才能同步"
+            return
+        }
+        scheduleSavedText = "正在同步到 Root Supervisor…"
+        lifecycleScope.launch {
+            val payload = JSONObject()
+                .put("schedule_organize_enabled", if (schedule.enabled) 1 else 0)
+                .put("schedule_organize_minutes", schedule.intervalMinutes)
+                .put("schedule_organize_hours", ((schedule.intervalMinutes + 59) / 60).coerceAtLeast(1))
+                .put("organize_charging_only", if (schedule.chargingOnly) 1 else 0)
+                .put("organize_screen_off_only", if (schedule.screenOffOnly) 1 else 0)
+                .put("organize_device_idle_only", 0)
+            if (schedule.enabled) payload.put("enabled", 1)
+            val saved = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(root.saveSchedulerConfig(payload.toString())) }.getOrElse {
+                    JSONObject().put("error", "save_failed").put("message", it.message ?: it.javaClass.simpleName)
+                }
+            }
+            if (!saved.optBoolean("success", false)) {
+                scheduleSavedText = saved.optString("message", "Root 计划同步失败")
+                return@launch
+            }
+
+            val runNow = schedule.enabled && schedule.runImmediatelyOnEnable && !previous.enabled
+            val immediateText = if (runNow) {
+                val launched = withContext(Dispatchers.IO) {
+                    runCatching { JSONObject(root.runModuleTask("organize")) }.getOrElse {
+                        JSONObject().put("error", "launch_failed").put("message", it.message ?: it.javaClass.simpleName)
+                    }
+                }
+                if (launched.optBoolean("success", false) || launched.optBoolean("accepted", false)) {
+                    "，已立即启动一次归类"
+                } else {
+                    "，立即执行未启动：${launched.optString("message", launched.optString("error", "未知错误"))}"
+                }
+            } else ""
+
+            scheduleSavedText = if (schedule.enabled) {
+                "已交给 Root Supervisor：每 ${FileOrganizerWorker.intervalLabel(schedule.intervalMinutes)}检查一次$immediateText"
+            } else {
+                "定时归类已关闭"
+            }
+            FileOrganizerWorker.recordResult(this@FileOrganizerActivity, scheduleSavedText)
+            schedule = FileOrganizerWorker.loadSettings(this@FileOrganizerActivity)
         }
     }
 
@@ -494,7 +537,7 @@ private fun ScheduleCard(
     onChange: (FileOrganizerScheduleSettings) -> Unit,
     onSave: () -> Unit
 ) {
-    val intervals = listOf(6, 12, 24, 72, 168)
+    val intervals = FileOrganizerWorker.ALLOWED_INTERVALS
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -532,20 +575,11 @@ private fun ScheduleCard(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                intervals.forEach { hours ->
+                intervals.forEach { minutes ->
                     FilterChip(
-                        selected = schedule.intervalHours == hours,
-                        onClick = { onChange(schedule.copy(intervalHours = hours)) },
-                        label = {
-                            Text(
-                                when (hours) {
-                                    24 -> "每天"
-                                    72 -> "每3天"
-                                    168 -> "每周"
-                                    else -> "${hours}小时"
-                                }
-                            )
-                        }
+                        selected = schedule.intervalMinutes == minutes,
+                        onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
+                        label = { Text(FileOrganizerWorker.intervalLabel(minutes)) }
                     )
                 }
             }
@@ -556,6 +590,9 @@ private fun ScheduleCard(
             }
             SettingSwitch("仅息屏时执行", schedule.screenOffOnly) {
                 onChange(schedule.copy(screenOffOnly = it))
+            }
+            SettingSwitch("开启计划后立即执行一次", schedule.runImmediatelyOnEnable) {
+                onChange(schedule.copy(runImmediatelyOnEnable = it))
             }
             Text(
                 "上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}",

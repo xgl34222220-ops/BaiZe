@@ -13,6 +13,14 @@ CONDITION_RETRY_SECONDS=60
 FAILURE_LIMIT=3
 FAILURE_PAUSE_SECONDS=21600
 NEXT_CHECK_EPOCH=0
+SLEEP_PID=
+
+wake_scheduler() {
+  if [ -n "${SLEEP_PID:-}" ]; then
+    kill "$SLEEP_PID" 2>/dev/null || true
+  fi
+}
+trap wake_scheduler USR1 HUP
 
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
   sleep 10
@@ -105,6 +113,8 @@ refresh_next_check() {
     echo "reason=${reason:-等待下一次定时检查}"
     echo "updated=$updated"
     echo "next_check_epoch=$next"
+    echo "scheduler_pid=$$"
+    echo "heartbeat_epoch=$(date +%s)"
   } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
 }
 
@@ -165,7 +175,7 @@ scheduler_task_alive() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-scan.sh*|*cache-snapshot-clean.sh*|*profile-snapshot-clean.sh*|*apk-snapshot-*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-scan.sh*|*cache-snapshot-clean.sh*|*profile-snapshot-clean.sh*|*apk-snapshot-*|*organizer-worker.sh*|*worker-runner.sh*organize*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -187,23 +197,33 @@ is_device_idle() {
   printf '%s\n' "$idle_dump" | grep -Eq 'mState=(IDLE|IDLE_MAINTENANCE)|mLightState=(IDLE|WAITING_FOR_NETWORK)'
 }
 
-conditions_allow_clean() {
+conditions_allow_task() {
+  task_group=${1:-clean}
   SCHEDULE_REASON=""
-  [ "$(bool_value enabled)" = "1" ] || { SCHEDULE_REASON="模块清理总开关已关闭"; return 1; }
+  [ "$(bool_value enabled)" = "1" ] || { SCHEDULE_REASON="Root 定时任务总开关已关闭"; return 1; }
   [ -f "$STATE_DIR/stop" ] && { SCHEDULE_REASON="已收到停止请求"; return 1; }
 
-  if [ "$(bool_value screen_off_only)" = "1" ] && ! is_screen_off; then
+  screen_key=screen_off_only
+  idle_key=device_idle_only
+  charging_key=charging_only
+  if [ "$task_group" = organize ]; then
+    screen_key=organize_screen_off_only
+    idle_key=organize_device_idle_only
+    charging_key=organize_charging_only
+  fi
+
+  if [ "$(bool_value "$screen_key")" = "1" ] && ! is_screen_off; then
     SCHEDULE_REASON="等待息屏"
     return 1
   fi
 
-  if [ "$(bool_value device_idle_only)" = "1" ] && ! is_device_idle; then
+  if [ "$(bool_value "$idle_key")" = "1" ] && ! is_device_idle; then
     SCHEDULE_REASON="等待系统进入空闲状态"
     return 1
   fi
 
   battery_dump=$(dumpsys battery 2>/dev/null)
-  if [ "$(bool_value charging_only)" = "1" ]; then
+  if [ "$(bool_value "$charging_key")" = "1" ]; then
     if ! printf '%s\n' "$battery_dump" | grep -Eq '^[[:space:]]*(AC powered|USB powered|Wireless powered|Dock powered): true'; then
       status=$(printf '%s\n' "$battery_dump" | sed -n 's/^[[:space:]]*status: //p' | head -n 1)
       if [ "$status" != "2" ] && [ "$status" != "5" ]; then
@@ -287,7 +307,7 @@ run_due_group() {
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
   due=$interval_seconds
   [ $((now - last)) -ge "$due" ] || return 0
-  if ! conditions_allow_clean; then
+  if ! conditions_allow_task "$group"; then
     write_scheduler_state "waiting" "$group" "$SCHEDULE_REASON"
     return 10
   fi
@@ -316,7 +336,7 @@ run_daily_group() {
   stamp_value=$(sed -n '1p' "$stamp" 2>/dev/null)
   [ "$stamp_value" = "$daily_cycle" ] && return 0
   [ -n "$legacy_cycle_date" ] && [ "$stamp_value" = "$legacy_cycle_date" ] && return 0
-  if ! conditions_allow_clean; then
+  if ! conditions_allow_task "$group"; then
     write_scheduler_state "waiting" "$group" "$SCHEDULE_REASON"
     return 10
   fi
@@ -331,10 +351,19 @@ run_daily_group() {
 
 try_scheduled_clean() {
   any=0
-  for key in schedule_cache_enabled schedule_empty_enabled schedule_rules_enabled schedule_fragment_enabled schedule_deep_enabled; do
+  for key in schedule_cache_enabled schedule_empty_enabled schedule_rules_enabled schedule_fragment_enabled schedule_deep_enabled schedule_organize_enabled; do
     [ "$(bool_value "$key")" = "1" ] && any=1
   done
   [ "$any" = "1" ] || { write_scheduler_state "disabled" "" "所有定时任务均已关闭"; return 0; }
+
+  # 文件归类始终使用自己的周期；它与清理任务共享锁、状态、恢复和历史。
+  run_due_group organize schedule_organize_enabled schedule_organize_minutes schedule_organize_hours 1440 organize
+  organize_code=$?
+  case "$organize_code" in
+    3|9) return 0 ;;
+    0|10|11) ;;
+    *) write_scheduler_state "failed" "organize" "文件归类调度失败（代码 $organize_code）" ;;
+  esac
 
   # 每日模式优先且独占；超出补做窗口后跳过当天，避免白天突然执行。
   if [ "$(bool_value daily_schedule_enabled)" = "1" ]; then
@@ -457,7 +486,8 @@ compute_interval_sleep() {
     "empty schedule_empty_enabled schedule_empty_minutes schedule_empty_hours 30" \
     "rules schedule_rules_enabled schedule_rules_minutes schedule_rules_hours 30" \
     "fragment schedule_fragment_enabled schedule_fragment_minutes schedule_fragment_hours 30" \
-    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080"; do
+    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080" \
+    "organize schedule_organize_enabled schedule_organize_minutes schedule_organize_hours 1440"; do
     set -- $spec
     group=$1
     [ "$(bool_value "$2")" = "1" ] || continue
@@ -494,5 +524,8 @@ while true; do
   now=$(date +%s)
   NEXT_CHECK_EPOCH=$((now + sleep_seconds))
   refresh_next_check "$NEXT_CHECK_EPOCH"
-  sleep "$sleep_seconds"
+  sleep "$sleep_seconds" &
+  SLEEP_PID=$!
+  wait "$SLEEP_PID" 2>/dev/null || true
+  SLEEP_PID=
 done

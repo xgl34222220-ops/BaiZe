@@ -11,6 +11,8 @@ RESULT_DIR="$STATE_DIR/task-results"
 RESULT_FILE="$RESULT_DIR/$TASK_ID.env"
 WORKER_FILE="$STATE_DIR/worker.env"
 LOG_FILE="$STATE_DIR/logs/worker-$TASK_ID.log"
+ORGANIZER_RESULT="$STATE_DIR/organizer-result.env"
+HISTORY_FILE="$STATE_DIR/history.tsv"
 mkdir -p "$RESULT_DIR" "$STATE_DIR/logs"
 started=$(date +%s)
 code=127
@@ -28,6 +30,19 @@ else
   echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
 fi
 ended=$(date +%s)
+if [ "$MODE" = organize ] && [ -f "$ORGANIZER_RESULT" ]; then
+  moved=$(sed -n 's/^moved=//p' "$ORGANIZER_RESULT" | tail -n 1)
+  bytes=$(sed -n 's/^bytes=//p' "$ORGANIZER_RESULT" | tail -n 1)
+  failed=$(sed -n 's/^failed=//p' "$ORGANIZER_RESULT" | tail -n 1)
+  phase=$(sed -n 's/^phase=//p' "$ORGANIZER_RESULT" | tail -n 1 | tr '\t\r\n' '   ')
+  case "$moved" in ''|*[!0-9]*) moved=0 ;; esac
+  case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
+  case "$failed" in ''|*[!0-9]*) failed=0 ;; esac
+  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+  printf '%s\torganize\t%s\t%s\t0\t%s\t%s\t%s\t\t\n' \
+    "$timestamp" "$bytes" "$moved" "$failed" "${phase:-文件归类完成}" "$TRIGGER" >>"$HISTORY_FILE"
+  tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+fi
 tmp="$RESULT_FILE.tmp.$$"
 {
   echo "task_id=$TASK_ID"
@@ -38,6 +53,12 @@ tmp="$RESULT_FILE.tmp.$$"
   echo "elapsed=$((ended-started))"
   echo "exit_code=$code"
   echo "log=$LOG_FILE"
+  if [ "$MODE" = organize ] && [ -f "$ORGANIZER_RESULT" ]; then
+    for key in success cancelled requested moved skipped failed bytes undoAvailable phase; do
+      value=$(sed -n "s/^$key=//p" "$ORGANIZER_RESULT" | tail -n 1)
+      [ -n "$value" ] && printf '%s=%s\n' "$key" "$value"
+    done
+  fi
 } >"$tmp" && mv -f "$tmp" "$RESULT_FILE"
 chmod 0600 "$RESULT_FILE" 2>/dev/null || true
 current_id=$(sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1)
