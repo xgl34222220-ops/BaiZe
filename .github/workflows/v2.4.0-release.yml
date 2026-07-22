@@ -213,7 +213,7 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$CERT_FILE"
           cat "$CERT_FILE"
           if [ "${{ github.event_name }}" != 'pull_request' ]; then
-            APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($2); exit}' "$CERT_FILE" | tr -d ':[:space:]')
+            APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT_FILE" | tr -d ':[:space:]')
             test "$APK_CERT" = "$BAIZE_CERT_SHA256"
           fi
           cp "$APK" "$RELEASE_APK"
