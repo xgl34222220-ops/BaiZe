@@ -70,4 +70,5 @@ for method in ("scanSafe", "getPage", "cleanSafe", "getTaskState", "cancelCurren
     require(method in AIDL, f"binder method missing: {method}")
 
 runpy.run_path(str(ROOT / "v2/tests/test-candidate-selection-plan.py"), run_name="__main__")
+runpy.run_path(str(ROOT / "v2/tests/test-clean-result-report.py"), run_name="__main__")
 print("clean plan persistence contract: ok")

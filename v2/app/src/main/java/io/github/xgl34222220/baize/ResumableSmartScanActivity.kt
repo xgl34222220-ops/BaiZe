@@ -62,8 +62,10 @@ import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeRootService
 import io.github.xgl34222220.baize.root.CleanPlanResumeRootService
+import io.github.xgl34222220.baize.root.CleanResultRootService
 import io.github.xgl34222220.baize.root.IBaiZeRootService
 import io.github.xgl34222220.baize.root.ICleanPlanResumeService
+import io.github.xgl34222220.baize.root.ICleanResultService
 import io.github.xgl34222220.baize.root.IPersistentCleanPlanService
 import io.github.xgl34222220.baize.root.PersistentCleanPlanRootService
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
@@ -81,7 +83,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
 
-/** Smart clean with stage checkpoints and crash-safe resume. */
+/** Smart clean with stage checkpoints, crash-safe resume and explainable reports. */
 class ResumableSmartScanActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
@@ -89,9 +91,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private var cacheService: IBaiZeRootService? = null
     private var planService: IPersistentCleanPlanService? = null
     private var resumeService: ICleanPlanResumeService? = null
+    private var resultService: ICleanResultService? = null
     private var cacheBindingRequested = false
     private var planBindingRequested = false
     private var resumeBindingRequested = false
+    private var resultBindingRequested = false
     private var pollJob: Job? = null
 
     private var cacheSnapshotId = ""
@@ -102,6 +106,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private var originalSafeCount = 0
     private var cleanPlanId = ""
     private var cleanPlanCreatedAt = 0L
+    private var authorizedBytes = 0L
+    private var lastResultId = ""
     private var runCount = 0
     private var deletedBytes = 0L
     private var deletedFiles = 0L
@@ -166,6 +172,20 @@ class ResumableSmartScanActivity : ComponentActivity() {
         }
     }
 
+    private val resultConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            resultService = ICleanResultService.Stub.asInterface(binder)
+            resultBindingRequested = true
+            updateConnectionState()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            resultService = null
+            resultBindingRequested = false
+            updateConnectionState()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -180,7 +200,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         onScan = ::startSmartScan,
                         onClean = { showCleanConfirm = true },
                         onStop = ::stopTask,
-                        onReconnect = ::bindServices
+                        onReconnect = ::bindServices,
+                        onReport = ::openResultReport
                     )
                     if (showCleanConfirm) {
                         AlertDialog(
@@ -256,16 +277,34 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 screenState = screenState.copy(phase = "断点事务 Root 服务启动失败：${it.message}")
             }
         }
+        if (resultService == null && !resultBindingRequested) {
+            runCatching {
+                RootService.bind(
+                    Intent(this, CleanResultRootService::class.java)
+                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                    resultConnection
+                )
+                resultBindingRequested = true
+            }.onFailure {
+                resultBindingRequested = false
+                screenState = screenState.copy(phase = "清理报告 Root 服务启动失败：${it.message}")
+            }
+        }
         updateConnectionState()
     }
 
     private fun updateConnectionState() {
-        val readyCount = listOf(cacheService, planService, resumeService).count { it != null }
+        val readyCount = listOf(cacheService, planService, resumeService, resultService).count { it != null }
         screenState = screenState.copy(
-            connected = readyCount == 3,
-            status = if (readyCount == 3) "扫描、快照与断点事务引擎已连接" else "正在连接 Root 引擎 · $readyCount/3"
+            connected = readyCount == 4,
+            status = if (readyCount == 4) {
+                "扫描、快照、断点与报告引擎已连接"
+            } else {
+                "正在连接 Root 引擎 · $readyCount/4"
+            },
+            resultId = lastResultId
         )
-        if (readyCount == 3 && restoredPlanNeedsValidation && !validationRunning) validateRestoredPlan()
+        if (readyCount == 4 && restoredPlanNeedsValidation && !validationRunning) validateRestoredPlan()
     }
 
     private fun startSmartScan() {
@@ -273,7 +312,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val cache = cacheService
         val plans = planService
         val transactions = resumeService
-        if (cache == null || plans == null || transactions == null) {
+        if (cache == null || plans == null || transactions == null || resultService == null) {
             screenState = screenState.copy(phase = "Root 引擎尚未全部连接，正在重新连接…")
             bindServices()
             return
@@ -286,10 +325,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
             connected = true,
             running = true,
             operation = "scan",
-            status = "扫描、快照与断点事务引擎已连接",
+            status = "扫描、快照、断点与报告引擎已连接",
             phase = "正在并行生成应用缓存与安全项目清理计划…",
             progressCurrent = 0,
             progressTotal = 2,
+            resultId = lastResultId,
             cacheSummary = "正在扫描",
             safeSummary = "正在扫描"
         )
@@ -324,6 +364,10 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 ).coerceAtLeast(0)
                 originalCacheCount = cacheCount
                 originalSafeCount = safeCount
+                authorizedBytes = (
+                    cacheJson.optLong("snapshotBytes", cacheJson.optLong("bytes", 0L)) +
+                        safeJson.optLong("knownBytes", 0L)
+                    ).coerceAtLeast(0L)
                 cleanPlanId = UUID.randomUUID().toString()
                 cleanPlanCreatedAt = System.currentTimeMillis()
 
@@ -344,6 +388,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     resumable = false,
                     progressCurrent = 2,
                     progressTotal = 2,
+                    estimatedBytes = authorizedBytes,
+                    resultId = lastResultId,
                     cacheSummary = if (cacheJson.has("error")) {
                         cacheJson.optString("message", "缓存扫描失败")
                     } else "$cacheCount 项 · ${cacheJson.optLong("elapsedMs")}ms",
@@ -375,7 +421,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val cache = cacheService
         val plans = planService
         val transactions = resumeService
-        if (cache == null || plans == null || transactions == null) {
+        val results = resultService
+        if (cache == null || plans == null || transactions == null || results == null) {
             screenState = screenState.copy(phase = "Root 引擎尚未全部连接")
             bindServices()
             return
@@ -394,6 +441,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
         lifecycleScope.launch {
             var interrupted = false
             try {
+                val registered = JSONObject(withContext(Dispatchers.IO) {
+                    results.registerPlan(cleanPlanId, originalCacheCount + originalSafeCount, authorizedBytes)
+                })
+                if (registered.has("error")) {
+                    throw IllegalStateException(registered.optString("message", "无法登记清理前统计"))
+                }
+
                 val begin = JSONObject(withContext(Dispatchers.IO) {
                     transactions.begin(cleanPlanId, cacheSnapshotId, safeSnapshotId, cacheCount, safeCount)
                 })
@@ -408,11 +462,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     screenState = screenState.copy(phase = "正在清理应用缓存 · 已建立事务检查点")
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
-                            JSONObject(cache.cleanSelected(
-                                cacheSnapshotId,
-                                selection,
-                                JSONArray(whitelist.toList().sorted()).toString()
-                            ))
+                            JSONObject(
+                                cache.cleanSelected(
+                                    cacheSnapshotId,
+                                    selection,
+                                    JSONArray(whitelist.toList().sorted()).toString()
+                                )
+                            )
                         }.getOrElse { throwableJson(it) }
                     }
                     val checkpoint = JSONObject(withContext(Dispatchers.IO) {
@@ -445,9 +501,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 val remaining = cacheCount + safeCount
                 val elapsed = SystemClock.elapsedRealtime() - started
                 val report = buildString {
-                    append(if (remaining > 0) {
-                        if (interrupted) "清理已安全停止" else "清理部分完成"
-                    } else "清理计划执行完成")
+                    append(
+                        if (remaining > 0) {
+                            if (interrupted) "清理已安全停止" else "清理部分完成"
+                        } else "清理计划执行完成"
+                    )
                     append(" · ${elapsed}ms")
                     append("\n累计释放 ${Formatter.formatFileSize(this@ResumableSmartScanActivity, deletedBytes)}")
                     append(" · 已处理 $processedCandidates 项 · 实际清理 $cleanedCandidates 项 · 剩余 $remaining 项")
@@ -464,12 +522,21 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     .apply()
 
                 if (remaining <= 0) {
+                    val archived = JSONObject(withContext(Dispatchers.IO) { results.archive(cleanPlanId) })
+                    if (archived.has("error")) {
+                        throw IllegalStateException(archived.optString("message", "清理完成但报告归档失败"))
+                    }
+                    lastResultId = archived.optString("reportId", cleanPlanId)
+                    preferences.edit().putString(PREF_LAST_RESULT_ID, lastResultId).apply()
                     withContext(Dispatchers.IO) { runCatching { transactions.finish(cleanPlanId) } }
                     clearLocalPlan()
                 } else {
                     resumable = true
+                    lastResultId = cleanPlanId
+                    preferences.edit().putString(PREF_LAST_RESULT_ID, lastResultId).apply()
                     persistCleanPlan()
                 }
+
                 screenState = screenState.copy(
                     running = false,
                     operation = "",
@@ -490,6 +557,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     unattributedDeletedBytes = unattributedDeletedBytes,
                     categoryStats = categoryStats.toString(),
                     riskStats = riskStats.toString(),
+                    estimatedBytes = authorizedBytes,
+                    resultId = lastResultId,
                     failures = cumulativeFailures,
                     progressCurrent = (originalCacheCount + originalSafeCount - remaining).coerceAtLeast(0),
                     progressTotal = (originalCacheCount + originalSafeCount).coerceAtLeast(1),
@@ -509,6 +578,10 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 if (recovered != null && !recovered.has("error")) applyTransaction(recovered)
                 val remaining = cacheCount + safeCount
                 resumable = remaining > 0
+                if (processedCandidates > 0 && cleanPlanId.isNotBlank()) {
+                    lastResultId = cleanPlanId
+                    preferences.edit().putString(PREF_LAST_RESULT_ID, lastResultId).apply()
+                }
                 if (remaining > 0) persistCleanPlan()
                 screenState = screenState.copy(
                     running = false,
@@ -520,7 +593,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     resumable = remaining > 0,
                     runCount = runCount,
                     deletedBytes = deletedBytes,
+                    processedCandidates = processedCandidates,
                     cleanedCandidates = cleanedCandidates,
+                    changedCandidates = changedCandidates,
+                    protectedCandidates = protectedCandidates,
+                    partialCandidates = partialCandidates,
+                    failedCandidates = failedCandidates,
+                    estimatedBytes = authorizedBytes,
+                    resultId = lastResultId,
                     failures = cumulativeFailures,
                     cacheSummary = "应用缓存剩余 $cacheCount 项",
                     safeSummary = "安全项目剩余 $safeCount 项"
@@ -531,6 +611,18 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 updateConnectionState()
             }
         }
+    }
+
+    private fun openResultReport() {
+        val id = lastResultId.ifBlank { cleanPlanId }
+        if (id.isBlank()) {
+            screenState = screenState.copy(phase = "当前还没有可查看的逐项清理结果")
+            return
+        }
+        startActivity(
+            Intent(this, CleanResultActivity::class.java)
+                .putExtra(CleanResultActivity.EXTRA_REPORT_ID, id)
+        )
     }
 
     private fun stopTask() {
@@ -586,23 +678,32 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 
     private fun restoreCleanPlan() {
+        lastResultId = preferences.getString(PREF_LAST_RESULT_ID, "").orEmpty()
         val rawV2 = preferences.getString(CLEAN_PLAN_KEY, null).orEmpty()
         val raw = if (rawV2.isNotBlank()) rawV2 else preferences.getString(LEGACY_PLAN_KEY, null).orEmpty()
-        if (raw.isBlank()) return
+        if (raw.isBlank()) {
+            screenState = screenState.copy(resultId = lastResultId)
+            return
+        }
         val plan = runCatching { JSONObject(raw) }.getOrNull() ?: run {
             clearLocalPlan()
+            screenState = screenState.copy(resultId = lastResultId)
             return
         }
         val createdAt = plan.optLong("createdAt", 0L)
         val age = System.currentTimeMillis() - createdAt
         if (createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS || plan.optString("optionsSha") != sha256(optionsJson())) {
             clearLocalPlan()
-            screenState = screenState.copy(phase = "旧清理计划已过期或设置已变化，请重新扫描")
+            screenState = screenState.copy(
+                phase = "旧清理计划已过期或设置已变化，请重新扫描",
+                resultId = lastResultId
+            )
             return
         }
 
         cleanPlanId = plan.optString("planId")
         cleanPlanCreatedAt = createdAt
+        authorizedBytes = plan.optLong("selectedCandidateBytes", plan.optLong("estimatedBytes", 0L)).coerceAtLeast(0L)
         cacheSnapshotId = plan.optString("cacheSnapshotId")
         safeSnapshotId = plan.optString("safeSnapshotId")
         cacheCount = plan.optInt("cacheCount").coerceAtLeast(0)
@@ -625,9 +726,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
         riskStats = plan.optJSONObject("riskStats") ?: JSONObject()
         cumulativeFailures = plan.optInt("deleteErrors", plan.optInt("failures", 0)).coerceAtLeast(0)
         resumable = plan.optBoolean("resumable", runCount > 0)
+        if (lastResultId.isBlank() && processedCandidates > 0) lastResultId = cleanPlanId
         val total = cacheCount + safeCount
         if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank())) {
             clearLocalPlan()
+            screenState = screenState.copy(resultId = lastResultId)
             return
         }
         if (rawV2.isBlank()) persistCleanPlan()
@@ -650,6 +753,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
             unattributedDeletedBytes = unattributedDeletedBytes,
             categoryStats = categoryStats.toString(),
             riskStats = riskStats.toString(),
+            estimatedBytes = authorizedBytes,
+            resultId = lastResultId,
             failures = cumulativeFailures,
             cacheSummary = plan.optString("cacheSummary", "剩余 $cacheCount 项"),
             safeSummary = plan.optString("safeSummary", "剩余 $safeCount 项")
@@ -660,6 +765,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val cache = cacheService ?: return
         val plans = planService ?: return
         val transactions = resumeService ?: return
+        val results = resultService ?: return
         if (!restoredPlanNeedsValidation || validationRunning) return
         validationRunning = true
         lifecycleScope.launch {
@@ -692,6 +798,20 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 val remaining = cacheCount + safeCount
                 resumable = runCount > 0 && remaining > 0
                 if (remaining <= 0) {
+                    if (processedCandidates > 0) {
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                results.registerPlan(cleanPlanId, originalCacheCount + originalSafeCount, authorizedBytes)
+                                val archived = JSONObject(results.archive(cleanPlanId))
+                                if (!archived.has("error")) {
+                                    lastResultId = archived.optString("reportId", cleanPlanId)
+                                }
+                            }
+                        }
+                        if (lastResultId.isNotBlank()) {
+                            preferences.edit().putString(PREF_LAST_RESULT_ID, lastResultId).apply()
+                        }
+                    }
                     withContext(Dispatchers.IO) { runCatching { transactions.finish(cleanPlanId) } }
                     clearLocalPlan()
                     screenState = screenState.copy(
@@ -699,7 +819,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         totalSafe = 0,
                         cleanReady = false,
                         scanCompleted = false,
-                        resumable = false
+                        resumable = false,
+                        estimatedBytes = authorizedBytes,
+                        resultId = lastResultId
                     )
                 } else {
                     persistCleanPlan()
@@ -713,7 +835,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         resumable = resumable,
                         runCount = runCount,
                         deletedBytes = deletedBytes,
+                        processedCandidates = processedCandidates,
                         cleanedCandidates = cleanedCandidates,
+                        changedCandidates = changedCandidates,
+                        protectedCandidates = protectedCandidates,
+                        partialCandidates = partialCandidates,
+                        failedCandidates = failedCandidates,
+                        estimatedBytes = authorizedBytes,
+                        resultId = lastResultId,
                         failures = cumulativeFailures,
                         cacheSummary = "应用缓存剩余 $cacheCount 项",
                         safeSummary = "安全项目剩余 $safeCount 项"
@@ -745,6 +874,10 @@ class ResumableSmartScanActivity : ComponentActivity() {
         riskStats = json.optJSONObject("riskStats") ?: riskStats
         cumulativeFailures = json.optInt("deleteErrors", json.optInt("failures", cumulativeFailures)).coerceAtLeast(0)
         resumable = json.optBoolean("resumable", cacheCount + safeCount > 0 && runCount > 0)
+        if (processedCandidates > 0 && cleanPlanId.isNotBlank()) {
+            lastResultId = cleanPlanId
+            preferences.edit().putString(PREF_LAST_RESULT_ID, lastResultId).apply()
+        }
         screenState = screenState.copy(
             totalSafe = cacheCount + safeCount,
             resumable = resumable,
@@ -760,6 +893,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
             unattributedDeletedBytes = unattributedDeletedBytes,
             categoryStats = categoryStats.toString(),
             riskStats = riskStats.toString(),
+            estimatedBytes = authorizedBytes,
+            resultId = lastResultId,
             failures = cumulativeFailures,
             cacheSummary = "应用缓存剩余 $cacheCount 项",
             safeSummary = "安全项目剩余 $safeCount 项"
@@ -780,6 +915,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("safeCount", safeCount)
             .put("originalCacheCount", originalCacheCount)
             .put("originalSafeCount", originalSafeCount)
+            .put("selectedCandidateBytes", authorizedBytes)
             .put("runCount", runCount)
             .put("deletedBytes", deletedBytes)
             .put("deletedFiles", deletedFiles)
@@ -854,6 +990,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         originalSafeCount = 0
         cleanPlanId = ""
         cleanPlanCreatedAt = 0L
+        authorizedBytes = 0L
         runCount = 0
         deletedBytes = 0L
         deletedFiles = 0L
@@ -883,6 +1020,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         if (cacheBindingRequested) runCatching { RootService.unbind(cacheConnection) }
         if (planBindingRequested) runCatching { RootService.unbind(planConnection) }
         if (resumeBindingRequested) runCatching { RootService.unbind(resumeConnection) }
+        if (resultBindingRequested) runCatching { RootService.unbind(resultConnection) }
         super.onDestroy()
     }
 
@@ -891,6 +1029,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         private const val LEGACY_PLAN_KEY = "smart_clean_plan_v1"
         private const val CLEAN_PLAN_VERSION = 2
         private const val CLEAN_PLAN_TTL_MS = 30L * 60_000L
+        private const val PREF_LAST_RESULT_ID = "last_clean_result_id"
     }
 }
 
@@ -916,6 +1055,8 @@ private data class ResumeSmartUiState(
     val unattributedDeletedBytes: Long = 0L,
     val categoryStats: String = "{}",
     val riskStats: String = "{}",
+    val estimatedBytes: Long = 0L,
+    val resultId: String = "",
     val failures: Int = 0,
     val progressCurrent: Int = 0,
     val progressTotal: Int = 0,
@@ -930,7 +1071,8 @@ private fun ResumeSmartScreen(
     onScan: () -> Unit,
     onClean: () -> Unit,
     onStop: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    onReport: () -> Unit
 ) {
     val context = LocalContext.current
     val progress = if (state.progressTotal > 0) {
@@ -951,7 +1093,7 @@ private fun ResumeSmartScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("RESUME CLEAN", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                     Text("智能扫描", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    Text("扫描一次 · 清理中断后从剩余项目继续", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("扫描一次 · 中断续清 · 逐项报告", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -969,7 +1111,7 @@ private fun ResumeSmartScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                if (state.cleanReady) Icons.Rounded.CheckCircle else Icons.Rounded.CleaningServices,
+                                if (state.cleanReady || state.resultId.isNotBlank()) Icons.Rounded.CheckCircle else Icons.Rounded.CleaningServices,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(30.dp)
@@ -1020,11 +1162,18 @@ private fun ResumeSmartScreen(
                             Text("开始智能扫描")
                         }
                     }
+                    if (state.resultId.isNotBlank()) {
+                        OutlinedButton(onClick = onReport, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text("查看逐项清理报告")
+                        }
+                    }
                 }
             }
         }
 
-        if (state.scanCompleted || state.runCount > 0) {
+        if (state.scanCompleted || state.runCount > 0 || state.processedCandidates > 0) {
             item {
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                     Text("TRANSACTION", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
@@ -1049,6 +1198,7 @@ private fun ResumeSmartScreen(
                     }
                 }
             }
+            item { ResumeComparisonCard(state) }
             item { ResumeInfoCard("应用缓存", state.cacheSummary) }
             item { ResumeInfoCard("安全项目", state.safeSummary) }
             item { ResumeInfoCard("按类别统计", formatMetricBuckets(state.categoryStats)) }
@@ -1060,7 +1210,7 @@ private fun ResumeSmartScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                 ) {
                     Text(
-                        "已完成或确认失效的候选会从事务快照中移除；部分删除、失败和未执行候选继续保留。应用或 Root 服务异常退出后，会先恢复快照检查点，再允许继续清理。",
+                        "已完成或确认失效的候选会从事务快照中移除；部分删除、失败和未执行候选继续保留。完成后先归档逐项报告，再删除事务备份。",
                         modifier = Modifier.padding(18.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
@@ -1068,6 +1218,36 @@ private fun ResumeSmartScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ResumeComparisonCard(state: ResumeSmartUiState) {
+    val context = LocalContext.current
+    val authorized = (state.totalSafe + state.processedCandidates).coerceAtLeast(0)
+    val completion = if (authorized > 0) (state.processedCandidates * 100 / authorized).coerceIn(0, 100) else 0
+    val recovery = if (state.estimatedBytes > 0L) {
+        ((state.deletedBytes * 100L / state.estimatedBytes).coerceIn(0L, 999L)).toInt()
+    } else 0
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {
+            Text("清理前后对比", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "预计 ${Formatter.formatFileSize(context, state.estimatedBytes)} · 实际 ${Formatter.formatFileSize(context, state.deletedBytes)} · 空间兑现 $recovery%",
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontSize = 12.sp
+            )
+            Text(
+                "处理完成度 $completion% · 剩余 ${state.totalSafe} 项",
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontSize = 12.sp
+            )
         }
     }
 }
@@ -1082,11 +1262,10 @@ private fun ResumeInfoCard(title: String, summary: String) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(3.dp))
-            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
     }
 }
-
 
 private fun formatMetricBuckets(raw: String): String {
     val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())

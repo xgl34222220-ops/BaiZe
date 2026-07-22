@@ -31,6 +31,7 @@
         <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
         <activity android:name=".ResumableSmartScanActivity" android:exported="false" />
         <activity android:name=".CandidateSmartScanActivity" android:exported="false" />
+        <activity android:name=".CleanResultActivity" android:exported="false" />
         <activity-alias
             android:name=".SmartScanActivity"
             android:exported="false"
@@ -70,6 +71,10 @@
             tools:ignore="Instantiatable" />
         <service
             android:name=".root.CandidatePlanRootService"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
+        <service
+            android:name=".root.CleanResultRootService"
             android:exported="false"
             tools:ignore="Instantiatable" />
     </application>
