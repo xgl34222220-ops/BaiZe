@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-OUTPUT="$OUT/BaiZe-v2.4.0-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.4.1-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -100,11 +100,11 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'storage-files.nul'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.4.0$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=24000$'
-unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.4.0"'
-if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.3\.0|versionCode=23000'; then
-  echo "安装脚本仍包含旧版 v2.3.0 标识，禁止发布" >&2
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.4.1$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=24001$'
+unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.4.1"'
+if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.(3\.0|4\.0)|versionCode=(23000|24000)'; then
+  echo "安装脚本仍包含旧版本标识，禁止发布" >&2
   exit 1
 fi
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
@@ -117,4 +117,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.4.0 完整强化模块：$OUTPUT"
+echo "已生成白泽 v2.4.1 完整强化模块：$OUTPUT"

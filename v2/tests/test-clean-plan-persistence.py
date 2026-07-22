@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
 ACTIVITY = (APP / "PersistentSmartScanActivity.kt").read_text(encoding="utf-8")
+RESUMABLE = (APP / "ResumableSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/PersistentCleanPlanRootService.kt").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IPersistentCleanPlanService.aidl").read_text(encoding="utf-8")
@@ -46,16 +47,19 @@ for symbol in (
     require(symbol in SERVICE, f"missing root persistence contract: {symbol}")
 
 require("NativeProfileEngine(this, cancelled)" in SERVICE, "native engine must remain the primary scanner")
-require("engine.scan(\"safe\"" in SERVICE, "safe discovery must use the existing scanner")
+require('engine.scan("safe"' in SERVICE, "safe discovery must use the existing scanner")
 require("engine.scan(" not in SERVICE[SERVICE.index("private fun cleanPersistedSnapshot"):],
         "persisted fallback cleaner must never rediscover candidates")
 
 require('android:name=".PersistentSmartScanActivity"' in MANIFEST, "persistent activity is not registered")
+require('android:name=".ResumableSmartScanActivity"' in MANIFEST, "resumable activity is not registered")
 require('android:name=".SmartScanActivity"' in MANIFEST, "legacy component alias is missing")
-require('android:targetActivity=".PersistentSmartScanActivity"' in MANIFEST,
-        "legacy smart-scan entry does not route to the persistent activity")
+require('android:targetActivity=".ResumableSmartScanActivity"' in MANIFEST,
+        "legacy smart-scan entry must route to the latest resumable activity")
 require('android:name=".root.PersistentCleanPlanRootService"' in MANIFEST,
         "persistent root service is not registered")
+require("PersistentCleanPlanRootService" in RESUMABLE and "IPersistentCleanPlanService" in RESUMABLE,
+        "resumable flow must keep using the persisted safe snapshot engine")
 
 for method in ("scanSafe", "getPage", "cleanSafe", "getTaskState", "cancelCurrentTask"):
     require(method in AIDL, f"binder method missing: {method}")
