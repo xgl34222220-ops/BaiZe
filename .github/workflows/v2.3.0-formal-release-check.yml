@@ -13,7 +13,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect formal release
+      - name: Inspect formal release and packaged metadata
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
@@ -41,10 +41,10 @@ jobs:
           TAG=$(printf '%s' "$RELEASE" | jq -r '.tag_name')
           DRAFT=$(printf '%s' "$RELEASE" | jq -r '.draft')
           PRERELEASE=$(printf '%s' "$RELEASE" | jq -r '.prerelease')
-          IMMUTABLE=$(printf '%s' "$RELEASE" | jq -r '.immutable // false')
           BODY=$(printf '%s' "$RELEASE" | jq -r '.body')
           ASSETS=$(printf '%s' "$RELEASE" | jq -r '.assets[].name')
           URL=$(printf '%s' "$RELEASE" | jq -r '.html_url')
+          MODULE_ASSET_ID=$(printf '%s' "$RELEASE" | jq -r '.assets[] | select(.name == "BaiZe-v2.3.0-Module.zip") | .id' | head -n 1)
 
           ok=true
           [ "$TAG" = v2.3.0 ] || ok=false
@@ -57,6 +57,23 @@ jobs:
           printf '%s\n' "$ASSETS" | grep -qx 'BaiZe-v2.3.0.apk.sha256' || ok=false
           printf '%s' "$BODY" | grep -q '白泽是 Android Root 垃圾清理与文件归类模块' || ok=false
 
+          PROP=''
+          if [ -n "$MODULE_ASSET_ID" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/releases/assets/$MODULE_ASSET_ID" \
+              -H 'Accept: application/octet-stream' > /tmp/BaiZe-v2.3.0-Module.zip 2>/tmp/asset-error.log
+            if [ "$?" -eq 0 ] && unzip -tq /tmp/BaiZe-v2.3.0-Module.zip >/dev/null 2>&1; then
+              PROP=$(unzip -p /tmp/BaiZe-v2.3.0-Module.zip module.prop)
+              printf '%s\n' "$PROP" | grep -qx 'description=用于清理应用缓存、安装包、卸载残留和深度垃圾，并整理应用下载、接收、附件与导出文件。' || ok=false
+              if printf '%s\n' "$PROP" | grep -Eq '测试版|稳定化版|后台任务|自恢复|Root Worker|更新|修复|优化'; then
+                ok=false
+              fi
+            else
+              ok=false
+            fi
+          else
+            ok=false
+          fi
+
           {
             echo '# BaiZe v2.3.0 正式发布'
             echo
@@ -66,14 +83,15 @@ jobs:
             echo "- 标题：$NAME"
             echo "- 草稿：\`$DRAFT\`"
             echo "- 预发行：\`$PRERELEASE\`"
-            echo "- 不可修改：\`$IMMUTABLE\`"
             echo "- 地址：$URL"
             echo '- 附件：'
             printf '%s\n' "$ASSETS" | sed 's/^/  - `/' | sed 's/$/`/'
             echo
-            echo '发布说明：'
+            echo '成品 module.prop：'
             echo
-            printf '%s\n' "$BODY"
+            echo '```properties'
+            printf '%s\n' "$PROP"
+            echo '```'
           } >/tmp/status.md
           gh issue edit 97 --repo "$GITHUB_REPOSITORY" --body-file /tmp/status.md
           [ "$ok" = true ]
