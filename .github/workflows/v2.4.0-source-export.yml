@@ -55,6 +55,10 @@ jobs:
           grep -Fxq 'service.sh' /tmp/baize-v240-files.txt
           grep -Fxq 'v2/tests/test-scheduler-fairness.sh' /tmp/baize-v240-files.txt
           tar -xzf /tmp/baize-v240-changes.tar.gz
+          sed -i 's/^internal data class FileOrganizerScheduleSettings(/data class FileOrganizerScheduleSettings(/' \
+            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q '^data class FileOrganizerScheduleSettings(' \
+            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
 
       - name: Verify shell and regression tests
         shell: bash
