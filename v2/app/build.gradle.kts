@@ -8,6 +8,12 @@ val releaseKeystorePath = providers.environmentVariable("BAIZE_KEYSTORE_PATH")
 val releaseKeystorePassword = providers.environmentVariable("BAIZE_KEYSTORE_PASSWORD")
 val releaseKeyAlias = providers.environmentVariable("BAIZE_KEY_ALIAS")
 val releaseKeyPassword = providers.environmentVariable("BAIZE_KEY_PASSWORD")
+val releaseSigningReady = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { provider -> provider.isPresent && provider.get().isNotBlank() }
 
 android {
     namespace = "io.github.xgl34222220.baize"
@@ -39,11 +45,11 @@ android {
 
     signingConfigs {
         create("release") {
-            if (releaseKeystorePath.isPresent) {
+            if (releaseSigningReady) {
                 storeFile = file(releaseKeystorePath.get())
-                storePassword = releaseKeystorePassword.orNull
-                keyAlias = releaseKeyAlias.orNull
-                keyPassword = releaseKeyPassword.orNull
+                storePassword = releaseKeystorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
@@ -54,7 +60,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName(if (releaseKeystorePath.isPresent) "release" else "debug")
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -66,6 +72,22 @@ android {
 
     packaging {
         resources.excludes += setOf("META-INF/AL2.0", "META-INF/LGPL2.1")
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val requestsReleaseArtifact = allTasks.any { task ->
+        task.name.contains("Release", ignoreCase = true) &&
+            (task.name.contains("assemble", ignoreCase = true) ||
+                task.name.contains("bundle", ignoreCase = true) ||
+                task.name.contains("package", ignoreCase = true) ||
+                task.name.contains("sign", ignoreCase = true))
+    }
+    if (requestsReleaseArtifact && !releaseSigningReady) {
+        throw GradleException(
+            "正式 Release 构建缺少 BAIZE_KEYSTORE_PATH、BAIZE_KEYSTORE_PASSWORD、" +
+                "BAIZE_KEY_ALIAS 或 BAIZE_KEY_PASSWORD；禁止回退到 Debug 签名。"
+        )
     }
 }
 
