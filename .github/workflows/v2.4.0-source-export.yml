@@ -94,5 +94,5 @@ jobs:
               actual_tar=$(sha256sum /tmp/baize-v240-diagnostic.tar.gz | awk '{print $1}')
             fi
           fi
-          gh issue comment 94 --repo "$GITHUB_REPOSITORY" \
+          gh pr comment 100 --repo "$GITHUB_REPOSITORY" \
             --body "BAIZE_V240_SOURCE_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA parts=$part_count bytes=$total_bytes b64=$actual_b64 tar=$actual_tar"
