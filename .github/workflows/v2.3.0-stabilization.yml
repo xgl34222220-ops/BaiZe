@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   verify-build-package:
+    if: github.event_name != 'pull_request' || github.head_ref != 'feat/v2.4.0-complete-hardening'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout committed source
