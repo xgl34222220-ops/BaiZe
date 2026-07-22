@@ -1,19 +1,31 @@
 #!/system/bin/sh
-MODDIR=${0%/*}
+# BaiZe v2.4 unified Root scheduler.
+# App only submits configuration/commands. This process owns fairness, conditions, locking and recovery.
+set -u
+
+MODDIR=${BAIZE_MODULE_DIR:-${0%/*}}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
-CONFIG="$STATE_DIR/config.conf"
+CONFIG=${BAIZE_CONFIG_PATH:-$STATE_DIR/config.conf}
 LOG_DIR="$STATE_DIR/logs"
 SCHEDULER_STATE="$STATE_DIR/scheduler.env"
+QUEUE_FILE="$STATE_DIR/scheduler-queue.tsv"
+REQUEST_DIR="$STATE_DIR/scheduler-requests"
+SKIP_DIR="$STATE_DIR/scheduler-skips"
 LOCK_DIR="$STATE_DIR/run.lock"
 STOP_FILE="$STATE_DIR/stop"
 RUNNING_FILE="$STATE_DIR/running.env"
-MIN_SLEEP_SECONDS=30
-MAX_SLEEP_SECONDS=900
-CONDITION_RETRY_SECONDS=60
+MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-30}
+MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
+CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}
 FAILURE_LIMIT=3
 FAILURE_PAUSE_SECONDS=21600
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
+QUEUE_COUNT=0
+QUEUE_GROUPS=
+NEXT_TASK=
+BLOCKED_GROUPS=
+INSTANCE_ID=${BAIZE_SUPERVISOR_INSTANCE:-scheduler-$$-$(date +%s)}
 
 wake_scheduler() {
   if [ -n "${SLEEP_PID:-}" ]; then
@@ -21,511 +33,366 @@ wake_scheduler() {
   fi
 }
 trap wake_scheduler USR1 HUP
+trap 'wake_scheduler; exit 0' INT TERM
 
-while [ "$(getprop sys.boot_completed)" != "1" ]; do
-  sleep 10
-done
-# 等待存储、包管理器和通知服务稳定，避免开机阶段误扫。
-sleep 120
+if [ "${BAIZE_SKIP_BOOT_WAIT:-0}" != 1 ]; then
+  while [ "$(getprop sys.boot_completed 2>/dev/null)" != "1" ]; do sleep 10; done
+  # Wait for storage/package/media services to settle. Tests opt out with BAIZE_SKIP_BOOT_WAIT=1.
+  sleep 120
+fi
 
-mkdir -p "$LOG_DIR"
-[ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
+mkdir -p "$LOG_DIR" "$REQUEST_DIR" "$SKIP_DIR"
+[ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null || : >"$CONFIG"
 
-config_value() {
-  sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1
-}
-
-bool_value() {
-  [ "$(config_value "$1")" = "1" ] && echo 1 || echo 0
-}
-
+config_value() { sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1; }
+bool_value() { [ "$(config_value "$1")" = 1 ] && echo 1 || echo 0; }
 uint_value() {
-  value=$(config_value "$1")
-  fallback=$2
-  min=$3
-  max=$4
-  case "$value" in ''|*[!0-9]*) value=$fallback ;; esac
-  [ "$value" -lt "$min" ] && value=$min
-  [ "$value" -gt "$max" ] && value=$max
-  echo "$value"
+  uv_value=$(config_value "$1"); uv_fallback=$2; uv_min=$3; uv_max=$4
+  case "$uv_value" in ''|*[!0-9]*) uv_value=$uv_fallback ;; esac
+  [ "$uv_value" -lt "$uv_min" ] && uv_value=$uv_min
+  [ "$uv_value" -gt "$uv_max" ] && uv_value=$uv_max
+  echo "$uv_value"
 }
-
 valid_interval_seconds() {
-  minutes_key=$1 hours_key=$2 fallback_minutes=$3
-  minutes=$(config_value "$minutes_key")
-  case "$minutes" in ''|*[!0-9]*) hours=$(uint_value "$hours_key" 1 1 720); minutes=$((hours * 60)) ;; esac
-  [ "$minutes" -lt 5 ] && minutes=5
-  [ "$minutes" -gt 43200 ] && minutes=43200
-  echo $((minutes * 60))
+  vi_minutes=$(config_value "$1")
+  case "$vi_minutes" in ''|*[!0-9]*) vi_hours=$(uint_value "$2" 1 1 720); vi_minutes=$((vi_hours * 60)) ;; esac
+  [ "$vi_minutes" -lt 5 ] && vi_minutes=5
+  [ "$vi_minutes" -gt 43200 ] && vi_minutes=43200
+  echo $((vi_minutes * 60))
 }
-
-daily_value() {
-  uint_value "$1" "$2" 0 "$3"
+sanitize_env() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+proc_start_ticks() {
+  pst_pid=$1
+  [ -r "/proc/$pst_pid/stat" ] || return 1
+  awk '{print $22}' "/proc/$pst_pid/stat" 2>/dev/null
 }
 
 write_scheduler_state() {
-  state=$1
-  group=${2:-}
-  reason=${3:-}
-  now=$(date +%s)
-  old_state=$(sed -n 's/^state=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_group=$(sed -n 's/^group=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_reason=$(sed -n 's/^reason=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  old_updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
-  case "$old_updated" in ''|*[!0-9]*) old_updated=0 ;; esac
-  case "$state" in
-    running|completed|failed|interrupted|paused) ;;
+  ws_state=$1; ws_group=${2:-}; ws_reason=${3:-}
+  ws_now=$(date +%s)
+  ws_old_state=$(sed -n 's/^state=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  ws_old_group=$(sed -n 's/^group=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  ws_old_reason=$(sed -n 's/^reason=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  ws_old_queue=$(sed -n 's/^queue_groups=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  ws_old_updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  case "$ws_old_updated" in ''|*[!0-9]*) ws_old_updated=0 ;; esac
+  case "$ws_state" in running|completed|failed|interrupted|paused|skipped) ;;
     *)
-      if [ "$state" = "$old_state" ] && [ "$group" = "$old_group" ] &&
-         [ "$reason" = "$old_reason" ] && [ $((now - old_updated)) -lt 300 ]; then
-        return 0
-      fi
+      if [ "$ws_state" = "$ws_old_state" ] && [ "$ws_group" = "$ws_old_group" ] &&
+         [ "$ws_reason" = "$ws_old_reason" ] && [ "$QUEUE_GROUPS" = "$ws_old_queue" ] &&
+         [ $((ws_now - ws_old_updated)) -lt 120 ]; then return 0; fi
       ;;
   esac
-  tmp="$SCHEDULER_STATE.tmp.$$"
+  ws_tmp="$SCHEDULER_STATE.tmp.$$"
   {
-    echo "state=$state"
-    echo "group=$group"
-    echo "reason=$reason"
-    echo "updated=$now"
+    echo "state=$ws_state"
+    echo "group=$(sanitize_env "$ws_group")"
+    echo "reason=$(sanitize_env "$ws_reason")"
+    echo "updated=$ws_now"
     echo "next_check_epoch=${NEXT_CHECK_EPOCH:-0}"
     echo "scheduler_pid=$$"
-    echo "heartbeat_epoch=$now"
-  } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
+    echo "scheduler_start_ticks=$(proc_start_ticks $$ 2>/dev/null || echo 0)"
+    echo "instance_id=$(sanitize_env "$INSTANCE_ID")"
+    echo "heartbeat_epoch=$ws_now"
+    echo "queue_count=${QUEUE_COUNT:-0}"
+    echo "queue_groups=$(sanitize_env "${QUEUE_GROUPS:-}")"
+    echo "next_task=$(sanitize_env "${NEXT_TASK:-}")"
+    echo "blocked_groups=$(sanitize_env "${BLOCKED_GROUPS:-}")"
+  } >"$ws_tmp" && mv -f "$ws_tmp" "$SCHEDULER_STATE"
+  chmod 0600 "$SCHEDULER_STATE" 2>/dev/null || true
 }
 
 refresh_next_check() {
-  next=$1
-  [ -f "$SCHEDULER_STATE" ] || {
-    NEXT_CHECK_EPOCH=$next
-    write_scheduler_state "waiting" "" "等待下一次定时检查"
-    return
-  }
-  state=$(sed -n 's/^state=//p' "$SCHEDULER_STATE" | tail -n 1)
-  group=$(sed -n 's/^group=//p' "$SCHEDULER_STATE" | tail -n 1)
-  reason=$(sed -n 's/^reason=//p' "$SCHEDULER_STATE" | tail -n 1)
-  updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" | tail -n 1)
-  case "$updated" in ''|*[!0-9]*) updated=$(date +%s) ;; esac
-  tmp="$SCHEDULER_STATE.tmp.$$"
-  {
-    echo "state=${state:-waiting}"
-    echo "group=$group"
-    echo "reason=${reason:-等待下一次定时检查}"
-    echo "updated=$updated"
-    echo "next_check_epoch=$next"
-    echo "scheduler_pid=$$"
-    echo "heartbeat_epoch=$(date +%s)"
-  } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
+  NEXT_CHECK_EPOCH=$1
+  rn_state=$(sed -n 's/^state=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  rn_group=$(sed -n 's/^group=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  rn_reason=$(sed -n 's/^reason=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
+  write_scheduler_state "${rn_state:-waiting}" "$rn_group" "${rn_reason:-等待下一次定时检查}"
 }
 
 rotate_scheduler_log() {
-  file=$1
-  [ -f "$file" ] || return 0
-  size=$(wc -c <"$file" 2>/dev/null | tr -d ' ')
-  case "$size" in ''|*[!0-9]*) size=0 ;; esac
-  if [ "$size" -gt 262144 ]; then
-    mv -f "$file" "$file.1" 2>/dev/null || : >"$file"
-  fi
+  rl_file=$1; [ -f "$rl_file" ] || return 0
+  rl_size=$(wc -c <"$rl_file" 2>/dev/null | tr -d ' ')
+  case "$rl_size" in ''|*[!0-9]*) rl_size=0 ;; esac
+  [ "$rl_size" -le 262144 ] || mv -f "$rl_file" "$rl_file.1" 2>/dev/null || : >"$rl_file"
 }
-
 failure_count_file() { printf '%s/scheduler-fail-%s.count\n' "$STATE_DIR" "$1"; }
 pause_until_file() { printf '%s/scheduler-pause-%s.until\n' "$STATE_DIR" "$1"; }
-
-clear_group_failure() {
-  rm -f "$(failure_count_file "$1")" "$(pause_until_file "$1")"
-}
-
+clear_group_failure() { rm -f "$(failure_count_file "$1")" "$(pause_until_file "$1")"; }
 record_group_failure() {
-  group=$1
-  count_file=$(failure_count_file "$group")
-  pause_file=$(pause_until_file "$group")
-  count=$(sed -n '1p' "$count_file" 2>/dev/null)
-  case "$count" in ''|*[!0-9]*) count=0 ;; esac
-  count=$((count + 1))
-  printf '%s\n' "$count" >"$count_file"
-  if [ "$count" -ge "$FAILURE_LIMIT" ]; then
-    until=$(( $(date +%s) + FAILURE_PAUSE_SECONDS ))
-    printf '%s\n' "$until" >"$pause_file"
-    FAILURE_REASON="连续失败 ${count} 次，已暂停 6 小时"
-    return 1
+  rg_group=$1; rg_count_file=$(failure_count_file "$rg_group"); rg_pause_file=$(pause_until_file "$rg_group")
+  rg_count=$(sed -n '1p' "$rg_count_file" 2>/dev/null)
+  case "$rg_count" in ''|*[!0-9]*) rg_count=0 ;; esac
+  rg_count=$((rg_count + 1)); printf '%s\n' "$rg_count" >"$rg_count_file"
+  if [ "$rg_count" -ge "$FAILURE_LIMIT" ]; then
+    rg_until=$(( $(date +%s) + FAILURE_PAUSE_SECONDS )); printf '%s\n' "$rg_until" >"$rg_pause_file"
+    FAILURE_REASON="连续失败 ${rg_count} 次，已暂停 6 小时"; return 1
   fi
-  FAILURE_REASON="连续失败 ${count}/${FAILURE_LIMIT} 次"
-  return 0
+  FAILURE_REASON="连续失败 ${rg_count}/${FAILURE_LIMIT} 次"; return 0
 }
-
 group_pause_remaining() {
-  group=$1
-  pause_file=$(pause_until_file "$group")
-  until=$(sed -n '1p' "$pause_file" 2>/dev/null)
-  case "$until" in ''|*[!0-9]*) until=0 ;; esac
-  now=$(date +%s)
-  if [ "$until" -gt "$now" ]; then
-    echo $((until - now))
-    return 0
-  fi
-  [ "$until" -gt 0 ] && rm -f "$pause_file" "$(failure_count_file "$group")"
+  gp_group=$1; gp_pause_file=$(pause_until_file "$gp_group")
+  gp_until=$(sed -n '1p' "$gp_pause_file" 2>/dev/null)
+  case "$gp_until" in ''|*[!0-9]*) gp_until=0 ;; esac
+  gp_now=$(date +%s)
+  if [ "$gp_until" -gt "$gp_now" ]; then echo $((gp_until - gp_now)); return 0; fi
+  [ "$gp_until" -gt 0 ] && rm -f "$gp_pause_file" "$(failure_count_file "$gp_group")"
   return 1
 }
 
 scheduler_task_alive() {
-  pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$pid" -gt 1 ] 2>/dev/null || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  [ -r "/proc/$pid/cmdline" ] || return 1
-  cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-scan.sh*|*cache-snapshot-clean.sh*|*profile-snapshot-clean.sh*|*apk-snapshot-*|*organizer-worker.sh*|*worker-runner.sh*organize*|*baize_engine*) return 0 ;;
+  sta_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+  sta_ticks=$(sed -n '1p' "$LOCK_DIR/start_ticks" 2>/dev/null)
+  case "$sta_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$sta_pid" -gt 1 ] 2>/dev/null || return 1
+  kill -0 "$sta_pid" 2>/dev/null || return 1
+  sta_actual=$(proc_start_ticks "$sta_pid" 2>/dev/null || echo 0)
+  case "$sta_ticks" in ''|*[!0-9]*) sta_ticks=0 ;; esac
+  [ "$sta_ticks" -eq 0 ] || [ "$sta_actual" = "$sta_ticks" ] || return 1
+  sta_cmdline=$(tr '\000' ' ' <"/proc/$sta_pid/cmdline" 2>/dev/null)
+  case "$sta_cmdline" in
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-scan.sh*|*cache-snapshot-clean.sh*|*profile-snapshot-clean.sh*|*apk-snapshot-*|*organizer-worker.sh*|*worker-runner.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
-
 clear_stale_task_markers() {
-  if [ -d "$LOCK_DIR" ] && scheduler_task_alive; then
-    return 0
-  fi
+  if [ -d "$LOCK_DIR" ] && scheduler_task_alive; then return 0; fi
   [ -d "$LOCK_DIR" ] && rm -rf -- "$LOCK_DIR" 2>/dev/null
   rm -f "$STOP_FILE" "$RUNNING_FILE" 2>/dev/null
 }
 
-is_screen_off() {
-  dumpsys power 2>/dev/null | grep -Eq 'Display Power: state=OFF|mWakefulness=Asleep|mInteractive=false'
-}
-
+is_screen_off() { dumpsys power 2>/dev/null | grep -Eq 'Display Power: state=OFF|mWakefulness=Asleep|mInteractive=false'; }
 is_device_idle() {
-  idle_dump=$(dumpsys deviceidle 2>/dev/null)
-  printf '%s\n' "$idle_dump" | grep -Eq 'mState=(IDLE|IDLE_MAINTENANCE)|mLightState=(IDLE|WAITING_FOR_NETWORK)'
+  id_dump=$(dumpsys deviceidle 2>/dev/null)
+  printf '%s\n' "$id_dump" | grep -Eq 'mState=(IDLE|IDLE_MAINTENANCE)|mLightState=(IDLE|WAITING_FOR_NETWORK)'
 }
-
 conditions_allow_task() {
-  task_group=${1:-clean}
-  SCHEDULE_REASON=""
-  [ "$(bool_value enabled)" = "1" ] || { SCHEDULE_REASON="Root 定时任务总开关已关闭"; return 1; }
-  [ -f "$STATE_DIR/stop" ] && { SCHEDULE_REASON="已收到停止请求"; return 1; }
-
-  screen_key=screen_off_only
-  idle_key=device_idle_only
-  charging_key=charging_only
-  if [ "$task_group" = organize ]; then
-    screen_key=organize_screen_off_only
-    idle_key=organize_device_idle_only
-    charging_key=organize_charging_only
-  fi
-
-  if [ "$(bool_value "$screen_key")" = "1" ] && ! is_screen_off; then
-    SCHEDULE_REASON="等待息屏"
-    return 1
-  fi
-
-  if [ "$(bool_value "$idle_key")" = "1" ] && ! is_device_idle; then
-    SCHEDULE_REASON="等待系统进入空闲状态"
-    return 1
-  fi
-
-  battery_dump=$(dumpsys battery 2>/dev/null)
-  if [ "$(bool_value "$charging_key")" = "1" ]; then
-    if ! printf '%s\n' "$battery_dump" | grep -Eq '^[[:space:]]*(AC powered|USB powered|Wireless powered|Dock powered): true'; then
-      status=$(printf '%s\n' "$battery_dump" | sed -n 's/^[[:space:]]*status: //p' | head -n 1)
-      if [ "$status" != "2" ] && [ "$status" != "5" ]; then
-        SCHEDULE_REASON="等待设备充电"
-        return 1
-      fi
+  ca_group=${1:-cache}; SCHEDULE_REASON=
+  [ "$(bool_value enabled)" = 1 ] || { SCHEDULE_REASON="Root 定时任务总开关已关闭"; return 1; }
+  [ ! -f "$STOP_FILE" ] || { SCHEDULE_REASON="已收到停止请求"; return 1; }
+  ca_screen=screen_off_only; ca_idle=device_idle_only; ca_charging=charging_only
+  if [ "$ca_group" = organize ]; then ca_screen=organize_screen_off_only; ca_idle=organize_device_idle_only; ca_charging=organize_charging_only; fi
+  if [ "$(bool_value "$ca_screen")" = 1 ] && ! is_screen_off; then SCHEDULE_REASON="等待息屏"; return 1; fi
+  if [ "$(bool_value "$ca_idle")" = 1 ] && ! is_device_idle; then SCHEDULE_REASON="等待系统进入空闲状态"; return 1; fi
+  ca_battery_dump=$(dumpsys battery 2>/dev/null)
+  if [ "$(bool_value "$ca_charging")" = 1 ]; then
+    if ! printf '%s\n' "$ca_battery_dump" | grep -Eq '^[[:space:]]*(AC powered|USB powered|Wireless powered|Dock powered): true'; then
+      ca_status=$(printf '%s\n' "$ca_battery_dump" | sed -n 's/^[[:space:]]*status: //p' | head -n 1)
+      [ "$ca_status" = 2 ] || [ "$ca_status" = 5 ] || { SCHEDULE_REASON="等待设备充电"; return 1; }
     fi
   fi
-
-  min_battery=$(uint_value min_battery 25 0 100)
-  battery=$(printf '%s\n' "$battery_dump" | sed -n 's/^[[:space:]]*level: //p' | head -n 1)
-  case "$battery" in ''|*[!0-9]*) battery=100 ;; esac
-  [ "$battery" -ge "$min_battery" ] || {
-    SCHEDULE_REASON="等待电量达到 ${min_battery}%（当前 ${battery}%）"
-    return 1
-  }
-
-  max_temp=$(uint_value max_battery_temp 45 30 60)
-  raw_temp=$(printf '%s\n' "$battery_dump" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)
-  case "$raw_temp" in ''|*[!0-9]*) raw_temp=0 ;; esac
-  if [ "$raw_temp" -gt 0 ]; then
-    max_raw=$((max_temp * 10))
-    if [ "$raw_temp" -gt "$max_raw" ]; then
-      temp_text=$(awk -v t="$raw_temp" 'BEGIN {printf "%.1f", t/10}')
-      SCHEDULE_REASON="等待电池降温（当前 ${temp_text}°C，上限 ${max_temp}°C）"
-      return 1
-    fi
+  ca_min=$(uint_value min_battery 25 0 100)
+  ca_level=$(printf '%s\n' "$ca_battery_dump" | sed -n 's/^[[:space:]]*level: //p' | head -n 1)
+  case "$ca_level" in ''|*[!0-9]*) ca_level=100 ;; esac
+  [ "$ca_level" -ge "$ca_min" ] || { SCHEDULE_REASON="等待电量达到 ${ca_min}%（当前 ${ca_level}%）"; return 1; }
+  ca_max_temp=$(uint_value max_battery_temp 45 30 60)
+  ca_temp=$(printf '%s\n' "$ca_battery_dump" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)
+  case "$ca_temp" in ''|*[!0-9]*) ca_temp=0 ;; esac
+  if [ "$ca_temp" -gt $((ca_max_temp * 10)) ]; then
+    ca_temp_text=$(awk -v t="$ca_temp" 'BEGIN {printf "%.1f", t/10}')
+    SCHEDULE_REASON="等待电池降温（当前 ${ca_temp_text}°C，上限 ${ca_max_temp}°C）"; return 1
   fi
   return 0
 }
 
-handle_cleaner_result() {
-  code=$1
-  group=$2
-  success_reason=$3
-  run_log=$4
-  stamp_type=$5
-  stamp_value=$6
-  case "$code" in
+group_spec() {
+  case "$1" in
+    cache) SPEC_ENABLED=schedule_cache_enabled; SPEC_MINUTES=schedule_cache_minutes; SPEC_HOURS=schedule_cache_hours; SPEC_FALLBACK=30; SPEC_MODE=cache-auto ;;
+    empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=30; SPEC_MODE=empty-clean ;;
+    rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=30; SPEC_MODE=rules-clean ;;
+    fragment) SPEC_ENABLED=schedule_fragment_enabled; SPEC_MINUTES=schedule_fragment_minutes; SPEC_HOURS=schedule_fragment_hours; SPEC_FALLBACK=30; SPEC_MODE=fragment-clean ;;
+    deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=10080; SPEC_MODE=deep-clean ;;
+    organize) SPEC_ENABLED=schedule_organize_enabled; SPEC_MINUTES=schedule_organize_minutes; SPEC_HOURS=schedule_organize_hours; SPEC_FALLBACK=1440; SPEC_MODE=organize ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
+# Outputs DAILY_CYCLE, DAILY_DUE_AT and DAILY_LABEL when today's/previous day's grace window is active.
+daily_cycle_info() {
+  dci_now=$(date +%s); dci_hour=$(uint_value daily_schedule_hour 3 0 23); dci_minute=$(uint_value daily_schedule_minute 30 0 59); dci_grace=$(uint_value daily_grace_minutes 240 15 720)
+  dci_h=$(date +%H | sed 's/^0//'); [ -n "$dci_h" ] || dci_h=0
+  dci_m=$(date +%M | sed 's/^0//'); [ -n "$dci_m" ] || dci_m=0
+  dci_s=$(date +%S | sed 's/^0//'); [ -n "$dci_s" ] || dci_s=0
+  dci_now_min=$((dci_h * 60 + dci_m)); dci_target=$((dci_hour * 60 + dci_minute)); dci_elapsed=-1
+  DAILY_CYCLE=$(date +%F 2>/dev/null); DAILY_LABEL=$(printf '%02d:%02d' "$dci_hour" "$dci_minute")
+  if [ "$dci_now_min" -ge "$dci_target" ]; then
+    dci_elapsed=$((dci_now_min - dci_target))
+    [ "$dci_elapsed" -le "$dci_grace" ] || return 1
+  else
+    dci_previous=$((dci_now_min + 1440 - dci_target))
+    [ "$dci_previous" -le "$dci_grace" ] || return 1
+    dci_elapsed=$dci_previous
+    DAILY_CYCLE=$(date -d 'yesterday' +%F 2>/dev/null || echo previous)
+  fi
+  DAILY_DUE_AT=$((dci_now - dci_elapsed * 60 - dci_s))
+  return 0
+}
+
+CANDIDATES=
+add_candidate() {
+  ac_priority=$1; ac_due=$2; ac_group=$3; ac_mode=$4; ac_kind=$5; ac_request=${6:-}; ac_cycle=${7:-}
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ac_priority" "$ac_due" "$ac_group" "$ac_mode" "$ac_kind" "$ac_request" "$ac_cycle" >>"$CANDIDATES"
+}
+collect_manual_requests() {
+  for cm_file in "$REQUEST_DIR"/*.env; do
+    [ -f "$cm_file" ] || continue
+    cm_group=$(sed -n 's/^group=//p' "$cm_file" | tail -n 1)
+    cm_created=$(sed -n 's/^created=//p' "$cm_file" | tail -n 1)
+    case "$cm_created" in ''|*[!0-9]*) cm_created=0 ;; esac
+    group_spec "$cm_group" || { rm -f "$cm_file"; continue; }
+    add_candidate 0 "$cm_created" "$cm_group" "$SPEC_MODE" manual "$cm_file" ""
+  done
+}
+collect_scheduled_candidates() {
+  [ "$(bool_value enabled)" = 1 ] || return 0
+  cs_now=$(date +%s); cs_daily=0
+  [ "$(bool_value daily_schedule_enabled)" = 1 ] && daily_cycle_info && cs_daily=1
+  for cs_group in cache empty rules fragment deep organize; do
+    group_spec "$cs_group" || continue
+    [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
+    if [ "$cs_group" != organize ] && [ "$cs_daily" = 1 ]; then
+      cs_stamp="$STATE_DIR/last_${cs_group}_daily.date"
+      [ "$(sed -n '1p' "$cs_stamp" 2>/dev/null)" = "$DAILY_CYCLE" ] && continue
+      add_candidate 1 "$DAILY_DUE_AT" "$cs_group" "$SPEC_MODE" daily "" "$DAILY_CYCLE"
+    elif [ "$cs_group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ]; then
+      continue
+    else
+      cs_interval=$(valid_interval_seconds "$SPEC_MINUTES" "$SPEC_HOURS" "$SPEC_FALLBACK")
+      cs_stamp="$STATE_DIR/last_${cs_group}_run.epoch"
+      cs_last=$(sed -n '1p' "$cs_stamp" 2>/dev/null); case "$cs_last" in ''|*[!0-9]*) cs_last=0 ;; esac
+      cs_due=$((cs_last + cs_interval)); [ "$cs_due" -le "$cs_now" ] || continue
+      add_candidate 1 "$cs_due" "$cs_group" "$SPEC_MODE" interval "" ""
+    fi
+  done
+}
+
+apply_skip_requests() {
+  for as_file in "$SKIP_DIR"/*.request; do
+    [ -f "$as_file" ] || continue
+    as_group=${as_file##*/}; as_group=${as_group%.request}
+    if group_spec "$as_group"; then
+      rm -f "$REQUEST_DIR"/*-"$as_group".env 2>/dev/null || true
+      as_now=$(date +%s); printf '%s\n' "$as_now" >"$STATE_DIR/last_${as_group}_run.epoch"
+      if [ "$as_group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ] && daily_cycle_info; then
+        printf '%s\n' "$DAILY_CYCLE" >"$STATE_DIR/last_${as_group}_daily.date"
+      fi
+      QUEUE_COUNT=0; QUEUE_GROUPS=; NEXT_TASK=
+      write_scheduler_state skipped "$as_group" "已跳过本次任务"
+    fi
+    rm -f "$as_file"
+  done
+}
+
+refresh_queue_snapshot() {
+  QUEUE_COUNT=0; QUEUE_GROUPS=; NEXT_TASK=
+  [ -s "$CANDIDATES" ] || { : >"$QUEUE_FILE"; return; }
+  sort -n -k1,1 -k2,2 "$CANDIDATES" >"$QUEUE_FILE.tmp.$$" && mv -f "$QUEUE_FILE.tmp.$$" "$QUEUE_FILE"
+  while IFS="$(printf '\t')" read -r rq_priority rq_due rq_group rq_mode rq_kind rq_request rq_cycle; do
+    [ -n "${rq_group:-}" ] || continue
+    QUEUE_COUNT=$((QUEUE_COUNT + 1))
+    [ -n "$QUEUE_GROUPS" ] && QUEUE_GROUPS="$QUEUE_GROUPS,$rq_group" || QUEUE_GROUPS=$rq_group
+    [ -n "$NEXT_TASK" ] || NEXT_TASK=$rq_group
+  done <"$QUEUE_FILE"
+}
+
+mark_group_completed() {
+  mg_group=$1; mg_kind=$2; mg_cycle=${3:-}; mg_now=$(date +%s)
+  printf '%s\n' "$mg_now" >"$STATE_DIR/last_${mg_group}_run.epoch"
+  [ "$mg_kind" != daily ] || printf '%s\n' "$mg_cycle" >"$STATE_DIR/last_${mg_group}_daily.date"
+}
+handle_task_result() {
+  hr_code=$1; hr_group=$2; hr_kind=$3; hr_cycle=$4; hr_request=$5; hr_run_log=$6
+  case "$hr_code" in
     0)
-      case "$stamp_type" in
-        epoch) date +%s >"$stamp_value" ;;
-        date) printf '%s\n' "$stamp_value" >"$STATE_DIR/last_${group}_daily.date" ;;
-      esac
-      clear_group_failure "$group"
-      write_scheduler_state "completed" "$group" "$success_reason"
+      mark_group_completed "$hr_group" "$hr_kind" "$hr_cycle"; clear_group_failure "$hr_group"
+      [ -n "$hr_request" ] && rm -f "$hr_request"
+      write_scheduler_state completed "$hr_group" "任务已完成，继续检查队列"
       ;;
     3)
-      write_scheduler_state "waiting" "$group" "已有手动或其他清理任务正在运行，稍后重试"
+      write_scheduler_state waiting "$hr_group" "已有手动或其他任务运行，稍后继续队列"
       ;;
     9)
-      write_scheduler_state "interrupted" "$group" "任务已停止或达到运行时长上限，本周期不会记为完成"
+      [ -n "$hr_request" ] && rm -f "$hr_request"
+      write_scheduler_state interrupted "$hr_group" "任务已停止，本周期不会记为完成"
       ;;
     *)
-      if record_group_failure "$group"; then
-        write_scheduler_state "failed" "$group" "执行失败（代码 $code，$FAILURE_REASON），请查看 $run_log"
+      [ -n "$hr_request" ] && rm -f "$hr_request"
+      if record_group_failure "$hr_group"; then
+        write_scheduler_state failed "$hr_group" "执行失败（代码 $hr_code，$FAILURE_REASON），请查看 $hr_run_log"
       else
-        write_scheduler_state "paused" "$group" "执行失败（代码 $code）；$FAILURE_REASON，请查看 $run_log"
+        write_scheduler_state paused "$hr_group" "执行失败（代码 $hr_code）；$FAILURE_REASON"
       fi
       ;;
   esac
 }
 
-run_due_group() {
-  group=$1
-  enabled_key=$2
-  minutes_key=$3
-  hours_key=$4
-  fallback_minutes=$5
-  mode=$6
-  [ "$(bool_value "$enabled_key")" = "1" ] || return 0
-  if remaining=$(group_pause_remaining "$group"); then
-    write_scheduler_state "paused" "$group" "连续失败熔断中，约 $(( (remaining + 59) / 60 )) 分钟后重试"
-    return 11
-  fi
-  interval_seconds=$(valid_interval_seconds "$minutes_key" "$hours_key" "$fallback_minutes")
-  interval_minutes=$((interval_seconds / 60))
-  stamp="$STATE_DIR/last_${group}_run.epoch"
-  now=$(date +%s)
-  last=$(sed -n '1p' "$stamp" 2>/dev/null)
-  case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  due=$interval_seconds
-  [ $((now - last)) -ge "$due" ] || return 0
-  if ! conditions_allow_task "$group"; then
-    write_scheduler_state "waiting" "$group" "$SCHEDULE_REASON"
-    return 10
-  fi
-  write_scheduler_state "running" "$group" "定时任务执行中"
-  run_log="$LOG_DIR/scheduler-${group}.log"
-  rotate_scheduler_log "$run_log"
-  sh "$MODDIR/task-worker.sh" "$mode" "scheduled:$group" "scheduled-$group-$(date +%s)" wait >>"$run_log" 2>&1
-  code=$?
-  handle_cleaner_result "$code" "$group" "已完成；下次约 ${interval_minutes} 分钟后" "$run_log" epoch "$stamp"
-  return "$code"
-}
-
-run_daily_group() {
-  group=$1
-  enabled_key=$2
-  mode=$3
-  daily_cycle=$4
-  daily_label=$5
-  legacy_cycle_date=$6
-  [ "$(bool_value "$enabled_key")" = "1" ] || return 0
-  if remaining=$(group_pause_remaining "$group"); then
-    write_scheduler_state "paused" "$group" "连续失败熔断中，约 $(( (remaining + 59) / 60 )) 分钟后重试"
-    return 11
-  fi
-  stamp="$STATE_DIR/last_${group}_daily.date"
-  stamp_value=$(sed -n '1p' "$stamp" 2>/dev/null)
-  [ "$stamp_value" = "$daily_cycle" ] && return 0
-  [ -n "$legacy_cycle_date" ] && [ "$stamp_value" = "$legacy_cycle_date" ] && return 0
-  if ! conditions_allow_task "$group"; then
-    write_scheduler_state "waiting" "$group" "$SCHEDULE_REASON"
-    return 10
-  fi
-  write_scheduler_state "running" "$group" "每日定时任务执行中"
-  run_log="$LOG_DIR/scheduler-${group}.log"
-  rotate_scheduler_log "$run_log"
-  sh "$MODDIR/task-worker.sh" "$mode" "daily:$group" "daily-$group-$(date +%s)" wait >>"$run_log" 2>&1
-  code=$?
-  handle_cleaner_result "$code" "$group" "每日任务已完成（$daily_label）" "$run_log" date "$daily_cycle"
-  return "$code"
-}
-
-try_scheduled_clean() {
-  any=0
-  for key in schedule_cache_enabled schedule_empty_enabled schedule_rules_enabled schedule_fragment_enabled schedule_deep_enabled schedule_organize_enabled; do
-    [ "$(bool_value "$key")" = "1" ] && any=1
-  done
-  [ "$any" = "1" ] || { write_scheduler_state "disabled" "" "所有定时任务均已关闭"; return 0; }
-
-  # 文件归类始终使用自己的周期；它与清理任务共享锁、状态、恢复和历史。
-  run_due_group organize schedule_organize_enabled schedule_organize_minutes schedule_organize_hours 1440 organize
-  organize_code=$?
-  case "$organize_code" in
-    3|9) return 0 ;;
-    0|10|11) ;;
-    *) write_scheduler_state "failed" "organize" "文件归类调度失败（代码 $organize_code）" ;;
-  esac
-
-  # 每日模式优先且独占；超出补做窗口后跳过当天，避免白天突然执行。
-  if [ "$(bool_value daily_schedule_enabled)" = "1" ]; then
-    hour=$(daily_value daily_schedule_hour 3 23)
-    minute=$(daily_value daily_schedule_minute 30 59)
-    grace=$(uint_value daily_grace_minutes 240 15 720)
-    now_epoch=$(date +%s)
-    now_hour=$(date +%H | sed 's/^0//'); [ -n "$now_hour" ] || now_hour=0
-    now_minute=$(date +%M | sed 's/^0//'); [ -n "$now_minute" ] || now_minute=0
-    now_second=$(date +%S | sed 's/^0//'); [ -n "$now_second" ] || now_second=0
-    now_total=$((now_hour * 60 + now_minute))
-    target_total=$((hour * 60 + minute))
-    schedule_text=$(printf '%02d:%02d' "$hour" "$minute")
-    daily_context="今日 $schedule_text"
-    legacy_cycle_date=$(date +%F 2>/dev/null)
-
-    if [ "$now_total" -ge "$target_total" ]; then
-      elapsed_minutes=$((now_total - target_total))
-      if [ "$elapsed_minutes" -gt "$grace" ]; then
-        write_scheduler_state "missed" "daily" "已超过今日补做窗口（${grace} 分钟），等待明日"
-        return 0
-      fi
-    else
-      previous_elapsed=$((now_total + 1440 - target_total))
-      if [ "$previous_elapsed" -le "$grace" ]; then
-        elapsed_minutes=$previous_elapsed
-        daily_context="跨午夜补做 $schedule_text"
-        legacy_cycle_date=$(date -d 'yesterday' +%F 2>/dev/null)
-      else
-        if [ $((target_total + grace)) -ge 1440 ]; then
-          write_scheduler_state "missed" "daily" "已超过上一日补做窗口，等待今日 $schedule_text"
-        else
-          write_scheduler_state "waiting" "daily" "等待每日 $schedule_text"
-        fi
-        return 0
-      fi
+run_next_fair_task() {
+  TASK_EXECUTED=0; BLOCKED_GROUPS=
+  [ -s "$QUEUE_FILE" ] || { write_scheduler_state waiting "" "没有到期任务"; return 0; }
+  if scheduler_task_alive; then write_scheduler_state waiting "" "已有手动任务运行，队列将在完成后继续"; return 0; fi
+  while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
+    [ -n "${rn_group:-}" ] || continue
+    if rn_pause=$(group_pause_remaining "$rn_group"); then
+      rn_reason="${rn_group}:熔断$(( (rn_pause + 59) / 60 ))分钟"
+      [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
+      continue
     fi
-
-    daily_cycle=$((now_epoch - elapsed_minutes * 60 - now_second))
-    failed_groups=""
-    for daily_spec in \
-      "cache schedule_cache_enabled cache-auto" \
-      "empty schedule_empty_enabled empty-clean" \
-      "rules schedule_rules_enabled rules-clean" \
-      "fragment schedule_fragment_enabled fragment-clean" \
-      "deep schedule_deep_enabled deep-clean"; do
-      set -- $daily_spec
-      group_name=$1
-      run_daily_group "$1" "$2" "$3" "$daily_cycle" "$daily_context" "$legacy_cycle_date"
-      group_code=$?
-      case "$group_code" in
-        3|9|10) return 0 ;;
-        0|11) ;;
-        *) failed_groups="${failed_groups}${failed_groups:+、}${group_name}(代码${group_code})" ;;
-      esac
-    done
-    [ -n "$failed_groups" ] && write_scheduler_state "failed" "multiple" "部分每日任务失败：$failed_groups"
+    if ! conditions_allow_task "$rn_group"; then
+      rn_reason="${rn_group}:${SCHEDULE_REASON}"
+      [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
+      continue
+    fi
+    write_scheduler_state running "$rn_group" "按超期时间与请求顺序执行队列"
+    rn_log="$LOG_DIR/scheduler-${rn_group}.log"; rotate_scheduler_log "$rn_log"
+    rn_task_id="scheduled-${rn_group}-$(date +%s)-$$"
+    sh "$MODDIR/task-worker.sh" "$rn_mode" "scheduler:$rn_kind" "$rn_task_id" wait >>"$rn_log" 2>&1
+    rn_code=$?
+    TASK_EXECUTED=1
+    handle_task_result "$rn_code" "$rn_group" "$rn_kind" "$rn_cycle" "$rn_request" "$rn_log"
     return 0
-  fi
-
-  failed_groups=""
-  for interval_spec in \
-    "cache schedule_cache_enabled schedule_cache_minutes schedule_cache_hours 30 cache-auto" \
-    "empty schedule_empty_enabled schedule_empty_minutes schedule_empty_hours 30 empty-clean" \
-    "rules schedule_rules_enabled schedule_rules_minutes schedule_rules_hours 30 rules-clean" \
-    "fragment schedule_fragment_enabled schedule_fragment_minutes schedule_fragment_hours 30 fragment-clean" \
-    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080 deep-clean"; do
-    set -- $interval_spec
-    group_name=$1
-    run_due_group "$1" "$2" "$3" "$4" "$5" "$6"
-    group_code=$?
-    case "$group_code" in
-      3|9|10) return 0 ;;
-      0|11) ;;
-      *) failed_groups="${failed_groups}${failed_groups:+、}${group_name}(代码${group_code})" ;;
-    esac
-  done
-  [ -n "$failed_groups" ] && write_scheduler_state "failed" "multiple" "部分间隔任务失败：$failed_groups"
+  done <"$QUEUE_FILE"
+  write_scheduler_state waiting "" "${BLOCKED_GROUPS:-所有到期任务都在等待执行条件}"
   return 0
 }
 
-clamp_sleep() {
-  value=$1
-  [ "$value" -lt "$MIN_SLEEP_SECONDS" ] && value=$MIN_SLEEP_SECONDS
-  [ "$value" -gt "$MAX_SLEEP_SECONDS" ] && value=$MAX_SLEEP_SECONDS
-  echo "$value"
-}
-
-compute_daily_sleep() {
-  hour=$(daily_value daily_schedule_hour 3 23)
-  minute=$(daily_value daily_schedule_minute 30 59)
-  grace=$(uint_value daily_grace_minutes 240 15 720)
-  now_hour=$(date +%H | sed 's/^0//'); [ -n "$now_hour" ] || now_hour=0
-  now_minute=$(date +%M | sed 's/^0//'); [ -n "$now_minute" ] || now_minute=0
-  now_second=$(date +%S | sed 's/^0//'); [ -n "$now_second" ] || now_second=0
-  now_total=$((now_hour * 60 + now_minute))
-  target_total=$((hour * 60 + minute))
-  if [ "$now_total" -ge "$target_total" ] && [ $((now_total - target_total)) -le "$grace" ]; then
-    echo "$CONDITION_RETRY_SECONDS"
-    return
-  fi
-  previous_elapsed=$((now_total + 1440 - target_total))
-  if [ "$now_total" -lt "$target_total" ] && [ "$previous_elapsed" -le "$grace" ]; then
-    echo "$CONDITION_RETRY_SECONDS"
-    return
-  fi
-  if [ "$now_total" -lt "$target_total" ]; then
-    seconds=$(((target_total - now_total) * 60 - now_second))
-  else
-    seconds=$(((1440 - now_total + target_total) * 60 - now_second))
-  fi
-  clamp_sleep "$seconds"
-}
-
-compute_interval_sleep() {
-  now=$(date +%s)
-  minimum=0
-  for spec in \
-    "cache schedule_cache_enabled schedule_cache_minutes schedule_cache_hours 30" \
-    "empty schedule_empty_enabled schedule_empty_minutes schedule_empty_hours 30" \
-    "rules schedule_rules_enabled schedule_rules_minutes schedule_rules_hours 30" \
-    "fragment schedule_fragment_enabled schedule_fragment_minutes schedule_fragment_hours 30" \
-    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080" \
-    "organize schedule_organize_enabled schedule_organize_minutes schedule_organize_hours 1440"; do
-    set -- $spec
-    group=$1
-    [ "$(bool_value "$2")" = "1" ] || continue
-    interval_seconds=$(valid_interval_seconds "$3" "$4" "$5")
-    stamp="$STATE_DIR/last_${group}_run.epoch"
-    last=$(sed -n '1p' "$stamp" 2>/dev/null)
-    case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    due_at=$((last + interval_seconds))
-    pause_file=$(pause_until_file "$group")
-    paused_until=$(sed -n '1p' "$pause_file" 2>/dev/null)
-    case "$paused_until" in ''|*[!0-9]*) paused_until=0 ;; esac
-    [ "$paused_until" -gt "$due_at" ] && due_at=$paused_until
-    remaining=$((due_at - now))
-    [ "$remaining" -lt 0 ] && remaining=0
-    if [ "$minimum" -eq 0 ] || [ "$remaining" -lt "$minimum" ]; then minimum=$remaining; fi
-  done
-  [ "$minimum" -eq 0 ] && minimum=$CONDITION_RETRY_SECONDS
-  clamp_sleep "$minimum"
-}
-
+clamp_sleep() { cs_value=$1; [ "$cs_value" -lt "$MIN_SLEEP_SECONDS" ] && cs_value=$MIN_SLEEP_SECONDS; [ "$cs_value" -gt "$MAX_SLEEP_SECONDS" ] && cs_value=$MAX_SLEEP_SECONDS; echo "$cs_value"; }
 compute_next_sleep() {
-  [ "$(bool_value enabled)" = "1" ] || { echo 300; return; }
-  if [ "$(bool_value daily_schedule_enabled)" = "1" ]; then
-    compute_daily_sleep
-  else
-    compute_interval_sleep
+  [ "$TASK_EXECUTED" = 1 ] && { echo "$MIN_SLEEP_SECONDS"; return; }
+  [ "$QUEUE_COUNT" -gt 0 ] && { echo "$CONDITION_RETRY_SECONDS"; return; }
+  cn_now=$(date +%s); cn_minimum=0
+  for cn_group in cache empty rules fragment deep organize; do
+    group_spec "$cn_group" || continue; [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
+    if [ "$cn_group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ]; then continue; fi
+    cn_interval=$(valid_interval_seconds "$SPEC_MINUTES" "$SPEC_HOURS" "$SPEC_FALLBACK")
+    cn_last=$(sed -n '1p' "$STATE_DIR/last_${cn_group}_run.epoch" 2>/dev/null); case "$cn_last" in ''|*[!0-9]*) cn_last=$cn_now ;; esac
+    cn_due=$((cn_last + cn_interval)); cn_remaining=$((cn_due - cn_now)); [ "$cn_remaining" -lt 0 ] && cn_remaining=0
+    [ "$cn_minimum" -eq 0 ] || [ "$cn_remaining" -ge "$cn_minimum" ] || cn_minimum=$cn_remaining
+    [ "$cn_minimum" -ne 0 ] || cn_minimum=$cn_remaining
+  done
+  if [ "$(bool_value daily_schedule_enabled)" = 1 ]; then
+    cn_hour=$(uint_value daily_schedule_hour 3 0 23); cn_minute=$(uint_value daily_schedule_minute 30 0 59)
+    cn_h=$(date +%H | sed 's/^0//'); [ -n "$cn_h" ] || cn_h=0; cn_m=$(date +%M | sed 's/^0//'); [ -n "$cn_m" ] || cn_m=0; cn_s=$(date +%S | sed 's/^0//'); [ -n "$cn_s" ] || cn_s=0
+    cn_now_min=$((cn_h * 60 + cn_m)); cn_target=$((cn_hour * 60 + cn_minute))
+    if [ "$cn_now_min" -lt "$cn_target" ]; then cn_daily=$(((cn_target - cn_now_min) * 60 - cn_s)); else cn_daily=$(((1440 - cn_now_min + cn_target) * 60 - cn_s)); fi
+    [ "$cn_minimum" -eq 0 ] || [ "$cn_daily" -ge "$cn_minimum" ] || cn_minimum=$cn_daily
+    [ "$cn_minimum" -ne 0 ] || cn_minimum=$cn_daily
   fi
+  [ "$cn_minimum" -gt 0 ] || cn_minimum=300
+  clamp_sleep "$cn_minimum"
 }
 
 while true; do
   clear_stale_task_markers
-  try_scheduled_clean
+  apply_skip_requests
+  CANDIDATES="$STATE_DIR/scheduler-candidates.tmp.$$"; : >"$CANDIDATES"
+  collect_manual_requests
+  collect_scheduled_candidates
+  refresh_queue_snapshot
+  run_next_fair_task
+  rm -f "$CANDIDATES"
+  [ "${BAIZE_SCHEDULER_ONCE:-0}" = 1 ] && exit 0
   sleep_seconds=$(compute_next_sleep)
-  now=$(date +%s)
-  NEXT_CHECK_EPOCH=$((now + sleep_seconds))
-  refresh_next_check "$NEXT_CHECK_EPOCH"
-  sleep "$sleep_seconds" &
-  SLEEP_PID=$!
-  wait "$SLEEP_PID" 2>/dev/null || true
-  SLEEP_PID=
+  now=$(date +%s); NEXT_CHECK_EPOCH=$((now + sleep_seconds)); refresh_next_check "$NEXT_CHECK_EPOCH"
+  sleep "$sleep_seconds" & SLEEP_PID=$!; wait "$SLEEP_PID" 2>/dev/null || true; SLEEP_PID=
 done

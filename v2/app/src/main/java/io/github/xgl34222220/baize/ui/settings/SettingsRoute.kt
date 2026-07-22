@@ -22,6 +22,7 @@ fun SettingsRoute(
     val actions = SettingsUiActions(
         onUpdateScheduler = dashboardActions.updateScheduler,
         onSaveScheduler = dashboardActions.saveScheduler,
+        onSchedulerCommand = dashboardActions.schedulerCommand,
         onOpenAppearance = dashboardActions.theme,
         onOpenWhitelist = dashboardActions.whitelist,
         onReconnect = dashboardActions.reconnect,

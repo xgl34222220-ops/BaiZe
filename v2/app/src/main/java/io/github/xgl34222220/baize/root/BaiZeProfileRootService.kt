@@ -36,7 +36,7 @@ class BaiZeProfileRootService : RootService() {
             .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
-            .put("engine", "unified-root-task-coordinator-v1")
+            .put("engine", "unified-root-task-coordinator-v2")
             .toString()
 
         override fun getProfileCatalog(): String = profileEngine.catalog()
@@ -97,8 +97,8 @@ class BaiZeProfileRootService : RootService() {
 
         override fun runModuleTask(mode: String?): String {
             val normalized = mode.orEmpty().trim().lowercase()
-            if (normalized == "scheduler-wake") {
-                return schedulerRepository.wakeSupervisor("workmanager-fallback")
+            if (normalized.startsWith("scheduler-")) {
+                return schedulerRepository.control(normalized)
             }
             if (normalized !in MODULE_TASKS) {
                 return JSONObject().put("error", "unsupported_mode").put("mode", normalized).toString()

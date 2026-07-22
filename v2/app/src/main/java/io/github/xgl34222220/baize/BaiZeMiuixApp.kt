@@ -260,6 +260,14 @@ data class SchedulerUiState(
     val fragmentMinutes: Int = 720,
     val deepEnabled: Boolean = false,
     val deepMinutes: Int = 10_080,
+    val organizeEnabled: Boolean = false,
+    val organizeMinutes: Int = 1_440,
+    val organizeScreenOffOnly: Boolean = true,
+    val organizeChargingOnly: Boolean = false,
+    val organizeIdleOnly: Boolean = false,
+    val organizeRunImmediately: Boolean = false,
+    val organizerConflictPolicy: Int = 1,
+    val organizerUndoRetention: Int = 10,
     val dailyEnabled: Boolean = false,
     val dailyHour: Int = 3,
     val dailyMinute: Int = 30,
@@ -274,6 +282,16 @@ data class SchedulerUiState(
     val apkPackagesEnabled: Boolean = true,
     val apkPackageDays: Int = 30,
     val scanRootWorkers: Int = 0,
+    val runtimeState: String = "waiting",
+    val runtimeReason: String = "等待调度器首次轮询",
+    val queueCount: Int = 0,
+    val queueGroups: String = "",
+    val nextTask: String = "",
+    val blockedGroups: String = "",
+    val nextCheckEpoch: Long = 0L,
+    val supervisorStatus: String = "unknown",
+    val supervisorHeartbeatAge: Long = -1L,
+    val runtimeStale: Boolean = false,
     val saving: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -293,6 +311,15 @@ data class SchedulerUiState(
         .put("schedule_deep_enabled", deepEnabled.flag())
         .put("schedule_deep_minutes", deepMinutes.coerceIn(5, 43_200))
         .put("schedule_deep_hours", ((deepMinutes + 59) / 60).coerceIn(1, 720))
+        .put("schedule_organize_enabled", organizeEnabled.flag())
+        .put("schedule_organize_minutes", organizeMinutes.coerceIn(15, 43_200))
+        .put("schedule_organize_hours", ((organizeMinutes + 59) / 60).coerceIn(1, 720))
+        .put("organize_screen_off_only", organizeScreenOffOnly.flag())
+        .put("organize_charging_only", organizeChargingOnly.flag())
+        .put("organize_device_idle_only", organizeIdleOnly.flag())
+        .put("organize_run_immediately", organizeRunImmediately.flag())
+        .put("organizer_conflict_policy", organizerConflictPolicy.coerceIn(0, 2))
+        .put("organizer_undo_retention", organizerUndoRetention.coerceIn(1, 20))
         .put("daily_schedule_enabled", dailyEnabled.flag())
         .put("daily_schedule_hour", dailyHour.coerceIn(0, 23))
         .put("daily_schedule_minute", dailyMinute.coerceIn(0, 59))
@@ -309,33 +336,54 @@ data class SchedulerUiState(
         .put("scan_root_workers", 0)
 
     companion object {
-        fun fromJson(json: JSONObject) = SchedulerUiState(
-            enabled = json.optInt("enabled", 1) == 1,
-            cacheEnabled = json.optInt("schedule_cache_enabled", 1) == 1,
-            cacheMinutes = json.optInt("schedule_cache_minutes", json.optInt("schedule_cache_hours", 1) * 60).coerceIn(5, 43_200),
-            emptyEnabled = json.optInt("schedule_empty_enabled", 1) == 1,
-            emptyMinutes = json.optInt("schedule_empty_minutes", json.optInt("schedule_empty_hours", 1) * 60).coerceIn(5, 43_200),
-            rulesEnabled = json.optInt("schedule_rules_enabled", 1) == 1,
-            rulesMinutes = json.optInt("schedule_rules_minutes", json.optInt("schedule_rules_hours", 6) * 60).coerceIn(5, 43_200),
-            fragmentEnabled = json.optInt("schedule_fragment_enabled", 1) == 1,
-            fragmentMinutes = json.optInt("schedule_fragment_minutes", json.optInt("schedule_fragment_hours", 12) * 60).coerceIn(5, 43_200),
-            deepEnabled = json.optInt("schedule_deep_enabled", 0) == 1,
-            deepMinutes = json.optInt("schedule_deep_minutes", json.optInt("schedule_deep_hours", 168) * 60).coerceIn(5, 43_200),
-            dailyEnabled = json.optInt("daily_schedule_enabled", 0) == 1,
-            dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
-            dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
-            dailyGraceMinutes = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720),
-            screenOffOnly = json.optInt("screen_off_only", 1) == 1,
-            chargingOnly = json.optInt("charging_only", 0) == 1,
-            idleOnly = json.optInt("device_idle_only", 0) == 1,
-            minBattery = json.optInt("min_battery", 25).coerceIn(0, 100),
-            notifyOnComplete = json.optInt("notify_on_complete", 1) == 1,
-            notifyZero = json.optInt("notify_zero_result", 0) == 1,
-            maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
-            apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
-            apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
-            scanRootWorkers = 0
-        )
+        fun fromJson(json: JSONObject): SchedulerUiState {
+            val runtime = json.optJSONObject("runtime") ?: JSONObject()
+            return SchedulerUiState(
+                enabled = json.optInt("enabled", 1) == 1,
+                cacheEnabled = json.optInt("schedule_cache_enabled", 1) == 1,
+                cacheMinutes = json.optInt("schedule_cache_minutes", json.optInt("schedule_cache_hours", 1) * 60).coerceIn(5, 43_200),
+                emptyEnabled = json.optInt("schedule_empty_enabled", 1) == 1,
+                emptyMinutes = json.optInt("schedule_empty_minutes", json.optInt("schedule_empty_hours", 1) * 60).coerceIn(5, 43_200),
+                rulesEnabled = json.optInt("schedule_rules_enabled", 1) == 1,
+                rulesMinutes = json.optInt("schedule_rules_minutes", json.optInt("schedule_rules_hours", 6) * 60).coerceIn(5, 43_200),
+                fragmentEnabled = json.optInt("schedule_fragment_enabled", 1) == 1,
+                fragmentMinutes = json.optInt("schedule_fragment_minutes", json.optInt("schedule_fragment_hours", 12) * 60).coerceIn(5, 43_200),
+                deepEnabled = json.optInt("schedule_deep_enabled", 0) == 1,
+                deepMinutes = json.optInt("schedule_deep_minutes", json.optInt("schedule_deep_hours", 168) * 60).coerceIn(5, 43_200),
+                organizeEnabled = json.optInt("schedule_organize_enabled", 0) == 1,
+                organizeMinutes = json.optInt("schedule_organize_minutes", json.optInt("schedule_organize_hours", 24) * 60).coerceIn(15, 43_200),
+                organizeScreenOffOnly = json.optInt("organize_screen_off_only", 1) == 1,
+                organizeChargingOnly = json.optInt("organize_charging_only", 0) == 1,
+                organizeIdleOnly = json.optInt("organize_device_idle_only", 0) == 1,
+                organizeRunImmediately = json.optInt("organize_run_immediately", 0) == 1,
+                organizerConflictPolicy = json.optInt("organizer_conflict_policy", 1).coerceIn(0, 2),
+                organizerUndoRetention = json.optInt("organizer_undo_retention", 10).coerceIn(1, 20),
+                dailyEnabled = json.optInt("daily_schedule_enabled", 0) == 1,
+                dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
+                dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
+                dailyGraceMinutes = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720),
+                screenOffOnly = json.optInt("screen_off_only", 1) == 1,
+                chargingOnly = json.optInt("charging_only", 0) == 1,
+                idleOnly = json.optInt("device_idle_only", 0) == 1,
+                minBattery = json.optInt("min_battery", 25).coerceIn(0, 100),
+                notifyOnComplete = json.optInt("notify_on_complete", 1) == 1,
+                notifyZero = json.optInt("notify_zero_result", 0) == 1,
+                maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
+                apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
+                apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
+                runtimeState = runtime.optString("state", "waiting"),
+                runtimeReason = runtime.optString("reason", "等待调度器首次轮询"),
+                queueCount = runtime.optInt("queueCount", 0).coerceAtLeast(0),
+                queueGroups = runtime.optString("queueGroups"),
+                nextTask = runtime.optString("nextTask"),
+                blockedGroups = runtime.optString("blockedGroups"),
+                nextCheckEpoch = runtime.optLong("nextCheckEpoch", 0L).coerceAtLeast(0L),
+                supervisorStatus = runtime.optString("supervisorStatus", "unknown"),
+                supervisorHeartbeatAge = runtime.optLong("supervisorHeartbeatAge", -1L),
+                runtimeStale = runtime.optBoolean("stale", false),
+                scanRootWorkers = 0
+            )
+        }
     }
 }
 
@@ -354,6 +402,7 @@ data class DashboardActions(
     val audit: () -> Unit,
     val updateScheduler: (SchedulerUiState) -> Unit,
     val saveScheduler: (SchedulerUiState) -> Unit,
+    val schedulerCommand: (String) -> Unit,
     val clearHistory: () -> Unit,
     val clearRawLog: () -> Unit,
     val reviewProtected: () -> Unit,

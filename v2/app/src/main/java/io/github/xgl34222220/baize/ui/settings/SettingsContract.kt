@@ -35,6 +35,7 @@ data class SettingsUiState(
 data class SettingsUiActions(
     val onUpdateScheduler: (SchedulerUiState) -> Unit,
     val onSaveScheduler: (SchedulerUiState) -> Unit,
+    val onSchedulerCommand: (String) -> Unit,
     val onOpenAppearance: () -> Unit,
     val onOpenWhitelist: () -> Unit,
     val onReconnect: () -> Unit,

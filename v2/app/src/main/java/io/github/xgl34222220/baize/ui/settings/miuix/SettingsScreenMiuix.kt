@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -73,6 +74,8 @@ fun SettingsScreenMiuix(
     ) {
         item { MiuixSettingsHeader() }
         item { MiuixAppearanceHero(state, actions) }
+        item { MiuixSectionTitle("TASK CENTER", "任务中心", "队列、等待原因与 Root 守护状态") }
+        item { MiuixTaskCenter(state, actions) }
         item { MiuixSectionTitle("AUTOMATION", "自动清理", "总开关、执行条件与最低电量") }
         item { MiuixAutomationGroup(config, actions) }
         item { MiuixSectionTitle("PROTECTION", "清理保护", "白名单、通知、安装包与单文件限制") }
@@ -187,6 +190,59 @@ private fun MiuixAppearanceHero(
     }
 }
 
+
+@Composable
+private fun MiuixTaskCenter(state: SettingsUiState, actions: SettingsUiActions) {
+    val config = state.scheduler
+    val scheme = MaterialTheme.colorScheme
+    MiuixGroupSurface {
+        Column(Modifier.padding(horizontal = 17.dp, vertical = 10.dp)) {
+            Text(
+                when (config.runtimeState) {
+                    "running" -> "正在执行 ${config.nextTask.ifBlank { "Root 任务" }}"
+                    "failed" -> "调度异常"
+                    "paused" -> "任务已熔断暂停"
+                    else -> "队列 ${config.queueCount} 项 · ${config.supervisorStatus}"
+                },
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Black
+            )
+            Text(
+                buildString {
+                    append(config.runtimeReason.ifBlank { "等待下一次调度" })
+                    if (config.queueGroups.isNotBlank()) append("\n队列：").append(config.queueGroups)
+                    if (config.blockedGroups.isNotBlank()) append("\n等待条件：").append(config.blockedGroups)
+                    if (config.runtimeStale) append("\n守护心跳已过期，建议唤醒")
+                },
+                color = scheme.onSurfaceVariant,
+                fontSize = 10.sp,
+                lineHeight = 15.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            MiuixDivider()
+            MiuixActionRow(Icons.Rounded.Refresh, "唤醒调度器", "检查计划并自动恢复 Supervisor") {
+                actions.onSchedulerCommand("scheduler-wake")
+            }
+            MiuixDivider()
+            MiuixActionRow(Icons.Rounded.CleaningServices, "立即执行清理与归类", "加入一次性公平队列，不改变正常周期") {
+                actions.onSchedulerCommand("scheduler-run-now:all")
+            }
+            MiuixDivider()
+            MiuixActionRow(Icons.Rounded.Rule, "立即执行文件归类", "条件满足后由统一 Root Worker 执行") {
+                actions.onSchedulerCommand("scheduler-run-now:organize")
+            }
+            MiuixDivider()
+            MiuixActionRow(Icons.Rounded.Stop, "停止当前任务", "安全写入停止请求，当前 Worker 会在检查点退出") {
+                actions.onSchedulerCommand("scheduler-stop-current")
+            }
+            MiuixDivider()
+            MiuixActionRow(Icons.Rounded.BugReport, "跳过下一个归类周期", "本次记为跳过，不关闭长期计划") {
+                actions.onSchedulerCommand("scheduler-skip:organize")
+            }
+        }
+    }
+}
+
 @Composable
 private fun MiuixAutomationGroup(
     config: SchedulerUiState,
@@ -224,6 +280,47 @@ private fun MiuixAutomationGroup(
                 description = "使用系统空闲状态限制后台任务",
                 checked = config.idleOnly,
                 onCheckedChange = { actions.onUpdateScheduler(config.copy(idleOnly = it)) }
+            )
+            MiuixDivider()
+            MiuixSwitchRow(
+                icon = Icons.Rounded.CleaningServices,
+                title = "启用定时文件归类",
+                description = "与清理共用公平队列，不会同时读写文件",
+                checked = config.organizeEnabled,
+                onCheckedChange = { actions.onUpdateScheduler(config.copy(organizeEnabled = it)) }
+            )
+            MiuixDivider()
+            MiuixSliderRow(
+                icon = Icons.Rounded.Rule,
+                title = "归类周期 ${organizerIntervalLabel(config.organizeMinutes)}",
+                description = "15 分钟到 30 天，Root 配置为唯一真源",
+                value = config.organizeMinutes.toFloat(),
+                valueRange = 15f..43_200f,
+                steps = 0,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizeMinutes = it.roundToInt().coerceIn(15, 43_200))) }
+            )
+            MiuixDivider()
+            MiuixSliderRow(
+                icon = Icons.Rounded.Security,
+                title = "同名策略 ${conflictPolicyLabel(config.organizerConflictPolicy)}",
+                description = "跳过、自动重命名或内容去重",
+                value = config.organizerConflictPolicy.toFloat(),
+                valueRange = 0f..2f,
+                steps = 1,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizerConflictPolicy = it.roundToInt().coerceIn(0, 2))) }
+            )
+            MiuixDivider()
+            MiuixSliderRow(
+                icon = Icons.Rounded.Rule,
+                title = "保留 ${config.organizerUndoRetention} 次撤销",
+                description = "重启后仍可逐批撤销最近归类",
+                value = config.organizerUndoRetention.toFloat(),
+                valueRange = 1f..20f,
+                steps = 18,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizerUndoRetention = it.roundToInt().coerceIn(1, 20))) }
             )
             MiuixDivider()
             MiuixSliderRow(
@@ -359,6 +456,24 @@ private fun MiuixServiceGroup(
             MiuixActionRow(Icons.Rounded.BugReport, "崩溃诊断", "查看或清除最近 App 崩溃记录", actions.onOpenCrashDiagnostics)
         }
     }
+}
+
+
+private fun organizerIntervalLabel(minutes: Int): String = when (minutes) {
+    30 -> "30 分钟"
+    60 -> "1 小时"
+    360 -> "6 小时"
+    720 -> "12 小时"
+    1_440 -> "每天"
+    4_320 -> "3 天"
+    10_080 -> "每周"
+    else -> "${minutes} 分钟"
+}
+
+private fun conflictPolicyLabel(value: Int): String = when (value) {
+    0 -> "跳过"
+    2 -> "内容去重"
+    else -> "自动重命名"
 }
 
 @Composable
