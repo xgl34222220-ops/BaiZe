@@ -25,12 +25,31 @@ jobs:
           ref: refactor/unified-root-tasks
           fetch-depth: 0
 
-      - name: Extract reviewed source bundle
+      - name: Verify and extract reviewed source bundle
         shell: bash
         run: |
           set -euo pipefail
-          cat tools/unified-root-refactor.part* | base64 -d > /tmp/unified-root-refactor.tar.gz
-          sha256sum /tmp/unified-root-refactor.tar.gz
+          hashes=(
+            5ef9da08840c64f06a661dd7b94be63d493f32a9961a2814ffb66992041c9011
+            3c854b3a52aca62569dbf8606065a5facdbbc6ff0e5796467afc07af2950189e
+            d7cd94710267ea990e65bea4c5ce6b8b6d155bc1fa249b46373320a100ffbfa5
+            782c2519ca30f894e5a83b7c053c1c1c32faaa50164efd904115d77d488fa151
+            503cd6c14c7baceea86174050e97c74d60e3a793fd8f24407e15ab7ed08c8173
+          )
+          for index in 0 1 2 3 4; do
+            file=$(printf 'tools/unified-root-refactor.part%02d' "$index")
+            actual=$(sha256sum "$file" | awk '{print $1}')
+            echo "PART_${index}_SHA=$actual" >> "$GITHUB_ENV"
+            test "$actual" = "${hashes[$index]}"
+          done
+          cat tools/unified-root-refactor.part* > /tmp/unified-root-refactor.b64
+          b64_sha=$(sha256sum /tmp/unified-root-refactor.b64 | awk '{print $1}')
+          echo "B64_SHA=$b64_sha" >> "$GITHUB_ENV"
+          test "$b64_sha" = 4837b086b9062341ea5495cddea6e6cc7b9f2f792e51190ce2465cca61729080
+          base64 -d /tmp/unified-root-refactor.b64 > /tmp/unified-root-refactor.tar.gz
+          tar_sha=$(sha256sum /tmp/unified-root-refactor.tar.gz | awk '{print $1}')
+          echo "TAR_SHA=$tar_sha" >> "$GITHUB_ENV"
+          test "$tar_sha" = 5f31ddea8bec30d3ac65d81967373dfd19d419ab426c077b6215e61dd4968a00
           tar -tzf /tmp/unified-root-refactor.tar.gz
           tar -xzf /tmp/unified-root-refactor.tar.gz
           git diff --check
@@ -81,4 +100,4 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
-          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA b64=${B64_SHA:-unknown} tar=${TAR_SHA:-unknown} parts=${PART_0_SHA:-unknown},${PART_1_SHA:-unknown},${PART_2_SHA:-unknown},${PART_3_SHA:-unknown},${PART_4_SHA:-unknown}"
