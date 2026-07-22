@@ -72,6 +72,7 @@ class RulePackRootService : RootService() {
                     .put("signerSha256", verified.signerFingerprint)
                     .put("packId", manifest.optString("packId"))
                     .put("version", manifest.optString("version"))
+                    .put("versionCode", manifest.optLong("versionCode", 0L))
                     .put("createdBy", manifest.optString("createdBy", "BaiZe"))
                     .put("releaseNotes", manifest.optString("releaseNotes"))
                     .put("minAppVersionCode", manifest.optLong("minAppVersionCode", 0L))
@@ -273,6 +274,12 @@ class RulePackRootService : RootService() {
         if (!PACK_ID.matches(packId)) throw PackException("pack_id_invalid", "规则包编号无效")
         val version = manifest.optString("version").trim()
         if (version.isBlank() || version.length > 80) throw PackException("version_invalid", "规则包版本无效")
+        val versionCode = manifest.optLong("versionCode", 0L)
+        if (versionCode <= 0L) throw PackException("version_code_invalid", "规则包缺少单调版本序号")
+        val currentVersionCode = readJson(currentMetadataFile()).optLong("versionCode", 0L)
+        if (currentVersionCode > 0L && versionCode < currentVersionCode) {
+            throw PackException("pack_downgrade", "规则包版本序号低于当前版本；降级请使用受控回滚")
+        }
         val minVersion = manifest.optLong("minAppVersionCode", 0L).coerceAtLeast(0L)
         if (minVersion > appVersionCode()) {
             throw PackException("app_too_old", "此规则包需要更高版本的白泽")
@@ -363,6 +370,7 @@ class RulePackRootService : RootService() {
         return JSONObject()
             .put("packId", metadata.optString("packId", "baize-bundled"))
             .put("version", metadata.optString("version", "bundled"))
+            .put("versionCode", metadata.optLong("versionCode", 0L))
             .put("installedAt", metadata.optLong("installedAt", 0L))
             .put("source", metadata.optString("source", "module"))
             .put("signerSha256", metadata.optString("signerSha256"))

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission
@@ -33,6 +35,7 @@
         <activity android:name=".CandidateSmartScanActivity" android:exported="false" />
         <activity android:name=".CleanResultActivity" android:exported="false" />
         <activity android:name=".RulePackActivity" android:exported="false" />
+        <activity android:name=".RuleUpdateActivity" android:exported="false" />
         <activity-alias
             android:name=".SmartScanActivity"
             android:exported="false"
@@ -80,6 +83,10 @@
             tools:ignore="Instantiatable" />
         <service
             android:name=".root.RulePackRootService"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
+        <service
+            android:name=".root.RuleIndexRootService"
             android:exported="false"
             tools:ignore="Instantiatable" />
     </application>

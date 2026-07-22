@@ -57,6 +57,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rules-dir", required=True, type=pathlib.Path)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--version-code", required=True, type=int)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--pack-id", default="baize-official")
     parser.add_argument("--created-by", default="BaiZe GitHub Actions")
@@ -68,6 +69,8 @@ def main() -> int:
         raise SystemExit("invalid --pack-id")
     if not args.version.strip() or len(args.version) > 80:
         raise SystemExit("invalid --version")
+    if args.version_code <= 0:
+        raise SystemExit("--version-code must be a positive monotonic integer")
     if not args.rules_dir.is_dir():
         raise SystemExit("--rules-dir is not a directory")
 
@@ -103,6 +106,7 @@ def main() -> int:
         "mode": "full",
         "packId": args.pack_id,
         "version": args.version.strip(),
+        "versionCode": args.version_code,
         "createdBy": args.created_by.strip(),
         "releaseNotes": args.release_notes.strip(),
         "minAppVersionCode": max(0, args.min_app_version_code),
