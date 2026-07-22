@@ -172,6 +172,17 @@ skipped=$(summary_number skipped)
 errors=$(summary_number errors)
 protected_items=$(summary_number protected_items)
 protected_bytes=$(summary_number protected_bytes)
+action_count() {
+  action=$1
+  awk -F '\t' -v action="$action" 'NR>1 && $1==action { count++ } END { print count+0 }' "$REPORT_FILE" 2>/dev/null
+}
+authorized_candidates=$(awk -F '\t' 'NR>1 && NF>=6 { count++ } END { print count+0 }' "$CACHE_SCAN_ITEMS" 2>/dev/null)
+cleaned_candidates=$(action_count cleaned)
+changed_candidates=$(action_count skipped)
+protected_candidates=$(action_count protected)
+partial_candidates=$(action_count partial)
+failed_candidates=$(action_count failed)
+processed_candidates=$((cleaned_candidates + changed_candidates + protected_candidates + partial_candidates + failed_candidates))
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 
@@ -192,6 +203,16 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
 {
   echo "mode=cache-clean"
   echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
+  echo "schema=clean-result-v1"
+  echo "scanned_candidates=$authorized_candidates"
+  echo "authorized_candidates=$authorized_candidates"
+  echo "processed_candidates=$processed_candidates"
+  echo "cleaned_candidates=$cleaned_candidates"
+  echo "changed_candidates=$changed_candidates"
+  echo "protected_candidates=$protected_candidates"
+  echo "partial_candidates=$partial_candidates"
+  echo "failed_candidates=$failed_candidates"
+  echo "skipped_candidates=$((changed_candidates + protected_candidates))"
   echo "files=$deleted_files"
   echo "regular_files=$deleted_files"
   echo "empty_files=0"
@@ -203,10 +224,20 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "errors=$errors"
   echo "protected_items=$protected_items"
   echo "protected_bytes=$protected_bytes"
-  echo "risk_low=$deleted_files"
+  echo "risk_low=$cleaned_candidates"
+  echo "risk_low_candidates=$cleaned_candidates"
   echo "risk_medium=0"
+  echo "risk_medium_candidates=0"
   echo "risk_high=0"
+  echo "risk_high_candidates=0"
   echo "risk_critical=0"
+  echo "risk_critical_candidates=0"
+  echo "category_cache_candidates=$authorized_candidates"
+  echo "category_cache_cleaned=$cleaned_candidates"
+  echo "category_cache_changed=$changed_candidates"
+  echo "category_cache_protected=$protected_candidates"
+  echo "category_cache_partial=$partial_candidates"
+  echo "category_cache_failed=$failed_candidates"
   echo "deep_slow_items=0"
   echo "deep_mount_items=0"
   echo "deep_truncated=0"
@@ -226,8 +257,9 @@ mv -f "$latest_tmp" "$STATE_DIR/latest.env"
   echo "----------------------------------------"
   echo "$result"
   echo "扫描快照: $snapshot_id"
-  echo "授权项目: $authorized_files 个 / $(human_bytes "$authorized_bytes")"
-  echo "实际清理: $deleted_files 个 / $(human_bytes "$deleted_bytes") | 变化或跳过: $skipped | 受保护: $protected_items | 失败: $errors | 耗时: ${elapsed}s"
+  echo "授权候选: $authorized_candidates 项 · 文件 $authorized_files 个 / $(human_bytes "$authorized_bytes")"
+  echo "实际结果: 清理 $cleaned_candidates 项 · 变化 $changed_candidates · 保护 $protected_candidates · 部分 $partial_candidates · 失败 $failed_candidates"
+  echo "实际删除: $deleted_files 个文件 / $(human_bytes "$deleted_bytes") | 引擎跳过: $skipped | 引擎错误: $errors | 耗时: ${elapsed}s"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 

@@ -24,7 +24,7 @@ class CleanPlanResumeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "clean-plan-resume-v1")
+                .put("engine", "clean-plan-resume-v2-result-model")
                 .put("transactions", transactionRoot().listFiles()?.count { it.isDirectory } ?: 0)
                 .toString()
         }
@@ -63,13 +63,14 @@ class CleanPlanResumeRootService : RootService() {
         override fun checkpointCache(planId: String?, resultJson: String?): String = guarded(planId) { _, directory ->
             val state = readState(directory) ?: return@guarded error("transaction_missing", "清理事务不存在")
             val result = parseJson(resultJson)
-            accumulate(state, result)
+            accumulateCounters(state, result)
             restoreCacheIfMissing(state, directory)
 
             val terminal = cacheTerminalPaths(state)
             val hasFailure = result.has("error") || result.optInt("failures", 0) > 0
             val interrupted = result.optBoolean("cancelled") || result.optBoolean("timedOut")
             val cleanFinished = result.optBoolean("success") && !hasFailure && !interrupted
+            captureCacheOutcomes(state, result, directory, terminal, cleanFinished)
 
             val remaining = if (cleanFinished) {
                 deleteCacheSnapshot()
@@ -91,10 +92,11 @@ class CleanPlanResumeRootService : RootService() {
         override fun checkpointSafe(planId: String?, resultJson: String?): String = guarded(planId) { _, directory ->
             val state = readState(directory) ?: return@guarded error("transaction_missing", "清理事务不存在")
             val result = parseJson(resultJson)
-            accumulate(state, result)
+            accumulateCounters(state, result)
             restoreSafeIfMissing(state, directory)
 
             val remaining = filterSafeSnapshot(state, result, directory)
+            captureSafeOutcomes(state, result, directory)
             state.put("safeRemaining", remaining)
                 .put("safeComplete", remaining <= 0)
                 .put("safeLastError", result.optString("message", result.optString("error")))
@@ -161,11 +163,26 @@ class CleanPlanResumeRootService : RootService() {
         .put("safeRemaining", safeCount.coerceAtLeast(0))
         .put("cacheComplete", cacheSnapshotId.isBlank() || cacheCount <= 0)
         .put("safeComplete", safeSnapshotId.isBlank() || safeCount <= 0)
+        .put("resultSchema", "clean-result-v1")
+        .put("scannedCandidates", cacheCount.coerceAtLeast(0) + safeCount.coerceAtLeast(0))
+        .put("authorizedCandidates", cacheCount.coerceAtLeast(0) + safeCount.coerceAtLeast(0))
+        .put("processedCandidates", 0)
+        .put("cleanedCandidates", 0)
+        .put("changedCandidates", 0)
+        .put("protectedCandidates", 0)
+        .put("partialCandidates", 0)
+        .put("failedCandidates", 0)
+        .put("skippedCandidates", 0)
         .put("deletedBytes", 0L)
         .put("deletedFiles", 0L)
         .put("deletedDirectories", 0L)
-        .put("cleanedCandidates", 0)
+        .put("classifiedDeletedBytes", 0L)
+        .put("unattributedDeletedBytes", 0L)
+        .put("deleteErrors", 0)
         .put("failures", 0)
+        .put("itemStates", JSONObject())
+        .put("categoryStats", JSONObject())
+        .put("riskStats", JSONObject())
 
     private fun response(state: JSONObject): String = JSONObject(state.toString())
         .put("success", true)
@@ -173,13 +190,268 @@ class CleanPlanResumeRootService : RootService() {
         .put("resumable", state.optInt("cacheRemaining") + state.optInt("safeRemaining") > 0)
         .toString()
 
-    private fun accumulate(state: JSONObject, result: JSONObject) {
+    private data class OutcomeItem(
+        val id: String,
+        val path: String,
+        val category: String,
+        val risk: String,
+        val estimatedBytes: Long = 0L,
+        val estimatedFiles: Long = 0L,
+        val estimatedDirectories: Long = 0L
+    )
+
+    private data class OutcomeDetail(
+        val action: String,
+        val reason: String,
+        val bytes: Long,
+        val files: Long,
+        val directories: Long
+    )
+
+    private fun accumulateCounters(state: JSONObject, result: JSONObject) {
         state.put("deletedBytes", state.optLong("deletedBytes") + result.optLong("deletedBytes"))
             .put("deletedFiles", state.optLong("deletedFiles") + result.optLong("deletedFiles"))
             .put("deletedDirectories", state.optLong("deletedDirectories") + result.optLong("deletedDirectories"))
-            .put("cleanedCandidates", state.optInt("cleanedCandidates") + result.optInt("cleanedCandidates"))
-            .put("failures", state.optInt("failures") + result.optInt("failures"))
+            .put("deleteErrors", state.optInt("deleteErrors") + result.optInt("failures"))
+            .put("failures", state.optInt("deleteErrors") + result.optInt("failures"))
     }
+
+    private fun captureCacheOutcomes(
+        state: JSONObject,
+        result: JSONObject,
+        directory: File,
+        terminal: Set<String>,
+        cleanFinished: Boolean
+    ) {
+        val source = readCacheOutcomeItems(File(directory, "cache/cache_scan.items.tsv"))
+        val details = readCacheReportDetails(state)
+        source.forEach { item ->
+            if (!cleanFinished && item.path !in terminal && item.path !in details) return@forEach
+            val detail = details[item.path] ?: OutcomeDetail(
+                action = if (cleanFinished) "cleaned" else "partial",
+                reason = if (cleanFinished) "" else result.optString("message"),
+                bytes = 0L,
+                files = 0L,
+                directories = 0L
+            )
+            recordOutcome(state, item, detail)
+        }
+        rebuildResultMetrics(state)
+    }
+
+    private fun captureSafeOutcomes(state: JSONObject, result: JSONObject, directory: File) {
+        val before = readSafeOutcomeItems(File(directory, "safe.json"))
+        if (before.isEmpty()) return
+        val live = safeSnapshotFile(state.optString("safeSnapshotId"))
+        val remainingKeys = readSafeOutcomeItems(live).flatMapTo(HashSet()) { listOf(it.id, it.path) }
+        val details = readSafeDetails(result)
+        before.forEach { item ->
+            val detail = details[item.id] ?: details[item.path]
+            val terminal = item.id !in remainingKeys && item.path !in remainingKeys
+            if (detail != null) {
+                recordOutcome(state, item, detail)
+            } else if (terminal) {
+                recordOutcome(
+                    state,
+                    item,
+                    OutcomeDetail(
+                        action = if (result.optBoolean("success") && !result.has("error")) "cleaned" else "skipped",
+                        reason = result.optString("message"),
+                        bytes = 0L,
+                        files = 0L,
+                        directories = 0L
+                    )
+                )
+            }
+        }
+        rebuildResultMetrics(state)
+    }
+
+    private fun readCacheOutcomeItems(file: File): List<OutcomeItem> {
+        if (!file.isFile) return emptyList()
+        return buildList {
+            file.useLines { lines ->
+                lines.drop(1).forEach { line ->
+                    val fields = line.split('\t', limit = 6)
+                    val path = fields.getOrNull(5)?.trim().orEmpty()
+                    if (fields.size < 6 || !path.startsWith("/")) return@forEach
+                    add(
+                        OutcomeItem(
+                            id = sha256Text(path),
+                            path = path,
+                            category = normalizeCategory(fields[1]),
+                            risk = "low",
+                            estimatedBytes = fields[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                            estimatedFiles = fields[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                            estimatedDirectories = fields[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun readSafeOutcomeItems(file: File?): List<OutcomeItem> {
+        if (file == null || !file.isFile) return emptyList()
+        val items = parseJson(file.readText()).optJSONArray("items") ?: JSONArray()
+        return buildList {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val path = item.optString("path")
+                if (!path.startsWith("/")) continue
+                add(
+                    OutcomeItem(
+                        id = item.optString("id").ifBlank { sha256Text(path) },
+                        path = path,
+                        category = normalizeCategory(item.optString("category", item.optString("categoryLabel"))),
+                        risk = normalizeRisk(item.optString("risk")),
+                        estimatedBytes = item.optLong("bytes", item.optLong("estimatedBytes", 0L)).coerceAtLeast(0L),
+                        estimatedFiles = item.optLong("files", 0L).coerceAtLeast(0L),
+                        estimatedDirectories = item.optLong("directories", 0L).coerceAtLeast(0L)
+                    )
+                )
+            }
+        }
+    }
+
+    private fun readCacheReportDetails(state: JSONObject): Map<String, OutcomeDetail> {
+        val report = File(RootPaths.STATE_DIR, "reports/latest.tsv")
+        val runStarted = state.optLong("runStartedAt", 0L)
+        if (!report.isFile || report.lastModified() + REPORT_CLOCK_SLOP_MS < runStarted) return emptyMap()
+        val result = LinkedHashMap<String, OutcomeDetail>()
+        report.useLines { lines ->
+            lines.drop(1).forEach { line ->
+                val fields = line.split('\t', limit = 6)
+                val path = fields.getOrNull(5)?.trim().orEmpty()
+                if (fields.size < 6 || !path.startsWith("/")) return@forEach
+                result[path] = OutcomeDetail(
+                    action = normalizeAction(fields[0]),
+                    reason = "",
+                    files = fields[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                    bytes = fields[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
+                    directories = 0L
+                )
+            }
+        }
+        return result
+    }
+
+    private fun readSafeDetails(result: JSONObject): Map<String, OutcomeDetail> {
+        val values = LinkedHashMap<String, OutcomeDetail>()
+        val details = result.optJSONArray("details") ?: JSONArray()
+        for (index in 0 until details.length()) {
+            val detail = details.optJSONObject(index) ?: continue
+            val value = OutcomeDetail(
+                action = normalizeAction(detail.optString("action")),
+                reason = detail.optString("reason"),
+                bytes = detail.optLong("bytes").coerceAtLeast(0L),
+                files = detail.optLong("files").coerceAtLeast(0L),
+                directories = detail.optLong("directories").coerceAtLeast(0L)
+            )
+            detail.optString("id").takeIf { it.isNotBlank() }?.let { values[it] = value }
+            detail.optString("path").takeIf { it.startsWith("/") }?.let { values[it] = value }
+        }
+        return values
+    }
+
+    private fun recordOutcome(state: JSONObject, item: OutcomeItem, detail: OutcomeDetail) {
+        val states = state.optJSONObject("itemStates") ?: JSONObject().also { state.put("itemStates", it) }
+        val key = item.id.ifBlank { sha256Text(item.path) }
+        val previous = states.optJSONObject(key)
+        states.put(
+            key,
+            JSONObject()
+                .put("id", item.id)
+                .put("path", item.path)
+                .put("category", item.category)
+                .put("risk", item.risk)
+                .put("action", normalizeAction(detail.action))
+                .put("reason", detail.reason)
+                .put("deletedBytes", (previous?.optLong("deletedBytes") ?: 0L) + detail.bytes)
+                .put("deletedFiles", (previous?.optLong("deletedFiles") ?: 0L) + detail.files)
+                .put("deletedDirectories", (previous?.optLong("deletedDirectories") ?: 0L) + detail.directories)
+                .put("updatedAt", System.currentTimeMillis())
+        )
+    }
+
+    private fun rebuildResultMetrics(state: JSONObject) {
+        val states = state.optJSONObject("itemStates") ?: JSONObject()
+        val categories = JSONObject()
+        val risks = JSONObject()
+        var processed = 0
+        var cleaned = 0
+        var changed = 0
+        var protected = 0
+        var partial = 0
+        var failed = 0
+        var classifiedBytes = 0L
+        val keys = states.keys()
+        while (keys.hasNext()) {
+            val value = states.optJSONObject(keys.next()) ?: continue
+            val action = normalizeAction(value.optString("action"))
+            processed++
+            when (action) {
+                "cleaned" -> cleaned++
+                "protected" -> protected++
+                "partial" -> partial++
+                "failed" -> failed++
+                else -> changed++
+            }
+            classifiedBytes += value.optLong("deletedBytes").coerceAtLeast(0L)
+            incrementBucket(categories, normalizeCategory(value.optString("category")), action, value)
+            incrementBucket(risks, normalizeRisk(value.optString("risk")), action, value)
+        }
+        state.put("processedCandidates", processed)
+            .put("cleanedCandidates", cleaned)
+            .put("changedCandidates", changed)
+            .put("protectedCandidates", protected)
+            .put("partialCandidates", partial)
+            .put("failedCandidates", failed)
+            .put("skippedCandidates", changed + protected)
+            .put("classifiedDeletedBytes", classifiedBytes)
+            .put("unattributedDeletedBytes", (state.optLong("deletedBytes") - classifiedBytes).coerceAtLeast(0L))
+            .put("categoryStats", categories)
+            .put("riskStats", risks)
+    }
+
+    private fun incrementBucket(root: JSONObject, key: String, action: String, item: JSONObject) {
+        val bucket = root.optJSONObject(key) ?: JSONObject().also { root.put(key, it) }
+        bucket.put("processed", bucket.optInt("processed") + 1)
+            .put(action, bucket.optInt(action) + 1)
+            .put("deletedBytes", bucket.optLong("deletedBytes") + item.optLong("deletedBytes"))
+            .put("deletedFiles", bucket.optLong("deletedFiles") + item.optLong("deletedFiles"))
+            .put("deletedDirectories", bucket.optLong("deletedDirectories") + item.optLong("deletedDirectories"))
+    }
+
+    private fun normalizeAction(raw: String): String = when (raw.trim().lowercase()) {
+        "cleaned", "deleted", "success" -> "cleaned"
+        "protected" -> "protected"
+        "partial" -> "partial"
+        "failed", "error" -> "failed"
+        else -> "changed"
+    }
+
+    private fun normalizeCategory(raw: String): String {
+        val value = raw.trim().lowercase()
+        return when {
+            value.contains("cache") || value.contains("缓存") || value.contains("code_cache") -> "cache"
+            value.contains("empty") || value.contains("空文件") || value.contains("空目录") -> "empty"
+            value.contains("fragment") || value.contains("碎片") || value.contains("残留") -> "fragment"
+            value.contains("rule") || value.contains("规则") -> "rules"
+            else -> "other"
+        }
+    }
+
+    private fun normalizeRisk(raw: String): String = when (raw.trim().lowercase()) {
+        "medium" -> "medium"
+        "high" -> "high"
+        "critical" -> "critical"
+        else -> "low"
+    }
+
+    private fun sha256Text(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private fun backupCurrentSnapshots(state: JSONObject, directory: File) {
         if (!state.optBoolean("cacheComplete")) backupCacheSnapshot(directory)
@@ -467,7 +739,7 @@ class CleanPlanResumeRootService : RootService() {
         .toString()
 
     companion object {
-        private const val TRANSACTION_VERSION = 1
+        private const val TRANSACTION_VERSION = 2
         private const val TRANSACTION_TTL_MS = 2L * 60L * 60_000L
         private const val REPORT_CLOCK_SLOP_MS = 5_000L
         private val CACHE_FILES = listOf(
