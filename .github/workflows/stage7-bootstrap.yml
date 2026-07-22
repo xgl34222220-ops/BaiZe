@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply stage seven integration
-        run: python3 v2/tools/apply_stage7.py
+        run: |
+          echo "applying stage seven integration"
+          python3 v2/tools/apply_stage7.py
 
       - name: Commit target branch
         shell: bash
