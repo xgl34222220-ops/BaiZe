@@ -82,5 +82,17 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
+          part_count=$(find .v240-upload -maxdepth 1 -type f -name 'part-*' 2>/dev/null | wc -l | tr -d ' ')
+          actual_b64=missing
+          actual_tar=missing
+          total_bytes=0
+          if [ "$part_count" = 12 ]; then
+            cat .v240-upload/part-* > /tmp/baize-v240-diagnostic.b64
+            total_bytes=$(wc -c </tmp/baize-v240-diagnostic.b64 | tr -d ' ')
+            actual_b64=$(sha256sum /tmp/baize-v240-diagnostic.b64 | awk '{print $1}')
+            if base64 -d /tmp/baize-v240-diagnostic.b64 >/tmp/baize-v240-diagnostic.tar.gz 2>/dev/null; then
+              actual_tar=$(sha256sum /tmp/baize-v240-diagnostic.tar.gz | awk '{print $1}')
+            fi
+          fi
           gh issue comment 94 --repo "$GITHUB_REPOSITORY" \
-            --body "BAIZE_V240_SOURCE_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
+            --body "BAIZE_V240_SOURCE_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA parts=$part_count bytes=$total_bytes b64=$actual_b64 tar=$actual_tar"
