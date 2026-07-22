@@ -60,7 +60,7 @@ jobs:
       - name: Install shell compatibility tools
         run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
 
-      - name: Verify scripts and regression tests
+      - name: Verify Root shell syntax
         shell: bash
         run: |
           set -euo pipefail
@@ -68,10 +68,18 @@ jobs:
             sh -n "$script"
             busybox ash -n "$script"
           done
-          sh v2/tests/test-scheduler-fairness.sh
-          sh v2/tests/test-incremental-index.sh
-          sh v2/tests/test-organizer-transactions.sh
-          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Test scheduler fairness
+        run: bash v2/tests/test-scheduler-fairness.sh
+
+      - name: Test incremental shared index
+        run: bash v2/tests/test-incremental-index.sh
+
+      - name: Test organizer transactions
+        run: bash v2/tests/test-organizer-transactions.sh
+
+      - name: Verify native source warnings
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
