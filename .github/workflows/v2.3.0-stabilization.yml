@@ -1,0 +1,159 @@
+name: BaiZe v2.3.0 Source and Build Verification
+
+on:
+  push:
+    branches: [main, feat/v2.3.0-stabilization]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-v230-source-build-verification
+  cancel-in-progress: true
+
+jobs:
+  verify-build-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout committed source
+        uses: actions/checkout@v4
+
+      - name: Verify committed source truth and versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d tools || ! find tools -maxdepth 1 -type f \( -name 'apply-v*.py' -o -name '*materialization*' -o -name '*.b64' \) -print -quit | grep -q .
+          for file in \
+            v2/module/supervisor.sh \
+            v2/module/worker-runner.sh \
+            v2/module/app-installer.sh \
+            v2/module/diagnostics-export.sh \
+            v2/module/storage-analyzer.sh \
+            v2/module/duplicate-scanner.sh \
+            v2/module/large-file-scanner.sh \
+            v2/module/quarantine-manager.sh \
+            v2/module/rules-validator.sh \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt; do
+            test -s "$file"
+          done
+          grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 23000' v2/app/build.gradle.kts
+          grep -qx 'version=v2.3.0' v2/module/module.prop
+          grep -qx 'versionCode=23000' v2/module/module.prop
+          grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json' v2/module/module.prop
+          grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'Handler(Looper.getMainLooper())' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'discover_app_user_roots' v2/module/storage-index.sh
+          grep -q '"attachment", "attachments"' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('update.json').read_text())
+          assert data == {
+              'version': 'v2.3.0',
+              'versionCode': 23000,
+              'zipUrl': 'https://github.com/xgl34222220-ops/BaiZe/releases/download/v2.3.0/BaiZe-v2.3.0-Module.zip',
+              'changelog': 'https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.3.0.md',
+          }
+          PY
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do sh -n "$script"; done
+          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+
+      - name: Verify Root shell compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do busybox ash -n "$script"; done
+          toybox sh -n v2/module/task-worker.sh || true
+          toybox sh -n v2/module/worker-runner.sh || true
+          toybox sh -n v2/module/supervisor.sh || true
+
+      - name: Test organizer discovery without source generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/baize-organizer
+          rm -rf "$ROOT"
+          mkdir -p \
+            "$ROOT/media/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
+            "$ROOT/media/0/Android/data/com.example.browser/private/received" \
+            "$ROOT/media/0/Android/data/com.example.mail/data/attachments" \
+            "$ROOT/media/0/Android/data/com.example.browser/cache/Download" \
+            "$ROOT/state"
+          printf qq >"$ROOT/media/0/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv/test.zip"
+          printf apk >"$ROOT/media/0/Android/data/com.example.browser/private/received/test.apk"
+          printf pdf >"$ROOT/media/0/Android/data/com.example.mail/data/attachments/test.pdf"
+          printf cache >"$ROOT/media/0/Android/data/com.example.browser/cache/Download/must-not-index.zip"
+          BAIZE_MEDIA_ROOT="$ROOT/media" BAIZE_STATE_DIR="$ROOT/state" busybox ash v2/module/storage-index.sh refresh ci
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/baize-organizer')
+          paths = {item.decode() for item in (root / 'state/index/storage-files.nul').read_bytes().split(b'\0') if item}
+          assert any(path.endswith('/test.zip') for path in paths)
+          assert any(path.endswith('/test.apk') for path in paths)
+          assert any(path.endswith('/test.pdf') for path in paths)
+          assert not any(path.endswith('/must-not-index.zip') for path in paths)
+          PY
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build ARM64 scanner
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build release app and lint
+        working-directory: v2
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+
+      - name: Package and verify module
+        working-directory: v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-module.sh
+          ZIP=dist/BaiZe-v2.3.0-Module.zip
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.3.0'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=23000'
+          for file in app/baize.apk supervisor.sh task-worker.sh worker-runner.sh app-installer.sh diagnostics-export.sh storage-analyzer.sh duplicate-scanner.sh large-file-scanner.sh quarantine-manager.sh rules-validator.sh bin/arm64-v8a/baize_engine; do
+            unzip -Z1 "$ZIP" | grep -qx "$file"
+          done
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          sha256sum "$ZIP" | tee "$ZIP.sha256"
+
+      - name: Upload verified build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.3.0-Committed-Source-Build
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.3.0-Module.zip
+            v2/dist/BaiZe-v2.3.0-Module.zip.sha256
+            v2/app/build/outputs/apk/release/app-release.apk
+            v2/android-build.log
