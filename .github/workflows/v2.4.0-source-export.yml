@@ -9,8 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  issues: write
+  contents: write
 
 concurrency:
   group: baize-v240-source-export
@@ -40,12 +39,16 @@ jobs:
           path: |
             BaiZe-v2.4.0-source.tar.gz
             BaiZe-v2.4.0-source.tar.gz.sha256
-      - name: Report export run
+      - name: Persist export result
         if: always()
         env:
-          GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
-          gh issue comment 94 --repo "$GITHUB_REPOSITORY" \
-            --body "BAIZE_V240_SOURCE_EXPORT run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
+          set -euo pipefail
+          printf 'run_id=%s\nstatus=%s\nhead=%s\n' "$GITHUB_RUN_ID" "$JOB_STATUS" "$GITHUB_SHA" > .v240-export-result
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .v240-export-result
+          git commit -m 'build: record v2.4.0 source export' || exit 0
+          git push origin HEAD:feat/v2.4.0-complete-hardening
