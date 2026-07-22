@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,12 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
+import io.github.xgl34222220.baize.ui.settings.schedulerBlockedGroupsLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerQueueLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerReasonLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerSupervisorStatusLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerRuntimeStateLabel
 import kotlin.math.roundToInt
 
 @Composable
@@ -73,11 +80,13 @@ fun SettingsScreenMaterial(
         ) {
             item { MaterialSettingsHeader() }
             item { MaterialAppearanceCard(state, actions) }
-            item { MaterialSectionTitle("AUTOMATION", "自动清理") }
+            item { MaterialSectionTitle("任务管理", "任务中心") }
+            item { MaterialTaskCenterCard(state, actions) }
+            item { MaterialSectionTitle("自动执行", "自动清理") }
             item { MaterialAutomationCard(config, actions) }
-            item { MaterialSectionTitle("PROTECTION", "清理保护与通知") }
+            item { MaterialSectionTitle("安全保护", "清理保护与通知") }
             item { MaterialProtectionCard(state, actions) }
-            item { MaterialSectionTitle("SERVICE", "服务与诊断") }
+            item { MaterialSectionTitle("系统服务", "服务与诊断") }
             item { MaterialServiceCard(state, actions) }
             item {
                 Button(
@@ -109,7 +118,7 @@ private fun MaterialSettingsHeader() {
             .padding(horizontal = 20.dp, vertical = 15.dp)
     ) {
         Text(
-            "PREFERENCES",
+            "设置中心",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -166,6 +175,46 @@ private fun MaterialAppearanceCard(
     }
 }
 
+
+@Composable
+private fun MaterialTaskCenterCard(state: SettingsUiState, actions: SettingsUiActions) {
+    val config = state.scheduler
+    Card(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            MaterialCardHeader(
+                icon = Icons.Rounded.Refresh,
+                title = "后台任务中心",
+                subtitle = "${schedulerRuntimeStateLabel(config.runtimeState)} · 待执行 ${config.queueCount} 项 · ${schedulerSupervisorStatusLabel(config.supervisorStatus)}"
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                buildString {
+                    append(schedulerReasonLabel(config.runtimeReason))
+                    if (config.queueGroups.isNotBlank()) append("\n待执行：").append(schedulerQueueLabel(config.queueGroups))
+                    if (config.blockedGroups.isNotBlank()) append("\n暂缓执行：").append(schedulerBlockedGroupsLabel(config.blockedGroups))
+                    if (config.runtimeStale) append("\n后台守护长时间没有响应，建议点击唤醒")
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.height(14.dp))
+            MaterialActionButton(Icons.Rounded.Refresh, "唤醒并恢复调度器") { actions.onSchedulerCommand("scheduler-wake") }
+            Spacer(Modifier.height(8.dp))
+            MaterialActionButton(Icons.Rounded.CleaningServices, "立即执行清理与归类") { actions.onSchedulerCommand("scheduler-run-now:all") }
+            Spacer(Modifier.height(8.dp))
+            MaterialActionButton(Icons.Rounded.Rule, "立即执行文件归类") { actions.onSchedulerCommand("scheduler-run-now:organize") }
+            Spacer(Modifier.height(8.dp))
+            MaterialActionButton(Icons.Rounded.Stop, "停止当前任务") { actions.onSchedulerCommand("scheduler-stop-current") }
+            Spacer(Modifier.height(8.dp))
+            MaterialActionButton(Icons.Rounded.BugReport, "跳过下一个归类周期") { actions.onSchedulerCommand("scheduler-skip:organize") }
+        }
+    }
+}
+
 @Composable
 private fun MaterialAutomationCard(
     config: SchedulerUiState,
@@ -212,7 +261,45 @@ private fun MaterialAutomationCard(
                 checked = config.idleOnly,
                 onCheckedChange = { actions.onUpdateScheduler(config.copy(idleOnly = it)) }
             )
+            HorizontalDivider()
+            MaterialSwitchRow(
+                title = "启用定时文件归类",
+                description = "与垃圾清理共享公平队列，不并行读写",
+                checked = config.organizeEnabled,
+                onCheckedChange = { actions.onUpdateScheduler(config.copy(organizeEnabled = it)) }
+            )
             Spacer(Modifier.height(12.dp))
+            MaterialSliderSetting(
+                icon = Icons.Rounded.Rule,
+                title = "归类周期 ${materialOrganizerIntervalLabel(config.organizeMinutes)}",
+                description = "后台计划为唯一真实设置来源",
+                value = config.organizeMinutes.toFloat(),
+                valueRange = 15f..43_200f,
+                steps = 0,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizeMinutes = it.roundToInt().coerceIn(15, 43_200))) }
+            )
+            MaterialSliderSetting(
+                icon = Icons.Rounded.Security,
+                title = "同名策略 ${materialConflictPolicyLabel(config.organizerConflictPolicy)}",
+                description = "跳过、自动重命名或内容去重",
+                value = config.organizerConflictPolicy.toFloat(),
+                valueRange = 0f..2f,
+                steps = 1,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizerConflictPolicy = it.roundToInt().coerceIn(0, 2))) }
+            )
+            MaterialSliderSetting(
+                icon = Icons.Rounded.Rule,
+                title = "保留 ${config.organizerUndoRetention} 次撤销",
+                description = "撤销记录跨重启持久保存",
+                value = config.organizerUndoRetention.toFloat(),
+                valueRange = 1f..20f,
+                steps = 18,
+                enabled = config.organizeEnabled,
+                onValueChange = { actions.onUpdateScheduler(config.copy(organizerUndoRetention = it.roundToInt().coerceIn(1, 20))) }
+            )
+            Spacer(Modifier.height(8.dp))
             MaterialSliderSetting(
                 icon = Icons.Rounded.Rule,
                 title = "最低电量 ${config.minBattery}%",
@@ -457,6 +544,24 @@ private fun MaterialSliderSetting(
             enabled = enabled
         )
     }
+}
+
+
+private fun materialOrganizerIntervalLabel(minutes: Int): String = when (minutes) {
+    30 -> "30 分钟"
+    60 -> "1 小时"
+    360 -> "6 小时"
+    720 -> "12 小时"
+    1_440 -> "每天"
+    4_320 -> "3 天"
+    10_080 -> "每周"
+    else -> "${minutes} 分钟"
+}
+
+private fun materialConflictPolicyLabel(value: Int): String = when (value) {
+    0 -> "跳过"
+    2 -> "内容去重"
+    else -> "自动重命名"
 }
 
 @Composable

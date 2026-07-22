@@ -1,6 +1,8 @@
 package io.github.xgl34222220.baize.root
 
+import android.net.Uri
 import android.os.SystemClock
+import android.util.Base64
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
@@ -39,6 +41,23 @@ class FileOrganizerEngine(
         APP_USER_FILES
     }
 
+    private enum class ConflictPolicy {
+        SKIP,
+        RENAME,
+        DEDUPE;
+
+        companion object {
+            fun fromJson(json: JSONObject): ConflictPolicy = when {
+                json.has("conflictPolicy") -> when (json.optString("conflictPolicy").lowercase()) {
+                    "skip", "0" -> SKIP
+                    "dedupe", "2" -> DEDUPE
+                    else -> RENAME
+                }
+                else -> RENAME
+            }
+        }
+    }
+
     private data class SourceRoot(
         val directory: File,
         val group: String,
@@ -68,10 +87,19 @@ class FileOrganizerEngine(
         val items: List<PlannedMove>
     )
 
+    private data class DestinationResolution(
+        val destination: File?,
+        val reason: String? = null,
+        val collisionAction: String = "none"
+    )
+
+    private data class UndoRecord(val file: File, val json: JSONObject, val legacy: Boolean = false)
+
     private data class Selection(
         val all: Boolean,
         val ids: Set<String>,
-        val excludedIds: Set<String>
+        val excludedIds: Set<String>,
+        val conflictPolicy: ConflictPolicy
     )
 
     @Volatile
@@ -108,7 +136,9 @@ class FileOrganizerEngine(
         )
         val id = UUID.randomUUID().toString()
         val truncated = immutable.size >= MAX_ITEMS || elapsed(started) >= SCAN_BUDGET_MS
-        snapshot = Snapshot(id, System.currentTimeMillis(), sourceCount, truncated, immutable)
+        val createdSnapshot = Snapshot(id, System.currentTimeMillis(), sourceCount, truncated, immutable)
+        snapshot = createdSnapshot
+        persistSnapshot(createdSnapshot)
 
         val categoryCounts = JSONObject()
         val sourceCounts = JSONObject()
@@ -176,6 +206,8 @@ class FileOrganizerEngine(
         var moved = 0
         var skipped = 0
         var failed = 0
+        var deduplicated = 0
+        var renamed = 0
         var bytes = 0L
 
         fun appendDetail(item: PlannedMove, action: String, reason: String) {
@@ -187,13 +219,22 @@ class FileOrganizerEngine(
             if (cancelled.get()) break
             progress(Progress("正在归类 ${item.category}", index + 1, selected.size, displayPath(item.source)))
             val source = File(item.source)
-            val destination = File(item.destination)
-            val reason = validatePlannedMove(item, source, destination)
+            val plannedDestination = File(item.destination)
+            val reason = validatePlannedMove(item, source, plannedDestination)
             if (reason != null) {
                 skipped += 1
                 appendDetail(item, "skipped", reason)
                 continue
             }
+            val resolution = resolveDestination(source, plannedDestination, selection.conflictPolicy)
+            val destination = resolution.destination
+            if (destination == null) {
+                skipped += 1
+                if (resolution.collisionAction == "deduplicated") deduplicated += 1
+                appendDetail(item, resolution.collisionAction.ifBlank { "skipped" }, resolution.reason ?: "目标文件冲突")
+                continue
+            }
+            if (resolution.collisionAction == "renamed") renamed += 1
 
             val result = runCatching {
                 destination.parentFile?.mkdirs()
@@ -203,6 +244,7 @@ class FileOrganizerEngine(
                     moveVerified(destination, source)
                     false
                 } else {
+                    notifyMediaStore(item.source, destination.path)
                     true
                 }
             }
@@ -212,11 +254,12 @@ class FileOrganizerEngine(
                 moves.put(
                     JSONObject()
                         .put("source", item.source)
-                        .put("destination", item.destination)
+                        .put("destination", destination.path)
                         .put("destinationFingerprint", fingerprint(destination))
                         .put("sourceUid", item.sourceUid)
                         .put("sourceGid", item.sourceGid)
                         .put("sourceMode", item.sourceMode)
+                        .put("collisionAction", resolution.collisionAction)
                 )
             } else {
                 failed += 1
@@ -224,8 +267,9 @@ class FileOrganizerEngine(
             }
         }
 
-        if (moves.length() > 0) persistUndo(moves) else undoFile().delete()
+        if (moves.length() > 0) persistUndo(moves)
         snapshot = null
+        deleteSnapshot(current.id)
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
@@ -233,17 +277,21 @@ class FileOrganizerEngine(
             .put("moved", moved)
             .put("skipped", skipped)
             .put("failed", failed)
+            .put("deduplicated", deduplicated)
+            .put("renamed", renamed)
             .put("bytes", bytes)
-            .put("undoAvailable", moves.length() > 0)
+            .put("conflictPolicy", selection.conflictPolicy.name.lowercase())
+            .put("undoAvailable", undoRecordCount() > 0)
+            .put("undoCount", undoRecordCount())
             .put("detailTruncated", detailTruncated)
             .put("details", details)
             .toString()
     }
 
     fun undo(progress: (Progress) -> Unit): String {
-        val record = readUndo()
+        val record = readUndoRecord()
             ?: return error("undo_missing", "没有可撤销的文件归类记录")
-        val moves = record.optJSONArray("moves") ?: JSONArray()
+        val moves = record.json.optJSONArray("moves") ?: JSONArray()
         if (moves.length() == 0) return error("undo_missing", "没有可撤销的文件归类记录")
 
         val remaining = JSONArray()
@@ -252,19 +300,25 @@ class FileOrganizerEngine(
         var restored = 0
         var skipped = 0
         var failed = 0
-
         fun appendDetail(value: JSONObject) {
             if (details.length() < MAX_RESULT_DETAILS) details.put(value) else detailTruncated = true
         }
 
         for (index in moves.length() - 1 downTo 0) {
             if (cancelled.get()) {
-                for (rest in 0..index) remaining.put(moves.optJSONObject(rest))
+                for (rest in 0..index) moves.optJSONObject(rest)?.let(remaining::put)
                 break
             }
             val move = moves.optJSONObject(index) ?: continue
-            val source = File(move.optString("source"))
-            val destination = File(move.optString("destination"))
+            val sourcePath = pathValue(move, "source")
+            val destinationPath = pathValue(move, "destination")
+            if (sourcePath.isBlank() || destinationPath.isBlank()) {
+                failed += 1
+                appendDetail(JSONObject().put("action", "failed").put("reason", "撤销记录路径无效"))
+                continue
+            }
+            val source = File(sourcePath)
+            val destination = File(destinationPath)
             progress(Progress("正在撤销文件归类", moves.length() - index, moves.length(), displayPath(destination.path)))
 
             val expected = move.optString("destinationFingerprint")
@@ -272,19 +326,14 @@ class FileOrganizerEngine(
                 source.exists() -> "原位置已存在同名文件"
                 !destination.isFile -> "归类后的文件已不存在"
                 isSymlink(destination) -> "符号链接不允许撤销"
-                expected.isBlank() || fingerprint(destination) != expected -> "归类后的文件已发生变化"
+                expected.isNotBlank() && fingerprint(destination) != expected -> "归类后的文件已发生变化"
                 !allowedOrganizerSource(source.path) -> "原路径不再属于允许的归类来源"
                 else -> null
             }
             if (reason != null) {
                 skipped += 1
                 remaining.put(move)
-                appendDetail(
-                    JSONObject()
-                        .put("destination", displayPath(destination.path))
-                        .put("action", "skipped")
-                        .put("reason", reason)
-                )
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", reason))
                 continue
             }
 
@@ -292,12 +341,7 @@ class FileOrganizerEngine(
             if (sourceParent?.isDirectory != true) {
                 skipped += 1
                 remaining.put(move)
-                appendDetail(
-                    JSONObject()
-                        .put("destination", displayPath(destination.path))
-                        .put("action", "skipped")
-                        .put("reason", "原目录已不存在")
-                )
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "skipped").put("reason", "原目录已不存在"))
                 continue
             }
             val ok = runCatching {
@@ -308,31 +352,32 @@ class FileOrganizerEngine(
                     normalizeSharedOwnership(destination)
                     false
                 } else {
+                    notifyMediaStore(destination.path, source.path)
                     true
                 }
             }.getOrDefault(false)
-            if (ok) {
-                restored += 1
-            } else {
+            if (ok) restored += 1 else {
                 failed += 1
                 remaining.put(move)
-                appendDetail(
-                    JSONObject()
-                        .put("destination", displayPath(destination.path))
-                        .put("action", "failed")
-                        .put("reason", "恢复失败")
-                )
+                appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
             }
         }
 
-        if (remaining.length() == 0) undoFile().delete() else persistUndo(remaining)
+        if (remaining.length() == 0) {
+            record.file.delete()
+            if (record.legacy) undoFile().delete()
+        } else {
+            persistUndoRecord(record.file, remaining)
+        }
+        refreshLegacyUndoPointer()
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
             .put("restored", restored)
             .put("skipped", skipped)
             .put("failed", failed)
-            .put("undoAvailable", remaining.length() > 0)
+            .put("undoAvailable", undoRecordCount() > 0)
+            .put("undoCount", undoRecordCount())
             .put("detailTruncated", detailTruncated)
             .put("details", details)
             .toString()
@@ -347,7 +392,7 @@ class FileOrganizerEngine(
         if (!script.isFile) return null
         progress(Progress("正在建立全应用共享存储索引", 0, 0, displayPath(script.path)))
         val process = runCatching {
-            ProcessBuilder("/system/bin/sh", script.path, "refresh", "organizer")
+            ProcessBuilder("/system/bin/sh", script.path, "ensure", "organizer")
                 .redirectErrorStream(true)
                 .start()
         }.getOrNull() ?: return null
@@ -358,7 +403,8 @@ class FileOrganizerEngine(
             }
         }
         if (process.exitValue() != 0) return null
-        val index = File(stateDir, "index/storage-files.nul")
+        val index = File(stateDir, "index/organizer-files.nul").takeIf { it.isFile }
+            ?: File(stateDir, "index/storage-files.nul")
         if (!index.isFile) return null
         val roots = LinkedHashSet<String>()
         var visited = 0
@@ -636,6 +682,36 @@ class FileOrganizerEngine(
         )
     }
 
+    private fun resolveDestination(source: File, planned: File, policy: ConflictPolicy): DestinationResolution {
+        if (!planned.exists()) return DestinationResolution(planned)
+        return when (policy) {
+            ConflictPolicy.SKIP -> DestinationResolution(null, "归类目录已有同名文件", "skipped")
+            ConflictPolicy.RENAME -> uniqueDestination(planned)?.let { DestinationResolution(it, collisionAction = "renamed") }
+                ?: DestinationResolution(null, "无法生成可用的重命名目标", "skipped")
+            ConflictPolicy.DEDUPE -> {
+                val identical = runCatching {
+                    source.length() == planned.length() && sha256(source) == sha256(planned)
+                }.getOrDefault(false)
+                if (identical) DestinationResolution(null, "目标目录已有内容相同的文件，保留原文件", "deduplicated")
+                else uniqueDestination(planned)?.let { DestinationResolution(it, collisionAction = "renamed") }
+                    ?: DestinationResolution(null, "同名文件内容不同且无法生成重命名目标", "skipped")
+            }
+        }
+    }
+
+    private fun uniqueDestination(planned: File): File? {
+        val parent = planned.parentFile ?: return null
+        val name = planned.name
+        val extension = name.substringAfterLast('.', "").takeIf { name.contains('.') }
+        val stem = if (extension == null) name else name.removeSuffix(".$extension")
+        for (index in 1..MAX_COLLISION_RENAMES) {
+            val candidateName = if (extension == null) "$stem ($index)" else "$stem ($index).$extension"
+            val candidate = File(parent, candidateName)
+            if (!candidate.exists()) return candidate
+        }
+        return null
+    }
+
     private fun validatePlannedMove(item: PlannedMove, source: File, destination: File): String? {
         val sourcePath = canonical(source)
         if (sourcePath != item.source) return "源路径已变化"
@@ -644,7 +720,6 @@ class FileOrganizerEngine(
         if (isSymlink(source)) return "符号链接受保护"
         if (!allowedOrganizerSource(sourcePath)) return "源文件不再属于允许的归类来源"
         if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
-        if (destination.exists()) return "归类目录已有同名文件"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
         return null
     }
@@ -666,14 +741,23 @@ class FileOrganizerEngine(
         val temp = File(parent, ".${destination.name}.baize-${UUID.randomUUID()}.tmp")
         if (temp.exists()) temp.delete()
         try {
+            val sourceDigest = MessageDigest.getInstance("SHA-256")
             FileInputStream(source).use { input ->
                 FileOutputStream(temp).use { output ->
-                    input.copyTo(output, 1024 * 1024)
+                    val buffer = ByteArray(1024 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        sourceDigest.update(buffer, 0, read)
+                        output.write(buffer, 0, read)
+                    }
                     output.fd.sync()
                 }
             }
             if (source.length() != temp.length()) return false
-            if (sha256(source) != sha256(temp)) return false
+            val copiedDigest = sha256(temp)
+            val originalDigest = sourceDigest.digest().joinToString("") { "%02x".format(it) }
+            if (originalDigest != copiedDigest) return false
             if (destination.exists()) return false
             Os.rename(temp.path, destination.path)
             if (!source.delete()) {
@@ -687,9 +771,14 @@ class FileOrganizerEngine(
     }
 
     private fun validSnapshot(id: String): Snapshot? {
-        val current = snapshot ?: return null
-        if (current.id != id || System.currentTimeMillis() - current.createdAt > SNAPSHOT_TTL_MS) {
+        var current = snapshot
+        if (current == null || current.id != id) {
+            current = readSnapshot(id)
+            snapshot = current
+        }
+        if (current == null || current.id != id || System.currentTimeMillis() - current.createdAt > SNAPSHOT_TTL_MS) {
             snapshot = null
+            deleteSnapshot(id)
             return null
         }
         return current
@@ -697,10 +786,13 @@ class FileOrganizerEngine(
 
     private fun parseSelection(raw: String): Selection {
         val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+        val configured = configInt("organizer_conflict_policy", 1).coerceIn(0, 2)
+        val withDefault = if (json.has("conflictPolicy")) json else JSONObject(json.toString()).put("conflictPolicy", configured)
         return Selection(
             all = json.optBoolean("all", false),
             ids = parseIds(json.optJSONArray("ids")),
-            excludedIds = parseIds(json.optJSONArray("excludeIds"))
+            excludedIds = parseIds(json.optJSONArray("excludeIds")),
+            conflictPolicy = ConflictPolicy.fromJson(withDefault)
         )
     }
 
@@ -715,25 +807,157 @@ class FileOrganizerEngine(
         return result
     }
 
-    private fun persistUndo(moves: JSONArray) {
-        stateDir.mkdirs()
-        val file = undoFile()
-        val temp = File(stateDir, "${file.name}.tmp")
-        temp.writeText(JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves).toString())
-        if (!temp.renameTo(file)) {
-            file.delete()
-            temp.renameTo(file)
+    private fun persistSnapshot(value: Snapshot) {
+        runCatching {
+            val directory = snapshotDir().apply { mkdirs() }
+            val items = JSONArray()
+            value.items.forEach { item ->
+                items.put(
+                    JSONObject()
+                        .put("id", item.id)
+                        .put("source", item.source)
+                        .put("sourceRoot", item.sourceRoot)
+                        .put("sourceGroup", item.sourceGroup)
+                        .put("destination", item.destination)
+                        .put("category", item.category)
+                        .put("name", item.name)
+                        .put("bytes", item.bytes)
+                        .put("fingerprint", item.fingerprint)
+                        .put("sourceUid", item.sourceUid)
+                        .put("sourceGid", item.sourceGid)
+                        .put("sourceMode", item.sourceMode)
+                )
+            }
+            val json = JSONObject()
+                .put("id", value.id)
+                .put("createdAt", value.createdAt)
+                .put("roots", value.roots)
+                .put("truncated", value.truncated)
+                .put("items", items)
+            RootFileStore.writeAtomic(File(directory, "${value.id}.json"), json.toString())
+            pruneFiles(directory, SNAPSHOT_RETENTION)
         }
-        file.setReadable(true, true)
-        file.setWritable(true, true)
     }
 
-    private fun readUndo(): JSONObject? = runCatching {
-        val file = undoFile()
-        if (!file.isFile) null else JSONObject(file.readText())
+    private fun readSnapshot(id: String): Snapshot? = runCatching {
+        if (!id.matches(Regex("^[A-Za-z0-9-]{16,80}$"))) return@runCatching null
+        val json = JSONObject(File(snapshotDir(), "$id.json").readText())
+        val array = json.optJSONArray("items") ?: return@runCatching null
+        val items = ArrayList<PlannedMove>(array.length())
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            items += PlannedMove(
+                id = item.optString("id"),
+                source = item.optString("source"),
+                sourceRoot = item.optString("sourceRoot"),
+                sourceGroup = item.optString("sourceGroup"),
+                destination = item.optString("destination"),
+                category = item.optString("category"),
+                name = item.optString("name"),
+                bytes = item.optLong("bytes", 0L),
+                fingerprint = item.optString("fingerprint"),
+                sourceUid = item.optInt("sourceUid", -1),
+                sourceGid = item.optInt("sourceGid", -1),
+                sourceMode = item.optInt("sourceMode", -1)
+            )
+        }
+        Snapshot(
+            id = json.optString("id"),
+            createdAt = json.optLong("createdAt", 0L),
+            roots = json.optInt("roots", 0),
+            truncated = json.optBoolean("truncated", false),
+            items = items
+        )
     }.getOrNull()
 
+    private fun deleteSnapshot(id: String) {
+        runCatching { File(snapshotDir(), "$id.json").delete() }
+    }
+
+    private fun snapshotDir() = File(stateDir, "snapshots/file-organizer")
+
+    private fun persistUndo(moves: JSONArray) {
+        stateDir.mkdirs()
+        val directory = undoDir().apply { mkdirs() }
+        val file = File(directory, "%013d-%s.json".format(System.currentTimeMillis(), UUID.randomUUID().toString().take(8)))
+        val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
+        RootFileStore.writeAtomic(file, json.toString())
+        RootFileStore.writeAtomic(undoFile(), json.toString())
+        pruneFiles(directory, configInt("organizer_undo_retention", DEFAULT_UNDO_RETENTION).coerceIn(1, 20))
+    }
+
+    private fun persistUndoRecord(file: File, moves: JSONArray) {
+        val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
+        RootFileStore.writeAtomic(file, json.toString())
+        RootFileStore.writeAtomic(undoFile(), json.toString())
+    }
+
+    private fun readUndoRecord(): UndoRecord? {
+        val newest = undoDir().listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.maxByOrNull { it.name }
+        if (newest != null) {
+            val json = runCatching { JSONObject(newest.readText()) }.getOrNull()
+            if (json != null) return UndoRecord(newest, json)
+        }
+        val legacy = undoFile()
+        val json = runCatching { if (legacy.isFile) JSONObject(legacy.readText()) else null }.getOrNull()
+        return json?.let { UndoRecord(legacy, it, legacy = true) }
+    }
+
+    private fun refreshLegacyUndoPointer() {
+        val newest = undoDir().listFiles()
+            ?.filter { it.isFile && it.extension == "json" }
+            ?.maxByOrNull { it.name }
+        if (newest == null) undoFile().delete()
+        else runCatching { RootFileStore.writeAtomic(undoFile(), newest.readText()) }
+    }
+
+    private fun undoRecordCount(): Int = undoDir().listFiles()?.count { it.isFile && it.extension == "json" }
+        ?: if (undoFile().isFile) 1 else 0
+
+    private fun undoDir() = File(stateDir, "organizer-undo")
     private fun undoFile() = File(stateDir, "organizer-last.json")
+
+    private fun pathValue(json: JSONObject, key: String): String {
+        val plain = json.optString(key)
+        if (plain.isNotBlank()) return plain
+        val encoded = json.optString("${key}B64")
+        if (encoded.isBlank()) return ""
+        return runCatching { String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8) }.getOrDefault("")
+    }
+
+    private fun pruneFiles(directory: File, keep: Int) {
+        directory.listFiles()
+            ?.filter(File::isFile)
+            ?.sortedByDescending { it.name }
+            ?.drop(keep)
+            ?.forEach { runCatching { it.delete() } }
+    }
+
+    private fun configInt(key: String, fallback: Int): Int = runCatching {
+        File(stateDir, "config.conf").useLines { lines ->
+            lines.firstOrNull { it.startsWith("$key=") }
+                ?.substringAfter('=')
+                ?.trim()
+                ?.toIntOrNull()
+                ?: fallback
+        }
+    }.getOrDefault(fallback)
+
+    private fun notifyMediaStore(oldPath: String, newPath: String) {
+        if (configInt("organizer_media_scan", 1) != 1) return
+        listOf(oldPath, newPath).forEach { path ->
+            runCatching {
+                val userId = userIdForPath(path) ?: 0
+                ProcessBuilder(
+                    "/system/bin/am", "broadcast", "--user", userId.toString(),
+                    "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+                    "-d", Uri.fromFile(File(path)).toString()
+                ).redirectErrorStream(true).start().apply { waitFor(4, TimeUnit.SECONDS) }
+            }
+        }
+    }
 
     private fun normalizeSharedOwnership(file: File): Boolean = runCatching {
         val root = mediaUserRoot(file.path) ?: return@runCatching false
@@ -971,5 +1195,8 @@ class FileOrganizerEngine(
         private const val MAX_PATH_CHARS = 360
         private const val MAX_NAME_CHARS = 160
         private const val MAX_GROUP_CHARS = 100
+        private const val MAX_COLLISION_RENAMES = 999
+        private const val SNAPSHOT_RETENTION = 3
+        private const val DEFAULT_UNDO_RETENTION = 10
     }
 }

@@ -24,6 +24,8 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -78,7 +80,9 @@ private data class MaterialQuickAction(
 @Composable
 fun CleanScreenMaterial(
     state: CleanUiState,
-    actions: CleanUiActions
+    actions: CleanUiActions,
+    expandedCategory: String,
+    onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var showDailyTimeDialog by remember { mutableStateOf(false) }
@@ -125,7 +129,7 @@ fun CleanScreenMaterial(
         item { MaterialCleanOverview(state) }
         item {
             MaterialSectionHeader(
-                eyebrow = "AUTOMATIC CLEANING",
+                eyebrow = "自动执行",
                 title = "自动清理类别",
                 subtitle = "两套皮肤共用同一份调度配置"
             )
@@ -166,7 +170,15 @@ fun CleanScreenMaterial(
             )
         }
         items(state.categories, key = { it.id.name }) { item ->
-            MaterialCategoryCard(item, actions, state.dailyEnabled)
+            MaterialCategoryCard(
+                item = item,
+                actions = actions,
+                dailyMode = state.dailyEnabled,
+                expanded = expandedCategory == item.id.name,
+                onToggleExpanded = {
+                    onExpandedCategoryChanged(if (expandedCategory == item.id.name) "" else item.id.name)
+                }
+            )
         }
         item {
             Card(
@@ -216,7 +228,7 @@ fun CleanScreenMaterial(
         }
         item {
             MaterialSectionHeader(
-                eyebrow = "MANUAL TOOLS",
+                eyebrow = "手动工具",
                 title = "手动清理工具",
                 subtitle = "直接执行扫描、深度清理或查看规则明细"
             )
@@ -254,7 +266,7 @@ private fun MaterialCleanHeader() {
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         Text(
-            "CLEANING CATEGORIES",
+            "清理分类",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -385,7 +397,9 @@ private fun MaterialDailyScheduleCard(
 private fun MaterialCategoryCard(
     item: CleanCategoryUiItem,
     actions: CleanUiActions,
-    dailyMode: Boolean
+    dailyMode: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit
 ) {
     var showIntervalDialog by remember(item.id, item.intervalMinutes) { mutableStateOf(false) }
     if (showIntervalDialog) {
@@ -440,45 +454,75 @@ private fun MaterialCategoryCard(
             }
             if (item.enabled) {
                 HorizontalDivider(Modifier.padding(vertical = 14.dp))
-                Text(
-                    "执行周期：${formatMinutes(item.intervalMinutes)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                if (dailyMode) {
-                    Text(
-                        "每日模式开启时暂不使用，关闭每日模式后自动恢复",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp
+                FilledTonalButton(
+                    onClick = onToggleExpanded,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                        Text(
+                            if (dailyMode) "每日模式已启用"
+                            else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            if (dailyMode) "关闭每日模式后恢复当前独立周期"
+                            else if (expanded) "周期设置已展开" else "周期设置已收起",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Text(if (expanded) "收起设置" else "展开设置", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.size(5.dp))
+                    Icon(
+                        if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (expanded) "收起设置" else "展开设置",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(30, 60, 360, 1_440).forEach { minutes ->
-                        FilledTonalButton(
-                            onClick = { actions.onCategoryIntervalChanged(item.id, minutes) },
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (item.intervalMinutes == minutes) {
-                                    MaterialTheme.colorScheme.primaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                }
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
-                        ) {
-                            Text(formatMinutes(minutes), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (expanded) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "执行周期：${formatMinutes(item.intervalMinutes)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (dailyMode) {
+                        Text(
+                            "每日模式开启时暂不使用，关闭每日模式后自动恢复",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(30, 60, 360, 1_440).forEach { minutes ->
+                            FilledTonalButton(
+                                onClick = { actions.onCategoryIntervalChanged(item.id, minutes) },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (item.intervalMinutes == minutes) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    }
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+                            ) {
+                                Text(formatMinutes(minutes), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                }
-                Spacer(Modifier.height(9.dp))
-                OutlinedButton(
-                    onClick = { showIntervalDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
-                    Text("精确输入 1–720 小时", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(9.dp))
+                    OutlinedButton(
+                        onClick = { showIntervalDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text("修改精确周期", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

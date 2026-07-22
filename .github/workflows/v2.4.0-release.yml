@@ -1,0 +1,240 @@
+name: BaiZe v2.4.0 Verify and Release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v240-release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  BAIZE_VERSION: v2.4.0
+  BAIZE_VERSION_NAME: 2.4.0
+  BAIZE_VERSION_CODE: '24000'
+
+jobs:
+  verify-build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout committed source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify unified v2.4.0 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q 'versionName = "2.4.0"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 24000' v2/app/build.gradle.kts
+          grep -q '禁止回退到 Debug 签名' v2/app/build.gradle.kts
+          ! grep -q 'else "debug"' v2/app/build.gradle.kts
+          cmp module.prop v2/module/module.prop
+          grep -qx 'id=baize_v2' module.prop
+          grep -qx 'version=v2.4.0' module.prop
+          grep -qx 'versionCode=24000' module.prop
+          grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json' module.prop
+          grep -q 'OUTPUT="$OUT/BaiZe-v2.4.0-Module.zip"' v2/scripts/package-module.sh
+          test -s RELEASE_NOTES_v2.4.0.md
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          expected = {
+              "version": "v2.4.0",
+              "versionCode": 24000,
+              "zipUrl": "https://github.com/xgl34222220-ops/BaiZe/releases/download/v2.4.0/BaiZe-v2.4.0-Module.zip",
+              "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.4.0.md",
+          }
+          actual = json.loads(Path("update.json").read_text())
+          assert actual == expected, (actual, expected)
+          PY
+
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+
+      - name: Verify Root shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+
+      - name: Test scheduler fairness
+        run: bash v2/tests/test-scheduler-fairness.sh
+
+      - name: Test incremental shared index
+        run: bash v2/tests/test-incremental-index.sh
+
+      - name: Test organizer transactions
+        run: bash v2/tests/test-organizer-transactions.sh
+
+      - name: Verify native source warnings
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Prepare temporary PR signing certificate
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/baize-v240-ci.jks"
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" \
+            -storepass 'baize-ci-24000' \
+            -keypass 'baize-ci-24000' \
+            -alias 'baize-ci' \
+            -keyalg RSA -keysize 3072 -validity 3650 \
+            -dname 'CN=BaiZe v2.4.0 CI,O=xgl34222220-ops,C=CN'
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo 'BAIZE_KEYSTORE_PASSWORD=baize-ci-24000'
+            echo 'BAIZE_KEY_ALIAS=baize-ci'
+            echo 'BAIZE_KEY_PASSWORD=baize-ci-24000'
+          } >> "$GITHUB_ENV"
+
+      - name: Prepare formal release signing certificate
+        if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            value=$(printenv "$name" || true)
+            if [ -z "$value" ]; then
+              echo "缺少正式签名 Secret：$name" >&2
+              exit 1
+            fi
+          done
+          KEYSTORE="$RUNNER_TEMP/baize-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build ARM64 scanner
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed Android Release, lint and macrobenchmark
+        id: android_build
+        working-directory: v2
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+
+      - name: Package stable module
+        working-directory: v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-module.sh 2>&1 | tee package-module.log
+
+      - name: Verify signed formal artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP="v2/dist/BaiZe-v2.4.0-Module.zip"
+          APK="v2/app/build/outputs/apk/release/app-release.apk"
+          RELEASE_APK="v2/dist/BaiZe-v2.4.0.apk"
+          test -s "$ZIP"
+          test -s "$APK"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.4.0'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=24000'
+          unzip -p "$ZIP" module.prop | grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json'
+          unzip -Z1 "$ZIP" | grep -qx 'app/baize.apk'
+          ! unzip -Z1 "$ZIP" | grep -Eq '^(webroot|webui|www|ksu-webui)/'
+          PACKAGED_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
+          BUILT_APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
+          test "$PACKAGED_APK_SHA" = "$BUILT_APK_SHA"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee v2/dist/BaiZe-v2.4.0-signing-certificate.txt
+          cp "$APK" "$RELEASE_APK"
+          sha256sum "$ZIP" > "$ZIP.sha256"
+          sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
+
+      - name: Upload verified v2.4.0 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-Verified-Release
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.4.0-Module.zip
+            v2/dist/BaiZe-v2.4.0-Module.zip.sha256
+            v2/dist/BaiZe-v2.4.0.apk
+            v2/dist/BaiZe-v2.4.0.apk.sha256
+            v2/dist/BaiZe-v2.4.0-signing-certificate.txt
+            v2/android-build.log
+            v2/package-module.log
+
+      - name: Publish BaiZe v2.4.0 GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=v2.4.0
+          ZIP=v2/dist/BaiZe-v2.4.0-Module.zip
+          ZIP_SHA=v2/dist/BaiZe-v2.4.0-Module.zip.sha256
+          APK=v2/dist/BaiZe-v2.4.0.apk
+          APK_SHA=v2/dist/BaiZe-v2.4.0.apk.sha256
+          CERT=v2/dist/BaiZe-v2.4.0-signing-certificate.txt
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title '白泽 v2.4.0' --notes-file RELEASE_NOTES_v2.4.0.md --latest
+            gh release upload "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" \
+              --target "$GITHUB_SHA" \
+              --title '白泽 v2.4.0' \
+              --notes-file RELEASE_NOTES_v2.4.0.md \
+              --latest
+          fi
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-Release-Diagnostics
+          if-no-files-found: warn
+          path: |
+            v2/android-build.log
+            v2/package-module.log
+            v2/app/build/reports/lint-results-release.html
+            v2/app/build/reports/lint-results-release.txt

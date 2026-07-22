@@ -54,7 +54,7 @@ tmp="$RESULT_FILE.tmp.$$"
   echo "exit_code=$code"
   echo "log=$LOG_FILE"
   if [ "$MODE" = organize ] && [ -f "$ORGANIZER_RESULT" ]; then
-    for key in success cancelled requested moved skipped failed bytes undoAvailable phase; do
+    for key in success cancelled requested moved skipped failed renamed deduplicated bytes conflictPolicy undoAvailable undoCount phase; do
       value=$(sed -n "s/^$key=//p" "$ORGANIZER_RESULT" | tail -n 1)
       [ -n "$value" ] && printf '%s=%s\n' "$key" "$value"
     done

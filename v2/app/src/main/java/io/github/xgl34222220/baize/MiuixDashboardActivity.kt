@@ -126,6 +126,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
         updateStorage()
+        FileOrganizerWorker.ensureWatchdog(this)
         dashboardState.value = dashboardState.value.copy(
             lastTaskTime = preferences.getString("last_task_time", "").orEmpty(),
             protectedItems = loadProtectedItems()
@@ -149,6 +150,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     audit = { startActivity(Intent(this, CleanCenterActivity::class.java)) },
                     updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
+                    schedulerCommand = { controlScheduler(it) },
                     clearHistory = { confirmClearHistory() },
                     clearRawLog = { confirmClearRawLogs() },
                     reviewProtected = { startActivity(Intent(this, ProtectedReviewActivity::class.java)) },
@@ -1300,6 +1302,25 @@ class MiuixDashboardActivity : ComponentActivity() {
             val success = response.getOrNull()?.optBoolean("success") == true
             schedulerState.value = config.copy(saving = false)
             toast(if (success) "设置已保存，调度器会自动读取" else "保存失败：${response.exceptionOrNull()?.message ?: "未知错误"}")
+            if (success) FileOrganizerWorker.ensureWatchdog(this@MiuixDashboardActivity)
+            loadScheduler()
+            refreshModuleState()
+        }
+    }
+
+    private fun controlScheduler(command: String) {
+        val service = rootService ?: return toast("Root 服务尚未连接")
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.runModuleTask(command)) }
+            }
+            val json = response.getOrNull()
+            val success = json?.optBoolean("success") == true
+            val message = json?.optString("message").orEmpty().ifBlank {
+                if (success) "调度器命令已执行" else json?.optString("error").orEmpty().ifBlank { response.exceptionOrNull()?.message ?: "命令执行失败" }
+            }
+            toast(message)
+            loadScheduler()
             refreshModuleState()
         }
     }
@@ -1545,6 +1566,8 @@ class MiuixDashboardActivity : ComponentActivity() {
         "apk-clean" -> "安装包清理"
         "profile-scan" -> "分类垃圾扫描"
         "profile-clean" -> "分类垃圾清理"
+        "organize", "organizer", "organize-clean" -> "文件自动归类"
+        "organize-scan", "organizer-scan" -> "文件归类扫描"
         else -> if (mode.isBlank()) "未知清理任务" else mode.replace('-', ' ').replaceFirstChar { it.uppercase() }
     }
 

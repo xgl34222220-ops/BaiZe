@@ -15,10 +15,21 @@ RUNNER="$MODDIR/worker-runner.sh"
 case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
-if [ -d "$LOCK_DIR" ]; then
+proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
+lock_owner_alive() {
   old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
-  case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
-  if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null; then
+  old_ticks=$(sed -n '1p' "$LOCK_DIR/start_ticks" 2>/dev/null)
+  case "$old_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null || return 1
+  current_ticks=$(proc_start_ticks "$old_pid")
+  case "$old_ticks" in ''|*[!0-9]*) old_ticks=0 ;; esac
+  [ "$old_ticks" -eq 0 ] || [ "$current_ticks" = "$old_ticks" ] || return 1
+  cmdline=$(tr '\000' ' ' <"/proc/$old_pid/cmdline" 2>/dev/null)
+  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*baize_engine*) return 0 ;; esac
+  return 1
+}
+if [ -d "$LOCK_DIR" ]; then
+  if lock_owner_alive; then
     echo "已有扫描、清理或归类任务正在运行" >&2
     exit 3
   fi
@@ -36,7 +47,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.3"
+  echo "worker=detached-root-worker-v2.4"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 if command -v setsid >/dev/null 2>&1; then
   setsid "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
@@ -61,6 +72,7 @@ tmp="$WORKER_FILE.tmp.$$"
   echo "trigger=$TRIGGER"
   echo "started=$started"
   echo "result=$RESULT_FILE"
+  echo "start_ticks=$(proc_start_ticks "$pid")"
 } >"$tmp" && mv -f "$tmp" "$WORKER_FILE"
 chmod 0600 "$WORKER_FILE" "$RUNNING_FILE" 2>/dev/null || true
 echo "统一 Root Worker 已启动：$pid"

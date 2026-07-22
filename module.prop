@@ -1,6 +1,7 @@
-id=safesweep
-name=白泽
-version=v1.0.3
-versionCode=1003
+id=baize_v2
+name=白泽 v2
+version=v2.4.0
+versionCode=24000
 author=惜故里丶
-description=深度扫描加速、慢目录保护、实时进度与准确清理统计。
+description=用于清理应用缓存、安装包、卸载残留和深度垃圾，并整理应用下载、接收、附件与导出文件。
+updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json

@@ -7,83 +7,120 @@ TRIGGER=${2:-app}
 TASK_ID=${3:-$(date +%s)-$$}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 INDEXER="$MODDIR/storage-index.sh"
-INDEX_FILE="$STATE_DIR/index/storage-files.nul"
+ALL_INDEX="$STATE_DIR/index/storage-files.nul"
+ORGANIZER_INDEX="$STATE_DIR/index/organizer-files.nul"
+INDEX_FILE="$ORGANIZER_INDEX"
 RUNNING_FILE="$STATE_DIR/running.env"
 RESULT_FILE="$STATE_DIR/organizer-result.env"
 UNDO_FILE="$STATE_DIR/organizer-last.json"
+UNDO_DIR="$STATE_DIR/organizer-undo"
 WORKER_FILE="$STATE_DIR/worker.env"
 STOP_FILE="$STATE_DIR/stop"
 LOCK_DIR="$STATE_DIR/run.lock"
 LOG_FILE="$STATE_DIR/logs/organizer-$TASK_ID.log"
+MEDIA_QUEUE="$STATE_DIR/media-scan-$TASK_ID.nul"
 
 [ "$MODE" = organize ] || { echo "不支持的归类模式：$MODE" >&2; exit 2; }
 [ -f "$INDEXER" ] || { echo "共享索引脚本缺失：$INDEXER" >&2; exit 5; }
 
-mkdir -p "$STATE_DIR/logs"
+config_value() { sed -n "s/^$1=//p" "$STATE_DIR/config.conf" 2>/dev/null | tail -n 1; }
+uint_config() {
+  uc_value=$(config_value "$1"); uc_default=$2; uc_min=$3; uc_max=$4
+  case "$uc_value" in ''|*[!0-9]*) uc_value=$uc_default ;; esac
+  [ "$uc_value" -lt "$uc_min" ] && uc_value=$uc_min
+  [ "$uc_value" -gt "$uc_max" ] && uc_value=$uc_max
+  echo "$uc_value"
+}
+proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
+lock_alive() {
+  la_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+  la_ticks=$(sed -n '1p' "$LOCK_DIR/start_ticks" 2>/dev/null)
+  case "$la_pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$la_pid" -gt 1 ] && kill -0 "$la_pid" 2>/dev/null || return 1
+  current_ticks=$(proc_start_ticks "$la_pid")
+  case "$la_ticks" in ''|*[!0-9]*) la_ticks=0 ;; esac
+  [ "$la_ticks" -eq 0 ] || [ "$current_ticks" = "$la_ticks" ] || return 1
+  cmdline=$(tr '\000' ' ' <"/proc/$la_pid/cmdline" 2>/dev/null)
+  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*) return 0 ;; esac
+  return 1
+}
+
+mkdir -p "$STATE_DIR/logs" "$UNDO_DIR"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  OLD_PID=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
-  case "$OLD_PID" in ''|*[!0-9]*) OLD_PID=0 ;; esac
-  if [ "$OLD_PID" -gt 1 ] && kill -0 "$OLD_PID" 2>/dev/null; then
+  if lock_alive; then
     echo "已有扫描、清理或归类任务正在运行" >&2
     exit 3
   fi
   rm -rf -- "$LOCK_DIR" 2>/dev/null || true
   mkdir "$LOCK_DIR" 2>/dev/null || { echo "无法创建任务锁" >&2; exit 3; }
 fi
-echo $$ >"$LOCK_DIR/pid"
+printf '%s\n' "$$" >"$LOCK_DIR/pid"
+proc_start_ticks $$ >"$LOCK_DIR/start_ticks"
+printf '%s\n' "$TASK_ID" >"$LOCK_DIR/task_id"
 
 sanitize_env() { printf '%s' "$1" | tr '\r\n' '  '; }
+LAST_PROGRESS_EPOCH=0
+LAST_PROGRESS_CURRENT=-1
 write_running() {
-  phase=$1 current=$2 total=$3 current_path=${4:-}
-  tmp="$RUNNING_FILE.tmp.$$"
+  wr_phase=$1; wr_current=$2; wr_total=$3; wr_path=${4:-}; wr_force=${5:-0}
+  wr_now=$(date +%s)
+  if [ "$wr_force" != 1 ] && [ "$wr_current" -ne 0 ] && [ $((wr_current - LAST_PROGRESS_CURRENT)) -lt 25 ] && [ $((wr_now - LAST_PROGRESS_EPOCH)) -lt 1 ]; then
+    return 0
+  fi
+  LAST_PROGRESS_EPOCH=$wr_now; LAST_PROGRESS_CURRENT=$wr_current
+  wr_tmp="$RUNNING_FILE.tmp.$$"
   {
     echo "mode=organize"
     echo "operation=module-organize"
-    echo "phase=$(sanitize_env "$phase")"
-    echo "progress_current=$current"
-    echo "progress_total=$total"
-    echo "current_path=$(sanitize_env "$current_path")"
+    echo "phase=$(sanitize_env "$wr_phase")"
+    echo "progress_current=$wr_current"
+    echo "progress_total=$wr_total"
+    echo "current_path=$(sanitize_env "$wr_path")"
     echo "task_id=$TASK_ID"
     echo "trigger=$TRIGGER"
-    echo "worker=detached-root-shell"
+    echo "worker=detached-root-shell-v2.4"
     echo "started=$STARTED"
-  } >"$tmp"
-  mv -f "$tmp" "$RUNNING_FILE"
+    echo "heartbeat=$wr_now"
+  } >"$wr_tmp" && mv -f "$wr_tmp" "$RUNNING_FILE"
   chmod 0600 "$RUNNING_FILE" 2>/dev/null || true
 }
 
 write_result() {
-  phase=$1 success=$2 cancelled=$3 requested=$4 moved=$5 skipped=$6 failed=$7 bytes=$8
-  tmp="$RESULT_FILE.tmp.$$"
+  wr_phase=$1; wr_success=$2; wr_cancelled=$3; wr_requested=$4; wr_moved=$5; wr_skipped=$6; wr_failed=$7; wr_bytes=$8
+  wr_tmp="$RESULT_FILE.tmp.$$"
+  wr_undo_count=$(find "$UNDO_DIR" -maxdepth 1 -type f -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+  case "$wr_undo_count" in ''|*[!0-9]*) wr_undo_count=0 ;; esac
   {
     echo "mode=organize"
     echo "operation=module-organize"
-    echo "phase=$(sanitize_env "$phase")"
-    echo "success=$success"
+    echo "phase=$(sanitize_env "$wr_phase")"
+    echo "success=$wr_success"
     echo "completed=1"
-    echo "cancelled=$cancelled"
-    echo "requested=$requested"
-    echo "moved=$moved"
-    echo "skipped=$skipped"
-    echo "failed=$failed"
-    echo "bytes=$bytes"
-    echo "undoAvailable=$([ "$moved" -gt 0 ] && echo true || echo false)"
+    echo "cancelled=$wr_cancelled"
+    echo "requested=$wr_requested"
+    echo "moved=$wr_moved"
+    echo "skipped=$wr_skipped"
+    echo "failed=$wr_failed"
+    echo "renamed=$RENAMED"
+    echo "deduplicated=$DEDUPLICATED"
+    echo "bytes=$wr_bytes"
+    echo "conflictPolicy=$CONFLICT_POLICY"
+    echo "undoAvailable=$([ "$wr_undo_count" -gt 0 ] && echo true || echo false)"
+    echo "undoCount=$wr_undo_count"
     echo "task_id=$TASK_ID"
     echo "trigger=$TRIGGER"
-    echo "worker=detached-root-shell"
+    echo "worker=detached-root-shell-v2.4"
     echo "completed_epoch=$(date +%s)"
-  } >"$tmp"
-  mv -f "$tmp" "$RESULT_FILE"
+  } >"$wr_tmp" && mv -f "$wr_tmp" "$RESULT_FILE"
   chmod 0600 "$RESULT_FILE" 2>/dev/null || true
 }
 
 cleanup() {
-  rm -f "$RUNNING_FILE" 2>/dev/null || true
-  if [ -f "$WORKER_FILE" ] && grep -q "^task_id=$TASK_ID$" "$WORKER_FILE" 2>/dev/null; then
-    rm -f "$WORKER_FILE" 2>/dev/null || true
-  fi
-  rm -rf -- "$LOCK_DIR" 2>/dev/null || true
+  rm -f "$RUNNING_FILE" "$MEDIA_QUEUE" 2>/dev/null || true
+  if [ -f "$WORKER_FILE" ] && grep -q "^task_id=$TASK_ID$" "$WORKER_FILE" 2>/dev/null; then rm -f "$WORKER_FILE"; fi
+  if [ -f "$LOCK_DIR/task_id" ] && [ "$(sed -n '1p' "$LOCK_DIR/task_id" 2>/dev/null)" = "$TASK_ID" ]; then rm -rf -- "$LOCK_DIR" 2>/dev/null || true; fi
 }
 trap cleanup EXIT INT TERM
 
@@ -295,14 +332,21 @@ skip_file() {
 }
 
 STARTED=$(date +%s)
-rm -f "$STOP_FILE" "$RESULT_FILE"
-write_running "正在由独立 Root Worker 建立安全归类索引" 0 0 ""
+CONFLICT_POLICY=$(uint_config organizer_conflict_policy 1 0 2)
+UNDO_RETENTION=$(uint_config organizer_undo_retention 10 1 20)
+MEDIA_SCAN=$(uint_config organizer_media_scan 1 0 1)
+RENAMED=0
+DEDUPLICATED=0
+rm -f "$STOP_FILE" "$RESULT_FILE" "$MEDIA_QUEUE"
+write_running "正在建立增量共享索引" 0 0 "" 1
 
-if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$INDEXER" refresh organizer-detached >>"$LOG_FILE" 2>&1; then
+if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" "$SHELL_BIN" "$INDEXER" ensure organizer-detached >>"$LOG_FILE" 2>&1; then
   echo "共享索引失败，切换独立 Root 安全兜底索引" >>"$LOG_FILE"
 fi
+[ -s "$ORGANIZER_INDEX" ] && INDEX_FILE="$ORGANIZER_INDEX" || INDEX_FILE="$ALL_INDEX"
 if [ ! -s "$INDEX_FILE" ]; then
-  write_running "共享索引为空，正在执行安全兜底发现" 0 0 "$MEDIA_ROOT"
+  INDEX_FILE="$ALL_INDEX"
+  write_running "共享索引为空，正在执行安全兜底发现" 0 0 "$MEDIA_ROOT" 1
   build_fallback_index
 fi
 if [ ! -s "$INDEX_FILE" ]; then
@@ -312,51 +356,81 @@ fi
 
 TOTAL=$(tr '\000' '\n' <"$INDEX_FILE" 2>/dev/null | wc -l | tr -d ' ')
 case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
-REQUESTED=0
-MOVED=0
-SKIPPED=0
-FAILED=0
-BYTES=0
-CURRENT=0
-UNDO_TMP="$UNDO_FILE.tmp.$$"
+REQUESTED=0; MOVED=0; SKIPPED=0; FAILED=0; BYTES=0; CURRENT=0
+UNDO_TMP="$UNDO_DIR/.${TASK_ID}.tmp.$$"
 FIRST_MOVE=1
-printf '{"createdAt":%s,"moves":[' "$(date +%s)000" >"$UNDO_TMP"
+printf '{"createdAt":%s,"taskId":"%s","trigger":"%s","moves":[' "$(date +%s)000" "$TASK_ID" "$(sanitize_env "$TRIGGER")" >"$UNDO_TMP"
+
+file_sha256() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
+unique_destination() {
+  ud_dir=$1; ud_name=$2
+  case "$ud_name" in
+    *.*) ud_ext=.${ud_name##*.}; ud_stem=${ud_name%$ud_ext} ;;
+    *) ud_ext=; ud_stem=$ud_name ;;
+  esac
+  ud_n=1
+  while [ "$ud_n" -le 999 ]; do
+    ud_candidate="$ud_dir/$ud_stem ($ud_n)$ud_ext"
+    [ -e "$ud_candidate" ] || { printf '%s\n' "$ud_candidate"; return 0; }
+    ud_n=$((ud_n + 1))
+  done
+  return 1
+}
+resolve_destination() {
+  rd_source=$1; rd_planned=$2
+  COLLISION_ACTION=none
+  [ -e "$rd_planned" ] || { RESOLVED_DEST=$rd_planned; return 0; }
+  case "$CONFLICT_POLICY" in
+    0) COLLISION_ACTION=skipped; return 1 ;;
+    2)
+      rd_ss=$(stat -c %s "$rd_source" 2>/dev/null || echo -1)
+      rd_ds=$(stat -c %s "$rd_planned" 2>/dev/null || echo -2)
+      if [ "$rd_ss" = "$rd_ds" ] && [ "$rd_ss" -ge 0 ] 2>/dev/null; then
+        rd_sh=$(file_sha256 "$rd_source"); rd_dh=$(file_sha256 "$rd_planned")
+        if [ -n "$rd_sh" ] && [ "$rd_sh" = "$rd_dh" ]; then COLLISION_ACTION=deduplicated; return 2; fi
+      fi
+      ;;
+  esac
+  RESOLVED_DEST=$(unique_destination "${rd_planned%/*}" "${rd_planned##*/}") || { COLLISION_ACTION=skipped; return 1; }
+  COLLISION_ACTION=renamed
+  return 0
+}
+queue_media_scan() { [ "$MEDIA_SCAN" = 1 ] && { printf '%s\0' "$1" >>"$MEDIA_QUEUE"; } || true; }
 
 while IFS= read -r -d '' FILE_PATH; do
   CURRENT=$((CURRENT + 1))
-  if [ -f "$STOP_FILE" ]; then break; fi
+  [ -f "$STOP_FILE" ] && break
   [ -f "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   [ ! -L "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   skip_file "$FILE_PATH" && { SKIPPED=$((SKIPPED + 1)); continue; }
-
   CATEGORY=$(category_for "$FILE_PATH")
   allowed_source "$FILE_PATH" "$CATEGORY" || continue
   REQUESTED=$((REQUESTED + 1))
   write_running "正在归类 $CATEGORY" "$CURRENT" "$TOTAL" "$FILE_PATH"
 
-  RELATIVE=${FILE_PATH#"$MEDIA_ROOT"/}
-  USER_ID=${RELATIVE%%/*}
+  RELATIVE=${FILE_PATH#"$MEDIA_ROOT"/}; USER_ID=${RELATIVE%%/*}
   case "$USER_ID" in ''|*[!0-9]*) SKIPPED=$((SKIPPED + 1)); continue ;; esac
-  NAME=${FILE_PATH##*/}
-  DEST_DIR="$MEDIA_ROOT/$USER_ID/BaiZe归类/$CATEGORY"
-  DEST="$DEST_DIR/$NAME"
-  [ ! -e "$DEST" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
+  NAME=${FILE_PATH##*/}; DEST_DIR="$MEDIA_ROOT/$USER_ID/BaiZe归类/$CATEGORY"; PLANNED_DEST="$DEST_DIR/$NAME"
+  mkdir -p "$DEST_DIR" 2>/dev/null || { FAILED=$((FAILED + 1)); continue; }
+  resolve_destination "$FILE_PATH" "$PLANNED_DEST"; rd_code=$?
+  case "$rd_code" in
+    1) SKIPPED=$((SKIPPED + 1)); continue ;;
+    2) DEDUPLICATED=$((DEDUPLICATED + 1)); SKIPPED=$((SKIPPED + 1)); continue ;;
+  esac
+  DEST=$RESOLVED_DEST
+  [ "$COLLISION_ACTION" = renamed ] && RENAMED=$((RENAMED + 1))
 
-  SIZE=$(stat -c %s "$FILE_PATH" 2>/dev/null)
-  SRC_UID=$(stat -c %u "$FILE_PATH" 2>/dev/null)
-  SRC_GID=$(stat -c %g "$FILE_PATH" 2>/dev/null)
-  SRC_MODE_OCT=$(stat -c %a "$FILE_PATH" 2>/dev/null)
+  SIZE=$(stat -c %s "$FILE_PATH" 2>/dev/null || echo 0)
+  SRC_UID=$(stat -c %u "$FILE_PATH" 2>/dev/null || echo 0)
+  SRC_GID=$(stat -c %g "$FILE_PATH" 2>/dev/null || echo 0)
+  SRC_MODE_OCT=$(stat -c %a "$FILE_PATH" 2>/dev/null || echo 644)
   case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
   case "$SRC_UID" in ''|*[!0-9]*) SRC_UID=0 ;; esac
   case "$SRC_GID" in ''|*[!0-9]*) SRC_GID=0 ;; esac
   case "$SRC_MODE_OCT" in ''|*[!0-7]*) SRC_MODE_OCT=644 ;; esac
   SRC_MODE=$(printf '%d' "0$SRC_MODE_OCT" 2>/dev/null || echo 420)
-
-  mkdir -p "$DEST_DIR" 2>/dev/null || { FAILED=$((FAILED + 1)); continue; }
-  ROOT_UID=$(stat -c %u "$MEDIA_ROOT/$USER_ID" 2>/dev/null)
-  ROOT_GID=$(stat -c %g "$MEDIA_ROOT/$USER_ID" 2>/dev/null)
-  case "$ROOT_UID" in ''|*[!0-9]*) ROOT_UID=0 ;; esac
-  case "$ROOT_GID" in ''|*[!0-9]*) ROOT_GID=0 ;; esac
+  ROOT_UID=$(stat -c %u "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
+  ROOT_GID=$(stat -c %g "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
 
   if mv "$FILE_PATH" "$DEST" 2>>"$LOG_FILE"; then
     chown "$ROOT_UID:$ROOT_GID" "$DEST_DIR" "$DEST" 2>/dev/null || true
@@ -368,11 +442,11 @@ while IFS= read -r -d '' FILE_PATH; do
     if [ -n "$SRC_B64" ] && [ -n "$DEST_B64" ]; then
       [ "$FIRST_MOVE" -eq 1 ] || printf ',' >>"$UNDO_TMP"
       FIRST_MOVE=0
-      printf '{"sourceB64":"%s","destinationB64":"%s","destinationFingerprint":"%s","sourceUid":%s,"sourceGid":%s,"sourceMode":%s}' \
-        "$SRC_B64" "$DEST_B64" "$DEST_FP" "$SRC_UID" "$SRC_GID" "$SRC_MODE" >>"$UNDO_TMP"
+      printf '{"sourceB64":"%s","destinationB64":"%s","destinationFingerprint":"%s","sourceUid":%s,"sourceGid":%s,"sourceMode":%s,"collisionAction":"%s"}' \
+        "$SRC_B64" "$DEST_B64" "$DEST_FP" "$SRC_UID" "$SRC_GID" "$SRC_MODE" "$COLLISION_ACTION" >>"$UNDO_TMP"
     fi
-    MOVED=$((MOVED + 1))
-    BYTES=$((BYTES + SIZE))
+    queue_media_scan "$FILE_PATH"; queue_media_scan "$DEST"
+    MOVED=$((MOVED + 1)); BYTES=$((BYTES + SIZE))
   else
     FAILED=$((FAILED + 1))
   fi
@@ -380,20 +454,25 @@ done <"$INDEX_FILE"
 
 printf ']}' >>"$UNDO_TMP"
 if [ "$MOVED" -gt 0 ]; then
-  mv -f "$UNDO_TMP" "$UNDO_FILE"
-  chmod 0600 "$UNDO_FILE" 2>/dev/null || true
+  UNDO_RECORD="$UNDO_DIR/$(date +%s)000-${TASK_ID}.json"
+  mv -f "$UNDO_TMP" "$UNDO_RECORD"
+  cp -f "$UNDO_RECORD" "$UNDO_FILE"
+  chmod 0600 "$UNDO_RECORD" "$UNDO_FILE" 2>/dev/null || true
+  ls -1t "$UNDO_DIR"/*.json 2>/dev/null | awk -v keep="$UNDO_RETENTION" 'NR>keep {print}' | while IFS= read -r old; do rm -f -- "$old"; done
 else
   rm -f "$UNDO_TMP"
 fi
 
-if [ -f "$STOP_FILE" ]; then
-  write_result "文件归类已停止" 0 1 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"
-  exit 9
+if [ "$MEDIA_SCAN" = 1 ] && [ -s "$MEDIA_QUEUE" ] && command -v am >/dev/null 2>&1; then
+  while IFS= read -r -d '' media_path; do
+    media_user=${media_path#"$MEDIA_ROOT"/}; media_user=${media_user%%/*}; case "$media_user" in ''|*[!0-9]*) media_user=0 ;; esac
+    am broadcast --user "$media_user" -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://$media_path" >/dev/null 2>&1 || true
+  done <"$MEDIA_QUEUE"
 fi
-if [ "$FAILED" -gt 0 ]; then
-  write_result "文件归类完成，但有 $FAILED 个文件失败" 0 0 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"
-  exit 1
-fi
+
+write_running "文件归类收尾中" "$TOTAL" "$TOTAL" "" 1
+if [ -f "$STOP_FILE" ]; then write_result "文件归类已停止" 0 1 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"; exit 9; fi
+if [ "$FAILED" -gt 0 ]; then write_result "文件归类完成，但有 $FAILED 个文件失败" 0 0 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"; exit 1; fi
 write_result "文件归类完成" 1 0 "$REQUESTED" "$MOVED" "$SKIPPED" 0 "$BYTES"
-echo "独立 Root 安全归类完成：移动 $MOVED 个，跳过 $SKIPPED 个，失败 $FAILED 个" >>"$LOG_FILE"
+echo "独立 Root 安全归类完成：移动 $MOVED 个，重命名 $RENAMED 个，重复 $DEDUPLICATED 个，失败 $FAILED 个" >>"$LOG_FILE"
 exit 0

@@ -83,6 +83,7 @@ class FileOrganizerActivity : ComponentActivity() {
             service = IProfileRootService.Stub.asInterface(binder)
             bound = true
             state = state.copy(connected = true, status = "文件归类服务已就绪")
+            loadRootSchedule()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -127,7 +128,20 @@ class FileOrganizerActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        schedule = FileOrganizerWorker.loadSettings(this)
+        if (service == null) schedule = FileOrganizerWorker.loadSettings(this)
+        else loadRootSchedule()
+    }
+
+    private fun loadRootSchedule() {
+        val root = service ?: return
+        lifecycleScope.launch {
+            val config = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(root.getSchedulerConfig()) }.getOrNull()
+            } ?: return@launch
+            schedule = FileOrganizerWorker.fromRootConfig(this@FileOrganizerActivity, config)
+            FileOrganizerWorker.cacheUiSettings(this@FileOrganizerActivity, schedule)
+            FileOrganizerWorker.ensureWatchdog(this@FileOrganizerActivity)
+        }
     }
 
     private fun bindService() {
@@ -148,15 +162,11 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 
     private fun saveSchedule() {
-        val root = service
-        val previous = FileOrganizerWorker.loadSettings(this)
-        FileOrganizerWorker.saveAndSchedule(this, schedule)
-        schedule = FileOrganizerWorker.loadSettings(this)
-        if (root == null) {
-            scheduleSavedText = "计划已保存在 App，连接 Root 服务后才能同步"
+        val root = service ?: run {
+            scheduleSavedText = "Root 服务尚未连接，计划没有保存"
             return
         }
-        scheduleSavedText = "正在同步到 Root Supervisor…"
+        scheduleSavedText = "正在保存到 Root Supervisor…"
         lifecycleScope.launch {
             val payload = JSONObject()
                 .put("schedule_organize_enabled", if (schedule.enabled) 1 else 0)
@@ -164,7 +174,9 @@ class FileOrganizerActivity : ComponentActivity() {
                 .put("schedule_organize_hours", ((schedule.intervalMinutes + 59) / 60).coerceAtLeast(1))
                 .put("organize_charging_only", if (schedule.chargingOnly) 1 else 0)
                 .put("organize_screen_off_only", if (schedule.screenOffOnly) 1 else 0)
-                .put("organize_device_idle_only", 0)
+                .put("organize_device_idle_only", if (schedule.idleOnly) 1 else 0)
+                .put("organize_run_immediately", if (schedule.runImmediatelyOnEnable) 1 else 0)
+                .put("organizer_conflict_policy", schedule.conflictPolicy.coerceIn(0, 2))
             if (schedule.enabled) payload.put("enabled", 1)
             val saved = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(root.saveSchedulerConfig(payload.toString())) }.getOrElse {
@@ -172,31 +184,17 @@ class FileOrganizerActivity : ComponentActivity() {
                 }
             }
             if (!saved.optBoolean("success", false)) {
-                scheduleSavedText = saved.optString("message", "Root 计划同步失败")
+                scheduleSavedText = saved.optString("message", "Root 计划保存失败")
                 return@launch
             }
-
-            val runNow = schedule.enabled && schedule.runImmediatelyOnEnable && !previous.enabled
-            val immediateText = if (runNow) {
-                val launched = withContext(Dispatchers.IO) {
-                    runCatching { JSONObject(root.runModuleTask("organize")) }.getOrElse {
-                        JSONObject().put("error", "launch_failed").put("message", it.message ?: it.javaClass.simpleName)
-                    }
-                }
-                if (launched.optBoolean("success", false) || launched.optBoolean("accepted", false)) {
-                    "，已立即启动一次归类"
-                } else {
-                    "，立即执行未启动：${launched.optString("message", launched.optString("error", "未知错误"))}"
-                }
-            } else ""
-
+            FileOrganizerWorker.cacheUiSettings(this@FileOrganizerActivity, schedule)
+            FileOrganizerWorker.ensureWatchdog(this@FileOrganizerActivity)
+            val immediateText = if (schedule.enabled && schedule.runImmediatelyOnEnable) "，开启时会加入立即执行队列" else ""
             scheduleSavedText = if (schedule.enabled) {
-                "已交给 Root Supervisor：每 ${FileOrganizerWorker.intervalLabel(schedule.intervalMinutes)}检查一次$immediateText"
-            } else {
-                "定时归类已关闭"
-            }
+                "Root 计划已保存：每 ${FileOrganizerWorker.intervalLabel(schedule.intervalMinutes)}检查一次$immediateText"
+            } else "定时归类已关闭"
             FileOrganizerWorker.recordResult(this@FileOrganizerActivity, scheduleSavedText)
-            schedule = FileOrganizerWorker.loadSettings(this@FileOrganizerActivity)
+            loadRootSchedule()
         }
     }
 
@@ -253,7 +251,7 @@ class FileOrganizerActivity : ComponentActivity() {
                     JSONObject(
                         root.applyFileOrganizer(
                             snapshotId,
-                            JSONObject().put("all", true).toString()
+                            JSONObject().put("all", true).put("conflictPolicy", schedule.conflictPolicy).toString()
                         )
                     )
                 }.getOrElse {
@@ -273,10 +271,12 @@ class FileOrganizerActivity : ComponentActivity() {
             val moved = result.optInt("moved")
             val skipped = result.optInt("skipped")
             val failed = result.optInt("failed")
+            val renamed = result.optInt("renamed")
+            val deduplicated = result.optInt("deduplicated")
             val bytes = result.optLong("bytes")
             state = state.copy(
                 running = false,
-                status = "一键归类完成：移动 $moved/$total 个 · 跳过 $skipped 个 · 失败 $failed 个 · ${
+                status = "一键归类完成：移动 $moved/$total 个 · 重命名 $renamed 个 · 重复 $deduplicated 个 · 跳过 $skipped 个 · 失败 $failed 个 · ${
                     Formatter.formatFileSize(this@FileOrganizerActivity, bytes)
                 }",
                 undoAvailable = result.optBoolean("undoAvailable"),
@@ -508,7 +508,7 @@ private fun DestinationCard() {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "按类型移动到对应子目录；遇到同名文件直接跳过，不覆盖。",
+                "按类型移动到对应子目录；同名文件可选择跳过、自动重命名或内容去重。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
             )
@@ -590,6 +590,22 @@ private fun ScheduleCard(
             }
             SettingSwitch("仅息屏时执行", schedule.screenOffOnly) {
                 onChange(schedule.copy(screenOffOnly = it))
+            }
+            SettingSwitch("仅设备空闲时执行", schedule.idleOnly) {
+                onChange(schedule.copy(idleOnly = it))
+            }
+            Text("同名文件处理", fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                (0..2).forEach { policy ->
+                    FilterChip(
+                        selected = schedule.conflictPolicy == policy,
+                        onClick = { onChange(schedule.copy(conflictPolicy = policy)) },
+                        label = { Text(FileOrganizerWorker.conflictPolicyLabel(policy)) }
+                    )
+                }
             }
             SettingSwitch("开启计划后立即执行一次", schedule.runImmediatelyOnEnable) {
                 onChange(schedule.copy(runImmediatelyOnEnable = it))
