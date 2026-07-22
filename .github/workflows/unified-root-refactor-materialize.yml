@@ -1,4 +1,4 @@
-name: Materialize unified Root refactor
+name: Cleanup unified Root refactor materialization
 
 on:
   push:
@@ -12,11 +12,11 @@ permissions:
   issues: write
 
 concurrency:
-  group: baize-unified-root-refactor-materialize
+  group: baize-unified-root-refactor-cleanup
   cancel-in-progress: false
 
 jobs:
-  materialize:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout refactor branch
@@ -25,87 +25,31 @@ jobs:
           ref: refactor/unified-root-tasks
           fetch-depth: 0
 
-      - name: Verify and extract reviewed source bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          files=(
-            tools/unified-root-refactor.part00
-            tools/unified-root-refactor.part01
-            tools/unified-root-refactor.part02a
-            tools/unified-root-refactor.part02b
-            tools/unified-root-refactor.part03
-            tools/unified-root-refactor.part04
-          )
-          hashes=(
-            5ef9da08840c64f06a661dd7b94be63d493f32a9961a2814ffb66992041c9011
-            3c854b3a52aca62569dbf8606065a5facdbbc6ff0e5796467afc07af2950189e
-            18bbc6aae0cada1cf6a4d9306f82df7207055820da518f82fbe92fde58bd52ff
-            b75e420b0f0eb55ff06a9ea2f09e878edcaf97f0cbee4393f777b0f7307e465a
-            782c2519ca30f894e5a83b7c053c1c1c32faaa50164efd904115d77d488fa151
-            503cd6c14c7baceea86174050e97c74d60e3a793fd8f24407e15ab7ed08c8173
-          )
-          for index in 0 1 2 3 4 5; do
-            actual=$(sha256sum "${files[$index]}" | awk '{print $1}')
-            echo "PART_${index}_SHA=$actual" >> "$GITHUB_ENV"
-            test "$actual" = "${hashes[$index]}"
-          done
-          cat "${files[@]}" > /tmp/unified-root-refactor.b64
-          b64_sha=$(sha256sum /tmp/unified-root-refactor.b64 | awk '{print $1}')
-          echo "B64_SHA=$b64_sha" >> "$GITHUB_ENV"
-          test "$b64_sha" = 4837b086b9062341ea5495cddea6e6cc7b9f2f792e51190ce2465cca61729080
-          base64 -d /tmp/unified-root-refactor.b64 > /tmp/unified-root-refactor.tar.gz
-          tar_sha=$(sha256sum /tmp/unified-root-refactor.tar.gz | awk '{print $1}')
-          echo "TAR_SHA=$tar_sha" >> "$GITHUB_ENV"
-          test "$tar_sha" = 5f31ddea8bec30d3ac65d81967373dfd19d419ab426c077b6215e61dd4968a00
-          tar -tzf /tmp/unified-root-refactor.tar.gz
-          tar -xzf /tmp/unified-root-refactor.tar.gz
-          git diff --check
-
-      - name: Verify shell and architecture anchors
-        shell: bash
-        run: |
-          set -euo pipefail
-          sh -n service.sh
-          for script in v2/module/*.sh v2/scripts/*.sh; do sh -n "$script"; done
-          grep -q 'schedule_organize_enabled' service.sh
-          grep -q 'scheduler-wake' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-          grep -q 'class TaskCoordinator' v2/app/src/main/java/io/github/xgl34222220/baize/root/TaskCoordinator.kt
-          grep -q 'class SchedulerRepository' v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt
-          ! grep -q 'scanFileOrganizer()' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-
-      - name: Commit unified source
+      - name: Remove transfer-only files
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            service.sh \
-            config/default.conf \
-            v2/module/task-worker.sh \
-            v2/module/worker-runner.sh \
-            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/RootSupport.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/PackageCatalog.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/WhitelistRepository.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/DiagnosticRepository.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/HistoryRepository.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/TaskCoordinator.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/OrganizerController.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/ModuleTaskController.kt
-          git diff --cached --quiet && { echo 'No source changes to commit'; exit 1; }
-          git commit -m 'refactor: unify Root scheduling and split service responsibilities'
+          rm -f \
+            tools/unified-root-refactor.part00 \
+            tools/unified-root-refactor.part01 \
+            tools/unified-root-refactor.part02 \
+            tools/unified-root-refactor.part02a \
+            tools/unified-root-refactor.part02b \
+            tools/unified-root-refactor.part03 \
+            tools/unified-root-refactor.part04 \
+            tools/unified-root-refactor.ready
+          git add -A tools
+          git diff --cached --quiet && { echo 'No transfer files remain'; exit 0; }
+          git commit -m 'chore: remove unified Root transfer files'
           git push origin HEAD:refactor/unified-root-tasks
 
-      - name: Report materialization status
+      - name: Report cleanup status
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
-          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA b64=${B64_SHA:-unknown} tar=${TAR_SHA:-unknown} parts=${PART_0_SHA:-unknown},${PART_1_SHA:-unknown},${PART_2_SHA:-unknown},${PART_3_SHA:-unknown},${PART_4_SHA:-unknown},${PART_5_SHA:-unknown}"
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_CLEANUP run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
