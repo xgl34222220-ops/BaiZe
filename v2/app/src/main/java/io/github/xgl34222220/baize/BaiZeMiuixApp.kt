@@ -439,6 +439,7 @@ fun BaiZeMiuixApp(
                     !amoled && !(appearance.adaptiveSmoothMode && runtimeDegraded)
             )
             var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
+            var expandedCleanCategory by rememberSaveable { mutableStateOf("") }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
             }
@@ -458,7 +459,14 @@ fun BaiZeMiuixApp(
                     ) { targetPage ->
                         when (targetPage) {
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), actions) { page = BaiZePage.Clean }
-                            BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state.forCleanPage(), scheduler, actions)
+                            BaiZePage.Clean -> CleanRoute(
+                            style = UiStyle.MATERIAL,
+                            dashboard = state.forCleanPage(),
+                            scheduler = scheduler,
+                            dashboardActions = actions,
+                            expandedCategory = expandedCleanCategory,
+                            onExpandedCategoryChanged = { expandedCleanCategory = it }
+                        )
                             BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
                             BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                         }
@@ -487,7 +495,14 @@ fun BaiZeMiuixApp(
                         ) { targetPage ->
                             when (targetPage) {
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), actions) { page = BaiZePage.Clean }
-                                BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state.forCleanPage(), scheduler, actions)
+                                BaiZePage.Clean -> CleanRoute(
+                                style = UiStyle.MIUIX,
+                                dashboard = state.forCleanPage(),
+                                scheduler = scheduler,
+                                dashboardActions = actions,
+                                expandedCategory = expandedCleanCategory,
+                                onExpandedCategoryChanged = { expandedCleanCategory = it }
+                            )
                                 BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
                                 BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                             }

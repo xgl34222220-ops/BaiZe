@@ -19,7 +19,9 @@ fun CleanRoute(
     style: UiStyle,
     dashboard: DashboardUiState,
     scheduler: SchedulerUiState,
-    dashboardActions: DashboardActions
+    dashboardActions: DashboardActions,
+    expandedCategory: String,
+    onExpandedCategoryChanged: (String) -> Unit
 ) {
     val context = LocalContext.current
     val state = scheduler.toCleanUiState(
@@ -62,7 +64,17 @@ fun CleanRoute(
     )
 
     when (style) {
-        UiStyle.MATERIAL -> CleanScreenMaterial(state, actions)
-        UiStyle.MIUIX -> CleanScreenMiuix(state, actions)
+        UiStyle.MATERIAL -> CleanScreenMaterial(
+            state = state,
+            actions = actions,
+            expandedCategory = expandedCategory,
+            onExpandedCategoryChanged = onExpandedCategoryChanged
+        )
+        UiStyle.MIUIX -> CleanScreenMiuix(
+            state = state,
+            actions = actions,
+            expandedCategory = expandedCategory,
+            onExpandedCategoryChanged = onExpandedCategoryChanged
+        )
     }
 }

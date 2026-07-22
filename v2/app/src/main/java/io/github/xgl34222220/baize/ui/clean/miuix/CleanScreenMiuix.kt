@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -83,7 +85,9 @@ private data class MiuixQuickAction(
 @Composable
 fun CleanScreenMiuix(
     state: CleanUiState,
-    actions: CleanUiActions
+    actions: CleanUiActions,
+    expandedCategory: String,
+    onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var showDailyTimeDialog by remember { mutableStateOf(false) }
@@ -133,7 +137,7 @@ fun CleanScreenMiuix(
         }
         item {
             MiuixSectionHeader(
-                eyebrow = "AUTOMATIC CLEANING",
+                eyebrow = "自动执行",
                 title = "自动清理类别",
                 subtitle = "紧凑分组，点击周期可快速切换"
             )
@@ -157,7 +161,15 @@ fun CleanScreenMiuix(
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
                 state.categories.forEachIndexed { index, item ->
-                    MiuixCategoryRow(item, actions, state.dailyEnabled)
+                    MiuixCategoryRow(
+                        item = item,
+                        actions = actions,
+                        dailyMode = state.dailyEnabled,
+                        expanded = expandedCategory == item.id.name,
+                        onToggleExpanded = {
+                            onExpandedCategoryChanged(if (expandedCategory == item.id.name) "" else item.id.name)
+                        }
+                    )
                     if (index != state.categories.lastIndex) {
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 59.dp),
@@ -184,7 +196,7 @@ fun CleanScreenMiuix(
         }
         item {
             MiuixSectionHeader(
-                eyebrow = "MANUAL TOOLS",
+                eyebrow = "手动工具",
                 title = "手动清理工具",
                 subtitle = "扫描、深度清理和规则明细"
             )
@@ -216,7 +228,7 @@ private fun MiuixCleanHeader() {
             .padding(horizontal = 20.dp, vertical = 14.dp)
     ) {
         Text(
-            "CLEANING CATEGORIES",
+            "清理分类",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -456,7 +468,9 @@ private fun MiuixDailyScheduleRow(
 private fun MiuixCategoryRow(
     item: CleanCategoryUiItem,
     actions: CleanUiActions,
-    dailyMode: Boolean
+    dailyMode: Boolean,
+    expanded: Boolean,
+    onToggleExpanded: () -> Unit
 ) {
     var showIntervalDialog by remember(item.id, item.intervalMinutes) { mutableStateOf(false) }
     if (showIntervalDialog) {
@@ -495,64 +509,106 @@ private fun MiuixCategoryRow(
         if (item.enabled) {
             Spacer(Modifier.height(10.dp))
             Row(
-                Modifier.padding(start = 58.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                listOf(30, 60, 360, 1_440).forEach { minutes ->
-                    val active = item.intervalMinutes == minutes
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(
-                                if (active) MaterialTheme.colorScheme.primary.copy(alpha = .16f)
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)
-                            )
-                            .clickable { actions.onCategoryIntervalChanged(item.id, minutes) }
-                            .padding(horizontal = 11.dp, vertical = 7.dp)
-                    ) {
-                        Text(
-                            formatMinutes(minutes),
-                            color = if (active) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(
                 Modifier
                     .padding(start = 58.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(15.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
-                    .clickable(onClick = { showIntervalDialog = true })
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
+                    .clickable(onClick = onToggleExpanded)
                     .padding(horizontal = 13.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Rounded.Edit,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "精确周期：${formatMinutes(item.intervalMinutes)}",
-                        color = MaterialTheme.colorScheme.primary,
+                        if (dailyMode) "每日模式已启用"
+                        else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (dailyMode) "每日模式开启时暂不使用，关闭后恢复"
-                        else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
+                        if (dailyMode) "关闭每日模式后恢复当前独立周期"
+                        else if (expanded) "点击收起周期设置" else "点击展开周期设置",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 9.sp
                     )
                 }
-                Text("修改", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (expanded) "收起设置" else "展开设置",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "收起设置" else "展开设置",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier.padding(start = 58.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    listOf(30, 60, 360, 1_440).forEach { minutes ->
+                        val active = item.intervalMinutes == minutes
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(
+                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = .16f)
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)
+                                )
+                                .clickable { actions.onCategoryIntervalChanged(item.id, minutes) }
+                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                formatMinutes(minutes),
+                                color = if (active) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    Modifier
+                        .padding(start = 58.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
+                        .clickable(onClick = { showIntervalDialog = true })
+                        .padding(horizontal = 13.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "精确周期：${formatMinutes(item.intervalMinutes)}",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            if (dailyMode) "每日模式开启时暂不使用，关闭后恢复"
+                            else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 9.sp
+                        )
+                    }
+                    Text("修改", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
