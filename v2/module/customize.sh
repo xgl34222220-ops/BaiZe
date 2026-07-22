@@ -15,14 +15,11 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 安装白泽 v2.1.0 Alpha 4 有限并发预览版"
-ui_print "- 原生 App 已接管全部清理与定时设置，旧 WebUI 将被彻底移除"
-ui_print "- C 原生高速扫描：应用缓存、完整深度规则与卸载残留"
-ui_print "- 缓存、安装包、深度清理与卸载残留均只消费扫描快照，不重复扫描"
-ui_print "- MIUIx / Material 双界面，支持 Monet、明暗模式、AMOLED、玻璃与模糊"
-ui_print "- 智能扫描显示真实任务阶段、目标路径与停止状态"
-ui_print "- 自动清理、白名单、大文件、软链接、挂载点与风险分级保护均已启用"
-ui_print "- 旧版 v1 将在迁移配置后彻底移除，不再保留双模块"
+ui_print "- 正在安装白泽 v2.3.0"
+ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
+ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
+ui_print "- 可整理应用下载、接收、附件与导出文件"
+ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
@@ -38,6 +35,11 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
+[ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+[ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
+[ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+[ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
+[ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
 touch "$STATE_DIR/stop" 2>/dev/null
@@ -49,6 +51,7 @@ pkill -f '/data/adb/modules/baize_v2/apk-scanner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/organizer-worker.sh' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR/run.lock"
 rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" "$STATE_DIR/cache_scan.manifest0"
@@ -74,9 +77,7 @@ if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ];
   touch "$STATE_DIR/legacy-v1-removed"
 
   if [ "$migrated" -eq 1 ]; then
-    ui_print "- 已迁移 v1 配置并彻底移除旧模块"
-  else
-    ui_print "- 已彻底移除旧版 v1 模块"
+    ui_print "- 已迁移旧版设置"
   fi
 fi
 
@@ -84,6 +85,8 @@ chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/cust
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
+chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
+chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
@@ -93,16 +96,13 @@ install_app() {
 
 if command -v pm >/dev/null 2>&1; then
   if install_app; then
-    ui_print "- 白泽 App 已安装或覆盖更新"
+    ui_print "- 白泽 App 已安装或更新"
     [ -f "$HASH_FILE" ] && cp -f "$HASH_FILE" "$STATE_DIR/installed-app.sha256"
   elif pm path "$APP_ID" >/dev/null 2>&1; then
-    ui_print "! App 覆盖更新失败，已保留当前安装与全部设置"
-    ui_print "! 可能是历史签名不兼容；请在确认备份后手动处理，模块不会自动卸载 App"
+    ui_print "! 白泽 App 更新失败，请手动安装模块内 APK"
   else
-    ui_print "! 白泽 App 安装失败；模块不会删除或替换其他应用"
-    ui_print "! 开机服务将继续记录失败原因，便于在 App 或日志中诊断"
+    ui_print "! 白泽 App 安装失败，请手动安装模块内 APK"
   fi
 else
-  ui_print "- 当前安装阶段无法调用包管理器"
-  ui_print "- 开机完成后模块会尝试安全覆盖安装，不会自动卸载现有 App"
+  ui_print "- 重启后将再次尝试安装白泽 App"
 fi

@@ -34,7 +34,10 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +63,10 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
+import io.github.xgl34222220.baize.ProtectedUiItem
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.common.AppPackageIcon
+import io.github.xgl34222220.baize.ui.common.AppPackageIconPreloader
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 
@@ -77,6 +83,7 @@ fun HistoryScreenMiuix(
     actions: HistoryUiActions
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    AppPackageIconPreloader(state.recentApps.map { it.packageName })
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -118,6 +125,27 @@ fun HistoryScreenMiuix(
                     key = { "junk-${it.name}-${it.samplePath}" },
                     contentType = { "junk-result" }
                 ) { GeneralResultCard(it) }
+            }
+        }
+
+        if (state.protectedItems.isNotEmpty()) {
+            item(key = "protected-title", contentType = "title") {
+                SectionTitle("PROTECTED REVIEW", "异常与受保护项目", "展示准确路径和原因；可复查项目由用户手动选择")
+            }
+            items(
+                items = state.protectedItems,
+                key = { "protected-${it.id}-${it.path}" },
+                contentType = { "protected-result" }
+            ) { ProtectedResultCard(it) }
+            item(key = "protected-action", contentType = "action") {
+                Button(
+                    onClick = actions.onReviewProtected,
+                    modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth()
+                ) {
+                    Icon(Icons.Rounded.Shield, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("重新扫描并手动选择可清理项目", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -254,6 +282,9 @@ private fun CurrentSummary(state: HistoryUiState) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("本次结果", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                if (state.lastTaskTime.isNotBlank()) {
+                    Text("执行时间 ${state.lastTaskTime}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
                 Text(
                     "${state.currentItemCount} 项 · ${state.recentApps.size} 个应用 · ${state.recentJunk.size} 类其他垃圾",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -281,6 +312,7 @@ private fun AppResultCard(item: AppJunkUiItem) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             ResultHeader(
                 icon = Icons.Rounded.Apps,
+                packageName = item.packageName,
                 title = item.label,
                 subtitle = item.category.ifBlank { item.packageName },
                 bytes = Formatter.formatFileSize(context, item.bytes),
@@ -328,6 +360,7 @@ private fun GeneralResultCard(item: GeneralJunkUiItem) {
 @Composable
 private fun ResultHeader(
     icon: ImageVector,
+    packageName: String? = null,
     title: String,
     subtitle: String,
     bytes: String,
@@ -337,7 +370,8 @@ private fun ResultHeader(
     error: Boolean
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconTile(icon, error)
+        if (packageName.isNullOrBlank()) IconTile(icon, error)
+        else AppPackageIcon(packageName, title, size = 50.dp, corner = 15.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -361,6 +395,34 @@ private fun ResultHeader(
                 modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun ProtectedResultCard(item: ProtectedUiItem) {
+    val tint = if (item.selectable) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error
+    GroupSurface {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Top) {
+            Box(
+                Modifier.size(46.dp).clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = .12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(if (item.selectable) Icons.Rounded.Shield else Icons.Rounded.Lock, null, tint = tint)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.category.ifBlank { "受保护项目" }, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(item.reason.ifBlank { "未提供保护原因" }, color = tint, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    item.path,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    lineHeight = 14.sp
+                )
+            }
+            Text(if (item.selectable) "可复查" else "硬保护", color = tint, fontSize = 9.sp, fontWeight = FontWeight.Black)
         }
     }
 }

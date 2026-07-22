@@ -935,15 +935,19 @@ class FileOrganizerEngine(
         private val APP_MEDIA_FILE = Regex("^/data/media/\\d+/Android/media/[^/]+/.+")
         private val APP_EXTERNAL_FILES_FILE = Regex("^/data/media/\\d+/Android/data/[^/]+/files/.+")
         private val DOWNLOAD_DIRECTORY_NAMES = setOf(
-            "download", "downloads", "下载",
+            "download", "downloads", "downloaded", "下载",
             "received", "receive", "recv", "file_recv",
             "qqfile_recv", "qqmy_file_recv", "qqfile_receive",
-            "timfile_recv", "tim_file_recv"
+            "timfile_recv", "tim_file_recv",
+            "attachment", "attachments",
+            "export", "exports", "saved", "shared",
+            "document", "documents", "transfer", "transfers", "offline"
         )
         private val USER_DIRECTORY_NAMES = setOf(
-            "download", "downloads", "下载",
+            "download", "downloads", "downloaded", "下载",
             "document", "documents", "file", "files",
             "received", "receive", "recv", "export", "exports",
+            "attachment", "attachments", "transfer", "transfers", "offline",
             "telegram", "telegram_documents", "telegram_files",
             "nagram", "nagramx", "saved", "shared"
         )

@@ -1,6 +1,6 @@
 #!/system/bin/sh
 MODDIR=${0%/*}
-STATE_DIR=/data/adb/safesweep
+STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 CONFIG="$STATE_DIR/config.conf"
 LOG_DIR="$STATE_DIR/logs"
 SCHEDULER_STATE="$STATE_DIR/scheduler.env"
@@ -42,8 +42,13 @@ uint_value() {
   echo "$value"
 }
 
-valid_interval() {
-  uint_value "$1" "$2" 1 720
+valid_interval_seconds() {
+  minutes_key=$1 hours_key=$2 fallback_minutes=$3
+  minutes=$(config_value "$minutes_key")
+  case "$minutes" in ''|*[!0-9]*) hours=$(uint_value "$hours_key" 1 1 720); minutes=$((hours * 60)) ;; esac
+  [ "$minutes" -lt 5 ] && minutes=5
+  [ "$minutes" -gt 43200 ] && minutes=43200
+  echo $((minutes * 60))
 }
 
 daily_value() {
@@ -76,6 +81,8 @@ write_scheduler_state() {
     echo "reason=$reason"
     echo "updated=$now"
     echo "next_check_epoch=${NEXT_CHECK_EPOCH:-0}"
+    echo "scheduler_pid=$$"
+    echo "heartbeat_epoch=$now"
   } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
 }
 
@@ -263,20 +270,22 @@ handle_cleaner_result() {
 run_due_group() {
   group=$1
   enabled_key=$2
-  hours_key=$3
-  fallback=$4
-  mode=$5
+  minutes_key=$3
+  hours_key=$4
+  fallback_minutes=$5
+  mode=$6
   [ "$(bool_value "$enabled_key")" = "1" ] || return 0
   if remaining=$(group_pause_remaining "$group"); then
     write_scheduler_state "paused" "$group" "连续失败熔断中，约 $(( (remaining + 59) / 60 )) 分钟后重试"
     return 11
   fi
-  interval=$(valid_interval "$hours_key" "$fallback")
+  interval_seconds=$(valid_interval_seconds "$minutes_key" "$hours_key" "$fallback_minutes")
+  interval_minutes=$((interval_seconds / 60))
   stamp="$STATE_DIR/last_${group}_run.epoch"
   now=$(date +%s)
   last=$(sed -n '1p' "$stamp" 2>/dev/null)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  due=$((interval * 3600))
+  due=$interval_seconds
   [ $((now - last)) -ge "$due" ] || return 0
   if ! conditions_allow_clean; then
     write_scheduler_state "waiting" "$group" "$SCHEDULE_REASON"
@@ -285,9 +294,9 @@ run_due_group() {
   write_scheduler_state "running" "$group" "定时任务执行中"
   run_log="$LOG_DIR/scheduler-${group}.log"
   rotate_scheduler_log "$run_log"
-  sh "$MODDIR/cleaner.sh" "$mode" "scheduled:$group" >>"$run_log" 2>&1
+  sh "$MODDIR/task-worker.sh" "$mode" "scheduled:$group" "scheduled-$group-$(date +%s)" wait >>"$run_log" 2>&1
   code=$?
-  handle_cleaner_result "$code" "$group" "已完成；下次约 ${interval} 小时后" "$run_log" epoch "$stamp"
+  handle_cleaner_result "$code" "$group" "已完成；下次约 ${interval_minutes} 分钟后" "$run_log" epoch "$stamp"
   return "$code"
 }
 
@@ -314,7 +323,7 @@ run_daily_group() {
   write_scheduler_state "running" "$group" "每日定时任务执行中"
   run_log="$LOG_DIR/scheduler-${group}.log"
   rotate_scheduler_log "$run_log"
-  sh "$MODDIR/cleaner.sh" "$mode" "daily:$group" >>"$run_log" 2>&1
+  sh "$MODDIR/task-worker.sh" "$mode" "daily:$group" "daily-$group-$(date +%s)" wait >>"$run_log" 2>&1
   code=$?
   handle_cleaner_result "$code" "$group" "每日任务已完成（$daily_label）" "$run_log" date "$daily_cycle"
   return "$code"
@@ -388,14 +397,14 @@ try_scheduled_clean() {
 
   failed_groups=""
   for interval_spec in \
-    "cache schedule_cache_enabled schedule_cache_hours 1 cache-auto" \
-    "empty schedule_empty_enabled schedule_empty_hours 1 empty-clean" \
-    "rules schedule_rules_enabled schedule_rules_hours 1 rules-clean" \
-    "fragment schedule_fragment_enabled schedule_fragment_hours 1 fragment-clean" \
-    "deep schedule_deep_enabled schedule_deep_hours 168 deep-clean"; do
+    "cache schedule_cache_enabled schedule_cache_minutes schedule_cache_hours 30 cache-auto" \
+    "empty schedule_empty_enabled schedule_empty_minutes schedule_empty_hours 30 empty-clean" \
+    "rules schedule_rules_enabled schedule_rules_minutes schedule_rules_hours 30 rules-clean" \
+    "fragment schedule_fragment_enabled schedule_fragment_minutes schedule_fragment_hours 30 fragment-clean" \
+    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080 deep-clean"; do
     set -- $interval_spec
     group_name=$1
-    run_due_group "$1" "$2" "$3" "$4" "$5"
+    run_due_group "$1" "$2" "$3" "$4" "$5" "$6"
     group_code=$?
     case "$group_code" in
       3|9|10) return 0 ;;
@@ -444,19 +453,19 @@ compute_interval_sleep() {
   now=$(date +%s)
   minimum=0
   for spec in \
-    "cache schedule_cache_enabled schedule_cache_hours 1" \
-    "empty schedule_empty_enabled schedule_empty_hours 1" \
-    "rules schedule_rules_enabled schedule_rules_hours 1" \
-    "fragment schedule_fragment_enabled schedule_fragment_hours 1" \
-    "deep schedule_deep_enabled schedule_deep_hours 168"; do
+    "cache schedule_cache_enabled schedule_cache_minutes schedule_cache_hours 30" \
+    "empty schedule_empty_enabled schedule_empty_minutes schedule_empty_hours 30" \
+    "rules schedule_rules_enabled schedule_rules_minutes schedule_rules_hours 30" \
+    "fragment schedule_fragment_enabled schedule_fragment_minutes schedule_fragment_hours 30" \
+    "deep schedule_deep_enabled schedule_deep_minutes schedule_deep_hours 10080"; do
     set -- $spec
     group=$1
     [ "$(bool_value "$2")" = "1" ] || continue
-    interval=$(valid_interval "$3" "$4")
+    interval_seconds=$(valid_interval_seconds "$3" "$4" "$5")
     stamp="$STATE_DIR/last_${group}_run.epoch"
     last=$(sed -n '1p' "$stamp" 2>/dev/null)
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    due_at=$((last + interval * 3600))
+    due_at=$((last + interval_seconds))
     pause_file=$(pause_until_file "$group")
     paused_until=$(sed -n '1p' "$pause_file" 2>/dev/null)
     case "$paused_until" in ''|*[!0-9]*) paused_until=0 ;; esac

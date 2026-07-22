@@ -387,14 +387,14 @@ private fun MaterialCategoryCard(
     actions: CleanUiActions,
     dailyMode: Boolean
 ) {
-    var showIntervalDialog by remember(item.id, item.intervalHours) { mutableStateOf(false) }
+    var showIntervalDialog by remember(item.id, item.intervalMinutes) { mutableStateOf(false) }
     if (showIntervalDialog) {
         IntValueDialog(
             title = "${item.title}执行周期",
-            description = "输入 1–720 小时，可直接设置数百小时。",
-            initialValue = item.intervalHours,
-            range = 1..720,
-            suffix = "小时",
+            description = "输入 5–43200 分钟，支持 30 分钟、1 小时或任意自定义周期。",
+            initialValue = item.intervalMinutes,
+            range = 5..43_200,
+            suffix = "分钟",
             onDismiss = { showIntervalDialog = false },
             onConfirm = { actions.onCategoryIntervalChanged(item.id, it) }
         )
@@ -441,7 +441,7 @@ private fun MaterialCategoryCard(
             if (item.enabled) {
                 HorizontalDivider(Modifier.padding(vertical = 14.dp))
                 Text(
-                    "执行周期：${item.intervalHours} 小时 · ${formatHours(item.intervalHours)}",
+                    "执行周期：${formatMinutes(item.intervalMinutes)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
@@ -455,11 +455,11 @@ private fun MaterialCategoryCard(
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1, 6, 12, 24).forEach { hours ->
+                    listOf(30, 60, 360, 1_440).forEach { minutes ->
                         FilledTonalButton(
-                            onClick = { actions.onCategoryIntervalChanged(item.id, hours) },
+                            onClick = { actions.onCategoryIntervalChanged(item.id, minutes) },
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (item.intervalHours == hours) {
+                                containerColor = if (item.intervalMinutes == minutes) {
                                     MaterialTheme.colorScheme.primaryContainer
                                 } else {
                                     MaterialTheme.colorScheme.surfaceContainerHighest
@@ -467,7 +467,7 @@ private fun MaterialCategoryCard(
                             ),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
                         ) {
-                            Text("${hours}h", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(formatMinutes(minutes), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

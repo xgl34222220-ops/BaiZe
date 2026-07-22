@@ -4,7 +4,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.text.format.Formatter
 import androidx.work.Constraints
@@ -16,7 +18,10 @@ import androidx.work.WorkerParameters
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.text.DateFormat
@@ -45,7 +50,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             return Result.retry()
         }
 
-        val session = runCatching { withTimeout(ROOT_BIND_TIMEOUT_MS) { bindRootService() } }.getOrElse {
+        val session = runCatching { bindRootServiceWithRetry() }.getOrElse {
             writeResult(applicationContext, "Root 服务连接失败：${it.message ?: it.javaClass.simpleName}")
             return Result.retry()
         }
@@ -92,34 +97,81 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         }
     }
 
-    private suspend fun bindRootService(): RootSession = suspendCancellableCoroutine { continuation ->
-        lateinit var connection: ServiceConnection
-        connection = object : ServiceConnection {
-            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                val root = IProfileRootService.Stub.asInterface(binder)
-                if (root == null) {
-                    if (continuation.isActive) continuation.resumeWithException(IllegalStateException("Root Binder 为空"))
-                    return
-                }
-                if (continuation.isActive) continuation.resume(RootSession(root, connection))
-                else runCatching { RootService.unbind(connection) }
+    private suspend fun bindRootServiceWithRetry(): RootSession {
+        var lastError: Throwable? = null
+        repeat(ROOT_BIND_ATTEMPTS) { attempt ->
+            val result = runCatching {
+                withTimeout(ROOT_BIND_TIMEOUT_MS) { bindRootService() }
             }
-
-            override fun onServiceDisconnected(name: ComponentName?) {
-                if (continuation.isActive) continuation.resumeWithException(IllegalStateException("Root 服务已断开"))
+            result.getOrNull()?.let { return it }
+            lastError = result.exceptionOrNull()
+            if (attempt + 1 < ROOT_BIND_ATTEMPTS) {
+                delay(ROOT_BIND_RETRY_DELAY_MS * (attempt + 1L))
             }
         }
-        continuation.invokeOnCancellation { runCatching { RootService.unbind(connection) } }
-        runCatching {
-            RootService.bind(
-                Intent(applicationContext, BaiZeProfileRootService::class.java).addCategory(RootService.CATEGORY_DAEMON_MODE),
-                connection
-            )
-        }.onFailure { if (continuation.isActive) continuation.resumeWithException(it) }
+        throw lastError ?: IllegalStateException("Root 服务连接失败")
+    }
+
+    private suspend fun bindRootService(): RootSession = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine { continuation ->
+            val mainHandler = Handler(Looper.getMainLooper())
+            lateinit var connection: ServiceConnection
+
+            fun unbindOnMainThread() {
+                val action = Runnable { runCatching { RootService.unbind(connection) } }
+                if (Looper.myLooper() == Looper.getMainLooper()) action.run() else mainHandler.post(action)
+            }
+
+            fun fail(message: String) {
+                if (continuation.isActive) {
+                    continuation.resumeWithException(IllegalStateException(message))
+                }
+            }
+
+            connection = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                    val root = IProfileRootService.Stub.asInterface(binder)
+                    if (root == null) {
+                        fail("Root Binder 为空")
+                        unbindOnMainThread()
+                        return
+                    }
+                    if (continuation.isActive) continuation.resume(RootSession(root, connection))
+                    else unbindOnMainThread()
+                }
+
+                override fun onServiceDisconnected(name: ComponentName?) {
+                    fail("Root 服务已断开")
+                }
+
+                override fun onBindingDied(name: ComponentName?) {
+                    fail("Root 服务绑定失效")
+                    unbindOnMainThread()
+                }
+
+                override fun onNullBinding(name: ComponentName?) {
+                    fail("Root 服务未返回 Binder")
+                    unbindOnMainThread()
+                }
+            }
+
+            continuation.invokeOnCancellation { unbindOnMainThread() }
+            runCatching {
+                RootService.bind(
+                    Intent(applicationContext, BaiZeProfileRootService::class.java)
+                        .addCategory(RootService.CATEGORY_DAEMON_MODE),
+                    connection
+                )
+            }.onFailure {
+                if (continuation.isActive) continuation.resumeWithException(it)
+            }
+        }
     }
 
     private data class RootSession(val service: IProfileRootService, val connection: ServiceConnection) {
-        fun close() { runCatching { RootService.unbind(connection) } }
+        suspend fun close() = withContext(Dispatchers.Main.immediate) {
+            runCatching { RootService.unbind(connection) }
+        }
     }
 
     companion object {
@@ -132,6 +184,8 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         private const val KEY_LAST_RESULT = "last_result"
         private const val UNIQUE_WORK = "baize_file_organizer_periodic"
         private const val ROOT_BIND_TIMEOUT_MS = 20_000L
+        private const val ROOT_BIND_ATTEMPTS = 3
+        private const val ROOT_BIND_RETRY_DELAY_MS = 800L
         private val ALLOWED_INTERVALS = setOf(6, 12, 24, 72, 168)
 
         fun loadSettings(context: Context): FileOrganizerScheduleSettings {

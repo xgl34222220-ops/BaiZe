@@ -3,6 +3,7 @@ package io.github.xgl34222220.baize
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.graphics.Color
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -10,7 +11,6 @@ import androidx.annotation.StyleRes
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.color.DynamicColorsOptions
-import com.google.android.material.color.utilities.Hct
 import java.util.WeakHashMap
 
 /** Central controller for the native MIUIx theme, palette and low-cost glass preferences. */
@@ -291,36 +291,44 @@ object ThemeManager {
         } else {
             currentPalette(context).preview.first()
         }
-        val source = Hct.fromInt(sourceColor)
-        var hue = source.hue
-        var chroma = source.chroma
+        val hsv = FloatArray(3)
+        Color.colorToHSV(sourceColor, hsv)
+        var hue = hsv[0].toDouble()
+        var saturation = (hsv[1] * 100.0).coerceIn(0.0, 100.0)
 
         when (currentMonetStyle(context).id) {
-            "tonal_spot" -> chroma = 36.0
-            "neutral" -> chroma = 8.0
-            "vibrant" -> chroma = maxOf(72.0, source.chroma * 1.30)
+            "tonal_spot" -> saturation = 36.0
+            "neutral" -> saturation = 8.0
+            "vibrant" -> saturation = maxOf(72.0, saturation * 1.30)
             "expressive" -> {
                 hue = (hue + 240.0) % 360.0
-                chroma = maxOf(44.0, source.chroma * 0.90)
+                saturation = maxOf(44.0, saturation * 0.90)
             }
             "rainbow" -> {
                 hue = (hue + 60.0) % 360.0
-                chroma = 56.0
+                saturation = 56.0
             }
             "fruit_salad" -> {
                 hue = (hue + 310.0) % 360.0
-                chroma = 48.0
+                saturation = 48.0
             }
-            "monochrome" -> chroma = 0.0
-            "fidelity" -> chroma = maxOf(24.0, source.chroma)
-            "content" -> chroma = maxOf(32.0, source.chroma * 0.82)
+            "monochrome" -> saturation = 0.0
+            "fidelity" -> saturation = maxOf(24.0, saturation)
+            "content" -> saturation = maxOf(32.0, saturation * 0.82)
         }
 
         if (currentColorStandard(context).id == "m3_2025" && currentMonetStyle(context).id != "monochrome") {
             hue = (hue + 12.0) % 360.0
-            chroma = chroma * 1.15 + 6.0
+            saturation = saturation * 1.15 + 6.0
         }
-        return Hct.from(hue, chroma.coerceIn(0.0, 120.0), 50.0).toInt()
+        val value = maxOf(hsv[2], 0.50f)
+        return Color.HSVToColor(
+            floatArrayOf(
+                hue.toFloat(),
+                (saturation.coerceIn(0.0, 100.0) / 100.0).toFloat(),
+                value.coerceIn(0.0f, 1.0f)
+            )
+        )
     }
 
     private fun migrateLegacySettings(context: Context) {

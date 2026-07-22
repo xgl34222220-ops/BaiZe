@@ -19,14 +19,15 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "43.3-alpha4-bounded-parallel"
+#define ENGINE_VERSION "43.5-v225-deep-budget"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;
 typedef struct {
     uint64_t files, bytes, dirs, empty_dirs;
     uint64_t visited_files, visited_dirs;
-    bool oversized, mount_conflict, incomplete;
+    uint64_t elapsed_ms;
+    bool oversized, mount_conflict, incomplete, timed_out;
 } Stats;
 typedef struct {
     const char *media_root, *data_root, *installed_root, *whitelist_path;
@@ -34,6 +35,8 @@ typedef struct {
     const char *items_path, *manifest_path, *summary_path, *progress_path, *stop_path;
     const char *corpse_report_path, *corpse_targets_path, *corpse_summary_path;
     uint64_t max_file_bytes;
+    uint64_t dir_budget_ms;
+    uint64_t global_budget_ms;
     int min_age_days;
     bool allow_high_risk;
 } Options;
@@ -45,6 +48,7 @@ typedef struct {
     uint64_t visited_files, visited_dirs;
     uint64_t package_index_entries, package_index_files, package_lookups;
     uint64_t first_result_ms;
+    uint64_t timed_out_dirs;
     uint64_t one_pass_app_dirs, one_pass_installed_dirs, one_pass_orphan_dirs;
 } Totals;
 
@@ -56,6 +60,10 @@ static uint64_t g_whitelist_pruned_subtrees;
 static time_t g_started;
 static uint64_t g_started_ms;
 static uint64_t g_last_progress_ms;
+static uint64_t g_deep_parse_ms;
+static uint64_t g_deep_stage_ms;
+static uint64_t g_deep_slowest_ms;
+static char g_deep_slowest_path[PATH_MAX];
 
 static void die(const char *msg) { fprintf(stderr, "%s\n", msg); exit(2); }
 static void *xmalloc(size_t n) { void *p = malloc(n ? n : 1); if (!p) die("out of memory"); return p; }
@@ -112,6 +120,15 @@ static void vec_sort_unique(StrVec *a) {
 static bool file_exists(const char *p) { struct stat st; return lstat(p, &st) == 0; }
 static bool is_dir_nofollow(const char *p) { struct stat st; return lstat(p, &st) == 0 && S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode); }
 static bool has_glob(const char *s) { return strpbrk(s, "*?[") != NULL; }
+static bool path_component_safe(const char *component) {
+    if (!component || !*component || strcmp(component, ".") == 0 || strcmp(component, "..") == 0) return false;
+    return strchr(component, '/') == NULL;
+}
+static bool path_join(char *out, size_t capacity, const char *base, const char *component) {
+    if (!out || capacity == 0U || !base || !path_component_safe(component)) return false;
+    int written = snprintf(out, capacity, "%s/%s", base, component);
+    return written >= 0 && (size_t)written < capacity;
+}
 static bool stop_requested(const Options *o) { return o->stop_path && access(o->stop_path, F_OK) == 0; }
 static void sanitize(char *s) { for (; *s; s++) if (*s == '\t' || *s == '\r' || *s == '\n') *s = ' '; }
 static void atomic_progress(const Options *o, const char *mode, const char *phase, uint64_t cur, uint64_t total, const char *path) {
@@ -229,8 +246,7 @@ static void load_installed_index(const char *root, Totals *totals) {
         }
         if (!user[0]) continue;
         char path[PATH_MAX];
-        int written = snprintf(path, sizeof(path), "%s/%s", root, entry->d_name);
-        if (written < 0 || (size_t)written >= sizeof(path)) continue;
+        if (!path_join(path, sizeof(path), root, entry->d_name)) continue;
         FILE *file = fopen(path, "r");
         if (!file) continue;
         if (totals) totals->package_index_files++;
@@ -243,7 +259,7 @@ static void load_installed_index(const char *root, Totals *totals) {
             while (finish > begin && isspace((unsigned char)finish[-1])) *--finish = '\0';
             if (!safe_package(begin)) continue;
             char key[512];
-            written = snprintf(key, sizeof(key), "%s\t%s", user, begin);
+            int written = snprintf(key, sizeof(key), "%s\t%s", user, begin);
             if (written < 0 || (size_t)written >= sizeof(key)) continue;
             vec_add(&g_installed_index, key);
         }
@@ -266,9 +282,10 @@ static bool eligible_mtime(const struct stat *st, int days) {
     time_t cutoff = time(NULL) - (time_t)days * 86400;
     return st->st_mtime <= cutoff;
 }
-static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, int days, const Options *o, Stats *s, unsigned depth) {
+static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, int days, const Options *o, Stats *s, unsigned depth, uint64_t deadline_ms) {
     if (depth > 512) { s->incomplete = true; return -1; }
     if (stop_requested(o)) return 9;
+    if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) { s->timed_out = true; s->incomplete = true; return 124; }
     struct stat st;
     if (lstat(path, &st) != 0) { s->incomplete = true; return -1; }
     if (S_ISLNK(st.st_mode)) return 0;
@@ -289,23 +306,32 @@ static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, i
     uint64_t before = s->files;
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
+        if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) { s->timed_out = true; s->incomplete = true; closedir(d); return 124; }
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
         char child[PATH_MAX];
         int n = snprintf(child, sizeof(child), "%s/%s", path, de->d_name);
         if (n < 0 || (size_t)n >= sizeof(child)) { s->incomplete = true; continue; }
-        int rc = stat_tree_rec(child, root_dev, max_bytes, days, o, s, depth + 1);
-        if (rc == 9) { closedir(d); return 9; }
+        int rc = stat_tree_rec(child, root_dev, max_bytes, days, o, s, depth + 1, deadline_ms);
+        if (rc == 9 || rc == 124) { closedir(d); return rc; }
     }
     closedir(d);
     s->dirs++;
     if (s->files == before) s->empty_dirs++;
     return 0;
 }
-static int stat_tree(const char *path, const Options *o, int days, Stats *s) {
+static int stat_tree_budgeted(const char *path, const Options *o, int days, Stats *s, uint64_t budget_ms) {
     memset(s, 0, sizeof(*s));
     struct stat st;
     if (lstat(path, &st) != 0) return -1;
-    return stat_tree_rec(path, st.st_dev, o->max_file_bytes, days, o, s, 0);
+    uint64_t started_ms = monotonic_ms();
+    uint64_t deadline_ms = budget_ms > 0U ? started_ms + budget_ms : 0U;
+    int result = stat_tree_rec(path, st.st_dev, o->max_file_bytes, days, o, s, 0, deadline_ms);
+    uint64_t finished_ms = monotonic_ms();
+    s->elapsed_ms = finished_ms >= started_ms ? finished_ms - started_ms : 0U;
+    return result;
+}
+static int stat_tree(const char *path, const Options *o, int days, Stats *s) {
+    return stat_tree_budgeted(path, o, days, s, 0U);
 }
 static FILE *open_report(const char *p) {
     FILE *f = fopen(p, "w");
@@ -329,14 +355,18 @@ static void write_summary_path(const char *path, const Totals *t) {
     uint64_t elapsed_ms = now_ms >= g_started_ms ? now_ms - g_started_ms : 0U;
     uint64_t visited = t->visited_files + t->visited_dirs;
     uint64_t throughput = elapsed_ms > 0U ? visited * 1000U / elapsed_ms : 0U;
+    char safe_slowest[PATH_MAX];
+    snprintf(safe_slowest, sizeof(safe_slowest), "%s", g_deep_slowest_path);
+    sanitize(safe_slowest);
     fprintf(f,
-        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nvisited_files=%" PRIu64 "\nvisited_dirs=%" PRIu64 "\npackage_index_entries=%" PRIu64 "\npackage_index_files=%" PRIu64 "\npackage_lookups=%" PRIu64 "\nfirst_result_ms=%" PRIu64 "\none_pass_app_dirs=%" PRIu64 "\none_pass_installed_dirs=%" PRIu64 "\none_pass_orphan_dirs=%" PRIu64 "\nwhitelist_index_entries=%" PRIu64 "\nwhitelist_index_queries=%" PRIu64 "\nwhitelist_ancestor_hits=%" PRIu64 "\nwhitelist_descendant_hits=%" PRIu64 "\npruned_subtrees=%" PRIu64 "\nelapsed_ms=%" PRIu64 "\nitems_per_second=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
+        "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64 "\nempty_dirs=%" PRIu64 "\nskipped=%" PRIu64 "\nerrors=%" PRIu64 "\nprotected_items=%" PRIu64 "\nprotected_bytes=%" PRIu64 "\ncandidates=%" PRIu64 "\ntargets=%" PRIu64 "\nrisk_low=%" PRIu64 "\nrisk_medium=%" PRIu64 "\nrisk_high=%" PRIu64 "\nrisk_critical=%" PRIu64 "\nmount_items=%" PRIu64 "\ntruncated=%" PRIu64 "\nwhitelisted=%" PRIu64 "\nvisited_files=%" PRIu64 "\nvisited_dirs=%" PRIu64 "\npackage_index_entries=%" PRIu64 "\npackage_index_files=%" PRIu64 "\npackage_lookups=%" PRIu64 "\nfirst_result_ms=%" PRIu64 "\ntimed_out_dirs=%" PRIu64 "\ndeep_parse_ms=%" PRIu64 "\ndeep_stage_ms=%" PRIu64 "\ndeep_slowest_ms=%" PRIu64 "\ndeep_slowest_path=%s\none_pass_app_dirs=%" PRIu64 "\none_pass_installed_dirs=%" PRIu64 "\none_pass_orphan_dirs=%" PRIu64 "\nwhitelist_index_entries=%" PRIu64 "\nwhitelist_index_queries=%" PRIu64 "\nwhitelist_ancestor_hits=%" PRIu64 "\nwhitelist_descendant_hits=%" PRIu64 "\npruned_subtrees=%" PRIu64 "\nelapsed_ms=%" PRIu64 "\nitems_per_second=%" PRIu64 "\nengine=native-c-arm64\nversion=%s\n",
         t->files, t->bytes, t->dirs, t->empty_dirs, t->skipped, t->errors,
         t->protected_items, t->protected_bytes, t->candidates, t->targets,
         t->risk_low, t->risk_medium, t->risk_high, t->risk_critical,
         t->mount_items, t->truncated, t->whitelisted,
         t->visited_files, t->visited_dirs, t->package_index_entries,
         t->package_index_files, t->package_lookups, t->first_result_ms,
+        t->timed_out_dirs, g_deep_parse_ms, g_deep_stage_ms, g_deep_slowest_ms, safe_slowest,
         t->one_pass_app_dirs, t->one_pass_installed_dirs, t->one_pass_orphan_dirs,
         (uint64_t)g_whitelist.n, g_whitelist_index_queries,
         g_whitelist_ancestor_hits, g_whitelist_descendant_hits,
@@ -355,6 +385,8 @@ static void parse_options(int argc, char **argv, Options *o) {
     o->media_root = "/data/media";
     o->data_root = "/data";
     o->max_file_bytes = 256ULL * 1024ULL * 1024ULL;
+    o->dir_budget_ms = 8000U;
+    o->global_budget_ms = 180000U;
     for (int i = 2; i < argc; i++) {
         const char *a = argv[i];
         if (strcmp(a, "--media-root") == 0) o->media_root = arg_value(argc, argv, &i);
@@ -374,6 +406,8 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--corpse-targets") == 0) o->corpse_targets_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--corpse-summary") == 0) o->corpse_summary_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--max-file-bytes") == 0) o->max_file_bytes = strtoull(arg_value(argc, argv, &i), NULL, 10);
+        else if (strcmp(a, "--dir-budget-ms") == 0) o->dir_budget_ms = strtoull(arg_value(argc, argv, &i), NULL, 10);
+        else if (strcmp(a, "--global-budget-ms") == 0) o->global_budget_ms = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--min-age-days") == 0) o->min_age_days = atoi(arg_value(argc, argv, &i));
         else if (strcmp(a, "--allow-high-risk") == 0) o->allow_high_risk = atoi(arg_value(argc, argv, &i)) != 0;
         else die("unknown option");
@@ -402,7 +436,7 @@ static int scan_corpses(const Options *o) {
         const char *sub[] = {"data", "obb", "media"};
         for (size_t si = 0; si < 3; si++) {
             char root[PATH_MAX];
-            snprintf(root, sizeof(root), "%s/%s", android, sub[si]);
+            if (!path_join(root, sizeof(root), android, sub[si])) continue;
             DIR *d = opendir(root);
             if (!d) continue;
             struct dirent *de;
@@ -411,7 +445,7 @@ static int scan_corpses(const Options *o) {
                 if (stop_requested(o)) { closedir(d); closedir(users); if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); return 9; }
                 if (installed_index_contains(ue->d_name, de->d_name, &t)) continue;
                 char path[PATH_MAX];
-                snprintf(path, sizeof(path), "%s/%s", root, de->d_name);
+                if (!path_join(path, sizeof(path), root, de->d_name)) continue;
                 if (!is_dir_nofollow(path)) { t.skipped++; continue; }
                 current++;
                 atomic_progress(o, "corpse-scan", "C 原生卸载残留扫描", current, 0, path);
@@ -631,19 +665,19 @@ static void scan_cache_user_root(const Options *o, const char *root, const char 
     while ((user_entry = readdir(users)) != NULL) {
         if (!isdigit((unsigned char)user_entry->d_name[0])) continue;
         char user[PATH_MAX];
-        snprintf(user, sizeof(user), "%s/%s", root, user_entry->d_name);
+        if (!path_join(user, sizeof(user), root, user_entry->d_name)) continue;
         DIR *apps = opendir(user);
         if (!apps) continue;
         struct dirent *app_entry;
         while ((app_entry = readdir(apps)) != NULL) {
             if (app_entry->d_name[0] == '.' || !safe_package(app_entry->d_name)) continue;
             char app[PATH_MAX];
-            snprintf(app, sizeof(app), "%s/%s", user, app_entry->d_name);
+            if (!path_join(app, sizeof(app), user, app_entry->d_name)) continue;
             const char *leaves[] = {"cache", "code_cache"};
             for (size_t i = 0; i < 2U; i++) {
                 if (stop_requested(o)) { closedir(apps); closedir(users); return; }
                 char path[PATH_MAX];
-                snprintf(path, sizeof(path), "%s/%s", app, leaves[i]);
+                if (!path_join(path, sizeof(path), app, leaves[i])) continue;
                 (*current)++;
                 char category[320];
                 snprintf(category, sizeof(category), "%s:%s", prefix, app_entry->d_name);
@@ -687,19 +721,21 @@ static int scan_cache(const Options *o) {
         while ((user_entry = readdir(users)) != NULL) {
             if (!isdigit((unsigned char)user_entry->d_name[0])) continue;
             char apps_root[PATH_MAX];
-            snprintf(apps_root, sizeof(apps_root), "%s/%s/Android/data", o->media_root, user_entry->d_name);
+            if (!path_component_safe(user_entry->d_name)) continue;
+            int apps_written = snprintf(apps_root, sizeof(apps_root), "%s/%s/Android/data", o->media_root, user_entry->d_name);
+            if (apps_written < 0 || (size_t)apps_written >= sizeof(apps_root)) continue;
             DIR *apps = opendir(apps_root);
             if (!apps) continue;
             struct dirent *app_entry;
             while ((app_entry = readdir(apps)) != NULL) {
                 if (app_entry->d_name[0] == '.' || !safe_package(app_entry->d_name)) continue;
                 char app[PATH_MAX];
-                snprintf(app, sizeof(app), "%s/%s", apps_root, app_entry->d_name);
+                if (!path_join(app, sizeof(app), apps_root, app_entry->d_name)) continue;
                 const char *leaves[] = {"cache", "code_cache"};
                 for (size_t i = 0; i < 2U; i++) {
                     if (stop_requested(o)) { closedir(apps); closedir(users); goto stopped; }
                     char path[PATH_MAX];
-                    snprintf(path, sizeof(path), "%s/%s", app, leaves[i]);
+                    if (!path_join(path, sizeof(path), app, leaves[i])) continue;
                     current++;
                     char category[320];
                     snprintf(category, sizeof(category), "外部应用缓存:%s", app_entry->d_name);
@@ -759,13 +795,15 @@ static int scan_external_one_pass(const Options *o) {
     uint64_t current = 0;
 
     char root[PATH_MAX];
-    snprintf(root, sizeof(root), "%s/user", o->data_root);
-    scan_cache_user_root(o, root, "内部应用缓存", cache_report, cache_targets,
-                         cache_items, cache_manifest, &cache_totals, &current);
+    if (path_join(root, sizeof(root), o->data_root, "user")) {
+        scan_cache_user_root(o, root, "内部应用缓存", cache_report, cache_targets,
+                             cache_items, cache_manifest, &cache_totals, &current);
+    }
     if (stop_requested(o)) goto stopped;
-    snprintf(root, sizeof(root), "%s/user_de", o->data_root);
-    scan_cache_user_root(o, root, "设备保护缓存", cache_report, cache_targets,
-                         cache_items, cache_manifest, &cache_totals, &current);
+    if (path_join(root, sizeof(root), o->data_root, "user_de")) {
+        scan_cache_user_root(o, root, "设备保护缓存", cache_report, cache_targets,
+                             cache_items, cache_manifest, &cache_totals, &current);
+    }
     if (stop_requested(o)) goto stopped;
 
     DIR *users = opendir(o->media_root);
@@ -773,10 +811,12 @@ static int scan_external_one_pass(const Options *o) {
         struct dirent *user_entry;
         while ((user_entry = readdir(users)) != NULL) {
             if (!isdigit((unsigned char)user_entry->d_name[0])) continue;
+            char user_media_root[PATH_MAX];
+            if (!path_join(user_media_root, sizeof(user_media_root), o->media_root, user_entry->d_name)) continue;
             char android_root[PATH_MAX];
-            snprintf(android_root, sizeof(android_root), "%s/%s/Android", o->media_root, user_entry->d_name);
+            if (!path_join(android_root, sizeof(android_root), user_media_root, "Android")) continue;
             char data_root[PATH_MAX];
-            snprintf(data_root, sizeof(data_root), "%s/data", android_root);
+            if (!path_join(data_root, sizeof(data_root), android_root, "data")) continue;
             DIR *apps = opendir(data_root);
             if (apps) {
                 struct dirent *app_entry;
@@ -784,7 +824,7 @@ static int scan_external_one_pass(const Options *o) {
                     if (app_entry->d_name[0] == '.' || !safe_package(app_entry->d_name)) continue;
                     if (stop_requested(o)) { closedir(apps); closedir(users); goto stopped; }
                     char app_path[PATH_MAX];
-                    snprintf(app_path, sizeof(app_path), "%s/%s", data_root, app_entry->d_name);
+                    if (!path_join(app_path, sizeof(app_path), data_root, app_entry->d_name)) continue;
                     if (!is_dir_nofollow(app_path)) { cache_totals.skipped++; continue; }
                     current++;
                     cache_totals.one_pass_app_dirs++;
@@ -796,7 +836,7 @@ static int scan_external_one_pass(const Options *o) {
                         const char *leaves[] = {"cache", "code_cache"};
                         for (size_t i = 0; i < 2U; i++) {
                             char cache_path[PATH_MAX];
-                            snprintf(cache_path, sizeof(cache_path), "%s/%s", app_path, leaves[i]);
+                            if (!path_join(cache_path, sizeof(cache_path), app_path, leaves[i])) continue;
                             char category[320];
                             snprintf(category, sizeof(category), "外部应用缓存:%s", app_entry->d_name);
                             cache_candidate(o, cache_report, cache_targets, cache_items, cache_manifest,
@@ -816,7 +856,7 @@ static int scan_external_one_pass(const Options *o) {
             const char *secondary[] = {"obb", "media"};
             for (size_t si = 0; si < 2U; si++) {
                 char secondary_root[PATH_MAX];
-                snprintf(secondary_root, sizeof(secondary_root), "%s/%s", android_root, secondary[si]);
+                if (!path_join(secondary_root, sizeof(secondary_root), android_root, secondary[si])) continue;
                 DIR *entries = opendir(secondary_root);
                 if (!entries) continue;
                 struct dirent *entry;
@@ -826,7 +866,7 @@ static int scan_external_one_pass(const Options *o) {
                     current++;
                     if (installed_index_contains(user_entry->d_name, entry->d_name, &cache_totals)) continue;
                     char path[PATH_MAX];
-                    snprintf(path, sizeof(path), "%s/%s", secondary_root, entry->d_name);
+                    if (!path_join(path, sizeof(path), secondary_root, entry->d_name)) continue;
                     char category[64];
                     snprintf(category, sizeof(category), "卸载残留:%s", secondary[si]);
                     int code = corpse_candidate(o, corpse_report, corpse_targets, &corpse_totals,
@@ -1118,7 +1158,7 @@ static void expand_rec(const char *base, const StrVec *comps, size_t idx, StrVec
         if (fnmatch(comp, de->d_name, FNM_PERIOD) != 0) continue;
         char p[PATH_MAX];
         if (strcmp(base, "/") == 0) snprintf(p, sizeof(p), "/%s", de->d_name);
-        else snprintf(p, sizeof(p), "%s/%s", base, de->d_name);
+        else if (!path_join(p, sizeof(p), base, de->d_name)) continue;
         struct stat st;
         if (lstat(p, &st) != 0 || S_ISLNK(st.st_mode)) continue;
         if (idx + 1 < comps->n && !S_ISDIR(st.st_mode)) continue;
@@ -1168,6 +1208,7 @@ static int scan_deep(const Options *o) {
     FILE *rules = fopen(o->rules_path, "r");
     if (!rules) die("cannot open rules");
     StrVec cand = {0};
+    uint64_t parse_started_ms = monotonic_ms();
     char *line = NULL;
     size_t cap = 0;
     uint64_t rn = 0;
@@ -1180,15 +1221,18 @@ static int scan_deep(const Options *o) {
     free(line);
     fclose(rules);
     vec_sort_unique(&cand);
+    uint64_t parse_finished_ms = monotonic_ms();
+    g_deep_parse_ms = parse_finished_ms >= parse_started_ms ? parse_finished_ms - parse_started_ms : 0U;
     FILE *rep = open_report(o->report_path);
     FILE *targets = fopen(o->targets_path, "w");
     Totals t = {0};
     char covered_all[PATH_MAX] = "", covered_protected[PATH_MAX] = "";
-    time_t stage = time(NULL);
+    uint64_t stage_started_ms = monotonic_ms();
     for (size_t i = 0; i < cand.n; i++) {
         const char *p = cand.v[i];
         if (stop_requested(o)) { if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); vec_free(&cand); return 9; }
-        if (time(NULL) - stage >= 300) { t.truncated = 1; break; }
+        uint64_t stage_now_ms = monotonic_ms();
+        if (o->global_budget_ms > 0U && stage_now_ms >= stage_started_ms && stage_now_ms - stage_started_ms >= o->global_budget_ms) { t.truncated = 1; break; }
         atomic_progress(o, "deep-scan", "C 原生执行深度规则", i + 1, cand.n, p);
         const char *r = deep_risk(p);
         if (strcmp(r, "low") == 0) t.risk_low++;
@@ -1218,8 +1262,18 @@ static int scan_deep(const Options *o) {
             continue;
         }
         Stats s;
-        int rc = stat_tree(p, o, 0, &s);
+        int rc = stat_tree_budgeted(p, o, 0, &s, o->dir_budget_ms);
+        if (s.elapsed_ms > g_deep_slowest_ms) {
+            g_deep_slowest_ms = s.elapsed_ms;
+            snprintf(g_deep_slowest_path, sizeof(g_deep_slowest_path), "%s", p);
+        }
         if (rc == 9) { if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); vec_free(&cand); return 9; }
+        if (rc == 124 || s.timed_out) {
+            t.timed_out_dirs++;
+            t.protected_items++;
+            report_row(rep, "protected", "slow", "深度规则", 1, 0, p);
+            continue;
+        }
         if (rc < 0 || s.incomplete) t.errors++;
         t.visited_files += s.visited_files;
         t.visited_dirs += s.visited_dirs;
@@ -1243,6 +1297,8 @@ static int scan_deep(const Options *o) {
         if (targets) fprintf(targets, "%s\t%s\n", p, r);
         if (is_dir_nofollow(p)) snprintf(covered_all, sizeof(covered_all), "%s", p);
     }
+    uint64_t stage_finished_ms = monotonic_ms();
+    g_deep_stage_ms = stage_finished_ms >= stage_started_ms ? stage_finished_ms - stage_started_ms : 0U;
     if (rep) fclose(rep);
     if (targets) fclose(targets);
     write_summary(o, &t);

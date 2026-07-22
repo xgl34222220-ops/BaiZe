@@ -458,14 +458,14 @@ private fun MiuixCategoryRow(
     actions: CleanUiActions,
     dailyMode: Boolean
 ) {
-    var showIntervalDialog by remember(item.id, item.intervalHours) { mutableStateOf(false) }
+    var showIntervalDialog by remember(item.id, item.intervalMinutes) { mutableStateOf(false) }
     if (showIntervalDialog) {
         IntValueDialog(
             title = "${item.title}执行周期",
-            description = "输入 1–720 小时。可设置 100、300、720 小时等任意整数周期。",
-            initialValue = item.intervalHours,
-            range = 1..720,
-            suffix = "小时",
+            description = "输入 5–43200 分钟。支持 30 分钟、1 小时以及任意整数周期。",
+            initialValue = item.intervalMinutes,
+            range = 5..43_200,
+            suffix = "分钟",
             onDismiss = { showIntervalDialog = false },
             onConfirm = { actions.onCategoryIntervalChanged(item.id, it) }
         )
@@ -498,8 +498,8 @@ private fun MiuixCategoryRow(
                 Modifier.padding(start = 58.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                listOf(1, 6, 12, 24).forEach { hours ->
-                    val active = item.intervalHours == hours
+                listOf(30, 60, 360, 1_440).forEach { minutes ->
+                    val active = item.intervalMinutes == minutes
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(13.dp))
@@ -507,11 +507,11 @@ private fun MiuixCategoryRow(
                                 if (active) MaterialTheme.colorScheme.primary.copy(alpha = .16f)
                                 else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)
                             )
-                            .clickable { actions.onCategoryIntervalChanged(item.id, hours) }
+                            .clickable { actions.onCategoryIntervalChanged(item.id, minutes) }
                             .padding(horizontal = 11.dp, vertical = 7.dp)
                     ) {
                         Text(
-                            "${hours}h",
+                            formatMinutes(minutes),
                             color = if (active) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 10.sp,
@@ -540,14 +540,14 @@ private fun MiuixCategoryRow(
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "精确周期：${item.intervalHours} 小时",
+                        "精确周期：${formatMinutes(item.intervalMinutes)}",
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         if (dailyMode) "每日模式开启时暂不使用，关闭后恢复"
-                        else "约 ${formatHours(item.intervalHours)}执行一次",
+                        else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 9.sp
                     )

@@ -18,7 +18,7 @@ data class CleanCategoryUiItem(
     val title: String,
     val description: String,
     val enabled: Boolean,
-    val intervalHours: Int
+    val intervalMinutes: Int
 )
 
 @Immutable
@@ -86,35 +86,35 @@ fun SchedulerUiState.toCleanUiState(
             title = "应用缓存",
             description = "应用内部缓存、外部缓存与临时文件",
             enabled = cacheEnabled,
-            intervalHours = cacheHours
+            intervalMinutes = cacheMinutes
         ),
         CleanCategoryUiItem(
             id = CleanCategoryId.EMPTY,
             title = "空文件与空目录",
             description = "清理公共存储中的空项目并保持目录整洁",
             enabled = emptyEnabled,
-            intervalHours = emptyHours
+            intervalMinutes = emptyMinutes
         ),
         CleanCategoryUiItem(
             id = CleanCategoryId.RULES,
             title = "规则垃圾与日志",
             description = "规则库命中的过期日志、临时文件与常见垃圾",
             enabled = rulesEnabled,
-            intervalHours = rulesHours
+            intervalMinutes = rulesMinutes
         ),
         CleanCategoryUiItem(
             id = CleanCategoryId.FRAGMENTS,
             title = "残留碎片",
             description = "下载碎片、缩略图、离线残留与无效片段",
             enabled = fragmentEnabled,
-            intervalHours = fragmentHours
+            intervalMinutes = fragmentMinutes
         ),
         CleanCategoryUiItem(
             id = CleanCategoryId.DEEP,
             title = "深度清理项",
             description = "更广的日志和残留范围，继续受白名单与限制约束",
             enabled = deepEnabled,
-            intervalHours = deepHours
+            intervalMinutes = deepMinutes
         )
     ),
     dailyEnabled = dailyEnabled,
@@ -142,15 +142,15 @@ fun SchedulerUiState.withCategoryEnabled(
 
 fun SchedulerUiState.withCategoryInterval(
     id: CleanCategoryId,
-    hours: Int
+    minutes: Int
 ): SchedulerUiState {
-    val safeHours = hours.coerceIn(1, 720)
+    val safeMinutes = minutes.coerceIn(5, 43_200)
     return when (id) {
-        CleanCategoryId.CACHE -> copy(cacheHours = safeHours)
-        CleanCategoryId.EMPTY -> copy(emptyHours = safeHours)
-        CleanCategoryId.RULES -> copy(rulesHours = safeHours)
-        CleanCategoryId.FRAGMENTS -> copy(fragmentHours = safeHours)
-        CleanCategoryId.DEEP -> copy(deepHours = safeHours)
+        CleanCategoryId.CACHE -> copy(cacheMinutes = safeMinutes)
+        CleanCategoryId.EMPTY -> copy(emptyMinutes = safeMinutes)
+        CleanCategoryId.RULES -> copy(rulesMinutes = safeMinutes)
+        CleanCategoryId.FRAGMENTS -> copy(fragmentMinutes = safeMinutes)
+        CleanCategoryId.DEEP -> copy(deepMinutes = safeMinutes)
     }
 }
 

@@ -1,0 +1,78 @@
+#!/system/bin/sh
+set -u
+MODDIR=${0%/*}
+MODE=${1:-clean}
+TRIGGER=${2:-app}
+TASK_ID=${3:-$(date +%s)-$$}
+WAIT_MODE=${4:-detach}
+STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
+RUNNING_FILE="$STATE_DIR/running.env"
+WORKER_FILE="$STATE_DIR/worker.env"
+LOCK_DIR="$STATE_DIR/run.lock"
+RESULT_FILE="$STATE_DIR/task-results/$TASK_ID.env"
+RUNNER="$MODDIR/worker-runner.sh"
+case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
+[ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
+[ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
+if [ -d "$LOCK_DIR" ]; then
+  old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+  case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
+  if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null; then
+    echo "已有扫描、清理或归类任务正在运行" >&2
+    exit 3
+  fi
+  rm -rf -- "$LOCK_DIR" 2>/dev/null || true
+fi
+mkdir -p "$STATE_DIR/logs" "$STATE_DIR/task-results"
+rm -f "$STATE_DIR/stop" "$RESULT_FILE"
+started=$(date +%s)
+tmp="$RUNNING_FILE.tmp.$$"
+{
+  echo "mode=$MODE"
+  echo "phase=正在启动统一 Root Worker"
+  echo "started=$started"
+  echo "progress_current=0"
+  echo "progress_total=0"
+  echo "current_path="
+  echo "task_id=$TASK_ID"
+  echo "worker=detached-root-worker-v2.3"
+} >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+elif command -v nohup >/dev/null 2>&1; then
+  nohup "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+else
+  "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+fi
+pid=$!
+case "$pid" in ''|*[!0-9]*) rm -f "$RUNNING_FILE"; echo "无法启动 Root Worker" >&2; exit 6 ;; esac
+sleep 1
+if ! kill -0 "$pid" 2>/dev/null && [ ! -f "$RESULT_FILE" ]; then
+  rm -f "$RUNNING_FILE"
+  echo "Root Worker 启动后立即退出" >&2
+  exit 7
+fi
+tmp="$WORKER_FILE.tmp.$$"
+{
+  echo "task_id=$TASK_ID"
+  echo "pid=$pid"
+  echo "mode=$MODE"
+  echo "trigger=$TRIGGER"
+  echo "started=$started"
+  echo "result=$RESULT_FILE"
+} >"$tmp" && mv -f "$tmp" "$WORKER_FILE"
+chmod 0600 "$WORKER_FILE" "$RUNNING_FILE" 2>/dev/null || true
+echo "统一 Root Worker 已启动：$pid"
+[ "$WAIT_MODE" = wait ] || exit 0
+max_minutes=$(sed -n 's/^max_run_minutes=//p' "$STATE_DIR/config.conf" 2>/dev/null | tail -n 1)
+case "$max_minutes" in ''|*[!0-9]*) max_minutes=45 ;; esac
+deadline=$(( $(date +%s) + max_minutes * 60 + 120 ))
+while kill -0 "$pid" 2>/dev/null; do
+  [ "$(date +%s)" -lt "$deadline" ] || { : >"$STATE_DIR/stop"; kill "$pid" 2>/dev/null || true; break; }
+  sleep 2
+done
+wait "$pid" 2>/dev/null || true
+code=$(sed -n 's/^exit_code=//p' "$RESULT_FILE" 2>/dev/null | tail -n 1)
+case "$code" in ''|*[!0-9]*) code=8 ;; esac
+exit "$code"

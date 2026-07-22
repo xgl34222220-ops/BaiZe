@@ -134,6 +134,10 @@ human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/107
 
 MAX_MB=$(get_config_uint max_file_mb 256 1 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
+DEEP_DIR_TIMEOUT_SECONDS=$(get_config_uint deep_dir_timeout_seconds 8 3 60)
+DEEP_STAGE_LIMIT_SECONDS=$(get_config_uint deep_stage_limit_seconds 180 30 600)
+DEEP_DIR_BUDGET_MS=$((DEEP_DIR_TIMEOUT_SECONDS * 1000))
+DEEP_GLOBAL_BUDGET_MS=$((DEEP_STAGE_LIMIT_SECONDS * 1000))
 code=0
 cache_days=0
 allow_high=0
@@ -168,7 +172,8 @@ case "$MODE" in
     [ "$allow_high" = "1" ] || allow_high=0
     set_phase "启动 C 原生深度规则扫描" 0 0 ""
     "$NATIVE_ENGINE" scan-deep --rules "$DEEP_RULES" --whitelist "$WHITELIST" \
-      --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$allow_high" --report "$REPORT_FILE" \
+      --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$allow_high" \
+      --dir-budget-ms "$DEEP_DIR_BUDGET_MS" --global-budget-ms "$DEEP_GLOBAL_BUDGET_MS" --report "$REPORT_FILE" \
       --targets "$TARGETS_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
   cache-scan)
@@ -220,6 +225,11 @@ WHITELIST_INDEX_QUERIES=$(summary_number whitelist_index_queries)
 WHITELIST_ANCESTOR_HITS=$(summary_number whitelist_ancestor_hits)
 WHITELIST_DESCENDANT_HITS=$(summary_number whitelist_descendant_hits)
 PRUNED_SUBTREES=$(summary_number pruned_subtrees)
+TIMED_OUT_DIRS=$(summary_number timed_out_dirs)
+DEEP_PARSE_MS=$(summary_number deep_parse_ms)
+DEEP_STAGE_MS=$(summary_number deep_stage_ms)
+DEEP_SLOWEST_MS=$(summary_number deep_slowest_ms)
+DEEP_SLOWEST_PATH=$(summary_value deep_slowest_path)
 TOTAL_ITEMS=$((FILES + EMPTY_DIRS))
 END_EPOCH=$(date +%s)
 ELAPSED=$((END_EPOCH - START_EPOCH))
@@ -261,12 +271,20 @@ else
         echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
         echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
         echo "pruned_subtrees=$PRUNED_SUBTREES"
+        echo "timed_out_dirs=$TIMED_OUT_DIRS"
+        echo "deep_parse_ms=$DEEP_PARSE_MS"
+        echo "deep_stage_ms=$DEEP_STAGE_MS"
+        echo "deep_slowest_ms=$DEEP_SLOWEST_MS"
+        printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
+' '  '
         echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/corpse_scan.env"
       chmod 0600 "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets" 2>/dev/null
       ;;
     deep-scan)
       RESULT="深度规则原生扫描完成，可清理 $SPACE"
+      [ "$TIMED_OUT_DIRS" -gt 0 ] && RESULT="$RESULT，慢目录跳过 ${TIMED_OUT_DIRS} 项"
+      [ "$TRUNCATED" -gt 0 ] && RESULT="$RESULT，已达到 ${DEEP_STAGE_LIMIT_SECONDS} 秒阶段上限"
       mv -f "$TARGETS_TMP" "$STATE_DIR/deep_scan.targets"
       targets_sha=$(file_sha "$STATE_DIR/deep_scan.targets")
       {
@@ -367,7 +385,7 @@ fi
   echo "risk_medium=$RISK_MEDIUM"
   echo "risk_high=$RISK_HIGH"
   echo "risk_critical=$RISK_CRITICAL"
-  echo "deep_slow_items=0"
+  echo "deep_slow_items=$TIMED_OUT_DIRS"
   echo "deep_mount_items=$MOUNT_ITEMS"
   echo "deep_truncated=$TRUNCATED"
   echo "cache_slow_dirs=0"
@@ -388,6 +406,11 @@ fi
   echo "whitelist_ancestor_hits=$WHITELIST_ANCESTOR_HITS"
   echo "whitelist_descendant_hits=$WHITELIST_DESCENDANT_HITS"
   echo "pruned_subtrees=$PRUNED_SUBTREES"
+  echo "deep_rule_parse_seconds=$((DEEP_PARSE_MS / 1000))"
+  echo "deep_stage_seconds=$((DEEP_STAGE_MS / 1000))"
+  echo "deep_slowest_seconds=$((DEEP_SLOWEST_MS / 1000))"
+  printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
+' '  '
   echo "elapsed=$ELAPSED"
   echo "engine=native-c-arm64-path-index"
   echo "result=$RESULT"
@@ -399,6 +422,10 @@ fi
   echo "$RESULT"
   echo "原生引擎: C arm64 43.0 Alpha 1 共享索引"
   echo "候选: $CANDIDATES | 文件: $FILES | 目录: $DIRS | 访问: $((VISITED_FILES + VISITED_DIRS)) | 吞吐: ${ITEMS_PER_SECOND}/s | 首项: ${FIRST_RESULT_MS}ms | 耗时: ${ENGINE_ELAPSED_MS}ms"
+  if [ "$MODE" = "deep-scan" ]; then
+    echo "深度阶段: 规则 ${DEEP_PARSE_MS}ms | 目录 ${DEEP_STAGE_MS}ms | 超时目录 $TIMED_OUT_DIRS"
+    [ "$DEEP_SLOWEST_MS" -gt 0 ] && echo "最慢目录: ${DEEP_SLOWEST_MS}ms | $DEEP_SLOWEST_PATH"
+  fi
   [ "$MODE" = "corpse-scan" ] && echo "安装包索引: $PACKAGE_INDEX_ENTRIES 项 / $PACKAGE_INDEX_FILES 个用户文件 / $PACKAGE_LOOKUPS 次内存查询"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
