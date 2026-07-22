@@ -67,7 +67,7 @@ internal class TaskCoordinator(
         currentPath: String,
         startedRealtime: Long,
         deletedBytes: Long = 0L,
-        deletedFiles: Int = 0,
+        deletedFiles: Long = 0L,
         failures: Int = 0
     ) {
         setState(
