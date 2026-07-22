@@ -28,7 +28,11 @@
             android:name=".ProfileActivity"
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
-        <activity android:name=".SmartScanActivity" android:exported="false" />
+        <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
+        <activity-alias
+            android:name=".SmartScanActivity"
+            android:exported="false"
+            android:targetActivity=".PersistentSmartScanActivity" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
@@ -52,6 +56,10 @@
             tools:ignore="Instantiatable" />
         <service
             android:name=".root.BaiZeProfileRootService"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
+        <service
+            android:name=".root.PersistentCleanPlanRootService"
             android:exported="false"
             tools:ignore="Instantiatable" />
     </application>
