@@ -28,17 +28,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ARCHIVE=/tmp/BaiZe-v2.4.0-source.tar.gz
           tar --exclude=.git --exclude=v2/build --exclude=v2/app/build --exclude=v2/.gradle \
-            -czf BaiZe-v2.4.0-source.tar.gz .
-          sha256sum BaiZe-v2.4.0-source.tar.gz > BaiZe-v2.4.0-source.tar.gz.sha256
+            -czf "$ARCHIVE" .
+          sha256sum "$ARCHIVE" > /tmp/BaiZe-v2.4.0-source.tar.gz.sha256
       - name: Upload source archive
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-v2.4.0-source
           if-no-files-found: error
           path: |
-            BaiZe-v2.4.0-source.tar.gz
-            BaiZe-v2.4.0-source.tar.gz.sha256
+            /tmp/BaiZe-v2.4.0-source.tar.gz
+            /tmp/BaiZe-v2.4.0-source.tar.gz.sha256
       - name: Persist export result
         if: always()
         env:
