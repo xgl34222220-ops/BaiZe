@@ -1,0 +1,73 @@
+name: Materialize unified Root refactor
+
+on:
+  push:
+    branches: [refactor/unified-root-tasks]
+    paths:
+      - 'tools/unified-root-refactor.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-unified-root-refactor-materialize
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout refactor branch
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/unified-root-tasks
+          fetch-depth: 0
+
+      - name: Extract reviewed source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat tools/unified-root-refactor.part* | base64 -d > /tmp/unified-root-refactor.tar.gz
+          tar -tzf /tmp/unified-root-refactor.tar.gz
+          tar -xzf /tmp/unified-root-refactor.tar.gz
+          git diff --check
+
+      - name: Verify shell and architecture anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n service.sh
+          for script in v2/module/*.sh v2/scripts/*.sh; do sh -n "$script"; done
+          grep -q 'schedule_organize_enabled' service.sh
+          grep -q 'scheduler-wake' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+          grep -q 'class TaskCoordinator' v2/app/src/main/java/io/github/xgl34222220/baize/root/TaskCoordinator.kt
+          grep -q 'class SchedulerRepository' v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt
+          ! grep -q 'scanFileOrganizer()' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
+
+      - name: Commit unified source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            service.sh \
+            config/default.conf \
+            v2/module/task-worker.sh \
+            v2/module/worker-runner.sh \
+            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerActivity.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/RootSupport.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/PackageCatalog.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/WhitelistRepository.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/DiagnosticRepository.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/HistoryRepository.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/TaskCoordinator.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/OrganizerController.kt \
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/ModuleTaskController.kt
+          git diff --cached --quiet && { echo 'No source changes to commit'; exit 1; }
+          git commit -m 'refactor: unify Root scheduling and split service responsibilities'
+          git push origin HEAD:refactor/unified-root-tasks
