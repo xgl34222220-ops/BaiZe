@@ -122,28 +122,88 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            value=$(printenv "$name" || true)
-            if [ -z "$value" ]; then
-              echo "缺少正式签名 Secret：$name" >&2
-              exit 1
-            fi
-          done
+
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in
+              "$secret_name="*) value=${value#*=} ;;
+            esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+
+          [ -n "$KEYSTORE_BASE64" ] || { echo 'BAIZE_KEYSTORE_BASE64 为空，请重新粘贴 github-secrets.txt 中等号右侧的完整内容。' >&2; exit 1; }
+          [ -n "$KEYSTORE_PASSWORD" ] || { echo 'BAIZE_KEYSTORE_PASSWORD 为空。' >&2; exit 1; }
+          [ -n "$KEY_PASSWORD" ] || { echo 'BAIZE_KEY_PASSWORD 为空。' >&2; exit 1; }
+          [ -n "$KEY_ALIAS" ] || KEY_ALIAS=baize-release
+
           KEYSTORE="$RUNNER_TEMP/baize-release.jks"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
-          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"; then
+            echo 'BAIZE_KEYSTORE_BASE64 不是有效的 Base64；不要粘贴变量名称、代码块标记或说明文字。' >&2
+            exit 1
+          fi
+          [ -s "$KEYSTORE" ] || { echo '解码后的正式签名文件为空。' >&2; exit 1; }
+
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo '正式签名文件无法打开：BAIZE_KEYSTORE_PASSWORD 不正确，或 BAIZE_KEYSTORE_BASE64 内容不完整。' >&2
+            exit 1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            echo "密钥别名不存在：$KEY_ALIAS；BaiZe 正式别名应为 baize-release。" >&2
+            exit 1
+          fi
+
+          VERIFY_STORE="$RUNNER_TEMP/baize-key-password-check.p12"
+          if ! keytool -importkeystore -noprompt \
+            -srckeystore "$KEYSTORE" \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
+            -srckeypass "$KEY_PASSWORD" \
+            -destkeystore "$VERIFY_STORE" \
+            -deststoretype PKCS12 \
+            -deststorepass 'baize-verify-24000' \
+            -destkeypass 'baize-verify-24000' >/dev/null 2>&1; then
+            echo 'BAIZE_KEY_PASSWORD 不正确，无法读取正式私钥。' >&2
+            exit 1
+          fi
+          rm -f "$VERIFY_STORE"
+
+          EXPECTED_SHA256='9E:FA:84:80:01:CC:DC:16:8E:A9:67:53:D3:32:B1:71:3E:26:68:BA:6A:2F:A2:2D:5B:FD:98:DE:65:DB:1F:0F'
+          ACTUAL_SHA256=$(keytool -exportcert \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            -rfc | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "正式证书指纹不匹配：$ACTUAL_SHA256" >&2
+            echo "预期 BaiZe 证书：$EXPECTED_SHA256" >&2
+            exit 1
+          fi
+
           {
             echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
             echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
             echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
             echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
+          echo "BaiZe 正式证书校验通过：$ACTUAL_SHA256"
 
       - name: Build ARM64 scanner
         working-directory: v2
@@ -185,6 +245,7 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee v2/dist/BaiZe-v2.4.0-signing-certificate.txt
+          grep -Fq '9e:fa:84:80:01:cc:dc:16:8e:a9:67:53:d3:32:b1:71:3e:26:68:ba:6a:2f:a2:2d:5b:fd:98:de:65:db:1f:0f' v2/dist/BaiZe-v2.4.0-signing-certificate.txt
           cp "$APK" "$RELEASE_APK"
           sha256sum "$ZIP" > "$ZIP.sha256"
           sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
