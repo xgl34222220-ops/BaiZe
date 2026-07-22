@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 concurrency:
   group: baize-v240-source-materialization
@@ -75,17 +74,15 @@ jobs:
           git commit -m 'feat(v2.4.0): complete scheduler, index and organizer hardening'
           git push origin HEAD:feat/v2.4.0-complete-hardening
 
-      - name: Report materialization status
+      - name: Collect transfer diagnostics
         if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
         shell: bash
         run: |
+          set -u
           part_count=$(find .v240-upload -maxdepth 1 -type f -name 'part-*' 2>/dev/null | wc -l | tr -d ' ')
+          total_bytes=0
           actual_b64=missing
           actual_tar=missing
-          total_bytes=0
           if [ "$part_count" = 12 ]; then
             cat .v240-upload/part-* > /tmp/baize-v240-diagnostic.b64
             total_bytes=$(wc -c </tmp/baize-v240-diagnostic.b64 | tr -d ' ')
@@ -94,5 +91,21 @@ jobs:
               actual_tar=$(sha256sum /tmp/baize-v240-diagnostic.tar.gz | awk '{print $1}')
             fi
           fi
-          gh pr comment 100 --repo "$GITHUB_REPOSITORY" \
-            --body "BAIZE_V240_SOURCE_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA parts=$part_count bytes=$total_bytes b64=$actual_b64 tar=$actual_tar"
+          {
+            echo "parts=$part_count"
+            echo "bytes=$total_bytes"
+            echo "b64=$actual_b64"
+            echo "tar=$actual_tar"
+            echo "expected_b64=723bb5cfca9fc9a54f2bb6e51358dc088d1813335ebe52d2f4d4de1b7296a1a9"
+            echo "expected_tar=0d6fa2a122d748c27aa01e95a21b59f72e2603d308da84a3bf3c3f6863084452"
+            wc -c .v240-upload/part-* 2>/dev/null || true
+            sha256sum .v240-upload/part-* 2>/dev/null || true
+          } >/tmp/baize-v240-transfer-diagnostics.txt
+
+      - name: Upload transfer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-transfer-diagnostics
+          if-no-files-found: error
+          path: /tmp/baize-v240-transfer-diagnostics.txt
