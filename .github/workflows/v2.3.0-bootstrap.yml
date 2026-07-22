@@ -1,6 +1,7 @@
 name: BaiZe v2.3.0 Source Materialization
 
-# Synchronize the generated v2.3.0 source back to the stabilization branch.
+# One-time source synchronization: decode the historical generators, commit the
+# resulting real source files, and stop relying on CI-only workspace mutations.
 on:
   push:
     branches:
@@ -18,37 +19,105 @@ jobs:
   materialize:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout stabilization source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: feat/v2.3.0-stabilization
 
-      - name: Decode and apply v2.3.0 source materialization
+      - name: Materialize complete v2.3.0 source
         shell: bash
         run: |
           set -euo pipefail
-          WORKER=v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt
-          ENGINE=v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
-          if grep -q 'withContext(Dispatchers.Main.immediate)' "$WORKER" \
-             && grep -q '"attachment", "attachments"' "$ENGINE" \
+
+          required=(
+            v2/module/supervisor.sh
+            v2/module/worker-runner.sh
+            v2/module/app-installer.sh
+            v2/module/diagnostics-export.sh
+            v2/module/storage-analyzer.sh
+            v2/module/duplicate-scanner.sh
+            v2/module/large-file-scanner.sh
+            v2/module/rules-validator.sh
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          )
+
+          complete=1
+          for file in "${required[@]}"; do
+            [ -s "$file" ] || complete=0
+          done
+
+          if [ "$complete" -eq 1 ] \
+             && grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
+             && grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
              && grep -q 'discover_app_user_roots' v2/module/storage-index.sh; then
-            echo "v2.3.0 source is already materialized"
-          else
-            python3 tools/prepare-v230-materialization.py
-            base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d > /tmp/bootstrap-v230.py
-            python3 -m py_compile /tmp/bootstrap-v230.py
-            python3 /tmp/bootstrap-v230.py
-            python3 tools/apply-v230-file-organizer-thread-fix.py
-            python3 tools/apply-v230-organizer-download-coverage.py
+            echo "Complete v2.3.0 source is already committed"
+            exit 0
           fi
-          grep -q 'withContext(Dispatchers.Main.immediate)' "$WORKER"
-          grep -q 'ROOT_BIND_ATTEMPTS = 3' "$WORKER"
-          grep -q '"attachment", "attachments"' "$ENGINE"
-          grep -q 'discover_app_user_roots' v2/module/storage-index.sh
+
+          python3 tools/prepare-v230-materialization.py
+          base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
+          python3 -m py_compile /tmp/bootstrap-v230.py
+          python3 /tmp/bootstrap-v230.py
+
+          base64 -d tools/finalize-v230.py.gz.b64 | gzip -d >/tmp/finalize-v230.py
+          python3 -m py_compile /tmp/finalize-v230.py
+          python3 /tmp/finalize-v230.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path("v2/module/storage-index.sh")
+          lines = index.read_text().splitlines()
+          fixed = []
+          for line in lines:
+              if line.startswith("add_root(){ group=$1 user=$2 volume=$3 depth=$4 root="):
+                  line = 'add_root(){ ar_group=$1; ar_user=$2; ar_volume=$3; ar_depth=$4; ar_root=${5%/}; [ -d "$ar_root" ] || return 0; [ ! -L "$ar_root" ] || return 0; grep -Fq "$(printf \'\\t%s\\n\' "$ar_root")" "$ROOTS" 2>/dev/null && return 0; printf \'%s\\t%s\\t%s\\t%s\\t%s\\n\' "$(safe "$ar_group")" "$ar_user" "$(safe "$ar_volume")" "$ar_depth" "$ar_root" >>"$ROOTS"; }'
+              elif line.startswith("add_user_root(){ user=$1 root=$2 volume=$3;"):
+                  line = 'add_user_root(){ au_user=$1; au_root=$2; au_volume=$3; add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"; add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"; add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"; for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done; for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done; for au_pkg in "$au_root"/Android/data/*; do [ -d "$au_pkg" ] || continue; au_name=${au_pkg##*/}; add_root "应用文件:$au_name" "$au_user" "$au_volume" 12 "$au_pkg/files"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Download"; add_root "应用下载:$au_name" "$au_user" "$au_volume" 10 "$au_pkg/Downloads"; done; }'
+              fixed.append(line)
+          index.write_text("\n".join(fixed) + "\n")
+
+          for name in ("storage-analyzer.sh", "duplicate-scanner.sh", "large-file-scanner.sh"):
+              path = Path("v2/module") / name
+              output = []
+              inserted = False
+              for line in path.read_text().splitlines():
+                  output.append(line)
+                  if not inserted and line.startswith('OUT="$STATE_DIR/reports/'):
+                      output.append('mkdir -p "${OUT%/*}"')
+                      inserted = True
+              if not inserted:
+                  raise SystemExit(f"missing report output anchor: {name}")
+              path.write_text("\n".join(output) + "\n")
+
+          rules = Path("v2/module/rules-validator.sh")
+          source = rules.read_text().replace(
+              'RULES="$MODDIR/config/deep.rules"\nMETA="$MODDIR/config/rules.meta.env"',
+              'RULES=${BAIZE_RULES_PATH:-$MODDIR/config/deep.rules}\nMETA=${BAIZE_RULES_META:-${RULES%/*}/rules.meta.env}',
+              1,
+          )
+          rules.write_text(source)
+          PY
+
+          python3 tools/fix-v230-android-lint.py
+
+          rm -f \
+            tools/bootstrap-v230.py.gz.b64 \
+            tools/finalize-v230.py.gz.b64 \
+            tools/apply-v230-native-path-safety.py.gz.b64 \
+            tools/fix-v230-android-lint.py
+
+          for file in "${required[@]}"; do
+            test -s "$file"
+          done
+          grep -q 'versionName = "2.3.0"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 23000' v2/app/build.gradle.kts
+          grep -qx 'version=v2.3.0' v2/module/module.prop
+          grep -qx 'versionCode=23000' v2/module/module.prop
           git diff --check
 
-      - name: Commit materialized source
+      - name: Commit real source files
         shell: bash
         run: |
           set -euo pipefail
@@ -59,5 +128,5 @@ jobs:
             echo "No source changes to commit"
             exit 0
           fi
-          git commit -m "feat: materialize v2.3.0 organizer and Root fixes"
+          git commit -m "feat: commit complete v2.3.0 source"
           git push origin HEAD:feat/v2.3.0-stabilization
