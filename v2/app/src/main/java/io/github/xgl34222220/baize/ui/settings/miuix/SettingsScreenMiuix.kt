@@ -57,6 +57,11 @@ import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
+import io.github.xgl34222220.baize.ui.settings.schedulerBlockedGroupsLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerQueueLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerReasonLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerSupervisorStatusLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
 import kotlin.math.roundToInt
 
 @Composable
@@ -74,13 +79,13 @@ fun SettingsScreenMiuix(
     ) {
         item { MiuixSettingsHeader() }
         item { MiuixAppearanceHero(state, actions) }
-        item { MiuixSectionTitle("TASK CENTER", "任务中心", "队列、等待原因与 Root 守护状态") }
+        item { MiuixSectionTitle("任务管理", "任务中心", "待执行任务、暂缓原因与后台守护状态") }
         item { MiuixTaskCenter(state, actions) }
-        item { MiuixSectionTitle("AUTOMATION", "自动清理", "总开关、执行条件与最低电量") }
+        item { MiuixSectionTitle("自动执行", "自动清理", "总开关、执行条件与最低电量") }
         item { MiuixAutomationGroup(config, actions) }
-        item { MiuixSectionTitle("PROTECTION", "清理保护", "白名单、通知、安装包与单文件限制") }
+        item { MiuixSectionTitle("安全保护", "清理保护", "白名单、通知、安装包与单文件限制") }
         item { MiuixProtectionGroup(state, actions) }
-        item { MiuixSectionTitle("SERVICE", "服务与诊断", "Root 服务恢复、清理明细与崩溃记录") }
+        item { MiuixSectionTitle("系统服务", "服务与诊断", "后台服务恢复、清理明细与崩溃记录") }
         item { MiuixServiceGroup(state, actions) }
         item {
             Button(
@@ -111,7 +116,7 @@ private fun MiuixSettingsHeader() {
             .padding(horizontal = 20.dp, vertical = 13.dp)
     ) {
         Text(
-            "PREFERENCES",
+            "设置中心",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -126,7 +131,7 @@ private fun MiuixSettingsHeader() {
             fontWeight = FontWeight.Black
         )
         Text(
-            "Miuix 紧凑设置与清理保护",
+            "MIUI 风格设置与清理保护",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
@@ -199,20 +204,20 @@ private fun MiuixTaskCenter(state: SettingsUiState, actions: SettingsUiActions) 
         Column(Modifier.padding(horizontal = 17.dp, vertical = 10.dp)) {
             Text(
                 when (config.runtimeState) {
-                    "running" -> "正在执行 ${config.nextTask.ifBlank { "Root 任务" }}"
+                    "running" -> "正在执行 ${schedulerTaskLabel(config.nextTask)}"
                     "failed" -> "调度异常"
-                    "paused" -> "任务已熔断暂停"
-                    else -> "队列 ${config.queueCount} 项 · ${config.supervisorStatus}"
+                    "paused" -> "连续失败，任务暂时暂停"
+                    else -> "待执行 ${config.queueCount} 项 · ${schedulerSupervisorStatusLabel(config.supervisorStatus)}"
                 },
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black
             )
             Text(
                 buildString {
-                    append(config.runtimeReason.ifBlank { "等待下一次调度" })
-                    if (config.queueGroups.isNotBlank()) append("\n队列：").append(config.queueGroups)
-                    if (config.blockedGroups.isNotBlank()) append("\n等待条件：").append(config.blockedGroups)
-                    if (config.runtimeStale) append("\n守护心跳已过期，建议唤醒")
+                    append(schedulerReasonLabel(config.runtimeReason))
+                    if (config.queueGroups.isNotBlank()) append("\n待执行：").append(schedulerQueueLabel(config.queueGroups))
+                    if (config.blockedGroups.isNotBlank()) append("\n暂缓执行：").append(schedulerBlockedGroupsLabel(config.blockedGroups))
+                    if (config.runtimeStale) append("\n后台守护长时间没有响应，建议点击唤醒")
                 },
                 color = scheme.onSurfaceVariant,
                 fontSize = 10.sp,
@@ -220,7 +225,7 @@ private fun MiuixTaskCenter(state: SettingsUiState, actions: SettingsUiActions) 
             )
             Spacer(Modifier.height(8.dp))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Refresh, "唤醒调度器", "检查计划并自动恢复 Supervisor") {
+            MiuixActionRow(Icons.Rounded.Refresh, "唤醒调度器", "检查计划并自动恢复后台守护进程") {
                 actions.onSchedulerCommand("scheduler-wake")
             }
             MiuixDivider()
@@ -228,11 +233,11 @@ private fun MiuixTaskCenter(state: SettingsUiState, actions: SettingsUiActions) 
                 actions.onSchedulerCommand("scheduler-run-now:all")
             }
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Rule, "立即执行文件归类", "条件满足后由统一 Root Worker 执行") {
+            MiuixActionRow(Icons.Rounded.Rule, "立即执行文件归类", "条件满足后由统一后台任务执行") {
                 actions.onSchedulerCommand("scheduler-run-now:organize")
             }
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Stop, "停止当前任务", "安全写入停止请求，当前 Worker 会在检查点退出") {
+            MiuixActionRow(Icons.Rounded.Stop, "停止当前任务", "安全写入停止请求，当前后台任务会在检查点退出") {
                 actions.onSchedulerCommand("scheduler-stop-current")
             }
             MiuixDivider()
@@ -293,7 +298,7 @@ private fun MiuixAutomationGroup(
             MiuixSliderRow(
                 icon = Icons.Rounded.Rule,
                 title = "归类周期 ${organizerIntervalLabel(config.organizeMinutes)}",
-                description = "15 分钟到 30 天，Root 配置为唯一真源",
+                description = "15 分钟到 30 天，后台计划为唯一设置来源",
                 value = config.organizeMinutes.toFloat(),
                 valueRange = 15f..43_200f,
                 steps = 0,

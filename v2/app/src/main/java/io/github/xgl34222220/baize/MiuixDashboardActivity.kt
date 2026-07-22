@@ -1566,6 +1566,8 @@ class MiuixDashboardActivity : ComponentActivity() {
         "apk-clean" -> "安装包清理"
         "profile-scan" -> "分类垃圾扫描"
         "profile-clean" -> "分类垃圾清理"
+        "organize", "organizer", "organize-clean" -> "文件自动归类"
+        "organize-scan", "organizer-scan" -> "文件归类扫描"
         else -> if (mode.isBlank()) "未知清理任务" else mode.replace('-', ' ').replaceFirstChar { it.uppercase() }
     }
 

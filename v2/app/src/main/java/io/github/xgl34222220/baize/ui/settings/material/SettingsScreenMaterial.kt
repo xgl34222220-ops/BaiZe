@@ -52,6 +52,12 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
+import io.github.xgl34222220.baize.ui.settings.schedulerBlockedGroupsLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerQueueLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerReasonLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerSupervisorStatusLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerRuntimeStateLabel
 import kotlin.math.roundToInt
 
 @Composable
@@ -74,13 +80,13 @@ fun SettingsScreenMaterial(
         ) {
             item { MaterialSettingsHeader() }
             item { MaterialAppearanceCard(state, actions) }
-            item { MaterialSectionTitle("TASK CENTER", "任务中心") }
+            item { MaterialSectionTitle("任务管理", "任务中心") }
             item { MaterialTaskCenterCard(state, actions) }
-            item { MaterialSectionTitle("AUTOMATION", "自动清理") }
+            item { MaterialSectionTitle("自动执行", "自动清理") }
             item { MaterialAutomationCard(config, actions) }
-            item { MaterialSectionTitle("PROTECTION", "清理保护与通知") }
+            item { MaterialSectionTitle("安全保护", "清理保护与通知") }
             item { MaterialProtectionCard(state, actions) }
-            item { MaterialSectionTitle("SERVICE", "服务与诊断") }
+            item { MaterialSectionTitle("系统服务", "服务与诊断") }
             item { MaterialServiceCard(state, actions) }
             item {
                 Button(
@@ -112,7 +118,7 @@ private fun MaterialSettingsHeader() {
             .padding(horizontal = 20.dp, vertical = 15.dp)
     ) {
         Text(
-            "PREFERENCES",
+            "设置中心",
             color = MaterialTheme.colorScheme.primary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -181,16 +187,16 @@ private fun MaterialTaskCenterCard(state: SettingsUiState, actions: SettingsUiAc
         Column(Modifier.padding(20.dp)) {
             MaterialCardHeader(
                 icon = Icons.Rounded.Refresh,
-                title = "Root 任务中心",
-                subtitle = "${config.runtimeState} · 队列 ${config.queueCount} 项 · ${config.supervisorStatus}"
+                title = "后台任务中心",
+                subtitle = "${schedulerRuntimeStateLabel(config.runtimeState)} · 待执行 ${config.queueCount} 项 · ${schedulerSupervisorStatusLabel(config.supervisorStatus)}"
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 buildString {
-                    append(config.runtimeReason.ifBlank { "等待下一次调度" })
-                    if (config.queueGroups.isNotBlank()) append("\n队列：").append(config.queueGroups)
-                    if (config.blockedGroups.isNotBlank()) append("\n等待条件：").append(config.blockedGroups)
-                    if (config.runtimeStale) append("\n守护心跳已过期，建议唤醒")
+                    append(schedulerReasonLabel(config.runtimeReason))
+                    if (config.queueGroups.isNotBlank()) append("\n待执行：").append(schedulerQueueLabel(config.queueGroups))
+                    if (config.blockedGroups.isNotBlank()) append("\n暂缓执行：").append(schedulerBlockedGroupsLabel(config.blockedGroups))
+                    if (config.runtimeStale) append("\n后台守护长时间没有响应，建议点击唤醒")
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
@@ -266,7 +272,7 @@ private fun MaterialAutomationCard(
             MaterialSliderSetting(
                 icon = Icons.Rounded.Rule,
                 title = "归类周期 ${materialOrganizerIntervalLabel(config.organizeMinutes)}",
-                description = "Root 配置为唯一真实计划来源",
+                description = "后台计划为唯一真实设置来源",
                 value = config.organizeMinutes.toFloat(),
                 valueRange = 15f..43_200f,
                 steps = 0,
