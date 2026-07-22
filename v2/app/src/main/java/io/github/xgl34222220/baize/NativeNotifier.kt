@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -30,6 +31,7 @@ object NativeNotifier {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
+    @SuppressLint("MissingPermission")
     fun showTaskResult(context: Context, title: String, summary: String, details: String) {
         if (!canPost(context)) return
         ensureChannel(context)
@@ -51,6 +53,10 @@ object NativeNotifier {
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .build()
-        NotificationManagerCompat.from(context).notify("baize-app-task", NOTIFICATION_ID, notification)
+        try {
+            NotificationManagerCompat.from(context).notify("baize-app-task", NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+            // Permission or OEM policy changed after the explicit permission check.
+        }
     }
 }

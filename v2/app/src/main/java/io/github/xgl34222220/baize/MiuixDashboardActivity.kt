@@ -38,6 +38,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Compose launcher backed by two native snapshot engines. A safety scan produces immutable,
@@ -45,6 +48,11 @@ import org.json.JSONObject
  * never restart discovery.
  */
 class MiuixDashboardActivity : ComponentActivity() {
+    private data class RemoteTaskProbe(
+        val complete: Boolean,
+        val runningState: JSONObject?
+    )
+
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
     private var rootService: IProfileRootService? = null
@@ -56,6 +64,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var pendingScanAfterConnect: Boolean? = null
     private var pendingModuleTask: String? = null
     private var pollJob: Job? = null
+    private var recoveryProbeJob: Job? = null
     private var taskCallbackRegistered = false
     private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
         override fun onTaskProgress(stateJson: String?) {
@@ -78,8 +87,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             profileBound = true
             taskCallbackRegistered = runCatching { rootService?.registerTaskProgressCallback(taskProgressCallback); true }.getOrDefault(false)
             updateConnectionState()
-            refreshAll()
-            runPendingActionsIfReady()
+            recoverRemoteTaskOrRefresh(runPendingActions = true)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -99,8 +107,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             cacheService = IBaiZeRootService.Stub.asInterface(binder)
             cacheBound = true
             updateConnectionState()
-            readServiceStatus()
-            runPendingActionsIfReady()
+            recoverRemoteTaskOrRefresh(runPendingActions = true)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -119,6 +126,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
         updateStorage()
+        dashboardState.value = dashboardState.value.copy(
+            lastTaskTime = preferences.getString("last_task_time", "").orEmpty(),
+            protectedItems = loadProtectedItems()
+        )
 
         setContent {
             val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
@@ -140,6 +151,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     saveScheduler = { saveScheduler(it) },
                     clearHistory = { confirmClearHistory() },
                     clearRawLog = { confirmClearRawLogs() },
+                    reviewProtected = { startActivity(Intent(this, ProtectedReviewActivity::class.java)) },
                     whitelist = { startActivity(Intent(this, WhitelistActivity::class.java)) },
                     theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
@@ -149,7 +161,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 appearance = appearance
             )
         }
-        connectPrimaryService()
+        connectServices()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -170,21 +182,142 @@ class MiuixDashboardActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         updateStorage()
-        if (rootService != null) {
-            refreshAll()
+        if (rootService != null || cacheService != null) {
+            recoverRemoteTaskOrRefresh()
         } else {
-            connectPrimaryService()
+            connectServices()
         }
     }
 
     private fun refreshAll() {
         updateStorage()
+        if (dashboardState.value.running) {
+            readServiceStatus()
+            recoverRemoteTaskOrRefresh()
+            return
+        }
         readServiceStatus()
         loadScheduler()
         refreshModuleState()
         refreshHistory()
         refreshRawLog()
         refreshWhitelist()
+    }
+
+    private fun recoverRemoteTaskOrRefresh(runPendingActions: Boolean = false) {
+        recoveryProbeJob?.cancel()
+        recoveryProbeJob = lifecycleScope.launch {
+            val probe = probeRemoteTask()
+            val running = probe.runningState
+            when {
+                running != null -> {
+                    dashboardState.value = dashboardState.value.copy(
+                        running = true,
+                        scanCompleted = false,
+                        serviceText = "后台 Root 任务仍在执行，已恢复实时进度"
+                    )
+                    renderTaskState(running)
+                    startRecoveredTaskPoll()
+                }
+                !probe.complete -> {
+                    dashboardState.value = dashboardState.value.copy(
+                        connected = rootService != null,
+                        ready = false,
+                        serviceText = "正在连接后台任务状态…",
+                        taskPhase = if (dashboardState.value.running) {
+                            "后台任务仍在执行，正在恢复 Root 连接…"
+                        } else {
+                            dashboardState.value.taskPhase
+                        }
+                    )
+                    connectServices()
+                }
+                dashboardState.value.running -> {
+                    // A just-started Binder task may need a brief moment before running.env appears.
+                    // Use the recovery poll instead of immediately restoring stale historical state.
+                    startRecoveredTaskPoll()
+                }
+                else -> {
+                    refreshAll()
+                    if (runPendingActions) runPendingActionsIfReady()
+                }
+            }
+        }
+    }
+
+    private suspend fun probeRemoteTask(): RemoteTaskProbe = withContext(Dispatchers.IO) {
+        val expectProfile = rootService != null || profileBound
+        val expectCache = cacheService != null || cacheBound
+        var profileResponded = !expectProfile
+        var cacheResponded = !expectCache
+        var runningState: JSONObject? = null
+
+        rootService?.let { service ->
+            val state = runCatching { JSONObject(service.getTaskState()) }.getOrNull()
+            if (state != null) {
+                profileResponded = true
+                if (state.optBoolean("running")) runningState = state
+            }
+        }
+        cacheService?.let { service ->
+            val state = runCatching { JSONObject(service.getTaskState()) }.getOrNull()
+            if (state != null) {
+                cacheResponded = true
+                if (runningState == null && state.optBoolean("running")) runningState = state
+            }
+        }
+
+        RemoteTaskProbe(
+            complete = (expectProfile || expectCache) && profileResponded && cacheResponded,
+            runningState = runningState
+        )
+    }
+
+    private fun startRecoveredTaskPoll() {
+        pollJob?.cancel()
+        pollJob = lifecycleScope.launch {
+            var idleConfirmations = 0
+            delay(250)
+            while (isActive) {
+                val probe = probeRemoteTask()
+                val state = probe.runningState
+                if (state != null) {
+                    idleConfirmations = 0
+                    renderTaskState(state)
+                    delay(420)
+                    continue
+                }
+                if (!probe.complete) {
+                    idleConfirmations = 0
+                    dashboardState.value = dashboardState.value.copy(
+                        running = true,
+                        connected = rootService != null,
+                        ready = false,
+                        serviceText = "后台任务连接中断，正在自动恢复…",
+                        taskPhase = "后台任务仍由 Root 执行，正在重新连接进度…"
+                    )
+                    connectServices()
+                    delay(700)
+                    continue
+                }
+
+                idleConfirmations += 1
+                if (idleConfirmations < 2) {
+                    delay(320)
+                    continue
+                }
+
+                dashboardState.value = dashboardState.value.copy(
+                    running = false,
+                    scanCompleted = false,
+                    taskPhase = "后台任务已结束，正在读取最终结果…"
+                )
+                delay(220)
+                refreshAll()
+                updateStorage()
+                break
+            }
+        }
     }
 
     private fun connectPrimaryService() {
@@ -475,9 +608,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                     else -> json.optString("message", "安装包扫描失败")
                 }
             }
+            val taskTime = markTaskTime()
+            val protected = protectedFromModule(emptyList(), junk)
+            saveProtectedItems(protected)
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 recentJunk = junk,
+                lastTaskTime = taskTime,
+                protectedItems = protected,
                 taskPhase = result
             )
             refreshHistory()
@@ -515,7 +653,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(
             running = true,
             scanCompleted = false,
-            taskPhase = "正在调用模块完整清理引擎…"
+            taskPhase = "正在把清理任务交给独立 Root Worker…"
         )
         startNativePoll()
         lifecycleScope.launch {
@@ -544,6 +682,16 @@ class MiuixDashboardActivity : ComponentActivity() {
                 toast(message)
                 return@launch
             }
+            if (json.optBoolean("accepted")) {
+                dashboardState.value = dashboardState.value.copy(
+                    running = true,
+                    scanCompleted = false,
+                    serviceText = "独立 Root Worker 已接管任务，关闭 App 也会继续",
+                    taskPhase = json.optString("message", "清理任务已在后台启动") + "\n可返回桌面或划掉最近任务"
+                )
+                startRecoveredTaskPoll()
+                return@launch
+            }
             updateRawLogFromResponse(json)
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
@@ -567,11 +715,16 @@ class MiuixDashboardActivity : ComponentActivity() {
                 else -> "白泽智能清理失败"
             }
 
+            val taskTime = markTaskTime()
+            val protected = protectedFromModule(appDetails, otherDetails)
+            saveProtectedItems(protected)
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 lastReleased = bytes,
                 recentApps = appDetails,
                 recentJunk = otherDetails,
+                lastTaskTime = taskTime,
+                protectedItems = protected,
                 taskPhase = "$resultLine\n$detailLine"
             )
             preferences.edit()
@@ -666,9 +819,11 @@ class MiuixDashboardActivity : ComponentActivity() {
             } else {
                 clearSnapshotHandles()
             }
+            val taskTime = markTaskTime()
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 scanCompleted = successfulScan,
+                lastTaskTime = taskTime,
                 scanBytes = knownBytes,
                 scanFiles = total.toLong(),
                 scanEmptyFiles = emptyFiles,
@@ -739,6 +894,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             var failures = 0
             var cancelled = false
             var stale = false
+            val protectedItems = ArrayList<ProtectedUiItem>()
             val selection = JSONObject().put("__all_safe__", true).toString()
             val whitelist = JSONArray(packageWhitelist().toList()).toString()
 
@@ -758,6 +914,22 @@ class MiuixDashboardActivity : ComponentActivity() {
                     val details = result.optJSONArray("details") ?: JSONArray()
                     for (index in 0 until details.length()) {
                         val item = details.optJSONObject(index) ?: continue
+                        val action = item.optString("action")
+                        if (action == "protected" || action == "partial") {
+                            val reason = item.optString("reason").ifBlank {
+                                if (action == "partial") "部分内容未删除" else "安全策略保护"
+                            }
+                            protectedItems += ProtectedUiItem(
+                                id = item.optString("id").ifBlank { item.optString("path") },
+                                category = item.optString("category").ifBlank { "受保护项目" },
+                                path = item.optString("path"),
+                                reason = reason,
+                                risk = item.optString("risk", "high"),
+                                selectable = reason == "高风险清理未启用" ||
+                                    reason == "仍有受保护或未删除项目" ||
+                                    reason.contains("大小限制")
+                            )
+                        }
                         when (item.optString("profile")) {
                             "empty" -> {
                                 emptyFiles += item.optLong("files", 0L).coerceAtLeast(0L)
@@ -803,10 +975,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 else -> "释放 ${formatBytes(deletedBytes)} · 处理 $cleanedCandidates 项"
             }
             val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
+            val taskTime = markTaskTime()
+            saveProtectedItems(protectedItems)
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 scanCompleted = false,
                 lastReleased = deletedBytes,
+                lastTaskTime = taskTime,
+                protectedItems = protectedItems,
                 taskPhase = "$resultLine\n$detailLine"
             )
             preferences.edit()
@@ -917,6 +1093,81 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(scanCompleted = false)
     }
 
+    private fun markTaskTime(): String {
+        val value = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        preferences.edit().putString("last_task_time", value).apply()
+        return value
+    }
+
+    private fun protectedFromModule(
+        apps: List<AppJunkUiItem>,
+        other: List<GeneralJunkUiItem>
+    ): List<ProtectedUiItem> = buildList {
+        apps.forEach { app ->
+            app.categories.filter { it.errors > 0 && it.samplePath.isNotBlank() }.forEach { category ->
+                add(
+                    ProtectedUiItem(
+                        id = "${app.packageName}:${category.samplePath}",
+                        category = "${app.label} · ${category.name}",
+                        path = category.samplePath,
+                        reason = "模块报告 ${category.errors} 个异常或受保护项目",
+                        risk = "high",
+                        selectable = true
+                    )
+                )
+            }
+        }
+        other.filter { it.errors > 0 && it.samplePath.isNotBlank() }.forEach { item ->
+            add(
+                ProtectedUiItem(
+                    id = "${item.name}:${item.samplePath}",
+                    category = item.name,
+                    path = item.samplePath,
+                    reason = "模块报告 ${item.errors} 个异常或受保护项目",
+                    risk = "high",
+                    selectable = true
+                )
+            )
+        }
+    }.distinctBy { "${it.path}|${it.reason}" }.take(120)
+
+    private fun saveProtectedItems(items: List<ProtectedUiItem>) {
+        val array = JSONArray()
+        items.take(120).forEach { item ->
+            array.put(
+                JSONObject()
+                    .put("id", item.id)
+                    .put("category", item.category)
+                    .put("path", item.path)
+                    .put("reason", item.reason)
+                    .put("risk", item.risk)
+                    .put("selectable", item.selectable)
+            )
+        }
+        preferences.edit().putString("last_protected_items", array.toString()).apply()
+    }
+
+    private fun loadProtectedItems(): List<ProtectedUiItem> = runCatching {
+        val array = JSONArray(preferences.getString("last_protected_items", "[]").orEmpty())
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val path = item.optString("path").trim()
+                if (path.isBlank()) continue
+                add(
+                    ProtectedUiItem(
+                        id = item.optString("id").ifBlank { path },
+                        category = item.optString("category", "受保护项目"),
+                        path = path,
+                        reason = item.optString("reason", "安全策略保护"),
+                        risk = item.optString("risk", "high"),
+                        selectable = item.optBoolean("selectable", false)
+                    )
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
+
     private fun packageWhitelist(): Set<String> =
         preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
 
@@ -999,6 +1250,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }.getOrDefault(packageName)
 
     private fun renderTaskState(json: JSONObject) {
+        if (!json.optBoolean("running")) return
         val current = json.optInt("progress_current", json.optInt("current", 0))
         val total = json.optInt("progress_total", json.optInt("total", 0))
         val target = json.optString("current_path", json.optString("currentPath")).trim()
@@ -1012,8 +1264,13 @@ class MiuixDashboardActivity : ComponentActivity() {
             if (total > 0) append(" · $current/$total")
             if (targetText.isNotBlank()) append("\n").append(targetText)
             if (json.optBoolean("cancelRequested")) append("\n正在停止…")
+            append("\n可切到后台，Root 会继续执行")
         }
-        dashboardState.value = dashboardState.value.copy(taskPhase = text)
+        dashboardState.value = dashboardState.value.copy(
+            running = true,
+            scanCompleted = false,
+            taskPhase = text
+        )
     }
 
     private fun stopTask() {
@@ -1071,6 +1328,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             } ?: return@launch
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val scheduler = json.optJSONObject("scheduler") ?: JSONObject()
+            val supervisor = json.optJSONObject("supervisor") ?: JSONObject()
+            val appInstall = json.optJSONObject("appInstall") ?: JSONObject()
             val performance = json.optJSONObject("scanPerformance") ?: JSONObject()
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
@@ -1080,10 +1339,30 @@ class MiuixDashboardActivity : ComponentActivity() {
             } else {
                 latest.optLong("bytes", preferences.getLong("last_clean_bytes", 0L)).coerceAtLeast(0L)
             }
+            val latestTaskText = buildString {
+                val result = latest.optString("result").trim()
+                if (result.isNotBlank()) append(result)
+                val files = latest.optLong("files", latest.optLong("regular_files", 0L)).coerceAtLeast(0L)
+                val errors = latest.optLong("errors", 0L).coerceAtLeast(0L)
+                val elapsed = latest.optLong("elapsed", 0L).coerceAtLeast(0L)
+                if (files > 0L || errors > 0L || elapsed > 0L) {
+                    if (isNotEmpty()) append("\n")
+                    append("文件 ").append(files)
+                    if (errors > 0L) append(" · 异常 ").append(errors)
+                    if (elapsed > 0L) append(" · ").append(formatElapsed(elapsed))
+                }
+                val slowestSeconds = latest.optLong("deep_slowest_seconds", 0L).coerceAtLeast(0L)
+                val slowestPath = latest.optString("deep_slowest_path").trim()
+                if (slowestSeconds > 0L && slowestPath.isNotBlank()) {
+                    if (isNotEmpty()) append("\n")
+                    append("最慢目录 ").append(slowestSeconds).append("秒 · ").append(slowestPath.takeLast(72))
+                }
+            }.ifBlank { dashboardState.value.taskPhase }
             dashboardState.value = dashboardState.value.copy(
                 lastReleased = latestReleased,
                 recentApps = if (appDetails.isNotEmpty()) appDetails else dashboardState.value.recentApps,
                 recentJunk = if (otherDetails.isNotEmpty()) otherDetails else dashboardState.value.recentJunk,
+                taskPhase = if (dashboardState.value.running) dashboardState.value.taskPhase else latestTaskText,
                 scanPerformance = ScanPerformanceUiState(
                     available = performance.optBoolean("available", false),
                     workerPolicy = performance.optString("workerPolicy", "auto"),
@@ -1097,12 +1376,17 @@ class MiuixDashboardActivity : ComponentActivity() {
                     nextProbeRun = performance.optInt("nextProbeRun", 0).coerceAtLeast(0),
                     parallelBlockedUntil = performance.optLong("parallelBlockedUntil", 0L).coerceAtLeast(0L)
                 ),
-                schedulerText = when (scheduler.optString("state", "waiting")) {
+                schedulerText = when {
+                    appInstall.optString("status") == "signature_mismatch" -> "App 与模块签名不一致，模块定时仍可运行"
+                    supervisor.optString("status") == "recovering" -> "调度器正在自动恢复：${supervisor.optString("reason")}"
+                    supervisor.optString("status") == "failed" -> "调度器守护异常：${supervisor.optString("reason")}"
+                    else -> when (scheduler.optString("state", "waiting")) {
                     "running" -> "定时任务正在执行"
                     "completed" -> "最近定时任务已完成"
                     "failed" -> "定时任务失败：${scheduler.optString("reason")}"
                     "disabled" -> "自动清理已关闭"
                     else -> scheduler.optString("reason", "等待调度器首次轮询")
+                    }
                 }
             )
         }
@@ -1279,6 +1563,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (taskCallbackRegistered) runCatching { rootService?.unregisterTaskProgressCallback(taskProgressCallback) }
 
         pollJob?.cancel()
+        recoveryProbeJob?.cancel()
         if (profileBound) runCatching { RootService.unbind(profileConnection) }
         if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
         super.onDestroy()

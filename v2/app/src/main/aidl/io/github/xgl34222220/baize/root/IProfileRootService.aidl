@@ -10,6 +10,7 @@ interface IProfileRootService {
     String cleanProfileSelected(String snapshotId, String selectionJson, String optionsJson);
 
     String runModuleTask(String mode);
+    String runMaintenanceTool(String tool, String optionsJson);
     String getModuleState();
     String getTaskHistory(int limit);
     String getTaskHistoryPage(int offset, int limit);

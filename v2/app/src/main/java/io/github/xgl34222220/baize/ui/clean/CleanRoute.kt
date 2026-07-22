@@ -36,8 +36,8 @@ fun CleanRoute(
         onCategoryEnabledChanged = { id, enabled ->
             dashboardActions.updateScheduler(scheduler.withCategoryEnabled(id, enabled))
         },
-        onCategoryIntervalChanged = { id, hours ->
-            dashboardActions.updateScheduler(scheduler.withCategoryInterval(id, hours))
+        onCategoryIntervalChanged = { id, minutes ->
+            dashboardActions.updateScheduler(scheduler.withCategoryInterval(id, minutes))
         },
         onDailyScheduleChanged = { enabled ->
             dashboardActions.updateScheduler(scheduler.withDailySchedule(enabled))

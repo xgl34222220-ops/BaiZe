@@ -37,6 +37,15 @@ chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/organizer-w
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
+chmod 0755 "$STAGE/quarantine-manager.sh"
+chmod 0755 "$STAGE/large-file-scanner.sh"
+chmod 0755 "$STAGE/duplicate-scanner.sh"
+chmod 0755 "$STAGE/storage-analyzer.sh"
+chmod 0755 "$STAGE/diagnostics-export.sh"
+chmod 0755 "$STAGE/app-installer.sh"
+chmod 0755 "$STAGE/supervisor.sh"
+chmod 0755 "$STAGE/worker-runner.sh"
+chmod 0755 "$STAGE/task-worker.sh"
 chmod 0755 "$STAGE/rules-validator.sh" "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/organizer-worker.sh"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
@@ -60,7 +69,7 @@ unzip -l "$OUTPUT" | grep -q 'one-pass-scan.sh'
 unzip -l "$OUTPUT" | grep -q 'storage-index.sh'
 unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
 unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
-unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-shell'
+unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.3'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'

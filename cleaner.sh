@@ -150,9 +150,14 @@ DEEP_COVER_MODE=""
 DEEP_SLOW_ITEMS=0
 DEEP_MOUNT_ITEMS=0
 DEEP_TRUNCATED=0
+DEEP_RULE_PARSE_SECONDS=0
+DEEP_STAGE_SECONDS=0
+DEEP_SLOWEST_SECONDS=0
+DEEP_SLOWEST_PATH=""
 CACHE_SLOW_DIRS=0
 CACHE_TRUNCATED=0
 COMMAND_TIMEOUT_MODE=""
+WATCHDOG_SEQ=0
 DEEP_PROGRESS_CURRENT=0
 DEEP_PROGRESS_TOTAL=0
 DEEP_CURRENT_PATH=""
@@ -556,6 +561,36 @@ ensure_timeout_runtime() {
   fi
 }
 
+run_with_watchdog() {
+  seconds=$1
+  shift
+  WATCHDOG_SEQ=$((WATCHDOG_SEQ + 1))
+  marker="$TMP_DIR/watchdog.$$.${WATCHDOG_SEQ}"
+  rm -f "$marker"
+  "$@" &
+  command_pid=$!
+  (
+    sleep "$seconds"
+    if kill -0 "$command_pid" 2>/dev/null; then
+      : >"$marker"
+      kill -TERM "$command_pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$command_pid" 2>/dev/null || true
+    fi
+  ) &
+  watchdog_pid=$!
+  wait "$command_pid"
+  command_code=$?
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+  if [ -f "$marker" ]; then
+    rm -f "$marker"
+    return 124
+  fi
+  rm -f "$marker"
+  return "$command_code"
+}
+
 run_limited_command() {
   seconds=$1
   shift
@@ -564,7 +599,7 @@ run_limited_command() {
     timeout) timeout "$seconds" "$@" ;;
     toybox) toybox timeout "$seconds" "$@" ;;
     busybox) busybox timeout "$seconds" "$@" ;;
-    *) "$@" ;;
+    *) run_with_watchdog "$seconds" "$@" ;;
   esac
 }
 
@@ -1245,8 +1280,8 @@ deep_risk_is_eligible() {
 }
 
 prepare_deep_runtime() {
-  DEEP_DIR_TIMEOUT_SECONDS=12
-  DEEP_STAGE_LIMIT_SECONDS=300
+  DEEP_DIR_TIMEOUT_SECONDS=$(get_uint deep_dir_timeout_seconds 8 3 60)
+  DEEP_STAGE_LIMIT_SECONDS=$(get_uint deep_stage_limit_seconds 180 30 600)
   ensure_timeout_runtime
   DEEP_TIMEOUT_MODE=$COMMAND_TIMEOUT_MODE
 
@@ -1275,7 +1310,7 @@ run_deep_limited() {
     timeout) timeout "$seconds" "$@" ;;
     toybox) toybox timeout "$seconds" "$@" ;;
     busybox) busybox timeout "$seconds" "$@" ;;
-    *) "$@" ;;
+    *) run_with_watchdog "$seconds" "$@" ;;
   esac
 }
 
@@ -1357,6 +1392,17 @@ deep_progress_update() {
   fi
 }
 
+deep_record_slowest() {
+  slow_target=$1
+  slow_seconds=${2:-0}
+  case "$slow_seconds" in ''|*[!0-9]*) slow_seconds=0 ;; esac
+  if [ "$slow_seconds" -gt "$DEEP_SLOWEST_SECONDS" ]; then
+    DEEP_SLOWEST_SECONDS=$slow_seconds
+    DEEP_SLOWEST_PATH=$(printf '%s' "$slow_target" | tr '
+' '  ')
+  fi
+}
+
 deep_keep_root() {
   case "${1%/}" in
     */cache|*/code_cache) return 0 ;;
@@ -1416,6 +1462,7 @@ deep_process_target() {
   if ! deep_target_stats "$target"; then
     case "$DEEP_TARGET_STATUS" in
       timeout)
+        deep_record_slowest "$target" "$DEEP_TARGET_ELAPSED"
         DEEP_SLOW_ITEMS=$((DEEP_SLOW_ITEMS + 1))
         PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
         log_line "[深度跳过:目录统计超时] $target（超过 ${DEEP_DIR_TIMEOUT_SECONDS} 秒）"
@@ -1450,6 +1497,7 @@ deep_process_target() {
     return 0
   fi
 
+  deep_record_slowest "$target" "$DEEP_TARGET_ELAPSED"
   if [ "$DEEP_TARGET_ELAPSED" -ge 3 ]; then
     log_line "[深度慢目录] $target（统计 ${DEEP_TARGET_ELAPSED} 秒，${count} 个文件）"
   fi
@@ -1549,6 +1597,7 @@ deep_process_target() {
 run_deep_rules() {
   [ -f "$DEEP_RULES" ] || return 0
   prepare_deep_runtime
+  deep_rules_started=$(date +%s)
   candidates="$TMP_DIR/deep-targets"
   sorted="$TMP_DIR/deep-targets.sorted"
   : >"$candidates"
@@ -1612,6 +1661,8 @@ run_deep_rules() {
   fi
 
   if sort -u "$candidates" >"$sorted" 2>/dev/null; then mv -f "$sorted" "$candidates"; else rm -f "$sorted"; fi
+  deep_rules_ready=$(date +%s)
+  DEEP_RULE_PARSE_SECONDS=$((deep_rules_ready - deep_rules_started))
   DEEP_PROGRESS_TOTAL=$(wc -l <"$candidates" 2>/dev/null | tr -d ' ')
   case "$DEEP_PROGRESS_TOTAL" in ''|*[!0-9]*) DEEP_PROGRESS_TOTAL=0 ;; esac
   DEEP_PROGRESS_CURRENT=0
@@ -1667,7 +1718,13 @@ run_deep_rules() {
     fi
   done <"$candidates"
 
+  deep_stage_end=$(date +%s)
+  DEEP_STAGE_SECONDS=$((deep_stage_end - deep_stage_start))
   deep_progress_update "$DEEP_PROGRESS_CURRENT" "$DEEP_PROGRESS_TOTAL" "" 1
+  log_line "[深度阶段耗时] 规则解析 ${DEEP_RULE_PARSE_SECONDS}s · 目录处理 ${DEEP_STAGE_SECONDS}s"
+  if [ "$DEEP_SLOWEST_SECONDS" -gt 0 ]; then
+    log_line "[深度最慢目录] ${DEEP_SLOWEST_SECONDS}s · $DEEP_SLOWEST_PATH"
+  fi
   log_line "[深度引擎] 候选 $DEEP_PROGRESS_TOTAL，已处理 $DEEP_PROGRESS_CURRENT，慢目录跳过 $DEEP_SLOW_ITEMS，挂载保护 $DEEP_MOUNT_ITEMS，截断 $DEEP_TRUNCATED"
   return 0
 }
@@ -2311,6 +2368,10 @@ else
   FRAGMENT_MTIME_ARGS="-mtime +$FRAGMENT_DAYS"
 fi
 MAX_RUN_MINUTES=$(get_uint max_run_minutes 45 5 180)
+if [ "$TRIGGER" = "app" ] && [ "$REQUEST_MODE" = "clean" ]; then
+  APP_TASK_MAX_MINUTES=$(get_uint app_task_max_minutes 20 5 45)
+  [ "$MAX_RUN_MINUTES" -le "$APP_TASK_MAX_MINUTES" ] || MAX_RUN_MINUTES=$APP_TASK_MAX_MINUTES
+fi
 MAX_RUN_SECONDS=$((MAX_RUN_MINUTES * 60))
 CLEAN_EMPTY_FILES=$(get_bool clean_empty_files)
 CLEAN_EMPTY_DIRS=$(get_bool clean_empty_dirs)
@@ -2507,6 +2568,9 @@ log_line "----------------------------------------"
 log_line "$RESULT"
 TOTAL_FILES=$((FILES + EMPTY_FILES))
 log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMPTY_FILES，空目录: $EMPTY_DIRS，隐藏垃圾: $HIDDEN_ITEMS，受保护: $PROTECTED_ITEMS，深度慢目录: $DEEP_SLOW_ITEMS，缓存慢目录: $CACHE_SLOW_DIRS，缓存截断: $CACHE_TRUNCATED，挂载保护: $DEEP_MOUNT_ITEMS，跳过: $SKIPPED，未清理: $ERRORS，耗时: ${ELAPSED}s"
+[ "$DEEP_RULE_PARSE_SECONDS" -gt 0 ] && log_line "深度规则解析: ${DEEP_RULE_PARSE_SECONDS}s"
+[ "$DEEP_STAGE_SECONDS" -gt 0 ] && log_line "深度目录处理: ${DEEP_STAGE_SECONDS}s"
+[ "$DEEP_SLOWEST_SECONDS" -gt 0 ] && log_line "最慢目录: ${DEEP_SLOWEST_SECONDS}s · $DEEP_SLOWEST_PATH"
 
 {
   echo "mode=$REQUEST_MODE"
@@ -2529,6 +2593,11 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
   echo "deep_slow_items=$DEEP_SLOW_ITEMS"
   echo "deep_mount_items=$DEEP_MOUNT_ITEMS"
   echo "deep_truncated=$DEEP_TRUNCATED"
+  echo "deep_rule_parse_seconds=$DEEP_RULE_PARSE_SECONDS"
+  echo "deep_stage_seconds=$DEEP_STAGE_SECONDS"
+  echo "deep_slowest_seconds=$DEEP_SLOWEST_SECONDS"
+  printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
+' '  '
   echo "cache_slow_dirs=$CACHE_SLOW_DIRS"
   echo "cache_truncated=$CACHE_TRUNCATED"
   echo "deep_progress_current=$DEEP_PROGRESS_CURRENT"
@@ -2550,6 +2619,11 @@ if [ "$REQUEST_MODE" = "deep-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:
     echo "truncated=$DEEP_TRUNCATED"
     echo "processed=$DEEP_PROGRESS_CURRENT"
     echo "targets=$DEEP_PROGRESS_TOTAL"
+    echo "rule_parse_seconds=$DEEP_RULE_PARSE_SECONDS"
+    echo "stage_seconds=$DEEP_STAGE_SECONDS"
+    echo "slowest_seconds=$DEEP_SLOWEST_SECONDS"
+    printf 'slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
+' '  '
   } >"$DEEP_SCAN_STATE"
 fi
 if [ "$REQUEST_MODE" = "corpse-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then

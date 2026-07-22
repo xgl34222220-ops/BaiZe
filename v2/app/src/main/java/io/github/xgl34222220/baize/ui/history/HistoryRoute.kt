@@ -16,7 +16,8 @@ fun HistoryRoute(
     val state = dashboard.toHistoryUiState()
     val actions = HistoryUiActions(
         onRefresh = dashboardActions.refresh,
-        onClearHistory = dashboardActions.clearHistory
+        onClearHistory = dashboardActions.clearHistory,
+        onReviewProtected = dashboardActions.reviewProtected
     )
 
     when (style) {

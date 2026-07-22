@@ -5,10 +5,12 @@ import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
+import io.github.xgl34222220.baize.ProtectedUiItem
 
 @Immutable
 data class HistoryUiState(
     val latestResult: String,
+    val lastTaskTime: String,
     val lifetimeRuns: Long,
     val lifetimeReleased: Long,
     val lifetimeFiles: Long,
@@ -18,6 +20,7 @@ data class HistoryUiState(
     val lifetimeElapsed: Long,
     val recentApps: List<AppJunkUiItem>,
     val recentJunk: List<GeneralJunkUiItem>,
+    val protectedItems: List<ProtectedUiItem>,
     val records: List<HistoryUiItem>
 ) {
     val hasCurrentResult: Boolean
@@ -32,11 +35,13 @@ data class HistoryUiState(
 
 data class HistoryUiActions(
     val onRefresh: () -> Unit,
-    val onClearHistory: () -> Unit
+    val onClearHistory: () -> Unit,
+    val onReviewProtected: () -> Unit
 )
 
 fun DashboardUiState.toHistoryUiState(): HistoryUiState = HistoryUiState(
     latestResult = history.firstOrNull()?.result.orEmpty(),
+    lastTaskTime = lastTaskTime.ifBlank { history.firstOrNull()?.time.orEmpty() },
     lifetimeRuns = lifetimeRuns,
     lifetimeReleased = lifetimeReleased,
     lifetimeFiles = lifetimeFiles,
@@ -46,5 +51,6 @@ fun DashboardUiState.toHistoryUiState(): HistoryUiState = HistoryUiState(
     lifetimeElapsed = lifetimeElapsed,
     recentApps = recentApps,
     recentJunk = recentJunk,
+    protectedItems = protectedItems,
     records = history
 )

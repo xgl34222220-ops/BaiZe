@@ -110,7 +110,6 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.CleanRoute
 import io.github.xgl34222220.baize.ui.home.HomeRoute
 import io.github.xgl34222220.baize.ui.history.HistoryRoute
-import io.github.xgl34222220.baize.ui.logs.LogsRoute
 import io.github.xgl34222220.baize.ui.settings.SettingsRoute
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidDock
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
@@ -172,6 +171,8 @@ data class DashboardUiState(
     val recentJunk: List<GeneralJunkUiItem> = emptyList(),
     val rawLogName: String = "",
     val rawLog: String = "",
+    val lastTaskTime: String = "",
+    val protectedItems: List<ProtectedUiItem> = emptyList(),
     val history: List<HistoryUiItem> = emptyList(),
     val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
 )
@@ -203,6 +204,16 @@ data class GeneralJunkUiItem(
     val bytes: Long,
     val errors: Long,
     val samplePath: String
+)
+
+@Immutable
+data class ProtectedUiItem(
+    val id: String,
+    val category: String,
+    val path: String,
+    val reason: String,
+    val risk: String,
+    val selectable: Boolean
 )
 
 @Immutable
@@ -240,15 +251,15 @@ data class HistoryAppUiItem(
 data class SchedulerUiState(
     val enabled: Boolean = true,
     val cacheEnabled: Boolean = true,
-    val cacheHours: Int = 1,
+    val cacheMinutes: Int = 60,
     val emptyEnabled: Boolean = true,
-    val emptyHours: Int = 1,
+    val emptyMinutes: Int = 60,
     val rulesEnabled: Boolean = true,
-    val rulesHours: Int = 6,
+    val rulesMinutes: Int = 360,
     val fragmentEnabled: Boolean = true,
-    val fragmentHours: Int = 12,
+    val fragmentMinutes: Int = 720,
     val deepEnabled: Boolean = false,
-    val deepHours: Int = 168,
+    val deepMinutes: Int = 10_080,
     val dailyEnabled: Boolean = false,
     val dailyHour: Int = 3,
     val dailyMinute: Int = 30,
@@ -268,15 +279,20 @@ data class SchedulerUiState(
     fun toJson(): JSONObject = JSONObject()
         .put("enabled", enabled.flag())
         .put("schedule_cache_enabled", cacheEnabled.flag())
-        .put("schedule_cache_hours", cacheHours.coerceIn(1, 720))
+        .put("schedule_cache_minutes", cacheMinutes.coerceIn(5, 43_200))
+        .put("schedule_cache_hours", ((cacheMinutes + 59) / 60).coerceIn(1, 720))
         .put("schedule_empty_enabled", emptyEnabled.flag())
-        .put("schedule_empty_hours", emptyHours.coerceIn(1, 720))
+        .put("schedule_empty_minutes", emptyMinutes.coerceIn(5, 43_200))
+        .put("schedule_empty_hours", ((emptyMinutes + 59) / 60).coerceIn(1, 720))
         .put("schedule_rules_enabled", rulesEnabled.flag())
-        .put("schedule_rules_hours", rulesHours.coerceIn(1, 720))
+        .put("schedule_rules_minutes", rulesMinutes.coerceIn(5, 43_200))
+        .put("schedule_rules_hours", ((rulesMinutes + 59) / 60).coerceIn(1, 720))
         .put("schedule_fragment_enabled", fragmentEnabled.flag())
-        .put("schedule_fragment_hours", fragmentHours.coerceIn(1, 720))
+        .put("schedule_fragment_minutes", fragmentMinutes.coerceIn(5, 43_200))
+        .put("schedule_fragment_hours", ((fragmentMinutes + 59) / 60).coerceIn(1, 720))
         .put("schedule_deep_enabled", deepEnabled.flag())
-        .put("schedule_deep_hours", deepHours.coerceIn(1, 720))
+        .put("schedule_deep_minutes", deepMinutes.coerceIn(5, 43_200))
+        .put("schedule_deep_hours", ((deepMinutes + 59) / 60).coerceIn(1, 720))
         .put("daily_schedule_enabled", dailyEnabled.flag())
         .put("daily_schedule_hour", dailyHour.coerceIn(0, 23))
         .put("daily_schedule_minute", dailyMinute.coerceIn(0, 59))
@@ -296,15 +312,15 @@ data class SchedulerUiState(
         fun fromJson(json: JSONObject) = SchedulerUiState(
             enabled = json.optInt("enabled", 1) == 1,
             cacheEnabled = json.optInt("schedule_cache_enabled", 1) == 1,
-            cacheHours = json.optInt("schedule_cache_hours", 1).coerceIn(1, 720),
+            cacheMinutes = json.optInt("schedule_cache_minutes", json.optInt("schedule_cache_hours", 1) * 60).coerceIn(5, 43_200),
             emptyEnabled = json.optInt("schedule_empty_enabled", 1) == 1,
-            emptyHours = json.optInt("schedule_empty_hours", 1).coerceIn(1, 720),
+            emptyMinutes = json.optInt("schedule_empty_minutes", json.optInt("schedule_empty_hours", 1) * 60).coerceIn(5, 43_200),
             rulesEnabled = json.optInt("schedule_rules_enabled", 1) == 1,
-            rulesHours = json.optInt("schedule_rules_hours", 6).coerceIn(1, 720),
+            rulesMinutes = json.optInt("schedule_rules_minutes", json.optInt("schedule_rules_hours", 6) * 60).coerceIn(5, 43_200),
             fragmentEnabled = json.optInt("schedule_fragment_enabled", 1) == 1,
-            fragmentHours = json.optInt("schedule_fragment_hours", 12).coerceIn(1, 720),
+            fragmentMinutes = json.optInt("schedule_fragment_minutes", json.optInt("schedule_fragment_hours", 12) * 60).coerceIn(5, 43_200),
             deepEnabled = json.optInt("schedule_deep_enabled", 0) == 1,
-            deepHours = json.optInt("schedule_deep_hours", 168).coerceIn(1, 720),
+            deepMinutes = json.optInt("schedule_deep_minutes", json.optInt("schedule_deep_hours", 168) * 60).coerceIn(5, 43_200),
             dailyEnabled = json.optInt("daily_schedule_enabled", 0) == 1,
             dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
             dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
@@ -340,6 +356,7 @@ data class DashboardActions(
     val saveScheduler: (SchedulerUiState) -> Unit,
     val clearHistory: () -> Unit,
     val clearRawLog: () -> Unit,
+    val reviewProtected: () -> Unit,
     val whitelist: () -> Unit,
     val theme: () -> Unit,
     val reconnect: () -> Unit,
@@ -351,7 +368,6 @@ private enum class BaiZePage(val title: String, val icon: ImageVector) {
     Home("首页", Icons.Rounded.Home),
     Clean("清理", Icons.Rounded.CleaningServices),
     Records("记录", Icons.Rounded.History),
-    Logs("日志", Icons.Rounded.Description),
     Settings("设置", Icons.Rounded.Settings)
 }
 
@@ -395,7 +411,6 @@ fun BaiZeMiuixApp(
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), actions) { page = BaiZePage.Clean }
                             BaiZePage.Clean -> CleanRoute(UiStyle.MATERIAL, state.forCleanPage(), scheduler, actions)
                             BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
-                            BaiZePage.Logs -> LogsRoute(UiStyle.MATERIAL, state.forLogsPage(), actions) { page = BaiZePage.Records }
                             BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                         }
                     }
@@ -425,7 +440,6 @@ fun BaiZeMiuixApp(
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), actions) { page = BaiZePage.Clean }
                                 BaiZePage.Clean -> CleanRoute(UiStyle.MIUIX, state.forCleanPage(), scheduler, actions)
                                 BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
-                                BaiZePage.Logs -> LogsRoute(UiStyle.MIUIX, state.forLogsPage(), actions) { page = BaiZePage.Records }
                                 BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
                             }
                         }

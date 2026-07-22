@@ -92,6 +92,29 @@ class BaiZeProfileRootService : RootService() {
             }
         }
 
+        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String {
+            val normalized = tool.orEmpty().trim()
+            val script = when (normalized) {
+                "storage-analysis" -> "storage-analyzer.sh"
+                "large-files" -> "large-file-scanner.sh"
+                "duplicates" -> "duplicate-scanner.sh"
+                "diagnostics" -> "diagnostics-export.sh"
+                "rules-validate" -> "rules-validator.sh"
+                else -> return JSONObject().put("success", false).put("error", "unsupported_tool").toString()
+            }
+            return runCatching {
+                val file = File(MODULE_DIR, script)
+                require(file.isFile) { "tool_missing" }
+                val arg = JSONObject(optionsJson.orEmpty().ifBlank { "{}" }).optInt("value", 0)
+                val command = mutableListOf("/system/bin/sh", file.absolutePath)
+                if (normalized == "large-files" && arg > 0) command += arg.coerceIn(16, 16384).toString()
+                val process = ProcessBuilder(command).redirectErrorStream(true).start()
+                val output = process.inputStream.bufferedReader().use { it.readText().takeLast(16000) }
+                val code = process.waitFor()
+                JSONObject().put("success", code == 0).put("exitCode", code).put("output", output).toString()
+            }.getOrElse { error -> failure("maintenance_failed", error) }
+        }
+
         override fun runModuleTask(mode: String?): String {
             val normalized = mode.orEmpty().trim().lowercase()
             if (normalized !in MODULE_TASKS) {
@@ -107,7 +130,8 @@ class BaiZeProfileRootService : RootService() {
                 .put("elapsedMs", 0)
                 .toString()
             return try {
-                executeModuleTask(normalized, started)
+                if (normalized == "clean") startDetachedModuleTask(normalized, started)
+                else executeModuleTask(normalized, started)
             } catch (error: Throwable) {
                 failure("module_task_failed", error)
             } finally {
@@ -246,6 +270,41 @@ class BaiZeProfileRootService : RootService() {
     }
 
     override fun onBind(intent: Intent): IBinder = binder
+
+    private fun startDetachedModuleTask(mode: String, started: Long): String {
+        val worker = File(MODULE_DIR, "task-worker.sh")
+        if (!worker.isFile) {
+            return JSONObject().put("error", "worker_missing")
+                .put("message", "独立 Root Worker 缺失，请重新刷入完整模块").toString()
+        }
+        val existing = readEnv(File(STATE_DIR, "running.env"))
+        if (existing.length() > 0 && existing.optString("mode").isNotBlank()) return busy("module-$mode")
+        val stateDir = File(STATE_DIR).apply { mkdirs() }
+        val taskId = "${System.currentTimeMillis()}-${Process.myPid()}"
+        val launcherLog = File(stateDir, "logs/launcher-$taskId.log").apply { parentFile?.mkdirs() }
+        val process = ProcessBuilder("/system/bin/sh", worker.absolutePath, mode, "app", taskId)
+            .redirectErrorStream(true).redirectOutput(launcherLog).start()
+        val exited = process.waitFor(8, TimeUnit.SECONDS)
+        if (!exited) {
+            process.destroyForcibly()
+            return JSONObject().put("error", "worker_launch_timeout")
+                .put("message", "独立 Root Worker 启动超时").toString()
+        }
+        val code = process.exitValue()
+        if (code != 0) {
+            val output = tailText(launcherLog, 2_000).trim()
+            return JSONObject().put("error", if (code == 3) "busy" else "worker_launch_failed")
+                .put("exitCode", code)
+                .put("message", output.ifBlank { "独立 Root Worker 启动失败（代码 $code）" }).toString()
+        }
+        taskStateJson = JSONObject().put("running", true).put("operation", "module-$mode")
+            .put("phase", "独立 Root Worker 已启动").put("taskId", taskId)
+            .put("elapsedMs", SystemClock.elapsedRealtime() - started).toString()
+        publishTaskState(true)
+        return JSONObject().put("success", true).put("accepted", true).put("running", true)
+            .put("mode", mode).put("taskId", taskId)
+            .put("message", "清理任务已交给独立 Root Worker，关闭 App 仍会继续").toString()
+    }
 
     private fun executeModuleTask(mode: String, started: Long): String {
         val cleaner = File(MODULE_DIR, "cleaner.sh")
@@ -478,6 +537,8 @@ class BaiZeProfileRootService : RootService() {
             .put("cleanerReady", File(MODULE_DIR, "cleaner.sh").isFile)
             .put("rulesReady", File(MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", scheduler)
+            .put("supervisor", readEnv(File(stateDir, "supervisor.env")))
+            .put("appInstall", readEnv(File(stateDir, "app-install.env")))
             .put("module", module)
             .put("totals", totals)
             .put("latest", latest)
@@ -501,9 +562,9 @@ class BaiZeProfileRootService : RootService() {
         val cache = readEnv(File(stateDir, "cache_scan.env"))
         val profile = readEnv(File(stateDir, "root-worker-profile.env"))
         val config = configJsonObject()
-        val requestedMode = config.optInt("scan_root_workers", 0).coerceIn(0, 2)
-        val actualWorkers = cache.optInt("root_workers", profile.optInt("last_workers", 1)).coerceIn(1, 2)
-        val recommendedWorkers = profile.optInt("recommended_workers", 1).coerceIn(1, 2)
+        val requestedMode = config.optInt("scan_root_workers", 0).coerceIn(0, 4)
+        val actualWorkers = cache.optInt("root_workers", profile.optInt("last_workers", 1)).coerceIn(1, 4)
+        val recommendedWorkers = profile.optInt("recommended_workers", 1).coerceIn(1, 4)
         val hasProfile = profile.length() > 0
         val reason = if (hasProfile) {
             cache.optString("worker_reason").ifBlank {
@@ -1172,21 +1233,26 @@ class BaiZeProfileRootService : RootService() {
             "min_battery" to 0..100,
             "max_battery_temp" to 30..60,
             "max_run_minutes" to 5..180,
-            "scan_root_workers" to 0..2,
+            "scan_root_workers" to 0..4,
             "scan_parallel_min_items" to 100..10_000_000,
             "scan_parallel_min_gain_percent" to 5..50,
             "scan_parallel_reprobe_runs" to 2..50,
             "scan_parallel_failure_cooldown_hours" to 1..168,
             "schedule_cache_enabled" to 0..1,
             "schedule_cache_hours" to 1..720,
+            "schedule_cache_minutes" to 5..43_200,
             "schedule_empty_enabled" to 0..1,
             "schedule_empty_hours" to 1..720,
+            "schedule_empty_minutes" to 5..43_200,
             "schedule_rules_enabled" to 0..1,
             "schedule_rules_hours" to 1..720,
+            "schedule_rules_minutes" to 5..43_200,
             "schedule_fragment_enabled" to 0..1,
             "schedule_fragment_hours" to 1..720,
+            "schedule_fragment_minutes" to 5..43_200,
             "schedule_deep_enabled" to 0..1,
             "schedule_deep_hours" to 1..720,
+            "schedule_deep_minutes" to 5..43_200,
             "daily_schedule_enabled" to 0..1,
             "daily_schedule_hour" to 0..23,
             "daily_schedule_minute" to 0..59,
@@ -1218,7 +1284,9 @@ class BaiZeProfileRootService : RootService() {
             "apk_package_days" to 0..365,
             "apk_package_max_mb" to 16..16_384,
             "root_shell_days" to 1..90,
-            "max_file_mb" to 16..16_384
+            "max_file_mb" to 16..16_384,
+            "shared_index_ttl_seconds" to 30..86_400,
+            "quarantine_retention_days" to 1..30
         )
     }
 }
