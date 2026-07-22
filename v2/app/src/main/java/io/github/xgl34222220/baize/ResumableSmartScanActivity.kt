@@ -106,7 +106,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private var deletedBytes = 0L
     private var deletedFiles = 0L
     private var deletedDirectories = 0L
+    private var processedCandidates = 0
     private var cleanedCandidates = 0
+    private var changedCandidates = 0
+    private var protectedCandidates = 0
+    private var partialCandidates = 0
+    private var failedCandidates = 0
+    private var classifiedDeletedBytes = 0L
+    private var unattributedDeletedBytes = 0L
+    private var categoryStats = JSONObject()
+    private var riskStats = JSONObject()
     private var cumulativeFailures = 0
     private var resumable = false
     private var restoredPlanNeedsValidation = false
@@ -441,8 +450,12 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     } else "清理计划执行完成")
                     append(" · ${elapsed}ms")
                     append("\n累计释放 ${Formatter.formatFileSize(this@ResumableSmartScanActivity, deletedBytes)}")
-                    append(" · 已完成 $cleanedCandidates 项 · 剩余 $remaining 项")
-                    if (cumulativeFailures > 0) append(" · 失败记录 $cumulativeFailures")
+                    append(" · 已处理 $processedCandidates 项 · 实际清理 $cleanedCandidates 项 · 剩余 $remaining 项")
+                    if (changedCandidates > 0) append(" · 已变化 $changedCandidates")
+                    if (protectedCandidates > 0) append(" · 受保护 $protectedCandidates")
+                    if (partialCandidates > 0) append(" · 部分 $partialCandidates")
+                    if (failedCandidates > 0) append(" · 失败候选 $failedCandidates")
+                    if (cumulativeFailures > 0) append(" · 删除错误 $cumulativeFailures")
                     if (remaining > 0) append("\n可直接点击继续清理，不会重新扫描或重复处理已完成项目")
                 }
                 preferences.edit()
@@ -467,7 +480,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     resumable = remaining > 0,
                     runCount = runCount,
                     deletedBytes = deletedBytes,
+                    processedCandidates = processedCandidates,
                     cleanedCandidates = cleanedCandidates,
+                    changedCandidates = changedCandidates,
+                    protectedCandidates = protectedCandidates,
+                    partialCandidates = partialCandidates,
+                    failedCandidates = failedCandidates,
+                    classifiedDeletedBytes = classifiedDeletedBytes,
+                    unattributedDeletedBytes = unattributedDeletedBytes,
+                    categoryStats = categoryStats.toString(),
+                    riskStats = riskStats.toString(),
                     failures = cumulativeFailures,
                     progressCurrent = (originalCacheCount + originalSafeCount - remaining).coerceAtLeast(0),
                     progressTotal = (originalCacheCount + originalSafeCount).coerceAtLeast(1),
@@ -591,8 +613,17 @@ class ResumableSmartScanActivity : ComponentActivity() {
         deletedBytes = plan.optLong("deletedBytes", 0L).coerceAtLeast(0L)
         deletedFiles = plan.optLong("deletedFiles", 0L).coerceAtLeast(0L)
         deletedDirectories = plan.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
+        processedCandidates = plan.optInt("processedCandidates", 0).coerceAtLeast(0)
         cleanedCandidates = plan.optInt("cleanedCandidates", 0).coerceAtLeast(0)
-        cumulativeFailures = plan.optInt("failures", 0).coerceAtLeast(0)
+        changedCandidates = plan.optInt("changedCandidates", 0).coerceAtLeast(0)
+        protectedCandidates = plan.optInt("protectedCandidates", 0).coerceAtLeast(0)
+        partialCandidates = plan.optInt("partialCandidates", 0).coerceAtLeast(0)
+        failedCandidates = plan.optInt("failedCandidates", 0).coerceAtLeast(0)
+        classifiedDeletedBytes = plan.optLong("classifiedDeletedBytes", 0L).coerceAtLeast(0L)
+        unattributedDeletedBytes = plan.optLong("unattributedDeletedBytes", 0L).coerceAtLeast(0L)
+        categoryStats = plan.optJSONObject("categoryStats") ?: JSONObject()
+        riskStats = plan.optJSONObject("riskStats") ?: JSONObject()
+        cumulativeFailures = plan.optInt("deleteErrors", plan.optInt("failures", 0)).coerceAtLeast(0)
         resumable = plan.optBoolean("resumable", runCount > 0)
         val total = cacheCount + safeCount
         if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank())) {
@@ -609,7 +640,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
             resumable = resumable,
             runCount = runCount,
             deletedBytes = deletedBytes,
+            processedCandidates = processedCandidates,
             cleanedCandidates = cleanedCandidates,
+            changedCandidates = changedCandidates,
+            protectedCandidates = protectedCandidates,
+            partialCandidates = partialCandidates,
+            failedCandidates = failedCandidates,
+            classifiedDeletedBytes = classifiedDeletedBytes,
+            unattributedDeletedBytes = unattributedDeletedBytes,
+            categoryStats = categoryStats.toString(),
+            riskStats = riskStats.toString(),
             failures = cumulativeFailures,
             cacheSummary = plan.optString("cacheSummary", "剩余 $cacheCount 项"),
             safeSummary = plan.optString("safeSummary", "剩余 $safeCount 项")
@@ -693,15 +733,33 @@ class ResumableSmartScanActivity : ComponentActivity() {
         deletedBytes = json.optLong("deletedBytes", deletedBytes).coerceAtLeast(0L)
         deletedFiles = json.optLong("deletedFiles", deletedFiles).coerceAtLeast(0L)
         deletedDirectories = json.optLong("deletedDirectories", deletedDirectories).coerceAtLeast(0L)
+        processedCandidates = json.optInt("processedCandidates", processedCandidates).coerceAtLeast(0)
         cleanedCandidates = json.optInt("cleanedCandidates", cleanedCandidates).coerceAtLeast(0)
-        cumulativeFailures = json.optInt("failures", cumulativeFailures).coerceAtLeast(0)
+        changedCandidates = json.optInt("changedCandidates", changedCandidates).coerceAtLeast(0)
+        protectedCandidates = json.optInt("protectedCandidates", protectedCandidates).coerceAtLeast(0)
+        partialCandidates = json.optInt("partialCandidates", partialCandidates).coerceAtLeast(0)
+        failedCandidates = json.optInt("failedCandidates", failedCandidates).coerceAtLeast(0)
+        classifiedDeletedBytes = json.optLong("classifiedDeletedBytes", classifiedDeletedBytes).coerceAtLeast(0L)
+        unattributedDeletedBytes = json.optLong("unattributedDeletedBytes", unattributedDeletedBytes).coerceAtLeast(0L)
+        categoryStats = json.optJSONObject("categoryStats") ?: categoryStats
+        riskStats = json.optJSONObject("riskStats") ?: riskStats
+        cumulativeFailures = json.optInt("deleteErrors", json.optInt("failures", cumulativeFailures)).coerceAtLeast(0)
         resumable = json.optBoolean("resumable", cacheCount + safeCount > 0 && runCount > 0)
         screenState = screenState.copy(
             totalSafe = cacheCount + safeCount,
             resumable = resumable,
             runCount = runCount,
             deletedBytes = deletedBytes,
+            processedCandidates = processedCandidates,
             cleanedCandidates = cleanedCandidates,
+            changedCandidates = changedCandidates,
+            protectedCandidates = protectedCandidates,
+            partialCandidates = partialCandidates,
+            failedCandidates = failedCandidates,
+            classifiedDeletedBytes = classifiedDeletedBytes,
+            unattributedDeletedBytes = unattributedDeletedBytes,
+            categoryStats = categoryStats.toString(),
+            riskStats = riskStats.toString(),
             failures = cumulativeFailures,
             cacheSummary = "应用缓存剩余 $cacheCount 项",
             safeSummary = "安全项目剩余 $safeCount 项"
@@ -726,7 +784,17 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("deletedBytes", deletedBytes)
             .put("deletedFiles", deletedFiles)
             .put("deletedDirectories", deletedDirectories)
+            .put("processedCandidates", processedCandidates)
             .put("cleanedCandidates", cleanedCandidates)
+            .put("changedCandidates", changedCandidates)
+            .put("protectedCandidates", protectedCandidates)
+            .put("partialCandidates", partialCandidates)
+            .put("failedCandidates", failedCandidates)
+            .put("classifiedDeletedBytes", classifiedDeletedBytes)
+            .put("unattributedDeletedBytes", unattributedDeletedBytes)
+            .put("categoryStats", categoryStats)
+            .put("riskStats", riskStats)
+            .put("deleteErrors", cumulativeFailures)
             .put("failures", cumulativeFailures)
             .put("resumable", resumable)
             .put("cacheSummary", screenState.cacheSummary)
@@ -790,7 +858,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
         deletedBytes = 0L
         deletedFiles = 0L
         deletedDirectories = 0L
+        processedCandidates = 0
         cleanedCandidates = 0
+        changedCandidates = 0
+        protectedCandidates = 0
+        partialCandidates = 0
+        failedCandidates = 0
+        classifiedDeletedBytes = 0L
+        unattributedDeletedBytes = 0L
+        categoryStats = JSONObject()
+        riskStats = JSONObject()
         cumulativeFailures = 0
         resumable = false
         restoredPlanNeedsValidation = false
@@ -829,7 +906,16 @@ private data class ResumeSmartUiState(
     val resumable: Boolean = false,
     val runCount: Int = 0,
     val deletedBytes: Long = 0L,
+    val processedCandidates: Int = 0,
     val cleanedCandidates: Int = 0,
+    val changedCandidates: Int = 0,
+    val protectedCandidates: Int = 0,
+    val partialCandidates: Int = 0,
+    val failedCandidates: Int = 0,
+    val classifiedDeletedBytes: Long = 0L,
+    val unattributedDeletedBytes: Long = 0L,
+    val categoryStats: String = "{}",
+    val riskStats: String = "{}",
     val failures: Int = 0,
     val progressCurrent: Int = 0,
     val progressTotal: Int = 0,
@@ -944,9 +1030,20 @@ private fun ResumeSmartScreen(
                     Text("TRANSACTION", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                     Text("清理事务", fontSize = 26.sp, fontWeight = FontWeight.Black)
                     Text(
-                        "执行 ${state.runCount} 次 · 累计释放 ${Formatter.formatFileSize(context, state.deletedBytes)} · 完成 ${state.cleanedCandidates} 项",
+                        "执行 ${state.runCount} 次 · 授权 ${state.totalSafe + state.processedCandidates} 项 · 已处理 ${state.processedCandidates} 项 · 实际清理 ${state.cleanedCandidates} 项",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        "释放 ${Formatter.formatFileSize(context, state.deletedBytes)} · 变化 ${state.changedCandidates} · 保护 ${state.protectedCandidates} · 部分 ${state.partialCandidates} · 失败 ${state.failedCandidates}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (state.unattributedDeletedBytes > 0L) {
+                        Text(
+                            "其中 ${Formatter.formatFileSize(context, state.unattributedDeletedBytes)} 来自引擎总计，缺少逐项归属但仍计入真实释放量",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                    }
                     if (state.failures > 0) {
                         Text("累计失败记录 ${state.failures} 项，失败项目会保留在剩余计划中", color = MaterialTheme.colorScheme.error)
                     }
@@ -954,6 +1051,8 @@ private fun ResumeSmartScreen(
             }
             item { ResumeInfoCard("应用缓存", state.cacheSummary) }
             item { ResumeInfoCard("安全项目", state.safeSummary) }
+            item { ResumeInfoCard("按类别统计", formatMetricBuckets(state.categoryStats)) }
+            item { ResumeInfoCard("按风险统计", formatMetricBuckets(state.riskStats)) }
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
@@ -986,4 +1085,41 @@ private fun ResumeInfoCard(title: String, summary: String) {
             Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+
+private fun formatMetricBuckets(raw: String): String {
+    val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+    if (root.length() == 0) return "尚无已处理项目"
+    val labels = mapOf(
+        "cache" to "应用缓存",
+        "empty" to "空项目",
+        "rules" to "规则垃圾",
+        "fragment" to "残留碎片",
+        "other" to "其他",
+        "low" to "低风险",
+        "medium" to "中风险",
+        "high" to "高风险",
+        "critical" to "关键风险"
+    )
+    val lines = ArrayList<String>()
+    val keys = root.keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        val bucket = root.optJSONObject(key) ?: continue
+        lines += buildString {
+            append(labels[key] ?: key)
+            append("：处理 ").append(bucket.optInt("processed"))
+            append(" · 清理 ").append(bucket.optInt("cleaned"))
+            val changed = bucket.optInt("changed")
+            val protected = bucket.optInt("protected")
+            val partial = bucket.optInt("partial")
+            val failed = bucket.optInt("failed")
+            if (changed > 0) append(" · 变化 ").append(changed)
+            if (protected > 0) append(" · 保护 ").append(protected)
+            if (partial > 0) append(" · 部分 ").append(partial)
+            if (failed > 0) append(" · 失败 ").append(failed)
+        }
+    }
+    return lines.joinToString("\n")
 }
