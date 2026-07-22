@@ -34,7 +34,7 @@ require("items.ndjson" in SERVICE and "MAX_RESULT_ITEMS" in SERVICE,
         "item outcomes must be stored outside the compact summary")
 
 for marker in (
-    "BEFORE / AFTER", "清理前后对比", "逐项结果", "受保护", "已变化",
+    "BEFORE / AFTER", "清理前后对比", "CleanResultItemCard", "受保护", "已变化",
     "getSummary", "getPage", "FilterChip", "加载更多"
 ):
     require(marker in ACTIVITY, f"result UI contract missing: {marker}")
