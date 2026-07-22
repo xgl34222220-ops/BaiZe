@@ -102,6 +102,11 @@ unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'storage-files.nul'
 unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.4.0$'
 unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=24000$'
+unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.4.0"'
+if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.3\.0|versionCode=23000'; then
+  echo "安装脚本仍包含旧版 v2.3.0 标识，禁止发布" >&2
+  exit 1
+fi
 if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
