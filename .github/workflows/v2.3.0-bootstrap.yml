@@ -106,6 +106,9 @@ jobs:
           grep -qx 'versionCode=23000' v2/module/module.prop
           git diff --check
 
+          git status --porcelain=v1 -z >/tmp/BaiZe-v2.3.0-Materialized-Status.z
+          git diff --name-status -z >/tmp/BaiZe-v2.3.0-Materialized-Tracked.z
+          git ls-files --others --exclude-standard -z >/tmp/BaiZe-v2.3.0-Materialized-Untracked.z
           tar --exclude=.git --exclude='v2/**/build' --exclude='v2/dist' \
             -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
 
@@ -115,7 +118,11 @@ jobs:
           name: BaiZe-v2.3.0-Materialized-Source
           if-no-files-found: error
           retention-days: 7
-          path: /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
+          path: |
+            /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
+            /tmp/BaiZe-v2.3.0-Materialized-Status.z
+            /tmp/BaiZe-v2.3.0-Materialized-Tracked.z
+            /tmp/BaiZe-v2.3.0-Materialized-Untracked.z
 
       - name: Report source export
         if: always()
