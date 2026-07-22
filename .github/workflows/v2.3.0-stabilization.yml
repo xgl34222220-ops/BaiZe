@@ -3,15 +3,13 @@ name: BaiZe v2.3.0 Source and Build Verification
 on:
   push:
     branches: [main, feat/v2.3.0-stabilization]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: baize-v230-source-build-verification
+  group: baize-v230-source-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
