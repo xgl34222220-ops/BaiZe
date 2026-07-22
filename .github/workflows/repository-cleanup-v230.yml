@@ -1,0 +1,122 @@
+name: BaiZe Repository Cleanup v2.3.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.cleanup/repository-cleanup-v230-trigger'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: baize-repository-cleanup-v230
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete prereleases and unused branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS_ISSUE: '98'
+        shell: bash
+        run: |
+          set -u
+          REPO="$GITHUB_REPOSITORY"
+          PRESERVE_MAIN='main'
+          PRESERVE_SOURCE='feat/v2.3.0-stabilization'
+          DELETED_RELEASES=/tmp/deleted-releases.txt
+          DELETED_TAGS=/tmp/deleted-tags.txt
+          DELETED_BRANCHES=/tmp/deleted-branches.txt
+          FAILED=/tmp/cleanup-failures.txt
+          : >"$DELETED_RELEASES"
+          : >"$DELETED_TAGS"
+          : >"$DELETED_BRANCHES"
+          : >"$FAILED"
+
+          gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" \
+            --jq '.[] | [.number, .head.ref] | @tsv' |
+          while IFS=$'\t' read -r number branch; do
+            [ -n "$number" ] || continue
+            case "$branch" in "$PRESERVE_MAIN"|"$PRESERVE_SOURCE") continue ;; esac
+            gh api -X PATCH "repos/$REPO/pulls/$number" -f state=closed >/dev/null 2>>"$FAILED" || \
+              echo "关闭 PR #$number ($branch) 失败" >>"$FAILED"
+          done
+
+          gh api --paginate "repos/$REPO/releases?per_page=100" \
+            --jq '.[] | select(.prerelease == true) | [.id, .tag_name, .name] | @tsv' |
+          while IFS=$'\t' read -r release_id tag name; do
+            [ -n "$release_id" ] || continue
+            if gh api -X DELETE "repos/$REPO/releases/$release_id" >/dev/null 2>>"$FAILED"; then
+              printf '%s\t%s\n' "$tag" "$name" >>"$DELETED_RELEASES"
+            else
+              echo "删除预发行 Release $tag 失败" >>"$FAILED"
+              continue
+            fi
+            if gh api -X DELETE "repos/$REPO/git/refs/tags/$tag" >/dev/null 2>>"$FAILED"; then
+              echo "$tag" >>"$DELETED_TAGS"
+            else
+              gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1 && echo "删除预发行标签 $tag 失败" >>"$FAILED"
+            fi
+          done
+
+          gh api --paginate "repos/$REPO/branches?per_page=100" --jq '.[].name' |
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            case "$branch" in "$PRESERVE_MAIN"|"$PRESERVE_SOURCE") continue ;; esac
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" >/dev/null 2>>"$FAILED"; then
+              echo "$branch" >>"$DELETED_BRANCHES"
+            else
+              echo "删除分支 $branch 失败" >>"$FAILED"
+            fi
+          done
+
+          REMAINING_BRANCHES=$(gh api --paginate "repos/$REPO/branches?per_page=100" --jq '.[].name' | sort)
+          REMAINING_PRERELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | select(.prerelease == true) | .tag_name' | sort)
+          FORMAL_RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | sort -Vr)
+
+          ok=true
+          printf '%s\n' "$REMAINING_BRANCHES" | grep -qx "$PRESERVE_MAIN" || ok=false
+          printf '%s\n' "$REMAINING_BRANCHES" | grep -qx "$PRESERVE_SOURCE" || ok=false
+          extra=$(printf '%s\n' "$REMAINING_BRANCHES" | grep -Ev "^(${PRESERVE_MAIN}|${PRESERVE_SOURCE})$" || true)
+          [ -z "$extra" ] || ok=false
+          [ -z "$REMAINING_PRERELEASES" ] || ok=false
+          [ ! -s "$FAILED" ] || ok=false
+
+          {
+            echo '# BaiZe 仓库清理状态'
+            echo
+            echo "- 状态：**$([ "$ok" = true ] && echo success || echo incomplete)**"
+            echo '- 保留分支：'
+            echo "  - \`$PRESERVE_MAIN\`"
+            echo "  - \`$PRESERVE_SOURCE\`（v2.3.0 最新源码尚未合并进 main）"
+            echo
+            echo '## 已删除的预发行 Release'
+            if [ -s "$DELETED_RELEASES" ]; then
+              while IFS=$'\t' read -r tag name; do echo "- \`$tag\` — ${name:-未命名}"; done <"$DELETED_RELEASES"
+            else echo '- 无'; fi
+            echo
+            echo '## 已删除的预发行标签'
+            if [ -s "$DELETED_TAGS" ]; then sed 's/^/- `/' "$DELETED_TAGS" | sed 's/$/`/'; else echo '- 无'; fi
+            echo
+            echo '## 已删除的分支'
+            if [ -s "$DELETED_BRANCHES" ]; then sed 's/^/- `/' "$DELETED_BRANCHES" | sed 's/$/`/'; else echo '- 无'; fi
+            echo
+            echo '## 当前剩余分支'
+            printf '%s\n' "$REMAINING_BRANCHES" | sed 's/^/- `/' | sed 's/$/`/'
+            echo
+            echo '## 当前正式 Release'
+            if [ -n "$FORMAL_RELEASES" ]; then printf '%s\n' "$FORMAL_RELEASES" | sed 's/^/- `/' | sed 's/$/`/'; else echo '- 无'; fi
+            if [ -s "$FAILED" ]; then echo; echo '## 未完成项'; sed 's/^/- /' "$FAILED"; fi
+          } >/tmp/status.md
+
+          gh issue edit "$STATUS_ISSUE" --repo "$REPO" --body-file /tmp/status.md
+          if [ "$ok" = true ]; then
+            gh issue close "$STATUS_ISSUE" --repo "$REPO" --reason completed
+          else
+            exit 1
+          fi
