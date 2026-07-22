@@ -26,6 +26,29 @@ jobs:
           ref: feat/v2.4.0-complete-hardening
           fetch-depth: 0
 
+      - name: Repair verified transfer bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          part08 = Path('.v240-upload/part-08')
+          data08 = part08.read_text()
+          assert len(data08) == 9001, len(data08)
+          assert data08[4377] == 'e', repr(data08[4368:4386])
+          data08 = data08[:4377] + data08[4378:]
+          assert len(data08) == 9000
+          part08.write_text(data08)
+
+          part09 = Path('.v240-upload/part-09')
+          data09 = part09.read_text()
+          assert len(data09) == 9000, len(data09)
+          assert data09[2596:2598] == 'rb', repr(data09[2588:2606])
+          data09 = data09[:2596] + 'br' + data09[2598:]
+          part09.write_text(data09)
+          PY
+
       - name: Verify and extract reviewed source
         shell: bash
         run: |
