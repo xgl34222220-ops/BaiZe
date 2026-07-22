@@ -115,9 +115,9 @@ jobs:
           path.write_text("\n".join(lines) + "\n")
           PY
 
-          # The GitHub Actions token may commit ordinary source but cannot change
-          # workflow files. Restore workflows here; they are cleaned up separately.
+          # Keep workflow changes out of the Actions-authored source commit.
           git restore --source=HEAD -- .github/workflows
+          git clean -fd -- .github/workflows
           rm -rf tools
           rm -f RELEASE_NOTES_V2.2.3.md RELEASE_NOTES_V2.2.4.md
 
