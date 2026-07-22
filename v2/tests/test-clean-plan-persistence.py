@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+# This test intentionally inspects the call path: a clean action may consume snapshots, but it may
+# never fall back to either discovery API. Runtime validation belongs inside the snapshot engines.
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
 ACTIVITY = (APP / "PersistentSmartScanActivity.kt").read_text(encoding="utf-8")
