@@ -20,6 +20,12 @@
 
 模块 ZIP 内已包含白泽 App。通过 Magisk、KernelSU 或 APatch 刷入模块后重启设备即可。单独更新 App 时请使用本 Release 中的正式签名 APK。
 
+## 正式签名
+
+BaiZe 正式 APK 固定使用以下 SHA-256 证书指纹，后续版本必须保持一致：
+
+`9E:FA:84:80:01:CC:DC:16:8E:A9:67:53:D3:32:B1:71:3E:26:68:BA:6A:2F:A2:2D:5B:FD:98:DE:65:DB:1F:0F`
+
 ## 在线更新
 
 模块的 `updateJson` 已指向仓库 `main/update.json`。安装旧版本后，可由模块管理器检测并下载 `v2.4.0` 正式模块。
