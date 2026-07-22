@@ -13,6 +13,7 @@ def require(value: bool, message: str) -> None:
 
 
 # Candidate outcomes are unique final states; engine file/error totals remain separate counters.
+# Keep this contract active after rebasing the result model onto the release baseline.
 for marker in (
     "itemStates", "processedCandidates", "changedCandidates", "protectedCandidates",
     "partialCandidates", "failedCandidates", "categoryStats", "riskStats",
