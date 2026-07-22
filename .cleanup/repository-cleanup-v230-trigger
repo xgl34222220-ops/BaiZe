@@ -1,0 +1,3 @@
+cleanup=prereleases-and-unused-branches
+preserve=main,feat/v2.3.0-stabilization
+requested_at=2026-07-22T00:15:00Z
