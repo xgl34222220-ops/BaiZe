@@ -5,6 +5,8 @@ on:
     branches: [feat/v2.4.0-complete-hardening]
     paths:
       - '.github/workflows/v2.4.0-source-export.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
