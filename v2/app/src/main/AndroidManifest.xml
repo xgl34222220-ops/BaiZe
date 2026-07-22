@@ -29,10 +29,11 @@
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
         <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
+        <activity android:name=".ResumableSmartScanActivity" android:exported="false" />
         <activity-alias
             android:name=".SmartScanActivity"
             android:exported="false"
-            android:targetActivity=".PersistentSmartScanActivity" />
+            android:targetActivity=".ResumableSmartScanActivity" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
@@ -60,6 +61,10 @@
             tools:ignore="Instantiatable" />
         <service
             android:name=".root.PersistentCleanPlanRootService"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
+        <service
+            android:name=".root.CleanPlanResumeRootService"
             android:exported="false"
             tools:ignore="Instantiatable" />
     </application>
