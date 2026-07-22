@@ -113,7 +113,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sh scripts/package-module.sh
+          set +e
+          sh scripts/package-module.sh 2>&1 | tee package-module.log
+          package_status=${PIPESTATUS[0]}
+          set -e
           ZIP=dist/BaiZe-v2.4.0-Module.zip
           APK=app/build/outputs/apk/release/app-release.apk
           test -s "$ZIP"
@@ -121,9 +124,11 @@ jobs:
           unzip -tq "$ZIP"
           unzip -p "$ZIP" module.prop | grep -qx 'version=v2.4.0'
           unzip -p "$ZIP" module.prop | grep -qx 'versionCode=24000'
+          unzip -Z1 "$ZIP" | grep -qx 'app/baize.apk'
           cp "$APK" dist/BaiZe-v2.4.0-Test.apk
           sha256sum "$ZIP" > "$ZIP.sha256"
           sha256sum dist/BaiZe-v2.4.0-Test.apk > dist/BaiZe-v2.4.0-Test.apk.sha256
+          echo "package-script-status=$package_status" >> package-module.log
 
       - name: Upload v2.4.0 test package
         uses: actions/upload-artifact@v4
@@ -136,6 +141,7 @@ jobs:
             v2/dist/BaiZe-v2.4.0-Test.apk
             v2/dist/BaiZe-v2.4.0-Test.apk.sha256
             v2/android-build.log
+            v2/package-module.log
 
       - name: Upload build diagnostics
         if: failure()
@@ -143,7 +149,9 @@ jobs:
         with:
           name: BaiZe-v2.4.0-Build-Diagnostics
           if-no-files-found: warn
-          path: v2/android-build.log
+          path: |
+            v2/android-build.log
+            v2/package-module.log
 
       - name: Commit reviewed source
         shell: bash
