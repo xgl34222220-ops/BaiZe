@@ -34,8 +34,9 @@ discover_app_user_roots(){
          -o -iname saved -o -iname shared -o -iname documents -o -iname document \
          -o -iname transfer -o -iname transfers -o -iname offline \) -print0 2>/dev/null >"$dau_list"
     while IFS= read -r -d '' dau_dir; do
-      dau_lower=$(printf '%s' "$dau_dir" | tr '[:upper:]' '[:lower:]')
-      case "$dau_lower" in */cache|*/cache/*|*/code_cache|*/code_cache/*|*/databases|*/databases/*|*/tmp|*/tmp/*|*/temp|*/temp/*) continue ;; esac
+      dau_relative=${dau_dir#"$dau_pkg"/}
+      dau_lower=$(printf '%s' "$dau_relative" | tr '[:upper:]' '[:lower:]')
+      case "$dau_lower" in cache|cache/*|*/cache|*/cache/*|code_cache|code_cache/*|*/code_cache|*/code_cache/*|databases|databases/*|*/databases|*/databases/*|tmp|tmp/*|*/tmp|*/tmp/*|temp|temp/*|*/temp|*/temp/*) continue ;; esac
       add_root "应用用户文件:$dau_name:${dau_dir##*/}" "$dau_user" "$dau_volume" 14 "$dau_dir"
     done <"$dau_list"
   done
