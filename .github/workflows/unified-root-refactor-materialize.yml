@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: baize-unified-root-refactor-materialize
@@ -29,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           cat tools/unified-root-refactor.part* | base64 -d > /tmp/unified-root-refactor.tar.gz
+          sha256sum /tmp/unified-root-refactor.tar.gz
           tar -tzf /tmp/unified-root-refactor.tar.gz
           tar -xzf /tmp/unified-root-refactor.tar.gz
           git diff --check
@@ -71,3 +73,12 @@ jobs:
           git diff --cached --quiet && { echo 'No source changes to commit'; exit 1; }
           git commit -m 'refactor: unify Root scheduling and split service responsibilities'
           git push origin HEAD:refactor/unified-root-tasks
+
+      - name: Report materialization status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_MATERIALIZATION run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
