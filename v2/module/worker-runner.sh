@@ -6,6 +6,7 @@ TRIGGER=${2:?trigger}
 TASK_ID=${3:?task_id}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 CLEANER="$MODDIR/cleaner.sh"
+ORGANIZER="$MODDIR/organizer-worker.sh"
 RESULT_DIR="$STATE_DIR/task-results"
 RESULT_FILE="$RESULT_DIR/$TASK_ID.env"
 WORKER_FILE="$STATE_DIR/worker.env"
@@ -13,7 +14,14 @@ LOG_FILE="$STATE_DIR/logs/worker-$TASK_ID.log"
 mkdir -p "$RESULT_DIR" "$STATE_DIR/logs"
 started=$(date +%s)
 code=127
-if [ -x "$CLEANER" ]; then
+if [ "$MODE" = organize ]; then
+  if [ -x "$ORGANIZER" ]; then
+    "$ORGANIZER" "$MODE" "$TRIGGER" "$TASK_ID" >>"$LOG_FILE" 2>&1
+    code=$?
+  else
+    echo "文件归类引擎不存在：$ORGANIZER" >>"$LOG_FILE"
+  fi
+elif [ -x "$CLEANER" ]; then
   "$CLEANER" "$MODE" "$TRIGGER" >>"$LOG_FILE" 2>&1
   code=$?
 else
