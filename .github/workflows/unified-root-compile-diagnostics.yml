@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: baize-unified-root-kotlin-diagnostics
@@ -51,3 +52,11 @@ jobs:
           path: |
             v2/kotlin-compile.log
             v2/kotlin-errors.txt
+      - name: Report diagnostics run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          gh issue comment 94 --repo "$GITHUB_REPOSITORY" --body "BAIZE_UNIFIED_ROOT_KOTLIN run_id=$GITHUB_RUN_ID status=$JOB_STATUS head=$GITHUB_SHA"
