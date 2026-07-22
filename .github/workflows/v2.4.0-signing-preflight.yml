@@ -1,0 +1,113 @@
+name: BaiZe v2.4.0 Signing Preflight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signing-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check BaiZe signing configuration
+        id: signing
+        continue-on-error: true
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          set -u
+          STATUS="$RUNNER_TEMP/baize-signing-preflight.txt"
+          : > "$STATUS"
+
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in
+              "$secret_name="*) value=${value#*=} ;;
+            esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+
+          fail() {
+            echo "result=failure" >> "$STATUS"
+            echo "stage=$1" >> "$STATUS"
+            echo "message=$2" >> "$STATUS"
+            echo "$2" >&2
+            exit 1
+          }
+
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+
+          echo "base64_length=${#KEYSTORE_BASE64}" >> "$STATUS"
+          echo "store_password_length=${#KEYSTORE_PASSWORD}" >> "$STATUS"
+          echo "alias_length=${#KEY_ALIAS}" >> "$STATUS"
+          echo "key_password_length=${#KEY_PASSWORD}" >> "$STATUS"
+
+          [ -n "$KEYSTORE_BASE64" ] || fail missing_base64 'BAIZE_KEYSTORE_BASE64 为空或名称不正确。'
+          [ -n "$KEYSTORE_PASSWORD" ] || fail missing_store_password 'BAIZE_KEYSTORE_PASSWORD 为空或名称不正确。'
+          [ -n "$KEY_PASSWORD" ] || fail missing_key_password 'BAIZE_KEY_PASSWORD 为空或名称不正确。'
+          [ -n "$KEY_ALIAS" ] || KEY_ALIAS=baize-release
+
+          KEYSTORE="$RUNNER_TEMP/baize-release.jks"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE" 2>/dev/null; then
+            fail base64_decode 'BAIZE_KEYSTORE_BASE64 不是完整有效的 Base64。'
+          fi
+          echo "decoded_bytes=$(wc -c < "$KEYSTORE" | tr -d ' ')" >> "$STATUS"
+          [ -s "$KEYSTORE" ] || fail empty_keystore '解码后的密钥库为空。'
+
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            fail store_password '密钥库无法打开：Base64 内容不完整或密钥库密码错误。'
+          fi
+          if ! keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            fail alias "密钥别名不存在：$KEY_ALIAS；应为 baize-release。"
+          fi
+
+          VERIFY_STORE="$RUNNER_TEMP/baize-key-password-check.p12"
+          if ! keytool -importkeystore -noprompt \
+            -srckeystore "$KEYSTORE" \
+            -srcstorepass "$KEYSTORE_PASSWORD" \
+            -srcalias "$KEY_ALIAS" \
+            -srckeypass "$KEY_PASSWORD" \
+            -destkeystore "$VERIFY_STORE" \
+            -deststoretype PKCS12 \
+            -deststorepass 'baize-verify-24000' \
+            -destkeypass 'baize-verify-24000' >/dev/null 2>&1; then
+            fail key_password 'BAIZE_KEY_PASSWORD 无法读取正式私钥。'
+          fi
+
+          EXPECTED='9E:FA:84:80:01:CC:DC:16:8E:A9:67:53:D3:32:B1:71:3E:26:68:BA:6A:2F:A2:2D:5B:FD:98:DE:65:DB:1F:0F'
+          ACTUAL=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)
+          echo "certificate_sha256=$ACTUAL" >> "$STATUS"
+          [ "$ACTUAL" = "$EXPECTED" ] || fail fingerprint '证书指纹不是本次生成的 BaiZe 正式证书。'
+
+          echo 'result=success' >> "$STATUS"
+          echo 'stage=complete' >> "$STATUS"
+          echo 'message=BaiZe 正式签名配置有效。' >> "$STATUS"
+
+      - name: Upload signing preflight result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-Signing-Preflight
+          if-no-files-found: error
+          path: ${{ runner.temp }}/baize-signing-preflight.txt
+
+      - name: Fail when signing configuration is invalid
+        if: steps.signing.outcome != 'success'
+        run: exit 1
