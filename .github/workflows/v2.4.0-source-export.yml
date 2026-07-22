@@ -108,4 +108,6 @@ jobs:
         with:
           name: BaiZe-v2.4.0-transfer-diagnostics
           if-no-files-found: error
-          path: /tmp/baize-v240-transfer-diagnostics.txt
+          path: |
+            /tmp/baize-v240-transfer-diagnostics.txt
+            /tmp/baize-v240-diagnostic.b64
