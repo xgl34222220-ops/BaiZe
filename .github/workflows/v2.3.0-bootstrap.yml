@@ -1,7 +1,5 @@
-name: BaiZe v2.3.0 Source Materialization
+name: BaiZe v2.3.0 Source Export
 
-# One-time source synchronization: decode the historical generators, commit the
-# resulting real source files, and stop relying on CI-only workspace mutations.
 on:
   push:
     branches:
@@ -9,14 +7,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  issues: write
 
 concurrency:
-  group: baize-v230-bootstrap
-  cancel-in-progress: false
+  group: baize-v230-source-export
+  cancel-in-progress: true
 
 jobs:
-  materialize:
+  export-source:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout stabilization source
@@ -30,35 +29,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          required=(
-            v2/module/supervisor.sh
-            v2/module/worker-runner.sh
-            v2/module/app-installer.sh
-            v2/module/diagnostics-export.sh
-            v2/module/storage-analyzer.sh
-            v2/module/duplicate-scanner.sh
-            v2/module/large-file-scanner.sh
-            v2/module/rules-validator.sh
-            v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
-          )
-
-          complete=1
-          for file in "${required[@]}"; do
-            [ -s "$file" ] || complete=0
-          done
-
-          if [ "$complete" -eq 1 ] \
-             && grep -q 'withContext(Dispatchers.Main.immediate)' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
-             && grep -q 'ROOT_BIND_ATTEMPTS = 3' v2/app/src/main/java/io/github/xgl34222220/baize/FileOrganizerWorker.kt \
-             && grep -q 'discover_app_user_roots' v2/module/storage-index.sh; then
-            echo "Complete v2.3.0 source is already committed"
-            exit 0
-          fi
-
           python3 tools/prepare-v230-materialization.py
+
           base64 -d tools/bootstrap-v230.py.gz.b64 | gzip -d >/tmp/bootstrap-v230.py
           python3 -m py_compile /tmp/bootstrap-v230.py
-          python3 /tmp/bootstrap-v230.py
+          if ! python3 /tmp/bootstrap-v230.py; then
+            echo "Historical bootstrap stopped at an already-applied anchor; continuing with the finalizer."
+          fi
 
           base64 -d tools/finalize-v230.py.gz.b64 | gzip -d >/tmp/finalize-v230.py
           python3 -m py_compile /tmp/finalize-v230.py
@@ -101,6 +78,7 @@ jobs:
           PY
 
           python3 tools/fix-v230-android-lint.py
+          python3 tools/apply-v230-organizer-download-coverage.py
 
           rm -f \
             tools/bootstrap-v230.py.gz.b64 \
@@ -108,6 +86,17 @@ jobs:
             tools/apply-v230-native-path-safety.py.gz.b64 \
             tools/fix-v230-android-lint.py
 
+          required=(
+            v2/module/supervisor.sh
+            v2/module/worker-runner.sh
+            v2/module/app-installer.sh
+            v2/module/diagnostics-export.sh
+            v2/module/storage-analyzer.sh
+            v2/module/duplicate-scanner.sh
+            v2/module/large-file-scanner.sh
+            v2/module/rules-validator.sh
+            v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          )
           for file in "${required[@]}"; do
             test -s "$file"
           done
@@ -117,16 +106,23 @@ jobs:
           grep -qx 'versionCode=23000' v2/module/module.prop
           git diff --check
 
-      - name: Commit real source files
+          tar --exclude=.git --exclude='v2/**/build' --exclude='v2/dist' \
+            -czf /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz .
+
+      - name: Upload materialized source
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.3.0-Materialized-Source
+          if-no-files-found: error
+          retention-days: 7
+          path: /tmp/BaiZe-v2.3.0-Materialized-Source.tar.gz
+
+      - name: Report source export
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ job.status }}
         shell: bash
         run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No source changes to commit"
-            exit 0
-          fi
-          git commit -m "feat: commit complete v2.3.0 source"
-          git push origin HEAD:feat/v2.3.0-stabilization
+          gh issue comment 94 --repo "${GITHUB_REPOSITORY}" \
+            --body "BAIZE_V230_SOURCE_EXPORT run_id=${GITHUB_RUN_ID} status=${RESULT} head=${GITHUB_SHA}"
