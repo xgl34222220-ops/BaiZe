@@ -12,14 +12,14 @@ WORKER_FILE="$STATE_DIR/worker.env"
 LOCK_DIR="$STATE_DIR/run.lock"
 RESULT_FILE="$STATE_DIR/task-results/$TASK_ID.env"
 RUNNER="$MODDIR/worker-runner.sh"
-case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
+case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
 if [ -d "$LOCK_DIR" ]; then
   old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
   case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
   if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null; then
-    echo "已有扫描或清理任务正在运行" >&2
+    echo "已有扫描、清理或归类任务正在运行" >&2
     exit 3
   fi
   rm -rf -- "$LOCK_DIR" 2>/dev/null || true
