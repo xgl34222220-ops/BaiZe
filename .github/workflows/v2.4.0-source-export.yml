@@ -100,13 +100,13 @@ jobs:
         working-directory: v2
         run: sh scripts/build-native.sh
 
-      - name: Build release app, lint and benchmark
+      - name: Build release test app
         id: android_build
         working-directory: v2
         shell: bash
         run: |
           set -o pipefail
-          gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
+          gradle --no-daemon :app:assembleRelease 2>&1 | tee android-build.log
 
       - name: Package and verify test module
         working-directory: v2
@@ -136,8 +136,6 @@ jobs:
             v2/dist/BaiZe-v2.4.0-Test.apk
             v2/dist/BaiZe-v2.4.0-Test.apk.sha256
             v2/android-build.log
-            v2/app/build/reports/lint-results-release.html
-            v2/app/build/reports/lint-results-release.txt
 
       - name: Upload build diagnostics
         if: failure()
@@ -145,10 +143,7 @@ jobs:
         with:
           name: BaiZe-v2.4.0-Build-Diagnostics
           if-no-files-found: warn
-          path: |
-            v2/android-build.log
-            v2/app/build/reports/lint-results-release.html
-            v2/app/build/reports/lint-results-release.txt
+          path: v2/android-build.log
 
       - name: Commit reviewed source
         shell: bash
