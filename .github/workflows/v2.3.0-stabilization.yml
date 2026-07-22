@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: baize-v240-foldable-clean-${{ github.event.pull_request.number || github.ref }}
@@ -16,16 +16,12 @@ jobs:
   foldable-clean-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout v2.4.0 feature branch
+      - name: Checkout committed v2.4.0 source
         uses: actions/checkout@v4
         with:
           ref: feat/v2.4.0-complete-hardening
-          fetch-depth: 0
 
-      - name: Restore collapsible cleaning categories
-        run: python3 .github/scripts/apply_foldable_clean_ui.py
-
-      - name: Verify foldable clean UI source
+      - name: Verify committed foldable clean UI
         shell: bash
         run: |
           set -euo pipefail
@@ -34,6 +30,7 @@ jobs:
           MIUIX=v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
           MATERIAL=v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
           grep -q 'expandedCleanCategory by rememberSaveable' "$APP"
+          grep -q 'expandedCategory = expandedCleanCategory' "$APP"
           grep -q 'onExpandedCategoryChanged' "$ROUTE"
           grep -q 'if (expanded) "收起设置" else "展开设置"' "$MIUIX"
           grep -q 'if (expanded) "收起设置" else "展开设置"' "$MATERIAL"
@@ -107,23 +104,6 @@ jobs:
             v2/dist/BaiZe-v2.4.0-Chinese-Foldable-Test.apk.sha256
             v2/android-build.log
             v2/package-module.log
-
-      - name: Commit foldable clean UI source
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -- \
-            v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt \
-            v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
-          git diff --cached --check
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix(ui): restore collapsible cleaning categories'
-            git push origin HEAD:feat/v2.4.0-complete-hardening
-          fi
 
       - name: Upload build diagnostics
         if: failure()
