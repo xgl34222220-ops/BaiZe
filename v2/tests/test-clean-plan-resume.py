@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
 ACTIVITY = (APP / "ResumableSmartScanActivity.kt").read_text(encoding="utf-8")
+CANDIDATE = (APP / "CandidateSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/CleanPlanResumeRootService.kt").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/ICleanPlanResumeService.aidl").read_text(encoding="utf-8")
@@ -50,7 +51,10 @@ for marker in (
 require('JSONObject(response(state)).put("recovered", true)' in SERVICE,
         "recover must return the transaction payload with its recovered flag")
 require('android:name=".ResumableSmartScanActivity"' in MANIFEST, "resume activity is not registered")
-require('android:targetActivity=".ResumableSmartScanActivity"' in MANIFEST, "smart scan alias does not use resume flow")
+require('android:targetActivity=".CandidateSmartScanActivity"' in MANIFEST,
+        "smart scan alias must enter candidate selection before resume")
+require("ResumableSmartScanActivity::class.java" in CANDIDATE,
+        "candidate selection must hand finalized snapshots to resume flow")
 require('android:name=".root.CleanPlanResumeRootService"' in MANIFEST, "resume Root service is not registered")
 
 for method in ("begin", "checkpointCache", "checkpointSafe", "recover", "finish"):

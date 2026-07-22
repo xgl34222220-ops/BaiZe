@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import runpy
 from pathlib import Path
 
 # This test intentionally inspects the call path: a clean action may consume snapshots, but it may
@@ -7,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
 ACTIVITY = (APP / "PersistentSmartScanActivity.kt").read_text(encoding="utf-8")
 RESUMABLE = (APP / "ResumableSmartScanActivity.kt").read_text(encoding="utf-8")
+CANDIDATE = (APP / "CandidateSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/PersistentCleanPlanRootService.kt").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IPersistentCleanPlanService.aidl").read_text(encoding="utf-8")
@@ -53,15 +55,19 @@ require("engine.scan(" not in SERVICE[SERVICE.index("private fun cleanPersistedS
 
 require('android:name=".PersistentSmartScanActivity"' in MANIFEST, "persistent activity is not registered")
 require('android:name=".ResumableSmartScanActivity"' in MANIFEST, "resumable activity is not registered")
+require('android:name=".CandidateSmartScanActivity"' in MANIFEST, "candidate activity is not registered")
 require('android:name=".SmartScanActivity"' in MANIFEST, "legacy component alias is missing")
-require('android:targetActivity=".ResumableSmartScanActivity"' in MANIFEST,
-        "legacy smart-scan entry must route to the latest resumable activity")
+require('android:targetActivity=".CandidateSmartScanActivity"' in MANIFEST,
+        "smart-scan entry must route through the candidate plan stage")
 require('android:name=".root.PersistentCleanPlanRootService"' in MANIFEST,
         "persistent root service is not registered")
 require("PersistentCleanPlanRootService" in RESUMABLE and "IPersistentCleanPlanService" in RESUMABLE,
         "resumable flow must keep using the persisted safe snapshot engine")
+require("ResumableSmartScanActivity::class.java" in CANDIDATE,
+        "candidate stage must hand finalized plans to the resumable cleaner")
 
 for method in ("scanSafe", "getPage", "cleanSafe", "getTaskState", "cancelCurrentTask"):
     require(method in AIDL, f"binder method missing: {method}")
 
+runpy.run_path(str(ROOT / "v2/tests/test-candidate-selection-plan.py"), run_name="__main__")
 print("clean plan persistence contract: ok")
