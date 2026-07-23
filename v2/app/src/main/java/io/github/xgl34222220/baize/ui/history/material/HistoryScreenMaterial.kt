@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.ui.history.material
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +22,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
@@ -35,6 +40,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +52,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.AppJunkUiItem
+import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
+import io.github.xgl34222220.baize.ui.common.AppPackageIcon
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -62,7 +74,15 @@ fun HistoryScreenMaterial(state: HistoryUiState, actions: HistoryUiActions) {
         item { MaterialLifetimeSummary(state) }
         item { MaterialSectionHeader("最近结果", "最近一次自动任务的清理内容") }
         item { MaterialCurrentResult(state) }
-        item { MaterialSectionHeader("任务记录", "按执行时间倒序排列") }
+        if (state.recentApps.isNotEmpty()) {
+            item { MaterialSectionHeader("应用垃圾", "点击应用查看清理分类与路径") }
+            item { MaterialAppResultGroup(state.recentApps) }
+        }
+        if (state.recentJunk.isNotEmpty()) {
+            item { MaterialSectionHeader("其他垃圾", "本次任务处理的非应用垃圾") }
+            item { MaterialJunkResultGroup(state.recentJunk) }
+        }
+        item { MaterialSectionHeader("任务记录", "点击有明细的任务可展开查看") }
         item { MaterialRecordGroup(state.records) }
         if (state.protectedItems.isNotEmpty()) {
             item {
@@ -213,22 +233,152 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
-            val details = buildList {
-                addAll(state.recentApps.take(2).map { it.label.ifBlank { it.packageName } to it.bytes })
-                addAll(state.recentJunk.take(2).map { it.name to it.bytes })
+        }
+    }
+}
+
+
+@Composable
+private fun MaterialAppResultGroup(apps: List<AppJunkUiItem>) {
+    Card(
+        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        apps.forEachIndexed { index, item ->
+            MaterialAppResultRow(item)
+            if (index != apps.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 68.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f)
+                )
             }
-            details.forEach { (label, bytes) ->
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f))
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun MaterialAppResultRow(item: AppJunkUiItem) {
+    val context = LocalContext.current
+    var expanded by rememberSaveable(item.packageName, item.category) { mutableStateOf(false) }
+    val hasDetails = item.categories.isNotEmpty()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = hasDetails) { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppPackageIcon(
+                packageName = item.packageName,
+                label = item.label.ifBlank { item.packageName },
+                size = 40.dp,
+                corner = 12.dp
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    item.label.ifBlank { item.packageName },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    item.category.ifBlank { item.packageName },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    Formatter.formatFileSize(context, item.bytes),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text("${item.files} 项", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            if (hasDetails) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "收起应用明细" else "展开应用明细",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (expanded && hasDetails) {
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f))
+            item.categories.forEach { detail ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 52.dp, top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(detail.name, style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            detail.samplePath.ifBlank { "未记录示例路径" },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Text(
-                        Formatter.formatFileSize(context, bytes),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        "${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}",
+                        color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialJunkResultGroup(items: List<GeneralJunkUiItem>) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        items.forEachIndexed { index, item ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        item.samplePath.ifBlank { "未记录示例路径" },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                    Text("${item.files} 项", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (index != items.lastIndex) {
+                HorizontalDivider(modifier = Modifier.padding(start = 68.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f))
             }
         }
     }
@@ -267,51 +417,73 @@ private fun MaterialRecordGroup(records: List<HistoryUiItem>) {
 @Composable
 private fun MaterialRecordRow(record: HistoryUiItem) {
     val context = LocalContext.current
-    Row(
+    var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
+    val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
+    val summary = when {
+        record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
+        record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
+        record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
+        else -> record.result
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(enabled = hasDetails) { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(MaterialTheme.shapes.medium)
-                .background(
-                    if (record.cleaned) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surfaceContainerHighest
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.outline)
-            )
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(if (record.cleaned) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.outline))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(record.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOf(record.time, record.trigger).filter(String::isNotBlank).joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(Formatter.formatFileSize(context, record.bytes), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                Text(if (record.cleaned) "已完成" else record.result.ifBlank { "已记录" }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            if (hasDetails) {
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "收起任务明细" else "展开任务明细",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(record.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                listOf(record.time, record.trigger).filter(String::isNotBlank).joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                Formatter.formatFileSize(context, record.bytes),
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelLarge
-            )
-            Text(
-                if (record.cleaned) "已完成" else record.result.ifBlank { "已记录" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
+        if (expanded && hasDetails) {
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f))
+            record.apps.forEach { app ->
+                Row(Modifier.fillMaxWidth().padding(start = 48.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(app.label.ifBlank { app.packageName }, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(app.category.ifBlank { app.packageName }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("${app.files} 项 · ${Formatter.formatFileSize(context, app.bytes)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            record.categories.forEach { detail ->
+                Row(Modifier.fillMaxWidth().padding(start = 48.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(detail.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                    Text("${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }

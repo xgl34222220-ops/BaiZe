@@ -23,7 +23,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
@@ -34,6 +38,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,7 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.AppJunkUiItem
+import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
+import io.github.xgl34222220.baize.ui.common.AppPackageIcon
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -59,7 +70,15 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         item { MiuixLifetimePanel(state) }
         item { MiuixSectionTitle("最近结果", "最近一次自动任务") }
         item { MiuixCurrentResultGroup(state) }
-        item { MiuixSectionTitle("任务记录", "按时间倒序显示") }
+        if (state.recentApps.isNotEmpty()) {
+            item { MiuixSectionTitle("应用垃圾", "点击应用查看清理分类与路径") }
+            item { MiuixAppResultGroup(state.recentApps) }
+        }
+        if (state.recentJunk.isNotEmpty()) {
+            item { MiuixSectionTitle("其他垃圾", "本次任务处理的非应用垃圾") }
+            item { MiuixJunkResultGroup(state.recentJunk) }
+        }
+        item { MiuixSectionTitle("任务记录", "点击有明细的任务可展开查看") }
         item { MiuixRecordGroup(state.records) }
         if (state.protectedItems.isNotEmpty()) {
             item {
@@ -221,20 +240,6 @@ private fun MiuixCurrentResultGroup(state: HistoryUiState) {
                     fontWeight = FontWeight.Bold
                 )
             }
-            val details = buildList {
-                addAll(state.recentApps.take(2).map { it.label.ifBlank { it.packageName } to it.bytes })
-                addAll(state.recentJunk.take(2).map { it.name to it.bytes })
-            }
-            details.forEach { (label, bytes) ->
-                MiuixDivider()
-                Row(
-                    modifier = Modifier.padding(start = 68.dp, end = 17.dp, top = 13.dp, bottom = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(Formatter.formatFileSize(context, bytes), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-            }
             if (state.lastTaskTime.isNotBlank()) {
                 MiuixDivider()
                 Row(
@@ -244,6 +249,96 @@ private fun MiuixCurrentResultGroup(state: HistoryUiState) {
                     Text("执行时间", modifier = Modifier.weight(1f), fontSize = 13.sp)
                     Text(state.lastTaskTime, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun MiuixAppResultGroup(apps: List<AppJunkUiItem>) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = BaiZeTokens.colors.surfaceRaised
+    ) {
+        Column {
+            apps.forEachIndexed { index, item ->
+                MiuixAppResultRow(item)
+                if (index != apps.lastIndex) MiuixDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiuixAppResultRow(item: AppJunkUiItem) {
+    val context = LocalContext.current
+    var expanded by rememberSaveable(item.packageName, item.category) { mutableStateOf(false) }
+    val hasDetails = item.categories.isNotEmpty()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = hasDetails) { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 13.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppPackageIcon(item.packageName, item.label.ifBlank { item.packageName }, size = 40.dp, corner = 13.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(item.label.ifBlank { item.packageName }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.category.ifBlank { item.packageName }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text("${item.files} 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            if (hasDetails) {
+                Spacer(Modifier.width(5.dp))
+                Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = if (expanded) "收起应用明细" else "展开应用明细", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (expanded && hasDetails) {
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .50f))
+            item.categories.forEach { detail ->
+                Row(Modifier.fillMaxWidth().padding(start = 52.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(detail.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(detail.samplePath.ifBlank { "未记录示例路径" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiuixJunkResultGroup(items: List<GeneralJunkUiItem>) {
+    val context = LocalContext.current
+    Surface(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = BaiZeTokens.colors.surfaceRaised
+    ) {
+        Column {
+            items.forEachIndexed { index, item ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(item.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(item.samplePath.ifBlank { "未记录示例路径" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("${item.files} 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                }
+                if (index != items.lastIndex) MiuixDivider()
             }
         }
     }
@@ -275,49 +370,60 @@ private fun MiuixRecordGroup(records: List<HistoryUiItem>) {
 @Composable
 private fun MiuixRecordRow(record: HistoryUiItem) {
     val context = LocalContext.current
-    Row(
+    var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
+    val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
+    val summary = when {
+        record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
+        record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
+        record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
+        else -> record.result
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(enabled = hasDetails) { expanded = !expanded }
+            .padding(horizontal = 16.dp, vertical = 13.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
-            contentAlignment = Alignment.Center
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.outline)
-            )
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.outline))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(record.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(listOf(record.time, record.trigger).filter(String::isNotBlank).joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(Formatter.formatFileSize(context, record.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(if (record.cleaned) "已完成" else record.result.ifBlank { "已记录" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            if (hasDetails) {
+                Spacer(Modifier.width(5.dp))
+                Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = if (expanded) "收起任务明细" else "展开任务明细", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(record.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                listOf(record.time, record.trigger).filter(String::isNotBlank).joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                Formatter.formatFileSize(context, record.bytes),
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                if (record.cleaned) "已完成" else record.result.ifBlank { "已记录" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
+        if (expanded && hasDetails) {
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .50f))
+            record.apps.forEach { app ->
+                Row(Modifier.fillMaxWidth().padding(start = 52.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(app.label.ifBlank { app.packageName }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(app.category.ifBlank { app.packageName }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text("${app.files} 项 · ${Formatter.formatFileSize(context, app.bytes)}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                }
+            }
+            record.categories.forEach { detail ->
+                Row(Modifier.fillMaxWidth().padding(start = 52.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(detail.name, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${detail.files} 项 · ${Formatter.formatFileSize(context, detail.bytes)}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                }
+            }
         }
     }
 }
