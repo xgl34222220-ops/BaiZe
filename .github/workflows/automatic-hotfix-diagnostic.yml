@@ -1,0 +1,71 @@
+name: BaiZe Automatic-First Hotfix Diagnostic
+
+on:
+  push:
+    branches: [agent/builtin-rule-expansion]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-automatic-hotfix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout automatic-first source
+        uses: actions/checkout@v4
+
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+
+      - name: Scheduler fairness and recovery
+        run: bash v2/tests/test-scheduler-fairness.sh
+
+      - name: Incremental index
+        run: bash v2/tests/test-incremental-index.sh
+
+      - name: Organizer transactions
+        run: bash v2/tests/test-organizer-transactions.sh
+
+      - name: Clean plan persistence
+        run: python3 v2/tests/test-clean-plan-persistence.py
+
+      - name: Clean plan resume
+        run: python3 v2/tests/test-clean-plan-resume.py
+
+      - name: Truthful result model
+        run: python3 v2/tests/test-clean-result-model.py
+
+      - name: Candidate plan internals
+        run: python3 v2/tests/test-candidate-selection-plan.py
+
+      - name: Clean result report
+        run: python3 v2/tests/test-clean-result-report.py
+
+      - name: Explainable rules and whitelist
+        run: python3 v2/tests/test-explainable-rules-whitelist.py
+
+      - name: Rule pack maintainer tooling
+        run: python3 v2/tests/test-rule-pack-management.py
+
+      - name: Rule update channel removal
+        run: python3 v2/tests/test-rule-update-channel.py
+
+      - name: Rule release automation
+        run: python3 v2/tests/test-rule-release-automation.py
+
+      - name: Native scanner host compile
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
