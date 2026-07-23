@@ -31,7 +31,7 @@ jobs:
           mkdir -p release
           success=0
           for attempt in $(seq 1 30); do
-            rm -f release/*
+            rm -rf release/* /tmp/release-apk
             if ! gh release download v2.4.0 \
               --repo xgl34222220-ops/BaiZe \
               --pattern 'BaiZe-v2.4.0-Module.zip' \
@@ -50,13 +50,20 @@ jobs:
             unzip -tq "$ZIP" >/dev/null || { sleep 30; continue; }
             unzip -p "$ZIP" scheduler.sh > /tmp/baize-scheduler.sh
 
-            grep -q 'next_cache_epoch=' /tmp/baize-scheduler.sh || { sleep 30; continue; }
-            grep -q 'next_organize_epoch=' /tmp/baize-scheduler.sh || { sleep 30; continue; }
-            grep -q 'retry_delay_for_fail_count' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            grep -q 'record_group_retry' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            grep -q 'scheduler-retry-' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            grep -q 'write_scheduler_state waiting "$hr_group" "待执行"' /tmp/baize-scheduler.sh || { sleep 30; continue; }
             if grep -Eq '连续失败|熔断|暂停 6 小时|max_run_minutes' /tmp/baize-scheduler.sh; then
               sleep 30
               continue
             fi
+
+            mkdir -p /tmp/release-apk
+            unzip -q "$APK" 'classes*.dex' -d /tmp/release-apk
+            strings /tmp/release-apk/classes*.dex > /tmp/apk-strings.txt
+            for key in next_cache_epoch next_empty_epoch next_rules_epoch next_fragment_epoch next_deep_epoch next_organize_epoch; do
+              grep -q "$key" /tmp/apk-strings.txt || { sleep 30; continue 2; }
+            done
 
             MODULE_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
             APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
