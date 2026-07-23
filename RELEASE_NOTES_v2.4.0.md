@@ -16,6 +16,14 @@
 - 修复 QQ、浏览器、邮件等应用下载、接收、附件与导出目录的发现和排除规则。
 - 正式 Release 禁止回退到 Debug 签名，缺少正式签名配置时发布流程会直接失败。
 
+## 2026-07-23 界面美化构建
+
+本次重新发布的 v2.4.0 构建仅包含界面美化，清理引擎与模块行为与初版 v2.4.0 完全一致：
+
+- Material 风格底部导航新增弹簧动画滑动选中胶囊，图标与文字颜色随选中态平滑过渡，与 Miuix 液态导航动效体验一致。
+- Material 与 Miuix 两套主题补齐 headlineSmall、titleSmall、bodyLarge（Miuix）、bodySmall、labelSmall 文字档位，全 App 文字层级更统一。
+- 首页存储用量圆环改为圆头端点，视觉更柔和。
+
 ## 安装说明
 
 模块 ZIP 内已包含白泽 App。通过 Magisk、KernelSU 或 APatch 刷入模块后重启设备即可。单独更新 App 时请使用本 Release 中的正式签名 APK。
