@@ -120,15 +120,12 @@ function fillState() {
   $('#storage-bar').style.width = `${percent}%`;
   $('#storage-used').textContent = formatStorageGB(state.data_used_kb);
   $('#storage-total').textContent = formatStorageGB(state.data_total_kb);
-  const schedulerLabels = { running: '定时任务正在执行', completed: '定时服务正常', waiting: '定时任务正在等待条件', interrupted: '定时任务已中断', missed: '定时补做窗口已错过', disabled: '定时任务已关闭', failed: '定时任务执行失败', unknown: '定时服务尚未就绪' };
-  const schedulerState = state.scheduler_state || 'unknown';
-  $('#scheduler-title').textContent = schedulerLabels[schedulerState] || '定时服务状态未知';
-  const groupNames = { daily: '每日定时', cache: '缓存', empty: '空文件', rules: '规则垃圾', fragment: '残留碎片', deep: '深度安全项', multiple: '多个任务' };
-  const schedulerWhen = Number(state.scheduler_updated || 0) > 0 ? ` · 更新于 ${new Date(Number(state.scheduler_updated) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
-  $('#scheduler-detail').textContent = `${state.scheduler_group ? `${groupNames[state.scheduler_group] || state.scheduler_group}：` : ''}${state.scheduler_reason || '—'}${schedulerWhen}`;
-  $('#scheduler-dot').className = `scheduler-dot ${schedulerState}`;
+  const schedulerState = state.scheduler_state || 'waiting';
+  const groupNames = { daily: '每日定时', cache: '应用缓存清理', empty: '空文件与空目录清理', rules: '规则垃圾清理', fragment: '残留碎片清理', deep: '深度安全清理', organize: '文件自动归类', multiple: '多个任务' };
+  $('#scheduler-title').textContent = schedulerState === 'running' ? '自动任务正在执行' : (schedulerState === 'disabled' ? '自动任务已关闭' : '待执行');
+  $('#scheduler-detail').textContent = schedulerState === 'running' ? (groupNames[state.scheduler_group] || '后台任务') : '白泽会按计划自动执行';
+  $('#scheduler-dot').className = `scheduler-dot ${schedulerState === 'running' ? 'running' : 'waiting'}`;
 
-  $('#scan').disabled = Boolean(state.running);
   $('#clean').disabled = Boolean(state.running);
   $('#stop-run').hidden = !state.running && !state.stop_requested;
   $('#stop-run').disabled = false;
@@ -231,13 +228,13 @@ async function monitorRun() {
   monitoring = true;
   let seenRunning = false;
   try {
-    const maxPolls = Math.max(180, Math.ceil(((Number(state.max_run_minutes || 45) * 60) + 180) / 2));
-    for (let i = 0; i < maxPolls; i += 1) {
+    let idlePolls = 0;
+    while (true) {
       const current = await loadStatus(false);
       if (!current) throw new Error('无法读取清理状态');
       if (current.running) {
         seenRunning = true;
-      } else if (seenRunning || i >= 2) {
+      } else if (seenRunning || idlePolls++ >= 2) {
         await loadStatus(false);
         await loadLog();
         await loadReport();
@@ -255,7 +252,6 @@ async function monitorRun() {
       }
       await delay(2000);
     }
-    throw new Error('任务运行时间过长，请查看日志');
   } catch (error) {
     message(error.message);
   } finally {
@@ -355,7 +351,6 @@ function openPage(name) {
 
 $$('.dock button').forEach((button) => button.addEventListener('click', () => openPage(button.dataset.page)));
 $('#refresh').addEventListener('click', () => loadStatus());
-$('#scan').addEventListener('click', () => run('scan'));
 $('#clean').addEventListener('click', () => run('clean'));
 $('#fragment-scan').addEventListener('click', () => run('fragment-scan'));
 $('#fragment-clean').addEventListener('click', () => run('fragment-clean'));

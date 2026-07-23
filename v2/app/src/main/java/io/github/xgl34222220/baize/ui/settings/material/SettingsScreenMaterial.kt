@@ -21,15 +21,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.InstallMobile
-import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -42,6 +40,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -52,12 +55,9 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
-import io.github.xgl34222220.baize.ui.settings.schedulerBlockedGroupsLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerQueueLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerReasonLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerSupervisorStatusLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerCountdownLabel
 import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerRuntimeStateLabel
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
@@ -81,7 +81,7 @@ fun SettingsScreenMaterial(
             item { MaterialSettingsHeader() }
             item { MaterialAppearanceCard(state, actions) }
             item { MaterialSectionTitle("任务管理", "任务中心") }
-            item { MaterialTaskCenterCard(state, actions) }
+            item { MaterialTaskCenterCard(state) }
             item { MaterialSectionTitle("自动执行", "自动清理") }
             item { MaterialAutomationCard(config, actions) }
             item { MaterialSectionTitle("安全保护", "清理保护与通知") }
@@ -177,8 +177,11 @@ private fun MaterialAppearanceCard(
 
 
 @Composable
-private fun MaterialTaskCenterCard(state: SettingsUiState, actions: SettingsUiActions) {
+private fun MaterialTaskCenterCard(state: SettingsUiState) {
     val config = state.scheduler
+    val nowEpoch = rememberMaterialSchedulerNowEpoch()
+    val runningGroup = config.runtimeGroup.ifBlank { config.nextTask }
+    val isRunning = config.runtimeState == "running"
     Card(
         modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -186,33 +189,51 @@ private fun MaterialTaskCenterCard(state: SettingsUiState, actions: SettingsUiAc
     ) {
         Column(Modifier.padding(20.dp)) {
             MaterialCardHeader(
-                icon = Icons.Rounded.Refresh,
-                title = "后台任务中心",
-                subtitle = "${schedulerRuntimeStateLabel(config.runtimeState)} · 待执行 ${config.queueCount} 项 · ${schedulerSupervisorStatusLabel(config.supervisorStatus)}"
+                icon = Icons.Rounded.Rule,
+                title = if (isRunning) "正在执行 ${schedulerTaskLabel(runningGroup)}" else "待执行",
+                subtitle = "自动任务会按计划运行，暂时未满足条件时继续等待"
             )
             Spacer(Modifier.height(12.dp))
-            Text(
-                buildString {
-                    append(schedulerReasonLabel(config.runtimeReason))
-                    if (config.queueGroups.isNotBlank()) append("\n待执行：").append(schedulerQueueLabel(config.queueGroups))
-                    if (config.blockedGroups.isNotBlank()) append("\n暂缓执行：").append(schedulerBlockedGroupsLabel(config.blockedGroups))
-                    if (config.runtimeStale) append("\n后台守护长时间没有响应，建议点击唤醒")
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.height(14.dp))
-            MaterialActionButton(Icons.Rounded.Refresh, "唤醒并恢复调度器") { actions.onSchedulerCommand("scheduler-wake") }
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.CleaningServices, "立即执行清理与归类") { actions.onSchedulerCommand("scheduler-run-now:all") }
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.Rule, "立即执行文件归类") { actions.onSchedulerCommand("scheduler-run-now:organize") }
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.Stop, "停止当前任务") { actions.onSchedulerCommand("scheduler-stop-current") }
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.BugReport, "跳过下一个归类周期") { actions.onSchedulerCommand("scheduler-skip:organize") }
+            MaterialTaskStatusRow("应用缓存清理", schedulerCountdownLabel(config.enabled && config.cacheEnabled, config.cacheNextEpoch, isRunning && runningGroup == "cache", nowEpoch))
+            HorizontalDivider()
+            MaterialTaskStatusRow("空文件与空目录清理", schedulerCountdownLabel(config.enabled && config.emptyEnabled, config.emptyNextEpoch, isRunning && runningGroup == "empty", nowEpoch))
+            HorizontalDivider()
+            MaterialTaskStatusRow("规则垃圾清理", schedulerCountdownLabel(config.enabled && config.rulesEnabled, config.rulesNextEpoch, isRunning && runningGroup == "rules", nowEpoch))
+            HorizontalDivider()
+            MaterialTaskStatusRow("残留碎片清理", schedulerCountdownLabel(config.enabled && config.fragmentEnabled, config.fragmentNextEpoch, isRunning && runningGroup == "fragment", nowEpoch))
+            HorizontalDivider()
+            MaterialTaskStatusRow("深度安全清理", schedulerCountdownLabel(config.enabled && config.deepEnabled, config.deepNextEpoch, isRunning && runningGroup == "deep", nowEpoch))
+            HorizontalDivider()
+            MaterialTaskStatusRow("文件自动归类", schedulerCountdownLabel(config.enabled && config.organizeEnabled, config.organizeNextEpoch, isRunning && runningGroup == "organize", nowEpoch))
         }
     }
+}
+
+@Composable
+private fun MaterialTaskStatusRow(title: String, status: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Rounded.Rule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(status, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun rememberMaterialSchedulerNowEpoch(): Long {
+    var now by remember { mutableStateOf(System.currentTimeMillis() / 1000L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            now = System.currentTimeMillis() / 1000L
+        }
+    }
+    return now
 }
 
 @Composable

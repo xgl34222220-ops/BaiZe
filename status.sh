@@ -196,7 +196,7 @@ printf '"corpse_scan_items":%s,' "$corpse_scan_items"
 printf '"report_lines":%s,' "$report_lines"
 
 for spec in \
-  enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 max_run_minutes:45 \
+  enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 \
   daily_schedule_enabled:0 daily_schedule_hour:3 daily_schedule_minute:30 daily_grace_minutes:240 \
   schedule_cache_enabled:1 schedule_cache_hours:24 schedule_empty_enabled:1 schedule_empty_hours:24 \
   schedule_rules_enabled:1 schedule_rules_hours:24 schedule_fragment_enabled:1 schedule_fragment_hours:24 \

@@ -17,8 +17,6 @@ RUNNING_FILE="$STATE_DIR/running.env"
 MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-30}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
 CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}
-FAILURE_LIMIT=3
-FAILURE_PAUSE_SECONDS=21600
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
 QUEUE_COUNT=0
@@ -42,6 +40,8 @@ if [ "${BAIZE_SKIP_BOOT_WAIT:-0}" != 1 ]; then
 fi
 
 mkdir -p "$LOG_DIR" "$REQUEST_DIR" "$SKIP_DIR"
+# v2.4.0 exposed legacy failure/pause markers. They are obsolete; retries are automatic now.
+rm -f "$STATE_DIR"/scheduler-fail-*.count "$STATE_DIR"/scheduler-pause-*.until 2>/dev/null || true
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null || : >"$CONFIG"
 
 config_value() { sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1; }
@@ -76,7 +76,7 @@ write_scheduler_state() {
   ws_old_queue=$(sed -n 's/^queue_groups=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
   ws_old_updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
   case "$ws_old_updated" in ''|*[!0-9]*) ws_old_updated=0 ;; esac
-  case "$ws_state" in running|completed|failed|interrupted|paused|skipped) ;;
+  case "$ws_state" in running|completed|interrupted|skipped) ;;
     *)
       if [ "$ws_state" = "$ws_old_state" ] && [ "$ws_group" = "$ws_old_group" ] &&
          [ "$ws_reason" = "$ws_old_reason" ] && [ "$QUEUE_GROUPS" = "$ws_old_queue" ] &&
@@ -116,27 +116,34 @@ rotate_scheduler_log() {
   case "$rl_size" in ''|*[!0-9]*) rl_size=0 ;; esac
   [ "$rl_size" -le 262144 ] || mv -f "$rl_file" "$rl_file.1" 2>/dev/null || : >"$rl_file"
 }
-failure_count_file() { printf '%s/scheduler-fail-%s.count\n' "$STATE_DIR" "$1"; }
-pause_until_file() { printf '%s/scheduler-pause-%s.until\n' "$STATE_DIR" "$1"; }
-clear_group_failure() { rm -f "$(failure_count_file "$1")" "$(pause_until_file "$1")"; }
-record_group_failure() {
-  rg_group=$1; rg_count_file=$(failure_count_file "$rg_group"); rg_pause_file=$(pause_until_file "$rg_group")
-  rg_count=$(sed -n '1p' "$rg_count_file" 2>/dev/null)
-  case "$rg_count" in ''|*[!0-9]*) rg_count=0 ;; esac
-  rg_count=$((rg_count + 1)); printf '%s\n' "$rg_count" >"$rg_count_file"
-  if [ "$rg_count" -ge "$FAILURE_LIMIT" ]; then
-    rg_until=$(( $(date +%s) + FAILURE_PAUSE_SECONDS )); printf '%s\n' "$rg_until" >"$rg_pause_file"
-    FAILURE_REASON="连续失败 ${rg_count} 次，已暂停 6 小时"; return 1
-  fi
-  FAILURE_REASON="连续失败 ${rg_count}/${FAILURE_LIMIT} 次"; return 0
+retry_count_file() { printf '%s/scheduler-retry-%s.count\n' "$STATE_DIR" "$1"; }
+retry_until_file() { printf '%s/scheduler-retry-%s.until\n' "$STATE_DIR" "$1"; }
+clear_group_retry() {
+  rm -f "$(retry_count_file "$1")" "$(retry_until_file "$1")" \
+    "$STATE_DIR/scheduler-fail-$1.count" "$STATE_DIR/scheduler-pause-$1.until" 2>/dev/null || true
 }
-group_pause_remaining() {
-  gp_group=$1; gp_pause_file=$(pause_until_file "$gp_group")
-  gp_until=$(sed -n '1p' "$gp_pause_file" 2>/dev/null)
-  case "$gp_until" in ''|*[!0-9]*) gp_until=0 ;; esac
-  gp_now=$(date +%s)
-  if [ "$gp_until" -gt "$gp_now" ]; then echo $((gp_until - gp_now)); return 0; fi
-  [ "$gp_until" -gt 0 ] && rm -f "$gp_pause_file" "$(failure_count_file "$gp_group")"
+record_group_retry() {
+  rr_group=$1; rr_count_file=$(retry_count_file "$rr_group"); rr_until_file=$(retry_until_file "$rr_group")
+  rr_count=$(sed -n '1p' "$rr_count_file" 2>/dev/null)
+  case "$rr_count" in ''|*[!0-9]*) rr_count=0 ;; esac
+  rr_count=$((rr_count + 1)); printf '%s\n' "$rr_count" >"$rr_count_file"
+  case "$rr_count" in
+    1) rr_delay=300 ;;
+    2) rr_delay=900 ;;
+    3) rr_delay=1800 ;;
+    4) rr_delay=3600 ;;
+    *) rr_delay=7200 ;;
+  esac
+  RETRY_DELAY_SECONDS=$rr_delay
+  printf '%s\n' $(( $(date +%s) + rr_delay )) >"$rr_until_file"
+}
+group_retry_remaining() {
+  gr_group=$1; gr_until_file=$(retry_until_file "$gr_group")
+  gr_until=$(sed -n '1p' "$gr_until_file" 2>/dev/null)
+  case "$gr_until" in ''|*[!0-9]*) gr_until=0 ;; esac
+  gr_now=$(date +%s)
+  if [ "$gr_until" -gt "$gr_now" ]; then echo $((gr_until - gr_now)); return 0; fi
+  [ "$gr_until" -gt 0 ] && rm -f "$gr_until_file"
   return 1
 }
 
@@ -305,7 +312,7 @@ handle_task_result() {
   hr_code=$1; hr_group=$2; hr_kind=$3; hr_cycle=$4; hr_request=$5; hr_run_log=$6
   case "$hr_code" in
     0)
-      mark_group_completed "$hr_group" "$hr_kind" "$hr_cycle"; clear_group_failure "$hr_group"
+      mark_group_completed "$hr_group" "$hr_kind" "$hr_cycle"; clear_group_retry "$hr_group"
       [ -n "$hr_request" ] && rm -f "$hr_request"
       write_scheduler_state completed "$hr_group" "任务已完成，继续检查队列"
       ;;
@@ -314,15 +321,12 @@ handle_task_result() {
       ;;
     9)
       [ -n "$hr_request" ] && rm -f "$hr_request"
-      write_scheduler_state interrupted "$hr_group" "任务已停止，本周期不会记为完成"
+      write_scheduler_state waiting "$hr_group" "待执行"
       ;;
     *)
-      [ -n "$hr_request" ] && rm -f "$hr_request"
-      if record_group_failure "$hr_group"; then
-        write_scheduler_state failed "$hr_group" "执行失败（代码 $hr_code，$FAILURE_REASON），请查看 $hr_run_log"
-      else
-        write_scheduler_state paused "$hr_group" "执行失败（代码 $hr_code）；$FAILURE_REASON"
-      fi
+      record_group_retry "$hr_group"
+      printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') task=$hr_group exit=$hr_code retry=${RETRY_DELAY_SECONDS}s" >>"$hr_run_log"
+      write_scheduler_state waiting "$hr_group" "待执行"
       ;;
   esac
 }
@@ -333,8 +337,8 @@ run_next_fair_task() {
   if scheduler_task_alive; then write_scheduler_state waiting "" "已有手动任务运行，队列将在完成后继续"; return 0; fi
   while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
     [ -n "${rn_group:-}" ] || continue
-    if rn_pause=$(group_pause_remaining "$rn_group"); then
-      rn_reason="${rn_group}:熔断$(( (rn_pause + 59) / 60 ))分钟"
+    if group_retry_remaining "$rn_group" >/dev/null; then
+      rn_reason="${rn_group}:待执行"
       [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
       continue
     fi

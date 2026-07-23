@@ -4,6 +4,9 @@ import android.os.Process
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -243,16 +246,23 @@ internal class SchedulerRepository(
         )
         val now = System.currentTimeMillis() / 1000L
         val heartbeatAge = if (supervisorHeartbeat > 0L) (now - supervisorHeartbeat).coerceAtLeast(0L) else -1L
+        val config = configJsonObject()
+        val publicState = when {
+            config.optInt("enabled", 1) != 1 -> "disabled"
+            scheduler.optString("state") == "running" -> "running"
+            else -> "waiting"
+        }
         return JSONObject()
-            .put("state", scheduler.optString("state", "unknown"))
+            .put("state", publicState)
             .put("group", scheduler.optString("group"))
-            .put("reason", scheduler.optString("reason", "等待调度器首次运行"))
+            .put("reason", if (publicState == "running") "执行中" else "待执行")
             .put("nextCheckEpoch", scheduler.optLong("next_check_epoch", 0L))
             .put("heartbeatEpoch", scheduler.optLong("heartbeat_epoch", 0L))
             .put("queueCount", scheduler.optInt("queue_count", queue.length()))
             .put("queueGroups", scheduler.optString("queue_groups"))
             .put("nextTask", scheduler.optString("next_task"))
-            .put("blockedGroups", scheduler.optString("blocked_groups"))
+            .put("blockedGroups", "")
+            .put("nextRuns", nextRunsJsonObject(config, now))
             .put("queue", queue)
             .put("schedulerHealthy", schedulerHealthy)
             .put("supervisorHealthy", supervisorHealthy)
@@ -262,6 +272,69 @@ internal class SchedulerRepository(
             .put("supervisorHeartbeatAge", heartbeatAge)
             .put("stale", !schedulerHealthy || !supervisorHealthy)
     }
+
+
+    private fun nextRunsJsonObject(config: JSONObject, now: Long): JSONObject {
+        val result = JSONObject()
+        val dailyEnabled = config.optInt("daily_schedule_enabled", 0) == 1
+        for (group in GROUPS) {
+            val enabled = config.optInt("schedule_${group}_enabled", 0) == 1
+            if (!enabled || config.optInt("enabled", 1) != 1) {
+                result.put(group, 0L)
+                continue
+            }
+            val retryUntil = readEpoch(File(stateDir, "scheduler-retry-$group.until"))
+            if (retryUntil > now) {
+                result.put(group, retryUntil)
+                continue
+            }
+            if (group != "organize" && dailyEnabled) {
+                result.put(group, nextDailyEpoch(group, config, now))
+                continue
+            }
+            val fallbackMinutes = when (group) {
+                "rules" -> 360
+                "fragment" -> 720
+                "deep" -> 10_080
+                "organize" -> 1_440
+                else -> 60
+            }
+            val minutes = config.optInt(
+                "schedule_${group}_minutes",
+                config.optInt("schedule_${group}_hours", (fallbackMinutes + 59) / 60) * 60
+            ).coerceIn(if (group == "organize") 15 else 5, 43_200)
+            val last = readEpoch(File(stateDir, "last_${group}_run.epoch"))
+            val due = if (last <= 0L) now else last + minutes * 60L
+            result.put(group, due.coerceAtLeast(now))
+        }
+        return result
+    }
+
+    private fun nextDailyEpoch(group: String, config: JSONObject, now: Long): Long {
+        val calendar = Calendar.getInstance().apply {
+            timeInMillis = now * 1000L
+            set(Calendar.HOUR_OF_DAY, config.optInt("daily_schedule_hour", 3).coerceIn(0, 23))
+            set(Calendar.MINUTE, config.optInt("daily_schedule_minute", 30).coerceIn(0, 59))
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val targetToday = calendar.timeInMillis / 1000L
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(now * 1000L))
+        val lastCycle = runCatching { File(stateDir, "last_${group}_daily.date").readText().trim() }.getOrDefault("")
+        if (lastCycle == today) {
+            calendar.add(Calendar.DAY_OF_YEAR, 1)
+            return calendar.timeInMillis / 1000L
+        }
+        if (now < targetToday) return targetToday
+        val graceSeconds = config.optInt("daily_grace_minutes", 240).coerceIn(15, 720) * 60L
+        if (now <= targetToday + graceSeconds) return now
+        calendar.add(Calendar.DAY_OF_YEAR, 1)
+        return calendar.timeInMillis / 1000L
+    }
+
+    private fun readEpoch(file: File): Long = runCatching {
+        file.useLines { lines -> lines.firstOrNull()?.trim()?.toLongOrNull() ?: 0L }
+    }.getOrDefault(0L)
 
     private fun configJsonObject(): JSONObject {
         ensureConfig()
@@ -338,7 +411,6 @@ internal class SchedulerRepository(
             "device_idle_only" to 0..1,
             "min_battery" to 0..100,
             "max_battery_temp" to 30..60,
-            "max_run_minutes" to 5..180,
             "scan_root_workers" to 0..4,
             "scan_parallel_min_items" to 100..10_000_000,
             "scan_parallel_min_gain_percent" to 5..50,
