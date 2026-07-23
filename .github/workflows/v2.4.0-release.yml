@@ -46,7 +46,7 @@ jobs:
       - name: Install shell compatibility tools
         run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
 
-      - name: Verify Root scripts and complete regressions
+      - name: Verify shell syntax
         shell: bash
         run: |
           set -euo pipefail
@@ -54,19 +54,45 @@ jobs:
             sh -n "$script"
             busybox ash -n "$script"
           done
-          bash v2/tests/test-scheduler-fairness.sh
-          bash v2/tests/test-incremental-index.sh
-          bash v2/tests/test-organizer-transactions.sh
-          python3 v2/tests/test-clean-plan-persistence.py
-          python3 v2/tests/test-clean-plan-resume.py
-          python3 v2/tests/test-clean-result-model.py
-          python3 v2/tests/test-candidate-selection-plan.py
-          python3 v2/tests/test-clean-result-report.py
-          python3 v2/tests/test-explainable-rules-whitelist.py
-          python3 v2/tests/test-rule-pack-management.py
-          python3 v2/tests/test-rule-update-channel.py
-          python3 v2/tests/test-rule-release-automation.py
-          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Verify scheduler fairness and recovery
+        run: bash v2/tests/test-scheduler-fairness.sh
+
+      - name: Verify incremental index
+        run: bash v2/tests/test-incremental-index.sh
+
+      - name: Verify organizer transactions
+        run: bash v2/tests/test-organizer-transactions.sh
+
+      - name: Verify clean plan persistence
+        run: python3 v2/tests/test-clean-plan-persistence.py
+
+      - name: Verify clean plan resume
+        run: python3 v2/tests/test-clean-plan-resume.py
+
+      - name: Verify truthful result model
+        run: python3 v2/tests/test-clean-result-model.py
+
+      - name: Verify candidate plan internals
+        run: python3 v2/tests/test-candidate-selection-plan.py
+
+      - name: Verify clean result report
+        run: python3 v2/tests/test-clean-result-report.py
+
+      - name: Verify explainable rules and whitelist
+        run: python3 v2/tests/test-explainable-rules-whitelist.py
+
+      - name: Verify rule pack maintainer tooling
+        run: python3 v2/tests/test-rule-pack-management.py
+
+      - name: Verify rule update channel removal
+        run: python3 v2/tests/test-rule-update-channel.py
+
+      - name: Verify rule release automation
+        run: python3 v2/tests/test-rule-release-automation.py
+
+      - name: Verify native scanner host compile
+        run: gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
