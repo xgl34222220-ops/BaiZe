@@ -21,21 +21,17 @@
         android:usesCleartextTraffic="false">
 
         <activity android:name=".MainActivity" android:exported="false" />
-        <activity
-            android:name=".ProtectedReviewActivity"
-            android:exported="false" />
-        <activity
-            android:name=".ProfileActivity"
-            android:exported="false" />
+        <activity android:name=".ProtectedReviewActivity" android:exported="false" />
+        <activity android:name=".ProfileActivity" android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
         <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
         <activity android:name=".ResumableSmartScanActivity" android:exported="false" />
         <activity android:name=".CandidateSmartScanActivity" android:exported="false" />
         <activity android:name=".CleanResultActivity" android:exported="false" />
-        <activity-alias
-            android:name=".SmartScanActivity"
-            android:exported="false"
-            android:targetActivity=".CandidateSmartScanActivity" />
+        <!-- Register the actual Activity class. The previous alias reused this component name and
+             redirected it into the experimental candidate picker, which made the visible junk
+             action fragile and could terminate immediately during Root-service startup. -->
+        <activity android:name=".SmartScanActivity" android:exported="false" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
