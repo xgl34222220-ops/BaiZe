@@ -34,14 +34,12 @@ import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.Rule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -113,7 +111,6 @@ class CleanCenterActivity : ComponentActivity() {
                                 )
                                 finish()
                             },
-                            onSmartScan = { startActivity(Intent(this, SmartScanActivity::class.java)) },
                             onOpenCache = { startActivity(Intent(this, CacheActivity::class.java)) },
                             onOpenProfile = ::openProfile
                         )
@@ -134,7 +131,6 @@ class CleanCenterActivity : ComponentActivity() {
 private data class CleanCenterActions(
     val onBack: () -> Unit,
     val onQuickClean: () -> Unit,
-    val onSmartScan: () -> Unit,
     val onOpenCache: () -> Unit,
     val onOpenProfile: (String) -> Unit
 )
@@ -304,29 +300,14 @@ private fun CleanCenterMaterialHero(actions: CleanCenterActions) {
                 CleanCenterPill("挂载点保护", Modifier.weight(1f))
             }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Button(
-                    onClick = actions.onQuickClean,
-                    modifier = Modifier
-                        .weight(1.25f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(19.dp)
-                ) {
-                    Icon(Icons.Rounded.CleaningServices, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("立即清理", fontWeight = FontWeight.Bold)
-                }
-                FilledTonalButton(
-                    onClick = actions.onSmartScan,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(19.dp)
-                ) {
-                    Icon(Icons.Rounded.Search, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("仅扫描", fontWeight = FontWeight.Bold)
-                }
+            Button(
+                onClick = actions.onQuickClean,
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                Icon(Icons.Rounded.CleaningServices, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.Black)
             }
         }
     }
@@ -536,29 +517,14 @@ private fun CleanCenterMiuixHero(actions: CleanCenterActions) {
                 CleanCenterPill("挂载点", Modifier.weight(1f))
             }
             Spacer(Modifier.height(17.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Button(
-                    onClick = actions.onQuickClean,
-                    modifier = Modifier
-                        .weight(1.25f)
-                        .height(60.dp),
-                    shape = RoundedCornerShape(22.dp)
-                ) {
-                    Icon(Icons.Rounded.CleaningServices, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.Black)
-                }
-                FilledTonalButton(
-                    onClick = actions.onSmartScan,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(60.dp),
-                    shape = RoundedCornerShape(22.dp)
-                ) {
-                    Icon(Icons.Rounded.Search, null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("仅扫描", fontWeight = FontWeight.Black)
-                }
+            Button(
+                onClick = actions.onQuickClean,
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                Icon(Icons.Rounded.CleaningServices, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.Black)
             }
         }
     }

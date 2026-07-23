@@ -35,7 +35,6 @@
 
       <div class="main-actions">
         <button class="main-clean" id="clean"><span class="action-icon"><svg viewBox="0 0 24 24"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/></svg></span><span><strong>立即清理</strong><small>按已启用的日常规则执行</small></span><svg class="arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
-        <button class="scan-only" id="scan"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><span><strong>安全扫描</strong><small>只计算，不删除</small></span></button>
       </div>
       <button class="stop-strip" id="stop-run" hidden><svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></svg><span><strong>停止当前任务</strong><small>不会把中断任务记为成功</small></span></button>
 
@@ -147,7 +146,6 @@
           <div class="number-list">
             <label><span>最低电量</span><div><input type="number" min="0" max="100" data-key="min_battery"><em>%</em></div></label>
             <label><span>电池温度上限</span><div><input type="number" min="30" max="60" data-key="max_battery_temp"><em>°C</em></div></label>
-            <label><span>单次运行上限</span><div><input type="number" min="5" max="180" data-key="max_run_minutes"><em>分钟</em></div></label>
             <label><span>每日补做窗口</span><div><input type="number" min="15" max="720" data-key="daily_grace_minutes"><em>分钟</em></div></label>
           </div>
           <div class="subheading"><span>保留周期</span><small>0 表示不按天数保留</small></div>

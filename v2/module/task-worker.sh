@@ -77,11 +77,9 @@ tmp="$WORKER_FILE.tmp.$$"
 chmod 0600 "$WORKER_FILE" "$RUNNING_FILE" 2>/dev/null || true
 echo "统一 Root Worker 已启动：$pid"
 [ "$WAIT_MODE" = wait ] || exit 0
-max_minutes=$(sed -n 's/^max_run_minutes=//p' "$STATE_DIR/config.conf" 2>/dev/null | tail -n 1)
-case "$max_minutes" in ''|*[!0-9]*) max_minutes=45 ;; esac
-deadline=$(( $(date +%s) + max_minutes * 60 + 120 ))
+# No global task deadline: long cleanups keep running and individual scanners retain their own
+# directory-level safety guards. User stop requests are consumed by the worker at checkpoints.
 while kill -0 "$pid" 2>/dev/null; do
-  [ "$(date +%s)" -lt "$deadline" ] || { : >"$STATE_DIR/stop"; kill "$pid" 2>/dev/null || true; break; }
   sleep 2
 done
 wait "$pid" 2>/dev/null || true

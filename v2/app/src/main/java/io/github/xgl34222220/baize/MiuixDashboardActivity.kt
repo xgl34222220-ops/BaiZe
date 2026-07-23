@@ -750,7 +750,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 connected = rootService != null,
                 ready = false,
-                taskPhase = "正在连接扫描引擎，连接后自动继续垃圾扫描"
+                taskPhase = "正在连接清理引擎，连接后自动继续"
             )
             connectServices()
             return
@@ -1397,17 +1397,10 @@ class MiuixDashboardActivity : ComponentActivity() {
                     nextProbeRun = performance.optInt("nextProbeRun", 0).coerceAtLeast(0),
                     parallelBlockedUntil = performance.optLong("parallelBlockedUntil", 0L).coerceAtLeast(0L)
                 ),
-                schedulerText = when {
-                    appInstall.optString("status") == "signature_mismatch" -> "App 与模块签名不一致，模块定时仍可运行"
-                    supervisor.optString("status") == "recovering" -> "调度器正在自动恢复：${supervisor.optString("reason")}"
-                    supervisor.optString("status") == "failed" -> "调度器守护异常：${supervisor.optString("reason")}"
-                    else -> when (scheduler.optString("state", "waiting")) {
-                    "running" -> "定时任务正在执行"
-                    "completed" -> "最近定时任务已完成"
-                    "failed" -> "定时任务失败：${scheduler.optString("reason")}"
-                    "disabled" -> "自动清理已关闭"
-                    else -> scheduler.optString("reason", "等待调度器首次轮询")
-                    }
+                schedulerText = when (scheduler.optString("state", "waiting")) {
+                    "running" -> "自动任务正在执行"
+                    "disabled" -> "自动任务已关闭"
+                    else -> "自动任务待执行"
                 }
             )
         }
@@ -1549,7 +1542,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun historyModeTitle(mode: String): String = when (mode) {
-        "scan" -> "垃圾扫描"
+        "scan" -> "清理准备"
         "clean" -> "智能自动清理"
         "snapshot-clean" -> "扫描快照清理"
         "smart-clean" -> "原生智能清理"
@@ -1564,7 +1557,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         "corpse-clean" -> "卸载残留清理"
         "apk-scan" -> "安装包扫描"
         "apk-clean" -> "安装包清理"
-        "profile-scan" -> "分类垃圾扫描"
+        "profile-scan" -> "分类清理准备"
         "profile-clean" -> "分类垃圾清理"
         "organize", "organizer", "organize-clean" -> "文件自动归类"
         "organize-scan", "organizer-scan" -> "文件归类扫描"

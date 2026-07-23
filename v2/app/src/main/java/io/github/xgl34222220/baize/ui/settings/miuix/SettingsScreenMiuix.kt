@@ -23,16 +23,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +39,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,11 +59,9 @@ import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
-import io.github.xgl34222220.baize.ui.settings.schedulerBlockedGroupsLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerQueueLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerReasonLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerSupervisorStatusLabel
+import io.github.xgl34222220.baize.ui.settings.schedulerCountdownLabel
 import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
@@ -79,8 +79,8 @@ fun SettingsScreenMiuix(
     ) {
         item { MiuixSettingsHeader() }
         item { MiuixAppearanceHero(state, actions) }
-        item { MiuixSectionTitle("任务管理", "任务中心", "待执行任务、暂缓原因与后台守护状态") }
-        item { MiuixTaskCenter(state, actions) }
+        item { MiuixSectionTitle("任务管理", "任务中心", "每项任务的状态和下次执行时间") }
+        item { MiuixTaskCenter(state) }
         item { MiuixSectionTitle("自动执行", "自动清理", "总开关、执行条件与最低电量") }
         item { MiuixAutomationGroup(config, actions) }
         item { MiuixSectionTitle("安全保护", "清理保护", "白名单、通知、安装包与单文件限制") }
@@ -197,55 +197,66 @@ private fun MiuixAppearanceHero(
 
 
 @Composable
-private fun MiuixTaskCenter(state: SettingsUiState, actions: SettingsUiActions) {
+private fun MiuixTaskCenter(state: SettingsUiState) {
     val config = state.scheduler
     val scheme = MaterialTheme.colorScheme
+    val nowEpoch = rememberSchedulerNowEpoch()
+    val runningGroup = config.runtimeGroup.ifBlank { config.nextTask }
+    val isRunning = config.runtimeState == "running"
     MiuixGroupSurface {
         Column(Modifier.padding(horizontal = 17.dp, vertical = 10.dp)) {
             Text(
-                when (config.runtimeState) {
-                    "running" -> "正在执行 ${schedulerTaskLabel(config.nextTask)}"
-                    "failed" -> "调度异常"
-                    "paused" -> "连续失败，任务暂时暂停"
-                    else -> "待执行 ${config.queueCount} 项 · ${schedulerSupervisorStatusLabel(config.supervisorStatus)}"
-                },
+                if (isRunning) "正在执行 ${schedulerTaskLabel(runningGroup)}" else "待执行",
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black
             )
             Text(
-                buildString {
-                    append(schedulerReasonLabel(config.runtimeReason))
-                    if (config.queueGroups.isNotBlank()) append("\n待执行：").append(schedulerQueueLabel(config.queueGroups))
-                    if (config.blockedGroups.isNotBlank()) append("\n暂缓执行：").append(schedulerBlockedGroupsLabel(config.blockedGroups))
-                    if (config.runtimeStale) append("\n后台守护长时间没有响应，建议点击唤醒")
-                },
+                "白泽会按计划自动清理和归类，暂时未满足条件时会继续等待。",
                 color = scheme.onSurfaceVariant,
                 fontSize = 10.sp,
                 lineHeight = 15.sp
             )
             Spacer(Modifier.height(8.dp))
+            MiuixTaskStatusRow("应用缓存清理", schedulerCountdownLabel(config.enabled && config.cacheEnabled, config.cacheNextEpoch, isRunning && runningGroup == "cache", nowEpoch))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Refresh, "唤醒调度器", "检查计划并自动恢复后台守护进程") {
-                actions.onSchedulerCommand("scheduler-wake")
-            }
+            MiuixTaskStatusRow("空文件与空目录清理", schedulerCountdownLabel(config.enabled && config.emptyEnabled, config.emptyNextEpoch, isRunning && runningGroup == "empty", nowEpoch))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.CleaningServices, "立即执行清理与归类", "加入一次性公平队列，不改变正常周期") {
-                actions.onSchedulerCommand("scheduler-run-now:all")
-            }
+            MiuixTaskStatusRow("规则垃圾清理", schedulerCountdownLabel(config.enabled && config.rulesEnabled, config.rulesNextEpoch, isRunning && runningGroup == "rules", nowEpoch))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Rule, "立即执行文件归类", "条件满足后由统一后台任务执行") {
-                actions.onSchedulerCommand("scheduler-run-now:organize")
-            }
+            MiuixTaskStatusRow("残留碎片清理", schedulerCountdownLabel(config.enabled && config.fragmentEnabled, config.fragmentNextEpoch, isRunning && runningGroup == "fragment", nowEpoch))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.Stop, "停止当前任务", "安全写入停止请求，当前后台任务会在检查点退出") {
-                actions.onSchedulerCommand("scheduler-stop-current")
-            }
+            MiuixTaskStatusRow("深度安全清理", schedulerCountdownLabel(config.enabled && config.deepEnabled, config.deepNextEpoch, isRunning && runningGroup == "deep", nowEpoch))
             MiuixDivider()
-            MiuixActionRow(Icons.Rounded.BugReport, "跳过下一个归类周期", "本次记为跳过，不关闭长期计划") {
-                actions.onSchedulerCommand("scheduler-skip:organize")
-            }
+            MiuixTaskStatusRow("文件自动归类", schedulerCountdownLabel(config.enabled && config.organizeEnabled, config.organizeNextEpoch, isRunning && runningGroup == "organize", nowEpoch))
         }
     }
+}
+
+@Composable
+private fun MiuixTaskStatusRow(title: String, status: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MiuixIconTile(Icons.Rounded.Rule)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(status, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun rememberSchedulerNowEpoch(): Long {
+    var now by remember { mutableStateOf(System.currentTimeMillis() / 1000L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            now = System.currentTimeMillis() / 1000L
+        }
+    }
+    return now
 }
 
 @Composable

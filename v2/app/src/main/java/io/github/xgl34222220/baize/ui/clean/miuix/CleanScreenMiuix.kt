@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -114,7 +113,6 @@ fun CleanScreenMiuix(
     }
 
     val quickActions = listOf(
-        MiuixQuickAction(Icons.Rounded.Search, "垃圾扫描", "生成快照，不立即删除", actions.onScan),
         MiuixQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK / APKS / XAPK", actions.onApkScan),
         MiuixQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
         MiuixQuickAction(Icons.Rounded.FolderCopy, "文件归类", "扫描所有下载目录并按类型整理", actions.onFileOrganizer),

@@ -141,9 +141,7 @@ RISK_LOW=0
 RISK_MEDIUM=0
 RISK_HIGH=0
 RISK_CRITICAL=0
-MAX_RUN_SECONDS=0
 STOP_REASON=""
-STOP_CHECK_TICKS=0
 DEEP_RULE_SHA=""
 DEEP_COVER_TARGET=0
 DEEP_COVER_MODE=""
@@ -308,16 +306,6 @@ should_stop() {
   if [ -f "$STATE_DIR/stop" ]; then
     STOP_REASON="已收到停止请求"
     return 0
-  fi
-  if [ "${MAX_RUN_SECONDS:-0}" -gt 0 ]; then
-    STOP_CHECK_TICKS=$((STOP_CHECK_TICKS + 1))
-    # 避免在数千条规则或文件循环中每次都启动 date 进程；停止标记仍逐项检查。
-    [ "$STOP_CHECK_TICKS" -eq 1 ] || [ $((STOP_CHECK_TICKS % 32)) -eq 0 ] || return 1
-    now=$(date +%s)
-    if [ $((now - START_EPOCH)) -ge "$MAX_RUN_SECONDS" ]; then
-      STOP_REASON="已达到单次任务时长上限"
-      return 0
-    fi
   fi
   return 1
 }
@@ -2367,12 +2355,6 @@ else
   FRAGMENT_POLICY="保留 ${FRAGMENT_DAYS} 天"
   FRAGMENT_MTIME_ARGS="-mtime +$FRAGMENT_DAYS"
 fi
-MAX_RUN_MINUTES=$(get_uint max_run_minutes 45 5 180)
-if [ "$TRIGGER" = "app" ] && [ "$REQUEST_MODE" = "clean" ]; then
-  APP_TASK_MAX_MINUTES=$(get_uint app_task_max_minutes 20 5 45)
-  [ "$MAX_RUN_MINUTES" -le "$APP_TASK_MAX_MINUTES" ] || MAX_RUN_MINUTES=$APP_TASK_MAX_MINUTES
-fi
-MAX_RUN_SECONDS=$((MAX_RUN_MINUTES * 60))
 CLEAN_EMPTY_FILES=$(get_bool clean_empty_files)
 CLEAN_EMPTY_DIRS=$(get_bool clean_empty_dirs)
 CLEAN_ROOT_SHELLS=$(get_bool clean_root_shells)
@@ -2401,7 +2383,6 @@ log_line "白泽 $REQUEST_MODE"
 log_line "时间: $(date '+%Y-%m-%d %H:%M:%S')"
 log_line "触发: $TRIGGER"
 log_line "单文件上限: $MAX_MB MiB"
-log_line "单次任务上限: $MAX_RUN_MINUTES 分钟"
 log_line "----------------------------------------"
 
 STOPPED=0

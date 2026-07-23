@@ -43,43 +43,48 @@ fun schedulerQueueLabel(raw: String): String {
 
 fun schedulerBlockedGroupsLabel(raw: String): String = raw
     .split(',', ';', '\n')
-    .map(String::trim)
+    .map { schedulerTaskLabel(it.substringBefore(':').trim()) }
     .filter(String::isNotBlank)
-    .joinToString("；") { item ->
-        val parts = item.split(':', limit = 2)
-        val task = schedulerTaskLabel(parts.firstOrNull().orEmpty())
-        val reason = schedulerReasonLabel(parts.getOrNull(1).orEmpty())
-            .replace(Regex("熔断\\s*(\\d+)\\s*分钟"), "连续失败，暂停 $1 分钟")
-        if (reason.isBlank()) task else "$task：$reason"
-    }
+    .distinct()
+    .joinToString("、")
 
 fun schedulerRuntimeStateLabel(raw: String): String = when (raw.trim().lowercase()) {
     "running" -> "正在执行"
-    "completed" -> "最近任务已完成"
-    "failed" -> "调度异常"
-    "paused" -> "连续失败，暂时暂停"
     "disabled" -> "自动任务已关闭"
-    "waiting" -> "等待执行"
-    else -> "等待状态"
+    else -> "待执行"
 }
 
 fun schedulerSupervisorStatusLabel(raw: String): String = when (raw.trim().lowercase()) {
-    "alive", "running", "healthy" -> "后台守护正常"
-    "recovering", "starting" -> "后台守护正在恢复"
-    "failed", "error" -> "后台守护异常"
-    "stale" -> "后台守护心跳过期"
-    "stopped", "missing" -> "后台守护未运行"
-    else -> "等待后台守护状态"
+    "alive", "running", "healthy" -> "自动运行正常"
+    else -> "自动恢复中"
 }
 
-fun schedulerReasonLabel(raw: String): String {
-    var text = raw.trim()
-    if (text.isBlank()) return "等待下一次调度"
-    text = text.replace("Supervisor", "后台守护进程", ignoreCase = true)
-    text = text.replace("Worker", "后台任务", ignoreCase = true)
-    val taskRegex = Regex(
-        "(?<![A-Za-z])(cache|empty|rules|fragment|deep|organize|organizer|all)(?![A-Za-z])",
-        RegexOption.IGNORE_CASE
-    )
-    return taskRegex.replace(text) { schedulerTaskLabel(it.value) }
+fun schedulerReasonLabel(raw: String): String = if (raw.trim().equals("执行中", ignoreCase = true)) {
+    "执行中"
+} else {
+    "待执行"
+}
+
+fun schedulerCountdownLabel(
+    enabled: Boolean,
+    nextEpoch: Long,
+    running: Boolean,
+    nowEpoch: Long
+): String {
+    if (!enabled) return "已关闭"
+    if (running) return "执行中"
+    val remaining = nextEpoch - nowEpoch
+    if (nextEpoch <= 0L || remaining <= 30L) return "待执行"
+    val minutes = (remaining + 59L) / 60L
+    if (minutes < 60L) return "还有 ${minutes} 分钟执行"
+    val hours = minutes / 60L
+    val minutePart = minutes % 60L
+    if (hours < 24L) return if (minutePart > 0L) {
+        "还有 ${hours} 小时 ${minutePart} 分钟执行"
+    } else {
+        "还有 ${hours} 小时执行"
+    }
+    val days = hours / 24L
+    val hourPart = hours % 24L
+    return if (hourPart > 0L) "还有 ${days} 天 ${hourPart} 小时执行" else "还有 ${days} 天执行"
 }

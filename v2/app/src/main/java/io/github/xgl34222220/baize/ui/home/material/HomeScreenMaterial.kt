@@ -26,11 +26,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Rule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -336,7 +333,7 @@ private fun MaterialScanResultCard(state: DashboardUiState, actions: DashboardAc
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(Modifier.padding(19.dp)) {
-            Text("垃圾扫描完成", style = MaterialTheme.typography.titleLarge)
+            Text("清理准备完成", style = MaterialTheme.typography.titleLarge)
             Text(
                 "发现 ${state.scanFiles} 项 · 空文件 ${state.scanEmptyFiles} · 空目录 ${state.scanEmptyDirs} · 碎片 ${state.scanFragments} · 异常 ${state.scanErrors}",
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .72f),
@@ -382,7 +379,6 @@ private fun MaterialQuickActions(
     onOpenClean: () -> Unit
 ) {
     val categories = listOf(
-        MaterialCleanCategory(Icons.Rounded.Search, "垃圾扫描", "只扫描统计", actions.scan),
         MaterialCleanCategory(Icons.Rounded.InstallMobile, "安装包", "查找安装包", actions.apkScan),
         MaterialCleanCategory(Icons.Rounded.CleaningServices, "全部选项", "进入清理页", onOpenClean)
     )

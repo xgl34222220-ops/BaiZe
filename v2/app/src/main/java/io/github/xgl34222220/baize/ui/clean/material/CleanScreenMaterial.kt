@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,7 +108,6 @@ fun CleanScreenMaterial(
     }
 
     val quickActions = listOf(
-        MaterialQuickAction(Icons.Rounded.Search, "垃圾扫描", "只扫描并生成可清理快照", actions.onScan),
         MaterialQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK、APKS 与 XAPK", actions.onApkScan),
         MaterialQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
         MaterialQuickAction(Icons.Rounded.FolderCopy, "文件归类", "扫描所有下载目录并按类型整理", actions.onFileOrganizer),

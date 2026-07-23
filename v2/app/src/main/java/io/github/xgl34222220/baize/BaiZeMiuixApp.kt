@@ -295,6 +295,13 @@ data class SchedulerUiState(
     val nextTask: String = "",
     val blockedGroups: String = "",
     val nextCheckEpoch: Long = 0L,
+    val runtimeGroup: String = "",
+    val cacheNextEpoch: Long = 0L,
+    val emptyNextEpoch: Long = 0L,
+    val rulesNextEpoch: Long = 0L,
+    val fragmentNextEpoch: Long = 0L,
+    val deepNextEpoch: Long = 0L,
+    val organizeNextEpoch: Long = 0L,
     val supervisorStatus: String = "unknown",
     val supervisorHeartbeatAge: Long = -1L,
     val runtimeStale: Boolean = false,
@@ -344,6 +351,7 @@ data class SchedulerUiState(
     companion object {
         fun fromJson(json: JSONObject): SchedulerUiState {
             val runtime = json.optJSONObject("runtime") ?: JSONObject()
+            val nextRuns = runtime.optJSONObject("nextRuns") ?: JSONObject()
             return SchedulerUiState(
                 enabled = json.optInt("enabled", 1) == 1,
                 cacheEnabled = json.optInt("schedule_cache_enabled", 1) == 1,
@@ -384,6 +392,13 @@ data class SchedulerUiState(
                 nextTask = runtime.optString("nextTask"),
                 blockedGroups = runtime.optString("blockedGroups"),
                 nextCheckEpoch = runtime.optLong("nextCheckEpoch", 0L).coerceAtLeast(0L),
+                runtimeGroup = runtime.optString("group"),
+                cacheNextEpoch = nextRuns.optLong("cache", 0L).coerceAtLeast(0L),
+                emptyNextEpoch = nextRuns.optLong("empty", 0L).coerceAtLeast(0L),
+                rulesNextEpoch = nextRuns.optLong("rules", 0L).coerceAtLeast(0L),
+                fragmentNextEpoch = nextRuns.optLong("fragment", 0L).coerceAtLeast(0L),
+                deepNextEpoch = nextRuns.optLong("deep", 0L).coerceAtLeast(0L),
+                organizeNextEpoch = nextRuns.optLong("organize", 0L).coerceAtLeast(0L),
                 supervisorStatus = runtime.optString("supervisorStatus", "unknown"),
                 supervisorHeartbeatAge = runtime.optLong("supervisorHeartbeatAge", -1L),
                 runtimeStale = runtime.optBoolean("stale", false),
@@ -806,12 +821,6 @@ internal fun HomeScreenMiuix(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     MiuixHomeQuickAction(
-                        icon = Icons.Rounded.Search,
-                        title = "垃圾扫描",
-                        modifier = Modifier.weight(1f),
-                        onClick = actions.scan
-                    )
-                    MiuixHomeQuickAction(
                         icon = Icons.Rounded.InstallMobile,
                         title = "安装包",
                         modifier = Modifier.weight(1f),
@@ -920,7 +929,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("垃圾扫描完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text("清理准备完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
                     Text(
                         when {
                             state.scanFiles <= 0 -> "没有发现可安全清理的内容"

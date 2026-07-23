@@ -68,4 +68,19 @@ grep -q 'organize:等待息屏' "$T/state/scheduler.env"
 run_once
 test -s "$T/state/last_organize_run.epoch"
 [ ! -e "$T/state/scheduler-skips/organize.request" ]
+
+# A non-zero result stays in the queue and becomes an internal timed retry, never a public failure state.
+cat > "$T/module/task-worker.sh" <<'SH'
+#!/bin/sh
+printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"${BAIZE_STATE_DIR}/executed.tsv"
+exit 7
+SH
+chmod +x "$T/module/task-worker.sh"
+rm -f "$T/state/last_cache_run.epoch"
+sed -i 's/^schedule_empty_enabled=.*/schedule_empty_enabled=0/; s/^schedule_organize_enabled=.*/schedule_organize_enabled=0/' "$T/state/config.conf"
+run_once
+grep -q '^state=waiting$' "$T/state/scheduler.env"
+grep -q '^reason=待执行$' "$T/state/scheduler.env"
+test -s "$T/state/scheduler-retry-cache.until"
+! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
 echo 'scheduler fairness: ok'
