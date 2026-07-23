@@ -2,7 +2,6 @@ package io.github.xgl34222220.baize.ui.home.material
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,7 +44,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -59,6 +57,7 @@ import io.github.xgl34222220.baize.BuildConfig
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 private data class MaterialCleanCategory(
     val icon: ImageVector,
@@ -85,21 +84,12 @@ fun HomeScreenMaterial(
                 if (!settings.glassEnabled) return@drawBehind
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(scheme.primary.copy(alpha = .15f), Color.Transparent),
+                        colors = listOf(scheme.primary.copy(alpha = .06f), Color.Transparent),
                         center = Offset(size.width, 0f),
                         radius = size.width * .82f
                     ),
                     radius = size.width * .82f,
                     center = Offset(size.width, 0f)
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(scheme.tertiary.copy(alpha = .11f), Color.Transparent),
-                        center = Offset(0f, size.height * .58f),
-                        radius = size.width
-                    ),
-                    radius = size.width,
-                    center = Offset(0f, size.height * .58f)
                 )
             }
     ) {
@@ -133,14 +123,14 @@ private fun MaterialPageHeader(onRefresh: () -> Unit) {
             Text(
                 "SMART CLEAN",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.4.sp
             )
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(4.dp))
             Text("白泽", style = MaterialTheme.typography.headlineLarge)
             Text(
-                "Material 3 清理概览 · v${BuildConfig.VERSION_NAME}",
+                "智能清理概览 · v${BuildConfig.VERSION_NAME}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
@@ -163,23 +153,15 @@ private fun MaterialHeroCard(state: DashboardUiState) {
         else -> "正在连接清理引擎"
     }
 
+    val container = scheme.primaryContainer
+    val onContainer = scheme.onPrimaryContainer
     Box(
         Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = BaiZeTokens.spacing.pageHorizontal)
             .fillMaxWidth()
-            .shadow(16.dp, MaterialTheme.shapes.extraLarge)
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(Brush.linearGradient(listOf(scheme.primary, scheme.tertiary)))
-            .border(1.dp, Color.White.copy(alpha = .22f), MaterialTheme.shapes.extraLarge)
-            .drawBehind {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = .23f), Color.Transparent)
-                    ),
-                    size = size.copy(height = size.height * .43f)
-                )
-            }
-            .padding(24.dp)
+            .clip(BaiZeTokens.corners.large)
+            .background(container)
+            .padding(BaiZeTokens.spacing.xxl)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -187,28 +169,28 @@ private fun MaterialHeroCard(state: DashboardUiState) {
                     Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (state.ready || state.scanCompleted) Color(0xFF78EEB8) else Color(0xFFFFD36F))
+                        .background(if (state.ready || state.scanCompleted) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
                 )
-                Spacer(Modifier.width(9.dp))
-                Text(state.device, color = Color.White.copy(alpha = .88f), fontWeight = FontWeight.Bold)
-                Text("  ·  ${state.android}", color = Color.White.copy(alpha = .66f), fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(state.device, color = onContainer, fontWeight = FontWeight.Bold)
+                Text("  ·  ${state.android}", color = onContainer.copy(alpha = .66f), fontSize = 12.sp)
             }
-            Spacer(Modifier.height(25.dp))
-            Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(24.dp))
+            Text(title, color = onContainer, style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
             Text(
                 state.taskPhase,
-                color = Color.White.copy(alpha = .74f),
+                color = onContainer.copy(alpha = .74f),
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(Modifier.height(28.dp))
-            Text("最近一次释放", color = Color.White.copy(alpha = .64f), fontSize = 12.sp)
+            Spacer(Modifier.height(24.dp))
+            Text("最近一次释放", color = onContainer.copy(alpha = .64f), fontSize = 12.sp)
             Text(
                 Formatter.formatFileSize(context, state.lastReleased),
-                color = Color.White,
-                style = MaterialTheme.typography.displaySmall
+                color = onContainer,
+                style = BaiZeTokens.type.hero
             )
         }
     }
@@ -218,12 +200,12 @@ private fun MaterialHeroCard(state: DashboardUiState) {
 private fun MaterialStorageCard(state: DashboardUiState) {
     val context = LocalContext.current
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .92f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
@@ -236,7 +218,7 @@ private fun MaterialStorageCard(state: DashboardUiState) {
                 Text(
                     "${(state.storagePercent * 100).toInt()}%",
                     color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Bold
                 )
             }
             Spacer(Modifier.width(20.dp))
@@ -266,10 +248,10 @@ private fun MaterialCleanButton(state: DashboardUiState, actions: DashboardActio
             else -> actions.clean
         },
         enabled = enabled,
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(70.dp),
-        shape = MaterialTheme.shapes.extraLarge,
+        modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth().height(64.dp),
+        shape = BaiZeTokens.corners.extraLarge,
         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 10.dp)
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
     ) {
         Icon(
             when {
@@ -286,7 +268,7 @@ private fun MaterialCleanButton(state: DashboardUiState, actions: DashboardActio
                 state.scanCompleted -> "按扫描结果清理"
                 else -> "一键智能清理"
             },
-            fontSize = 19.sp,
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold
         )
     }
@@ -295,14 +277,14 @@ private fun MaterialCleanButton(state: DashboardUiState, actions: DashboardActio
 @Composable
 private fun MaterialServiceCard(state: DashboardUiState) {
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(10.dp).clip(CircleShape)
-                    .background(if (state.ready || state.scanCompleted) Color(0xFF2DBE87) else Color(0xFFF2A93B))
+                    .background(if (state.ready || state.scanCompleted) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
             )
             Spacer(Modifier.width(10.dp))
             Text(
@@ -328,7 +310,7 @@ private fun MaterialServiceCard(state: DashboardUiState) {
 @Composable
 private fun MaterialScanResultCard(state: DashboardUiState, actions: DashboardActions) {
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
@@ -361,11 +343,11 @@ private fun MaterialScanResultCard(state: DashboardUiState, actions: DashboardAc
 
 @Composable
 private fun MaterialSectionTitle(eyebrow: String, title: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 4.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
         Text(
             eyebrow,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp
         )
@@ -383,7 +365,7 @@ private fun MaterialQuickActions(
         MaterialCleanCategory(Icons.Rounded.CleaningServices, "全部选项", "进入清理页", onOpenClean)
     )
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
@@ -419,7 +401,7 @@ private fun MaterialQuickActions(
                     Text(
                         item.description,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
