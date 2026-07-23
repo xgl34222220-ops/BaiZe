@@ -1,0 +1,178 @@
+name: Build PR120 + PR121 Test Package
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  PR120_HEAD: 329edead21f79ca7009ed0a3819c016ed18504d6
+  PR121_HEAD: 75c0e47ed8f10134d5f601637e3005bbb710de68
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+
+jobs:
+  build-combined-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge PR 120 and PR 121 on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main ui/design-tokens-a perf/one-pass-clean-p0
+          git checkout -B pr120-pr121-test origin/main
+          git merge --no-ff --no-edit "$PR120_HEAD"
+          git merge --no-ff --no-edit "$PR121_HEAD"
+          git merge-base --is-ancestor "$PR120_HEAD" HEAD
+          git merge-base --is-ancestor "$PR121_HEAD" HEAD
+          git diff --check origin/main...HEAD
+          {
+            echo "base=$(git rev-parse origin/main)"
+            echo "pr120=$PR120_HEAD"
+            echo "pr121=$PR121_HEAD"
+            echo "combined=$(git rev-parse HEAD)"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee /tmp/combined-build-info.txt
+
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+
+      - name: Verify Root scripts and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh status.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          bash v2/tests/test-scheduler-fairness.sh
+          bash v2/tests/test-incremental-index.sh
+          bash v2/tests/test-organizer-transactions.sh
+          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Prepare formal signing certificate
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+          test -n "$KEYSTORE_BASE64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/baize-pr120-pr121-test.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          ACTUAL_CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$ACTUAL_CERT" = "$BAIZE_CERT_SHA256"
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build ARM64 scanner
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed Android test APK and lint
+        working-directory: v2
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build-pr120-pr121.log
+
+      - name: Package combined Magisk module
+        working-directory: v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-module.sh 2>&1 | tee package-pr120-pr121.log
+          cp app/build/outputs/apk/release/app-release.apk dist/BaiZe-v2.4.0-PR120-PR121-Test.apk
+          cp dist/BaiZe-v2.4.0-Module.zip dist/BaiZe-v2.4.0-PR120-PR121-Test-Module.zip
+          cp /tmp/combined-build-info.txt dist/BaiZe-v2.4.0-PR120-PR121-Test-BuildInfo.txt
+
+      - name: Verify combined test artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK='v2/dist/BaiZe-v2.4.0-PR120-PR121-Test.apk'
+          ZIP='v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-Module.zip'
+          CERT='v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-Certificate.txt'
+          test -s "$APK"
+          test -s "$ZIP"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" cleaner.sh.compat | grep -q 'filter_processed_list_legacy'
+          unzip -p "$ZIP" profile-cleaner.sh | grep -q 'BAIZE_INSTALLED_ROOT'
+          unzip -l "$ZIP" | grep -q 'app/baize.apk'
+          PACKAGED_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
+          BUILT_APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
+          test "$PACKAGED_APK_SHA" = "$BUILT_APK_SHA"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$CERT"
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT" | tr -d ':[:space:]')
+          test "$APK_CERT" = "$BAIZE_CERT_SHA256"
+          sha256sum "$APK" > "$APK.sha256"
+          sha256sum "$ZIP" > "$ZIP.sha256"
+          cat "$CERT"
+
+      - name: Upload combined test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-PR120-PR121-Combined-Test
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test.apk
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test.apk.sha256
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-Module.zip
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-Module.zip.sha256
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-Certificate.txt
+            v2/dist/BaiZe-v2.4.0-PR120-PR121-Test-BuildInfo.txt
+            v2/android-build-pr120-pr121.log
+            v2/package-pr120-pr121.log
