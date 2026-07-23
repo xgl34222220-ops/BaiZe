@@ -143,19 +143,13 @@ fun CleanScreenMaterial(
         }
 
         item {
-            Button(
-                onClick = actions.onScan,
-                enabled = !state.running && state.engineReady,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .height(56.dp),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Icon(Icons.Rounded.CleaningServices, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("立即自动清理一次", fontWeight = FontWeight.Black)
-            }
+            Text(
+                "所有清理与文件归类均由后台自动执行。扫描、立即清理、停止、唤醒和开发者诊断按钮已全部移除。",
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                lineHeight = 17.sp
+            )
         }
     }
 }
