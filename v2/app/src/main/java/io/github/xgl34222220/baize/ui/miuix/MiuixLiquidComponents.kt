@@ -77,113 +77,94 @@ fun MiuixLiquidDock(
     val amoled = dark && settings.amoledBlack
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = if (floating) {
-        BaiZeTokens.corners.extraLarge
+        RoundedCornerShape(24.dp)
     } else {
-        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
     }
-
     val activeHazeState = hazeState.takeIf {
         settings.blurEnabled && settings.glassEnabled && !amoled
     }
     val dockColor = when {
-        amoled -> Color(0xEE000000)
-        activeHazeState != null && dark -> scheme.surface.copy(alpha = .28f)
-        activeHazeState != null -> Color.White.copy(alpha = .22f)
-        dark -> scheme.surface.copy(alpha = .98f)
-        else -> Color.White.copy(alpha = .98f)
+        amoled -> Color(0xF2000000)
+        activeHazeState != null && dark -> scheme.surface.copy(alpha = .62f)
+        activeHazeState != null -> Color.White.copy(alpha = .68f)
+        else -> BaiZeTokens.colors.surfaceRaised
     }
-    val borderColor = if (dark) Color.White.copy(alpha = .10f) else scheme.outlineVariant.copy(alpha = .6f)
     val hazeModifier = activeHazeState?.let { state ->
         Modifier.hazeEffect(
             state = state,
             style = HazeMaterials.ultraThin()
         ) {
-            blurRadius = 28.dp
-            noiseFactor = .06f
+            blurRadius = 18.dp
+            noiseFactor = .03f
         }
     } ?: Modifier
 
-    BoxWithConstraints(
+    Row(
         modifier = modifier
             .then(
                 if (floating) {
                     Modifier
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 14.dp)
                         .padding(bottom = bottomInset + 10.dp)
                 } else {
                     Modifier
                 }
             )
             .fillMaxWidth()
-            .shadow(if (floating) 8.dp else 2.dp, shape, clip = false)
+            .shadow(if (floating) 4.dp else 0.dp, shape, clip = false)
             .clip(shape)
             .then(hazeModifier)
             .background(dockColor)
-            .border(1.dp, borderColor, shape)
+            .border(
+                1.dp,
+                if (dark) Color.White.copy(alpha = .07f)
+                else scheme.outlineVariant.copy(alpha = .45f),
+                shape
+            )
             .padding(
-                start = 6.dp,
-                top = 7.dp,
-                end = 6.dp,
-                bottom = if (floating) 7.dp else bottomInset + 7.dp
+                start = 8.dp,
+                top = 6.dp,
+                end = 8.dp,
+                bottom = if (floating) 6.dp else bottomInset + 6.dp
             )
     ) {
-        val itemWidth = maxWidth / items.size.toFloat()
-        val compact = items.size > 4
         val targetIndex = selectedIndex.coerceIn(items.indices)
-        val indicatorX by animateDpAsState(
-            targetValue = itemWidth * targetIndex.toFloat(),
-            animationSpec = spring(
-                dampingRatio = .72f,
-                stiffness = Spring.StiffnessMediumLow
-            ),
-            label = "miuixLiquidIndicator"
-        )
-
-        Box(
-            modifier = Modifier
-                .offset(x = indicatorX + 4.dp)
-                .width(itemWidth - 8.dp)
-                .height(58.dp)
-                .clip(BaiZeTokens.corners.medium)
-                .background(scheme.primary.copy(alpha = if (dark) .22f else .12f))
-        )
-
-        Row(Modifier.fillMaxWidth()) {
-            items.forEachIndexed { index, item ->
-                val active = index == targetIndex
-                val iconColor by animateColorAsState(
-                    targetValue = if (active) scheme.primary else scheme.onSurfaceVariant,
-                    label = "miuixDockIconColor"
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (active) scheme.primary else scheme.onSurfaceVariant.copy(alpha = .78f),
-                    label = "miuixDockTextColor"
-                )
-
-                Column(
+        items.forEachIndexed { index, item ->
+            val active = index == targetIndex
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onSelected(index) }
+                    .padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .width(itemWidth)
-                        .height(58.dp)
-                        .clip(BaiZeTokens.corners.medium)
-                        .clickable { onSelected(index) },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .size(width = 42.dp, height = 28.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (active) scheme.primary.copy(alpha = if (dark) .20f else .11f)
+                            else Color.Transparent
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = item.icon,
                         contentDescription = item.title,
-                        modifier = Modifier.size(if (compact) 20.dp else if (active) 23.dp else 21.dp),
-                        tint = iconColor
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = item.title,
-                        color = textColor,
-                        fontSize = 11.sp,
-                        lineHeight = 13.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                        modifier = Modifier.size(20.dp),
+                        tint = if (active) scheme.primary else scheme.onSurfaceVariant
                     )
                 }
+                Text(
+                    text = item.title,
+                    color = if (active) scheme.primary else scheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                )
             }
         }
     }

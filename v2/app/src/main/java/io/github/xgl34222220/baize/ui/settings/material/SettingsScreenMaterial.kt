@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.ui.settings.material
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,90 +21,70 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.CleaningServices
-import androidx.compose.material.icons.rounded.InstallMobile
-import androidx.compose.material.icons.rounded.Palette
-import androidx.compose.material.icons.rounded.Rule
+import androidx.compose.material.icons.rounded.BatterySaver
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.SettingsSuggest
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
-import io.github.xgl34222220.baize.ui.settings.schedulerCountdownLabel
-import io.github.xgl34222220.baize.ui.settings.schedulerTaskLabel
-import kotlinx.coroutines.delay
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlin.math.roundToInt
 
 @Composable
-fun SettingsScreenMaterial(
-    state: SettingsUiState,
-    actions: SettingsUiActions
-) {
+fun SettingsScreenMaterial(state: SettingsUiState, actions: SettingsUiActions) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val config = state.scheduler
-
-    Box(
-        Modifier
+    LazyColumn(
+        modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(bottom = bottomInset + 104.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = bottomInset + 146.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item { MaterialSettingsHeader() }
-            item { MaterialAppearanceCard(state, actions) }
-            item { MaterialSectionTitle("任务管理", "任务中心") }
-            item { MaterialTaskCenterCard(state) }
-            item { MaterialSectionTitle("自动执行", "自动清理") }
-            item { MaterialAutomationCard(config, actions) }
-            item { MaterialSectionTitle("安全保护", "清理保护与通知") }
-            item { MaterialProtectionCard(state, actions) }
-            item { MaterialSectionTitle("系统服务", "服务与诊断") }
-            item { MaterialServiceCard(state, actions) }
-            item {
-                Button(
-                    onClick = { actions.onSaveScheduler(config) },
-                    enabled = !config.saving,
-                    modifier = Modifier
-                        .padding(horizontal = 18.dp)
-                        .fillMaxWidth()
-                        .height(58.dp),
-                    shape = MaterialTheme.shapes.extraLarge
-                ) {
-                    Text(
-                        if (config.saving) "正在保存…" else "保存全部设置",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
-                }
+        item { MaterialSettingsHeader() }
+        item { MaterialAppearanceCard(state, actions) }
+        item { MaterialSectionHeader("自动执行", "控制清理任务的运行条件") }
+        item { MaterialAutomationConditions(state.scheduler, actions) }
+        item { MaterialSectionHeader("文件自动归类", "归类任务可使用独立执行条件") }
+        item { MaterialOrganizerConditions(state.scheduler, actions) }
+        item { MaterialSectionHeader("清理保护", "限制电量、文件大小和白名单") }
+        item { MaterialSafetySettings(state, actions) }
+        item { MaterialSectionHeader("通知", "只保留有用的完成提醒") }
+        item { MaterialNotificationSettings(state.scheduler, actions) }
+        item { MaterialSectionHeader("服务状态", "后台会自动恢复，无需手动控制") }
+        item { MaterialServiceStatus(state) }
+        item {
+            Button(
+                onClick = { actions.onSaveScheduler(state.scheduler) },
+                enabled = !state.scheduler.saving,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = MaterialTheme.shapes.extraLarge
+            ) {
+                Text(if (state.scheduler.saving) "正在保存…" else "保存设置", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -112,22 +93,15 @@ fun SettingsScreenMaterial(
 @Composable
 private fun MaterialSettingsHeader() {
     Column(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 15.dp)
+            .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
-        Text(
-            "设置中心",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.3.sp
-        )
-        Spacer(Modifier.height(5.dp))
         Text("偏好设置", style = MaterialTheme.typography.headlineLarge)
+        Spacer(Modifier.height(4.dp))
         Text(
-            "外观、自动清理、保护规则与服务管理",
+            "主题、自动执行条件与清理保护",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
@@ -135,502 +109,301 @@ private fun MaterialSettingsHeader() {
 }
 
 @Composable
-private fun MaterialAppearanceCard(
-    state: SettingsUiState,
-    actions: SettingsUiActions
-) {
+private fun MaterialAppearanceCard(state: SettingsUiState, actions: SettingsUiActions) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .clickable(onClick = actions.onOpenAppearance),
         shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(20.dp)) {
-            MaterialCardHeader(
-                icon = Icons.Rounded.Palette,
-                title = "界面与主题",
-                subtitle = state.appearanceSummary
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                MaterialInfoPill(state.appearance.uiStyle.label, Modifier.weight(1f))
-                MaterialInfoPill(state.appearance.themeMode.label, Modifier.weight(1f))
-                MaterialInfoPill(state.appearance.kolorStyle.label, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(16.dp))
-            FilledTonalButton(
-                onClick = actions.onOpenAppearance,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge
-            ) {
-                Icon(Icons.Rounded.Tune, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("主题模式、配色与玻璃", fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-
-@Composable
-private fun MaterialTaskCenterCard(state: SettingsUiState) {
-    val config = state.scheduler
-    val nowEpoch = rememberMaterialSchedulerNowEpoch()
-    val runningGroup = config.runtimeGroup.ifBlank { config.nextTask }
-    val isRunning = config.runtimeState == "running"
-    Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            MaterialCardHeader(
-                icon = Icons.Rounded.Rule,
-                title = if (isRunning) "正在执行 ${schedulerTaskLabel(runningGroup)}" else "待执行",
-                subtitle = "自动任务会按计划运行，暂时未满足条件时继续等待"
-            )
-            Spacer(Modifier.height(12.dp))
-            MaterialTaskStatusRow("应用缓存清理", schedulerCountdownLabel(config.enabled && config.cacheEnabled, config.cacheNextEpoch, isRunning && runningGroup == "cache", nowEpoch))
-            HorizontalDivider()
-            MaterialTaskStatusRow("空文件与空目录清理", schedulerCountdownLabel(config.enabled && config.emptyEnabled, config.emptyNextEpoch, isRunning && runningGroup == "empty", nowEpoch))
-            HorizontalDivider()
-            MaterialTaskStatusRow("规则垃圾清理", schedulerCountdownLabel(config.enabled && config.rulesEnabled, config.rulesNextEpoch, isRunning && runningGroup == "rules", nowEpoch))
-            HorizontalDivider()
-            MaterialTaskStatusRow("残留碎片清理", schedulerCountdownLabel(config.enabled && config.fragmentEnabled, config.fragmentNextEpoch, isRunning && runningGroup == "fragment", nowEpoch))
-            HorizontalDivider()
-            MaterialTaskStatusRow("深度安全清理", schedulerCountdownLabel(config.enabled && config.deepEnabled, config.deepNextEpoch, isRunning && runningGroup == "deep", nowEpoch))
-            HorizontalDivider()
-            MaterialTaskStatusRow("文件自动归类", schedulerCountdownLabel(config.enabled && config.organizeEnabled, config.organizeNextEpoch, isRunning && runningGroup == "organize", nowEpoch))
-        }
-    }
-}
-
-@Composable
-private fun MaterialTaskStatusRow(title: String, status: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(Icons.Rounded.Rule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(status, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun rememberMaterialSchedulerNowEpoch(): Long {
-    var now by remember { mutableStateOf(System.currentTimeMillis() / 1000L) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(30_000L)
-            now = System.currentTimeMillis() / 1000L
-        }
-    }
-    return now
-}
-
-@Composable
-private fun MaterialAutomationCard(
-    config: SchedulerUiState,
-    actions: SettingsUiActions
-) {
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            MaterialCardHeader(
-                icon = Icons.Rounded.CleaningServices,
-                title = "自动清理",
-                subtitle = if (config.enabled) "调度器已启用" else "调度器总开关已关闭"
-            )
-            Spacer(Modifier.height(10.dp))
-            MaterialSwitchRow(
-                title = "启用自动清理",
-                description = "按各清理类别设定的周期自动执行",
-                checked = config.enabled,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(enabled = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "等待息屏后执行",
-                description = "减少前台使用期间的性能影响",
-                checked = config.screenOffOnly,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(screenOffOnly = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "仅在充电时执行",
-                description = "避免自动任务额外消耗电量",
-                checked = config.chargingOnly,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(chargingOnly = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "仅在设备空闲时执行",
-                description = "由系统空闲状态限制后台任务",
-                checked = config.idleOnly,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(idleOnly = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "启用定时文件归类",
-                description = "与垃圾清理共享公平队列，不并行读写",
-                checked = config.organizeEnabled,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(organizeEnabled = it)) }
-            )
-            Spacer(Modifier.height(12.dp))
-            MaterialSliderSetting(
-                icon = Icons.Rounded.Rule,
-                title = "归类周期 ${materialOrganizerIntervalLabel(config.organizeMinutes)}",
-                description = "后台计划为唯一真实设置来源",
-                value = config.organizeMinutes.toFloat(),
-                valueRange = 15f..43_200f,
-                steps = 0,
-                enabled = config.organizeEnabled,
-                onValueChange = { actions.onUpdateScheduler(config.copy(organizeMinutes = it.roundToInt().coerceIn(15, 43_200))) }
-            )
-            MaterialSliderSetting(
-                icon = Icons.Rounded.Security,
-                title = "同名策略 ${materialConflictPolicyLabel(config.organizerConflictPolicy)}",
-                description = "跳过、自动重命名或内容去重",
-                value = config.organizerConflictPolicy.toFloat(),
-                valueRange = 0f..2f,
-                steps = 1,
-                enabled = config.organizeEnabled,
-                onValueChange = { actions.onUpdateScheduler(config.copy(organizerConflictPolicy = it.roundToInt().coerceIn(0, 2))) }
-            )
-            MaterialSliderSetting(
-                icon = Icons.Rounded.Rule,
-                title = "保留 ${config.organizerUndoRetention} 次撤销",
-                description = "撤销记录跨重启持久保存",
-                value = config.organizerUndoRetention.toFloat(),
-                valueRange = 1f..20f,
-                steps = 18,
-                enabled = config.organizeEnabled,
-                onValueChange = { actions.onUpdateScheduler(config.copy(organizerUndoRetention = it.roundToInt().coerceIn(1, 20))) }
-            )
-            Spacer(Modifier.height(8.dp))
-            MaterialSliderSetting(
-                icon = Icons.Rounded.Rule,
-                title = "最低电量 ${config.minBattery}%",
-                description = "电量低于此值时不启动自动清理",
-                value = config.minBattery.toFloat(),
-                valueRange = 0f..100f,
-                steps = 19,
-                onValueChange = {
-                    actions.onUpdateScheduler(config.copy(minBattery = (it / 5f).roundToInt() * 5))
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun MaterialProtectionCard(
-    state: SettingsUiState,
-    actions: SettingsUiActions
-) {
-    val config = state.scheduler
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            MaterialCardHeader(
-                icon = Icons.Rounded.Shield,
-                title = "清理保护",
-                subtitle = if (state.whitelistCount > 0) {
-                    "已保护 ${state.whitelistCount} 个应用"
-                } else {
-                    "尚未添加应用白名单"
-                }
-            )
-            Spacer(Modifier.height(15.dp))
-            FilledTonalButton(
-                onClick = actions.onOpenWhitelist,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.extraLarge
-            ) {
-                Icon(Icons.Rounded.Security, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("管理应用白名单", fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(10.dp))
-            MaterialSwitchRow(
-                title = "任务完成后发送通知",
-                description = "显示释放空间和处理项目数量",
-                checked = config.notifyOnComplete,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(notifyOnComplete = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "没有垃圾时也发送通知",
-                description = "零结果任务仍然显示完成通知",
-                checked = config.notifyZero,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(notifyZero = it)) }
-            )
-            HorizontalDivider()
-            MaterialSwitchRow(
-                title = "清理过期 APK 安装包",
-                description = "扫描常见下载目录中的 APK、APKS 与 XAPK",
-                checked = config.apkPackagesEnabled,
-                onCheckedChange = { actions.onUpdateScheduler(config.copy(apkPackagesEnabled = it)) }
-            )
-            Spacer(Modifier.height(12.dp))
-            MaterialSliderSetting(
-                icon = Icons.Rounded.InstallMobile,
-                title = "安装包保留 ${config.apkPackageDays} 天",
-                description = "0 天表示安装包进入扫描范围后即可作为候选",
-                value = config.apkPackageDays.toFloat(),
-                valueRange = 0f..365f,
-                steps = 0,
-                enabled = config.apkPackagesEnabled,
-                onValueChange = {
-                    actions.onUpdateScheduler(config.copy(apkPackageDays = it.roundToInt().coerceIn(0, 365)))
-                }
-            )
-            Spacer(Modifier.height(8.dp))
-            MaterialSliderSetting(
-                icon = Icons.Rounded.Security,
-                title = "单文件上限 ${config.maxFileMb} MB",
-                description = "超过上限的文件只统计，不会自动删除",
-                value = config.maxFileMb.toFloat(),
-                valueRange = 16f..2048f,
-                steps = 0,
-                onValueChange = {
-                    actions.onUpdateScheduler(config.copy(maxFileMb = ((it / 16f).roundToInt() * 16).coerceIn(16, 2048)))
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun MaterialServiceCard(
-    state: SettingsUiState,
-    actions: SettingsUiActions
-) {
-    val statusColor = when {
-        state.running -> MaterialTheme.colorScheme.tertiary
-        state.serviceHealthy -> MaterialTheme.colorScheme.primary
-        state.connected -> MaterialTheme.colorScheme.secondary
-        else -> MaterialTheme.colorScheme.error
-    }
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(12.dp)
-                        .background(statusColor, CircleShape)
-                )
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Root 服务", style = MaterialTheme.typography.titleLarge)
-                    Text(
-                        state.serviceText,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                state.schedulerText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.height(16.dp))
-            MaterialActionButton(Icons.Rounded.Refresh, "重新连接 Root 服务", actions.onReconnect)
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.Rule, "打开清理明细", actions.onOpenAudit)
-            Spacer(Modifier.height(8.dp))
-            MaterialActionButton(Icons.Rounded.BugReport, "崩溃诊断", actions.onOpenCrashDiagnostics)
-        }
-    }
-}
-
-@Composable
-private fun MaterialCardHeader(
-    icon: ImageVector,
-    title: String,
-    subtitle: String
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(50.dp)
-                .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.large),
-            contentAlignment = Alignment.Center
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Surface(
+                modifier = Modifier.size(46.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .10f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.DarkMode, contentDescription = null)
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("界面与主题", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    state.appearanceSummary,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, contentDescription = null)
         }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun MaterialSectionHeader(title: String, subtitle: String) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun MaterialAutomationConditions(scheduler: SchedulerUiState, actions: SettingsUiActions) {
+    MaterialGroup {
+        MaterialSwitchRow(
+            icon = Icons.Rounded.SettingsSuggest,
+            title = "仅在息屏时执行",
+            subtitle = "避免在使用手机时占用存储性能",
+            checked = scheduler.screenOffOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(screenOffOnly = it)) }
+        )
+        MaterialDivider()
+        MaterialSwitchRow(
+            icon = Icons.Rounded.BatterySaver,
+            title = "仅在充电时执行",
+            subtitle = "适合深度任务和夜间自动清理",
+            checked = scheduler.chargingOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(chargingOnly = it)) }
+        )
+        MaterialDivider()
+        MaterialSwitchRow(
+            icon = Icons.Rounded.SettingsSuggest,
+            title = "仅在系统空闲时执行",
+            subtitle = "等待 Android 进入空闲状态",
+            checked = scheduler.idleOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(idleOnly = it)) }
+        )
+    }
+}
+
+@Composable
+private fun MaterialOrganizerConditions(scheduler: SchedulerUiState, actions: SettingsUiActions) {
+    MaterialGroup {
+        MaterialSwitchRow(
+            icon = Icons.Rounded.FolderCopy,
+            title = "归类时等待息屏",
+            subtitle = "文件整理不会打断前台操作",
+            checked = scheduler.organizeScreenOffOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeScreenOffOnly = it)) }
+        )
+        MaterialDivider()
+        MaterialSwitchRow(
+            icon = Icons.Rounded.BatterySaver,
+            title = "归类时等待充电",
+            subtitle = "只在设备连接电源后整理文件",
+            checked = scheduler.organizeChargingOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeChargingOnly = it)) }
+        )
+        MaterialDivider()
+        MaterialSwitchRow(
+            icon = Icons.Rounded.SettingsSuggest,
+            title = "归类时等待系统空闲",
+            subtitle = "减少文件移动对前台应用的影响",
+            checked = scheduler.organizeIdleOnly,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeIdleOnly = it)) }
+        )
+    }
+}
+
+@Composable
+private fun MaterialSafetySettings(state: SettingsUiState, actions: SettingsUiActions) {
+    val scheduler = state.scheduler
+    MaterialGroup {
+        MaterialSliderRow(
+            icon = Icons.Rounded.BatterySaver,
+            title = "最低电量 ${scheduler.minBattery}%",
+            subtitle = "低于此电量时自动等待",
+            value = scheduler.minBattery.toFloat(),
+            range = 0f..100f,
+            steps = 19,
+            onValueChange = { actions.onUpdateScheduler(scheduler.copy(minBattery = it.roundToInt())) }
+        )
+        MaterialDivider()
+        MaterialSliderRow(
+            icon = Icons.Rounded.Security,
+            title = "单文件上限 ${scheduler.maxFileMb} MB",
+            subtitle = "超过上限的文件不会自动清理",
+            value = scheduler.maxFileMb.toFloat(),
+            range = 16f..2_048f,
+            steps = 30,
+            onValueChange = { actions.onUpdateScheduler(scheduler.copy(maxFileMb = it.roundToInt())) }
+        )
+        MaterialDivider()
+        MaterialValueRow(
+            icon = Icons.Rounded.Security,
+            title = "应用白名单",
+            subtitle = "${state.whitelistCount} 个应用受到保护",
+            onClick = actions.onOpenWhitelist
+        )
+    }
+}
+
+@Composable
+private fun MaterialNotificationSettings(scheduler: SchedulerUiState, actions: SettingsUiActions) {
+    MaterialGroup {
+        MaterialSwitchRow(
+            icon = Icons.Rounded.Notifications,
+            title = "任务完成通知",
+            subtitle = "自动任务结束后显示结果",
+            checked = scheduler.notifyOnComplete,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(notifyOnComplete = it)) }
+        )
+        MaterialDivider()
+        MaterialSwitchRow(
+            icon = Icons.Rounded.Notifications,
+            title = "零结果也通知",
+            subtitle = "没有可清理内容时也发送通知",
+            checked = scheduler.notifyZero,
+            onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(notifyZero = it)) }
+        )
+    }
+}
+
+@Composable
+private fun MaterialServiceStatus(state: SettingsUiState) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(if (state.ready) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Root 服务", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    state.serviceText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Text(
-                subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                if (state.running) "执行中" else if (state.ready) "运行正常" else "自动恢复中",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium
             )
         }
+    }
+}
+
+@Composable
+private fun MaterialGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(content = content)
     }
 }
 
 @Composable
 private fun MaterialSwitchRow(
+    icon: ImageVector,
     title: String,
-    description: String,
+    subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            Text(
-                description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
-            )
-        }
+        MaterialLeadingIcon(icon)
         Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
 @Composable
-private fun MaterialSliderSetting(
+private fun MaterialSliderRow(
     icon: ImageVector,
     title: String,
-    description: String,
+    subtitle: String,
     value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
+    range: ClosedFloatingPointRange<Float>,
     steps: Int,
-    enabled: Boolean = true,
     onValueChange: (Float) -> Unit
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(
-                    description,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
-                )
-            }
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        MaterialLeadingIcon(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Slider(value = value, onValueChange = onValueChange, valueRange = range, steps = steps)
         }
-        Slider(
-            value = value.coerceIn(valueRange.start, valueRange.endInclusive),
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            steps = steps,
-            enabled = enabled
-        )
     }
 }
 
-
-private fun materialOrganizerIntervalLabel(minutes: Int): String = when (minutes) {
-    30 -> "30 分钟"
-    60 -> "1 小时"
-    360 -> "6 小时"
-    720 -> "12 小时"
-    1_440 -> "每天"
-    4_320 -> "3 天"
-    10_080 -> "每周"
-    else -> "${minutes} 分钟"
-}
-
-private fun materialConflictPolicyLabel(value: Int): String = when (value) {
-    0 -> "跳过"
-    2 -> "内容去重"
-    else -> "自动重命名"
-}
-
 @Composable
-private fun MaterialActionButton(
-    icon: ImageVector,
-    title: String,
-    onClick: () -> Unit
-) {
-    FilledTonalButton(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge
+private fun MaterialValueRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(9.dp))
-        Text(title, fontWeight = FontWeight.Bold)
+        MaterialLeadingIcon(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun MaterialInfoPill(text: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.extraLarge)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center
+private fun MaterialLeadingIcon(icon: ImageVector) {
+    Surface(
+        modifier = Modifier.size(42.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.secondaryContainer
     ) {
-        Text(
-            text,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(21.dp))
+        }
     }
 }
 
 @Composable
-private fun MaterialSectionTitle(eyebrow: String, title: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 2.dp)) {
-        Text(
-            eyebrow,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp
-        )
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-    }
+private fun MaterialDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 70.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .60f)
+    )
 }
