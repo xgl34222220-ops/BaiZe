@@ -26,8 +26,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(cat .github/dual-theme-patch.part.* | wc -c)" -eq 61632
-          cat .github/dual-theme-patch.part.* | base64 --decode | gzip --decompress > /tmp/dual-theme.patch
+          {
+            head -c 15000 .github/dual-theme-patch.part.00
+            cat .github/dual-theme-patch.part.01
+            cat .github/dual-theme-patch.part.02
+            cat .github/dual-theme-patch.part.03
+            cat .github/dual-theme-patch.part.04
+          } > /tmp/dual-theme.patch.gz.b64
+          test "$(wc -c < /tmp/dual-theme.patch.gz.b64)" -eq 61632
+          echo 'fdfaeb09e0ac355928d634ccfdce6923711cf5c2810c67c19ef91cc4020119a2  /tmp/dual-theme.patch.gz.b64' | sha256sum --check --strict
+          base64 --decode /tmp/dual-theme.patch.gz.b64 | gzip --decompress > /tmp/dual-theme.patch
           echo '47186f7a3ca039f931bf0e86aad532e575bcbc351a1439040f6069eb78851827  /tmp/dual-theme.patch' | sha256sum --check --strict
           patch --dry-run -p1 < /tmp/dual-theme.patch
 
