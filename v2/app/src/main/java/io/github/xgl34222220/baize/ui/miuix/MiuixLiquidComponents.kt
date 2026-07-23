@@ -32,17 +32,13 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -55,6 +51,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 /** A stable Miuix navigation item. Labels always stay below icons. */
 data class MiuixLiquidNavItem(
@@ -80,9 +77,9 @@ fun MiuixLiquidDock(
     val amoled = dark && settings.amoledBlack
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = if (floating) {
-        RoundedCornerShape(34.dp)
+        BaiZeTokens.corners.extraLarge
     } else {
-        RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp)
+        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     }
 
     val activeHazeState = hazeState.takeIf {
@@ -95,7 +92,7 @@ fun MiuixLiquidDock(
         dark -> scheme.surface.copy(alpha = .98f)
         else -> Color.White.copy(alpha = .98f)
     }
-    val borderColor = if (dark) Color.White.copy(alpha = .15f) else Color.White.copy(alpha = .82f)
+    val borderColor = if (dark) Color.White.copy(alpha = .10f) else scheme.outlineVariant.copy(alpha = .6f)
     val hazeModifier = activeHazeState?.let { state ->
         Modifier.hazeEffect(
             state = state,
@@ -118,34 +115,11 @@ fun MiuixLiquidDock(
                 }
             )
             .fillMaxWidth()
-            .shadow(if (floating) 22.dp else 8.dp, shape, clip = false)
+            .shadow(if (floating) 8.dp else 2.dp, shape, clip = false)
             .clip(shape)
             .then(hazeModifier)
             .background(dockColor)
             .border(1.dp, borderColor, shape)
-            .drawBehind {
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = if (dark) .14f else .46f),
-                            Color.Transparent
-                        )
-                    ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(34.dp.toPx()),
-                    size = size.copy(height = size.height * .58f)
-                )
-                if (!amoled && settings.glassEnabled) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            listOf(scheme.primary.copy(alpha = .14f), Color.Transparent),
-                            center = Offset(size.width * .18f, size.height * .08f),
-                            radius = size.width * .6f
-                        ),
-                        radius = size.width * .6f,
-                        center = Offset(size.width * .18f, size.height * .08f)
-                    )
-                }
-            }
             .padding(
                 start = 6.dp,
                 top = 7.dp,
@@ -170,20 +144,8 @@ fun MiuixLiquidDock(
                 .offset(x = indicatorX + 4.dp)
                 .width(itemWidth - 8.dp)
                 .height(58.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            scheme.primary.copy(alpha = if (dark) .28f else .20f),
-                            scheme.tertiary.copy(alpha = if (dark) .20f else .13f)
-                        )
-                    )
-                )
-                .border(
-                    1.dp,
-                    Color.White.copy(alpha = if (dark) .12f else .62f),
-                    RoundedCornerShape(24.dp)
-                )
+                .clip(BaiZeTokens.corners.medium)
+                .background(scheme.primary.copy(alpha = if (dark) .22f else .12f))
         )
 
         Row(Modifier.fillMaxWidth()) {
@@ -202,7 +164,7 @@ fun MiuixLiquidDock(
                     modifier = Modifier
                         .width(itemWidth)
                         .height(58.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(BaiZeTokens.corners.medium)
                         .clickable { onSelected(index) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
@@ -217,8 +179,8 @@ fun MiuixLiquidDock(
                     Text(
                         text = item.title,
                         color = textColor,
-                        fontSize = if (compact) 9.sp else 10.sp,
-                        lineHeight = if (compact) 11.sp else 12.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                     )
                 }
@@ -237,45 +199,18 @@ fun MiuixOverviewHero(
     positive: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val settings = LocalAppearanceSettings.current
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.background.luminance() < .5f
-    val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(36.dp)
-    val surface = when {
-        amoled -> Color(0xFF090909)
-        dark -> scheme.surfaceContainerHigh
-        else -> scheme.surface
-    }
+    val shape = BaiZeTokens.corners.large
+    val surface = BaiZeTokens.colors.surfaceRaised
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(12.dp, shape, clip = false)
             .clip(shape)
             .background(surface)
             .border(1.dp, scheme.onSurface.copy(alpha = if (dark) .08f else .05f), shape)
-            .drawBehind {
-                if (!amoled) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            listOf(scheme.primary.copy(alpha = if (dark) .20f else .16f), Color.Transparent),
-                            center = Offset(size.width, 0f),
-                            radius = size.width * .78f
-                        ),
-                        radius = size.width * .78f,
-                        center = Offset(size.width, 0f)
-                    )
-                }
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = if (dark) .05f else .35f), Color.Transparent)
-                    ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(36.dp.toPx()),
-                    size = size.copy(height = size.height * .38f)
-                )
-            }
-            .padding(24.dp)
+            .padding(BaiZeTokens.spacing.xxl)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -283,7 +218,7 @@ fun MiuixOverviewHero(
                     Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (positive) Color(0xFF2DBE87) else Color(0xFFF2A93B))
+                        .background(if (positive) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(device, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -296,7 +231,7 @@ fun MiuixOverviewHero(
                 )
             }
 
-            Spacer(Modifier.height(23.dp))
+            Spacer(Modifier.height(24.dp))
             Text(
                 "最近一次释放",
                 color = scheme.onSurfaceVariant,
@@ -306,24 +241,22 @@ fun MiuixOverviewHero(
             Text(
                 releasedText,
                 color = scheme.onSurface,
-                fontSize = 42.sp,
-                lineHeight = 46.sp,
-                fontWeight = FontWeight.Black
+                style = BaiZeTokens.type.hero
             )
 
             Spacer(Modifier.height(20.dp))
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(22.dp))
+                    .clip(BaiZeTokens.corners.medium)
                     .background(scheme.onSurface.copy(alpha = if (dark) .055f else .04f))
-                    .padding(horizontal = 15.dp, vertical = 13.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     if (positive) Icons.Rounded.CheckCircle else Icons.Rounded.Refresh,
                     contentDescription = null,
-                    tint = if (positive) Color(0xFF2DBE87) else scheme.primary,
+                    tint = if (positive) BaiZeTokens.colors.success else scheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(11.dp))
@@ -351,9 +284,7 @@ fun MiuixLiquidPrimaryButton(
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
-    val settings = LocalAppearanceSettings.current
-    val dark = scheme.background.luminance() < .5f
-    val shape = RoundedCornerShape(28.dp)
+    val shape = BaiZeTokens.corners.full
     val label = when {
         running -> "停止清理"
         scanReady -> "按扫描结果清理"
@@ -365,38 +296,31 @@ fun MiuixLiquidPrimaryButton(
         else -> Icons.Rounded.AutoAwesome
     }
 
-    val baseGradient = when {
-        !enabled -> listOf(scheme.onSurface.copy(alpha = .16f), scheme.onSurface.copy(alpha = .10f))
-        running -> listOf(Color(0xFF6B6E79), Color(0xFF4C4F59))
-        else -> listOf(scheme.primary, scheme.tertiary)
+    // 纯色胶囊：默认 primary，运行中用中性面，禁用为淡灰。
+    val containerColor = when {
+        !enabled -> scheme.onSurface.copy(alpha = .12f)
+        running -> scheme.surfaceVariant
+        else -> scheme.primary
+    }
+    val contentColor = when {
+        !enabled -> scheme.onSurface.copy(alpha = .45f)
+        running -> scheme.onSurface
+        else -> scheme.onPrimary
     }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp)
-            .shadow(if (enabled) 14.dp else 0.dp, shape, clip = false)
+            .height(64.dp)
             .clip(shape)
-            .background(Brush.horizontalGradient(baseGradient))
-            .border(1.dp, Color.White.copy(alpha = if (dark) .16f else .48f), shape)
-            .drawBehind {
-                if (settings.glassEnabled) {
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(
-                            listOf(Color.White.copy(alpha = .34f), Color.Transparent)
-                        ),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(28.dp.toPx()),
-                        size = size.copy(height = size.height * .54f)
-                    )
-                }
-            }
+            .background(containerColor)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(25.dp))
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
-            Text(label, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+            Text(label, color = contentColor, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
