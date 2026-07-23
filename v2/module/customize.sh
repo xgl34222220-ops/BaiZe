@@ -16,10 +16,10 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
 done
 
 ui_print "- 正在安装白泽 v2.4.1"
-ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
-ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
-ui_print "- 可整理应用下载、接收、附件与导出文件"
-ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"
+ui_print "- 白泽是全自动 Android Root 垃圾清理与文件归类模块"
+ui_print "- 后台自动清理缓存、安装包、卸载残留和安全碎片"
+ui_print "- 后台自动整理应用下载、接收、附件与导出文件"
+ui_print "- App 仅用于开关、白名单和结果查看，无需手动唤醒"
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
@@ -37,8 +37,7 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
 [ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
-[ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
-[ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
+[ -f "$MODPATH/worker-runner.sh" ] || abort "! 模块包中缺少 Root Worker Runner"
 [ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
@@ -52,16 +51,20 @@ pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/organizer-worker.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/scheduler.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/supervisor.sh' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR/run.lock"
-rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
+rm -f "$STATE_DIR/running.env" "$STATE_DIR/worker.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" "$STATE_DIR/cache_scan.manifest0"
 rm -f "$STATE_DIR/cache_auto.env" "$STATE_DIR/cache_auto.targets" "$STATE_DIR/cache_auto.items.tsv" "$STATE_DIR/cache_auto.manifest0"
 rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
 rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
-# v2.4.1 test builds used a fixed six-hour fuse. Drop those stale counters on upgrade;
-# the new scheduler uses short adaptive retry windows and user-triggered retries clear their own group.
+
+# Clear every old developer-facing failure/fuse snapshot. The supervisor will rebuild a clean
+# runtime state automatically after reboot and will retry transient failures by itself.
 rm -f "$STATE_DIR"/scheduler-fail-*.count "$STATE_DIR"/scheduler-fail-*.env "$STATE_DIR"/scheduler-pause-*.until 2>/dev/null || true
+rm -f "$STATE_DIR/scheduler.env" "$STATE_DIR/scheduler-queue.tsv" 2>/dev/null || true
 
 if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ]; then
   migrated=0
@@ -84,11 +87,28 @@ if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ];
   fi
 fi
 
+set_config_value() {
+  key=$1
+  value=$2
+  file="$STATE_DIR/config.conf"
+  [ -f "$file" ] || return 0
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    sed -i "s/^${key}=.*/${key}=${value}/" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >>"$file"
+  fi
+}
+
+# This build is explicitly automatic-first. Existing installations are upgraded to the same
+# defaults as fresh installs so automatic cleaning and automatic organization work immediately.
+set_config_value enabled 1
+set_config_value schedule_organize_enabled 1
+ui_print "- 全自动清理与自动文件归类已启用"
+
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
-chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {
