@@ -420,24 +420,31 @@ while IFS= read -r line || [ -n "$line" ]; do
       target_bytes=$((estimated - remaining_bytes)); [ "$target_bytes" -lt 0 ] && target_bytes=0
       errors=$((errors + remain))
     fi
-    # 目录已按 -depth 自底向上排序：文件删除后统一 rmdir，链式空目录依次消除，非空/新于快照的目录自动保留
-    dir_count=$(count_nul "$dirs_list"); case "$dir_count" in ''|*[!0-9]*) dir_count=0 ;; esac
+    # 目录已按 -depth 自底向上排序：文件删除后统一 rmdir，链式空目录依次消除，非空目录自动保留。
+    # 删除时点新鲜度复核：删文件会刷新父目录 mtime，凡新于快照的目录一律保留
+    # （read/-nt 均为内建，代价可忽略），与 base 版 find ! -newer -delete 的删除时点语义一致。
+    fresh_dirs="$TMP_DIR/$MODE.$current.freshdirs0"
+    : >"$fresh_dirs"
+    while IFS= read -r -d '' entry; do
+      [ ! "$entry" -nt "$STATE_FILE" ] && printf '%s\0' "$entry" >>"$fresh_dirs"
+    done <"$dirs_list"
+    dir_count=$(count_nul "$fresh_dirs"); case "$dir_count" in ''|*[!0-9]*) dir_count=0 ;; esac
     if [ "$dir_count" -gt 0 ]; then
-      xargs -0 -n 100 rmdir <"$dirs_list" 2>/dev/null &
+      xargs -0 -n 100 rmdir <"$fresh_dirs" 2>/dev/null &
       child=$!
       wait_with_stop "$child"
       rmdir_code=$?
-      if [ "$rmdir_code" -eq 9 ]; then rm -f "$list" "$dirs_list" "$remaining"; code=9; break; fi
+      if [ "$rmdir_code" -eq 9 ]; then rm -f "$list" "$dirs_list" "$remaining" "$fresh_dirs"; code=9; break; fi
       remain_dirs=0
       while IFS= read -r -d '' entry; do
         [ -d "$entry" ] && remain_dirs=$((remain_dirs + 1))
-      done <"$dirs_list"
+      done <"$fresh_dirs"
       target_dirs=$((dir_count - remain_dirs)); [ "$target_dirs" -lt 0 ] && target_dirs=0
     fi
     if [ -d "$target" ] && [ ! "$target" -nt "$STATE_FILE" ]; then
       rmdir "$target" 2>/dev/null && target_dirs=$((target_dirs + 1))
     fi
-    rm -f "$list" "$dirs_list" "$remaining"
+    rm -f "$list" "$dirs_list" "$remaining" "$fresh_dirs"
   else
     skipped=$((skipped + 1))
     printf 'protected\t%s\t不支持的文件类型\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
