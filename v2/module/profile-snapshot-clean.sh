@@ -122,17 +122,28 @@ path_relation() {
   return 1
 }
 
+# 单趟 awk 白名单判定：不再逐行 fork sed/path_relation，双向前缀语义（路径本身、子项、父目录均受保护）与原实现完全一致。
 path_conflicts_whitelist() {
   target=${1%/}
-  while IFS= read -r raw || [ -n "$raw" ]; do
-    item=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    case "$item" in ''|'#'*) continue ;; /*) ;; *) continue ;; esac
-    item=${item%/}
-    [ -n "$item" ] || item=/
-    path_relation "$item" "$target" && return 0
-    path_relation "$target" "$item" && return 0
-  done <"$WHITELIST"
-  return 1
+  awk -v t="$target" '
+    function relation(parent, child,   p, c) {
+      p = parent; c = child
+      sub(/\/$/, "", p); sub(/\/$/, "", c)
+      if (p == c) return 1
+      if (substr(c, 1, length(p) + 1) == p "/") return 1
+      return 0
+    }
+    {
+      item = $0
+      sub(/^[[:space:]]*/, "", item); sub(/[[:space:]]*$/, "", item)
+      if (item == "" || item ~ /^#/) next
+      if (item !~ /^\//) next
+      sub(/\/$/, "", item)
+      if (item == "") item = "/"
+      if (relation(item, t) || relation(t, item)) { found = 1; exit }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$WHITELIST"
 }
 
 deep_path_allowed() {
@@ -164,6 +175,8 @@ corpse_target_info() {
   printf '%s\t%s\t%s\n' "$user" "$bucket" "$package"
 }
 
+# 已安装包列表按用户一次性缓存到临时文件（每用户全程仅一次 binder 调用），
+# 获取失败时返回 2，调用方按"无法复核安装状态"保守跳过。
 package_installed() {
   user=$1 package=$2
   if [ -n "${BAIZE_INSTALLED_ROOT:-}" ]; then
@@ -172,19 +185,21 @@ package_installed() {
     grep -Fqx -- "$package" "$list" 2>/dev/null
     return $?
   fi
-  if command -v cmd >/dev/null 2>&1; then
-    output=$(cmd package list packages --user "$user" "$package" 2>/dev/null)
-    [ $? -eq 0 ] || return 2
-    printf '%s\n' "$output" | sed 's/^package://' | grep -Fqx -- "$package"
-    return $?
+  cache="$TMP_DIR/installed-$user.txt"
+  if [ ! -f "$cache" ]; then
+    : >"$cache"
+    if command -v cmd >/dev/null 2>&1; then
+      cmd package list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$cache"
+    fi
+    if [ ! -s "$cache" ] && command -v pm >/dev/null 2>&1; then
+      pm list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$cache"
+    fi
+    if [ ! -s "$cache" ]; then
+      rm -f "$cache"
+      return 2
+    fi
   fi
-  if command -v pm >/dev/null 2>&1; then
-    output=$(pm list packages --user "$user" "$package" 2>/dev/null)
-    [ $? -eq 0 ] || return 2
-    printf '%s\n' "$output" | sed 's/^package://' | grep -Fqx -- "$package"
-    return $?
-  fi
-  return 2
+  grep -Fqx -- "$package" "$cache" 2>/dev/null
 }
 
 wait_with_stop() {
@@ -200,9 +215,12 @@ wait_with_stop() {
   wait "$child"
 }
 
-find_snapshot_files() {
+# 单趟遍历同时收集待删文件与候选目录（-depth 保证目录按自底向上排序）：
+# 文件须不超大小上限且不新于快照；目录只需不新于快照，删文件后统一 rmdir，非空目录自动保留。
+find_snapshot_entries() {
   target=$1 output=$2 max_bytes=$3
-  find "$target" -xdev -mindepth 1 -type f ! -size "+${max_bytes}c" ! -newer "$STATE_FILE" -print0 >"$output" 2>/dev/null &
+  find "$target" -xdev -depth -mindepth 1 ! -newer "$STATE_FILE" \
+    \( -type d -o -type f ! -size "+${max_bytes}c" \) -print0 >"$output" 2>/dev/null &
   child=$!
   wait_with_stop "$child"
 }
@@ -370,18 +388,31 @@ while IFS= read -r line || [ -n "$line" ]; do
       errors=$((errors + 1))
     fi
   elif [ -d "$target" ]; then
+    all_list="$TMP_DIR/$MODE.$current.entries0"
     list="$TMP_DIR/$MODE.$current.files0"
+    dirs_list="$TMP_DIR/$MODE.$current.dirs0"
     remaining="$TMP_DIR/$MODE.$current.remaining0"
-    : >"$list"
-    find_snapshot_files "$target" "$list" "$max_file_bytes"
+    : >"$all_list"
+    find_snapshot_entries "$target" "$all_list" "$max_file_bytes"
     find_code=$?
-    if [ "$find_code" -eq 9 ]; then code=9; break; fi
+    if [ "$find_code" -eq 9 ]; then rm -f "$all_list"; code=9; break; fi
+    : >"$list"
+    : >"$dirs_list"
+    # 单趟遍历结果按类型分流（read/[ 均为 shell 内建，无额外进程）
+    while IFS= read -r -d '' entry; do
+      if [ -d "$entry" ]; then
+        printf '%s\0' "$entry" >>"$dirs_list"
+      else
+        printf '%s\0' "$entry" >>"$list"
+      fi
+    done <"$all_list"
+    rm -f "$all_list"
     count=$(count_nul "$list"); case "$count" in ''|*[!0-9]*) count=0 ;; esac
     if [ "$count" -gt 0 ]; then
       estimated=$(bytes_from_list "$list"); case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
       delete_file_list "$list"
       delete_code=$?
-      if [ "$delete_code" -eq 9 ]; then code=9; break; fi
+      if [ "$delete_code" -eq 9 ]; then rm -f "$list" "$dirs_list"; code=9; break; fi
       existing_files_to_list "$list" "$remaining"
       remain=$(count_nul "$remaining"); case "$remain" in ''|*[!0-9]*) remain=0 ;; esac
       remaining_bytes=$(bytes_from_list "$remaining"); case "$remaining_bytes" in ''|*[!0-9]*) remaining_bytes=0 ;; esac
@@ -389,16 +420,24 @@ while IFS= read -r line || [ -n "$line" ]; do
       target_bytes=$((estimated - remaining_bytes)); [ "$target_bytes" -lt 0 ] && target_bytes=0
       errors=$((errors + remain))
     fi
-    before_dirs=$(find "$target" -xdev -mindepth 1 -type d -empty ! -newer "$STATE_FILE" 2>/dev/null | wc -l | tr -d ' ')
-    case "$before_dirs" in ''|*[!0-9]*) before_dirs=0 ;; esac
-    find "$target" -xdev -depth -mindepth 1 -type d -empty ! -newer "$STATE_FILE" -delete 2>/dev/null
-    after_dirs=$(find "$target" -xdev -mindepth 1 -type d -empty ! -newer "$STATE_FILE" 2>/dev/null | wc -l | tr -d ' ')
-    case "$after_dirs" in ''|*[!0-9]*) after_dirs=0 ;; esac
-    target_dirs=$((before_dirs - after_dirs)); [ "$target_dirs" -lt 0 ] && target_dirs=0
+    # 目录已按 -depth 自底向上排序：文件删除后统一 rmdir，链式空目录依次消除，非空/新于快照的目录自动保留
+    dir_count=$(count_nul "$dirs_list"); case "$dir_count" in ''|*[!0-9]*) dir_count=0 ;; esac
+    if [ "$dir_count" -gt 0 ]; then
+      xargs -0 -n 100 rmdir <"$dirs_list" 2>/dev/null &
+      child=$!
+      wait_with_stop "$child"
+      rmdir_code=$?
+      if [ "$rmdir_code" -eq 9 ]; then rm -f "$list" "$dirs_list" "$remaining"; code=9; break; fi
+      remain_dirs=0
+      while IFS= read -r -d '' entry; do
+        [ -d "$entry" ] && remain_dirs=$((remain_dirs + 1))
+      done <"$dirs_list"
+      target_dirs=$((dir_count - remain_dirs)); [ "$target_dirs" -lt 0 ] && target_dirs=0
+    fi
     if [ -d "$target" ] && [ ! "$target" -nt "$STATE_FILE" ]; then
       rmdir "$target" 2>/dev/null && target_dirs=$((target_dirs + 1))
     fi
-    rm -f "$list" "$remaining"
+    rm -f "$list" "$dirs_list" "$remaining"
   else
     skipped=$((skipped + 1))
     printf 'protected\t%s\t不支持的文件类型\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
