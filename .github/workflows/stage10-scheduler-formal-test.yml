@@ -1,0 +1,158 @@
+name: Stage Ten Scheduler Recovery Formal Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  formal-test:
+    if: github.head_ref == 'agent/builtin-rule-expansion'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout stage branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/builtin-rule-expansion
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Prepare formal production signer
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+          EXPECTED_CERT: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+        run: |
+          set -euo pipefail
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/baize-stage10-scheduler-formal.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          ACTUAL_CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify scheduler and built-in rule inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n service.sh
+          sh -n v2/module/task-worker.sh
+          sh -n v2/module/worker-runner.sh
+          sh -n v2/module/organizer-worker.sh
+          grep -q 'SPEC_MODE=deep-auto' service.sh
+          grep -q '1) echo 300' service.sh
+          ! grep -q 'FAILURE_PAUSE_SECONDS=21600' service.sh
+          grep -q 'deep-scan' v2/module/worker-runner.sh
+          grep -q 'deep-clean' v2/module/worker-runner.sh
+          grep -q 'exit 10' v2/module/organizer-worker.sh
+          app=$(grep -Ev '^[[:space:]]*(#|$)' config/app.rules | wc -l | tr -d ' ')
+          external=$(grep -Ev '^[[:space:]]*(#|$)' config/external.rules | wc -l | tr -d ' ')
+          hidden=$(grep -Ev '^[[:space:]]*(#|$)' config/hidden.rules | wc -l | tr -d ' ')
+          deep=$(grep -E '^[[:space:]]*/' config/deep.rules | wc -l | tr -d ' ')
+          test "$app" = 430
+          test "$external" = 232
+          test "$hidden" = 22
+          test "$deep" = 4746
+          {
+            echo "app.rules=$app"
+            echo "external.rules=$external"
+            echo "hidden.rules=$hidden"
+            echo "deep.rules=$deep"
+            echo "total=$((app + external + hidden + deep))"
+            echo 'deep_schedule=scan_then_clean'
+            echo 'retry_minutes=5,15,30,60,120'
+          } > stage10-scheduler-inventory.txt
+
+      - name: Build ARM64 scanner
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build formal signed Android release
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Package formal signed module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify and stage formal artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=v2/dist/stage10-scheduler-formal-test
+          ZIP=v2/dist/BaiZe-v2.4.1-Module.zip
+          APK=v2/app/build/outputs/apk/release/app-release.apk
+          mkdir -p "$OUT"
+          test -s "$ZIP" && test -s "$APK"
+          unzip -tq "$ZIP"
+          for file in app.rules external.rules hidden.rules deep.rules; do
+            cmp "config/$file" <(unzip -p "$ZIP" "config/$file")
+          done
+          cmp service.sh <(unzip -p "$ZIP" scheduler.sh)
+          cmp v2/module/task-worker.sh <(unzip -p "$ZIP" task-worker.sh)
+          cmp v2/module/worker-runner.sh <(unzip -p "$ZIP" worker-runner.sh)
+          cmp v2/module/organizer-worker.sh <(unzip -p "$ZIP" organizer-worker.sh)
+          cmp v2/module/customize.sh <(unzip -p "$ZIP" customize.sh)
+          PACKAGED_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
+          BUILT_APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
+          test "$PACKAGED_APK_SHA" = "$BUILT_APK_SHA"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Certificate.txt"
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Certificate.txt" | tr -d ':[:space:]')
+          test "$APK_CERT" = '9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f'
+          cp "$ZIP" "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Module.zip"
+          cp "$APK" "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix.apk"
+          cp stage10-scheduler-inventory.txt "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Inventory.txt"
+          sha256sum "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Module.zip" > "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix-Module.zip.sha256"
+          sha256sum "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix.apk" > "$OUT/BaiZe-v2.4.1-Stage10-Scheduler-Fix.apk.sha256"
+
+      - name: Upload formal signed test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.1-Stage10-Scheduler-Fix-Formal-Test
+          if-no-files-found: error
+          path: v2/dist/stage10-scheduler-formal-test/*
