@@ -52,11 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryUiItem
@@ -228,16 +225,14 @@ private fun MiuixCleanHeader() {
         Text(
             "清理分类",
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.2.sp
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "清理中心",
-            fontSize = 36.sp,
-            lineHeight = 40.sp,
-            fontWeight = FontWeight.Black
+            style = BaiZeTokens.type.display
         )
         Text(
             "选择类别、周期和手动清理工具",
@@ -257,7 +252,7 @@ private fun MiuixCleanOverview(
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(34.dp)
+    val shape = RoundedCornerShape(36.dp)
     val status = when {
         state.running -> "清理任务执行中"
         state.scanSnapshotReady -> "扫描快照已就绪"
@@ -268,37 +263,16 @@ private fun MiuixCleanOverview(
     Box(
         modifier
             .fillMaxWidth()
-            .shadow(10.dp, shape, clip = false)
             .clip(shape)
             .background(
                 when {
-                    amoled -> Color(0xFF090909)
+                    amoled -> BaiZeTokens.colors.surfaceRaised
                     dark -> scheme.surfaceContainerHigh
                     else -> scheme.surface
                 }
             )
             .border(1.dp, scheme.onSurface.copy(alpha = .06f), shape)
-            .drawBehind {
-                if (!amoled) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            listOf(scheme.primary.copy(alpha = if (dark) .20f else .15f), Color.Transparent),
-                            center = Offset(size.width, 0f),
-                            radius = size.width * .72f
-                        ),
-                        radius = size.width * .72f,
-                        center = Offset(size.width, 0f)
-                    )
-                }
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = if (dark) .05f else .30f), Color.Transparent)
-                    ),
-                    cornerRadius = CornerRadius(34.dp.toPx()),
-                    size = size.copy(height = size.height * .42f)
-                )
-            }
-            .padding(22.dp)
+            .padding(BaiZeTokens.spacing.xxl)
     ) {
         Column {
             Text(
@@ -310,9 +284,7 @@ private fun MiuixCleanOverview(
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     state.enabledCategoryCount.toString(),
-                    fontSize = 46.sp,
-                    lineHeight = 48.sp,
-                    fontWeight = FontWeight.Black
+                    style = BaiZeTokens.type.hero
                 )
                 Text(
                     " / ${state.categories.size} 类",
@@ -326,9 +298,9 @@ private fun MiuixCleanOverview(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(21.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .background(scheme.onSurface.copy(alpha = if (dark) .055f else .04f))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -336,8 +308,8 @@ private fun MiuixCleanOverview(
                         .size(10.dp)
                         .clip(CircleShape)
                         .background(
-                            if (state.engineReady || state.scanSnapshotReady) Color(0xFF2DBE87)
-                            else Color(0xFFF2A93B)
+                            if (state.engineReady || state.scanSnapshotReady) BaiZeTokens.colors.success
+                            else BaiZeTokens.colors.warning
                         )
                 )
                 Spacer(Modifier.width(10.dp))
@@ -346,7 +318,7 @@ private fun MiuixCleanOverview(
                     Text(
                         state.serviceText,
                         color = scheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -365,15 +337,15 @@ private fun MiuixGroupCard(
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(30.dp)
+    val shape = RoundedCornerShape(28.dp)
     Column(
         modifier
             .fillMaxWidth()
-            .shadow(6.dp, shape, clip = false)
+            .shadow(2.dp, shape, clip = false)
             .clip(shape)
             .background(
                 when {
-                    amoled -> Color(0xFF090909)
+                    amoled -> BaiZeTokens.colors.surfaceRaised
                     dark -> scheme.surfaceContainer
                     else -> scheme.surface
                 }
@@ -406,7 +378,7 @@ private fun MiuixMasterSwitchRow(
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -432,7 +404,7 @@ private fun MiuixDailyScheduleRow(
                     if (state.dailyEnabled) "每天 ${state.dailyTimeText}，替代各类别小时周期"
                     else "关闭时按每个类别的独立小时周期执行",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     lineHeight = 14.sp
                 )
             }
@@ -492,7 +464,7 @@ private fun MiuixCategoryRow(
                 Text(
                     item.description,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     lineHeight = 14.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -510,7 +482,7 @@ private fun MiuixCategoryRow(
                 Modifier
                     .padding(start = 58.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(15.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
                     .clickable(onClick = onToggleExpanded)
                     .padding(horizontal = 13.dp, vertical = 10.dp),
@@ -528,13 +500,13 @@ private fun MiuixCategoryRow(
                         if (dailyMode) "关闭每日模式后恢复当前独立周期"
                         else if (expanded) "点击收起周期设置" else "点击展开周期设置",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 9.sp
+                        fontSize = 11.sp
                     )
                 }
                 Text(
                     if (expanded) "收起设置" else "展开设置",
                     color = MaterialTheme.colorScheme.primary,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.width(4.dp))
@@ -555,7 +527,7 @@ private fun MiuixCategoryRow(
                         val active = item.intervalMinutes == minutes
                         Box(
                             Modifier
-                                .clip(RoundedCornerShape(13.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(
                                     if (active) MaterialTheme.colorScheme.primary.copy(alpha = .16f)
                                     else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)
@@ -567,7 +539,7 @@ private fun MiuixCategoryRow(
                                 formatMinutes(minutes),
                                 color = if (active) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -578,7 +550,7 @@ private fun MiuixCategoryRow(
                     Modifier
                         .padding(start = 58.dp)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(15.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
                         .clickable(onClick = { showIntervalDialog = true })
                         .padding(horizontal = 13.dp, vertical = 10.dp),
@@ -602,10 +574,10 @@ private fun MiuixCategoryRow(
                             if (dailyMode) "每日模式开启时暂不使用，关闭后恢复"
                             else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 9.sp
+                            fontSize = 11.sp
                         )
                     }
-                    Text("修改", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("修改", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -621,13 +593,13 @@ private fun MiuixScheduleValueButton(
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Black)
+        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -647,7 +619,7 @@ private fun MiuixQuickActionRow(action: MiuixQuickAction) {
             Text(
                 action.subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -666,7 +638,7 @@ private fun MiuixIconTile(icon: ImageVector) {
     Box(
         Modifier
             .size(45.dp)
-            .clip(RoundedCornerShape(15.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
         contentAlignment = Alignment.Center
     ) {
@@ -718,35 +690,20 @@ private fun MiuixSaveButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(24.dp)
     Box(
         modifier
             .fillMaxWidth()
-            .height(62.dp)
-            .shadow(10.dp, shape, clip = false)
-            .clip(shape)
-            .background(
-                Brush.horizontalGradient(
-                    listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
-                )
-            )
-            .drawBehind {
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = .28f), Color.Transparent)
-                    ),
-                    cornerRadius = CornerRadius(24.dp.toPx()),
-                    size = size.copy(height = size.height * .54f)
-                )
-            }
+            .height(60.dp)
+            .clip(BaiZeTokens.corners.full)
+            .background(MaterialTheme.colorScheme.primary)
             .clickable(enabled = !saving, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             if (saving) "正在保存…" else "保存自动清理设置",
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onPrimary,
             fontSize = 17.sp,
-            fontWeight = FontWeight.Black
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -757,19 +714,19 @@ private fun MiuixSectionHeader(
     title: String,
     subtitle: String
 ) {
-    Column(Modifier.padding(horizontal = 21.dp, vertical = 5.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
         Text(
             eyebrow,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp
         )
-        Text(title, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
+        Text(title, color = MaterialTheme.colorScheme.onSurface, style = BaiZeTokens.type.headline)
         Text(
             subtitle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp
+            fontSize = 11.sp
         )
     }
 }
