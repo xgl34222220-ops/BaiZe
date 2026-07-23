@@ -472,7 +472,14 @@ fi
 
 write_running "文件归类收尾中" "$TOTAL" "$TOTAL" "" 1
 if [ -f "$STOP_FILE" ]; then write_result "文件归类已停止" 0 1 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"; exit 9; fi
-if [ "$FAILED" -gt 0 ]; then write_result "文件归类完成，但有 $FAILED 个文件失败" 0 0 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"; exit 1; fi
+if [ "$FAILED" -gt 0 ]; then
+  if [ "$REQUESTED" -gt 0 ] && [ "$MOVED" -eq 0 ] && [ "$FAILED" -ge "$REQUESTED" ]; then
+    write_result "文件归类失败：所有待处理文件均无法移动" 0 0 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"
+    exit 1
+  fi
+  write_result "文件归类完成，$FAILED 个文件因权限或状态变化跳过" 1 0 "$REQUESTED" "$MOVED" "$SKIPPED" "$FAILED" "$BYTES"
+  exit 10
+fi
 write_result "文件归类完成" 1 0 "$REQUESTED" "$MOVED" "$SKIPPED" 0 "$BYTES"
 echo "独立 Root 安全归类完成：移动 $MOVED 个，重命名 $RENAMED 个，重复 $DEDUPLICATED 个，失败 $FAILED 个" >>"$LOG_FILE"
 exit 0

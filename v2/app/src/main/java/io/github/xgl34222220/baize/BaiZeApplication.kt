@@ -10,7 +10,6 @@ class BaiZeApplication : Application() {
         CrashRecorder.install(this)
         ThemeManager.install(this)
         NativeNotifier.ensureChannel(this)
-        RuleUpdateWorker.ensureScheduled(this)
         DisplayPerformanceController.install(this)
         Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(

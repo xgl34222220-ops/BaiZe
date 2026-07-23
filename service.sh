@@ -17,8 +17,8 @@ RUNNING_FILE="$STATE_DIR/running.env"
 MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-30}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
 CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}
-FAILURE_LIMIT=3
-FAILURE_PAUSE_SECONDS=21600
+FAILURE_HARD_LIMIT=5
+FAILURE_MAX_PAUSE_SECONDS=7200
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
 QUEUE_COUNT=0
@@ -117,18 +117,45 @@ rotate_scheduler_log() {
   [ "$rl_size" -le 262144 ] || mv -f "$rl_file" "$rl_file.1" 2>/dev/null || : >"$rl_file"
 }
 failure_count_file() { printf '%s/scheduler-fail-%s.count\n' "$STATE_DIR" "$1"; }
+failure_detail_file() { printf '%s/scheduler-fail-%s.env\n' "$STATE_DIR" "$1"; }
 pause_until_file() { printf '%s/scheduler-pause-%s.until\n' "$STATE_DIR" "$1"; }
-clear_group_failure() { rm -f "$(failure_count_file "$1")" "$(pause_until_file "$1")"; }
+clear_group_failure() {
+  rm -f "$(failure_count_file "$1")" "$(failure_detail_file "$1")" "$(pause_until_file "$1")"
+}
+failure_backoff_seconds() {
+  case "$1" in
+    1) echo 300 ;;
+    2) echo 900 ;;
+    3) echo 1800 ;;
+    4) echo 3600 ;;
+    *) echo "$FAILURE_MAX_PAUSE_SECONDS" ;;
+  esac
+}
 record_group_failure() {
-  rg_group=$1; rg_count_file=$(failure_count_file "$rg_group"); rg_pause_file=$(pause_until_file "$rg_group")
+  rg_group=$1; rg_code=${2:-1}
+  rg_count_file=$(failure_count_file "$rg_group")
+  rg_detail_file=$(failure_detail_file "$rg_group")
+  rg_pause_file=$(pause_until_file "$rg_group")
+  rg_now=$(date +%s)
   rg_count=$(sed -n '1p' "$rg_count_file" 2>/dev/null)
+  rg_previous=$(sed -n 's/^failed_epoch=//p' "$rg_detail_file" 2>/dev/null | tail -n 1)
   case "$rg_count" in ''|*[!0-9]*) rg_count=0 ;; esac
-  rg_count=$((rg_count + 1)); printf '%s\n' "$rg_count" >"$rg_count_file"
-  if [ "$rg_count" -ge "$FAILURE_LIMIT" ]; then
-    rg_until=$(( $(date +%s) + FAILURE_PAUSE_SECONDS )); printf '%s\n' "$rg_until" >"$rg_pause_file"
-    FAILURE_REASON="连续失败 ${rg_count} 次，已暂停 6 小时"; return 1
-  fi
-  FAILURE_REASON="连续失败 ${rg_count}/${FAILURE_LIMIT} 次"; return 0
+  case "$rg_previous" in ''|*[!0-9]*) rg_previous=0 ;; esac
+  [ "$rg_previous" -eq 0 ] || [ $((rg_now - rg_previous)) -le 86400 ] || rg_count=0
+  rg_count=$((rg_count + 1))
+  rg_pause=$(failure_backoff_seconds "$rg_count")
+  rg_until=$((rg_now + rg_pause))
+  printf '%s\n' "$rg_count" >"$rg_count_file"
+  printf '%s\n' "$rg_until" >"$rg_pause_file"
+  {
+    echo "count=$rg_count"
+    echo "exit_code=$rg_code"
+    echo "failed_epoch=$rg_now"
+    echo "retry_epoch=$rg_until"
+  } >"$rg_detail_file"
+  chmod 0600 "$rg_count_file" "$rg_pause_file" "$rg_detail_file" 2>/dev/null || true
+  FAILURE_REASON="第 ${rg_count} 次失败，$((rg_pause / 60)) 分钟后自动重试"
+  [ "$rg_count" -lt "$FAILURE_HARD_LIMIT" ]
 }
 group_pause_remaining() {
   gp_group=$1; gp_pause_file=$(pause_until_file "$gp_group")
@@ -136,8 +163,13 @@ group_pause_remaining() {
   case "$gp_until" in ''|*[!0-9]*) gp_until=0 ;; esac
   gp_now=$(date +%s)
   if [ "$gp_until" -gt "$gp_now" ]; then echo $((gp_until - gp_now)); return 0; fi
-  [ "$gp_until" -gt 0 ] && rm -f "$gp_pause_file" "$(failure_count_file "$gp_group")"
+  [ "$gp_until" -gt 0 ] && rm -f "$gp_pause_file"
   return 1
+}
+group_last_failure_code() {
+  glf_code=$(sed -n 's/^exit_code=//p' "$(failure_detail_file "$1")" 2>/dev/null | tail -n 1)
+  case "$glf_code" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$glf_code"
 }
 
 scheduler_task_alive() {
@@ -201,7 +233,7 @@ group_spec() {
     empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=30; SPEC_MODE=empty-clean ;;
     rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=30; SPEC_MODE=rules-clean ;;
     fragment) SPEC_ENABLED=schedule_fragment_enabled; SPEC_MINUTES=schedule_fragment_minutes; SPEC_HOURS=schedule_fragment_hours; SPEC_FALLBACK=30; SPEC_MODE=fragment-clean ;;
-    deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=10080; SPEC_MODE=deep-clean ;;
+    deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=10080; SPEC_MODE=deep-auto ;;
     organize) SPEC_ENABLED=schedule_organize_enabled; SPEC_MINUTES=schedule_organize_minutes; SPEC_HOURS=schedule_organize_hours; SPEC_FALLBACK=1440; SPEC_MODE=organize ;;
     *) return 1 ;;
   esac
@@ -241,6 +273,8 @@ collect_manual_requests() {
     cm_created=$(sed -n 's/^created=//p' "$cm_file" | tail -n 1)
     case "$cm_created" in ''|*[!0-9]*) cm_created=0 ;; esac
     group_spec "$cm_group" || { rm -f "$cm_file"; continue; }
+    # An explicit user request is a deliberate retry and must not inherit stale automatic backoff.
+    clear_group_failure "$cm_group"
     add_candidate 0 "$cm_created" "$cm_group" "$SPEC_MODE" manual "$cm_file" ""
   done
 }
@@ -316,12 +350,17 @@ handle_task_result() {
       [ -n "$hr_request" ] && rm -f "$hr_request"
       write_scheduler_state interrupted "$hr_group" "任务已停止，本周期不会记为完成"
       ;;
+    10)
+      mark_group_completed "$hr_group" "$hr_kind" "$hr_cycle"; clear_group_failure "$hr_group"
+      [ -n "$hr_request" ] && rm -f "$hr_request"
+      write_scheduler_state completed "$hr_group" "任务已完成，部分变化文件已安全跳过"
+      ;;
     *)
       [ -n "$hr_request" ] && rm -f "$hr_request"
-      if record_group_failure "$hr_group"; then
-        write_scheduler_state failed "$hr_group" "执行失败（代码 $hr_code，$FAILURE_REASON），请查看 $hr_run_log"
+      if record_group_failure "$hr_group" "$hr_code"; then
+        write_scheduler_state failed "$hr_group" "执行失败（代码 $hr_code）；$FAILURE_REASON，请查看 $hr_run_log"
       else
-        write_scheduler_state paused "$hr_group" "执行失败（代码 $hr_code）；$FAILURE_REASON"
+        write_scheduler_state paused "$hr_group" "任务多次失败（代码 $hr_code）；$FAILURE_REASON"
       fi
       ;;
   esac
@@ -334,7 +373,10 @@ run_next_fair_task() {
   while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
     [ -n "${rn_group:-}" ] || continue
     if rn_pause=$(group_pause_remaining "$rn_group"); then
-      rn_reason="${rn_group}:熔断$(( (rn_pause + 59) / 60 ))分钟"
+      rn_minutes=$(( (rn_pause + 59) / 60 ))
+      rn_code=$(group_last_failure_code "$rn_group" 2>/dev/null || true)
+      if [ -n "$rn_code" ]; then rn_reason="${rn_group}:上次代码${rn_code}，${rn_minutes}分钟后重试"
+      else rn_reason="${rn_group}:${rn_minutes}分钟后重试"; fi
       [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
       continue
     fi

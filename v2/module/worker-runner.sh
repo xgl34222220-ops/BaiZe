@@ -23,6 +23,19 @@ if [ "$MODE" = organize ]; then
   else
     echo "文件归类引擎不存在：$ORGANIZER" >>"$LOG_FILE"
   fi
+elif [ "$MODE" = deep-auto ]; then
+  if [ -x "$CLEANER" ]; then
+    echo "自动深度任务：先生成不可变扫描快照" >>"$LOG_FILE"
+    "$CLEANER" deep-scan "$TRIGGER" >>"$LOG_FILE" 2>&1
+    code=$?
+    if [ "$code" -eq 0 ]; then
+      echo "自动深度任务：消费刚生成的扫描快照" >>"$LOG_FILE"
+      "$CLEANER" deep-clean "$TRIGGER" >>"$LOG_FILE" 2>&1
+      code=$?
+    fi
+  else
+    echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
+  fi
 elif [ -x "$CLEANER" ]; then
   "$CLEANER" "$MODE" "$TRIGGER" >>"$LOG_FILE" 2>&1
   code=$?

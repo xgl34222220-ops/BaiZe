@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Stage nine final verification: signed release rehearsal, visible rule entry, and full repository build must pass.
-# The rule center must be visible from both the MIUIx home page and clean page.
+# Stage ten: signed rule release tooling remains maintainable, while end users consume expanded built-in rules.
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/rule-release.yml").read_text(encoding="utf-8")
@@ -11,8 +11,13 @@ PACK_BUILDER = (ROOT / "v2/tools/build-rule-pack.py").read_text(encoding="utf-8"
 INDEX_BUILDER = (ROOT / "v2/tools/build-rule-index.py").read_text(encoding="utf-8")
 CLIENT = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/RuleUpdateClient.kt").read_text(encoding="utf-8")
 DOC = (ROOT / "v2/docs/rule-release-playbook.md").read_text(encoding="utf-8")
-VISIBLE_HOME = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt").read_text(encoding="utf-8")
-VISIBLE_CLEAN = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt").read_text(encoding="utf-8")
+MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+APPLICATION = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeApplication.kt").read_text(encoding="utf-8")
+CLEAN_CENTER = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt").read_text(encoding="utf-8")
+HOME = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt").read_text(encoding="utf-8")
+CLEAN_UI = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt").read_text(encoding="utf-8")
+APP_RULES_TEXT = (ROOT / "config/app.rules").read_text(encoding="utf-8")
+EXTERNAL_RULES_TEXT = (ROOT / "config/external.rules").read_text(encoding="utf-8")
 
 
 def require(value: bool, message: str) -> None:
@@ -83,9 +88,9 @@ for marker in (
 stable_asset = "BaiZe-Rules-Index-stable.jar"
 beta_asset = "BaiZe-Rules-Index-beta.jar"
 require(stable_asset in CLIENT and beta_asset in CLIENT,
-        "client fixed index assets changed unexpectedly")
+        "maintainer release tooling asset names changed unexpectedly")
 require('INDEX_ASSET="BaiZe-Rules-Index-${CHANNEL}.jar"' in WORKFLOW,
-        "workflow index asset naming must match the client")
+        "workflow index asset naming must match the release tooling")
 require('PACK_TAG="rules-${CHANNEL}-${VERSION_CODE}"' in WORKFLOW,
         "versioned pack release tag is not deterministic")
 require('PACK_ASSET="BaiZe-Rules-${CHANNEL}-${VERSION}.jar"' in WORKFLOW,
@@ -120,9 +125,71 @@ for marker in (
 ):
     require(marker in DOC, f"release operations documentation missing: {marker}")
 
-for marker in ("规则中心", "官方更新", "RulePackActivity::class.java", "RuleUpdateActivity::class.java"):
-    require(marker in VISIBLE_HOME, f"home rule shortcut missing: {marker}")
-for marker in ("规则管理中心", "官方规则更新", "更多清理工具", "RulePackActivity::class.java", "RuleUpdateActivity::class.java"):
-    require(marker in VISIBLE_CLEAN, f"clean page rule entry missing: {marker}")
+# The updater remains a maintainer-side release capability, not an end-user product surface.
+for marker in (
+    "RulePackActivity", "RuleUpdateActivity", "RulePackRootService", "RuleIndexRootService",
+    "android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE",
+):
+    require(marker not in MANIFEST, f"unused rule-center component still exposed in manifest: {marker}")
+require("RuleUpdateWorker.ensureScheduled" not in APPLICATION,
+        "online rule worker must not start in the built-in-rule product")
+for source_name, source in (
+    ("clean center", CLEAN_CENTER),
+    ("MIUIx home", HOME),
+    ("MIUIx clean page", CLEAN_UI),
+):
+    for marker in ("RulePackActivity", "RuleUpdateActivity", "规则管理中心", "官方规则更新", "规则中心", "官方更新"):
+        require(marker not in source, f"{source_name} still exposes removed rule center: {marker}")
 
-print("signed rule release automation contract: ok")
+PACKAGE = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$")
+
+
+def parse_rules(text: str, name: str) -> list[str]:
+    rules: list[str] = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("|")
+        require(len(parts) == 3, f"{name}:{number}: expected package|relative-path|days")
+        package, relative, days = (part.strip() for part in parts)
+        require(bool(PACKAGE.fullmatch(package)), f"{name}:{number}: invalid package")
+        require(relative and not relative.startswith(("/", "\\")), f"{name}:{number}: absolute path")
+        require("\x00" not in relative and "\\" not in relative, f"{name}:{number}: invalid separator")
+        require(all(part not in {"", ".", ".."} for part in relative.split("/")),
+                f"{name}:{number}: path traversal or empty segment")
+        require(days.isdigit() and 0 <= int(days) <= 3650, f"{name}:{number}: invalid retention")
+        rules.append(line)
+    require(len(rules) == len(set(rules)), f"{name}: duplicate rules")
+    return rules
+
+
+app_rules = parse_rules(APP_RULES_TEXT, "app.rules")
+external_rules = parse_rules(EXTERNAL_RULES_TEXT, "external.rules")
+require(len(app_rules) >= 430, f"app.rules expansion regressed: {len(app_rules)}")
+require(len(external_rules) >= 232, f"external.rules expansion regressed: {len(external_rules)}")
+require("2026.07.2" in APP_RULES_TEXT and "2026.07.2" in EXTERNAL_RULES_TEXT,
+        "built-in rule refresh marker missing")
+
+for rule in (
+    "com.xingin.xhs|app_webview/Default/GPUCache|0",
+    "com.android.chrome|app_chrome/Crashpad/pending|0",
+    "com.qiyi.video|files/logs|0",
+    "me.ele|app_webview/Default/Code Cache|0",
+    "com.baidu.BaiduMap|files/MiPushLog|0",
+):
+    require(rule in app_rules, f"representative built-in app rule missing: {rule}")
+
+for rule in (
+    "com.xingin.xhs|files/xlog|0",
+    "tv.danmaku.bili|files/perfUploading|0",
+    "com.taobao.taobao|files/tnetlogs|0",
+    "com.tencent.qqlive|files/crash|0",
+    "com.microsoft.office.outlook|files/logs|0",
+):
+    require(rule in external_rules, f"representative external rule missing: {rule}")
+
+print(
+    "built-in rule product contract: ok "
+    f"(app={len(app_rules)}, external={len(external_rules)})"
+)

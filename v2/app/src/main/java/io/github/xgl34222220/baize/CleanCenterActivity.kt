@@ -29,7 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteSweep
@@ -116,9 +115,7 @@ class CleanCenterActivity : ComponentActivity() {
                             },
                             onSmartScan = { startActivity(Intent(this, SmartScanActivity::class.java)) },
                             onOpenCache = { startActivity(Intent(this, CacheActivity::class.java)) },
-                            onOpenProfile = ::openProfile,
-                            onRulePack = { startActivity(Intent(this, RulePackActivity::class.java)) },
-                            onRuleUpdate = { startActivity(Intent(this, RuleUpdateActivity::class.java)) }
+                            onOpenProfile = ::openProfile
                         )
                     )
                 }
@@ -139,9 +136,7 @@ private data class CleanCenterActions(
     val onQuickClean: () -> Unit,
     val onSmartScan: () -> Unit,
     val onOpenCache: () -> Unit,
-    val onOpenProfile: (String) -> Unit,
-    val onRulePack: () -> Unit,
-    val onRuleUpdate: () -> Unit
+    val onOpenProfile: (String) -> Unit
 )
 
 private data class CleanCenterItem(
@@ -212,8 +207,6 @@ private fun CleanCenterMaterial(
         CleanCenterItem(Icons.Rounded.Apps, "残留碎片", "过期临时文件、旋转日志与中断下载", "保留期", profile = "fragments")
     )
     val advanced = listOf(
-        CleanCenterItem(Icons.Rounded.CloudDownload, "官方规则更新", "签名索引、断点续传与自动策略", "在线", directAction = actions.onRuleUpdate),
-        CleanCenterItem(Icons.Rounded.Rule, "规则管理中心", "版本、签名、更新预览与回滚", "已签名", directAction = actions.onRulePack),
         CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对 data、obb、media 与应用私有目录", "二次确认", profile = "corpses", dangerous = true),
         CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "完整规则库扫描并按风险分级", "二次确认", profile = "deep", dangerous = true)
     )
@@ -439,8 +432,6 @@ private fun CleanCenterMiuix(
         CleanCenterItem(Icons.Rounded.Apps, "残留碎片", "临时文件与中断下载", "保留期", profile = "fragments")
     )
     val advanced = listOf(
-        CleanCenterItem(Icons.Rounded.CloudDownload, "官方规则更新", "防回放、断点下载与自动策略", "在线", directAction = actions.onRuleUpdate),
-        CleanCenterItem(Icons.Rounded.Rule, "规则管理中心", "签名校验、预览与回滚", "已签名", directAction = actions.onRulePack),
         CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对无主应用目录", "确认", profile = "corpses", dangerous = true),
         CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "4,714 条规则风险分级", "确认", profile = "deep", dangerous = true)
     )

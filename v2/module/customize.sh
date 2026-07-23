@@ -59,6 +59,9 @@ rm -f "$STATE_DIR/cache_auto.env" "$STATE_DIR/cache_auto.targets" "$STATE_DIR/ca
 rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
 rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
+# v2.4.1 test builds used a fixed six-hour fuse. Drop those stale counters on upgrade;
+# the new scheduler uses short adaptive retry windows and user-triggered retries clear their own group.
+rm -f "$STATE_DIR"/scheduler-fail-*.count "$STATE_DIR"/scheduler-fail-*.env "$STATE_DIR"/scheduler-pause-*.until 2>/dev/null || true
 
 if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ]; then
   migrated=0
