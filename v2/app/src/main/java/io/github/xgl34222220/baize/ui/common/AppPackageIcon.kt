@@ -55,7 +55,7 @@ fun AppPackageIcon(
         if (current != null) {
             Image(current.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         } else {
-            Text(label.trim().firstOrNull()?.uppercase() ?: "?", fontWeight = FontWeight.Black)
+            Text(label.trim().firstOrNull()?.uppercase() ?: "?", fontWeight = FontWeight.Bold)
         }
     }
 }
