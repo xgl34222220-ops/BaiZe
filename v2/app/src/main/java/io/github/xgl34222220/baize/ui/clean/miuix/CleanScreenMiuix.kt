@@ -39,10 +39,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.clean.CleanUiActions
 import io.github.xgl34222220.baize.ui.clean.CleanUiState
 
-/**
- * Status and configuration page for BaiZe automatic cleaning.
- * Manual scan, clean, wake, stop and diagnostic actions are deliberately not rendered.
- */
+/** Status and configuration page for BaiZe automatic cleaning. */
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun CleanScreenMiuix(
@@ -59,8 +56,8 @@ fun CleanScreenMiuix(
         else -> "全自动清理已关闭"
     }
     val statusBody = when {
-        state.running -> "任务由独立 Root Worker 执行，关闭 App 也不会中断。"
-        state.automaticCleaningEnabled -> "系统会自行等待合适时机、清理垃圾并自动恢复，无需手动扫描或唤醒。"
+        state.running -> "任务在后台持续执行，关闭 App 也不会中断。"
+        state.automaticCleaningEnabled -> "系统会自行选择合适时机完成清理与归类，遇到中断也会自动恢复。"
         else -> "开启后，缓存、空项目、规则垃圾和碎片会按计划自动处理。"
     }
 
@@ -175,7 +172,7 @@ fun CleanScreenMiuix(
 
         item {
             Text(
-                "所有清理与文件归类均由后台自动执行。扫描、立即清理、停止、唤醒和开发者诊断按钮已全部移除。",
+                "所有清理与文件归类均由后台自动执行，日常无需操作。",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
