@@ -7,6 +7,7 @@ ACTIVITY = (APP / "CandidateSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/CandidatePlanRootService.kt").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/ICandidatePlanService.aidl").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+CLEAN_ROUTE = (APP / "ui/clean/CleanRoute.kt").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -14,9 +15,13 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+# Keep the candidate engine available for restored/internal plans, but do not redirect the visible
+# cleanup action into it. BaiZe's user-facing product is automatic-first.
 require('android:name=".CandidateSmartScanActivity"' in MANIFEST, "candidate selection activity is not registered")
-require('android:targetActivity=".CandidateSmartScanActivity"' in MANIFEST,
-        "smart scan entry must route through candidate selection")
+require('android:targetActivity=".CandidateSmartScanActivity"' not in MANIFEST,
+        "candidate selection must not replace the automatic user-facing cleaner")
+require("onScan = dashboardActions.clean" in CLEAN_ROUTE,
+        "visible cleanup action must route to the automatic Root worker")
 require('android:name=".root.CandidatePlanRootService"' in MANIFEST,
         "candidate plan Root service is not registered")
 require("finalizePlan" in AIDL, "candidate plan binder method is missing")
