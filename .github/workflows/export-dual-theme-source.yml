@@ -1,6 +1,9 @@
 name: Export Dual Theme Source
 
 on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
   pull_request:
     branches: [main]
 
