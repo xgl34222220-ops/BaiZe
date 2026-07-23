@@ -337,7 +337,8 @@ first_nul_path() {
   return 1
 }
 
-filter_processed_list() {
+# 逐条去重的原始实现：仅在路径含换行或批量解析结果对不齐时回退使用，语义与旧版完全一致。
+filter_processed_list_legacy() {
   source_list=$1
   unique_list="$source_list.unique"
   : >"$unique_list"
@@ -351,6 +352,63 @@ filter_processed_list() {
     printf '%s\0' "$candidate" >>"$unique_list"
   done <"$source_list"
   mv -f "$unique_list" "$source_list"
+}
+
+# 单趟 awk 去重：已处理列表载入关联数组，候选经一趟 xargs -0 readlink -f 批量解析符号链接后一次过滤，
+# 进程数从每候选 3 个降为常数个。readlink 解析语义与 canonical_rule_path 首选实现一致；
+# 路径含换行或批量解析行数与候选对不齐（解析失败等）时回退逐条处理，保证语义不变。
+filter_processed_list() {
+  source_list=$1
+  total=$(count_nul "$source_list")
+  case "$total" in ''|*[!0-9]*) total=0 ;; esac
+  [ "$total" -gt 0 ] || { filter_processed_list_legacy "$source_list"; return; }
+
+  source_nl="$source_list.nl"
+  canon_nl="$source_list.canon"
+  unique_nl="$source_list.uniq.nl"
+  unique_list="$source_list.unique"
+  tr '\000' '\n' <"$source_list" >"$source_nl"
+  nl_lines=$(wc -l <"$source_nl" 2>/dev/null | tr -d ' ')
+  if [ "$nl_lines" != "$total" ]; then
+    rm -f "$source_nl"
+    filter_processed_list_legacy "$source_list"
+    return
+  fi
+  : >"$canon_nl"
+  if command -v readlink >/dev/null 2>&1; then
+    xargs -0 readlink -f -- <"$source_list" 2>/dev/null >"$canon_nl"
+  fi
+  canon_lines=$(wc -l <"$canon_nl" 2>/dev/null | tr -d ' ')
+  if [ "$canon_lines" != "$total" ]; then
+    rm -f "$source_nl" "$canon_nl"
+    filter_processed_list_legacy "$source_list"
+    return
+  fi
+  : >"$unique_nl"
+  awk -v processed="$PROCESSED_PATHS" -v canon="$canon_nl" -v unique="$unique_nl" '
+    BEGIN {
+      while ((getline line < processed) > 0) seen[line] = 1
+      close(processed)
+      ci = 0
+      while ((getline line < canon) > 0) { ci++; resolved[ci] = line }
+      close(canon)
+    }
+    {
+      candidate = $0
+      if (candidate == "") next
+      key = resolved[FNR]
+      if (key == "") key = candidate
+      gsub(/\r/, " ", key)
+      gsub(/\n/, " ", key)
+      if (key in seen) next
+      seen[key] = 1
+      printf "%s\n", key >> processed
+      printf "%s\n", candidate >> unique
+    }
+  ' "$source_nl"
+  tr '\n' '\000' <"$unique_nl" >"$unique_list"
+  mv -f "$unique_list" "$source_list"
+  rm -f "$source_nl" "$canon_nl" "$unique_nl"
 }
 
 is_whitelisted() {
@@ -662,6 +720,7 @@ process_cache_chunk() {
   cache_category=$4
   cache_done=$5
   cache_total=$6
+  cache_chunk_hook=${7:-}
   set --
   while IFS= read -r cache_dir || [ -n "$cache_dir" ]; do
     [ -d "$cache_dir" ] && [ ! -L "$cache_dir" ] && set -- "$@" "$cache_dir"
@@ -673,7 +732,11 @@ process_cache_chunk() {
   run_cache_find 25 "$cache_days" "$cache_chunk_out" "$@"
   cache_code=$?
   if [ "$cache_code" -eq 0 ]; then
-    cat "$cache_chunk_out" >>"$cache_target_list"
+    if [ -n "$cache_chunk_hook" ]; then
+      "$cache_chunk_hook" "$cache_chunk_out"
+    else
+      cat "$cache_chunk_out" >>"$cache_target_list"
+    fi
   else
     case "$cache_code" in
       124|137|143) log_line "[缓存慢批次] $cache_category 第 ${cache_done}/${cache_total} 个目录附近超时，正在逐目录定位" ;;
@@ -694,7 +757,11 @@ process_cache_chunk() {
       run_cache_find 6 "$cache_days" "$cache_one_out" "$cache_dir"
       cache_one_code=$?
       if [ "$cache_one_code" -eq 0 ]; then
-        cat "$cache_one_out" >>"$cache_target_list"
+        if [ -n "$cache_chunk_hook" ]; then
+          "$cache_chunk_hook" "$cache_one_out"
+        else
+          cat "$cache_one_out" >>"$cache_target_list"
+        fi
       else
         CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
         PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
@@ -713,6 +780,7 @@ collect_cache_candidates() {
   days=$2
   target_list=$3
   cache_category=$4
+  cache_chunk_hook=${5:-}
   cache_total=$(wc -l <"$dir_list" 2>/dev/null | tr -d ' ')
   case "$cache_total" in ''|*[!0-9]*) cache_total=0 ;; esac
   [ "$cache_total" -gt 0 ] || return 0
@@ -729,7 +797,7 @@ collect_cache_candidates() {
     cache_chunk_count=$((cache_chunk_count + 1))
     cache_done=$((cache_done + 1))
     if [ "$cache_chunk_count" -ge 64 ]; then
-      process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total"
+      process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total" "$cache_chunk_hook"
       : >"$cache_chunk"
       cache_chunk_count=0
       should_stop && { rm -f "$cache_chunk"; return 9; }
@@ -743,61 +811,61 @@ collect_cache_candidates() {
     fi
   done <"$dir_list"
   if [ "$cache_chunk_count" -gt 0 ]; then
-    process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total"
+    process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total" "$cache_chunk_hook"
   fi
   rm -f "$cache_chunk"
   return 0
 }
 
-process_cache_candidates() {
-  list=$1
-  CATEGORY=$2
-  app_package=${3:-}
-  app_done=${4:-0}
-  app_total=${5:-0}
-  filter_whitelist_list "$list"
-  filter_processed_list "$list"
-  count=$(count_nul "$list")
-  case "$count" in ''|*[!0-9]*) count=0 ;; esac
-  [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
-  sample_path=$(first_nul_path "$list" 2>/dev/null)
+# 批次回调：对单批缓存候选做白名单/去重过滤、批量删除，并用一趟 du|awk 按包名累积统计。
+# 统计原始行格式：包名 \t 文件数(1) \t KB \t 样本路径，最终由 scan_cache_batch 聚合成每 App 输出。
+CACHE_STATS=""
+CACHE_REMSTATS=""
+CACHE_CATEGORY=""
+CACHE_PKG_FIELD=""
 
-  if [ -n "$app_package" ]; then
-    if [ "$MODE" = "clean" ]; then
-      set_phase "正在清理应用缓存" "$app_done" "$app_total" "$app_package"
-    else
-      set_phase "正在统计应用缓存" "$app_done" "$app_total" "$app_package"
-    fi
-  fi
+cache_stats_row() {
+  # $1=NUL 文件列表；按 CACHE_PKG_FIELD 提取包名，逐文件输出统计原始行
+  [ -s "$1" ] || return 0
+  xargs -0 du -k <"$1" 2>/dev/null | awk -v f="$CACHE_PKG_FIELD" '
+    {
+      kb = $1
+      path = $0
+      sub(/^[^ \t]*[ \t]+/, "", path)
+      split(path, seg, "/")
+      pkg = seg[f]
+      if (pkg == "") next
+      printf "%s\t1\t%d\t%s\n", pkg, kb, path
+    }'
+}
 
-  estimated=$(bytes_from_list "$list")
-  case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
+cache_chunk_process() {
+  chunk_list=$1
+  filter_whitelist_list "$chunk_list"
+  filter_processed_list "$chunk_list"
+  chunk_count=$(count_nul "$chunk_list")
+  case "$chunk_count" in ''|*[!0-9]*) chunk_count=0 ;; esac
+  [ "$chunk_count" -gt 0 ] || { rm -f "$chunk_list"; return 0; }
+
+  cache_stats_row "$chunk_list" >>"$CACHE_STATS"
   if [ "$MODE" = "clean" ]; then
-    err_file="$TMP_DIR/rm-cache.err.$LIST_SEQ"
-    xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
-    remaining="$list.remaining"
-    existing_files_to_list "$list" "$remaining"
-    batch_actuals "$list" "$remaining" "$estimated"
-    [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
-    reason=$(tail -n 1 "$err_file" 2>/dev/null)
-    [ "$REMAINING_COUNT" -gt 0 ] && log_line "[部分未清理][$CATEGORY] ${reason:-系统拒绝删除部分文件}"
-    log_line "[应用清理][$app_package][$CATEGORY] $ACTUAL_COUNT 个缓存文件，$ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
-    report_line cleaned low "$CATEGORY:$app_package" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$app_package"
-    [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low "$CATEGORY:$app_package" "$REMAINING_COUNT" "$REMAINING_BYTES" "$app_package"
-    append_app_detail "$app_package" "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$REMAINING_COUNT" "$sample_path"
-    FILES=$((FILES + ACTUAL_COUNT))
-    add_bytes "$ACTUAL_BYTES"
+    LIST_SEQ=$((LIST_SEQ + 1))
+    err_file="$TMP_DIR/rm-cache.$LIST_SEQ.err"
+    xargs -0 -n 200 rm -f -- <"$chunk_list" 2>"$err_file"
+    remaining="$chunk_list.remaining"
+    existing_files_to_list "$chunk_list" "$remaining"
+    cache_stats_row "$remaining" >>"$CACHE_REMSTATS"
+    if [ -s "$remaining" ]; then
+      reason=$(tail -n 1 "$err_file" 2>/dev/null)
+      log_line "[部分未清理][$CACHE_CATEGORY] ${reason:-系统拒绝删除部分文件}"
+    fi
     rm -f "$remaining" "$err_file"
-  else
-    log_line "[应用扫描][$app_package][$CATEGORY] $count 个缓存文件，$estimated bytes"
-    report_line candidate low "$CATEGORY:$app_package" "$count" "$estimated" "$app_package"
-    append_app_detail "$app_package" "$CATEGORY" "$count" "$estimated" 0 "$sample_path"
-    FILES=$((FILES + count))
-    add_bytes "$estimated"
   fi
-  rm -f "$list"
+  rm -f "$chunk_list"
   return 0
 }
+
+# （原 process_cache_candidates 已由 cache_chunk_process + scan_cache_batch 取代并移除）
 
 clean_dir() {
   dir=$1
@@ -960,12 +1028,113 @@ is_allowed_custom_dir() {
   return 1
 }
 
+# 缓存阶段统一出口：批量收集（64 目录/批，collect_cache_candidates + cache_chunk_process 回调），
+# 结束后用单趟 awk 把累积统计按包名聚合，输出与逐 App 时代完全一致的
+# report_line / append_app_detail / log_line 格式，并汇总全局计数器。
+scan_cache_batch() {
+  dir_list=$1
+  days=$2
+  category=$3
+  pkg_field=$4
+
+  total_dirs=$(wc -l <"$dir_list" 2>/dev/null | tr -d ' ')
+  case "$total_dirs" in ''|*[!0-9]*) total_dirs=0 ;; esac
+  [ "$total_dirs" -gt 0 ] || { rm -f "$dir_list"; return 0; }
+
+  LIST_SEQ=$((LIST_SEQ + 1))
+  CACHE_STATS="$TMP_DIR/cache-stats.$LIST_SEQ"
+  CACHE_REMSTATS="$TMP_DIR/cache-remstats.$LIST_SEQ"
+  totals="$TMP_DIR/cache-totals.$LIST_SEQ"
+  : >"$CACHE_STATS"
+  : >"$CACHE_REMSTATS"
+  CACHE_CATEGORY=$category
+  CACHE_PKG_FIELD=$pkg_field
+
+  collect_cache_candidates "$dir_list" "$days" /dev/null "$category" cache_chunk_process
+  code=$?
+  rm -f "$dir_list"
+  if [ "$code" -eq 9 ]; then
+    rm -f "$CACHE_STATS" "$CACHE_REMSTATS"
+    return 9
+  fi
+  [ -s "$CACHE_STATS" ] || { rm -f "$CACHE_STATS" "$CACHE_REMSTATS"; return 0; }
+
+  set_phase "正在汇总${category}统计" 0 0 ""
+  awk -v stats="$CACHE_STATS" -v rem="$CACHE_REMSTATS" -v category="$category" -v mode="$MODE" \
+      -v report="$REPORT_FILE" -v details="$APP_DETAILS" -v items="$APP_ITEMS" \
+      -v logf="$LOG_FILE" -v totals="$totals" '
+    function sanitize(s) { gsub(/[\t\r\n]/, " ", s); return s }
+    BEGIN {
+      while ((getline line < rem) > 0) {
+        split(line, a, "\t")
+        remc[a[1]] += a[2] + 0
+        remb[a[1]] += a[3] * 1024
+      }
+      close(rem)
+      while ((getline line < stats) > 0) {
+        split(line, a, "\t")
+        counts[a[1]] += a[2] + 0
+        bytes[a[1]] += a[3] * 1024
+        if (!(a[1] in samples)) samples[a[1]] = a[4]
+      }
+      close(stats)
+      total_files = 0
+      total_bytes = 0
+      total_errors = 0
+      for (p in counts) {
+        rc = remc[p] + 0
+        rb = remb[p] + 0
+        if (mode == "clean") {
+          ac = counts[p] - rc; if (ac < 0) ac = 0
+          ab = bytes[p] - rb; if (ab < 0) ab = 0
+          printf "[应用清理][%s][%s] %d 个缓存文件，%.0f bytes，未清理 %d 个\n", p, category, ac, ab, rc >> logf
+          printf "cleaned\tlow\t%s\t%d\t%.0f\t%s\n", sanitize(category ":" p), ac, ab, sanitize(p) >> report
+          if (rc > 0)
+            printf "failed\tlow\t%s\t%d\t%.0f\t%s\n", sanitize(category ":" p), rc, rb, sanitize(p) >> report
+          if (ac > 0 || ab > 0 || rc > 0) {
+            printf "%s\t%s\t%d\t%.0f\n", sanitize(p), sanitize(category), ac, ab >> details
+            printf "%s\t%s\t%d\t%.0f\t%d\t%s\n", sanitize(p), sanitize(category), ac, ab, rc, sanitize(samples[p]) >> items
+          }
+          total_files += ac
+          total_bytes += ab
+          total_errors += rc
+        } else {
+          printf "[应用扫描][%s][%s] %d 个缓存文件，%.0f bytes\n", p, category, counts[p], bytes[p] >> logf
+          printf "candidate\tlow\t%s\t%d\t%.0f\t%s\n", sanitize(category ":" p), counts[p], bytes[p], sanitize(p) >> report
+          printf "%s\t%s\t%d\t%.0f\n", sanitize(p), sanitize(category), counts[p], bytes[p] >> details
+          printf "%s\t%s\t%d\t%.0f\t0\t%s\n", sanitize(p), sanitize(category), counts[p], bytes[p], sanitize(samples[p]) >> items
+          total_files += counts[p]
+          total_bytes += bytes[p]
+        }
+      }
+      printf "files=%d\nbytes=%.0f\nerrors=%d\n", total_files, total_bytes, total_errors > totals
+    }'
+  t_files=0
+  t_bytes=0
+  t_errors=0
+  while IFS='=' read -r t_key t_value; do
+    case "$t_key" in
+      files) t_files=$t_value ;;
+      bytes) t_bytes=$t_value ;;
+      errors) t_errors=$t_value ;;
+    esac
+  done <"$totals"
+  case "$t_files" in ''|*[!0-9]*) t_files=0 ;; esac
+  case "$t_bytes" in ''|*[!0-9.]*) t_bytes=0 ;; esac
+  case "$t_errors" in ''|*[!0-9]*) t_errors=0 ;; esac
+  FILES=$((FILES + t_files))
+  ERRORS=$((ERRORS + t_errors))
+  add_bytes "$t_bytes"
+  rm -f "$CACHE_STATS" "$CACHE_REMSTATS" "$totals"
+  return 0
+}
+
 scan_cache_roots() {
   roots=$1
   days=$2
   category=$3
-  packages="$TMP_DIR/cache-packages.internal"
-  : >"$packages"
+  dir_list="$TMP_DIR/cache-dirs.internal"
+  : >"$dir_list"
 
   for root in $roots; do
     [ -d "$root" ] || continue
@@ -975,100 +1144,30 @@ scan_cache_roots() {
         [ -d "$app_dir" ] || continue
         package=${app_dir##*/}
         valid_package_name "$package" || continue
-        { [ -d "$app_dir/cache" ] || [ -d "$app_dir/code_cache" ]; } || continue
-        grep -Fqx -- "$package" "$packages" 2>/dev/null || printf '%s\n' "$package" >>"$packages"
+        [ -d "$app_dir/cache" ] && printf '%s\n' "$app_dir/cache" >>"$dir_list"
+        [ -d "$app_dir/code_cache" ] && printf '%s\n' "$app_dir/code_cache" >>"$dir_list"
       done
     done
   done
 
-  total=$(wc -l <"$packages" 2>/dev/null | tr -d ' ')
-  case "$total" in ''|*[!0-9]*) total=0 ;; esac
-  done_count=0
-  stage_started=$(date +%s)
-  while IFS= read -r package || [ -n "$package" ]; do
-    valid_package_name "$package" || continue
-    done_count=$((done_count + 1))
-    set --
-    for root in $roots; do
-      for user_root in "$root"/[0-9]*; do
-        [ -d "$user_root/$package/cache" ] && [ ! -L "$user_root/$package/cache" ] && set -- "$@" "$user_root/$package/cache"
-        [ -d "$user_root/$package/code_cache" ] && [ ! -L "$user_root/$package/code_cache" ] && set -- "$@" "$user_root/$package/code_cache"
-      done
-    done
-    [ "$#" -gt 0 ] || continue
-    should_stop && { rm -f "$packages"; return 9; }
-    set_phase "正在扫描应用缓存" "$done_count" "$total" "$package"
-    LIST_SEQ=$((LIST_SEQ + 1))
-    candidates="$TMP_DIR/cache-internal.$LIST_SEQ.nul"
-    run_cache_find 10 "$days" "$candidates" "$@"
-    code=$?
-    if [ "$code" -eq 0 ]; then
-      process_cache_candidates "$candidates" "$category" "$package" "$done_count" "$total"
-    else
-      CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
-      PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-      report_line protected timeout "$category:$package" 1 0 "$package"
-      rm -f "$candidates"
-    fi
-    now=$(date +%s)
-    if [ $((now - stage_started)) -ge 240 ]; then
-      CACHE_TRUNCATED=1
-      log_line "[应用缓存提前结束] 已达到 240 秒上限"
-      break
-    fi
-  done <"$packages"
-  rm -f "$packages"
-  return 0
+  scan_cache_batch "$dir_list" "$days" "$category" 5
+  return $?
 }
 
 scan_external_cache() {
   days=$1
-  packages="$TMP_DIR/cache-packages.external"
-  : >"$packages"
+  dir_list="$TMP_DIR/cache-dirs.external"
+  : >"$dir_list"
   for app_dir in /data/media/[0-9]*/Android/data/*; do
     [ -d "$app_dir" ] || continue
     package=${app_dir##*/}
     valid_package_name "$package" || continue
-    { [ -d "$app_dir/cache" ] || [ -d "$app_dir/code_cache" ]; } || continue
-    grep -Fqx -- "$package" "$packages" 2>/dev/null || printf '%s\n' "$package" >>"$packages"
+    [ -d "$app_dir/cache" ] && printf '%s\n' "$app_dir/cache" >>"$dir_list"
+    [ -d "$app_dir/code_cache" ] && printf '%s\n' "$app_dir/code_cache" >>"$dir_list"
   done
 
-  total=$(wc -l <"$packages" 2>/dev/null | tr -d ' ')
-  case "$total" in ''|*[!0-9]*) total=0 ;; esac
-  done_count=0
-  stage_started=$(date +%s)
-  while IFS= read -r package || [ -n "$package" ]; do
-    valid_package_name "$package" || continue
-    done_count=$((done_count + 1))
-    set --
-    for app_dir in /data/media/[0-9]*/Android/data/"$package"; do
-      [ -d "$app_dir/cache" ] && [ ! -L "$app_dir/cache" ] && set -- "$@" "$app_dir/cache"
-      [ -d "$app_dir/code_cache" ] && [ ! -L "$app_dir/code_cache" ] && set -- "$@" "$app_dir/code_cache"
-    done
-    [ "$#" -gt 0 ] || continue
-    should_stop && { rm -f "$packages"; return 9; }
-    set_phase "正在扫描外部应用缓存" "$done_count" "$total" "$package"
-    LIST_SEQ=$((LIST_SEQ + 1))
-    candidates="$TMP_DIR/cache-external.$LIST_SEQ.nul"
-    run_cache_find 10 "$days" "$candidates" "$@"
-    code=$?
-    if [ "$code" -eq 0 ]; then
-      process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total"
-    else
-      CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
-      PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-      report_line protected timeout "外部应用缓存:$package" 1 0 "$package"
-      rm -f "$candidates"
-    fi
-    now=$(date +%s)
-    if [ $((now - stage_started)) -ge 180 ]; then
-      CACHE_TRUNCATED=1
-      log_line "[外部缓存提前结束] 已达到 180 秒上限"
-      break
-    fi
-  done <"$packages"
-  rm -f "$packages"
-  return 0
+  scan_cache_batch "$dir_list" "$days" "外部应用缓存" 7
+  return $?
 }
 
 run_app_rules() {
@@ -1339,7 +1438,7 @@ deep_target_stats() {
   start_stats=$(date +%s)
   if [ "$DEEP_FIND_XDEV" = "1" ]; then xdev_arg='-xdev'; else xdev_arg=''; fi
   if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
-    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\'''
+    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\''
   else
     command_body='find "$1" $4 -type f -print0 >"$2" 2>/dev/null
 if [ -s "$2" ]; then
@@ -1749,7 +1848,16 @@ corpse_process_target() {
   [ "$count" -eq 0 ] && was_empty_dir=1
   report_count=$count
   [ "$report_count" -gt 0 ] || report_count=1
-  if find "$target" -type f -size "+${MAX_FILE_BYTES}c" -print -quit 2>/dev/null | grep -q .; then
+  # 大文件探测改为兼容写法：不使用 -quit（部分 ROM 的 find 不支持会静默失败并绕过保护），
+  # find 退出码非 0 时按"存在大文件"处理，宁可不删也不可误删。
+  LIST_SEQ=$((LIST_SEQ + 1))
+  big_probe="$TMP_DIR/corpse-big-probe.$LIST_SEQ"
+  big_found=1
+  if find "$target" -type f -size "+${MAX_FILE_BYTES}c" -print >"$big_probe" 2>/dev/null; then
+    [ -s "$big_probe" ] || big_found=0
+  fi
+  rm -f "$big_probe"
+  if [ "$big_found" -eq 1 ]; then
     PROTECTED_ITEMS=$((PROTECTED_ITEMS + report_count))
     PROTECTED_BYTES=$(awk -v a="$PROTECTED_BYTES" -v b="$size" 'BEGIN {printf "%.0f", a+b}')
     log_line "[残留受保护:超过单文件上限] $target（上限 ${MAX_MB} MiB）"
@@ -1970,7 +2078,8 @@ is_mount_target() {
 
 root_shell_old_enough() {
   [ "$ROOT_SHELL_DAYS" -le 0 ] && return 0
-  find "$1" -maxdepth 0 -mtime "+$ROOT_SHELL_DAYS" -print -quit 2>/dev/null | grep -q .
+  # -maxdepth 0 至多输出一行，无需 -quit（不支持的 find 会报错退出 → 无输出 → 视为不够旧，方向保守）
+  find "$1" -maxdepth 0 -mtime "+$ROOT_SHELL_DAYS" -print 2>/dev/null | grep -q .
 }
 
 root_shell_effectively_empty() {
@@ -1985,6 +2094,15 @@ root_shell_effectively_empty() {
     ! \( -type f -size 0c \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \) \
     -print -quit >"$probe" 2>/dev/null
   probe_code=$?
+  if [ "$probe_code" -ne 0 ]; then
+    # 兼容不支持 -quit 的 find：去掉 -quit 重试（输出量由 6 秒超时兜底，只判断是否存在条目）。
+    # 不支持的 find 会立即报错退出，重试代价可忽略；超时目录重试后仍失败则按受保护处理。
+    run_limited_command 6 find "$dir" -mindepth 1 \
+      ! -type d \
+      ! \( -type f -size 0c \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \) \
+      -print >"$probe" 2>/dev/null
+    probe_code=$?
+  fi
   if [ "$probe_code" -ne 0 ]; then
     PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
     log_line "[根目录保护:扫描超时或异常] $dir"
