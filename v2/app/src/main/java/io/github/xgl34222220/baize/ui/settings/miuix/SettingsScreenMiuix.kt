@@ -42,17 +42,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
 import io.github.xgl34222220.baize.ui.settings.SettingsUiState
 
-/**
- * User-facing settings for an automatic cleaner.
- *
- * Scheduler failure counters, backoff, supervisor heartbeats and recovery commands are internal
- * implementation details. The Root supervisor already retries and recovers by itself, so they are
- * deliberately not exposed as buttons or alarming status text here.
- */
+/** User-facing controls for BaiZe automatic cleaning and organization. */
 @Composable
 fun SettingsScreenMiuix(
     state: SettingsUiState,
@@ -85,7 +78,7 @@ fun SettingsScreenMiuix(
                 Spacer(Modifier.height(4.dp))
                 Text("自动化设置", fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Black)
                 Text(
-                    "白泽会自行调度、重试和恢复，无需手动唤醒",
+                    "设置完成后，白泽会在后台持续自动运行",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -103,7 +96,7 @@ fun SettingsScreenMiuix(
                     )
                     Text(
                         if (config.enabled) {
-                            "后台会按计划运行。暂时不满足条件或遇到临时异常时，会自动等待并恢复，不需要人工处理。"
+                            "后台会按计划完成清理与文件整理，并在需要时自行恢复，不需要人工操作。"
                         } else {
                             "开启后，白泽会自动清理缓存、空项目、规则垃圾和安全碎片。"
                         },
@@ -143,7 +136,7 @@ fun SettingsScreenMiuix(
                     SettingSwitchRow(
                         icon = Icons.Rounded.Notifications,
                         title = "完成后通知",
-                        description = "只报告结果，不要求用户干预",
+                        description = "清理完成后显示简洁结果",
                         checked = config.notifyOnComplete,
                         onCheckedChange = { actions.onUpdateScheduler(config.copy(notifyOnComplete = it)) }
                     )
@@ -161,7 +154,7 @@ fun SettingsScreenMiuix(
                     .height(60.dp),
                 shape = RoundedCornerShape(22.dp)
             ) {
-                Text(if (config.saving) "正在保存…" else "保存并交给后台自动运行", fontWeight = FontWeight.Black)
+                Text(if (config.saving) "正在保存…" else "保存并自动运行", fontWeight = FontWeight.Black)
             }
         }
 
@@ -192,7 +185,7 @@ fun SettingsScreenMiuix(
 
         item {
             Text(
-                "“连续失败、熔断、守护进程心跳、手动唤醒”等属于内部容错机制，已从用户界面移除。白泽会在后台自行短暂等待并再次执行。",
+                "日常使用只需要保持自动清理开启。其余运行与恢复过程由白泽后台自行完成。",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
