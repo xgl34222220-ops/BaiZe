@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - verify/v240-release-assets
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
