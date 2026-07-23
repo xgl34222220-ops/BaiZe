@@ -1,0 +1,28 @@
+name: Export Dual Theme Source
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack Android UI source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf baize-dual-theme-source.tar.gz \
+            v2/app/src/main/java/io/github/xgl34222220/baize \
+            v2/app/build.gradle.kts \
+            v2/settings.gradle.kts \
+            v2/build.gradle.kts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baize-dual-theme-source
+          path: baize-dual-theme-source.tar.gz
+          if-no-files-found: error
