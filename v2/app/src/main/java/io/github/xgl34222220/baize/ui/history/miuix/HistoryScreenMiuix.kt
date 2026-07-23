@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
@@ -140,7 +141,7 @@ fun HistoryScreenMiuix(
             item(key = "protected-action", contentType = "action") {
                 Button(
                     onClick = actions.onReviewProtected,
-                    modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth()
+                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
                 ) {
                     Icon(Icons.Rounded.Shield, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -178,7 +179,7 @@ private fun HistoryHeader(canClear: Boolean, actions: HistoryUiActions) {
             Text(
                 "CLEAN HISTORY",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.2.sp
             )
@@ -188,10 +189,10 @@ private fun HistoryHeader(canClear: Boolean, actions: HistoryUiActions) {
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 34.sp,
                 lineHeight = 38.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
             Text(
-                "轻量列表 · 无逐卡片阴影",
+                "每次清理的结果与累计统计",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
@@ -207,7 +208,7 @@ private fun HistoryHeader(canClear: Boolean, actions: HistoryUiActions) {
 private fun HeaderButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier.size(50.dp),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .06f))
     ) {
@@ -227,7 +228,7 @@ private fun HistoryOverview(state: HistoryUiState) {
                     Modifier
                         .size(9.dp)
                         .clip(CircleShape)
-                        .background(if (state.lifetimeRuns > 0) Color(0xFF2DBE87) else Color(0xFFF2A93B))
+                        .background(if (state.lifetimeRuns > 0) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -243,13 +244,13 @@ private fun HistoryOverview(state: HistoryUiState) {
                 Formatter.formatFileSize(context, state.lifetimeReleased),
                 fontSize = 39.sp,
                 lineHeight = 43.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.height(17.dp))
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(21.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .04f))
                     .padding(horizontal = 13.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -265,8 +266,8 @@ private fun HistoryOverview(state: HistoryUiState) {
 @Composable
 private fun Metric(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Black)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
@@ -281,21 +282,21 @@ private fun CurrentSummary(state: HistoryUiState) {
             IconTile(Icons.Rounded.CheckCircle, false)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("本次结果", fontSize = 17.sp, fontWeight = FontWeight.Black)
+                Text("本次结果", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 if (state.lastTaskTime.isNotBlank()) {
-                    Text("执行时间 ${state.lastTaskTime}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("执行时间 ${state.lastTaskTime}", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(
                     "${state.currentItemCount} 项 · ${state.recentApps.size} 个应用 · ${state.recentJunk.size} 类其他垃圾",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
+                    fontSize = 11.sp
                 )
             }
             Text(
                 Formatter.formatFileSize(context, state.currentBytes),
                 color = MaterialTheme.colorScheme.primary,
                 fontSize = 17.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
         }
     }
@@ -378,14 +379,14 @@ private fun ResultHeader(
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(bytes, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Black)
-            Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+            Text(bytes, color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(meta, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         }
         if (expandable) {
             Spacer(Modifier.width(4.dp))
@@ -405,7 +406,7 @@ private fun ProtectedResultCard(item: ProtectedUiItem) {
     GroupSurface {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.Top) {
             Box(
-                Modifier.size(46.dp).clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = .12f)),
+                Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = .12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(if (item.selectable) Icons.Rounded.Shield else Icons.Rounded.Lock, null, tint = tint)
@@ -413,16 +414,16 @@ private fun ProtectedResultCard(item: ProtectedUiItem) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.category.ifBlank { "受保护项目" }, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text(item.reason.ifBlank { "未提供保护原因" }, color = tint, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(item.reason.ifBlank { "未提供保护原因" }, color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(
                     item.path,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     lineHeight = 14.sp
                 )
             }
-            Text(if (item.selectable) "可复查" else "硬保护", color = tint, fontSize = 9.sp, fontWeight = FontWeight.Black)
+            Text(if (item.selectable) "可复查" else "硬保护", color = tint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -455,14 +456,14 @@ private fun RecordCard(item: HistoryUiItem) {
                     Text(
                         "${item.time} · ${item.trigger}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 9.sp,
+                        fontSize = 11.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         summary,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = if (expanded) 4 else 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -472,9 +473,9 @@ private fun RecordCard(item: HistoryUiItem) {
                         Formatter.formatFileSize(context, item.bytes),
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Black
+                        fontWeight = FontWeight.Bold
                     )
-                    Text(historyStatus(item), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                    Text(historyStatus(item), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
                 if (hasDetails) {
                     Spacer(Modifier.width(4.dp))
@@ -515,16 +516,16 @@ private fun DetailRow(title: String, subtitle: String, value: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 8.sp,
+                fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp)
+        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
     }
 }
 
@@ -542,7 +543,7 @@ private fun EmptyHistoryCard() {
                 tint = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(10.dp))
-            Text("还没有清理记录", fontSize = 18.sp, fontWeight = FontWeight.Black)
+            Text("还没有清理记录", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text(
                 "完成一次扫描或清理后，这里会显示垃圾分类、涉及应用和释放空间。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -558,7 +559,7 @@ private fun IconTile(icon: ImageVector, error: Boolean) {
     Box(
         Modifier
             .size(46.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(if (error) scheme.errorContainer else scheme.primary.copy(alpha = .11f)),
         contentAlignment = Alignment.Center
     ) {
@@ -580,13 +581,13 @@ private fun GroupSurface(
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
     val background = when {
-        amoled -> Color(0xFF080808)
+        amoled -> BaiZeTokens.colors.surfaceRaised
         dark -> scheme.surfaceContainerHigh
         else -> scheme.surface
     }
     Surface(
-        modifier = modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(27.dp),
+        modifier = modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
         color = background,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -596,16 +597,16 @@ private fun GroupSurface(
 
 @Composable
 private fun SectionTitle(eyebrow: String, title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 3.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 3.dp)) {
         Text(
             eyebrow,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp
         )
-        Text(title, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Black)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+        Text(title, fontSize = 26.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold)
+        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 

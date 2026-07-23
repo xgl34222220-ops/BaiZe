@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.logs.LogLevel
 import io.github.xgl34222220.baize.ui.logs.LogUiItem
@@ -105,7 +106,7 @@ private fun MiuixLogsHeader(
             Text(
                 "SYSTEM LOGS",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 2.4.sp
             )
@@ -115,10 +116,10 @@ private fun MiuixLogsHeader(
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 36.sp,
                 lineHeight = 40.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
             Text(
-                "Miuix 紧凑状态与诊断",
+                "服务状态与诊断信息",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
@@ -148,7 +149,7 @@ private fun MiuixHeaderButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(19.dp)
+    val shape = RoundedCornerShape(20.dp)
     Box(
         Modifier
             .size(54.dp)
@@ -171,7 +172,7 @@ private fun MiuixRuntimeOverview(state: LogsUiState) {
     val amoled = dark && settings.amoledBlack
     val shape = RoundedCornerShape(36.dp)
     val background = when {
-        amoled -> Color(0xFF090909)
+        amoled -> BaiZeTokens.colors.surfaceRaised
         dark -> scheme.surfaceContainerHigh
         else -> scheme.surface
     }
@@ -182,14 +183,14 @@ private fun MiuixRuntimeOverview(state: LogsUiState) {
         else -> "服务需要恢复"
     }
     val statusColor = when {
-        state.healthy -> Color(0xFF2DBE87)
-        state.connected -> Color(0xFFF2A93B)
+        state.healthy -> BaiZeTokens.colors.success
+        state.connected -> BaiZeTokens.colors.warning
         else -> scheme.error
     }
 
     Box(
         Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth()
             .shadow(12.dp, shape, clip = false)
             .clip(shape)
@@ -218,7 +219,7 @@ private fun MiuixRuntimeOverview(state: LogsUiState) {
                 color = scheme.onSurface,
                 fontSize = 34.sp,
                 lineHeight = 39.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
 
             Spacer(Modifier.height(18.dp))
@@ -246,8 +247,8 @@ private fun MiuixStatusRow(label: String, value: String) {
             label,
             modifier = Modifier.width(45.dp),
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Black
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
         )
         Text(
             value,
@@ -269,12 +270,12 @@ private fun MiuixStatePill(label: String, positive: Boolean) {
     Text(
         label,
         modifier = Modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(background)
             .padding(horizontal = 9.dp, vertical = 6.dp),
         color = if (positive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-        fontSize = 9.sp,
-        fontWeight = FontWeight.Black
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold
     )
 }
 
@@ -293,7 +294,7 @@ private fun MiuixRawLogCard(state: LogsUiState, actions: LogsUiActions) {
                     Text(
                         if (state.hasRawLog) "显示最后 36 行，不使用任务摘要代替" else "执行模块扫描或清理后自动读取",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 9.sp
+                        fontSize = 11.sp
                     )
                 }
                 MiuixHeaderButton(
@@ -309,12 +310,12 @@ private fun MiuixRawLogCard(state: LogsUiState, actions: LogsUiActions) {
                     visible,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
                         .padding(13.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     lineHeight = 14.sp
                 )
             }
@@ -365,7 +366,7 @@ private fun MiuixToolRow(
         Box(
             Modifier
                 .size(44.dp)
-                .clip(RoundedCornerShape(15.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
             contentAlignment = Alignment.Center
         ) {
@@ -377,7 +378,7 @@ private fun MiuixToolRow(
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp
+                fontSize = 11.sp
             )
         }
     }
@@ -387,8 +388,8 @@ private fun MiuixToolRow(
 private fun MiuixLogCard(item: LogUiItem) {
     val context = LocalContext.current
     val (icon, tint) = when (item.level) {
-        LogLevel.SUCCESS -> Icons.Rounded.CheckCircle to Color(0xFF2DBE87)
-        LogLevel.WARNING -> Icons.Rounded.Search to Color(0xFFF2A93B)
+        LogLevel.SUCCESS -> Icons.Rounded.CheckCircle to BaiZeTokens.colors.success
+        LogLevel.WARNING -> Icons.Rounded.Search to BaiZeTokens.colors.warning
         LogLevel.ERROR -> Icons.Rounded.ErrorOutline to MaterialTheme.colorScheme.error
         LogLevel.INFO -> Icons.Rounded.Description to MaterialTheme.colorScheme.primary
     }
@@ -401,7 +402,7 @@ private fun MiuixLogCard(item: LogUiItem) {
             Box(
                 Modifier
                     .size(46.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .background(tint.copy(alpha = .12f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -413,12 +414,12 @@ private fun MiuixLogCard(item: LogUiItem) {
                 Text(
                     "${item.time} · ${item.trigger}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp
+                    fontSize = 11.sp
                 )
                 Text(
                     item.message,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -428,12 +429,12 @@ private fun MiuixLogCard(item: LogUiItem) {
                     Formatter.formatFileSize(context, item.bytes),
                     color = tint,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
                     if (item.errors > 0) "异常 ${item.errors}" else "${item.files} 项",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp
+                    fontSize = 11.sp
                 )
             }
         }
@@ -448,16 +449,16 @@ private fun MiuixGroupSurface(
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(29.dp)
+    val shape = RoundedCornerShape(28.dp)
     val background = when {
-        amoled -> Color(0xFF090909)
+        amoled -> BaiZeTokens.colors.surfaceRaised
         dark -> scheme.surfaceContainerHigh
         else -> scheme.surface
     }
 
     Column(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth()
             .shadow(6.dp, shape, clip = false)
             .clip(shape)
@@ -473,19 +474,19 @@ private fun MiuixSectionTitle(
     title: String,
     subtitle: String
 ) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 5.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 5.dp)) {
         Text(
             eyebrow,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.2.sp
         )
-        Text(title, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
+        Text(title, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
         Text(
             subtitle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp
+            fontSize = 11.sp
         )
     }
 }
@@ -506,11 +507,11 @@ private fun MiuixEmptyLogs() {
                 tint = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(10.dp))
-            Text("还没有任务日志", fontSize = 19.sp, fontWeight = FontWeight.Black)
+            Text("还没有任务日志", fontSize = 19.sp, fontWeight = FontWeight.Bold)
             Text(
                 "完成一次扫描或清理后，这里会显示任务结果、大小和异常数量。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 11.sp
             )
         }
     }
