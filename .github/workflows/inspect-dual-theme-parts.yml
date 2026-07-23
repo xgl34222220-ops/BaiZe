@@ -1,0 +1,34 @@
+name: Inspect Dual Theme Parts
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print exact part checksums
+        shell: bash
+        run: |
+          set -u
+          for f in .github/dual-theme-patch.part.*; do
+            printf 'PART %s bytes=' "$f"
+            wc -c < "$f" | tr -d ' '
+            sha256sum "$f"
+          done
+          cat .github/dual-theme-patch.part.* > /tmp/all.b64
+          printf 'ALL bytes='
+          wc -c < /tmp/all.b64 | tr -d ' '
+          sha256sum /tmp/all.b64
+          base64 --decode /tmp/all.b64 > /tmp/all.gz 2>/tmp/decode.err || true
+          printf 'GZ bytes='
+          wc -c < /tmp/all.gz | tr -d ' '
+          sha256sum /tmp/all.gz
+          cat /tmp/decode.err || true
+          gzip --test /tmp/all.gz || true
