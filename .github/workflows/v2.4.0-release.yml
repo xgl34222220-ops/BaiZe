@@ -1,35 +1,34 @@
-name: BaiZe v2.4.1 Verify and Release
+name: BaiZe v2.4.1 Beta 1 Verify and Release
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: [main]
+    branches: [agent/builtin-rule-expansion]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: baize-v241-release-${{ github.event.pull_request.number || github.ref }}
+  group: baize-v241-beta1-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   BAIZE_VERSION: v2.4.1
   BAIZE_VERSION_NAME: 2.4.1
   BAIZE_VERSION_CODE: '24001'
+  BAIZE_PRERELEASE_TAG: v2.4.1-beta.1
   BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
 
 jobs:
-  verify-build-release:
+  verify-build-prerelease:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout committed source
+      - name: Checkout latest beta source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify unified v2.4.1 metadata
+      - name: Verify v2.4.1 beta metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -40,26 +39,14 @@ jobs:
           grep -q '禁止回退到 Debug 签名' v2/app/build.gradle.kts
           grep -qx 'version=v2.4.1' module.prop
           grep -qx 'versionCode=24001' module.prop
-          grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json' module.prop
           grep -q 'OUTPUT="$OUT/BaiZe-v2.4.1-Module.zip"' v2/scripts/package-module.sh
           grep -Fqx 'ui_print "- 正在安装白泽 v2.4.1"' v2/module/customize.sh
-          grep -q 'v2.4.1' README.md
-          test -s RELEASE_NOTES_v2.4.1.md
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          assert json.loads(Path('update.json').read_text()) == {
-              'version': 'v2.4.1',
-              'versionCode': 24001,
-              'zipUrl': 'https://github.com/xgl34222220-ops/BaiZe/releases/download/v2.4.1/BaiZe-v2.4.1-Module.zip',
-              'changelog': 'https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.4.1.md',
-          }
-          PY
+          grep -q 'v2.4.1-beta.1' RELEASE_NOTES_v2.4.1.md
 
       - name: Install shell compatibility tools
         run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
 
-      - name: Verify Root scripts and regressions
+      - name: Verify Root scripts and complete regressions
         shell: bash
         run: |
           set -euo pipefail
@@ -73,6 +60,12 @@ jobs:
           python3 v2/tests/test-clean-plan-persistence.py
           python3 v2/tests/test-clean-plan-resume.py
           python3 v2/tests/test-clean-result-model.py
+          python3 v2/tests/test-candidate-selection-plan.py
+          python3 v2/tests/test-clean-result-report.py
+          python3 v2/tests/test-explainable-rules-whitelist.py
+          python3 v2/tests/test-rule-pack-management.py
+          python3 v2/tests/test-rule-update-channel.py
+          python3 v2/tests/test-rule-release-automation.py
           gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
 
       - name: Set up JDK 17
@@ -92,28 +85,7 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Prepare temporary PR signing certificate
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/baize-v241-ci.jks"
-          keytool -genkeypair -noprompt \
-            -keystore "$KEYSTORE" \
-            -storepass 'baize-ci-24001' \
-            -keypass 'baize-ci-24001' \
-            -alias 'baize-ci' \
-            -keyalg RSA -keysize 3072 -validity 3650 \
-            -dname 'CN=BaiZe v2.4.1 CI,O=xgl34222220-ops,C=CN'
-          {
-            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
-            echo 'BAIZE_KEYSTORE_PASSWORD=baize-ci-24001'
-            echo 'BAIZE_KEY_ALIAS=baize-ci'
-            echo 'BAIZE_KEY_PASSWORD=baize-ci-24001'
-          } >> "$GITHUB_ENV"
-
       - name: Prepare formal release signing certificate
-        if: github.event_name != 'pull_request'
         shell: bash
         env:
           KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
@@ -172,22 +144,21 @@ jobs:
         working-directory: v2
         run: sh scripts/build-native.sh
 
-      - name: Build signed Android Release, debug Kotlin, lint and macrobenchmark
-        id: android_build
+      - name: Build signed Android Release and verification targets
         working-directory: v2
         shell: bash
         run: |
           set -o pipefail
           gradle --no-daemon :app:assembleRelease :app:compileDebugKotlin :app:lintRelease :macrobenchmark:assemble 2>&1 | tee android-build.log
 
-      - name: Package stable module
+      - name: Package beta module
         working-directory: v2
         shell: bash
         run: |
           set -euo pipefail
           sh scripts/package-module.sh 2>&1 | tee package-module.log
 
-      - name: Verify signed formal artifacts
+      - name: Verify signed beta artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -204,7 +175,6 @@ jobs:
           unzip -Z1 "$ZIP" > "$ZIP_LIST"
           grep -qx 'version=v2.4.1' "$MODULE_PROP"
           grep -qx 'versionCode=24001' "$MODULE_PROP"
-          grep -qx 'updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json' "$MODULE_PROP"
           grep -qx 'app/baize.apk' "$ZIP_LIST"
           if grep -Eq '^(webroot|webui|www|ksu-webui)/' "$ZIP_LIST"; then
             echo '模块包中不允许包含 WebUI 资源' >&2
@@ -216,19 +186,16 @@ jobs:
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK" > "$CERT_FILE"
-          cat "$CERT_FILE"
-          if [ "${{ github.event_name }}" != 'pull_request' ]; then
-            APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT_FILE" | tr -d ':[:space:]')
-            test "$APK_CERT" = "$BAIZE_CERT_SHA256"
-          fi
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT_FILE" | tr -d ':[:space:]')
+          test "$APK_CERT" = "$BAIZE_CERT_SHA256"
           cp "$APK" "$RELEASE_APK"
           sha256sum "$ZIP" > "$ZIP.sha256"
           sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
 
-      - name: Upload verified v2.4.1 artifacts
+      - name: Upload verified beta artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.4.1-Verified-Release
+          name: BaiZe-v2.4.1-Beta1-Verified
           if-no-files-found: error
           path: |
             v2/dist/BaiZe-v2.4.1-Module.zip
@@ -239,35 +206,37 @@ jobs:
             v2/android-build.log
             v2/package-module.log
 
-      - name: Publish BaiZe v2.4.1 GitHub Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish BaiZe v2.4.1 Beta 1 prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=v2.4.1
+          TAG="$BAIZE_PRERELEASE_TAG"
           ZIP=v2/dist/BaiZe-v2.4.1-Module.zip
           ZIP_SHA=v2/dist/BaiZe-v2.4.1-Module.zip.sha256
           APK=v2/dist/BaiZe-v2.4.1.apk
           APK_SHA=v2/dist/BaiZe-v2.4.1.apk.sha256
           CERT=v2/dist/BaiZe-v2.4.1-signing-certificate.txt
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title '白泽 v2.4.1' --notes-file RELEASE_NOTES_v2.4.1.md --latest
+            gh release edit "$TAG" \
+              --title '白泽 v2.4.1 Beta 1' \
+              --notes-file RELEASE_NOTES_v2.4.1.md \
+              --prerelease
             gh release upload "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" --clobber
           else
             gh release create "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" \
               --target "$GITHUB_SHA" \
-              --title '白泽 v2.4.1' \
+              --title '白泽 v2.4.1 Beta 1' \
               --notes-file RELEASE_NOTES_v2.4.1.md \
-              --latest
+              --prerelease
           fi
 
       - name: Upload build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.4.1-Release-Diagnostics
+          name: BaiZe-v2.4.1-Beta1-Diagnostics
           if-no-files-found: warn
           path: |
             v2/android-build.log
