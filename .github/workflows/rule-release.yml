@@ -1,0 +1,553 @@
+name: BaiZe Signed Rule Release
+
+on:
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'v2/tools/build-rule-pack.py'
+      - 'v2/tools/build-rule-index.py'
+      - 'v2/tools/verify-rule-release.py'
+      - 'v2/tools/verify-signed-jar.sh'
+      - 'v2/tests/test-rule-release-automation.py'
+      - 'v2/docs/rule-release-playbook.md'
+      - '.github/workflows/rule-release.yml'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Rule update channel
+        type: choice
+        options: [stable, beta]
+        default: stable
+        required: true
+      version:
+        description: Display version, for example 2026.08.1
+        type: string
+        required: true
+      version_code:
+        description: Positive monotonic integer, for example 20260801
+        type: string
+        required: true
+      min_app_version_code:
+        description: Minimum BaiZe app versionCode
+        type: string
+        default: '24001'
+        required: true
+      release_notes:
+        description: Rule changes shown in the app
+        type: string
+        required: true
+      mandatory:
+        description: Mark the rule update as mandatory
+        type: boolean
+        default: false
+      valid_days:
+        description: Signed index validity window, 1-45 days
+        type: string
+        default: '30'
+        required: true
+      publish:
+        description: Publish GitHub Release assets after rehearsal
+        type: boolean
+        default: false
+      confirm_publish:
+        description: Type PUBLISH when publish is enabled
+        type: string
+        default: ''
+        required: false
+  schedule:
+    - cron: '23 3 * * 1'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-rule-release-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+
+jobs:
+  release-rehearsal:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout committed source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and validate release inputs
+        id: release
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_VERSION_CODE: ${{ inputs.version_code }}
+          INPUT_MIN_APP: ${{ inputs.min_app_version_code }}
+          INPUT_NOTES: ${{ inputs.release_notes }}
+          INPUT_MANDATORY: ${{ inputs.mandatory }}
+          INPUT_VALID_DAYS: ${{ inputs.valid_days }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_CONFIRM: ${{ inputs.confirm_publish }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            CHANNEL=stable
+            VERSION="ci-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+            VERSION_CODE=$((900000000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
+            MIN_APP=24001
+            MANDATORY=false
+            VALID_DAYS=7
+            PUBLISH=false
+            printf '%s\n' 'Pull request end-to-end signed rule release rehearsal.' > release-notes.txt
+          else
+            CHANNEL=$INPUT_CHANNEL
+            VERSION=$INPUT_VERSION
+            VERSION_CODE=$INPUT_VERSION_CODE
+            MIN_APP=$INPUT_MIN_APP
+            MANDATORY=$INPUT_MANDATORY
+            VALID_DAYS=$INPUT_VALID_DAYS
+            PUBLISH=$INPUT_PUBLISH
+            printf '%s\n' "$INPUT_NOTES" > release-notes.txt
+          fi
+          case "$CHANNEL" in stable|beta) ;; *) echo 'invalid channel' >&2; exit 1 ;; esac
+          printf '%s' "$VERSION" | grep -Eq '^[A-Za-z0-9._-]{1,80}$'
+          printf '%s' "$VERSION_CODE" | grep -Eq '^[1-9][0-9]{0,17}$'
+          printf '%s' "$MIN_APP" | grep -Eq '^[0-9]{1,18}$'
+          printf '%s' "$VALID_DAYS" | grep -Eq '^[0-9]{1,2}$'
+          [ "$VALID_DAYS" -ge 1 ] && [ "$VALID_DAYS" -le 45 ]
+          test -s release-notes.txt
+          if [ "$PUBLISH" = 'true' ]; then
+            [ "$GITHUB_EVENT_NAME" = 'workflow_dispatch' ]
+            [ "$GITHUB_REF" = 'refs/heads/main' ]
+            [ "$INPUT_CONFIRM" = 'PUBLISH' ]
+          fi
+          PACK_TAG="rules-${CHANNEL}-${VERSION_CODE}"
+          PACK_ASSET="BaiZe-Rules-${CHANNEL}-${VERSION}.jar"
+          INDEX_ASSET="BaiZe-Rules-Index-${CHANNEL}.jar"
+          PACK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${PACK_TAG}/${PACK_ASSET}"
+          GENERATED_AT=$(date +%s%3N)
+          {
+            echo "channel=$CHANNEL"
+            echo "version=$VERSION"
+            echo "version_code=$VERSION_CODE"
+            echo "min_app=$MIN_APP"
+            echo "mandatory=$MANDATORY"
+            echo "valid_days=$VALID_DAYS"
+            echo "publish=$PUBLISH"
+            echo "pack_tag=$PACK_TAG"
+            echo "pack_asset=$PACK_ASSET"
+            echo "index_asset=$INDEX_ASSET"
+            echo "pack_url=$PACK_URL"
+            echo "generated_at=$GENERATED_AT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare temporary rehearsal signer
+        if: steps.release.outputs.publish != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/baize-rule-ci.jks"
+          PASSWORD='baize-rule-ci-24001'
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" -storepass "$PASSWORD" -keypass "$PASSWORD" \
+            -alias baize-rule-ci -keyalg RSA -keysize 3072 -validity 3650 \
+            -dname 'CN=BaiZe Rule Release CI,O=xgl34222220-ops,C=CN'
+          CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$PASSWORD" -alias baize-rule-ci -rfc \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$PASSWORD"
+            echo 'BAIZE_KEY_ALIAS=baize-rule-ci'
+            echo "BAIZE_KEY_PASSWORD=$PASSWORD"
+            echo "EXPECTED_RULE_CERT_SHA256=$CERT"
+          } >> "$GITHUB_ENV"
+
+      - name: Prepare formal production signer
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/baize-rule-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          ACTUAL_CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$ACTUAL_CERT" = "$BAIZE_CERT_SHA256"
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+            echo "EXPECTED_RULE_CERT_SHA256=$ACTUAL_CERT"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and sign official rule pack
+        id: pack
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+          MIN_APP: ${{ steps.release.outputs.min_app }}
+          PACK_ASSET: ${{ steps.release.outputs.pack_asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p rule-release
+          python3 v2/tools/build-rule-pack.py \
+            --rules-dir config \
+            --version "$VERSION" \
+            --version-code "$VERSION_CODE" \
+            --min-app-version-code "$MIN_APP" \
+            --release-notes "$(cat release-notes.txt)" \
+            --output rule-release/unsigned-pack.jar
+          jarsigner -keystore "$BAIZE_KEYSTORE_PATH" -storepass "$BAIZE_KEYSTORE_PASSWORD" \
+            -keypass "$BAIZE_KEY_PASSWORD" -signedjar "rule-release/$PACK_ASSET" \
+            rule-release/unsigned-pack.jar "$BAIZE_KEY_ALIAS"
+          bash v2/tools/verify-signed-jar.sh "rule-release/$PACK_ASSET"
+          ACTUAL=$(keytool -printcert -jarfile "rule-release/$PACK_ASSET" \
+            | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+          test "$ACTUAL" = "$EXPECTED_RULE_CERT_SHA256"
+          sha256sum "rule-release/$PACK_ASSET" > "rule-release/$PACK_ASSET.sha256"
+          PACK_SHA=$(awk '{print $1}' "rule-release/$PACK_ASSET.sha256")
+          PACK_BYTES=$(stat -c '%s' "rule-release/$PACK_ASSET")
+          PACK_ID=$(unzip -p "rule-release/$PACK_ASSET" rule-pack.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["packId"])')
+          {
+            echo "sha=$PACK_SHA"
+            echo "bytes=$PACK_BYTES"
+            echo "pack_id=$PACK_ID"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Load and validate previous signed channel index
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX_ASSET: ${{ steps.release.outputs.index_asset }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p rule-release/previous
+          if gh release view rules-index >/dev/null 2>&1 && \
+             gh release download rules-index --pattern "$INDEX_ASSET" --dir rule-release/previous >/dev/null 2>&1; then
+            OLD="rule-release/previous/$INDEX_ASSET"
+            bash v2/tools/verify-signed-jar.sh "$OLD"
+            OLD_CERT=$(keytool -printcert -jarfile "$OLD" \
+              | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+            test "$OLD_CERT" = "$BAIZE_CERT_SHA256"
+            unzip -p "$OLD" rule-index.json > rule-release/previous-index.json
+            python3 - "$CHANNEL" "$VERSION_CODE" <<'PY'
+          import json, pathlib, sys
+          channel, new_code = sys.argv[1], int(sys.argv[2])
+          data = json.loads(pathlib.Path('rule-release/previous-index.json').read_text())
+          assert data['schema'] == 1 and data['channel'] == channel
+          codes = [int(item['versionCode']) for item in data.get('releases', [])]
+          if codes and new_code <= max(codes):
+              raise SystemExit(f'versionCode {new_code} must be greater than published {max(codes)}')
+          PY
+          else
+            printf '%s\n' '{"schema":1,"releases":[]}' > rule-release/previous-index.json
+          fi
+
+      - name: Build merged signed channel index
+        id: index
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          VERSION: ${{ steps.release.outputs.version }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+          MIN_APP: ${{ steps.release.outputs.min_app }}
+          MANDATORY: ${{ steps.release.outputs.mandatory }}
+          VALID_DAYS: ${{ steps.release.outputs.valid_days }}
+          GENERATED_AT: ${{ steps.release.outputs.generated_at }}
+          PACK_URL: ${{ steps.release.outputs.pack_url }}
+          PACK_SHA: ${{ steps.pack.outputs.sha }}
+          PACK_BYTES: ${{ steps.pack.outputs.bytes }}
+          PACK_ID: ${{ steps.pack.outputs.pack_id }}
+          INDEX_ASSET: ${{ steps.release.outputs.index_asset }}
+        run: |
+          set -euo pipefail
+          [ -s rule-release/previous-index.json ] || printf '%s\n' '{"schema":1,"releases":[]}' > rule-release/previous-index.json
+          python3 - <<'PY'
+          import json, os, pathlib
+          source = json.loads(pathlib.Path('rule-release/previous-index.json').read_text())
+          releases = [item for item in source.get('releases', []) if int(item.get('versionCode', 0)) != int(os.environ['VERSION_CODE'])]
+          releases.append({
+              'channel': os.environ['CHANNEL'],
+              'packId': os.environ['PACK_ID'],
+              'version': os.environ['VERSION'],
+              'versionCode': int(os.environ['VERSION_CODE']),
+              'minAppVersionCode': int(os.environ['MIN_APP']),
+              'url': os.environ['PACK_URL'],
+              'sha256': os.environ['PACK_SHA'],
+              'bytes': int(os.environ['PACK_BYTES']),
+              'publishedAt': int(os.environ['GENERATED_AT']),
+              'mandatory': os.environ['MANDATORY'].lower() == 'true',
+              'releaseNotes': pathlib.Path('release-notes.txt').read_text().strip(),
+          })
+          releases.sort(key=lambda item: int(item['versionCode']), reverse=True)
+          pathlib.Path('rule-release/releases.json').write_text(
+              json.dumps({'releases': releases[:50]}, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+          )
+          PY
+          python3 v2/tools/build-rule-index.py \
+            --channel "$CHANNEL" \
+            --releases-json rule-release/releases.json \
+            --generated-at "$GENERATED_AT" \
+            --valid-days "$VALID_DAYS" \
+            --output rule-release/unsigned-index.jar
+          jarsigner -keystore "$BAIZE_KEYSTORE_PATH" -storepass "$BAIZE_KEYSTORE_PASSWORD" \
+            -keypass "$BAIZE_KEY_PASSWORD" -signedjar "rule-release/$INDEX_ASSET" \
+            rule-release/unsigned-index.jar "$BAIZE_KEY_ALIAS"
+          bash v2/tools/verify-signed-jar.sh "rule-release/$INDEX_ASSET"
+          ACTUAL=$(keytool -printcert -jarfile "rule-release/$INDEX_ASSET" \
+            | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+          test "$ACTUAL" = "$EXPECTED_RULE_CERT_SHA256"
+          sha256sum "rule-release/$INDEX_ASSET" > "rule-release/$INDEX_ASSET.sha256"
+          echo "sha=$(awk '{print $1}' "rule-release/$INDEX_ASSET.sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: End-to-end cross-check generated assets
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          VERSION: ${{ steps.release.outputs.version }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+          PACK_URL: ${{ steps.release.outputs.pack_url }}
+          PACK_ASSET: ${{ steps.release.outputs.pack_asset }}
+          INDEX_ASSET: ${{ steps.release.outputs.index_asset }}
+        run: |
+          set -euo pipefail
+          python3 v2/tools/verify-rule-release.py \
+            --pack "rule-release/$PACK_ASSET" \
+            --index "rule-release/$INDEX_ASSET" \
+            --channel "$CHANNEL" --version "$VERSION" --version-code "$VERSION_CODE" \
+            --pack-url "$PACK_URL" --expected-signer-sha256 "$EXPECTED_RULE_CERT_SHA256" \
+            --output rule-release/release-verification.json
+          unzip -p "rule-release/$PACK_ASSET" rule-pack.json > rule-release/rule-pack.json
+          unzip -p "rule-release/$INDEX_ASSET" rule-index.json > rule-release/rule-index.json
+          git diff --check
+
+      - name: Upload signed rehearsal bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-Signed-Rule-Release-${{ steps.release.outputs.channel }}-${{ steps.release.outputs.version }}
+          if-no-files-found: error
+          path: |
+            rule-release/${{ steps.release.outputs.pack_asset }}
+            rule-release/${{ steps.release.outputs.pack_asset }}.sha256
+            rule-release/${{ steps.release.outputs.index_asset }}
+            rule-release/${{ steps.release.outputs.index_asset }}.sha256
+            rule-release/rule-pack.json
+            rule-release/rule-index.json
+            rule-release/release-verification.json
+            rule-release/releases.json
+
+      - name: Publish versioned rule pack before channel index
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACK_TAG: ${{ steps.release.outputs.pack_tag }}
+          PACK_ASSET: ${{ steps.release.outputs.pack_asset }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if gh release view "$PACK_TAG" >/dev/null 2>&1; then
+            gh release edit "$PACK_TAG" --title "BaiZe Rules $VERSION ($CHANNEL)" --notes-file release-notes.txt --latest=false
+            gh release upload "$PACK_TAG" "rule-release/$PACK_ASSET" "rule-release/$PACK_ASSET.sha256" rule-release/rule-pack.json --clobber
+          else
+            gh release create "$PACK_TAG" "rule-release/$PACK_ASSET" "rule-release/$PACK_ASSET.sha256" rule-release/rule-pack.json \
+              --target "$GITHUB_SHA" --title "BaiZe Rules $VERSION ($CHANNEL)" \
+              --notes-file release-notes.txt --latest=false
+          fi
+
+      - name: Atomically update fixed signed channel index asset
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INDEX_ASSET: ${{ steps.release.outputs.index_asset }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          printf 'Signed %s rule index. Clients verify this JAR with the BaiZe APK certificate.\n' "$CHANNEL" > rule-release/index-notes.txt
+          if gh release view rules-index >/dev/null 2>&1; then
+            gh release edit rules-index --title 'BaiZe Signed Rule Indexes' --notes-file rule-release/index-notes.txt --latest=false
+            gh release upload rules-index "rule-release/$INDEX_ASSET" "rule-release/$INDEX_ASSET.sha256" \
+              rule-release/rule-index.json rule-release/release-verification.json --clobber
+          else
+            gh release create rules-index "rule-release/$INDEX_ASSET" "rule-release/$INDEX_ASSET.sha256" \
+              rule-release/rule-index.json rule-release/release-verification.json \
+              --target "$GITHUB_SHA" --title 'BaiZe Signed Rule Indexes' \
+              --notes-file rule-release/index-notes.txt --latest=false
+          fi
+
+      - name: Download published assets and verify the public path
+        if: steps.release.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          VERSION: ${{ steps.release.outputs.version }}
+          VERSION_CODE: ${{ steps.release.outputs.version_code }}
+          PACK_TAG: ${{ steps.release.outputs.pack_tag }}
+          PACK_ASSET: ${{ steps.release.outputs.pack_asset }}
+          INDEX_ASSET: ${{ steps.release.outputs.index_asset }}
+          PACK_URL: ${{ steps.release.outputs.pack_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p rule-release/public
+          gh release download "$PACK_TAG" --pattern "$PACK_ASSET" --dir rule-release/public
+          gh release download rules-index --pattern "$INDEX_ASSET" --dir rule-release/public
+          bash v2/tools/verify-signed-jar.sh "rule-release/public/$PACK_ASSET"
+          bash v2/tools/verify-signed-jar.sh "rule-release/public/$INDEX_ASSET"
+          for file in "$PACK_ASSET" "$INDEX_ASSET"; do
+            CERT=$(keytool -printcert -jarfile "rule-release/public/$file" \
+              | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+            test "$CERT" = "$BAIZE_CERT_SHA256"
+          done
+          test "$(sha256sum "rule-release/public/$PACK_ASSET" | awk '{print $1}')" = "${{ steps.pack.outputs.sha }}"
+          test "$(sha256sum "rule-release/public/$INDEX_ASSET" | awk '{print $1}')" = "${{ steps.index.outputs.sha }}"
+          python3 v2/tools/verify-rule-release.py \
+            --pack "rule-release/public/$PACK_ASSET" --index "rule-release/public/$INDEX_ASSET" \
+            --channel "$CHANNEL" --version "$VERSION" --version-code "$VERSION_CODE" \
+            --pack-url "$PACK_URL" --expected-signer-sha256 "$BAIZE_CERT_SHA256"
+
+  refresh-signed-indexes:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare formal production signer
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/baize-rule-refresh.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$CERT" = "$BAIZE_CERT_SHA256"
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Download and verify existing signed index
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          set -euo pipefail
+          ASSET="BaiZe-Rules-Index-${CHANNEL}.jar"
+          mkdir -p refresh
+          if ! gh release view rules-index >/dev/null 2>&1 || \
+             ! gh release download rules-index --pattern "$ASSET" --dir refresh >/dev/null 2>&1; then
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bash v2/tools/verify-signed-jar.sh "refresh/$ASSET"
+          CERT=$(keytool -printcert -jarfile "refresh/$ASSET" \
+            | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+          test "$CERT" = "$BAIZE_CERT_SHA256"
+          unzip -p "refresh/$ASSET" rule-index.json > refresh/current.json
+          python3 - "$CHANNEL" <<'PY'
+          import json, pathlib, sys
+          channel = sys.argv[1]
+          data = json.loads(pathlib.Path('refresh/current.json').read_text())
+          assert data['schema'] == 1 and data['channel'] == channel and data.get('releases')
+          pathlib.Path('refresh/releases.json').write_text(
+              json.dumps({'releases': data['releases']}, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+          )
+          PY
+          echo 'available=true' >> "$GITHUB_OUTPUT"
+
+      - name: Re-sign index with a fresh validity window
+        if: steps.existing.outputs.available == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          set -euo pipefail
+          ASSET="BaiZe-Rules-Index-${CHANNEL}.jar"
+          GENERATED_AT=$(date +%s%3N)
+          python3 v2/tools/build-rule-index.py --channel "$CHANNEL" \
+            --releases-json refresh/releases.json --generated-at "$GENERATED_AT" --valid-days 30 \
+            --output refresh/unsigned.jar
+          jarsigner -keystore "$BAIZE_KEYSTORE_PATH" -storepass "$BAIZE_KEYSTORE_PASSWORD" \
+            -keypass "$BAIZE_KEY_PASSWORD" -signedjar "refresh/$ASSET" \
+            refresh/unsigned.jar "$BAIZE_KEY_ALIAS"
+          bash v2/tools/verify-signed-jar.sh "refresh/$ASSET"
+          CERT=$(keytool -printcert -jarfile "refresh/$ASSET" \
+            | awk -F': ' '/SHA256:/ {print tolower($2); exit}' | tr -d ':[:space:]')
+          test "$CERT" = "$BAIZE_CERT_SHA256"
+          sha256sum "refresh/$ASSET" > "refresh/$ASSET.sha256"
+          gh release upload rules-index "refresh/$ASSET" "refresh/$ASSET.sha256" --clobber

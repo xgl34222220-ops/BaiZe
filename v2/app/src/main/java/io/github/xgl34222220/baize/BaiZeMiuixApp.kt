@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.content.Intent
 import android.os.Build
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
@@ -816,6 +818,32 @@ internal fun HomeScreenMiuix(
                         title = "全部选项",
                         modifier = Modifier.weight(1f),
                         onClick = onOpenClean
+                    )
+                }
+            }
+        }
+        item {
+            GlassSurface(
+                Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(30.dp),
+                shadow = 6,
+                contentPadding = PaddingValues(10.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.Rule,
+                        title = "规则中心",
+                        modifier = Modifier.weight(1f),
+                        onClick = { context.startActivity(Intent(context, RulePackActivity::class.java)) }
+                    )
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.CloudDownload,
+                        title = "官方更新",
+                        modifier = Modifier.weight(1f),
+                        onClick = { context.startActivity(Intent(context, RuleUpdateActivity::class.java)) }
                     )
                 }
             }

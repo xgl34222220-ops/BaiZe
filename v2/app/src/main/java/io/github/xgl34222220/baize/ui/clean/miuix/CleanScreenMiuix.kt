@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.clean.miuix
 
+import android.content.Intent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -61,10 +63,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.RulePackActivity
+import io.github.xgl34222220.baize.RuleUpdateActivity
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryUiItem
@@ -90,6 +95,7 @@ fun CleanScreenMiuix(
     onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val context = LocalContext.current
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
 
@@ -114,13 +120,23 @@ fun CleanScreenMiuix(
     }
 
     val quickActions = listOf(
+        MiuixQuickAction(
+            Icons.Rounded.Rule,
+            "规则管理中心",
+            "版本、签名、更新预览与一键回滚"
+        ) { context.startActivity(Intent(context, RulePackActivity::class.java)) },
+        MiuixQuickAction(
+            Icons.Rounded.CloudDownload,
+            "官方规则更新",
+            "签名索引、断点下载与自动更新策略"
+        ) { context.startActivity(Intent(context, RuleUpdateActivity::class.java)) },
         MiuixQuickAction(Icons.Rounded.Search, "垃圾扫描", "生成快照，不立即删除", actions.onScan),
         MiuixQuickAction(Icons.Rounded.InstallMobile, "安装包扫描", "查找 APK / APKS / XAPK", actions.onApkScan),
         MiuixQuickAction(Icons.Rounded.Bolt, "系统即时清缓存", "手动选择应用，直接调用系统 cache-only", actions.onInstantCache),
         MiuixQuickAction(Icons.Rounded.FolderCopy, "文件归类", "扫描所有下载目录并按类型整理", actions.onFileOrganizer),
         MiuixQuickAction(Icons.Rounded.DeleteSweep, "深度清理", "日志、临时文件和常见残留", actions.onDeepClean),
         MiuixQuickAction(Icons.Rounded.FolderDelete, "卸载残留", "无主 data、obb 与 media 目录", actions.onCorpses),
-        MiuixQuickAction(Icons.Rounded.Rule, "清理明细", "规则范围和最近命中", actions.onAudit)
+        MiuixQuickAction(Icons.Rounded.Security, "更多清理工具", "规则范围、最近命中与高风险项目", actions.onAudit)
     )
 
     LazyColumn(
@@ -198,7 +214,7 @@ fun CleanScreenMiuix(
             MiuixSectionHeader(
                 eyebrow = "手动工具",
                 title = "手动清理工具",
-                subtitle = "扫描、深度清理和规则明细"
+                subtitle = "规则管理和官方更新位于最上方"
             )
         }
         item {

@@ -17,6 +17,7 @@ FORBIDDEN = (
     "/vendor", "/product", "/odm", "/apex",
 )
 PACK_ID = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
+PACKAGE_NAME = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$")
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
@@ -32,14 +33,42 @@ def effective_rules(text: str, name: str) -> int:
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith("//"):
             continue
-        path = line.split("|", 1)[0].split("#", 1)[0].strip()
-        if not path.startswith("/") or "\x00" in path or any(part == ".." for part in path.split("/")):
+        if name == "deep.rules":
+            # Historical deep.rules contains a few human annotations without a comment prefix.
+            # The runtime scanner only consumes absolute paths, so keep compatibility by ignoring
+            # non-path annotations rather than accepting them as executable rules.
+            if not line.startswith("/"):
+                continue
+            path = line.split("|", 1)[0].split("#", 1)[0].strip()
+            safe = "\x00" not in path and not any(part == ".." for part in path.split("/"))
+            safe = safe and path not in ("/", "/data") and not any(
+                path == root or path.startswith(root + "/") for root in FORBIDDEN
+            )
+            segments = [part for part in path.split("/") if part]
+            safe = safe and bool(segments) and not any(
+                part in {"*", "**", "?"} for part in segments[:2]
+            )
+        elif name in {"app.rules", "external.rules"}:
+            parts = line.split("|")
+            safe = len(parts) == 3 and bool(PACKAGE_NAME.fullmatch(parts[0].strip()))
+            relative = parts[1].strip() if len(parts) == 3 else ""
+            safe = safe and bool(relative) and not relative.startswith(("/", "\\"))
+            safe = safe and "\x00" not in relative and "\\" not in relative
+            safe = safe and all(part not in {"", ".", ".."} for part in relative.split("/"))
+            safe = safe and parts[2].strip().isdigit() and 0 <= int(parts[2].strip()) <= 3650
+        elif name == "hidden.rules":
+            parts = line.split("|")
+            pattern = parts[1].strip() if len(parts) == 3 else ""
+            kind = parts[0].strip() if len(parts) == 3 else ""
+            safe = kind in {"dir", "file"} and bool(pattern) and len(pattern) <= 128
+            safe = safe and "/" not in pattern and "\\" not in pattern
+            safe = safe and "\x00" not in pattern and pattern not in {".", ".."}
+            safe = safe and (kind == "file" or not any(char in pattern for char in "*?[]"))
+            safe = safe and parts[2].strip().isdigit() and 0 <= int(parts[2].strip()) <= 3650
+        else:
+            safe = False
+        if not safe:
             raise ValueError(f"{name}:{number}: unsafe rule syntax")
-        if path in ("/", "/data") or any(path == root or path.startswith(root + "/") for root in FORBIDDEN):
-            raise ValueError(f"{name}:{number}: forbidden rule root {path}")
-        segments = [part for part in path.split("/") if part]
-        if not segments or any(part in {"*", "**", "?"} for part in segments[:2]):
-            raise ValueError(f"{name}:{number}: top-level wildcard is forbidden")
         count += 1
         if count > 20_000:
             raise ValueError(f"{name}: more than 20,000 effective rules")
@@ -112,11 +141,17 @@ def main() -> int:
         "minAppVersionCode": max(0, args.min_app_version_code),
         "files": files,
     }
-    manifest_bytes = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    manifest_bytes = json.dumps(
+        manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.output, "w") as archive:
-        write_entry(archive, "META-INF/MANIFEST.MF", b"Manifest-Version: 1.0\r\nCreated-By: BaiZe Rule Pack Builder\r\n\r\n")
+        write_entry(
+            archive,
+            "META-INF/MANIFEST.MF",
+            b"Manifest-Version: 1.0\r\nCreated-By: BaiZe Rule Pack Builder\r\n\r\n",
+        )
         write_entry(archive, "rule-pack.json", manifest_bytes)
         for name, data in payloads.items():
             write_entry(archive, f"rules/{name}", data)

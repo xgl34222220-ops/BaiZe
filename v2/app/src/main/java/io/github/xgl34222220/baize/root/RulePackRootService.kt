@@ -337,21 +337,40 @@ class RulePackRootService : RootService() {
             if (raw.length > MAX_RULE_LINE_LENGTH) throw PackException("rule_line_large", "$name 第 ${index + 1} 行过长")
             val line = raw.trim()
             if (line.isBlank() || line.startsWith("#") || line.startsWith("//")) return@forEachIndexed
-            if (!safeRuleSyntax(line)) throw PackException("rule_syntax_invalid", "$name 第 ${index + 1} 行规则不安全")
+            if (name == "deep.rules" && !line.startsWith("/")) return@forEachIndexed
+            if (!safeRuleSyntax(name, line)) throw PackException("rule_syntax_invalid", "$name 第 ${index + 1} 行规则不安全")
             rules += 1
             if (rules > MAX_RULES_PER_FILE) throw PackException("rule_count_large", "$name 规则数量超过限制")
         }
         return RuleInfo(sha256(bytes), rules, bytes.size.toLong())
     }
 
-    private fun safeRuleSyntax(raw: String): Boolean {
-        val path = raw.substringBefore('|').substringBefore('#').trim()
-        if (!path.startsWith("/") || path.length !in 2..MAX_RULE_LINE_LENGTH) return false
-        if (path.split('/').any { it == ".." }) return false
-        if (FORBIDDEN_RULE_ROOTS.any { path == it || path.startsWith("$it/") }) return false
-        val segments = path.split('/').filter { it.isNotEmpty() }
-        if (segments.isEmpty() || segments.take(2).any { it == "*" || it == "**" || it == "?" }) return false
-        return true
+    private fun safeRuleSyntax(name: String, raw: String): Boolean = when (name) {
+        "deep.rules" -> {
+            val path = raw.substringBefore('|').substringBefore('#').trim()
+            path.startsWith("/") && path.length in 2..MAX_RULE_LINE_LENGTH &&
+                path.split('/').none { it == ".." } &&
+                FORBIDDEN_RULE_ROOTS.none { path == it || path.startsWith("$it/") } &&
+                path.split('/').filter { it.isNotEmpty() }.take(2).none { it == "*" || it == "**" || it == "?" }
+        }
+        "app.rules", "external.rules" -> {
+            val parts = raw.split('|')
+            val relative = parts.getOrNull(1)?.trim().orEmpty()
+            parts.size == 3 && PACKAGE_NAME.matches(parts[0].trim()) && relative.isNotEmpty() &&
+                !relative.startsWith('/') && !relative.startsWith('\\') && '\u0000' !in relative && '\\' !in relative &&
+                relative.split('/').none { it.isEmpty() || it == "." || it == ".." } &&
+                parts[2].trim().toIntOrNull()?.let { it in 0..3650 } == true
+        }
+        "hidden.rules" -> {
+            val parts = raw.split('|')
+            val kind = parts.getOrNull(0)?.trim().orEmpty()
+            val pattern = parts.getOrNull(1)?.trim().orEmpty()
+            parts.size == 3 && kind in setOf("dir", "file") && pattern.isNotEmpty() && pattern.length <= 128 &&
+                '/' !in pattern && '\\' !in pattern && '\u0000' !in pattern && pattern !in setOf(".", "..") &&
+                (kind == "file" || pattern.none { it == '*' || it == '?' || it == '[' || it == ']' }) &&
+                parts[2].trim().toIntOrNull()?.let { it in 0..3650 } == true
+        }
+        else -> false
     }
 
     private fun currentInfo(): JSONObject {
@@ -648,6 +667,7 @@ class RulePackRootService : RootService() {
         private val MANAGED_RULES = setOf("app.rules", "external.rules", "hidden.rules", "deep.rules")
         private val PACK_ID = Regex("^[A-Za-z0-9._-]{1,80}$")
         private val SHA256 = Regex("^[0-9a-f]{64}$")
+        private val PACKAGE_NAME = Regex("^[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+$")
         private val FORBIDDEN_RULE_ROOTS = setOf(
             "/", "/data", "/data/adb", "/metadata", "/proc", "/sys", "/dev",
             "/system", "/vendor", "/product", "/odm", "/apex"
