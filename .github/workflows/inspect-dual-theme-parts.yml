@@ -16,22 +16,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Print exact part checksums
+      - name: Record exact part checksums
         shell: bash
         run: |
           set -u
+          : > checksums.txt
           for f in .github/dual-theme-patch.part.*; do
-            printf 'PART %s bytes=' "$f"
-            wc -c < "$f" | tr -d ' '
-            sha256sum "$f"
+            printf 'PART %s bytes=' "$f" >> checksums.txt
+            wc -c < "$f" | tr -d ' ' >> checksums.txt
+            sha256sum "$f" >> checksums.txt
           done
           cat .github/dual-theme-patch.part.* > /tmp/all.b64
-          printf 'ALL bytes='
-          wc -c < /tmp/all.b64 | tr -d ' '
-          sha256sum /tmp/all.b64
-          base64 --decode /tmp/all.b64 > /tmp/all.gz 2>/tmp/decode.err || true
-          printf 'GZ bytes='
-          wc -c < /tmp/all.gz | tr -d ' '
-          sha256sum /tmp/all.gz
-          cat /tmp/decode.err || true
-          gzip --test /tmp/all.gz || true
+          printf 'ALL bytes=' >> checksums.txt
+          wc -c < /tmp/all.b64 | tr -d ' ' >> checksums.txt
+          sha256sum /tmp/all.b64 >> checksums.txt
+          base64 --decode /tmp/all.b64 > /tmp/all.gz 2>decode.err || true
+          printf 'GZ bytes=' >> checksums.txt
+          wc -c < /tmp/all.gz | tr -d ' ' >> checksums.txt
+          sha256sum /tmp/all.gz >> checksums.txt
+          cat decode.err >> checksums.txt || true
+          gzip --test /tmp/all.gz >> checksums.txt 2>&1 || true
+          cat checksums.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dual-theme-part-checksums
+          path: checksums.txt
+          if-no-files-found: error
