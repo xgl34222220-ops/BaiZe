@@ -16,17 +16,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Record exact part checksums
+      - name: Record repair checksums
         shell: bash
         run: |
           set -u
           : > checksums.txt
-          for f in .github/dual-theme-patch.part.*; do
+          for f in .github/repair/* .github/dual-theme-patch.part.02 .github/dual-theme-patch.part.04; do
+            [ -f "$f" ] || continue
             printf 'PART %s bytes=' "$f" >> checksums.txt
             wc -c < "$f" | tr -d ' ' >> checksums.txt
             sha256sum "$f" >> checksums.txt
           done
-          cat .github/dual-theme-patch.part.* > /tmp/all.b64
+          cat \
+            .github/repair/00.a .github/repair/00.b \
+            .github/repair/01.a .github/repair/01.b \
+            .github/dual-theme-patch.part.02 \
+            .github/repair/03.a .github/repair/03.b \
+            .github/dual-theme-patch.part.04 > /tmp/all.b64
           printf 'ALL bytes=' >> checksums.txt
           wc -c < /tmp/all.b64 | tr -d ' ' >> checksums.txt
           sha256sum /tmp/all.b64 >> checksums.txt
@@ -39,6 +45,6 @@ jobs:
           cat checksums.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: dual-theme-part-checksums
+          name: dual-theme-repair-checksums
           path: checksums.txt
           if-no-files-found: error
