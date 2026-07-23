@@ -38,7 +38,8 @@ internal fun List<HomeTaskPresentation>.nextTask(nowEpoch: Long): HomeTaskPresen
 internal fun taskCountdownLabel(task: HomeTaskPresentation?, nowEpoch: Long): String {
     if (task == null || !task.enabled) return "自动任务已关闭"
     val remaining = task.nextEpoch - nowEpoch
-    if (task.nextEpoch <= 0L || remaining <= 30L) return "待执行"
+    if (task.nextEpoch <= 0L) return "正在计算执行时间"
+    if (remaining <= 30L) return "已到期，等待自动执行"
     val minutes = (remaining + 59L) / 60L
     if (minutes < 60L) return "还有 ${minutes} 分钟执行"
     val hours = minutes / 60L
