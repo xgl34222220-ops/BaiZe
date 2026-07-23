@@ -1,0 +1,31 @@
+name: Inspect Main v2.4.0 Run
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read main release workflow status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run list \
+            --repo xgl34222220-ops/BaiZe \
+            --commit 5d6f6287c1822d4fb53d5b071ea4681bb3de764b \
+            --limit 10 \
+            --json databaseId,name,event,status,conclusion,headSha,createdAt,updatedAt,url \
+            | tee main-run-status.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: main-v240-run-status
+          path: main-run-status.json
