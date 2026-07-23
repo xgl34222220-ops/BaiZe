@@ -40,11 +40,8 @@ import io.github.xgl34222220.baize.ui.clean.CleanUiActions
 import io.github.xgl34222220.baize.ui.clean.CleanUiState
 
 /**
- * Automatic-first cleanup page.
- *
- * BaiZe is a background cleaner, so the main UI only exposes the automatic master switch,
- * current schedule and one optional "run once" action. The old collection of manual scanners,
- * candidate pickers and diagnostic utilities was confusing and duplicated the scheduler.
+ * Status and configuration page for BaiZe automatic cleaning.
+ * Manual scan, clean, wake, stop and diagnostic actions are deliberately not rendered.
  */
 @Suppress("UNUSED_PARAMETER")
 @Composable
@@ -177,24 +174,8 @@ fun CleanScreenMiuix(
         }
 
         item {
-            Button(
-                onClick = actions.onScan,
-                enabled = !state.running && state.engineReady,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .height(58.dp),
-                shape = RoundedCornerShape(22.dp)
-            ) {
-                Icon(Icons.Rounded.CleaningServices, contentDescription = null)
-                Spacer(Modifier.width(9.dp))
-                Text("立即自动清理一次", fontWeight = FontWeight.Black)
-            }
-        }
-
-        item {
             Text(
-                "白泽内部会自动处理临时失败、后台恢复和任务重试。界面不再提供手动扫描、手动唤醒或开发者诊断按钮。",
+                "所有清理与文件归类均由后台自动执行。扫描、立即清理、停止、唤醒和开发者诊断按钮已全部移除。",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
