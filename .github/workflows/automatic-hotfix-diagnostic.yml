@@ -3,13 +3,15 @@ name: BaiZe Automatic-First Hotfix Diagnostic
 on:
   push:
     branches: [agent/builtin-rule-expansion]
+  pull_request:
+    branches: [agent/rule-release-automation]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: baize-automatic-hotfix-${{ github.ref }}
+  group: baize-automatic-hotfix-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
