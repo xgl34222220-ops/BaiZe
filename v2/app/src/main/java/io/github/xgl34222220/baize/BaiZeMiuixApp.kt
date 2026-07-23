@@ -3,11 +3,15 @@ package io.github.xgl34222220.baize
 import android.os.Build
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -16,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -26,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -994,7 +1000,7 @@ private fun MaterialFloatingDock(
         tonalElevation = if (floating) 10.dp else 5.dp,
         shadowElevation = if (floating) 18.dp else 8.dp
     ) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
@@ -1002,45 +1008,65 @@ private fun MaterialFloatingDock(
                     top = 7.dp,
                     end = 7.dp,
                     bottom = if (floating) 7.dp else bottom + 7.dp
-                ),
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                )
         ) {
-            BaiZePage.entries.forEach { item ->
-                val active = item == selected
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.large)
-                        .clickable { onSelected(item) }
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Box(
+            val itemWidth = maxWidth / BaiZePage.entries.size
+            val targetIndex = BaiZePage.entries.indexOf(selected).coerceAtLeast(0)
+            val indicatorX by animateDpAsState(
+                targetValue = itemWidth * targetIndex + (itemWidth - 48.dp) / 2,
+                animationSpec = spring(
+                    dampingRatio = .72f,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "baizeMaterialDockIndicator"
+            )
+            Box(
+                modifier = Modifier
+                    .offset(x = indicatorX, y = 7.dp)
+                    .size(width = 48.dp, height = 30.dp)
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                BaiZePage.entries.forEach { item ->
+                    val active = item == selected
+                    val iconTint by animateColorAsState(
+                        targetValue = if (active) MaterialTheme.colorScheme.onSecondaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        label = "baizeMaterialDockIconTint"
+                    )
+                    val textColor by animateColorAsState(
+                        targetValue = if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        label = "baizeMaterialDockTextColor"
+                    )
+                    Column(
                         modifier = Modifier
-                            .size(width = 48.dp, height = 30.dp)
-                            .clip(MaterialTheme.shapes.extraLarge)
-                            .background(
-                                if (active) MaterialTheme.colorScheme.secondaryContainer
-                                else Color.Transparent
-                            ),
-                        contentAlignment = Alignment.Center
+                            .weight(1f)
+                            .clip(MaterialTheme.shapes.large)
+                            .clickable { onSelected(item) }
+                            .padding(vertical = 7.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Icon(
-                            imageVector = item.icon,
-                            contentDescription = item.title,
-                            modifier = Modifier.size(20.dp),
-                            tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        Box(
+                            modifier = Modifier.size(width = 48.dp, height = 30.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = item.icon,
+                                contentDescription = item.title,
+                                modifier = Modifier.size(20.dp),
+                                tint = iconTint
+                            )
+                        }
+                        Text(
+                            text = item.title,
+                            color = textColor,
+                            fontSize = 10.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                         )
                     }
-                    Text(
-                        text = item.title,
-                        color = if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
-                    )
                 }
             }
         }
