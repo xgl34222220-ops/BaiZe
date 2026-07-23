@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/automatic-task-status
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
