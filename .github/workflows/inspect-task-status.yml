@@ -16,17 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build inspection report
+      - name: Pack source snapshot
         shell: bash
         run: |
-          {
-            echo '=== TREE ==='
-            find . -maxdepth 8 -type f | sort
-            echo '=== MATCHES ==='
-            grep -RInE '垃圾扫描|安全扫描|连续失败|熔断|暂停 6 小时|max_run_minutes|超时|timeout|schedule_organize|organize.*hours|scheduler_reason|scheduler_state|next_check_epoch|last_.*_run.epoch' . \
-              --exclude-dir=.git --exclude='*.png' --exclude='*.jpg' --exclude='*.jar' --exclude='*.apk' || true
-          } > inspect.txt
+          tar -czf /tmp/baize-source.tar.gz \
+            service.sh status.sh cleaner.sh config webroot \
+            v2/app/src/main v2/module v2/scripts v2/tests \
+            .github/workflows/v2.4.0-release.yml
       - uses: actions/upload-artifact@v4
         with:
-          name: baize-task-status-inspection
-          path: inspect.txt
+          name: baize-v240-source-snapshot
+          path: /tmp/baize-source.tar.gz
