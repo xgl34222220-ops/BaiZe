@@ -1,0 +1,80 @@
+name: Apply Verified Organizer Safety Patch
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Verify and apply patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object v2/module/organizer-worker.sh)" = "797b0e65abdbf7365adff1a29a92cdabef704d7b"
+          test "$(git hash-object v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt)" = "1f9b0fcf39e30de5d75fee25b54b23730a973331"
+          test "$(git hash-object v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt)" = "ab5f43f28d8995c2257830133193b45ffb31aae5"
+          test "$(git hash-object v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/SchedulerText.kt)" = "f34793336c0b3b272980929a44ac38c5eebc4dc0"
+          test "$(git hash-object v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt)" = "3a73eff18c684dcd5cecb67c69fff5b2405e6c8d"
+          echo '50e139eac5c33872ba22d22bc3450872e212a3d30db39f022b0f4acc6b9b6ae3  .github/organizer-safety.patch.gz.b64' | sha256sum -c --strict
+          base64 -d .github/organizer-safety.patch.gz.b64 | gzip -d > /tmp/organizer-safety.patch
+          echo '56a4489dd1a90e8d0e6bf133fa2b0df929bbda957074bb6d24c455dc74a830cb  /tmp/organizer-safety.patch' | sha256sum -c --strict
+          patch --dry-run -p1 < /tmp/organizer-safety.patch
+          patch -p1 < /tmp/organizer-safety.patch
+          git diff --check
+
+      - name: Run organizer safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n v2/module/organizer-worker.sh
+          bash -n v2/module/organizer-worker.sh
+          awk '/^category_for\(\)/,/^}/ {print} /^is_public_user_path\(\)/,/^}/ {print} /^skip_file\(\)/,/^}/ {print}' v2/module/organizer-worker.sh > /tmp/organizer-functions.sh
+          cat >> /tmp/organizer-functions.sh <<'EOF'
+          assert_eq() { [ "$1" = "$2" ] || { echo "expected [$2], got [$1]" >&2; exit 1; }; }
+          assert_true() { "$@" || { echo "expected true: $*" >&2; exit 1; }; }
+          assert_false() { if "$@"; then echo "expected false: $*" >&2; exit 1; fi; }
+          assert_eq "$(category_for /x/photo.jpg)" "图片"
+          assert_eq "$(category_for /x/report.pdf)" "文档"
+          assert_eq "$(category_for /x/0013b21d38fdb6885de31fcd262fddcc.bytes)" ""
+          assert_eq "$(category_for /x/010ab74b2dcdd906a7099c2ffeabeee.vfs)" ""
+          assert_eq "$(category_for /x/config.json)" ""
+          assert_true skip_file /x/0013b21d38fdb6885de31fcd262fddcc.bytes
+          assert_true skip_file /x/010ab74b2dcdd906a7099c2ffeabeee.vfs
+          assert_true skip_file /x/0013b21d38fdb6885de31fcd262fddcc.jpg
+          assert_false skip_file /x/holiday-photo.jpg
+          assert_true is_public_user_path 'Download/holiday-photo.jpg'
+          assert_true is_public_user_path 'Telegram/Telegram Documents/file.pdf'
+          assert_false is_public_user_path 'DCIM/Camera/photo.jpg'
+          assert_false is_public_user_path 'Pictures/app-cache/0013.jpg'
+          assert_false is_public_user_path 'Telegram/cache/blob.bin'
+          EOF
+          sed -i 's/^          //' /tmp/organizer-functions.sh
+          sh /tmp/organizer-functions.sh
+          grep -q '已到期，等待自动执行' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+          grep -q 'allowedIndexedPublicPath' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+          grep -q 'APP_USER_DIRECTORY_NAMES' v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt
+
+      - name: Commit verified fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/organizer-safety.patch.gz.b64
+          rm -f .github/workflows/fix-organizer-safety.yml
+          rm -f .github/workflows/apply-organizer-safety-v2.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: clarify due tasks and protect organizer sources'
+          git push origin HEAD:agent/dual-theme-ui-redesign
