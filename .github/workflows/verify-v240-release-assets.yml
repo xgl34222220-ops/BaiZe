@@ -1,0 +1,80 @@
+name: Verify v2.4.0 Release Assets
+
+on:
+  push:
+    branches:
+      - verify/v240-release-assets
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Android tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install APK verifier
+        run: yes | sdkmanager 'build-tools;36.0.0'
+
+      - name: Verify current formal release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_CERT: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          success=0
+          for attempt in $(seq 1 30); do
+            rm -f release/*
+            if ! gh release download v2.4.0 \
+              --repo xgl34222220-ops/BaiZe \
+              --pattern 'BaiZe-v2.4.0-Module.zip' \
+              --pattern 'BaiZe-v2.4.0.apk' \
+              --pattern 'BaiZe-v2.4.0-Module.zip.sha256' \
+              --pattern 'BaiZe-v2.4.0.apk.sha256' \
+              --pattern 'BaiZe-v2.4.0-signing-certificate.txt' \
+              --dir release --clobber; then
+              sleep 30
+              continue
+            fi
+
+            ZIP=release/BaiZe-v2.4.0-Module.zip
+            APK=release/BaiZe-v2.4.0.apk
+            test -s "$ZIP" && test -s "$APK" || { sleep 30; continue; }
+            unzip -tq "$ZIP" >/dev/null || { sleep 30; continue; }
+            unzip -p "$ZIP" scheduler.sh > /tmp/baize-scheduler.sh
+
+            grep -q 'next_cache_epoch=' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            grep -q 'next_organize_epoch=' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            grep -q 'retry_delay_for_fail_count' /tmp/baize-scheduler.sh || { sleep 30; continue; }
+            if grep -Eq '连续失败|熔断|暂停 6 小时|max_run_minutes' /tmp/baize-scheduler.sh; then
+              sleep 30
+              continue
+            fi
+
+            MODULE_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
+            APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
+            test "$MODULE_APK_SHA" = "$APK_SHA" || { sleep 30; continue; }
+
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+            "$APKSIGNER" verify --verbose --print-certs "$APK" > /tmp/apk-cert.txt
+            ACTUAL_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' /tmp/apk-cert.txt | tr -d ':[:space:]')
+            test "$ACTUAL_CERT" = "$EXPECTED_CERT" || { sleep 30; continue; }
+
+            (cd release && sha256sum BaiZe-v2.4.0-Module.zip BaiZe-v2.4.0.apk > verified-sha256.txt)
+            cp /tmp/apk-cert.txt release/verified-apk-certificate.txt
+            printf 'verified_commit=%s\nverified_at=%s\n' '${{ github.sha }}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > release/verification.txt
+            success=1
+            break
+          done
+          test "$success" -eq 1
+
+      - name: Upload verified formal bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.4.0-Automatic-Task-Fix-Formal
+          if-no-files-found: error
+          path: release/
