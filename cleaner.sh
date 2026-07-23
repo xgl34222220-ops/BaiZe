@@ -797,6 +797,7 @@ collect_cache_candidates() {
     cache_chunk_count=$((cache_chunk_count + 1))
     cache_done=$((cache_done + 1))
     if [ "$cache_chunk_count" -ge 64 ]; then
+      should_stop && { rm -f "$cache_chunk"; return 9; }
       process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total" "$cache_chunk_hook"
       : >"$cache_chunk"
       cache_chunk_count=0
@@ -811,6 +812,7 @@ collect_cache_candidates() {
     fi
   done <"$dir_list"
   if [ "$cache_chunk_count" -gt 0 ]; then
+    should_stop && { rm -f "$cache_chunk"; return 9; }
     process_cache_chunk "$cache_chunk" "$days" "$target_list" "$cache_category" "$cache_done" "$cache_total" "$cache_chunk_hook"
   fi
   rm -f "$cache_chunk"
