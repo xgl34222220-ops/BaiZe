@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.settings.SettingsUiActions
@@ -94,15 +95,15 @@ fun SettingsScreenMiuix(
                 onClick = { actions.onSaveScheduler(config) },
                 enabled = !config.saving,
                 modifier = Modifier
-                    .padding(horizontal = 18.dp)
+                    .padding(horizontal = 20.dp)
                     .fillMaxWidth()
                     .height(64.dp),
-                shape = RoundedCornerShape(24.dp)
+                shape = RoundedCornerShape(20.dp)
             ) {
                 Text(
                     if (config.saving) "正在保存…" else "保存全部设置",
                     fontSize = 17.sp,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -120,7 +121,7 @@ private fun MiuixSettingsHeader() {
         Text(
             "设置中心",
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.4.sp
         )
@@ -130,10 +131,10 @@ private fun MiuixSettingsHeader() {
             color = MaterialTheme.colorScheme.onSurface,
             fontSize = 36.sp,
             lineHeight = 40.sp,
-            fontWeight = FontWeight.Black
+            fontWeight = FontWeight.Bold
         )
         Text(
-            "MIUI 风格设置与清理保护",
+            "设置与清理保护",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium
@@ -153,7 +154,7 @@ private fun MiuixAppearanceHero(
                 MiuixIconTile(Icons.Rounded.Palette, large = true)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("界面与主题", fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Text("界面与主题", fontSize = 21.sp, fontWeight = FontWeight.Bold)
                     Text(
                         state.appearanceSummary,
                         color = scheme.onSurfaceVariant,
@@ -176,7 +177,7 @@ private fun MiuixAppearanceHero(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(21.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .background(scheme.primary.copy(alpha = .12f))
                     .clickable(onClick = actions.onOpenAppearance)
                     .padding(horizontal = 16.dp, vertical = 15.dp),
@@ -189,7 +190,7 @@ private fun MiuixAppearanceHero(
                     modifier = Modifier.weight(1f),
                     color = scheme.primary,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Black
+                    fontWeight = FontWeight.Bold
                 )
                 Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = scheme.primary)
             }
@@ -206,16 +207,16 @@ private fun MiuixTaskCenter(state: SettingsUiState) {
     val runningGroup = config.runtimeGroup.ifBlank { config.nextTask }
     val isRunning = config.runtimeState == "running"
     MiuixGroupSurface {
-        Column(Modifier.padding(horizontal = 17.dp, vertical = 10.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Text(
                 if (isRunning) "正在执行 ${schedulerTaskLabel(runningGroup)}" else "待执行",
                 fontSize = 17.sp,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Bold
             )
             Text(
                 "白泽会按计划自动清理和归类，暂时未满足条件时会继续等待。",
                 color = scheme.onSurfaceVariant,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 lineHeight = 15.sp
             )
             Spacer(Modifier.height(8.dp))
@@ -267,7 +268,7 @@ private fun MiuixAutomationGroup(
     actions: SettingsUiActions
 ) {
     MiuixGroupSurface {
-        Column(Modifier.padding(horizontal = 17.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             MiuixSwitchRow(
                 icon = Icons.Rounded.CleaningServices,
                 title = "启用自动清理",
@@ -363,7 +364,7 @@ private fun MiuixProtectionGroup(
 ) {
     val config = state.scheduler
     MiuixGroupSurface {
-        Column(Modifier.padding(horizontal = 17.dp, vertical = 6.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             MiuixActionRow(
                 icon = Icons.Rounded.Shield,
                 title = "应用白名单",
@@ -434,13 +435,13 @@ private fun MiuixServiceGroup(
 ) {
     val scheme = MaterialTheme.colorScheme
     val statusColor = when {
-        state.running -> Color(0xFFF2A93B)
-        state.serviceHealthy -> Color(0xFF2DBE87)
+        state.running -> BaiZeTokens.colors.warning
+        state.serviceHealthy -> BaiZeTokens.colors.success
         state.connected -> scheme.primary
         else -> scheme.error
     }
     MiuixGroupSurface {
-        Column(Modifier.padding(horizontal = 17.dp, vertical = 10.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -450,11 +451,11 @@ private fun MiuixServiceGroup(
                 Box(Modifier.size(11.dp).clip(CircleShape).background(statusColor))
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Root 服务", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                    Text("Root 服务", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Text(
                         state.serviceText,
                         color = scheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -464,7 +465,7 @@ private fun MiuixServiceGroup(
                 state.schedulerText,
                 modifier = Modifier.padding(horizontal = 2.dp, vertical = 8.dp),
                 color = scheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 11.sp
             )
             MiuixDivider()
             MiuixActionRow(Icons.Rounded.Refresh, "重新连接 Root 服务", "重新绑定双 Root 引擎", actions.onReconnect)
@@ -496,7 +497,7 @@ private fun conflictPolicyLabel(value: Int): String = when (value) {
 
 @Composable
 private fun MiuixGroupSurface(
-    shape: RoundedCornerShape = RoundedCornerShape(30.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(28.dp),
     shadow: Int = 7,
     content: @Composable () -> Unit
 ) {
@@ -505,13 +506,13 @@ private fun MiuixGroupSurface(
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
     val background = when {
-        amoled -> Color(0xFF090909)
+        amoled -> BaiZeTokens.colors.surfaceRaised
         dark -> scheme.surfaceContainerHigh
         else -> scheme.surface
     }
     Box(
         Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth()
             .shadow(shadow.dp, shape, clip = false)
             .clip(shape)
@@ -543,7 +544,7 @@ private fun MiuixSwitchRow(
             Text(
                 description,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 lineHeight = 13.sp
             )
         }
@@ -576,7 +577,7 @@ private fun MiuixSliderRow(
                 Text(
                     description,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp
+                    fontSize = 11.sp
                 )
             }
         }
@@ -613,7 +614,7 @@ private fun MiuixActionRow(
             Text(
                 description,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -651,7 +652,7 @@ private fun MiuixIconTile(icon: ImageVector, large: Boolean = false) {
 private fun MiuixInfoPill(text: String, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
             .padding(horizontal = 7.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center
@@ -659,8 +660,8 @@ private fun MiuixInfoPill(text: String, modifier: Modifier = Modifier) {
         Text(
             text,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Black,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -680,19 +681,19 @@ private fun MiuixSectionTitle(
     title: String,
     subtitle: String
 ) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 3.dp)) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 3.dp)) {
         Text(
             eyebrow,
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 9.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 2.sp
         )
-        Text(title, fontSize = 27.sp, fontWeight = FontWeight.Black)
+        Text(title, fontSize = 27.sp, fontWeight = FontWeight.Bold)
         Text(
             subtitle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp
+            fontSize = 11.sp
         )
     }
 }
