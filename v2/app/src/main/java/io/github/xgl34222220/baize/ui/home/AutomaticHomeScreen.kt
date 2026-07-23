@@ -39,12 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.DashboardUiState
 
-/**
- * Status-only home page for BaiZe's automatic product mode.
- *
- * It intentionally contains no scan, clean, stop, wake, package-scan or diagnostic actions. All
- * work is owned by the Root scheduler; the App is only a status and configuration surface.
- */
+/** Status-only home page for BaiZe automatic cleaning and organization. */
 @Composable
 fun AutomaticHomeScreen(state: DashboardUiState) {
     val context = LocalContext.current
@@ -58,7 +53,7 @@ fun AutomaticHomeScreen(state: DashboardUiState) {
     val body = when {
         state.running -> state.taskPhase.ifBlank { "后台任务正在执行，关闭 App 也不会中断。" }
         state.ready -> "缓存清理、规则垃圾、空项目和文件归类会按计划自动完成。"
-        else -> "白泽会自动恢复 Root 服务，无需手动唤醒或点击扫描。"
+        else -> "白泽会自动恢复后台服务，恢复后继续按计划运行。"
     }
 
     LazyColumn(
@@ -182,7 +177,7 @@ fun AutomaticHomeScreen(state: DashboardUiState) {
 
         item {
             Text(
-                "首页仅显示自动运行状态。扫描、手动清理、停止、唤醒、安装包扫描和开发者诊断入口已全部移除。",
+                "首页仅显示自动运行状态，日常无需操作。",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
