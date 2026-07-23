@@ -65,7 +65,7 @@ fun CleanScreenMaterial(
             ) {
                 Text("自动清理", fontSize = 34.sp, fontWeight = FontWeight.Black)
                 Text(
-                    "设置一次，后续由白泽自动执行、重试和恢复",
+                    "设置一次，后续由白泽自动完成",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -95,7 +95,7 @@ fun CleanScreenMaterial(
                                 fontWeight = FontWeight.Black
                             )
                             Text(
-                                "后台会自行等待合适条件，不需要手动扫描或唤醒。",
+                                "后台会自行选择合适时机完成清理与归类，遇到中断也会自动恢复。",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp
                             )
@@ -144,7 +144,7 @@ fun CleanScreenMaterial(
 
         item {
             Text(
-                "所有清理与文件归类均由后台自动执行。扫描、立即清理、停止、唤醒和开发者诊断按钮已全部移除。",
+                "所有清理与文件归类均由后台自动执行，日常无需操作。",
                 modifier = Modifier.padding(horizontal = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,
