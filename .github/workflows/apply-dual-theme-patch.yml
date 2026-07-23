@@ -1,0 +1,57 @@
+name: Apply Dual Theme Redesign
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-dual-theme-redesign
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout redesign branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Rebuild and verify redesign patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat .github/dual-theme-patch.part.* | wc -c)" -eq 61632
+          cat .github/dual-theme-patch.part.* | base64 --decode | gzip --decompress > /tmp/dual-theme.patch
+          echo '47186f7a3ca039f931bf0e86aad532e575bcbc351a1439040f6069eb78851827  /tmp/dual-theme.patch' | sha256sum --check --strict
+          patch --dry-run -p1 < /tmp/dual-theme.patch
+
+      - name: Apply redesign atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -p1 < /tmp/dual-theme.patch
+          git diff --check
+          grep -q 'CleanCategoryId.ORGANIZE' v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt
+          grep -q 'HomeScreenMiuix' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt
+          grep -q 'Material 3' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          grep -q 'MIUIx / HyperOS' v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+
+      - name: Commit only product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/dual-theme-patch.part.*
+          rm -f .github/workflows/apply-dual-theme-patch.yml
+          rm -f .github/workflows/export-dual-theme-source.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'ui: rebuild Material and MIUIx page structure'
+          git push origin HEAD:agent/dual-theme-ui-redesign
