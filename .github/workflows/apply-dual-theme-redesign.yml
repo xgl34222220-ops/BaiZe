@@ -1,0 +1,94 @@
+name: Apply Dual Theme Redesign
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-dual-theme-redesign
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Verify transport and rebuild patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '4fbb4b50bc52f898bd0f3b447036dcf176be1a90a9d6a72d263d352edec02121  .github/repair/00.a' | sha256sum -c --strict
+          echo '53d9f8613f33b0543808025dcb4dca580e8e1a5a914e724cd34d445d63ece25f  .github/repair/00.b' | sha256sum -c --strict
+          echo 'ba05c341cf41c9cc2987b919fe64f0b6e21f78749c49be68ecf630e4b64bbfa6  .github/repair/01.a' | sha256sum -c --strict
+          echo '5614170358283dc2e094c701cb923fc549fec343df9c4b433f3707cabd6fbbb8  .github/repair/01.b' | sha256sum -c --strict
+          echo 'a0094026aa47e41972018b26e69b127a19eb01e39509956b383c6dd0c972e2fa  .github/dual-theme-patch.part.02' | sha256sum -c --strict
+          echo '4771e92bd11c779bfcc371ce96ba8a90cea39a840c1b04b3b4db1d3598fe9cfd  .github/repair/03.a' | sha256sum -c --strict
+          echo '39d646ef332e7d5209c00d2d62a659ab40533df54ab0511be8683d1be20a5944  .github/repair/03.b' | sha256sum -c --strict
+          echo 'c541bba78a615f8feeaf74ae5ebb2f6bfdc93db05d750bd6d108b58cfc07c8aa  .github/dual-theme-patch.part.04' | sha256sum -c --strict
+          cat \
+            .github/repair/00.a .github/repair/00.b \
+            .github/repair/01.a .github/repair/01.b \
+            .github/dual-theme-patch.part.02 \
+            .github/repair/03.a .github/repair/03.b \
+            .github/dual-theme-patch.part.04 > /tmp/dual-theme.patch.gz.b64
+          test "$(wc -c < /tmp/dual-theme.patch.gz.b64)" -eq 61632
+          echo 'fdfaeb09e0ac355928d634ccfdce6923711cf5c2810c67c19ef91cc4020119a2  /tmp/dual-theme.patch.gz.b64' | sha256sum -c --strict
+          base64 -d /tmp/dual-theme.patch.gz.b64 | gzip -d > /tmp/dual-theme.patch
+          echo '47186f7a3ca039f931bf0e86aad532e575bcbc351a1439040f6069eb78851827  /tmp/dual-theme.patch' | sha256sum -c --strict
+
+      - name: Restore clean UI baseline and apply redesign
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show 329edead21f79ca7009ed0a3819c016ed18504d6:v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt > v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt
+          rm -f v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+          patch --dry-run -p1 < /tmp/dual-theme.patch
+          patch -p1 < /tmp/dual-theme.patch
+          git diff --check
+
+      - name: Verify exact redesigned sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/redesign.sha256 <<'EOF'
+          ee0eb8e5958b648df04d14b0f99a9c29fac299d54644063ba9d94ac7e402492c  v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          59d1147c5efb4c0cf2e722f23a6e7bf3fee08f06ab4ca6191f31751932a85293  v2/app/src/main/java/io/github/xgl34222220/baize/ui/appearance/AppearanceSettings.kt
+          1f49022dfd80921e0e354e6fe384c4174f2b6252b1faa95d27e1a5a437e7363d  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt
+          3640bb715ef4ea9fce5efaf1d560c133cee7aa389b3e39594cd9db6dc1dec646  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt
+          bf7898385100a687952007c752c387c77370cf76c32e7f4fa737ae2b860be945  v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt
+          8128b7fdae92ca53892707c18ec9c2607731e231730cc8491270bdb3392ff785  v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/material/HistoryScreenMaterial.kt
+          b45116464d027f7978f8120ff53e1923b6fcbf61962d979e25105f06a9f3f422  v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
+          4d97acd6337816a9a3d868af5cb0d6b711fc9e0894601c669a0a6c84f4f14a53  v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt
+          6aa4a03d082e2cccfb67dd19b1b9a5b695882f7a3fe3013b9d6ad60f6037b088  v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+          5e0817454fdcf458b269c6e9b303c66595445122bab0ae4059cafcb86d1feb86  v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/material/HomeScreenMaterial.kt
+          6ed2e9663732a8e40ff4ca9e5b6248e7b6f4c8a0eeafbb5c7c5b960c122385f9  v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
+          82d2ff855d813c23a2c0780d2d60f611a0ce3a15b8c6ce7e63a1d96a9c2d20d0  v2/app/src/main/java/io/github/xgl34222220/baize/ui/miuix/MiuixLiquidComponents.kt
+          97617af6eb4409a150395c64fb5268d1b82ffe6386bca61b1b78863ed2428fa2  v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/material/SettingsScreenMaterial.kt
+          9afb4a5574b5b07d2256200fe740cdda0c3646dfd50482b219b0f0cf58939512  v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/miuix/SettingsScreenMiuix.kt
+          5d0264f5790d25be7257e5667a0b16bd0f7a3bf6e75fc54716aaa3716a65a868  v2/app/src/main/java/io/github/xgl34222220/baize/ui/theme/BaiZeTheme.kt
+          EOF
+          sed -i 's/^          //' /tmp/redesign.sha256
+          sha256sum -c --strict /tmp/redesign.sha256
+
+      - name: Commit product redesign only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .github/repair .github/redesign
+          rm -f .github/dual-theme-patch.part.*
+          rm -f .github/workflows/apply-dual-theme-redesign.yml
+          rm -f .github/workflows/inspect-dual-theme-parts.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'ui: rebuild Material and MIUIx page structure'
+          git push origin HEAD:agent/dual-theme-ui-redesign
