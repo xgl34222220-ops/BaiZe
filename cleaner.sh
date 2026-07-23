@@ -1438,7 +1438,7 @@ deep_target_stats() {
   start_stats=$(date +%s)
   if [ "$DEEP_FIND_XDEV" = "1" ]; then xdev_arg='-xdev'; else xdev_arg=''; fi
   if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
-    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\''
+    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\'''
   else
     command_body='find "$1" $4 -type f -print0 >"$2" 2>/dev/null
 if [ -s "$2" ]; then
