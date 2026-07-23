@@ -1,0 +1,22 @@
+name: Inspect BaiZe task status
+
+on:
+  push:
+    branches:
+      - agent/automatic-task-status
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository tree
+        run: find . -maxdepth 6 -type f | sort
+      - name: Locate scan, failure, timeout, and organizer status
+        shell: bash
+        run: |
+          grep -RInE '垃圾扫描|安全扫描|连续失败|熔断|暂停 6 小时|max_run_minutes|超时|timeout|schedule_organize|organize.*hours|scheduler_reason|scheduler_state' . \
+            --exclude-dir=.git --exclude='*.png' --exclude='*.jpg' --exclude='*.jar' --exclude='*.apk' || true
