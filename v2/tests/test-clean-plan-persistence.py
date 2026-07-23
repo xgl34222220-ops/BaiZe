@@ -12,6 +12,7 @@ CANDIDATE = (APP / "CandidateSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/PersistentCleanPlanRootService.kt").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IPersistentCleanPlanService.aidl").read_text(encoding="utf-8")
+CLEAN_ROUTE = (APP / "ui/clean/CleanRoute.kt").read_text(encoding="utf-8")
 
 
 def require(condition: bool, message: str) -> None:
@@ -56,9 +57,11 @@ require("engine.scan(" not in SERVICE[SERVICE.index("private fun cleanPersistedS
 require('android:name=".PersistentSmartScanActivity"' in MANIFEST, "persistent activity is not registered")
 require('android:name=".ResumableSmartScanActivity"' in MANIFEST, "resumable activity is not registered")
 require('android:name=".CandidateSmartScanActivity"' in MANIFEST, "candidate activity is not registered")
-require('android:name=".SmartScanActivity"' in MANIFEST, "legacy component alias is missing")
-require('android:targetActivity=".CandidateSmartScanActivity"' in MANIFEST,
-        "smart-scan entry must route through the candidate plan stage")
+require('android:name=".SmartScanActivity"' in MANIFEST, "real smart-scan activity is not registered")
+require('android:targetActivity=".CandidateSmartScanActivity"' not in MANIFEST,
+        "automatic-first build must not redirect SmartScanActivity through the experimental candidate picker")
+require("onScan = dashboardActions.clean" in CLEAN_ROUTE,
+        "visible cleanup action must use the proven automatic Root cleaner")
 require('android:name=".root.PersistentCleanPlanRootService"' in MANIFEST,
         "persistent root service is not registered")
 require("PersistentCleanPlanRootService" in RESUMABLE and "IPersistentCleanPlanService" in RESUMABLE,
