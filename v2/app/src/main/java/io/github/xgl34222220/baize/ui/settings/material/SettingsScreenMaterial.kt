@@ -69,7 +69,7 @@ fun SettingsScreenMaterial(
             ) {
                 Text("自动化设置", fontSize = 34.sp, fontWeight = FontWeight.Black)
                 Text(
-                    "白泽会自行调度、重试和恢复，无需手动唤醒",
+                    "设置完成后，白泽会在后台持续自动运行",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -84,7 +84,11 @@ fun SettingsScreenMaterial(
                         fontWeight = FontWeight.Black
                     )
                     Text(
-                        "临时失败和后台重连由 Root Supervisor 自动处理，界面不再显示熔断或守护进程操作。",
+                        if (config.enabled) {
+                            "后台会按计划完成清理与文件整理，并在需要时自行恢复，不需要人工操作。"
+                        } else {
+                            "开启后，白泽会自动清理缓存、空项目、规则垃圾和安全碎片。"
+                        },
                         modifier = Modifier.padding(top = 5.dp, bottom = 8.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
@@ -101,7 +105,7 @@ fun SettingsScreenMaterial(
                     SwitchRow(Icons.Rounded.FolderCopy, "自动文件归类", "每天自动整理下载与接收文件", config.organizeEnabled) {
                         actions.onUpdateScheduler(config.copy(organizeEnabled = it))
                     }
-                    SwitchRow(Icons.Rounded.Notifications, "完成后通知", "只报告结果，不要求人工处理", config.notifyOnComplete) {
+                    SwitchRow(Icons.Rounded.Notifications, "完成后通知", "清理完成后显示简洁结果", config.notifyOnComplete) {
                         actions.onUpdateScheduler(config.copy(notifyOnComplete = it))
                     }
                 }
@@ -129,6 +133,16 @@ fun SettingsScreenMaterial(
                     ActionRow(Icons.Rounded.Security, "清理白名单", "保护应用和指定路径", actions.onOpenWhitelist)
                 }
             }
+        }
+
+        item {
+            Text(
+                "日常使用只需要保持自动清理开启。其余运行与恢复过程由白泽后台自行完成。",
+                modifier = Modifier.padding(horizontal = 24.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                lineHeight = 17.sp
+            )
         }
     }
 }
