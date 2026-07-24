@@ -39,7 +39,7 @@ grep -Fq '原文件未删除' "$REPO"
 # Restore must never overwrite an existing original path and must use a marked conflict copy.
 grep -Fq '.baize-restored-' "$REPO"
 grep -Fq 'if (!original.exists())' "$REPO"
-grep -Fq 'if (destination.exists()) return error("restore_conflict"' "$REPO"
+grep -Fq 'if (destination.exists()) return errorJson("restore_conflict"' "$REPO"
 
 # Controlled namespaces, retention and scan exclusion are mandatory.
 grep -Fq 'private const val RETENTION_DAYS = 7' "$REPO"
