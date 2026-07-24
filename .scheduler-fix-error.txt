@@ -1,12 +1,4 @@
 Traceback (most recent call last):
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 32, in <module>
-    if p.is_file() and "CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}" in read(p)
-                                                                                         ^^^^^^^
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 8, in read
-    return path.read_text(encoding="utf-8")
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/lib/python3.12/pathlib.py", line 1030, in read_text
-    return f.read()
-           ^^^^^^^^
-  File "<frozen codecs>", line 322, in decode
-UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbf in position 24: invalid start byte
+  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 35, in <module>
+    raise RuntimeError(f"scheduler source: expected one match, found {scheduler_matches}")
+RuntimeError: scheduler source: expected one match, found [PosixPath('/home/runner/work/BaiZe/BaiZe/service.sh'), PosixPath('/home/runner/work/BaiZe/BaiZe/.scheduler-fix-error.txt'), PosixPath('/home/runner/work/BaiZe/BaiZe/.github/workflows/apply-immediate-scheduler-fix.yml'), PosixPath('/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py')]
