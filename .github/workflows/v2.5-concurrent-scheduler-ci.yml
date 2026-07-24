@@ -1,0 +1,44 @@
+name: BaiZe v2.5 Concurrent Scheduler CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'service.sh'
+      - 'v2/module/**'
+      - 'v2/scripts/**'
+      - 'v2/tests/**'
+      - '.github/workflows/v2.5-concurrent-scheduler-ci.yml'
+  push:
+    branches: [fix/concurrent-scheduler-lanes]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-v250-concurrent-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  root-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+      - name: Verify shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+      - name: Run scheduler regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash v2/tests/test-scheduler-fairness.sh
+          bash v2/tests/test-concurrent-scheduler.sh
+          bash v2/tests/test-incremental-index.sh
+          bash v2/tests/test-organizer-transactions.sh
