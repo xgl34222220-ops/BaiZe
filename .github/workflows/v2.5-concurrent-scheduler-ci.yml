@@ -37,7 +37,20 @@ jobs:
       - name: Existing scheduler regression
         run: bash v2/tests/test-scheduler-fairness.sh
       - name: Concurrent scheduler regression
-        run: bash -x v2/tests/test-concurrent-scheduler.sh
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-concurrent-scheduler.sh > /tmp/concurrent-scheduler.log 2>&1
+          code=$?
+          tail -n 80 /tmp/concurrent-scheduler.log
+          exit "$code"
+      - name: Upload concurrent scheduler diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: concurrent-scheduler-diagnostics
+          path: /tmp/concurrent-scheduler.log
+          if-no-files-found: warn
       - name: Incremental index regression
         run: bash v2/tests/test-incremental-index.sh
       - name: Organizer transaction regression
