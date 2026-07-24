@@ -51,8 +51,11 @@ grep -Fq 'if (!original.exists())' "$REPO"
 grep -Fq 'if (destination.exists()) return errorJson("restore_conflict"' "$REPO"
 grep -Fq 'if (!safeOriginalPath(destinationPath)) return errorJson("unsafe_restore"' "$REPO"
 
-# Controlled namespaces, retention, expiration behavior and scan exclusion are mandatory.
-grep -Fq 'private const val RETENTION_DAYS = 7' "$REPO"
+# Controlled namespaces, bounded policy retention, expiration behavior and scan exclusion are mandatory.
+grep -Fq 'quarantine_retention_days' "$REPO"
+grep -Fq '.coerceIn(1, 30)' "$REPO"
+grep -Fq 'private const val DEFAULT_RETENTION_DAYS = 7' "$REPO"
+grep -Fq 'expiresAt = now + retentionDays * DAY_MS' "$REPO"
 grep -Fq '.baize-quarantine' "$REPO"
 grep -Fq '".baize-quarantine"' "$ENGINE"
 grep -Fq 'safeOriginalPath' "$REPO"

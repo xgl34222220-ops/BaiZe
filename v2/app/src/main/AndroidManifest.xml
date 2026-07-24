@@ -33,6 +33,7 @@
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
         <activity android:name=".CleanCenterActivity" android:exported="false" />
+        <activity android:name=".CleanupPolicyActivity" android:exported="false" />
         <activity android:name=".QuarantineActivity" android:exported="false" />
         <activity android:name=".AuditActivity" android:exported="false" />
         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />

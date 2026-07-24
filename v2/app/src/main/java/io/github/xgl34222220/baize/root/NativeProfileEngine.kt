@@ -42,7 +42,9 @@ internal class NativeProfileEngine(
         val whitelistPaths: Set<String>,
         val maxFileBytes: Long,
         val fragmentDays: Int,
-        val allowHighRisk: Boolean
+        val allowHighRisk: Boolean,
+        val maxAutoRisk: String,
+        val highRiskMode: String
     )
 
     private data class Candidate(
@@ -162,6 +164,8 @@ internal class NativeProfileEngine(
             .put("emptyDirs", list.count { it.category == "empty_dir" })
             .put("fragmentFiles", list.count { it.category == "fragment" })
             .put("ruleTargets", list.count { it.profile == "rules" })
+            .put("maxAutoRisk", options.maxAutoRisk)
+            .put("highRiskMode", options.highRiskMode)
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .toString()
     }
@@ -313,7 +317,7 @@ internal class NativeProfileEngine(
         val selectAllSafe = selection["__all_safe__"] == true
         val selected = snapshot.candidates.filter { candidate ->
             val explicit = selection[candidate.id] == true || selection[candidate.path] == true
-            explicit || (selectAllSafe && (candidate.risk == "low" || candidate.risk == "medium"))
+            explicit || (selectAllSafe && (candidate.risk == "low" || (candidate.risk == "medium" && snapshot.options.maxAutoRisk == "medium")))
         }
         if (selected.isEmpty()) {
             return JSONObject().put("error", "empty_selection").put("message", "没有明确勾选任何项目").toString()
@@ -393,6 +397,9 @@ internal class NativeProfileEngine(
             snapshots.remove(snapshotId)
             return JSONObject().put("error", "rules_changed").put("message", "深度规则已变化，请重新扫描").toString()
         }
+    }
+    if (snapshot.options.highRiskMode == "audit") {
+        return JSONObject().put("error", "policy_audit_only").put("message", "当前保守策略仅审计高风险项目，请切换策略并重新扫描").toString()
     }
     val selection = parseSelection(selectionJson)
     val selected = snapshot.candidates.filter { candidate ->
@@ -892,7 +899,11 @@ internal class NativeProfileEngine(
             strings(json.optJSONArray("whitelistPaths")).filter { it.startsWith("/") }.toSet(),
             json.optLong("maxFileBytes", DEFAULT_MAX_FILE_BYTES).coerceIn(0L, 16L * 1024 * 1024 * 1024),
             json.optInt("fragmentDays", 7).coerceIn(0, 365),
-            json.optBoolean("allowHighRisk", false)
+            json.optBoolean("allowHighRisk", false),
+            json.optString("maxAutoRisk", "medium").lowercase().let { if (it == "low") "low" else "medium" },
+            json.optString("highRiskMode", "manual_quarantine").lowercase().let {
+                if (it in setOf("audit", "manual_quarantine", "recommended_quarantine")) it else "manual_quarantine"
+            }
         )
     }
 

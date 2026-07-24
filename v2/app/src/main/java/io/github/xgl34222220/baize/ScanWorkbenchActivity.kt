@@ -119,6 +119,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private var cacheSnapshotId = ""
     private var profileSnapshotId = ""
     private var snapshotExpiresAtRealtime = 0L
+    private var cleanupPolicy = CleanupPolicy.BALANCED
     private var pollJob: Job? = null
     private var screenState by mutableStateOf(WorkbenchUiState())
 
@@ -272,7 +273,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     val packageWhitelist = profile.getWhitelistPackages()
-                    val options = optionsJson(profile)
+                    val config = JSONObject(profile.getSchedulerConfig())
+                    cleanupPolicy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
+                    val options = optionsJson(profile, config)
                     coroutineScope {
                         val cacheJob = async { JSONObject(cache.scanCandidates(packageWhitelist)) }
                         val profileJob = async { JSONObject(profile.scanProfile("safe", options)) }
@@ -335,7 +338,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     .thenBy { it.groupTitle }
                     .thenBy { it.title }
             )
-            val selected = items.asSequence().filter { it.selectable }.mapTo(linkedSetOf()) { it.id }
+            val selected = items.asSequence()
+                .filter { it.selectable && cleanupPolicy.defaultSelected(it.risk) }
+                .mapTo(linkedSetOf()) { it.id }
             snapshotExpiresAtRealtime = SystemClock.elapsedRealtime() + SNAPSHOT_TTL_MS
             screenState = screenState.copy(
                 running = false,
@@ -344,7 +349,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 items = items,
                 selectedIds = selected,
                 expiresAtRealtime = snapshotExpiresAtRealtime,
-                resultText = if (items.isEmpty()) "当前设备很干净" else "默认勾选全部低风险与中风险项目"
+                policyTitle = cleanupPolicy.title,
+                policyKey = cleanupPolicy.key,
+                highRiskMode = cleanupPolicy.highRiskMode,
+                resultText = if (items.isEmpty()) "当前设备很干净" else if (cleanupPolicy == CleanupPolicy.CONSERVATIVE) {
+                    "保守档默认只勾选低风险项目；中风险仍可手动选择"
+                } else {
+                    "${cleanupPolicy.title}档默认勾选低风险与中风险项目"
+                }
             )
         }
     }
@@ -428,7 +440,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     bytes = item.optLong("bytes", -1L),
                     files = item.optLong("files", -1L),
                     directories = item.optLong("directories", -1L),
-                    reason = note.ifBlank { riskReason(risk, label) },
+                    reason = note.ifBlank { riskReason(risk, label, cleanupPolicy) },
                     selectable = risk == "low" || risk == "medium"
                 )
             }
@@ -548,7 +560,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun quarantineItem(item: WorkbenchItem) {
-    if (screenState.running || item.source != "profile" || item.risk != "high") return
+    if (screenState.running || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
     if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
         screenState = screenState.copy(scanReady = false, phase = "扫描快照已过期，请重新扫描")
         return
@@ -694,8 +706,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun optionsJson(service: IProfileRootService): String {
-        val config = runCatching { JSONObject(service.getSchedulerConfig()) }.getOrDefault(JSONObject())
+    private fun optionsJson(service: IProfileRootService, suppliedConfig: JSONObject? = null): String {
+        val config = suppliedConfig ?: runCatching { JSONObject(service.getSchedulerConfig()) }.getOrDefault(JSONObject())
+        val policy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
         val paths = runCatching { JSONArray(service.getWhitelistPaths()) }.getOrDefault(JSONArray())
         val packages = runCatching { JSONArray(service.getWhitelistPackages()) }.getOrDefault(JSONArray())
         val maxMb = config.optInt("max_file_mb", 256).coerceIn(16, 16_384)
@@ -705,6 +718,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
             .put("maxFileBytes", maxMb * 1_024L * 1_024L)
             .put("fragmentDays", config.optInt("fragment_days", 7).coerceIn(0, 365))
             .put("allowHighRisk", false)
+            .put("maxAutoRisk", policy.autoRisk)
+            .put("highRiskMode", policy.highRiskMode)
+            .put("cleanupPolicy", policy.key)
             .toString()
     }
 
@@ -774,7 +790,10 @@ private data class WorkbenchUiState(
     val items: List<WorkbenchItem> = emptyList(),
     val selectedIds: Set<String> = emptySet(),
     val expiresAtRealtime: Long = 0L,
-    val resultText: String = ""
+    val resultText: String = "",
+    val policyTitle: String = CleanupPolicy.BALANCED.title,
+    val policyKey: String = CleanupPolicy.BALANCED.key,
+    val highRiskMode: String = CleanupPolicy.BALANCED.highRiskMode
 ) {
     val connected: Boolean get() = profileConnected && cacheConnected
     val selectedItems: List<WorkbenchItem> get() = items.filter { it.id in selectedIds }
@@ -963,6 +982,7 @@ private fun ScanWorkbenchScreen(
                             item = row.item,
                             selected = row.item.id in state.selectedIds,
                             horizontal = horizontal,
+                            highRiskMode = state.highRiskMode,
                             onToggle = { actions.onToggleItem(row.item.id) },
                             onProtect = { actions.onProtect(row.item) },
                             onQuarantine = { actions.onQuarantine(row.item) }
@@ -1141,6 +1161,7 @@ private fun WorkbenchSummaryCard(
                 SummaryPill("应用 ${state.items.count { it.source == "cache" }}")
                 SummaryPill("其他 ${state.items.count { it.source == "profile" }}")
                 SummaryPill("受保护 ${state.items.count { !it.selectable }}")
+                SummaryPill("${state.policyTitle}档")
             }
             if (state.resultText.isNotBlank()) {
                 Spacer(Modifier.height(9.dp))
@@ -1218,6 +1239,7 @@ private fun WorkbenchCandidateRow(
     item: WorkbenchItem,
     selected: Boolean,
     horizontal: androidx.compose.ui.unit.Dp,
+    highRiskMode: String,
     onToggle: () -> Unit,
     onProtect: () -> Unit,
     onQuarantine: () -> Unit
@@ -1259,11 +1281,16 @@ private fun WorkbenchCandidateRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (item.risk == "high") {
+        if (item.risk == "high" && highRiskMode != "audit") {
             IconButton(onClick = onQuarantine, modifier = Modifier.size(38.dp)) {
-                Icon(Icons.Rounded.Inventory2, contentDescription = "移入隔离区", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    Icons.Rounded.Inventory2,
+                    contentDescription = if (highRiskMode == "recommended_quarantine") "建议移入隔离区" else "移入隔离区",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (highRiskMode == "recommended_quarantine") BaiZeTokens.colors.warning else MaterialTheme.colorScheme.error
+                )
             }
-        } else {
+        } else if (item.risk != "high" && item.risk != "critical") {
             IconButton(onClick = onProtect, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Rounded.Shield, contentDescription = "加入白名单", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
             }
@@ -1300,9 +1327,13 @@ private fun categoryLabel(category: String): String = when (category) {
     else -> "安全项目"
 }
 
-private fun riskReason(risk: String, label: String): String = when (risk) {
+private fun riskReason(risk: String, label: String, policy: CleanupPolicy): String = when (risk) {
     "low" -> "$label · 可安全自动处理"
     "medium" -> "$label · 清理前再次校验白名单与大小限制"
-    "high" -> "$label · 不会直接删除，可单独移入隔离区"
+    "high" -> when (policy.highRiskMode) {
+        "audit" -> "$label · 保守档仅审计，切换策略并重新扫描后才可隔离"
+        "recommended_quarantine" -> "$label · 积极档建议逐项移入隔离区，仍不会直接删除"
+        else -> "$label · 不会直接删除，可单独移入隔离区"
+    }
     else -> "$label · 关键风险项目，只展示不自动清理"
 }
