@@ -8,6 +8,7 @@ OLD_STATE="/data/adb/safesweep"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
+DEEP_SNAPSHOT_ENGINE="$MODPATH/bin/arm64-v8a/baize_deep_snapshot"
 
 for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/baize_v2"; do
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
@@ -29,9 +30,12 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/cache-transaction.sh" ] || abort "! 模块包中缺少自动缓存事务执行器"
 [ -f "$MODPATH/apk-scanner.sh" ] || abort "! 模块包中缺少安装包快照扫描器"
 [ -f "$MODPATH/apk-cleaner.sh" ] || abort "! 模块包中缺少安装包快照清理器"
-[ -f "$MODPATH/profile-cleaner.sh" ] || abort "! 模块包中缺少深度/残留快照执行器"
+[ -f "$MODPATH/profile-cleaner.sh" ] || abort "! 模块包中缺少卸载残留快照执行器"
+[ -f "$MODPATH/deep-scan-manifest.sh" ] || abort "! 模块包中缺少深度不可变快照扫描器"
+[ -f "$MODPATH/deep-manifest-clean.sh" ] || abort "! 模块包中缺少深度不可变快照清理器"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
+[ -f "$DEEP_SNAPSHOT_ENGINE" ] || abort "! 模块包中缺少 arm64 深度快照引擎"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
 [ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
@@ -39,6 +43,7 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
+# Stop both the legacy and immutable-manifest pipelines before replacing module files.
 touch "$STATE_DIR/stop" 2>/dev/null
 pkill -f '/data/adb/modules/baize_v2/cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/native-cleaner.sh' >/dev/null 2>&1 || true
@@ -48,7 +53,10 @@ pkill -f '/data/adb/modules/baize_v2/cache-lane-worker.sh' >/dev/null 2>&1 || tr
 pkill -f '/data/adb/modules/baize_v2/apk-scanner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/deep-scan-manifest.sh' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/deep-manifest-clean.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_deep_snapshot' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/organizer-worker.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/worker-runner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/task-worker.sh' >/dev/null 2>&1 || true
@@ -59,7 +67,8 @@ rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" "$STATE_DIR/cache_scan.manifest0"
 rm -f "$STATE_DIR/cache_auto.env" "$STATE_DIR/cache_auto.targets" "$STATE_DIR/cache_auto.items.tsv" "$STATE_DIR/cache_auto.manifest0"
 rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
-rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
+rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets" "$STATE_DIR/deep_scan.manifest0" \
+  "$STATE_DIR/deep_scan.cursor" "$STATE_DIR/deep_scan.manifest.env" "$STATE_DIR/deep_clean.accum.env"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
 rm -f "$STATE_DIR/worker.env" "$STATE_DIR/scheduler.env" "$STATE_DIR/supervisor.env" \
   "$STATE_DIR/scheduler-queue.tsv" "$STATE_DIR/scheduler-candidates.tmp" \
@@ -68,7 +77,7 @@ rm -f "$STATE_DIR"/scheduler-retry-*.count "$STATE_DIR"/scheduler-retry-*.until 
   "$STATE_DIR"/scheduler-fail-*.count "$STATE_DIR"/scheduler-pause-*.until 2>/dev/null || true
 rm -rf "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
 mkdir -p "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
-echo 'concurrent-lanes-v1' >"$STATE_DIR/runtime-schema"
+echo 'deep-manifest-v1' >"$STATE_DIR/runtime-schema"
 
 if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ]; then
   migrated=0
@@ -93,8 +102,8 @@ fi
 
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/cache-lane-worker.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/cache-lane-worker.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" "$MODPATH/deep-scan-manifest.sh" "$MODPATH/deep-manifest-clean.sh" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
 chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {
