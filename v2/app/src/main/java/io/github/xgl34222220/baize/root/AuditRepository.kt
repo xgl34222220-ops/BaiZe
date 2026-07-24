@@ -24,6 +24,7 @@ internal class AuditRepository(
     private val policyAdvisor = PolicyAdvisor()
     private val effectivenessAnalyzer = CleanupEffectivenessAnalyzer()
     private val ruleQualityAnalyzer = RuleQualityAnalyzer()
+    private val ruleQualityReviewRepository = RuleQualityReviewRepository(stateDir)
 
     @Synchronized
     fun recordResult(
@@ -90,7 +91,7 @@ internal class AuditRepository(
 
         val advisor = policyAdvisor.evaluate(combined)
         val effectiveness = effectivenessAnalyzer.analyze(combined)
-        val ruleQuality = ruleQualityAnalyzer.analyze(combined)
+        val ruleQuality = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
 
         return JSONObject()
             .put("success", true)
@@ -110,6 +111,44 @@ internal class AuditRepository(
             .put("ruleQuality", ruleQuality)
             .put("events", page)
             .toString()
+    }
+
+    @Synchronized
+    fun updateRuleQualityReviewJson(ruleKey: String?, action: String?, note: String?): String {
+        val clearEpoch = readClearEpoch()
+        val combined = (readAuditEvents(clearEpoch) + readLegacyEvents(clearEpoch))
+            .distinctBy { it.optString("id") }
+            .sortedByDescending { it.optLong("timeEpoch") }
+            .take(MAX_EVENTS)
+        val report = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
+        val queue = report.optJSONArray("reviewQueue") ?: JSONArray()
+        val validKeys = linkedSetOf<String>()
+        val categories = linkedMapOf<String, String>()
+        for (index in 0 until queue.length()) {
+            val item = queue.optJSONObject(index) ?: continue
+            val key = item.optString("key")
+            if (key.isBlank()) continue
+            validKeys += key
+            categories[key] = sanitize(item.optString("category"), 100)
+        }
+        val raw = ruleQualityReviewRepository.update(ruleKey, action, note, validKeys)
+        val result = runCatching { JSONObject(raw) }.getOrElse { return raw }
+        if (result.optBoolean("success", false)) {
+            val key = result.optString("ruleKey")
+            val category = categories[key].orEmpty().ifBlank { "未命名分类" }
+            val state = result.optString("state", "pending")
+            val stateLabel = when (state) {
+                "kept" -> "已保留"
+                "observing" -> "观察中"
+                "ignored" -> "已忽略"
+                else -> "待审核"
+            }
+            val auditResult = JSONObject(raw)
+                .put("message", "规则审核已更新：$category · $stateLabel")
+                .put("profile", category)
+            recordResult("rule-review-$state", "app-rule-review", auditResult.toString())
+        }
+        return raw
     }
 
     @Synchronized
@@ -313,6 +352,7 @@ internal class AuditRepository(
     }
 
     private fun kindFor(operation: String): String = when {
+        operation.contains("rule-review") -> "review"
         operation.contains("quarantine") || operation.contains("restore") || operation.contains("purge") || operation.contains("expire") -> "safety"
         operation.contains("scan") -> "scan"
         operation.contains("organize") -> "organize"

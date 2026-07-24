@@ -194,6 +194,8 @@ class BaiZeProfileRootService : RootService() {
         override fun getAuditTimelinePage(offset: Int, limit: Int): String =
             auditRepository.timelinePageJson(offset, limit)
         override fun clearAuditTimeline(): String = auditRepository.clearTimelineJson()
+        override fun updateRuleQualityReview(ruleKey: String?, action: String?, note: String?): String =
+            auditRepository.updateRuleQualityReviewJson(ruleKey, action, note)
         override fun getScanCoverage(): String = diagnostics.scanCoverageJson()
         override fun clearTaskHistory(): String = historyRepository.clearTaskHistoryJson()
         override fun getRawLog(maxChars: Int): String = diagnostics.rawLogJson(maxChars)
