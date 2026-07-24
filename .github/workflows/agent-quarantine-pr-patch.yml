@@ -25,6 +25,48 @@ jobs:
             capture && /^          PY$/ { capture=0; exit }
             capture { sub(/^          /, ""); print }
           ' .github/workflows/agent-quarantine-patch.yml > /tmp/quarantine-patch.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/quarantine-patch.py')
+          lines = path.read_text().splitlines()
+          exact = {
+              "onProtect = ::protectItem''',": 28,
+              "onProtect = ::protectItem,": 28,
+              "onQuarantine = ::quarantineItem''',": 28,
+              "onProtect = { actions.onProtect(row.item) }": 28,
+              "onProtect = { actions.onProtect(row.item) },": 28,
+              "onQuarantine = { actions.onQuarantine(row.item) }": 28,
+              ")''',": 24,
+              "onOpenProfile = ::openProfile''',": 28,
+              "onOpenQuarantine = { startActivity(Intent(this, QuarantineActivity::class.java)) },": 28,
+          }
+          output = []
+          in_action_button = False
+          for line in lines:
+              stripped = line.lstrip(' ')
+              indent = len(line) - len(stripped)
+              if stripped.startswith("'''        IconButton(onClick = onProtect"):
+                  in_action_button = True
+              if stripped.startswith("'" * 3 + '        if (item.risk == "high")'):
+                  in_action_button = True
+              if stripped in exact and indent in {20, 24}:
+                  line = ' ' * exact[stripped] + stripped
+              elif in_action_button and stripped.startswith('Icon('):
+                  line = ' ' * (12 if indent == 8 else 16) + stripped
+              elif in_action_button and stripped == 'IconButton(onClick = onQuarantine, modifier = Modifier.size(38.dp)) {':
+                  line = ' ' * 12 + stripped
+              elif in_action_button and stripped == 'IconButton(onClick = onProtect, modifier = Modifier.size(38.dp)) {':
+                  line = ' ' * 12 + stripped
+              elif in_action_button and stripped == '} else {':
+                  line = ' ' * 8 + stripped
+              elif in_action_button and stripped == '}':
+                  line = ' ' * 12 + stripped
+              elif in_action_button and stripped == "}''',":
+                  line = ' ' * 8 + stripped
+                  in_action_button = False
+              output.append(line)
+          path.write_text('\n'.join(output) + '\n')
+          PY
           set +e
           python3 /tmp/quarantine-patch.py > /tmp/quarantine-patch.log 2>&1
           code=$?
