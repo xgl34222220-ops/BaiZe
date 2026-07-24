@@ -24,24 +24,14 @@ trap 'rm -rf "$STAGE"' EXIT INT TERM
 for f in module.env supervisor.env scheduler.env worker.env running.env latest.env totals.env app-install.env root-worker-profile.env runtime-schema; do
   [ -f "$STATE_DIR/$f" ] && cp -f "$STATE_DIR/$f" "$STAGE/$f"
 done
-[ -f "$STATE_DIR/config.conf" ] && sed -E 's#^([^=]*(path|dir|folder)[^=]*)=.*$#\1=<redacted>#I' "$STATE_DIR/config.conf" >"$STAGE/config-redacted.conf" 2>/dev/null || true
+[ -f "$STATE_DIR/config.conf" ] && sed -E 's#^([^=]*(path|dir|folder)[^=]*)=.*$#\1=<redacted>#' "$STATE_DIR/config.conf" >"$STAGE/config-redacted.conf" 2>/dev/null || true
 [ -f "$STATE_DIR/scheduler-queue.tsv" ] && awk -F '\t' 'BEGIN{OFS="\t"} {if (NF>=6 && $6!="-") {$6="<request-file>"}; print}' "$STATE_DIR/scheduler-queue.tsv" >"$STAGE/scheduler-queue-redacted.tsv" 2>/dev/null || true
 [ -f "$MODDIR/module.prop" ] && cp -f "$MODDIR/module.prop" "$STAGE/module.prop"
 [ -f "$MODDIR/config/rules.meta.env" ] && cp -f "$MODDIR/config/rules.meta.env" "$STAGE/rules.meta.env"
 
 # Paths are privacy-sensitive: retain only basename and a stable short hash.
 if [ -f "$STATE_DIR/reports/latest.tsv" ]; then
-  awk -F '\t' 'BEGIN{OFS="\t"} NR==1{print;next} {
-    path=$6
-    safe=path
-    gsub(/[^[:alnum:]_.-]/,"_",safe)
-    cmd="printf %s \'" safe "\' | sha256sum"
-    cmd|getline hash
-    close(cmd)
-    n=split(path,a,"/")
-    $6="…/" a[n] "#" substr(hash,1,10)
-    print
-  }' "$STATE_DIR/reports/latest.tsv" >"$STAGE/latest-redacted.tsv" 2>/dev/null || true
+  awk -F '\t' 'BEGIN{OFS="\t"} NR==1{print;next} {path=$6; cmd="printf %s \\"" path "\\" | sha256sum"; cmd|getline hash; close(cmd); n=split(path,a,"/"); $6="…/" a[n] "#" substr(hash,1,10); print}' "$STATE_DIR/reports/latest.tsv" >"$STAGE/latest-redacted.tsv" 2>/dev/null || true
 fi
 
 for log in $(ls -1t "$STATE_DIR"/logs/*.log 2>/dev/null | head -n 3); do
