@@ -1,0 +1,52 @@
+name: Apply Primary Actions And Persistent Icons
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-primary-actions-icons
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Apply product changes
+        run: python3 .github/scripts/apply-primary-actions-icons.py
+
+      - name: Verify expected changes
+        run: |
+          grep -q 'val organize: () -> Unit' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'private fun runOneTapOrganize' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q '一键清理' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/material/HomeScreenMaterial.kt
+          grep -q '一键归类' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
+          grep -q 'AtomicFile' v2/app/src/main/java/io/github/xgl34222220/baize/ui/common/AppPackageIcon.kt
+          grep -q 'AppPackageIconPreloader(iconPackages)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
+          grep -q 'AppPackageIconPreloader(iconPackages)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/material/HistoryScreenMaterial.kt
+          git diff --check
+
+      - name: Commit verified changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/scripts/apply-primary-actions-icons.py .github/workflows/apply-primary-actions-icons.yml
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/common/AppPackageIcon.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/material/HomeScreenMaterial.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/material/HistoryScreenMaterial.kt
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/history/miuix/HistoryScreenMiuix.kt
+          git commit -m 'feat: restore primary actions and persist app icons'
+          git push origin HEAD:agent/dual-theme-ui-redesign
