@@ -78,3 +78,21 @@ else
   "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
 fi
 pid=$!
+case "$pid" in ''|*[!0-9]*) cleanup_worker_marker; rm -f "$RUNNING_FILE"; echo "无法启动 Root Worker" >&2; exit 6 ;; esac
+[ "$(worker_marker_id)" = "$TASK_ID" ] && write_worker_marker "$pid"
+sleep 1
+if ! kill -0 "$pid" 2>/dev/null && [ ! -f "$RESULT_FILE" ]; then
+  cleanup_worker_marker
+  rm -f "$RUNNING_FILE"
+  echo "Root Worker 启动后立即退出" >&2
+  exit 7
+fi
+echo "统一 Root Worker 已启动：$pid"
+[ "$WAIT_MODE" = wait ] || exit 0
+wait "$pid" 2>/dev/null
+runner_code=$?
+cleanup_worker_marker
+code=$(sed -n 's/^exit_code=//p' "$RESULT_FILE" 2>/dev/null | tail -n 1)
+case "$code" in ''|*[!0-9]*) code=$runner_code ;; esac
+case "$code" in ''|*[!0-9]*) code=8 ;; esac
+exit "$code"
