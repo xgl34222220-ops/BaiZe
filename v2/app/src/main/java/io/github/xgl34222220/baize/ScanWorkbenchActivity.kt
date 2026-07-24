@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
@@ -657,7 +658,15 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun applicationLabel(packageName: String): String = runCatching {
-        val info = packageManager.getApplicationInfo(packageName, PackageManagerFlags.applicationInfo())
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getApplicationInfo(
+                packageName,
+                android.content.pm.PackageManager.ApplicationInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getApplicationInfo(packageName, 0)
+        }
         packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
     }.getOrNull() ?: packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
 
@@ -673,11 +682,6 @@ class ScanWorkbenchActivity : ComponentActivity() {
         private const val MAX_ITEMS = 2_000
         private const val SNAPSHOT_TTL_MS = 30L * 60L * 1_000L
     }
-}
-
-private object PackageManagerFlags {
-    fun applicationInfo(): android.content.pm.PackageManager.ApplicationInfoFlags =
-        android.content.pm.PackageManager.ApplicationInfoFlags.of(0)
 }
 
 private data class CleanAggregate(
