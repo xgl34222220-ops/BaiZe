@@ -1,4 +1,0 @@
-expected block not found: v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
-    private fun renderTaskState(json: JSONObject) {
-        if (!json.optBoolean("running")) return
-        val current = json.optInt("progress_current", json.optInt("current", 0))
