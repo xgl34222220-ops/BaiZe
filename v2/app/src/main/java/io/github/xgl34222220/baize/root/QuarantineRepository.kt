@@ -18,7 +18,8 @@ import java.util.UUID
  * the pending record and leaves the original untouched; a successful move remains recoverable.
  */
 internal class QuarantineRepository(
-    private val stateDir: File = File(RootPaths.STATE_DIR)
+    private val stateDir: File = File(RootPaths.STATE_DIR),
+    private val configFile: File = File(RootPaths.CONFIG_FILE)
 ) {
     data class Result(
         val success: Boolean,
@@ -114,6 +115,7 @@ internal class QuarantineRepository(
         if (isSymlink(destination.parentFile ?: destination)) return Result(false, message = "隔离目录异常")
 
         val now = System.currentTimeMillis()
+        val retentionDays = retentionDays()
 val entry = Entry(
     id = id,
     originalPath = sourcePath,
@@ -124,7 +126,7 @@ val entry = Entry(
     risk = risk,
     snapshotId = snapshotId.take(MAX_TEXT),
     createdAt = now,
-    expiresAt = now + RETENTION_MS,
+    expiresAt = now + retentionDays * DAY_MS,
     bytes = stats.bytes,
     files = stats.files,
     directories = stats.directories
@@ -150,7 +152,7 @@ if (!moved || source.exists() || !destination.exists()) {
     )
 }
 
-return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 7 天内恢复")
+return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 $retentionDays 天内恢复")
     }
 
     @Synchronized
@@ -166,7 +168,7 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
             .put("total", entries.size)
             .put("offset", start)
             .put("limit", count)
-            .put("retentionDays", RETENTION_DAYS)
+            .put("retentionDays", retentionDays())
             .put("expiredPurged", expired)
             .put("items", JSONArray().apply {
                 for (index in start until end) put(entries[index].json())
@@ -359,6 +361,10 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         return success && !root.exists()
     }
 
+    private fun retentionDays(): Int = RootFileStore.readEnv(configFile)
+        .optInt("quarantine_retention_days", DEFAULT_RETENTION_DAYS)
+        .coerceIn(1, 30)
+
     private fun quarantineRootFor(path: String): File {
         val emulated = Regex("^/storage/emulated/([0-9]+)(?:/.*)?$").find(path)
         if (emulated != null) return File("/storage/emulated/${emulated.groupValues[1]}/.baize-quarantine")
@@ -430,8 +436,8 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         .toString()
 
     companion object {
-        private const val RETENTION_DAYS = 7
-        private const val RETENTION_MS = RETENTION_DAYS * 24L * 60L * 60L * 1_000L
+        private const val DEFAULT_RETENTION_DAYS = 7
+        private const val DAY_MS = 24L * 60L * 60L * 1_000L
         private const val MEASURE_BUDGET_MS = 30_000L
         private const val MAX_NODES = 200_000
         private const val MAX_TEXT = 512

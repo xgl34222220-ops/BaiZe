@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.root
 
 import android.os.Process
+import io.github.xgl34222220.baize.CleanupPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -26,6 +27,19 @@ internal class SchedulerRepository(
         ensureConfig()
         val previous = configJsonObject()
         val updates = LinkedHashMap<String, String>()
+        val requestedPolicy = if (input.has("cleanup_policy")) {
+            val value = input.optInt("cleanup_policy", Int.MIN_VALUE)
+            if (value !in ALLOWED_CONFIG.getValue("cleanup_policy")) {
+                return error("invalid_value", "配置值超出范围", "cleanup_policy")
+            }
+            CleanupPolicy.fromId(value)
+        } else null
+        requestedPolicy?.let { policy ->
+            updates["cleanup_policy"] = policy.id.toString()
+            policy.values.forEach { (key, value) ->
+                if (key in ALLOWED_CONFIG && !key.startsWith("schedule_")) updates[key] = value.toString()
+            }
+        }
         val keys = input.keys()
         while (keys.hasNext()) {
             val key = keys.next()
@@ -68,6 +82,7 @@ internal class SchedulerRepository(
         return JSONObject()
             .put("success", true)
             .put("config", configJsonObject().put("runtime", runtimeJsonObject()))
+            .put("policyApplied", requestedPolicy != null)
             .put("queued", queued)
             .put("schedulerWake", JSONObject(wake))
             .toString()
@@ -577,7 +592,12 @@ internal class SchedulerRepository(
             val value = line.substringAfter('=').trim()
             if (key in ALLOWED_CONFIG) result.put(key, value.toIntOrNull() ?: value)
         }
+        val policy = CleanupPolicy.fromId(result.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
+        val customized = policy.values.any { (key, expected) -> result.optInt(key, expected) != expected }
         return result
+            .put("cleanup_policy", policy.id)
+            .put("cleanup_policy_name", policy.key)
+            .put("cleanup_policy_customized", customized)
     }
 
     private fun ensureConfig() {
@@ -637,6 +657,7 @@ internal class SchedulerRepository(
         private val GROUPS = listOf("cache", "empty", "rules", "fragment", "deep", "organize")
         val ALLOWED_CONFIG: Map<String, IntRange> = mapOf(
             "enabled" to 0..1,
+            "cleanup_policy" to 0..2,
             "screen_off_only" to 0..1,
             "charging_only" to 0..1,
             "device_idle_only" to 0..1,

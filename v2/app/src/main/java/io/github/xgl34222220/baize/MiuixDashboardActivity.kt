@@ -1339,13 +1339,18 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun optionsJson(): String {
         val paths = preferences.getStringSet("path_whitelist", emptySet()).orEmpty()
-        val maxMb = schedulerState.value.maxFileMb.coerceIn(16, 2048)
+        val config = runCatching { JSONObject(rootService?.getSchedulerConfig().orEmpty()) }.getOrDefault(JSONObject())
+        val policy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
+        val maxMb = config.optInt("max_file_mb", schedulerState.value.maxFileMb).coerceIn(16, 16_384)
         return JSONObject()
             .put("whitelistPackages", JSONArray(packageWhitelist().toList()))
             .put("whitelistPaths", JSONArray(paths.toList()))
             .put("maxFileBytes", maxMb * 1024L * 1024L)
-            .put("fragmentDays", preferences.getInt("fragment_days", 7).coerceIn(0, 365))
+            .put("fragmentDays", config.optInt("fragment_days", 7).coerceIn(0, 365))
             .put("allowHighRisk", false)
+            .put("maxAutoRisk", policy.autoRisk)
+            .put("highRiskMode", policy.highRiskMode)
+            .put("cleanupPolicy", policy.key)
             .toString()
     }
 
