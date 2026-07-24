@@ -255,7 +255,7 @@ internal class SchedulerRepository(
         return JSONObject()
             .put("state", publicState)
             .put("group", scheduler.optString("group"))
-            .put("reason", if (publicState == "running") "执行中" else "待执行")
+            .put("reason", publicSchedulerReason(publicState, scheduler.optString("reason")))
             .put("nextCheckEpoch", scheduler.optLong("next_check_epoch", 0L))
             .put("heartbeatEpoch", scheduler.optLong("heartbeat_epoch", 0L))
             .put("queueCount", scheduler.optInt("queue_count", queue.length()))
@@ -273,6 +273,20 @@ internal class SchedulerRepository(
             .put("stale", !schedulerHealthy || !supervisorHealthy)
     }
 
+
+    private fun publicSchedulerReason(state: String, raw: String): String = when {
+        state == "disabled" -> "自动任务已关闭"
+        state == "running" -> "执行中"
+        raw.contains("息屏") -> "等待息屏后执行"
+        raw.contains("充电") -> "等待充电后执行"
+        raw.contains("电量") -> "等待电量满足条件"
+        raw.contains("空闲") -> "等待系统空闲后执行"
+        raw.contains("已有") || raw.contains("当前任务") -> "等待当前任务完成"
+        raw.contains("恢复") || raw.contains("重新拉起") -> "后台正在自动恢复"
+        raw.contains("重试") -> "等待自动重试"
+        raw.contains("没有到期") || raw.contains("下次") -> "等待下次执行"
+        else -> "等待自动执行"
+    }
 
     private fun nextRunsJsonObject(config: JSONObject, now: Long): JSONObject {
         val result = JSONObject()

@@ -10,13 +10,56 @@ ORGANIZER="$MODDIR/organizer-worker.sh"
 RESULT_DIR="$STATE_DIR/task-results"
 RESULT_FILE="$RESULT_DIR/$TASK_ID.env"
 WORKER_FILE="$STATE_DIR/worker.env"
+RUNNING_FILE="$STATE_DIR/running.env"
 LOG_FILE="$STATE_DIR/logs/worker-$TASK_ID.log"
 ORGANIZER_RESULT="$STATE_DIR/organizer-result.env"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 mkdir -p "$RESULT_DIR" "$STATE_DIR/logs"
 started=$(date +%s)
 code=127
-if [ "$MODE" = organize ]; then
+record_empty_deep_result() {
+  now_text=$(date '+%Y-%m-%d %H:%M:%S')
+  result="深度清理完成，没有可清理项"
+  {
+    echo "mode=deep-clean"
+    echo "time=$now_text"
+    echo "files=0"
+    echo "regular_files=0"
+    echo "empty_files=0"
+    echo "empty_dirs=0"
+    echo "hidden_items=0"
+    echo "fragment_files=0"
+    echo "bytes=0"
+    echo "skipped=0"
+    echo "errors=0"
+    echo "protected_items=0"
+    echo "protected_bytes=0"
+    echo "elapsed=0"
+    echo "result=$result"
+  } >"$STATE_DIR/latest.env"
+  printf '%s\tdeep-clean\t0\t0\t0\t0\t%s\t%s\t深度规则|0|0\t\n' \
+    "$now_text" "$result" "$TRIGGER" >>"$HISTORY_FILE"
+  tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+  rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
+  echo "$result" >>"$LOG_FILE"
+}
+if [ "$MODE" = deep-auto ]; then
+  if [ -x "$CLEANER" ]; then
+    BAIZE_SUPPRESS_SCAN_HISTORY=1 "$CLEANER" deep-scan "$TRIGGER" >>"$LOG_FILE" 2>&1
+    code=$?
+    if [ "$code" -eq 0 ]; then
+      if [ -s "$STATE_DIR/deep_scan.targets" ]; then
+        "$CLEANER" deep-clean "$TRIGGER" >>"$LOG_FILE" 2>&1
+        code=$?
+      else
+        record_empty_deep_result
+        code=0
+      fi
+    fi
+  else
+    echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
+  fi
+elif [ "$MODE" = organize ]; then
   if [ -x "$ORGANIZER" ]; then
     "$ORGANIZER" "$MODE" "$TRIGGER" "$TASK_ID" >>"$LOG_FILE" 2>&1
     code=$?
@@ -62,5 +105,7 @@ tmp="$RESULT_FILE.tmp.$$"
 } >"$tmp" && mv -f "$tmp" "$RESULT_FILE"
 chmod 0600 "$RESULT_FILE" 2>/dev/null || true
 current_id=$(sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1)
-[ "$current_id" = "$TASK_ID" ] && rm -f "$WORKER_FILE"
+if [ "$current_id" = "$TASK_ID" ]; then
+  rm -f "$WORKER_FILE" "$RUNNING_FILE"
+fi
 exit "$code"

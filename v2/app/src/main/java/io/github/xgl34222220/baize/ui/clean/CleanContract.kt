@@ -9,7 +9,8 @@ enum class CleanCategoryId {
     EMPTY,
     RULES,
     FRAGMENTS,
-    DEEP
+    DEEP,
+    ORGANIZE
 }
 
 @Immutable
@@ -111,10 +112,17 @@ fun SchedulerUiState.toCleanUiState(
         ),
         CleanCategoryUiItem(
             id = CleanCategoryId.DEEP,
-            title = "深度清理项",
+            title = "深度清理",
             description = "更广的日志和残留范围，继续受白名单与限制约束",
             enabled = deepEnabled,
             intervalMinutes = deepMinutes
+        ),
+        CleanCategoryUiItem(
+            id = CleanCategoryId.ORGANIZE,
+            title = "文件自动归类",
+            description = "按文件类型整理下载目录，冲突文件会安全保留",
+            enabled = organizeEnabled,
+            intervalMinutes = organizeMinutes
         )
     ),
     dailyEnabled = dailyEnabled,
@@ -138,6 +146,7 @@ fun SchedulerUiState.withCategoryEnabled(
     CleanCategoryId.RULES -> copy(rulesEnabled = enabled)
     CleanCategoryId.FRAGMENTS -> copy(fragmentEnabled = enabled)
     CleanCategoryId.DEEP -> copy(deepEnabled = enabled)
+    CleanCategoryId.ORGANIZE -> copy(organizeEnabled = enabled)
 }
 
 fun SchedulerUiState.withCategoryInterval(
@@ -151,6 +160,7 @@ fun SchedulerUiState.withCategoryInterval(
         CleanCategoryId.RULES -> copy(rulesMinutes = safeMinutes)
         CleanCategoryId.FRAGMENTS -> copy(fragmentMinutes = safeMinutes)
         CleanCategoryId.DEEP -> copy(deepMinutes = safeMinutes)
+        CleanCategoryId.ORGANIZE -> copy(organizeMinutes = safeMinutes.coerceAtLeast(15))
     }
 }
 
@@ -169,6 +179,7 @@ internal fun formatHours(hours: Int): String = when {
 }
 
 internal fun formatMinutes(minutes: Int): String = when {
+    minutes % 1_440 == 0 -> "${minutes / 1_440} 天"
     minutes % 60 == 0 -> "${minutes / 60} 小时"
     minutes > 60 -> "${minutes / 60} 小时 ${minutes % 60} 分"
     else -> "$minutes 分钟"

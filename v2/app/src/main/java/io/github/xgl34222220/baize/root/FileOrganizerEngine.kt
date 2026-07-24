@@ -440,8 +440,33 @@ class FileOrganizerEngine(
             else File(mediaRoot, "Android/data/$packageName")
             return SourceRoot(root, "$packageName · 应用文件", SourcePolicy.APP_USER_FILES)
         }
+        if (!allowedIndexedPublicPath(relative)) return null
         val root = File(mediaRoot, parts.first())
         return SourceRoot(root, sourceGroup(root.path), SourcePolicy.FULL_DOWNLOAD_TREE)
+    }
+
+
+    private fun allowedIndexedPublicPath(relative: String): Boolean {
+        val normalized = relative.replace('\\', '/').lowercase()
+        return when {
+            normalized.startsWith("download/") || normalized.startsWith("downloads/") -> true
+            normalized.startsWith("documents/") || normalized.startsWith("bluetooth/") -> true
+            normalized.startsWith("tencent/qqfile_recv/") || normalized.startsWith("tencent/timfile_recv/") -> true
+            normalized.startsWith("telegram/telegram documents/") ||
+                normalized.startsWith("telegram/telegram images/") ||
+                normalized.startsWith("telegram/telegram video/") ||
+                normalized.startsWith("telegram/telegram audio/") ||
+                normalized.startsWith("telegram/telegram files/") -> true
+            normalized.startsWith("nagram/nagram documents/") ||
+                normalized.startsWith("nagram/nagram images/") ||
+                normalized.startsWith("nagram/nagram video/") ||
+                normalized.startsWith("nagram/nagram audio/") -> true
+            normalized.startsWith("nagramx/nagramx documents/") ||
+                normalized.startsWith("nagramx/nagramx images/") ||
+                normalized.startsWith("nagramx/nagramx video/") ||
+                normalized.startsWith("nagramx/nagramx audio/") -> true
+            else -> false
+        }
     }
 
     private fun forEachNulPath(file: File, block: (String) -> Boolean) {
@@ -661,6 +686,7 @@ class FileOrganizerEngine(
         val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: return
         val statFingerprint = fingerprint(sourceStat)
         val category = category(file.name)
+        if (category.isBlank()) return
         val destination = File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
         val id = sha256Text("$path\u0000$statFingerprint")
         out.putIfAbsent(
@@ -1011,10 +1037,9 @@ class FileOrganizerEngine(
     }
 
     private fun isAppUserFile(file: File, path: String): Boolean {
-        if (category(file.name) != "其他") return true
-        if (file.extension.isBlank()) return false
+        if (category(file.name).isBlank()) return false
         return path.split('/').any { segment ->
-            normalizeDirectoryName(segment) in USER_DIRECTORY_NAMES
+            normalizeDirectoryName(segment) in APP_USER_DIRECTORY_NAMES
         }
     }
 
@@ -1048,7 +1073,19 @@ class FileOrganizerEngine(
             name.endsWith(".db") || name.endsWith(".sqlite") || name.endsWith(".sqlite3") ||
             name.endsWith("-wal") || name.endsWith("-shm") || name.endsWith(".journal") ||
             name.endsWith(".part") || name.endsWith(".partial") || name.endsWith(".crdownload") ||
-            name.endsWith(".download") || name.endsWith(".tmp") || name.endsWith(".temp")
+            name.endsWith(".download") || name.endsWith(".tmp") || name.endsWith(".temp") ||
+            name.endsWith(".bytes") || name.endsWith(".vfs") || name.endsWith(".blob") ||
+            name.endsWith(".bin") || name.endsWith(".dat") || name.endsWith(".pak") ||
+            name.endsWith(".obb") || name.endsWith(".bundle") || name.endsWith(".asset") ||
+            name.endsWith(".cache") || name.endsWith(".idx") || name.endsWith(".index") ||
+            name.endsWith(".dex") || name.endsWith(".odex") || name.endsWith(".vdex") ||
+            name.endsWith(".so") || opaqueResourceName(name)
+    }
+
+
+    private fun opaqueResourceName(name: String): Boolean {
+        val stem = name.substringBeforeLast('.', name)
+        return stem.length >= 24 && stem.all { it in '0'..'9' || it in 'a'..'f' }
     }
 
     private fun category(name: String): String {
@@ -1058,11 +1095,11 @@ class FileOrganizerEngine(
             "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "3gp", "ts" -> "视频"
             "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "wma", "amr" -> "音频"
             "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "md",
-            "odt", "ods", "odp", "log", "json", "xml", "yaml", "yml", "conf", "ini" -> "文档"
+            "odt", "ods", "odp" -> "文档"
             "apk", "apks", "xapk", "apkm", "aab" -> "安装包"
             "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "tgz", "tbz2" -> "压缩包"
             "epub", "mobi", "azw", "azw3", "fb2", "cbz", "cbr", "djvu" -> "电子书"
-            else -> "其他"
+            else -> ""
         }
     }
 
@@ -1167,13 +1204,15 @@ class FileOrganizerEngine(
             "export", "exports", "saved", "shared",
             "document", "documents", "transfer", "transfers", "offline"
         )
-        private val USER_DIRECTORY_NAMES = setOf(
+        private val APP_USER_DIRECTORY_NAMES = setOf(
             "download", "downloads", "downloaded", "下载",
-            "document", "documents", "file", "files",
-            "received", "receive", "recv", "export", "exports",
-            "attachment", "attachments", "transfer", "transfers", "offline",
-            "telegram", "telegram_documents", "telegram_files",
-            "nagram", "nagramx", "saved", "shared"
+            "document", "documents", "received", "receive", "recv", "file_recv",
+            "qqfile_recv", "qqmy_file_recv", "timfile_recv", "tim_file_recv",
+            "export", "exports", "attachment", "attachments",
+            "transfer", "transfers", "offline", "saved", "shared",
+            "telegram_documents", "telegram_images", "telegram_video", "telegram_audio", "telegram_files",
+            "nagram_documents", "nagram_images", "nagram_video", "nagram_audio", "nagram_files",
+            "nagramx_documents", "nagramx_images", "nagramx_video", "nagramx_audio", "nagramx_files"
         )
         private val DISCOVERY_PRUNE_NAMES = setOf(
             "cache", "code_cache", "databases", "shared_prefs", "lib", "oat", "no_backup",

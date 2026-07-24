@@ -98,6 +98,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -122,10 +123,9 @@ import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidNavItem
 import io.github.xgl34222220.baize.ui.miuix.MiuixLiquidPrimaryButton
 import io.github.xgl34222220.baize.ui.miuix.MiuixOverviewHero
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import org.json.JSONObject
 import kotlin.math.roundToInt
-
-private val SuccessGreen = Color(0xFF2DBE87)
 
 @Immutable
 data class ScanPerformanceUiState(
@@ -149,6 +149,13 @@ data class DashboardUiState(
     val running: Boolean = false,
     val serviceText: String = "正在等待 Root 服务…",
     val taskPhase: String = "等待下一次清理",
+    val taskOperation: String = "",
+    val taskProgressCurrent: Long = 0L,
+    val taskProgressTotal: Long = 0L,
+    val taskProgressPath: String = "",
+    val taskProgressBytes: Long = 0L,
+    val taskProgressFiles: Long = 0L,
+    val taskProgressElapsedMs: Long = 0L,
     val schedulerText: String = "等待调度器状态",
     val device: String = Build.MODEL,
     val android: String = "Android ${Build.VERSION.RELEASE}",
@@ -268,7 +275,7 @@ data class SchedulerUiState(
     val deepMinutes: Int = 10_080,
     val organizeEnabled: Boolean = false,
     val organizeMinutes: Int = 1_440,
-    val organizeScreenOffOnly: Boolean = true,
+    val organizeScreenOffOnly: Boolean = false,
     val organizeChargingOnly: Boolean = false,
     val organizeIdleOnly: Boolean = false,
     val organizeRunImmediately: Boolean = false,
@@ -278,7 +285,7 @@ data class SchedulerUiState(
     val dailyHour: Int = 3,
     val dailyMinute: Int = 30,
     val dailyGraceMinutes: Int = 240,
-    val screenOffOnly: Boolean = true,
+    val screenOffOnly: Boolean = false,
     val chargingOnly: Boolean = false,
     val idleOnly: Boolean = false,
     val minBattery: Int = 25,
@@ -366,7 +373,7 @@ data class SchedulerUiState(
                 deepMinutes = json.optInt("schedule_deep_minutes", json.optInt("schedule_deep_hours", 168) * 60).coerceIn(5, 43_200),
                 organizeEnabled = json.optInt("schedule_organize_enabled", 0) == 1,
                 organizeMinutes = json.optInt("schedule_organize_minutes", json.optInt("schedule_organize_hours", 24) * 60).coerceIn(15, 43_200),
-                organizeScreenOffOnly = json.optInt("organize_screen_off_only", 1) == 1,
+                organizeScreenOffOnly = json.optInt("organize_screen_off_only", 0) == 1,
                 organizeChargingOnly = json.optInt("organize_charging_only", 0) == 1,
                 organizeIdleOnly = json.optInt("organize_device_idle_only", 0) == 1,
                 organizeRunImmediately = json.optInt("organize_run_immediately", 0) == 1,
@@ -376,7 +383,7 @@ data class SchedulerUiState(
                 dailyHour = json.optInt("daily_schedule_hour", 3).coerceIn(0, 23),
                 dailyMinute = json.optInt("daily_schedule_minute", 30).coerceIn(0, 59),
                 dailyGraceMinutes = json.optInt("daily_grace_minutes", 240).coerceIn(15, 720),
-                screenOffOnly = json.optInt("screen_off_only", 1) == 1,
+                screenOffOnly = json.optInt("screen_off_only", 0) == 1,
                 chargingOnly = json.optInt("charging_only", 0) == 1,
                 idleOnly = json.optInt("device_idle_only", 0) == 1,
                 minBattery = json.optInt("min_battery", 25).coerceIn(0, 100),
@@ -413,6 +420,7 @@ private fun Boolean.flag() = if (this) 1 else 0
 data class DashboardActions(
     val refresh: () -> Unit,
     val clean: () -> Unit,
+    val organize: () -> Unit,
     val scan: () -> Unit,
     val apkScan: () -> Unit,
     val cleanScan: () -> Unit,
@@ -479,7 +487,7 @@ fun BaiZeMiuixApp(
                             .statusBarsPadding()
                     ) { targetPage ->
                         when (targetPage) {
-                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), actions) { page = BaiZePage.Clean }
+                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
                             BaiZePage.Clean -> CleanRoute(
                             style = UiStyle.MATERIAL,
                             dashboard = state.forCleanPage(),
@@ -515,7 +523,7 @@ fun BaiZeMiuixApp(
                                 .statusBarsPadding()
                         ) { targetPage ->
                             when (targetPage) {
-                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), actions) { page = BaiZePage.Clean }
+                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
                                 BaiZePage.Clean -> CleanRoute(
                                 style = UiStyle.MIUIX,
                                 dashboard = state.forCleanPage(),
@@ -579,36 +587,18 @@ private fun AnimatedPageHost(
 @Composable
 private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
     val scheme = MaterialTheme.colorScheme
-    val base = when {
-        amoled -> listOf(Color.Black, Color.Black, Color.Black)
-        dark -> listOf(Color(0xFF101117), Color(0xFF151827), Color(0xFF101117))
-        else -> listOf(Color(0xFFF8F7FF), Color(0xFFF0F5FF), Color(0xFFF8F8FC))
-    }
+    // 纯色中性底 + 一抹极淡单色氛围，不做蓝紫渐变与多层光斑。
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(base))
+            .background(BaiZeTokens.colors.surfaceBase)
             .drawBehind {
                 if (amoled) return@drawBehind
                 drawRect(
                     Brush.radialGradient(
-                        listOf(scheme.secondary.copy(alpha = if (dark) .15f else .24f), Color.Transparent),
-                        center = Offset(size.width * .9f, size.height * .06f),
-                        radius = size.width * .72f
-                    )
-                )
-                drawRect(
-                    Brush.radialGradient(
-                        listOf(scheme.primary.copy(alpha = if (dark) .12f else .18f), Color.Transparent),
-                        center = Offset(size.width * .02f, size.height * .54f),
-                        radius = size.width * .82f
-                    )
-                )
-                drawRect(
-                    Brush.radialGradient(
-                        listOf(scheme.tertiary.copy(alpha = if (dark) .06f else .12f), Color.Transparent),
-                        center = Offset(size.width, size.height),
-                        radius = size.width * .72f
+                        listOf(scheme.primary.copy(alpha = if (dark) .05f else .06f), Color.Transparent),
+                        center = Offset(size.width * .85f, 0f),
+                        radius = size.width * .9f
                     )
                 )
             }
@@ -618,7 +608,7 @@ private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
 @Composable
 private fun GlassSurface(
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(30.dp),
+    shape: Shape = RoundedCornerShape(28.dp),
     shadow: Int = 10,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit
@@ -628,10 +618,7 @@ private fun GlassSurface(
     val amoled = dark && settings.amoledBlack
     val glass = settings.glassEnabled
     val fill = when {
-        amoled -> Color(0xFF080808)
-        dark && glass -> Color(0xFF1B1D25)
-        dark -> MaterialTheme.colorScheme.surface
-        glass -> Color(0xFFF9F9FD)
+        amoled || glass -> BaiZeTokens.colors.surfaceRaised
         else -> MaterialTheme.colorScheme.surface
     }
     val border = if (dark) Color.White.copy(alpha = .08f) else MaterialTheme.colorScheme.primary.copy(alpha = .08f)
@@ -648,7 +635,7 @@ private fun GlassSurface(
 @Composable
 private fun ResultSurface(
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(26.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(28.dp),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable () -> Unit
 ) {
@@ -672,18 +659,18 @@ private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 22.dp, vertical = 14.dp),
+            .padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(eyebrow.uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Text(eyebrow.uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             Spacer(Modifier.height(5.dp))
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Black)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, style = BaiZeTokens.type.display)
             Spacer(Modifier.height(4.dp))
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
         if (refresh != null) {
-            GlassSurface(shape = RoundedCornerShape(18.dp), shadow = 6) {
+            GlassSurface(shape = BaiZeTokens.corners.medium, shadow = 6) {
                 IconButton(onClick = refresh, modifier = Modifier.size(58.dp)) {
                     Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(27.dp))
                 }
@@ -718,7 +705,7 @@ internal fun HomeScreenMiuix(
             PageHeader(
                 "SMART CLEAN",
                 "白泽",
-                "Miuix · ${io.github.xgl34222220.baize.performance.PerformanceRuntime.statusLine()} · v${BuildConfig.VERSION_NAME}",
+                "智能清理概览 · v${BuildConfig.VERSION_NAME}",
                 actions.refresh
             )
         }
@@ -730,15 +717,15 @@ internal fun HomeScreenMiuix(
                 taskPhase = state.taskPhase,
                 releasedText = Formatter.formatFileSize(context, state.lastReleased),
                 positive = positive,
-                modifier = Modifier.padding(horizontal = 18.dp)
+                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal)
             )
         }
         item {
             GlassSurface(
-                modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-                shape = RoundedCornerShape(30.dp),
+                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
                 shadow = 6,
-                contentPadding = PaddingValues(18.dp)
+                contentPadding = PaddingValues(BaiZeTokens.spacing.xl)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StorageRing(state.storagePercent)
@@ -752,9 +739,9 @@ internal fun HomeScreenMiuix(
                         )
                         Text(
                             Formatter.formatFileSize(context, state.storageFree),
-                            fontSize = 31.sp,
-                            lineHeight = 35.sp,
-                            fontWeight = FontWeight.Black
+                            fontSize = 28.sp,
+                            lineHeight = 34.sp,
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
                             "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}",
@@ -775,7 +762,7 @@ internal fun HomeScreenMiuix(
                     state.scanCompleted -> actions.cleanScan
                     else -> actions.clean
                 },
-                modifier = Modifier.padding(horizontal = 18.dp)
+                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal)
             )
         }
         item {
@@ -793,15 +780,15 @@ internal fun HomeScreenMiuix(
             item { ScanResultCard(state, actions) }
         }
         item {
-            Column(Modifier.padding(horizontal = 22.dp, vertical = 5.dp)) {
+            Column(Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 5.dp)) {
                 Text(
                     "QUICK ACTIONS",
                     color = MaterialTheme.colorScheme.primary,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp
                 )
-                Text("快捷操作", fontSize = 27.sp, fontWeight = FontWeight.Black)
+                Text("快捷操作", style = BaiZeTokens.type.headline)
                 Text(
                     "完整清理类别、开关与周期统一放在“清理”页",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -811,8 +798,8 @@ internal fun HomeScreenMiuix(
         }
         item {
             GlassSurface(
-                Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-                shape = RoundedCornerShape(30.dp),
+                Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
                 shadow = 6,
                 contentPadding = PaddingValues(10.dp)
             ) {
@@ -846,7 +833,7 @@ private fun MiuixHomeQuickAction(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(22.dp))
+            .clip(BaiZeTokens.corners.medium)
             .clickable(onClick = onClick)
             .padding(horizontal = 5.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -855,7 +842,7 @@ private fun MiuixHomeQuickAction(
         Box(
             Modifier
                 .size(46.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
             contentAlignment = Alignment.Center
         ) {
@@ -874,9 +861,10 @@ private fun MiuixHomeQuickAction(
 @Composable
 private fun StorageRing(progress: Float) {
     val primary = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
     Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
-            drawArc(Color(0xFFDDE4F1), -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(trackColor, -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
             drawArc(primary, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
         }
         Text("${(progress * 100).roundToInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -886,14 +874,14 @@ private fun StorageRing(progress: Float) {
 @Composable
 private fun StatusPill(ready: Boolean, text: String, scanReady: Boolean = false) {
     GlassSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
+        shape = RoundedCornerShape(percent = 50),
         shadow = 5,
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
+        contentPadding = PaddingValues(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val positive = ready || scanReady
-            Box(Modifier.size(10.dp).clip(CircleShape).background(if (positive) SuccessGreen else Color(0xFFF2A93B)))
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (positive) BaiZeTokens.colors.success else BaiZeTokens.colors.warning))
             Spacer(Modifier.width(10.dp))
             Text(text, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
@@ -913,7 +901,7 @@ private fun StatusPill(ready: Boolean, text: String, scanReady: Boolean = false)
 private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     GlassSurface(
-        Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         shadow = 8,
         contentPadding = PaddingValues(20.dp)
@@ -921,7 +909,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(.14f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -929,7 +917,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("清理准备完成", fontSize = 19.sp, fontWeight = FontWeight.Black)
+                    Text("清理准备完成", style = BaiZeTokens.type.title, fontWeight = FontWeight.Bold)
                     Text(
                         when {
                             state.scanFiles <= 0 -> "没有发现可安全清理的内容"
@@ -952,7 +940,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                 Button(
                     onClick = actions.dismissScan,
                     modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(19.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.onSurface.copy(.07f),
                         contentColor = MaterialTheme.colorScheme.onSurface
@@ -962,7 +950,7 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
                     onClick = actions.cleanScan,
                     enabled = state.scanFiles > 0 && !state.running,
                     modifier = Modifier.weight(1.45f).height(52.dp),
-                    shape = RoundedCornerShape(19.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
@@ -972,9 +960,9 @@ private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
             }
             Text(
                 "点击后直接消费本次快照，不会重新扫描；删除前只复核路径、白名单、挂载点和文件状态。快照 30 分钟后自动失效。",
-                modifier = Modifier.padding(top = 11.dp),
+                modifier = Modifier.padding(top = 12.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 11.sp
             )
         }
     }
@@ -989,14 +977,14 @@ private fun MaterialFloatingDock(
 ) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = if (floating) {
-        MaterialTheme.shapes.extraLarge
+        RoundedCornerShape(20.dp)
     } else {
-        RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
     }
     val outerModifier = if (floating) {
         modifier
             .padding(horizontal = 20.dp)
-            .padding(bottom = bottom + 12.dp)
+            .padding(bottom = bottom + 8.dp)
             .fillMaxWidth()
     } else {
         modifier.fillMaxWidth()
@@ -1005,77 +993,56 @@ private fun MaterialFloatingDock(
     Surface(
         modifier = outerModifier,
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = .96f),
-        tonalElevation = if (floating) 10.dp else 5.dp,
-        shadowElevation = if (floating) 18.dp else 8.dp
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
+        shadowElevation = if (floating) 3.dp else 0.dp
     ) {
-        BoxWithConstraints(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
-                    start = 7.dp,
-                    top = 7.dp,
-                    end = 7.dp,
-                    bottom = if (floating) 7.dp else bottom + 7.dp
+                    start = 8.dp,
+                    top = 4.dp,
+                    end = 8.dp,
+                    bottom = if (floating) 4.dp else bottom + 6.dp
                 )
         ) {
-            val itemWidth = maxWidth / BaiZePage.entries.size
-            val targetIndex = BaiZePage.entries.indexOf(selected).coerceAtLeast(0)
-            val indicatorX by animateDpAsState(
-                targetValue = itemWidth * targetIndex + (itemWidth - 48.dp) / 2,
-                animationSpec = spring(
-                    dampingRatio = .72f,
-                    stiffness = Spring.StiffnessMediumLow
-                ),
-                label = "baizeMaterialDockIndicator"
-            )
-            Box(
-                modifier = Modifier
-                    .offset(x = indicatorX, y = 7.dp)
-                    .size(width = 48.dp, height = 30.dp)
-                    .clip(MaterialTheme.shapes.extraLarge)
-                    .background(MaterialTheme.colorScheme.secondaryContainer)
-            )
-            Row(modifier = Modifier.fillMaxWidth()) {
-                BaiZePage.entries.forEach { item ->
-                    val active = item == selected
-                    val iconTint by animateColorAsState(
-                        targetValue = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        label = "baizeMaterialDockIconTint"
-                    )
-                    val textColor by animateColorAsState(
-                        targetValue = if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        label = "baizeMaterialDockTextColor"
-                    )
-                    Column(
+            BaiZePage.entries.forEach { item ->
+                val active = item == selected
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onSelected(item) }
+                        .padding(vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .clip(MaterialTheme.shapes.large)
-                            .clickable { onSelected(item) }
-                            .padding(vertical = 7.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                            .size(width = 38.dp, height = 24.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (active) MaterialTheme.colorScheme.secondaryContainer
+                                else Color.Transparent
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier.size(width = 48.dp, height = 30.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.title,
-                                modifier = Modifier.size(20.dp),
-                                tint = iconTint
-                            )
-                        }
-                        Text(
-                            text = item.title,
-                            color = textColor,
-                            fontSize = 10.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.title,
+                            modifier = Modifier.size(19.dp),
+                            tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Text(
+                        text = item.title,
+                        color = if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
+                    )
                 }
             }
         }
