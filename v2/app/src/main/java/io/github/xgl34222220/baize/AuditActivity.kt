@@ -141,7 +141,7 @@ class AuditActivity : ComponentActivity() {
                         onBack = ::finish,
                         onRefresh = ::loadTimeline,
                         onClear = ::clearTimeline,
-                        onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) }
+                        onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
                         onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) }
                     )
                 }
@@ -340,7 +340,7 @@ private fun AuditScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onClear: () -> Unit,
-    onOpenPolicy: () -> Unit
+    onOpenPolicy: () -> Unit,
     onOpenEffectiveness: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
