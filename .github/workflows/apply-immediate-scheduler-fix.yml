@@ -23,9 +23,30 @@ jobs:
           fetch-depth: 0
 
       - name: Apply scheduler and UI fix
-        run: python3 .github/scripts/apply-immediate-scheduler-fix.py
+        id: patch
+        shell: bash
+        run: |
+          set +e
+          python3 .github/scripts/apply-immediate-scheduler-fix.py >.scheduler-fix-output.txt 2>&1
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ]; then
+            cp .scheduler-fix-output.txt .scheduler-fix-error.txt
+          fi
+          exit 0
+
+      - name: Commit exact patch diagnostic
+        if: ${{ steps.patch.outputs.code != '0' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .scheduler-fix-error.txt
+          git commit -m 'ci: capture immediate scheduler patch error'
+          git push origin HEAD:agent/dual-theme-ui-redesign
+          exit 1
 
       - name: Verify scheduler contracts
+        if: ${{ steps.patch.outputs.code == '0' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -47,9 +68,11 @@ jobs:
           grep -q 'taskCountdownLabel(task, nowEpoch, scheduler)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
 
       - name: Commit product changes and remove temporary files
+        if: ${{ steps.patch.outputs.code == '0' }}
         run: |
           rm -f .github/scripts/apply-immediate-scheduler-fix.py
           rm -f .github/workflows/apply-immediate-scheduler-fix.yml
+          rm -f .scheduler-fix-output.txt .scheduler-fix-error.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
