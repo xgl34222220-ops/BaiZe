@@ -49,7 +49,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: concurrent-scheduler-diagnostics
-          path: /tmp/concurrent-scheduler.log
+          path: |
+            /tmp/concurrent-scheduler.log
+            /tmp/baize-v250-concurrent-scheduler-test
           if-no-files-found: warn
       - name: Incremental index regression
         run: bash v2/tests/test-incremental-index.sh
