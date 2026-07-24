@@ -34,11 +34,11 @@ jobs:
             sh -n "$script"
             busybox ash -n "$script"
           done
-      - name: Run scheduler regressions
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash v2/tests/test-scheduler-fairness.sh
-          bash v2/tests/test-concurrent-scheduler.sh
-          bash v2/tests/test-incremental-index.sh
-          bash v2/tests/test-organizer-transactions.sh
+      - name: Existing scheduler regression
+        run: bash v2/tests/test-scheduler-fairness.sh
+      - name: Concurrent scheduler regression
+        run: bash -x v2/tests/test-concurrent-scheduler.sh
+      - name: Incremental index regression
+        run: bash v2/tests/test-incremental-index.sh
+      - name: Organizer transaction regression
+        run: bash v2/tests/test-organizer-transactions.sh
