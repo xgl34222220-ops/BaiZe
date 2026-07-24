@@ -83,6 +83,7 @@ fun HomeScreenMiuix(
                 onOrganize = actions.organize
             )
         }
+        if (state.running) item { MiuixRunningTaskCard(state) }
         item { MiuixSectionTitle("任务计划", "所有任务按条件自动运行") }
         item { MiuixTaskGroup(tasks, nowEpoch, onOpenClean) }
         item { MiuixSectionTitle("最近状态", "最近一次自动任务的结果") }

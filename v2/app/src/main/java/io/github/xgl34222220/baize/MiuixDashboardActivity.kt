@@ -575,7 +575,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(
             running = true,
             scanCompleted = false,
-            taskPhase = "正在把文件归类交给独立 Root Worker…"
+            taskPhase = "正在把文件归类交给独立 Root Worker…",
+            taskOperation = "module-organize",
+            taskProgressCurrent = 0L,
+            taskProgressTotal = 0L,
+            taskProgressPath = "",
+            taskProgressBytes = 0L,
+            taskProgressFiles = 0L,
+            taskProgressElapsedMs = 0L
         )
         startNativePoll()
         lifecycleScope.launch {
@@ -738,7 +745,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         dashboardState.value = dashboardState.value.copy(
             running = true,
             scanCompleted = false,
-            taskPhase = "正在把清理任务交给独立 Root Worker…"
+            taskPhase = "正在把清理任务交给独立 Root Worker…",
+            taskOperation = "module-clean",
+            taskProgressCurrent = 0L,
+            taskProgressTotal = 0L,
+            taskProgressPath = "",
+            taskProgressBytes = 0L,
+            taskProgressFiles = 0L,
+            taskProgressElapsedMs = 0L
         )
         startNativePoll()
         lifecycleScope.launch {
@@ -1336,25 +1350,44 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun renderTaskState(json: JSONObject) {
         if (!json.optBoolean("running")) return
-        val current = json.optInt("progress_current", json.optInt("current", 0))
-        val total = json.optInt("progress_total", json.optInt("total", 0))
+        val current = json.optLong("progress_current", json.optLong("current", 0L)).coerceAtLeast(0L)
+        val total = json.optLong("progress_total", json.optLong("total", 0L)).coerceAtLeast(0L)
         val target = json.optString("current_path", json.optString("currentPath")).trim()
         val targetText = when {
             looksLikePackageName(target) -> "${appLabel(target)} · $target"
-            target.isNotBlank() -> target.takeLast(72)
+            target.isNotBlank() -> target.takeLast(96)
             else -> ""
         }
+        val phase = json.optString("phase", "任务执行中").ifBlank { "任务执行中" }
+        val operation = json.optString("operation", json.optString("mode")).ifBlank { "module-task" }
+        val deletedBytes = json.optLong(
+            "deleted_bytes",
+            json.optLong("deletedBytes", json.optLong("bytes", 0L))
+        ).coerceAtLeast(0L)
+        val deletedFiles = json.optLong(
+            "deleted_files",
+            json.optLong("deletedFiles", json.optLong("moved", json.optLong("files", 0L)))
+        ).coerceAtLeast(0L)
+        val elapsedMs = json.optLong(
+            "elapsed_ms",
+            json.optLong("elapsedMs", json.optLong("elapsed", 0L) * 1_000L)
+        ).coerceAtLeast(0L)
         val text = buildString {
-            append(json.optString("phase", "任务执行中"))
-            if (total > 0) append(" · $current/$total")
-            if (targetText.isNotBlank()) append("\n").append(targetText)
-            if (json.optBoolean("cancelRequested")) append("\n正在停止…")
-            append("\n可切到后台，Root 会继续执行")
+            append(phase)
+            if (total > 0L) append(" · ").append(current.coerceAtMost(total)).append('/').append(total)
+            if (json.optBoolean("cancelRequested")) append(" · 正在停止")
         }
         dashboardState.value = dashboardState.value.copy(
             running = true,
             scanCompleted = false,
-            taskPhase = text
+            taskPhase = text,
+            taskOperation = operation,
+            taskProgressCurrent = current,
+            taskProgressTotal = total,
+            taskProgressPath = targetText,
+            taskProgressBytes = deletedBytes,
+            taskProgressFiles = deletedFiles,
+            taskProgressElapsedMs = elapsedMs
         )
     }
 

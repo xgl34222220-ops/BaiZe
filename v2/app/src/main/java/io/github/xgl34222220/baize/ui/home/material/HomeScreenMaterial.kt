@@ -93,6 +93,7 @@ fun HomeScreenMaterial(
                 onOrganize = actions.organize
             )
         }
+        if (state.running) item { MaterialRunningTaskCard(state) }
         item { MaterialSectionHeader("任务计划", "每项任务独立显示下一次执行时间", onOpenClean) }
         item { MaterialTaskScheduleCard(tasks, nowEpoch, onOpenClean) }
         item { MaterialSectionHeader("最近状态", "只保留最有用的结果与存储信息") }
