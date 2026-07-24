@@ -12,6 +12,7 @@ OUTPUT="$OUT/BaiZe-v2.5.0-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
+bash "$ROOT/tests/test-concurrent-scheduler.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
@@ -24,20 +25,20 @@ cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
 cp -f "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
 cp -f "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-scanner.sh"
 cp -f "$STAGE/apk-snapshot-clean.sh" "$STAGE/apk-cleaner.sh"
-rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh"
+cp -f "$STAGE/scheduler-v2.5.sh" "$STAGE/scheduler.sh"
+rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
 
 cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
 cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
-cp -f "$REPO/service.sh" "$STAGE/scheduler.sh"
-sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/cleaner.sh.compat" "$STAGE/scheduler.sh"
+sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/cleaner.sh.compat"
 sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
 
 cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
-chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/organizer-worker.sh"
+chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
-chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh"
+chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
 chmod 0644 "$STAGE/app/baize.apk"
@@ -59,7 +60,11 @@ unzip -l "$OUTPUT" | grep -q 'cache-transaction.sh'
 unzip -l "$OUTPUT" | grep -q 'one-pass-scan.sh'
 unzip -l "$OUTPUT" | grep -q 'storage-index.sh'
 unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
+unzip -l "$OUTPUT" | grep -q 'cache-lane-worker.sh'
+unzip -p "$OUTPUT" cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
 unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
+unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
+unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
