@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -149,7 +149,14 @@ private fun SchedulerHealthDialog(
                 )
                 HealthLine("Root 引擎", if (state.ready) "组件完整" else state.serviceText)
                 HealthLine("Supervisor", supervisorSummary(scheduler))
-                HealthLine("等待队列", if (scheduler.queueCount > 0) "${scheduler.queueCount} 项 · ${groupLabel(scheduler.nextTask)} 优先" else "当前没有到期任务")
+                HealthLine(
+                    "等待队列",
+                    if (scheduler.queueCount > 0) {
+                        "${scheduler.queueCount} 项 · ${groupLabel(scheduler.nextTask)} 优先"
+                    } else {
+                        "当前没有到期任务"
+                    }
+                )
                 if (blocked.isNotBlank()) HealthLine("阻塞详情", blocked)
                 HealthLine("下次检查", nextCheckSummary(scheduler.nextCheckEpoch))
                 Text(
