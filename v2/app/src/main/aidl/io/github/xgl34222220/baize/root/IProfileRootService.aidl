@@ -23,6 +23,7 @@ interface IProfileRootService {
     String getTaskHistoryPage(int offset, int limit);
     String getAuditTimelinePage(int offset, int limit);
     String clearAuditTimeline();
+    String updateRuleQualityReview(String ruleKey, String action, String note);
     String getScanCoverage();
     String clearTaskHistory();
     String getRawLog(int maxChars);

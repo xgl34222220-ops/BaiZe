@@ -73,6 +73,8 @@ jobs:
         run: bash v2/tests/test-cleanup-effectiveness-contract.sh
       - name: Rule quality center contract
         run: bash v2/tests/test-rule-quality-contract.sh
+      - name: Rule review closed-loop contract
+        run: bash v2/tests/test-rule-review-closed-loop-contract.sh
       - name: Concurrent scheduler regression
         shell: bash
         run: |

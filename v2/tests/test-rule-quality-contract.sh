@@ -13,7 +13,7 @@ for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST" "$WORK
   test -f "$file" || { echo "missing rule quality contract file: $file" >&2; exit 1; }
 done
 
-# Analysis is review-only and cannot mutate rules, policy, tasks, files or scheduler cadence.
+# Analysis remains read-only: review metadata is separate and cannot mutate rules, policy, tasks, files or cadence.
 grep -Fq '.put("readOnly", true)' "$ANALYZER"
 grep -Fq '.put("reviewOnly", true)' "$ANALYZER"
 grep -Fq '.put("automaticActions", false)' "$ANALYZER"
@@ -48,8 +48,8 @@ for recommendation in consider_disable narrow_scope observe keep; do
   grep -Fq "\"$recommendation\"" "$ANALYZER"
 done
 
-# Root exposes the report and UI provides a dedicated, non-actionable review screen.
-grep -Fq 'ruleQualityAnalyzer.analyze(combined)' "$AUDIT_REPO"
+# Root exposes the report, merges Root-owned review metadata and keeps a dedicated UI.
+grep -Fq 'ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())' "$AUDIT_REPO"
 grep -Fq '.put("ruleQuality", ruleQuality)' "$AUDIT_REPO"
 grep -Fq 'class RuleQualityActivity' "$ACTIVITY"
 for label in '规则质量中心' '高失败' '频繁保护' '零命中' '低收益' '只读人工审核'; do
