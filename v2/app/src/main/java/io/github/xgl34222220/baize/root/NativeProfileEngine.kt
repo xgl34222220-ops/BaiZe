@@ -24,7 +24,8 @@ import kotlin.math.min
  */
 internal class NativeProfileEngine(
     private val context: Context,
-    private val cancelled: AtomicBoolean
+    private val cancelled: AtomicBoolean,
+    private val quarantineRepository: QuarantineRepository = QuarantineRepository()
 ) {
     data class Progress(
         val phase: String,
@@ -183,7 +184,7 @@ internal class NativeProfileEngine(
             if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.first))
             for (target in expand(rule.first)) {
                 if (target.exists() && !isSymlink(target)) {
-                    add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options)
+                    add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options, true)
                 }
             }
         }
@@ -203,12 +204,12 @@ internal class NativeProfileEngine(
                 }
                 if (post) {
                     if (file != root && isEmptyDirectory(file) && !protectedDirectoryName(file.name)) {
-                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, deleteRoot = true), options)
+                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, deleteRoot = true), options, true)
                     }
                     return@walk
                 }
                 if (file.isDirectory && file != root && hidden.contains(file.name.lowercase())) {
-                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, deleteRoot = false), options)
+                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, deleteRoot = false), options, true)
                 } else if (file.isFile) {
                     if (file.length() == 0L && !placeholder(file.name)) {
                         val item = candidate("empty", "empty_file", "空文件", "low", file, deleteRoot = true)
@@ -217,7 +218,7 @@ internal class NativeProfileEngine(
                         item.directories = 0L
                         item.measured = true
                         item.complete = true
-                        add(out, item, options)
+                        add(out, item, options, true)
                     } else if (file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
                         val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
                         item.bytes = file.length()
@@ -225,7 +226,7 @@ internal class NativeProfileEngine(
                         item.directories = 0L
                         item.measured = true
                         item.complete = true
-                        add(out, item, options)
+                        add(out, item, options, true)
                     }
                 }
             }
@@ -249,7 +250,7 @@ internal class NativeProfileEngine(
                     item.directories = 0L
                     item.measured = true
                     item.complete = true
-                    add(out, item, options)
+                    add(out, item, options, true)
                 }
             }
         }
@@ -377,6 +378,93 @@ internal class NativeProfileEngine(
             .put("details", details)
             .toString()
     }
+
+    fun quarantine(
+    snapshotId: String,
+    selectionJson: String,
+    optionsJson: String,
+    progress: (Progress) -> Unit
+): String {
+    val snapshot = validSnapshot(snapshotId)
+        ?: return JSONObject().put("error", "snapshot_expired").put("message", "扫描快照不存在或已过期").toString()
+    if (snapshot.profile == "deep") {
+        val current = sha256(deepRules())
+        if (snapshot.ruleSha.isBlank() || current != snapshot.ruleSha) {
+            snapshots.remove(snapshotId)
+            return JSONObject().put("error", "rules_changed").put("message", "深度规则已变化，请重新扫描").toString()
+        }
+    }
+    val selection = parseSelection(selectionJson)
+    val selected = snapshot.candidates.filter { candidate ->
+        candidate.risk == "high" && (selection[candidate.id] == true || selection[candidate.path] == true)
+    }
+    if (selected.isEmpty()) {
+        return JSONObject().put("error", "empty_selection").put("message", "没有明确选择高风险隔离项目").toString()
+    }
+
+    val options = parseOptions(optionsJson).copy(allowHighRisk = true)
+    val mounts = mountPoints()
+    val details = JSONArray()
+    var quarantined = 0
+    var quarantinedBytes = 0L
+    var quarantinedFiles = 0L
+    var quarantinedDirectories = 0L
+    var failures = 0
+    val started = SystemClock.elapsedRealtime()
+    val deadline = started + CLEAN_TOTAL_MS
+    for ((index, candidate) in selected.withIndex()) {
+        if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
+        progress(Progress("正在隔离${candidate.label}", index, selected.size, candidate.path, quarantinedBytes, quarantinedFiles, failures))
+        val reason = validate(candidate, options, mounts)
+        if (reason != null) {
+            failures += 1
+            details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
+            continue
+        }
+        val result = quarantineRepository.quarantine(
+            snapshotId = snapshotId,
+            candidateId = candidate.id,
+            originalPath = candidate.path,
+            profile = candidate.profile,
+            category = candidate.category,
+            label = candidate.label,
+            risk = candidate.risk
+        )
+        if (result.success) {
+            quarantined += 1
+            quarantinedBytes += result.bytes
+            quarantinedFiles += result.files
+            quarantinedDirectories += result.directories
+        } else {
+            failures += 1
+        }
+        details.put(
+            result.json()
+                .put("candidateId", candidate.id)
+                .put("path", candidate.path)
+                .put("action", if (result.success) "quarantined" else "failed")
+        )
+    }
+    snapshots.remove(snapshotId)
+    val wasCancelled = cancelled.get()
+    val timedOut = SystemClock.elapsedRealtime() >= deadline
+    progress(Progress(if (wasCancelled) "隔离已停止" else "隔离完成", selected.size, selected.size, bytes = quarantinedBytes, files = quarantinedFiles, failures = failures))
+    return JSONObject()
+        .put("success", true)
+        .put("profile", snapshot.profile)
+        .put("selected", selected.size)
+        .put("quarantinedCandidates", quarantined)
+        .put("quarantinedBytes", quarantinedBytes)
+        .put("quarantinedFiles", quarantinedFiles)
+        .put("quarantinedDirectories", quarantinedDirectories)
+        .put("failures", failures)
+        .put("cancelled", wasCancelled)
+        .put("timedOut", timedOut)
+        .put("elapsedMs", SystemClock.elapsedRealtime() - started)
+        .put("message", "已隔离 $quarantined 个高风险项目，可在隔离区恢复")
+        .put("details", details)
+        .toString()
+}
 
     private fun scanEmpty(
         options: Options,
@@ -1030,7 +1118,7 @@ internal class NativeProfileEngine(
             "audiobooks", "podcasts", "ringtones", "notifications", "alarms"
         )
         private val HIDDEN_PROTECTED = setOf(
-            ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg"
+            ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine"
         )
         private val CRITICAL = setOf(
             "/download", "/documents", "/dcim", "/pictures", "/movies", "/music", "/android/obb",

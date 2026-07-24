@@ -8,7 +8,13 @@ interface IProfileRootService {
     String scanProfile(String profile, String optionsJson);
     String getProfilePage(String snapshotId, int offset, int limit);
     String cleanProfileSelected(String snapshotId, String selectionJson, String optionsJson);
+    String quarantineProfileSelected(String snapshotId, String selectionJson, String optionsJson);
     String prepareCacheSelection(String snapshotId, String selectionJson);
+
+    String getQuarantinePage(int offset, int limit);
+    String restoreQuarantineItem(String id);
+    String purgeQuarantineItem(String id);
+    String purgeExpiredQuarantine();
 
     String runModuleTask(String mode);
     String runMaintenanceTool(String tool, String optionsJson);

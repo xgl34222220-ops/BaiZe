@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Deselect
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.SelectAll
@@ -193,7 +194,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
                             onToggleGroup = ::toggleGroup,
                             onSelectAll = ::selectAllSafe,
                             onClear = ::clearSelection,
-                            onProtect = ::protectItem
+                            onProtect = ::protectItem,
+                            onQuarantine = ::quarantineItem
                         )
                     )
                 }
@@ -545,6 +547,55 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
+    private fun quarantineItem(item: WorkbenchItem) {
+    if (screenState.running || item.source != "profile" || item.risk != "high") return
+    if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
+        screenState = screenState.copy(scanReady = false, phase = "扫描快照已过期，请重新扫描")
+        return
+    }
+    val service = profileService ?: return
+    screenState = screenState.copy(
+        running = true,
+        phase = "正在把 ${item.title} 移入隔离区…",
+        currentPath = item.path
+    )
+    startPolling()
+    lifecycleScope.launch {
+        val result = runCatching {
+            withContext(Dispatchers.IO) {
+                val selection = JSONObject().put(item.id.removePrefix("profile:"), true)
+                JSONObject(service.quarantineProfileSelected(profileSnapshotId, selection.toString(), optionsJson(service)))
+            }
+        }
+        pollJob?.cancel()
+        result.onSuccess { json ->
+            if (json.optBoolean("success") && json.optInt("quarantinedCandidates") > 0) {
+                cacheSnapshotId = ""
+                profileSnapshotId = ""
+                snapshotExpiresAtRealtime = 0L
+                screenState = screenState.copy(
+                    running = false,
+                    scanReady = false,
+                    items = emptyList(),
+                    selectedIds = emptySet(),
+                    phase = json.optString("message", "高风险项目已移入隔离区"),
+                    resultText = "已隔离 ${json.optInt("quarantinedCandidates")} 项 · ${formatBytes(json.optLong("quarantinedBytes"))}"
+                )
+                Toast.makeText(this@ScanWorkbenchActivity, "已移入隔离区，可随时恢复", Toast.LENGTH_SHORT).show()
+                delay(180L)
+                runScan()
+            } else {
+                screenState = screenState.copy(
+                    running = false,
+                    phase = json.optString("message", json.optString("error", "隔离失败"))
+                )
+            }
+        }.onFailure {
+            screenState = screenState.copy(running = false, phase = "隔离失败：${it.message ?: it.javaClass.simpleName}")
+        }
+    }
+}
+
     private fun protectItem(item: WorkbenchItem) {
         if (screenState.running) return
         val service = profileService ?: return
@@ -739,7 +790,8 @@ private data class WorkbenchActions(
     val onToggleGroup: (String) -> Unit,
     val onSelectAll: () -> Unit,
     val onClear: () -> Unit,
-    val onProtect: (WorkbenchItem) -> Unit
+    val onProtect: (WorkbenchItem) -> Unit,
+    val onQuarantine: (WorkbenchItem) -> Unit
 )
 
 private data class WorkbenchGroup(
@@ -912,7 +964,8 @@ private fun ScanWorkbenchScreen(
                             selected = row.item.id in state.selectedIds,
                             horizontal = horizontal,
                             onToggle = { actions.onToggleItem(row.item.id) },
-                            onProtect = { actions.onProtect(row.item) }
+                            onProtect = { actions.onProtect(row.item) },
+                            onQuarantine = { actions.onQuarantine(row.item) }
                         )
                     }
                 }
@@ -1166,7 +1219,8 @@ private fun WorkbenchCandidateRow(
     selected: Boolean,
     horizontal: androidx.compose.ui.unit.Dp,
     onToggle: () -> Unit,
-    onProtect: () -> Unit
+    onProtect: () -> Unit,
+    onQuarantine: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -1205,8 +1259,14 @@ private fun WorkbenchCandidateRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        IconButton(onClick = onProtect, modifier = Modifier.size(38.dp)) {
-            Icon(Icons.Rounded.Shield, contentDescription = "加入白名单", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
+        if (item.risk == "high") {
+            IconButton(onClick = onQuarantine, modifier = Modifier.size(38.dp)) {
+                Icon(Icons.Rounded.Inventory2, contentDescription = "移入隔离区", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.error)
+            }
+        } else {
+            IconButton(onClick = onProtect, modifier = Modifier.size(38.dp)) {
+                Icon(Icons.Rounded.Shield, contentDescription = "加入白名单", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
@@ -1243,6 +1303,6 @@ private fun categoryLabel(category: String): String = when (category) {
 private fun riskReason(risk: String, label: String): String = when (risk) {
     "low" -> "$label · 可安全自动处理"
     "medium" -> "$label · 清理前再次校验白名单与大小限制"
-    "high" -> "$label · 默认只审计，不自动勾选"
+    "high" -> "$label · 不会直接删除，可单独移入隔离区"
     else -> "$label · 关键风险项目，只展示不自动清理"
 }

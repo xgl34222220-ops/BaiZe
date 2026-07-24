@@ -23,13 +23,14 @@ grep -q 'path == root || path.startsWith("$root/")' "$SELECTION"
 grep -q 'prepareCacheSelection(cacheSnapshotId' "$WORKBENCH"
 grep -q 'cache.cleanSelected' "$WORKBENCH"
 grep -q 'profile.cleanProfileSelected' "$WORKBENCH"
-CLEAN_SECTION=$(sed -n '/private fun cleanSelection()/,/private fun protectItem/p' "$WORKBENCH")
+CLEAN_SECTION=$(sed -n '/private fun cleanSelection()/,/private fun quarantineItem/p' "$WORKBENCH")
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanCandidates'
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanProfile'
 
 grep -q 'ScanWorkbenchActivity::class.java' "$HOME"
 grep -q 'android:name=".ScanWorkbenchActivity"' "$MANIFEST"
-grep -q '默认只审计，不自动勾选' "$WORKBENCH"
+grep -q '不会直接删除，可单独移入隔离区' "$WORKBENCH"
+grep -q '关键风险项目，只展示不自动清理' "$WORKBENCH"
 grep -q '加入白名单' "$WORKBENCH"
 
 echo "scan workbench contract regression passed"
