@@ -230,7 +230,6 @@ internal class AuditRepository(
         stateDir.mkdirs()
         val lines = runCatching { if (auditFile.isFile) auditFile.readLines() else emptyList() }
             .getOrDefault(emptyList())
-            .asSequence()
             .filter { it.isNotBlank() }
             .takeLast(MAX_EVENTS - 1)
             .toMutableList()
@@ -240,11 +239,10 @@ internal class AuditRepository(
 
     private fun readAuditEvents(clearEpoch: Long): List<JSONObject> = runCatching {
         if (!auditFile.isFile) return@runCatching emptyList()
-        auditFile.readLines().asSequence()
+        auditFile.readLines()
             .mapNotNull { line -> runCatching { JSONObject(line) }.getOrNull() }
             .filter { it.optLong("timeEpoch") > clearEpoch }
             .takeLast(MAX_EVENTS)
-            .toList()
     }.getOrDefault(emptyList())
 
     private fun readLegacyEvents(clearEpoch: Long): List<JSONObject> = runCatching {
@@ -323,7 +321,7 @@ internal class AuditRepository(
         val normalized = path.trim().replace('\\', '/')
         if (normalized.isBlank()) return ""
         val segments = normalized.split('/').filter { it.isNotBlank() }
-        return if (segments.size <= 4) normalized else "…/" + segments.takeLast(4).joinToString("/")
+        return if (segments.isEmpty()) "" else "…/" + segments.takeLast(4).joinToString("/")
     }
 
     private fun sanitize(value: String, limit: Int): String = value
