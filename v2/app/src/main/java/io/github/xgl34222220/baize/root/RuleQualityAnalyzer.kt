@@ -7,16 +7,21 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * Read-only rule quality review queue built from bounded, already-redacted audit summaries.
+ * Read-only rule quality analysis built from bounded, already-redacted audit summaries.
  *
- * The analyzer never edits rule files, never changes policy or scheduler configuration, never starts
- * a task and never receives full filesystem paths. Its recommendations require explicit human review.
+ * Manual review metadata may be merged into the response, but the analyzer never edits rule files,
+ * changes policy or scheduler configuration, starts a task, or receives full filesystem paths.
  */
 internal class RuleQualityAnalyzer {
-    fun analyze(events: List<JSONObject>, nowEpoch: Long = System.currentTimeMillis()): JSONObject {
+    fun analyze(
+        events: List<JSONObject>,
+        reviews: Map<String, RuleQualityReview> = emptyMap(),
+        nowEpoch: Long = System.currentTimeMillis()
+    ): JSONObject {
         val cutoff = nowEpoch - LOOKBACK_DAYS * DAY_MS
         val recent = events.asSequence()
             .filter { it.optLong("timeEpoch", nowEpoch) >= cutoff }
+            .filter { it.optString("kind") in TASK_KINDS }
             .take(MAX_INPUT_EVENTS)
             .toList()
         val stats = linkedMapOf<String, RuleStat>()
@@ -49,23 +54,38 @@ internal class RuleQualityAnalyzer {
             }
         }
 
-        val classified = stats.values.map(::classify)
-        val reviewQueue = classified.filter { it.type != "healthy" && it.type != "insufficient" }
+        val classified = stats.values.map(::classify).map { assessment ->
+            val review = reviews[assessment.key]
+            assessment.copy(
+                reviewState = review?.state ?: "pending",
+                reviewNote = review?.note.orEmpty(),
+                reviewedAt = review?.reviewedAt ?: 0L
+            )
+        }
+        val reviewQueue = classified
+            .filter { it.type != "healthy" && it.type != "insufficient" }
             .sortedWith(
-                compareByDescending<RuleAssessment> { severityRank(it.severity) }
+                compareBy<RuleAssessment> { reviewStateRank(it.reviewState) }
+                    .thenByDescending { severityRank(it.severity) }
                     .thenByDescending { it.failureRate }
                     .thenByDescending { it.protectionRate }
                     .thenByDescending { it.events }
             )
             .take(MAX_REVIEW_ITEMS)
+        val pendingCount = reviewQueue.count { it.reviewState == "pending" }
+        val observingCount = reviewQueue.count { it.reviewState == "observing" }
+        val keptCount = reviewQueue.count { it.reviewState == "kept" }
+        val ignoredCount = reviewQueue.count { it.reviewState == "ignored" }
+        val reviewedCount = observingCount + keptCount + ignoredCount
         val healthyCount = classified.count { it.type == "healthy" }
         val insufficientCount = classified.count { it.type == "insufficient" }
-        val highPriorityCount = reviewQueue.count { it.severity == "high" }
+        val highPriorityCount = reviewQueue.count { it.reviewState == "pending" && it.severity == "high" }
 
         return JSONObject()
             .put("available", classified.isNotEmpty())
             .put("readOnly", true)
             .put("reviewOnly", true)
+            .put("reviewStateWritable", true)
             .put("automaticActions", false)
             .put("rulesChanged", false)
             .put("policyUntouched", true)
@@ -74,11 +94,16 @@ internal class RuleQualityAnalyzer {
             .put("lookbackDays", LOOKBACK_DAYS)
             .put("eventSampleCount", recent.size)
             .put("ruleCount", classified.size)
-            .put("needsReview", reviewQueue.size)
+            .put("needsReview", pendingCount)
+            .put("pendingCount", pendingCount)
+            .put("observingCount", observingCount)
+            .put("keptCount", keptCount)
+            .put("ignoredCount", ignoredCount)
+            .put("reviewedCount", reviewedCount)
             .put("highPriorityCount", highPriorityCount)
             .put("healthyCount", healthyCount)
             .put("insufficientCount", insufficientCount)
-            .put("summary", summary(classified.size, reviewQueue.size, highPriorityCount))
+            .put("summary", summary(classified.size, pendingCount, highPriorityCount, observingCount, reviewedCount))
             .put("reviewQueue", JSONArray(reviewQueue.map(RuleAssessment::toJson)))
     }
 
@@ -154,10 +179,12 @@ internal class RuleQualityAnalyzer {
         )
     }
 
-    private fun summary(ruleCount: Int, needsReview: Int, highPriority: Int): String = when {
+    private fun summary(ruleCount: Int, pending: Int, highPriority: Int, observing: Int, reviewed: Int): String = when {
         ruleCount == 0 -> "暂无足够的规则审计数据"
         highPriority > 0 -> "发现 $highPriority 项高优先级规则需要人工审核"
-        needsReview > 0 -> "发现 $needsReview 项规则值得继续观察"
+        pending > 0 -> "还有 $pending 项规则等待人工审核"
+        observing > 0 -> "$observing 项规则正在持续观察"
+        reviewed > 0 -> "当前审核队列已处理完成"
         else -> "当前规则质量表现正常"
     }
 
@@ -175,6 +202,14 @@ internal class RuleQualityAnalyzer {
         "high" -> 3
         "medium" -> 2
         else -> 1
+    }
+
+    private fun reviewStateRank(value: String): Int = when (value) {
+        "pending" -> 0
+        "observing" -> 1
+        "kept" -> 2
+        "ignored" -> 3
+        else -> 4
     }
 
     private data class RuleStat(
@@ -208,7 +243,10 @@ internal class RuleQualityAnalyzer {
         val failureRate: Int,
         val bytes: Long,
         val files: Long,
-        val averageBytes: Long
+        val averageBytes: Long,
+        val reviewState: String = "pending",
+        val reviewNote: String = "",
+        val reviewedAt: Long = 0L
     ) {
         fun toJson(): JSONObject = JSONObject()
             .put("key", key)
@@ -228,6 +266,9 @@ internal class RuleQualityAnalyzer {
             .put("bytes", bytes)
             .put("files", files)
             .put("averageBytes", averageBytes)
+            .put("reviewState", reviewState)
+            .put("reviewNote", reviewNote)
+            .put("reviewedAt", reviewedAt)
     }
 
     companion object {
@@ -245,6 +286,7 @@ internal class RuleQualityAnalyzer {
         private const val HIGH_FAILURE_RATE = 40
         private const val FREQUENT_PROTECTION_RATE = 50
         private const val LOW_VALUE_AVERAGE_BYTES = 1024L * 1024L
+        private val TASK_KINDS = setOf("scan", "clean", "organize")
         private val PROCESSED_ACTIONS = setOf("deleted", "cleaned", "quarantined", "restored", "purged", "processed")
         private val PROTECTED_ACTIONS = setOf("protected", "skipped", "partial")
         private val FAILED_ACTIONS = setOf("failed", "error")
