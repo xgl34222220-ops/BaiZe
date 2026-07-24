@@ -25,6 +25,7 @@ internal class AuditRepository(
     private val effectivenessAnalyzer = CleanupEffectivenessAnalyzer()
     private val ruleQualityAnalyzer = RuleQualityAnalyzer()
     private val ruleQualityReviewRepository = RuleQualityReviewRepository(stateDir)
+    private val ruleReviewTrendAnalyzer = RuleReviewTrendAnalyzer()
 
     @Synchronized
     fun recordResult(
@@ -99,6 +100,15 @@ internal class AuditRepository(
         } else {
             preliminaryRuleQuality
         }
+        val trendEvents = if (reconciliation.reopened.isNotEmpty()) {
+            (readAuditEvents(clearEpoch) + readLegacyEvents(clearEpoch))
+                .distinctBy { it.optString("id") }
+                .sortedByDescending { it.optLong("timeEpoch") }
+                .take(MAX_EVENTS)
+        } else {
+            combined
+        }
+        val ruleReviewTrends = ruleReviewTrendAnalyzer.analyze(trendEvents, ruleQuality)
 
         return JSONObject()
             .put("success", true)
@@ -116,6 +126,7 @@ internal class AuditRepository(
             .put("advisor", advisor)
             .put("effectiveness", effectiveness)
             .put("ruleQuality", ruleQuality)
+            .put("ruleReviewTrends", ruleReviewTrends)
             .put("events", page)
             .toString()
     }
