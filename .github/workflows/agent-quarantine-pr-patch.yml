@@ -32,6 +32,15 @@ jobs:
           [ "$code" -eq 0 ] || exit "$code"
           git diff --check
           git diff --stat
+      - name: Upload patch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarantine-patch-diagnostics
+          path: |
+            /tmp/quarantine-patch.log
+            /tmp/quarantine-patch.py
+          if-no-files-found: warn
       - name: Commit quarantine integration
         shell: bash
         run: |
