@@ -30,27 +30,32 @@ fun CleanRoute(
         serviceText = dashboard.serviceText
     )
 
+    fun applyAndSave(next: SchedulerUiState) {
+        dashboardActions.updateScheduler(next)
+        dashboardActions.saveScheduler(next)
+    }
+
     val actions = CleanUiActions(
         onAutomaticCleaningChanged = { enabled ->
-            dashboardActions.updateScheduler(scheduler.withAutomaticCleaning(enabled))
+            applyAndSave(scheduler.withAutomaticCleaning(enabled))
         },
         onCategoryEnabledChanged = { id, enabled ->
-            dashboardActions.updateScheduler(scheduler.withCategoryEnabled(id, enabled))
+            applyAndSave(scheduler.withCategoryEnabled(id, enabled))
         },
         onCategoryIntervalChanged = { id, minutes ->
-            dashboardActions.updateScheduler(scheduler.withCategoryInterval(id, minutes))
+            applyAndSave(scheduler.withCategoryInterval(id, minutes))
         },
         onDailyScheduleChanged = { enabled ->
-            dashboardActions.updateScheduler(scheduler.withDailySchedule(enabled))
+            applyAndSave(scheduler.withDailySchedule(enabled))
         },
         onDailyTimeChanged = { hour, minute ->
-            dashboardActions.updateScheduler(scheduler.withDailyTime(hour, minute))
+            applyAndSave(scheduler.withDailyTime(hour, minute))
         },
         onDailyGraceChanged = { minutes ->
-            dashboardActions.updateScheduler(scheduler.withDailyGrace(minutes))
+            applyAndSave(scheduler.withDailyGrace(minutes))
         },
         onApkPackagesChanged = { enabled ->
-            dashboardActions.updateScheduler(scheduler.copy(apkPackagesEnabled = enabled))
+            applyAndSave(scheduler.copy(apkPackagesEnabled = enabled))
         },
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = {},
