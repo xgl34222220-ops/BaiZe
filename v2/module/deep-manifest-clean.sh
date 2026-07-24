@@ -24,7 +24,7 @@ mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$WHITELIST" ] || : >"$WHITELIST"
 
 state_value() { sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | tail -n 1; }
-summary_value() { sed -n "s/^$1=//p" "$1" 2>/dev/null | tail -n 1; }
+summary_value() { summary_file=$1; summary_key=$2; sed -n "s/^$summary_key=//p" "$summary_file" 2>/dev/null | tail -n 1; }
 uint_value() { value=$1; fallback=${2:-0}; case "$value" in ''|*[!0-9]*) value=$fallback ;; esac; echo "$value"; }
 file_sha() { [ -f "$1" ] && sha256sum "$1" 2>/dev/null | awk 'NR==1{print $1}' || echo missing; }
 human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
