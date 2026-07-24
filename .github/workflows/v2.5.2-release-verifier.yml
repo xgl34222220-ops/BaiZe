@@ -1,0 +1,123 @@
+name: BaiZe v2.5.2 Release Verifier
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-v2.5.2.verify'
+      - '.github/workflows/v2.5.2-release-verifier.yml'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: baize-v2.5.2-release-verifier
+  cancel-in-progress: false
+
+jobs:
+  verify-published-release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v2.5.2
+      RELEASE_TARGET_SHA: bfd437727d476d3f4a386cf0cea62402abe027ce
+      VERIFY_PR: '132'
+      CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for immutable Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1800))
+          until gh release view "$RELEASE_TAG" --json tagName,name,isDraft,isPrerelease,url,assets > /tmp/release.json 2>/tmp/release.err; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              cat /tmp/release.err >&2 || true
+              echo "等待 ${RELEASE_TAG} Release 超时" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Download and verify every formal asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$RELEASE_TARGET_SHA"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          release = json.loads(Path('/tmp/release.json').read_text())
+          expected = {
+              'BaiZe-v2.5.2-Module.zip',
+              'BaiZe-v2.5.2-Module.zip.sha256',
+              'BaiZe-v2.5.2.apk',
+              'BaiZe-v2.5.2.apk.sha256',
+              'BaiZe-v2.5.2-signing-certificate.txt',
+          }
+          assets = {item['name']: item for item in release['assets']}
+          assert set(assets) == expected, (set(assets), expected)
+          assert all(int(item.get('size', 0)) > 0 for item in assets.values())
+          assert release['tagName'] == 'v2.5.2'
+          assert release['isDraft'] is False
+          assert release['isPrerelease'] is False
+          PY
+          rm -rf /tmp/baize-v2.5.2-release
+          mkdir -p /tmp/baize-v2.5.2-release
+          gh release download "$RELEASE_TAG" --dir /tmp/baize-v2.5.2-release
+          cd /tmp/baize-v2.5.2-release
+          module_expected=$(awk 'NR==1{print $1}' BaiZe-v2.5.2-Module.zip.sha256)
+          module_actual=$(sha256sum BaiZe-v2.5.2-Module.zip | awk '{print $1}')
+          apk_expected=$(awk 'NR==1{print $1}' BaiZe-v2.5.2.apk.sha256)
+          apk_actual=$(sha256sum BaiZe-v2.5.2.apk | awk '{print $1}')
+          test "$module_actual" = "$module_expected"
+          test "$apk_actual" = "$apk_expected"
+          unzip -tq BaiZe-v2.5.2-Module.zip
+          unzip -p BaiZe-v2.5.2-Module.zip module.prop | grep -qx 'version=v2.5.2'
+          unzip -p BaiZe-v2.5.2-Module.zip module.prop | grep -qx 'versionCode=25002'
+          unzip -p BaiZe-v2.5.2-Module.zip service.sh | grep -q 'RUNTIME_SCHEMA=deep-manifest-v1'
+          unzip -p BaiZe-v2.5.2-Module.zip deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
+          unzip -p BaiZe-v2.5.2-Module.zip deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
+          unzip -l BaiZe-v2.5.2-Module.zip | grep -q 'bin/arm64-v8a/baize_engine'
+          unzip -l BaiZe-v2.5.2-Module.zip | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
+          packaged_apk_sha=$(unzip -p BaiZe-v2.5.2-Module.zip app/baize.apk | sha256sum | awk '{print $1}')
+          test "$packaged_apk_sha" = "$apk_actual"
+          cert_normalized=$(tr -d ':[:space:]' < BaiZe-v2.5.2-signing-certificate.txt | tr '[:upper:]' '[:lower:]')
+          printf '%s' "$cert_normalized" | grep -q "$CERT_SHA256"
+          printf '%s\n' "$module_actual" > /tmp/module.sha256
+          printf '%s\n' "$apk_actual" > /tmp/apk.sha256
+
+      - name: Record verified publication on release PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/release-verification.md
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          release = json.loads(Path('/tmp/release.json').read_text())
+          assets = sorted(release['assets'], key=lambda item: item['name'])
+          module_sha = Path('/tmp/module.sha256').read_text().strip()
+          apk_sha = Path('/tmp/apk.sha256').read_text().strip()
+          print('<!-- baize-v2.5.2-release-verified -->')
+          print('## v2.5.2 正式发布验证通过')
+          print()
+          print(f"- Release：{release['url']}")
+          print('- 标签目标：`bfd437727d476d3f4a386cf0cea62402abe027ce`')
+          print(f"- 模块 SHA-256：`{module_sha}`")
+          print(f"- APK SHA-256：`{apk_sha}`")
+          print('- APK 固定证书 SHA-256：`9E:FA:84:80:01:CC:DC:16:8E:A9:67:53:D3:32:B1:71:3E:26:68:BA:6A:2F:A2:2D:5B:FD:98:DE:65:DB:1F:0F`')
+          print(f"- 验证时间：{datetime.now(timezone.utc).isoformat()}")
+          print()
+          print('已下载并验证全部正式资产：')
+          for item in assets:
+              print(f"- `{item['name']}` — {item['size']} bytes")
+          print()
+          print('验证包括：Release 非草稿/非预发行、资产集合完整、SHA-256 匹配、模块 ZIP 可解压、模块与 App 版本一致、内嵌 APK 与独立 APK 相同、两个 ARM64 原生引擎与深度 manifest 组件齐全。')
+          PY
+          gh pr comment "$VERIFY_PR" --body-file /tmp/release-verification.md
