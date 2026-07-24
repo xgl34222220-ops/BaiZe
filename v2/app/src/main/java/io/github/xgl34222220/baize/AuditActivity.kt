@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -138,7 +139,8 @@ class AuditActivity : ComponentActivity() {
                         style = appearance.uiStyle,
                         onBack = ::finish,
                         onRefresh = ::loadTimeline,
-                        onClear = ::clearTimeline
+                        onClear = ::clearTimeline,
+                        onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) }
                     )
                 }
             }
@@ -195,6 +197,7 @@ class AuditActivity : ComponentActivity() {
                     releasedBytes = json.optLong("releasedBytes").coerceAtLeast(0L),
                     quarantinedBytes = json.optLong("quarantinedBytes").coerceAtLeast(0L),
                     protectedCount = json.optLong("protectedCount").coerceAtLeast(0L),
+                    advice = parseAdvice(json.optJSONObject("advisor")),
                     message = if (events.isEmpty()) "暂无审计事件" else "已载入 ${events.size} / ${json.optInt("total", events.size)} 条事件"
                 )
             }.onFailure {
@@ -244,6 +247,26 @@ class AuditActivity : ComponentActivity() {
         details = json.optJSONArray("details").toDetailList(),
         legacy = json.optBoolean("legacy")
     )
+
+    private fun parseAdvice(raw: JSONObject?): AuditPolicyAdvice? {
+        if (raw == null || !raw.optBoolean("available", false)) return null
+        val reasonsJson = raw.optJSONArray("reasons")
+        val reasons = buildList {
+            if (reasonsJson != null) for (index in 0 until reasonsJson.length()) {
+                reasonsJson.optString(index).trim().takeIf { it.isNotBlank() }?.let(::add)
+            }
+        }
+        return AuditPolicyAdvice(
+            recommendedPolicy = CleanupPolicy.fromId(raw.optInt("recommendedPolicyId", CleanupPolicy.BALANCED.id)),
+            summary = raw.optString("summary", "暂时没有策略建议"),
+            confidence = raw.optString("confidence", "low"),
+            storageFreePercent = raw.optInt("storageFreePercent", -1),
+            failureRate = raw.optInt("failureRate").coerceIn(0, 100),
+            restoreRate = raw.optInt("restoreRate").coerceIn(0, 100),
+            sampleCount = raw.optInt("sampleCount").coerceAtLeast(0),
+            reasons = reasons
+        )
+    }
 }
 
 private data class AuditUiState(
@@ -257,7 +280,19 @@ private data class AuditUiState(
     val releasedBytes: Long = 0L,
     val quarantinedBytes: Long = 0L,
     val protectedCount: Long = 0L,
+    val advice: AuditPolicyAdvice? = null,
     val message: String = "等待连接 Root 审计服务"
+)
+
+private data class AuditPolicyAdvice(
+    val recommendedPolicy: CleanupPolicy,
+    val summary: String,
+    val confidence: String,
+    val storageFreePercent: Int,
+    val failureRate: Int,
+    val restoreRate: Int,
+    val sampleCount: Int,
+    val reasons: List<String>
 )
 
 private data class AuditEvent(
@@ -302,7 +337,8 @@ private fun AuditScreen(
     style: UiStyle,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    onOpenPolicy: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
@@ -337,6 +373,9 @@ private fun AuditScreen(
                 )
             }
             item { AuditSummary(state, horizontal, cardShape) }
+            state.advice?.let { advice ->
+                item { AuditPolicyAdviceCard(advice, horizontal, cardShape, onOpenPolicy) }
+            }
             item {
                 Row(
                     modifier = Modifier
@@ -468,6 +507,61 @@ private fun AuditMetric(label: String, value: String, modifier: Modifier = Modif
         Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
             Text(value, fontWeight = FontWeight.Black, fontSize = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun AuditPolicyAdviceCard(
+    advice: AuditPolicyAdvice,
+    horizontal: androidx.compose.ui.unit.Dp,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpenPolicy: () -> Unit
+) {
+    Card(
+        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(43.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = .12f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("设备建议：${advice.recommendedPolicy.title}档", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "可用空间 ${if (advice.storageFreePercent < 0) "未知" else "${advice.storageFreePercent}%"} · 异常率 ${advice.failureRate}% · 恢复率 ${advice.restoreRate}% · 样本 ${advice.sampleCount}",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
+            )
+            advice.reasons.firstOrNull()?.let { reason ->
+                Spacer(Modifier.height(7.dp))
+                Text(reason, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(11.dp))
+            OutlinedButton(onClick = onOpenPolicy, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Rounded.Tune, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("查看并手动采用建议")
+            }
+            Text(
+                "建议不会自动生效，也不会修改定时任务周期。",
+                modifier = Modifier.padding(top = 7.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 9.sp
+            )
         }
     }
 }

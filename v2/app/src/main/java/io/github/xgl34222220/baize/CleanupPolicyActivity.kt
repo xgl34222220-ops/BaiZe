@@ -152,12 +152,16 @@ class CleanupPolicyActivity : ComponentActivity() {
     private fun loadPolicy() {
         val root = service ?: return
         if (state.loading) return
-        state = state.copy(loading = true, message = "正在读取当前清理策略…")
+        state = state.copy(loading = true, message = "正在分析当前策略与设备状态…")
         lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { JSONObject(root.getSchedulerConfig()) }
+                withContext(Dispatchers.IO) {
+                    val config = JSONObject(root.getSchedulerConfig())
+                    val audit = runCatching { JSONObject(root.getAuditTimelinePage(0, 100)) }.getOrDefault(JSONObject())
+                    config to audit.optJSONObject("advisor")
+                }
             }
-            result.onSuccess { json ->
+            result.onSuccess { (json, advisorJson) ->
                 val policy = CleanupPolicy.fromId(json.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
                 state = state.copy(
                     connected = true,
@@ -167,6 +171,7 @@ class CleanupPolicyActivity : ComponentActivity() {
                     maxFileMb = json.optInt("max_file_mb", policy.values.getValue("max_file_mb")),
                     fragmentDays = json.optInt("fragment_days", policy.values.getValue("fragment_days")),
                     quarantineDays = json.optInt("quarantine_retention_days", policy.values.getValue("quarantine_retention_days")),
+                    advice = parseAdvice(advisorJson),
                     message = if (json.optBoolean("cleanup_policy_customized", false)) {
                         "当前基于${policy.title}档，并包含手动调整"
                     } else {
@@ -177,6 +182,30 @@ class CleanupPolicyActivity : ComponentActivity() {
                 state = state.copy(loading = false, message = "读取策略失败：${it.message ?: it.javaClass.simpleName}")
             }
         }
+    }
+
+    private fun parseAdvice(raw: JSONObject?): PolicyAdvice? {
+        if (raw == null || !raw.optBoolean("available", false)) return null
+        val reasonsJson = raw.optJSONArray("reasons")
+        val reasons = buildList {
+            if (reasonsJson != null) for (index in 0 until reasonsJson.length()) {
+                reasonsJson.optString(index).trim().takeIf { it.isNotBlank() }?.let(::add)
+            }
+        }
+        return PolicyAdvice(
+            recommendedPolicy = CleanupPolicy.fromId(raw.optInt("recommendedPolicyId", CleanupPolicy.BALANCED.id)),
+            summary = raw.optString("summary", "暂时没有策略建议"),
+            confidence = raw.optString("confidence", "low"),
+            storageFreePercent = raw.optInt("storageFreePercent", -1),
+            failureRate = raw.optInt("failureRate").coerceIn(0, 100),
+            restoreRate = raw.optInt("restoreRate").coerceIn(0, 100),
+            protectionRate = raw.optInt("protectionRate").coerceIn(0, 100),
+            averageScanMs = raw.optLong("averageScanMs").coerceAtLeast(0L),
+            sampleCount = raw.optInt("sampleCount").coerceAtLeast(0),
+            reasons = reasons,
+            automatic = raw.optBoolean("automatic", false),
+            scheduleUntouched = raw.optBoolean("scheduleUntouched", true)
+        )
     }
 
     private fun applyPolicy(policy: CleanupPolicy) {
@@ -216,7 +245,23 @@ private data class CleanupPolicyUiState(
     val maxFileMb: Int = 256,
     val fragmentDays: Int = 7,
     val quarantineDays: Int = 7,
+    val advice: PolicyAdvice? = null,
     val message: String = "等待连接 Root 策略服务"
+)
+
+private data class PolicyAdvice(
+    val recommendedPolicy: CleanupPolicy,
+    val summary: String,
+    val confidence: String,
+    val storageFreePercent: Int,
+    val failureRate: Int,
+    val restoreRate: Int,
+    val protectionRate: Int,
+    val averageScanMs: Long,
+    val sampleCount: Int,
+    val reasons: List<String>,
+    val automatic: Boolean,
+    val scheduleUntouched: Boolean
 )
 
 @Composable
@@ -295,6 +340,19 @@ private fun CleanupPolicyScreen(
                 }
             }
         }
+        state.advice?.let { advice ->
+            item {
+                PolicyAdviceCard(
+                    advice = advice,
+                    activePolicy = state.activePolicy,
+                    customized = state.customized,
+                    enabled = state.connected && !state.loading,
+                    shape = cardShape,
+                    horizontal = horizontal,
+                    onApply = { onSelect(advice.recommendedPolicy) }
+                )
+            }
+        }
         item {
             Column(Modifier.padding(horizontal = horizontal, vertical = 2.dp)) {
                 Text("选择档位", style = MaterialTheme.typography.titleLarge)
@@ -332,6 +390,82 @@ private fun CleanupPolicyScreen(
                         fontSize = 12.sp,
                         lineHeight = 18.sp
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PolicyAdviceCard(
+    advice: PolicyAdvice,
+    activePolicy: CleanupPolicy,
+    customized: Boolean,
+    enabled: Boolean,
+    shape: androidx.compose.ui.graphics.Shape,
+    horizontal: androidx.compose.ui.unit.Dp,
+    onApply: () -> Unit
+) {
+    val matches = advice.recommendedPolicy == activePolicy && !customized
+    val confidence = when (advice.confidence) {
+        "high" -> "高可信"
+        "medium" -> "中等可信"
+        else -> "数据较少"
+    }
+    Card(
+        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(
+            containerColor = if (matches) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Column(Modifier.padding(19.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(46.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = .13f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("设备建议：${advice.recommendedPolicy.title}档", fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                }
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
+                    Text(confidence, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(13.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PolicyMetric("可用空间", if (advice.storageFreePercent < 0) "未知" else "${advice.storageFreePercent}%", Modifier.weight(1f))
+                PolicyMetric("任务异常", "${advice.failureRate}%", Modifier.weight(1f))
+                PolicyMetric("隔离恢复", "${advice.restoreRate}%", Modifier.weight(1f))
+            }
+            if (advice.reasons.isNotEmpty()) {
+                Spacer(Modifier.height(11.dp))
+                advice.reasons.take(4).forEach { reason ->
+                    Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
+                        Box(Modifier.padding(top = 6.dp).size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                        Spacer(Modifier.width(8.dp))
+                        Text(reason, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "基于最近 30 天 ${advice.sampleCount} 条有效记录。仅建议，不会自动切换；定时任务周期保持不变。",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp,
+                lineHeight = 15.sp
+            )
+            if (!matches) {
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = onApply, enabled = enabled, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(16.dp)) {
+                    Text("采用建议的${advice.recommendedPolicy.title}档", fontWeight = FontWeight.Bold)
                 }
             }
         }
