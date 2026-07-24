@@ -20,7 +20,7 @@ grep -Fq 'MAX_RECORDS = 200' "$REVIEW_REPO"
 grep -Fq 'MAX_NOTE_LENGTH = 200' "$REVIEW_REPO"
 grep -Fq 'Regex("^[0-9a-f]{16}$")' "$REVIEW_REPO"
 grep -Fq 'setOf("keep", "observe", "ignore", "reset")' "$REVIEW_REPO"
-grep -Fq 'ruleKey !in validKeys' "$REVIEW_REPO"
+grep -Fq 'val currentEvidence = evidence[ruleKey]' "$REVIEW_REPO"
 grep -Fq 'RootFileStore.writeAtomic(reviewFile' "$REVIEW_REPO"
 
 # Review writes cannot mutate real cleaner rules, files, policies, tasks or scheduling.
@@ -47,7 +47,7 @@ grep -Fq 'TASK_KINDS' "$ANALYZER"
 grep -Fq 'String updateRuleQualityReview(String ruleKey, String action, String note);' "$AIDL"
 grep -Fq 'override fun updateRuleQualityReview' "$SERVICE"
 grep -Fq 'updateRuleQualityReviewJson' "$AUDIT_REPO"
-grep -Fq 'validKeys' "$AUDIT_REPO"
+grep -Fq 'ruleQualityReviewRepository.update(ruleKey, action, note, report)' "$AUDIT_REPO"
 grep -Fq 'rule-review-' "$AUDIT_REPO"
 grep -Fq 'operation.contains("rule-review") -> "review"' "$AUDIT_REPO"
 
@@ -57,7 +57,8 @@ for label in '待审核' '观察中' '已保留' '已忽略' '保留规则' '继
 done
 grep -Fq 'updateRuleQualityReview(item.key, action, note)' "$ACTIVITY"
 grep -Fq '仅保存审核状态和备注' "$ACTIVITY"
-grep -Fq '不会自动停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
+grep -Fq '只自动重新打开审核状态' "$ACTIVITY"
+grep -Fq '不会停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
 
 # Permanent Root regression executes this contract.
 grep -Fq 'test-rule-review-closed-loop-contract.sh' "$WORKFLOW"
