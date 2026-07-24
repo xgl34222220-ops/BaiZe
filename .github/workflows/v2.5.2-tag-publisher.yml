@@ -34,7 +34,7 @@ jobs:
           git show "$TARGET_SHA:module.prop" | grep -qx 'version=v2.5.2'
           git show "$TARGET_SHA:module.prop" | grep -qx 'versionCode=25002'
           git show "$TARGET_SHA:v2/app/build.gradle.kts" | grep -q 'versionName = "2.5.2"'
-          git show "$TARGET_SHA:.github/workflows/v2.5.2-release.yml" | grep -q "- 'v2.5.2'"
+          git show "$TARGET_SHA:.github/workflows/v2.5.2-release.yml" | grep -q -- "- 'v2.5.2'"
 
       - name: Reject existing tag or release
         shell: bash
