@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'service.sh'
+      - 'config/**'
       - 'v2/module/**'
       - 'v2/scripts/**'
       - 'v2/tests/**'
@@ -44,14 +45,24 @@ jobs:
           code=$?
           tail -n 80 /tmp/concurrent-scheduler.log
           exit "$code"
-      - name: Upload concurrent scheduler diagnostics
+      - name: Deep clean continuous batch regression
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-deep-clean-budget.sh > /tmp/deep-clean-stream.log 2>&1
+          code=$?
+          tail -n 120 /tmp/deep-clean-stream.log
+          exit "$code"
+      - name: Upload Root diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: concurrent-scheduler-diagnostics
+          name: root-regression-diagnostics
           path: |
             /tmp/concurrent-scheduler.log
+            /tmp/deep-clean-stream.log
             /tmp/baize-v250-concurrent-scheduler-test
+            /tmp/baize-deep-clean-stream-test
           if-no-files-found: warn
       - name: Incremental index regression
         run: bash v2/tests/test-incremental-index.sh
