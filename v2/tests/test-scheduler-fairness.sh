@@ -5,7 +5,8 @@ set -euo pipefail
 if [ -f .github/scripts/apply-queue-dispatch-insets-fix.py ]; then
   LOG=$(mktemp)
   set +e
-  {
+  (
+    set -e
     python3 .github/scripts/apply-queue-dispatch-insets-fix.py
     git diff --check
     sh -n service.sh
@@ -14,8 +15,8 @@ if [ -f .github/scripts/apply-queue-dispatch-insets-fix.py ]; then
     busybox ash -n v2/module/supervisor.sh
     sh -n v2/module/task-worker.sh
     busybox ash -n v2/module/task-worker.sh
-    BAIZE_QUEUE_DISPATCH_PATCH_APPLIED=1 bash "$0"
-  } >"$LOG" 2>&1
+    timeout 70 env BAIZE_QUEUE_DISPATCH_PATCH_APPLIED=1 bash "$0"
+  ) >"$LOG" 2>&1
   CODE=$?
   set -e
   if [ "$CODE" -ne 0 ]; then
