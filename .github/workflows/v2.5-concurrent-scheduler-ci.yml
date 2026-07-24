@@ -65,6 +65,8 @@ jobs:
         run: bash v2/tests/test-quarantine-contract.sh
       - name: Cleaning audit center contract
         run: bash v2/tests/test-audit-center-contract.sh
+      - name: Cleanup policy safety contract
+        run: bash v2/tests/test-cleanup-policy-contract.sh
       - name: Concurrent scheduler regression
         shell: bash
         run: |
