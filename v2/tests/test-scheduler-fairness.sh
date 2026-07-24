@@ -16,7 +16,7 @@ screen_off_only=0
 charging_only=0
 device_idle_only=0
 min_battery=0
-max_battery_temp=60
+max_battery_temp=0
 daily_schedule_enabled=0
 schedule_cache_enabled=1
 schedule_cache_minutes=30
@@ -80,7 +80,7 @@ rm -f "$T/state/last_cache_run.epoch"
 sed -i 's/^schedule_empty_enabled=.*/schedule_empty_enabled=0/; s/^schedule_organize_enabled=.*/schedule_organize_enabled=0/' "$T/state/config.conf"
 run_once
 grep -q '^state=waiting$' "$T/state/scheduler.env"
-grep -q '^reason=待执行$' "$T/state/scheduler.env"
+grep -q '^reason=等待自动重试$' "$T/state/scheduler.env"
 test -s "$T/state/scheduler-retry-cache.until"
 ! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
 echo 'scheduler fairness: ok'
