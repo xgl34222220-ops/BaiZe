@@ -16,7 +16,18 @@ HISTORY_FILE="$STATE_DIR/history.tsv"
 mkdir -p "$RESULT_DIR" "$STATE_DIR/logs"
 started=$(date +%s)
 code=127
-if [ "$MODE" = organize ]; then
+if [ "$MODE" = deep-auto ]; then
+  if [ -x "$CLEANER" ]; then
+    "$CLEANER" deep-scan "$TRIGGER" >>"$LOG_FILE" 2>&1
+    code=$?
+    if [ "$code" -eq 0 ]; then
+      "$CLEANER" deep-clean "$TRIGGER" >>"$LOG_FILE" 2>&1
+      code=$?
+    fi
+  else
+    echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
+  fi
+elif [ "$MODE" = organize ]; then
   if [ -x "$ORGANIZER" ]; then
     "$ORGANIZER" "$MODE" "$TRIGGER" "$TASK_ID" >>"$LOG_FILE" 2>&1
     code=$?

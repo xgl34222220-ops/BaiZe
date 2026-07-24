@@ -212,11 +212,11 @@ category_for() {
     jpg|jpeg|png|gif|webp|bmp|heic|heif|avif|dng|raw) echo 图片 ;;
     mp4|mkv|mov|avi|webm|flv|wmv|m4v|3gp|ts) echo 视频 ;;
     mp3|flac|wav|m4a|aac|ogg|opus|ape|wma|amr) echo 音频 ;;
-    pdf|doc|docx|xls|xlsx|ppt|pptx|txt|rtf|csv|md|odt|ods|odp|log|json|xml|yaml|yml|conf|ini) echo 文档 ;;
+    pdf|doc|docx|xls|xlsx|ppt|pptx|txt|rtf|csv|md|odt|ods|odp) echo 文档 ;;
     apk|apks|xapk|apkm|aab) echo 安装包 ;;
     zip|rar|7z|tar|gz|bz2|xz|zst|tgz|tbz2) echo 压缩包 ;;
     epub|mobi|azw|azw3|fb2|cbz|cbr|djvu) echo 电子书 ;;
-    *) echo 其他 ;;
+    *) echo "" ;;
   esac
 }
 
@@ -284,7 +284,10 @@ allowed_app_source() {
 
 is_public_user_path() {
   case "$1" in
-    Download/*|Downloads/*|Documents/*|DCIM/*|Pictures/*|Movies/*|Music/*|Podcasts/*|Audiobooks/*|Recordings/*|Bluetooth/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*|Telegram/*|Nagram/*|NagramX/*) return 0 ;;
+    Download/*|Downloads/*|Documents/*|Bluetooth/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
+    Telegram/Telegram\ Documents/*|Telegram/Telegram\ Images/*|Telegram/Telegram\ Video/*|Telegram/Telegram\ Audio/*|Telegram/Telegram\ Files/*) return 0 ;;
+    Nagram/Nagram\ Documents/*|Nagram/Nagram\ Images/*|Nagram/Nagram\ Video/*|Nagram/Nagram\ Audio/*) return 0 ;;
+    NagramX/NagramX\ Documents/*|NagramX/NagramX\ Images/*|NagramX/NagramX\ Video/*|NagramX/NagramX\ Audio/*) return 0 ;;
   esac
   return 1
 }
@@ -327,6 +330,12 @@ skip_file() {
   case "$name" in
     .nomedia|.*) return 0 ;;
     *.lock|*.lck|*.db|*.sqlite|*.sqlite3|*-wal|*-shm|*.journal|*.part|*.partial|*.crdownload|*.download|*.tmp|*.temp) return 0 ;;
+    *.bytes|*.vfs|*.blob|*.bin|*.dat|*.pak|*.obb|*.bundle|*.asset|*.cache|*.idx|*.index|*.dex|*.odex|*.vdex|*.so) return 0 ;;
+  esac
+  stem=${name%.*}
+  case "$stem" in
+    *[!0-9a-f]*) ;;
+    *) [ "${#stem}" -ge 24 ] && return 0 ;;
   esac
   return 1
 }
@@ -404,6 +413,7 @@ while IFS= read -r -d '' FILE_PATH; do
   [ ! -L "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   skip_file "$FILE_PATH" && { SKIPPED=$((SKIPPED + 1)); continue; }
   CATEGORY=$(category_for "$FILE_PATH")
+  [ -n "$CATEGORY" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   allowed_source "$FILE_PATH" "$CATEGORY" || continue
   REQUESTED=$((REQUESTED + 1))
   write_running "正在归类 $CATEGORY" "$CURRENT" "$TOTAL" "$FILE_PATH"
