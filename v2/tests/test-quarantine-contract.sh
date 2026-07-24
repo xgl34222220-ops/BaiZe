@@ -30,23 +30,34 @@ grep -Fq 'val reason = validate(candidate, options, mounts)' "$ENGINE"
 grep -Fq 'if (candidate.risk == "critical") return "关键风险只允许审计"' "$ENGINE"
 grep -Fq 'private val quarantineRepository: QuarantineRepository' "$ENGINE"
 
-# Transactional move: source is renamed before metadata publish, and metadata failure attempts rollback.
+# A recovery record must be durable before the same-filesystem atomic move begins.
 grep -Fq 'source.renameTo(destination)' "$REPO"
 grep -Fq 'writeEntry(entry)' "$REPO"
-grep -Fq 'destination.renameTo(source)' "$REPO"
-grep -Fq '原文件未删除' "$REPO"
+grep -Fq '隔离记录写入失败，原文件未移动' "$REPO"
+grep -Fq '隔离移动状态异常，已保留恢复记录' "$REPO"
+python3 - "$REPO" <<'PY'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+write = text.index('writeEntry(entry)')
+move = text.index('source.renameTo(destination)')
+if write >= move:
+    raise SystemExit('quarantine metadata must be written before moving the source')
+PY
 
 # Restore must never overwrite an existing original path and must use a marked conflict copy.
 grep -Fq '.baize-restored-' "$REPO"
 grep -Fq 'if (!original.exists())' "$REPO"
 grep -Fq 'if (destination.exists()) return errorJson("restore_conflict"' "$REPO"
+grep -Fq 'if (!safeOriginalPath(destinationPath)) return errorJson("unsafe_restore"' "$REPO"
 
-# Controlled namespaces, retention and scan exclusion are mandatory.
+# Controlled namespaces, retention, expiration behavior and scan exclusion are mandatory.
 grep -Fq 'private const val RETENTION_DAYS = 7' "$REPO"
 grep -Fq '.baize-quarantine' "$REPO"
 grep -Fq '".baize-quarantine"' "$ENGINE"
 grep -Fq 'safeOriginalPath' "$REPO"
 grep -Fq 'isStoredPayload' "$REPO"
+grep -Fq 'if (!isStoredPayload(entry, payload)) continue' "$REPO"
 
 # Service, UI entry and manifest registration stay connected.
 grep -Fq 'override fun quarantineProfileSelected' "$SERVICE"
