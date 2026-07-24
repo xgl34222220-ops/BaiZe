@@ -25,7 +25,7 @@ lock_owner_alive() {
   case "$old_ticks" in ''|*[!0-9]*) old_ticks=0 ;; esac
   [ "$old_ticks" -eq 0 ] || [ "$current_ticks" = "$old_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$old_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*baize_engine*) return 0 ;; esac
+  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 worker_marker_id() { sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1; }
@@ -65,7 +65,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.5.1"
+  echo "worker=detached-root-worker-v2.5.2"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then

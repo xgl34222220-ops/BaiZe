@@ -1,0 +1,233 @@
+name: BaiZe v2.5.2 Immutable Release
+
+on:
+  push:
+    tags:
+      - 'v2.5.2'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v252-immutable-release
+  cancel-in-progress: false
+
+env:
+  BAIZE_VERSION: v2.5.2
+  BAIZE_VERSION_NAME: 2.5.2
+  BAIZE_VERSION_CODE: '25002'
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+
+jobs:
+  verify-build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout immutable tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag and v2.5.2 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/tags/v2.5.2'
+          test "$(git rev-list -n 1 v2.5.2)" = "$GITHUB_SHA"
+          git diff --check
+          cmp module.prop v2/module/module.prop
+          grep -q 'versionName = "2.5.2"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 25002' v2/app/build.gradle.kts
+          grep -qx 'version=v2.5.2' module.prop
+          grep -qx 'versionCode=25002' module.prop
+          grep -q 'BaiZe-v2.5.2-Module.zip' v2/scripts/package-module.sh
+          grep -q 'detached-root-worker-v2.5.2' v2/module/task-worker.sh
+          grep -Fqx 'ui_print "- 正在安装白泽 v2.5.2"' v2/module/customize.sh
+          grep -q 'BaiZe v2.5.1 Historical Release Guard' .github/workflows/v2.5.1-release.yml
+          test -s RELEASE_NOTES_v2.5.2.md
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('update.json').read_text()) == {
+              'version': 'v2.5.2',
+              'versionCode': 25002,
+              'zipUrl': 'https://github.com/xgl34222220-ops/BaiZe/releases/download/v2.5.2/BaiZe-v2.5.2-Module.zip',
+              'changelog': 'https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.5.2.md',
+          }
+          PY
+
+      - name: Reject an existing v2.5.2 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view v2.5.2 >/dev/null 2>&1; then
+            echo 'v2.5.2 Release already exists; immutable assets must never be overwritten.' >&2
+            exit 1
+          fi
+
+      - name: Install compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+
+      - name: Verify Root scripts, native sources and regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh service.sh cleaner.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_deep_snapshot.c -o /tmp/baize_deep_snapshot
+          bash v2/tests/test-scheduler-fairness.sh
+          bash v2/tests/test-scheduler-daily-fields.sh
+          bash v2/tests/test-concurrent-scheduler.sh
+          bash v2/tests/test-deep-clean-budget.sh
+          bash v2/tests/test-deep-manifest.sh
+          bash v2/tests/test-incremental-index.sh
+          bash v2/tests/test-organizer-transactions.sh
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Prepare formal signing certificate
+        shell: bash
+        env:
+          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          normalize_secret() {
+            secret_name=$1
+            raw_value=$2
+            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+            case "$value" in
+              \"*\") value=${value#\"}; value=${value%\"} ;;
+              \'*\') value=${value#\'}; value=${value%\'} ;;
+            esac
+            printf '%s' "$value"
+          }
+          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+          test -n "$KEYSTORE_BASE64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/baize-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          ACTUAL_CERT=$(keytool -exportcert -keystore "$KEYSTORE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" -rfc | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test "$ACTUAL_CERT" = "$BAIZE_CERT_SHA256"
+          {
+            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+            echo "BAIZE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BAIZE_KEY_ALIAS=$KEY_ALIAS"
+            echo "BAIZE_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build ARM64 native engines
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed Android Release
+        working-directory: v2
+        shell: bash
+        run: gradle --no-daemon :app:assembleRelease :app:lintRelease :macrobenchmark:assemble
+
+      - name: Package v2.5.2 module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify immutable formal artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='v2/dist/BaiZe-v2.5.2-Module.zip'
+          APK='v2/app/build/outputs/apk/release/app-release.apk'
+          RELEASE_APK='v2/dist/BaiZe-v2.5.2.apk'
+          CERT='v2/dist/BaiZe-v2.5.2-signing-certificate.txt'
+          test -s "$ZIP"
+          test -s "$APK"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop | grep -qx 'version=v2.5.2'
+          unzip -p "$ZIP" module.prop | grep -qx 'versionCode=25002'
+          unzip -p "$ZIP" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.5.2"'
+          unzip -p "$ZIP" task-worker.sh | grep -q 'detached-root-worker-v2.5.2'
+          unzip -p "$ZIP" service.sh | grep -q 'RUNTIME_SCHEMA=deep-manifest-v1'
+          unzip -p "$ZIP" deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
+          unzip -p "$ZIP" deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
+          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_engine'
+          unzip -l "$ZIP" | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
+          PACKAGED_APK_SHA=$(unzip -p "$ZIP" app/baize.apk | sha256sum | awk '{print $1}')
+          BUILT_APK_SHA=$(sha256sum "$APK" | awk '{print $1}')
+          test "$PACKAGED_APK_SHA" = "$BUILT_APK_SHA"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs "$APK" > "$CERT"
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT" | tr -d ':[:space:]')
+          test "$APK_CERT" = "$BAIZE_CERT_SHA256"
+          cp "$APK" "$RELEASE_APK"
+          sha256sum "$ZIP" > "$ZIP.sha256"
+          sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
+
+      - name: Upload verified artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.5.2-Verified-Release
+          if-no-files-found: error
+          path: |
+            v2/dist/BaiZe-v2.5.2-Module.zip
+            v2/dist/BaiZe-v2.5.2-Module.zip.sha256
+            v2/dist/BaiZe-v2.5.2.apk
+            v2/dist/BaiZe-v2.5.2.apk.sha256
+            v2/dist/BaiZe-v2.5.2-signing-certificate.txt
+
+      - name: Publish immutable BaiZe v2.5.2 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create v2.5.2 \
+            v2/dist/BaiZe-v2.5.2-Module.zip \
+            v2/dist/BaiZe-v2.5.2-Module.zip.sha256 \
+            v2/dist/BaiZe-v2.5.2.apk \
+            v2/dist/BaiZe-v2.5.2.apk.sha256 \
+            v2/dist/BaiZe-v2.5.2-signing-certificate.txt \
+            --verify-tag \
+            --title '白泽 v2.5.2' \
+            --notes-file RELEASE_NOTES_v2.5.2.md \
+            --latest
+
+      - name: Upload release diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.5.2-Release-Diagnostics
+          if-no-files-found: warn
+          path: |
+            v2/app/build/reports/lint-results-release.html
+            v2/app/build/reports/lint-results-release.txt
+            v2/dist
+            /tmp/baize-deep-manifest-state-*
