@@ -9,13 +9,11 @@ APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
 
-# The native App is the only control surface. Some module managers preserve files from an
-# older same-ID installation, so delete every known legacy WebUI directory explicitly.
 for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/baize_v2"; do
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.4.0"
+ui_print "- 正在安装白泽 v2.5.0"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
@@ -61,8 +59,6 @@ rm -f "$STATE_DIR/cache_auto.env" "$STATE_DIR/cache_auto.targets" "$STATE_DIR/ca
 rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
 rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"
-# Runtime state is never configuration. Clear every stale worker, queue and retry marker so a
-# failed deep pipeline from an older build cannot survive the module update.
 rm -f "$STATE_DIR/worker.env" "$STATE_DIR/scheduler.env" "$STATE_DIR/supervisor.env" \
   "$STATE_DIR/scheduler-queue.tsv" "$STATE_DIR/scheduler-candidates.tmp" \
   "$STATE_DIR/supervisor.stop" "$STATE_DIR/stop"
