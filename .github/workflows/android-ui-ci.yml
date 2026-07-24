@@ -40,4 +40,21 @@ jobs:
 
       - name: Compile and lint UI
         working-directory: v2
-        run: gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
+          code=$?
+          tail -n 200 /tmp/baize-android-ui.log
+          exit "$code"
+
+      - name: Upload Android diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-diagnostics
+          path: |
+            /tmp/baize-android-ui.log
+            v2/app/build/reports/lint-results-debug.html
+            v2/app/build/reports/lint-results-debug.txt
+          if-no-files-found: warn
