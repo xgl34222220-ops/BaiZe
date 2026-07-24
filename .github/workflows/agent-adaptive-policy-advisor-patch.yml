@@ -1,0 +1,41 @@
+name: Agent Adaptive Policy Advisor Patch
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/adaptive-policy-advisor
+          fetch-depth: 0
+      - name: Integrate adaptive policy advisor
+        run: python3 .github/scripts/adaptive_policy_advisor_patch.py
+      - name: Verify patch contract markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'policyAdvisor.evaluate(combined)' v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRepository.kt
+          grep -Fq 'PolicyAdviceCard' v2/app/src/main/java/io/github/xgl34222220/baize/CleanupPolicyActivity.kt
+          grep -Fq 'AuditPolicyAdviceCard' v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt
+          grep -Fq 'test-policy-advisor-contract.sh' .github/workflows/v2.5-concurrent-scheduler-ci.yml
+      - name: Commit advisor integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRepository.kt \
+                  v2/app/src/main/java/io/github/xgl34222220/baize/CleanupPolicyActivity.kt \
+                  v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt \
+                  .github/workflows/v2.5-concurrent-scheduler-ci.yml
+          git commit -m 'feat: integrate adaptive policy recommendations'
+          git push origin HEAD:agent/adaptive-policy-advisor
