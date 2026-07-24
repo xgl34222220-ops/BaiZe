@@ -13,6 +13,7 @@ OUTPUT="$OUT/BaiZe-v2.5.1-Module.zip"
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
 bash "$ROOT/tests/test-concurrent-scheduler.sh"
+bash "$ROOT/tests/test-deep-clean-budget.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
@@ -22,11 +23,11 @@ cp -a "$REPO/config" "$STAGE/config"
 
 cp -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.sh"
 cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
-cp -f "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-cleaner.sh"
+cp -f "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/profile-cleaner.sh"
 cp -f "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-scanner.sh"
 cp -f "$STAGE/apk-snapshot-clean.sh" "$STAGE/apk-cleaner.sh"
 cp -f "$STAGE/scheduler-v2.5.sh" "$STAGE/scheduler.sh"
-rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
+rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
 
 cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
 cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
@@ -71,6 +72,9 @@ unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'build_fallback_index'
 unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
+unzip -p "$OUTPUT" profile-cleaner.sh | grep -q 'profile-snapshot-v42.7-budgeted'
+unzip -p "$OUTPUT" profile-cleaner.sh | grep -q 'deep_clean_target_timeout_seconds'
+unzip -p "$OUTPUT" profile-cleaner.sh | grep -q 'deep_clean_stage_limit_seconds'
 unzip -l "$OUTPUT" | grep -q 'apk-scanner.sh'
 unzip -l "$OUTPUT" | grep -q 'apk-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'cleaner.sh.compat'
@@ -91,6 +95,8 @@ unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'parallel_overlap_milli'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^deep_clean_target_timeout_seconds=30$'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^deep_clean_stage_limit_seconds=180$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
