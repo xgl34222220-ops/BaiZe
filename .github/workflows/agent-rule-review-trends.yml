@@ -1,0 +1,43 @@
+name: Agent Rule Review Trends Integration
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/rule-review-trends
+          fetch-depth: 0
+      - name: Integrate rule review trends
+        run: python3 .github/scripts/rule_review_trends_patch.py
+      - name: Verify integration markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'ruleReviewTrendAnalyzer.analyze' v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRepository.kt
+          grep -Fq '审核历史与趋势' v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt
+          grep -Fq 'android:name=".RuleReviewTrendsActivity"' v2/app/src/main/AndroidManifest.xml
+      - name: Commit product integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRepository.kt \
+                  v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt \
+                  v2/app/src/main/AndroidManifest.xml
+          if git diff --cached --quiet; then
+            echo 'integration already present'
+            exit 0
+          fi
+          git commit -m 'feat: integrate rule review trends center'
+          git push origin HEAD:agent/rule-review-trends
