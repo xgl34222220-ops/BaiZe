@@ -1,0 +1,48 @@
+name: Apply Persistent Task Progress
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-persistent-task-progress
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ hashFiles('.github/scripts/apply-persistent-task-progress.py') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Apply progress UI patch
+        run: python3 .github/scripts/apply-persistent-task-progress.py
+
+      - name: Verify source contracts
+        run: |
+          git diff --check
+          grep -q 'taskProgressCurrent' v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt
+          grep -q 'MaterialRunningTaskCard(state)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/material/HomeScreenMaterial.kt
+          grep -q 'MiuixRunningTaskCard(state)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
+          grep -q 'taskProgressPath = targetText' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q 'DETACHED_TASKS = setOf("clean", "organize")' v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt
+          sh -n v2/module/task-worker.sh
+          bash -n v2/module/task-worker.sh
+
+      - name: Commit product changes and remove temporary files
+        run: |
+          rm -f .github/scripts/apply-persistent-task-progress.py
+          rm -f .github/workflows/apply-persistent-task-progress.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ui: show persistent Root task progress'
+          git push origin HEAD:agent/dual-theme-ui-redesign
