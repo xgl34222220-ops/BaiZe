@@ -116,7 +116,7 @@ private fun MaterialHomeHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("白泽", style = MaterialTheme.typography.headlineLarge)
+            Text("白泽", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -145,7 +145,7 @@ private fun MaterialHomeHeader(
                 )
             }
         }
-        FilledTonalIconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
+        FilledTonalIconButton(onClick = onRefresh, modifier = Modifier.size(44.dp)) {
             Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
         }
     }
@@ -163,7 +163,7 @@ private fun MaterialNextTaskCard(
             .padding(horizontal = 20.dp)
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = if (enabled) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -173,7 +173,7 @@ private fun MaterialNextTaskCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(horizontal = 24.dp, vertical = 22.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "下一个任务",
@@ -187,10 +187,10 @@ private fun MaterialNextTaskCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 task?.title ?: "自动清理",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -198,15 +198,15 @@ private fun MaterialNextTaskCard(
             Text(
                 countdown,
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 28.sp,
-                lineHeight = 34.sp,
+                fontSize = 19.sp,
+                lineHeight = 25.sp,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(7.dp))
             Text(
                 "点击查看和调整所有任务周期",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
@@ -255,7 +255,7 @@ private fun MaterialActionButton(
 ) {
     Surface(
         modifier = modifier
-            .height(82.dp)
+            .height(74.dp)
             .clip(MaterialTheme.shapes.large)
             .clickable(enabled = enabled, onClick = onClick),
         shape = MaterialTheme.shapes.large,

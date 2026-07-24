@@ -81,7 +81,7 @@ internal fun rememberHomeNowEpoch(): Long {
     var nowEpoch by remember { mutableLongStateOf(System.currentTimeMillis() / 1000L) }
     LaunchedEffect(Unit) {
         while (true) {
-            delay(30_000L)
+            delay(1_000L)
             nowEpoch = System.currentTimeMillis() / 1000L
         }
     }

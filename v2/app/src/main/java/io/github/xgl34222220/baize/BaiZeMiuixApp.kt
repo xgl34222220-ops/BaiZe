@@ -975,14 +975,14 @@ private fun MaterialFloatingDock(
 ) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = if (floating) {
-        RoundedCornerShape(24.dp)
+        RoundedCornerShape(20.dp)
     } else {
         RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
     }
     val outerModifier = if (floating) {
         modifier
-            .padding(horizontal = 14.dp)
-            .padding(bottom = bottom + 10.dp)
+            .padding(horizontal = 20.dp)
+            .padding(bottom = bottom + 8.dp)
             .fillMaxWidth()
     } else {
         modifier.fillMaxWidth()
@@ -993,16 +993,16 @@ private fun MaterialFloatingDock(
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 2.dp,
-        shadowElevation = if (floating) 4.dp else 0.dp
+        shadowElevation = if (floating) 3.dp else 0.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
                     start = 8.dp,
-                    top = 6.dp,
+                    top = 4.dp,
                     end = 8.dp,
-                    bottom = if (floating) 6.dp else bottom + 6.dp
+                    bottom = if (floating) 4.dp else bottom + 6.dp
                 )
         ) {
             BaiZePage.entries.forEach { item ->
@@ -1018,8 +1018,8 @@ private fun MaterialFloatingDock(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 42.dp, height = 28.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .size(width = 38.dp, height = 24.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .background(
                                 if (active) MaterialTheme.colorScheme.secondaryContainer
                                 else Color.Transparent
@@ -1029,7 +1029,7 @@ private fun MaterialFloatingDock(
                         Icon(
                             imageVector = item.icon,
                             contentDescription = item.title,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(19.dp),
                             tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1038,7 +1038,7 @@ private fun MaterialFloatingDock(
                         text = item.title,
                         color = if (active) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                     )
                 }
