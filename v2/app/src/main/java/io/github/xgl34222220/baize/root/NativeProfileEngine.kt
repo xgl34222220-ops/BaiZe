@@ -401,7 +401,8 @@ internal class NativeProfileEngine(
     if (snapshot.options.highRiskMode == "audit") {
         return JSONObject().put("error", "policy_audit_only").put("message", "当前保守策略仅审计高风险项目，请切换策略并重新扫描").toString()
     }
-
+    val selection = parseSelection(selectionJson)
+    val selected = snapshot.candidates.filter { candidate ->
         candidate.risk == "high" && (selection[candidate.id] == true || selection[candidate.path] == true)
     }
     if (selected.isEmpty()) {

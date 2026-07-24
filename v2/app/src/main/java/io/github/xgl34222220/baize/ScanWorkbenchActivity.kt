@@ -1052,7 +1052,6 @@ private fun WorkbenchStatusCard(
     state: WorkbenchUiState,
     shape: Shape,
     horizontal: androidx.compose.ui.unit.Dp,
-    highRiskMode: String,
     onStop: () -> Unit
 ) {
     Card(
@@ -1240,6 +1239,7 @@ private fun WorkbenchCandidateRow(
     item: WorkbenchItem,
     selected: Boolean,
     horizontal: androidx.compose.ui.unit.Dp,
+    highRiskMode: String,
     onToggle: () -> Unit,
     onProtect: () -> Unit,
     onQuarantine: () -> Unit
