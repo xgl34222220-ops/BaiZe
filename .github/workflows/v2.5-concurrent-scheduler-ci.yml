@@ -79,6 +79,8 @@ jobs:
         run: bash v2/tests/test-rule-review-auto-reopen-contract.sh
       - name: Rule review trends contract
         run: bash v2/tests/test-rule-review-trends-contract.sh
+      - name: Rule improvement drafts contract
+        run: bash v2/tests/test-rule-improvement-drafts-contract.sh
       - name: Concurrent scheduler regression
         shell: bash
         run: |
