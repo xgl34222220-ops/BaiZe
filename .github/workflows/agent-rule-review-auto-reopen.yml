@@ -41,5 +41,4 @@ jobs:
             exit 0
           fi
           git commit -m 'feat: integrate rule review auto reopen'
-          git pull --rebase origin agent/rule-review-auto-reopen
           git push origin HEAD:agent/rule-review-auto-reopen
