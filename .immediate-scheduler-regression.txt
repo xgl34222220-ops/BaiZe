@@ -1,0 +1,118 @@
+=== workflow step ===
+.github/workflows/v2.4.0-release.yml-55-          PY
+.github/workflows/v2.4.0-release.yml-56-
+.github/workflows/v2.4.0-release.yml-57-      - name: Install shell compatibility tools
+.github/workflows/v2.4.0-release.yml-58-        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+.github/workflows/v2.4.0-release.yml-59-
+.github/workflows/v2.4.0-release.yml:60:      - name: Verify Root scripts and regressions
+.github/workflows/v2.4.0-release.yml-61-        shell: bash
+.github/workflows/v2.4.0-release.yml-62-        run: |
+.github/workflows/v2.4.0-release.yml-63-          set -euo pipefail
+.github/workflows/v2.4.0-release.yml-64-          for script in v2/module/*.sh v2/scripts/*.sh service.sh cleaner.sh; do
+.github/workflows/v2.4.0-release.yml-65-            sh -n "$script"
+.github/workflows/v2.4.0-release.yml-66-            busybox ash -n "$script"
+.github/workflows/v2.4.0-release.yml-67-          done
+.github/workflows/v2.4.0-release.yml-68-          bash v2/tests/test-scheduler-fairness.sh
+.github/workflows/v2.4.0-release.yml-69-          bash v2/tests/test-incremental-index.sh
+.github/workflows/v2.4.0-release.yml-70-          bash v2/tests/test-organizer-transactions.sh
+.github/workflows/v2.4.0-release.yml-71-          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+.github/workflows/v2.4.0-release.yml-72-
+.github/workflows/v2.4.0-release.yml-73-      - name: Set up JDK 17
+.github/workflows/v2.4.0-release.yml-74-        uses: actions/setup-java@v4
+.github/workflows/v2.4.0-release.yml-75-        with:
+.github/workflows/v2.4.0-release.yml-76-          distribution: temurin
+.github/workflows/v2.4.0-release.yml-77-          java-version: '17'
+.github/workflows/v2.4.0-release.yml-78-
+.github/workflows/v2.4.0-release.yml-79-      - name: Set up Android SDK
+.github/workflows/v2.4.0-release.yml-80-        uses: android-actions/setup-android@v3
+.github/workflows/v2.4.0-release.yml-81-
+.github/workflows/v2.4.0-release.yml-82-      - name: Install Android platform and NDK
+.github/workflows/v2.4.0-release.yml-83-        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+.github/workflows/v2.4.0-release.yml-84-
+.github/workflows/v2.4.0-release.yml-85-      - name: Set up Gradle
+.github/workflows/v2.4.0-release.yml-86-        uses: gradle/actions/setup-gradle@v4
+.github/workflows/v2.4.0-release.yml-87-        with:
+.github/workflows/v2.4.0-release.yml-88-          gradle-version: '8.13'
+.github/workflows/v2.4.0-release.yml-89-
+.github/workflows/v2.4.0-release.yml-90-      - name: Prepare temporary PR signing certificate
+.github/workflows/v2.4.0-release.yml-91-        if: github.event_name == 'pull_request'
+.github/workflows/v2.4.0-release.yml-92-        shell: bash
+.github/workflows/v2.4.0-release.yml-93-        run: |
+.github/workflows/v2.4.0-release.yml-94-          set -euo pipefail
+.github/workflows/v2.4.0-release.yml-95-          KEYSTORE="$RUNNER_TEMP/baize-v240-ci.jks"
+.github/workflows/v2.4.0-release.yml-96-          keytool -genkeypair -noprompt \
+.github/workflows/v2.4.0-release.yml-97-            -keystore "$KEYSTORE" \
+.github/workflows/v2.4.0-release.yml-98-            -storepass 'baize-ci-24000' \
+.github/workflows/v2.4.0-release.yml-99-            -keypass 'baize-ci-24000' \
+.github/workflows/v2.4.0-release.yml-100-            -alias 'baize-ci' \
+.github/workflows/v2.4.0-release.yml-101-            -keyalg RSA -keysize 3072 -validity 3650 \
+.github/workflows/v2.4.0-release.yml-102-            -dname 'CN=BaiZe v2.4.0 CI,O=xgl34222220-ops,C=CN'
+.github/workflows/v2.4.0-release.yml-103-          {
+.github/workflows/v2.4.0-release.yml-104-            echo "BAIZE_KEYSTORE_PATH=$KEYSTORE"
+.github/workflows/v2.4.0-release.yml-105-            echo 'BAIZE_KEYSTORE_PASSWORD=baize-ci-24000'
+.github/workflows/v2.4.0-release.yml-106-            echo 'BAIZE_KEY_ALIAS=baize-ci'
+.github/workflows/v2.4.0-release.yml-107-            echo 'BAIZE_KEY_PASSWORD=baize-ci-24000'
+.github/workflows/v2.4.0-release.yml-108-          } >> "$GITHUB_ENV"
+.github/workflows/v2.4.0-release.yml-109-
+.github/workflows/v2.4.0-release.yml-110-      - name: Prepare formal release signing certificate
+.github/workflows/v2.4.0-release.yml-111-        if: github.event_name != 'pull_request'
+.github/workflows/v2.4.0-release.yml-112-        shell: bash
+.github/workflows/v2.4.0-release.yml-113-        env:
+.github/workflows/v2.4.0-release.yml-114-          KEYSTORE_BASE64_RAW: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+.github/workflows/v2.4.0-release.yml-115-          KEYSTORE_PASSWORD_RAW: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+.github/workflows/v2.4.0-release.yml-116-          KEY_ALIAS_RAW: ${{ secrets.BAIZE_KEY_ALIAS }}
+.github/workflows/v2.4.0-release.yml-117-          KEY_PASSWORD_RAW: ${{ secrets.BAIZE_KEY_PASSWORD }}
+.github/workflows/v2.4.0-release.yml-118-        run: |
+.github/workflows/v2.4.0-release.yml-119-          set -euo pipefail
+.github/workflows/v2.4.0-release.yml-120-          normalize_secret() {
+.github/workflows/v2.4.0-release.yml-121-            secret_name=$1
+.github/workflows/v2.4.0-release.yml-122-            raw_value=$2
+.github/workflows/v2.4.0-release.yml-123-            value=$(printf '%s' "$raw_value" | tr -d '\r\n')
+.github/workflows/v2.4.0-release.yml-124-            value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+.github/workflows/v2.4.0-release.yml-125-            case "$value" in "$secret_name="*) value=${value#*=} ;; esac
+.github/workflows/v2.4.0-release.yml-126-            case "$value" in
+.github/workflows/v2.4.0-release.yml-127-              \"*\") value=${value#\"}; value=${value%\"} ;;
+.github/workflows/v2.4.0-release.yml-128-              \'*\') value=${value#\'}; value=${value%\'} ;;
+.github/workflows/v2.4.0-release.yml-129-            esac
+.github/workflows/v2.4.0-release.yml-130-            printf '%s' "$value"
+.github/workflows/v2.4.0-release.yml-131-          }
+.github/workflows/v2.4.0-release.yml-132-          KEYSTORE_BASE64=$(normalize_secret BAIZE_KEYSTORE_BASE64 "$KEYSTORE_BASE64_RAW" | tr -d '[:space:]')
+.github/workflows/v2.4.0-release.yml-133-          KEYSTORE_PASSWORD=$(normalize_secret BAIZE_KEYSTORE_PASSWORD "$KEYSTORE_PASSWORD_RAW")
+.github/workflows/v2.4.0-release.yml-134-          KEY_ALIAS=$(normalize_secret BAIZE_KEY_ALIAS "$KEY_ALIAS_RAW")
+.github/workflows/v2.4.0-release.yml-135-          KEY_PASSWORD=$(normalize_secret BAIZE_KEY_PASSWORD "$KEY_PASSWORD_RAW")
+.github/workflows/v2.4.0-release.yml-136-          test -n "$KEYSTORE_BASE64"
+.github/workflows/v2.4.0-release.yml-137-          test -n "$KEYSTORE_PASSWORD"
+.github/workflows/v2.4.0-release.yml-138-          test -n "$KEY_ALIAS"
+.github/workflows/v2.4.0-release.yml-139-          test -n "$KEY_PASSWORD"
+.github/workflows/v2.4.0-release.yml-140-          KEYSTORE="$RUNNER_TEMP/baize-release.jks"
+--
+.github/workflows/diagnose-immediate-scheduler-tests.yml-20-        shell: bash
+.github/workflows/diagnose-immediate-scheduler-tests.yml-21-        run: |
+.github/workflows/diagnose-immediate-scheduler-tests.yml-22-          set -e
+.github/workflows/diagnose-immediate-scheduler-tests.yml-23-          {
+.github/workflows/diagnose-immediate-scheduler-tests.yml-24-            echo '=== workflow step ==='
+.github/workflows/diagnose-immediate-scheduler-tests.yml:25:            grep -R -n -A 80 -B 5 'Verify Root scripts and regressions' .github/workflows || true
+.github/workflows/diagnose-immediate-scheduler-tests.yml-26-            echo '=== old boot delay assertions ==='
+.github/workflows/diagnose-immediate-scheduler-tests.yml-27-            grep -R -n -E 'sleep 120|BOOT_WAIT|max_battery_temp|等待电池降温|screen_off_only=1|CONDITION_RETRY_SECONDS.*60' . --exclude-dir=.git --exclude='*.apk' --exclude='*.zip' || true
+.github/workflows/diagnose-immediate-scheduler-tests.yml-28-          } > .immediate-scheduler-regression.txt
+.github/workflows/diagnose-immediate-scheduler-tests.yml-29-      - name: Commit diagnostic
+.github/workflows/diagnose-immediate-scheduler-tests.yml-30-        run: |
+.github/workflows/diagnose-immediate-scheduler-tests.yml-31-          git config user.name 'github-actions[bot]'
+.github/workflows/diagnose-immediate-scheduler-tests.yml-32-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+.github/workflows/diagnose-immediate-scheduler-tests.yml-33-          git add .immediate-scheduler-regression.txt
+.github/workflows/diagnose-immediate-scheduler-tests.yml-34-          git commit -m 'ci: capture scheduler regression contracts'
+.github/workflows/diagnose-immediate-scheduler-tests.yml-35-          git push origin HEAD:agent/dual-theme-ui-redesign
+=== old boot delay assertions ===
+./.github/workflows/diagnose-immediate-scheduler-tests.yml:27:            grep -R -n -E 'sleep 120|BOOT_WAIT|max_battery_temp|等待电池降温|screen_off_only=1|CONDITION_RETRY_SECONDS.*60' . --exclude-dir=.git --exclude='*.apk' --exclude='*.zip' || true
+./webctl.sh:25:    max_battery_temp) cfg_min=30; cfg_max=60 ;;
+./customize.sh:58:  charging_only=0 device_idle_only=0 max_battery_temp=45 max_run_minutes=45 daily_grace_minutes=240 deep_high_risk_enabled=0; do
+./webroot/index.html:148:            <label><span>电池温度上限</span><div><input type="number" min="30" max="60" data-key="max_battery_temp"><em>°C</em></div></label>
+./v2/tests/test-scheduler-fairness.sh:19:max_battery_temp=60
+./v2/tests/test-scheduler-fairness.sh:49:  BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 sh "$T/module/scheduler.sh"
+./v2/tests/test-scheduler-fairness.sh:59:sed -i 's/^organize_screen_off_only=.*/organize_screen_off_only=1/' "$T/state/config.conf"
+./v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt:426:            "max_battery_temp" to 30..60,
+./service.sh:36:if [ "${BAIZE_SKIP_BOOT_WAIT:-0}" != 1 ]; then
+./status.sh:199:  enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 \
+./config/default.conf:7:max_battery_temp=0
+./docs/README-detailed.md:198:screen_off_only=1
+./docs/README-detailed.md:202:max_battery_temp=45
