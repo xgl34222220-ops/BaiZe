@@ -86,6 +86,13 @@ fun HomeScreenMaterial(
                 onClick = onOpenClean
             )
         }
+        item {
+            MaterialPrimaryActions(
+                enabled = state.ready && !state.running,
+                onClean = actions.clean,
+                onOrganize = actions.organize
+            )
+        }
         item { MaterialSectionHeader("任务计划", "每项任务独立显示下一次执行时间", onOpenClean) }
         item { MaterialTaskScheduleCard(tasks, nowEpoch, onOpenClean) }
         item { MaterialSectionHeader("最近状态", "只保留最有用的结果与存储信息") }
@@ -200,6 +207,70 @@ private fun MaterialNextTaskCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
+        }
+    }
+}
+
+@Composable
+private fun MaterialPrimaryActions(
+    enabled: Boolean,
+    onClean: () -> Unit,
+    onOrganize: () -> Unit
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        MaterialActionButton(
+            title = "一键清理",
+            subtitle = "按当前规则立即执行",
+            icon = Icons.Rounded.CleaningServices,
+            primary = true,
+            enabled = enabled,
+            onClick = onClean,
+            modifier = Modifier.weight(1f)
+        )
+        MaterialActionButton(
+            title = "一键归类",
+            subtitle = "整理明确的用户文件",
+            icon = Icons.Rounded.FolderCopy,
+            primary = false,
+            enabled = enabled,
+            onClick = onOrganize,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun MaterialActionButton(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    primary: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(82.dp)
+            .clip(MaterialTheme.shapes.large)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        color = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, fontSize = 10.sp, maxLines = 2, lineHeight = 14.sp)
+            }
         }
     }
 }

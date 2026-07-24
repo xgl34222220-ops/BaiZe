@@ -54,12 +54,18 @@ import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
 import io.github.xgl34222220.baize.ui.common.AppPackageIcon
+import io.github.xgl34222220.baize.ui.common.AppPackageIconPreloader
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
+    val iconPackages = buildList {
+        addAll(state.recentApps.map { it.packageName })
+        state.records.forEach { record -> addAll(record.apps.map { it.packageName }) }
+    }
+    AppPackageIconPreloader(iconPackages)
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

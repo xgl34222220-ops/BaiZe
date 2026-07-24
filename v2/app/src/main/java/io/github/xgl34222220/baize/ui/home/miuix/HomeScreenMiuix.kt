@@ -76,6 +76,13 @@ fun HomeScreenMiuix(
     ) {
         item { MiuixHomeHeader(state, scheduler.enabled, actions.refresh) }
         item { MiuixNextTaskPanel(nextTask, nowEpoch, scheduler.enabled, onOpenClean) }
+        item {
+            MiuixPrimaryActions(
+                enabled = state.ready && !state.running,
+                onClean = actions.clean,
+                onOrganize = actions.organize
+            )
+        }
         item { MiuixSectionTitle("任务计划", "所有任务按条件自动运行") }
         item { MiuixTaskGroup(tasks, nowEpoch, onOpenClean) }
         item { MiuixSectionTitle("最近状态", "最近一次自动任务的结果") }
@@ -185,6 +192,78 @@ private fun MiuixNextTaskPanel(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun MiuixPrimaryActions(
+    enabled: Boolean,
+    onClean: () -> Unit,
+    onOrganize: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = BaiZeTokens.colors.surfaceRaised
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MiuixActionButton(
+                title = "一键清理",
+                subtitle = "立即执行清理规则",
+                icon = Icons.Rounded.CleaningServices,
+                primary = true,
+                enabled = enabled,
+                onClick = onClean,
+                modifier = Modifier.weight(1f)
+            )
+            MiuixActionButton(
+                title = "一键归类",
+                subtitle = "整理用户下载文件",
+                icon = Icons.Rounded.FolderCopy,
+                primary = false,
+                enabled = enabled,
+                onClick = onOrganize,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiuixActionButton(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    primary: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val fill = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+    val content = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+    Surface(
+        modifier = modifier
+            .height(76.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(17.dp),
+        color = if (enabled) fill else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f),
+        contentColor = if (enabled) content else MaterialTheme.colorScheme.outline
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(23.dp))
+            Spacer(Modifier.width(9.dp))
+            Column {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, fontSize = 10.sp, lineHeight = 13.sp, maxLines = 2)
+            }
         }
     }
 }

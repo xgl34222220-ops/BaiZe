@@ -413,6 +413,7 @@ private fun Boolean.flag() = if (this) 1 else 0
 data class DashboardActions(
     val refresh: () -> Unit,
     val clean: () -> Unit,
+    val organize: () -> Unit,
     val scan: () -> Unit,
     val apkScan: () -> Unit,
     val cleanScan: () -> Unit,

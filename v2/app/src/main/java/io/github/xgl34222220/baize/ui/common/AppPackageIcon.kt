@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.os.Build
+import android.util.AtomicFile
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +34,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 @Composable
 fun AppPackageIcon(
@@ -43,8 +47,9 @@ fun AppPackageIcon(
     corner: Dp = 15.dp
 ) {
     val context = LocalContext.current.applicationContext
-    val bitmap by produceState<Bitmap?>(PersistentAppIconStore.get(packageName), packageName) {
-        if (value == null) value = withContext(Dispatchers.IO) { PersistentAppIconStore.load(context, packageName) }
+    val stablePackage = remember(packageName) { packageName.trim() }
+    val bitmap by produceState<Bitmap?>(PersistentAppIconStore.memory(stablePackage), stablePackage) {
+        value = withContext(Dispatchers.IO) { PersistentAppIconStore.load(context, stablePackage) }
     }
     Box(
         modifier.size(size).clip(RoundedCornerShape(corner))
@@ -52,7 +57,7 @@ fun AppPackageIcon(
         contentAlignment = Alignment.Center
     ) {
         val current = bitmap
-        if (current != null) {
+        if (current != null && !current.isRecycled) {
             Image(current.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         } else {
             Text(label.trim().firstOrNull()?.uppercase() ?: "?", fontWeight = FontWeight.Bold)
@@ -63,47 +68,85 @@ fun AppPackageIcon(
 @Composable
 fun AppPackageIconPreloader(packageNames: List<String>) {
     val context = LocalContext.current.applicationContext
-    val stable = packageNames.filter { it.isNotBlank() }.distinct().take(80)
+    val stable = remember(packageNames) {
+        packageNames.map(String::trim).filter(String::isNotBlank).distinct().take(160)
+    }
     LaunchedEffect(stable) {
         withContext(Dispatchers.IO) { stable.forEach { PersistentAppIconStore.load(context, it) } }
     }
 }
 
 private object PersistentAppIconStore {
-    private const val PX = 112
-    private val memory = object : LruCache<String, Bitmap>(160) {}
+    private const val PX = 128
+    private val memoryCache = object : LruCache<String, Bitmap>(192) {}
+    private val packageLocks = ConcurrentHashMap<String, Any>()
 
     @Synchronized
-    fun get(packageName: String): Bitmap? = memory.get(packageName)
+    fun memory(packageName: String): Bitmap? = memoryCache.get(packageName)
 
     fun load(context: Context, packageName: String): Bitmap? {
-        synchronized(this) { memory.get(packageName) }?.let { return it }
-        val directory = File(context.filesDir, "baize-app-icons").apply { mkdirs() }
-        val stableFile = File(directory, sha256(packageName) + ".png")
-        val disk = runCatching { if (stableFile.isFile) BitmapFactory.decodeFile(stableFile.path) else null }.getOrNull()
-        if (disk != null) {
-            synchronized(this) { memory.put(packageName, disk) }
-            return disk
-        }
-        val pm = context.packageManager
-        val info = appInfo(pm, packageName) ?: return null
-        val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return null
-        val bitmap = runCatching {
-            Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888).also { target ->
-                drawable.setBounds(0, 0, PX, PX)
-                drawable.draw(Canvas(target))
+        if (packageName.isBlank()) return null
+        synchronized(this) { memoryCache.get(packageName) }?.let { return it }
+        val lock = packageLocks.getOrPut(packageName) { Any() }
+        return synchronized(lock) {
+            synchronized(this) { memoryCache.get(packageName) }?.let { return@synchronized it }
+
+            val fileName = sha256(packageName) + ".png"
+            val persistentDirectory = File(context.noBackupFilesDir, "baize-app-icons-v2").apply { mkdirs() }
+            val persistentFile = File(persistentDirectory, fileName)
+            val legacyFile = File(File(context.filesDir, "baize-app-icons"), fileName)
+
+            decode(persistentFile)?.let { return@synchronized remember(packageName, it) }
+            decode(legacyFile)?.let { legacy ->
+                writeAtomic(persistentFile, legacy)
+                return@synchronized remember(packageName, legacy)
             }
-        }.getOrNull() ?: return null
-        synchronized(this) { memory.put(packageName, bitmap) }
-        runCatching {
-            val temporary = File(directory, stableFile.name + ".tmp")
-            temporary.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (!temporary.renameTo(stableFile)) {
-                temporary.copyTo(stableFile, overwrite = true)
-                temporary.delete()
-            }
-        }
+
+            val pm = context.packageManager
+            val info = appInfo(pm, packageName) ?: return@synchronized null
+            val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@synchronized null
+            val bitmap = runCatching {
+                Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888).also { target ->
+                    val canvas = Canvas(target)
+                    drawable.setBounds(0, 0, PX, PX)
+                    drawable.draw(canvas)
+                }
+            }.getOrNull() ?: return@synchronized null
+
+            remember(packageName, bitmap)
+            writeAtomic(persistentFile, bitmap)
+            bitmap
+        }.also { packageLocks.remove(packageName, lock) }
+    }
+
+    private fun decode(file: File): Bitmap? {
+        if (!file.isFile || file.length() <= 0L) return null
+        val decoded = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+        if (decoded == null) runCatching { file.delete() }
+        return decoded
+    }
+
+    @Synchronized
+    private fun remember(packageName: String, bitmap: Bitmap): Bitmap {
+        memoryCache.put(packageName, bitmap)
         return bitmap
+    }
+
+    private fun writeAtomic(target: File, bitmap: Bitmap) {
+        runCatching {
+            target.parentFile?.mkdirs()
+            val atomic = AtomicFile(target)
+            var output: FileOutputStream? = null
+            try {
+                output = atomic.startWrite()
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                output.fd.sync()
+                atomic.finishWrite(output)
+                output = null
+            } finally {
+                output?.let(atomic::failWrite)
+            }
+        }
     }
 
     @Suppress("DEPRECATION")

@@ -140,6 +140,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 actions = DashboardActions(
                     refresh = { refreshAll() },
                     clean = { runSmartClean() },
+                    organize = { runOneTapOrganize() },
                     scan = { runNativeScan(cleanAfterScan = false) },
                     apkScan = { runApkScan() },
                     cleanScan = { cleanNativeSnapshots() },
@@ -437,7 +438,11 @@ class MiuixDashboardActivity : ComponentActivity() {
         val mode = pendingModuleTask
         if (mode != null && rootService != null) {
             pendingModuleTask = null
-            runModuleUtilityTask(requireNotNull(rootService), mode)
+            if (mode == "organize") {
+                runDetachedOrganizer(requireNotNull(rootService))
+            } else {
+                runModuleUtilityTask(requireNotNull(rootService), mode)
+            }
         }
     }
 
@@ -541,6 +546,84 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun showTaskBusy(message: String = "当前已有扫描或清理任务正在运行，请先停止或等待完成") {
         dashboardState.value = dashboardState.value.copy(taskPhase = message)
         toast(message)
+    }
+
+    private fun runOneTapOrganize() {
+        if (dashboardState.value.running) {
+            showTaskBusy("当前已有任务正在运行，请等待完成后再归类")
+            return
+        }
+        val service = rootService
+        if (service == null) {
+            pendingModuleTask = "organize"
+            dashboardState.value = dashboardState.value.copy(
+                connected = false,
+                ready = false,
+                taskPhase = "正在连接 Root 服务，连接后自动开始文件归类"
+            )
+            connectPrimaryService()
+            return
+        }
+        runDetachedOrganizer(service)
+    }
+
+    private fun runDetachedOrganizer(service: IProfileRootService) {
+        if (dashboardState.value.running) {
+            showTaskBusy("当前已有任务正在运行，请等待完成后再归类")
+            return
+        }
+        dashboardState.value = dashboardState.value.copy(
+            running = true,
+            scanCompleted = false,
+            taskPhase = "正在把文件归类交给独立 Root Worker…"
+        )
+        startNativePoll()
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.runModuleTask("organize")) }
+            }
+            pollJob?.cancel()
+            if (response.isFailure) {
+                rootService = null
+                profileBound = false
+                dashboardState.value = dashboardState.value.copy(
+                    connected = false,
+                    ready = false,
+                    running = false,
+                    serviceText = "Root 服务已断开，正在重新连接…",
+                    taskPhase = "文件归类启动失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                )
+                connectPrimaryService()
+                return@launch
+            }
+            val json = response.getOrThrow()
+            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
+                val message = json.optString("message", "当前已有任务正在运行")
+                dashboardState.value = dashboardState.value.copy(running = false, taskPhase = message)
+                toast(message)
+                return@launch
+            }
+            if (json.optBoolean("accepted")) {
+                dashboardState.value = dashboardState.value.copy(
+                    running = true,
+                    scanCompleted = false,
+                    serviceText = "独立 Root Worker 已接管文件归类，关闭 App 也会继续",
+                    taskPhase = json.optString("message", "文件归类已在后台启动")
+                )
+                startRecoveredTaskPoll()
+                return@launch
+            }
+            updateRawLogFromResponse(json)
+            dashboardState.value = dashboardState.value.copy(
+                running = false,
+                taskPhase = json.optString("message").ifBlank {
+                    if (json.optBoolean("success")) "文件归类完成" else "文件归类未完成"
+                }
+            )
+            refreshHistory()
+            refreshModuleState()
+            readServiceStatus()
+        }
     }
 
     private fun runApkScan() {
