@@ -1,7 +1,12 @@
 Traceback (most recent call last):
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 30, in <module>
-    scheduler = find_unique("scheduler.sh", "BaiZe v2.4 unified Root scheduler")
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 25, in find_unique
-    raise RuntimeError(f"{name}: expected one file containing {marker!r}, found {matches}")
-RuntimeError: scheduler.sh: expected one file containing 'BaiZe v2.4 unified Root scheduler', found []
+  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 32, in <module>
+    if p.is_file() and "CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}" in read(p)
+                                                                                         ^^^^^^^
+  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 8, in read
+    return path.read_text(encoding="utf-8")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1030, in read_text
+    return f.read()
+           ^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xbf in position 24: invalid start byte
