@@ -1,0 +1,57 @@
+name: Apply Immediate Scheduler Fix
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-immediate-scheduler-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Apply scheduler and UI fix
+        run: python3 .github/scripts/apply-immediate-scheduler-fix.py
+
+      - name: Verify scheduler contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          scheduler=$(grep -rl 'BaiZe v2.4 unified Root scheduler' . --include='scheduler.sh' | head -n 1)
+          defaults=$(grep -rl 'schedule_cache_enabled=1' . --include='default.conf' | head -n 1)
+          test -n "$scheduler"
+          test -n "$defaults"
+          sh -n "$scheduler"
+          bash -n "$scheduler"
+          ! grep -q 'sleep 120' "$scheduler"
+          grep -q 'BAIZE_CONDITION_RETRY_SECONDS:-15' "$scheduler"
+          ! grep -q '等待电池降温' "$scheduler"
+          grep -q '^screen_off_only=0$' "$defaults"
+          grep -q '^organize_screen_off_only=0$' "$defaults"
+          grep -q '后台调度正在自动恢复' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+          grep -q '已进入队列，即将执行' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+          grep -q 'taskCountdownLabel(nextTask, nowEpoch, scheduler)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/material/HomeScreenMaterial.kt
+          grep -q 'taskCountdownLabel(task, nowEpoch, scheduler)' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/miuix/HomeScreenMiuix.kt
+
+      - name: Commit product changes and remove temporary files
+        run: |
+          rm -f .github/scripts/apply-immediate-scheduler-fix.py
+          rm -f .github/workflows/apply-immediate-scheduler-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(scheduler): run due tasks immediately'
+          git push origin HEAD:agent/dual-theme-ui-redesign
