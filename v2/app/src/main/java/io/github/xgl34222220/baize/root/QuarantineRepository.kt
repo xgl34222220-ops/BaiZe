@@ -14,8 +14,8 @@ import java.util.UUID
  *
  * The UI never supplies a filesystem path to this repository. [NativeProfileEngine] resolves a
  * candidate from an unexpired server-side snapshot, validates it again, and only then calls
- * [quarantine]. Payloads are moved to a quarantine directory on the same filesystem, so a failed
- * move leaves the original untouched. Metadata is written after the move and rolled back on error.
+ * [quarantine]. Metadata is committed before the same-filesystem atomic move. A failed move removes
+ * the pending record and leaves the original untouched; a successful move remains recoverable.
  */
 internal class QuarantineRepository(
     private val stateDir: File = File(RootPaths.STATE_DIR)
@@ -113,41 +113,44 @@ internal class QuarantineRepository(
         destination.parentFile?.mkdirs()
         if (isSymlink(destination.parentFile ?: destination)) return Result(false, message = "隔离目录异常")
 
-        val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
-        if (!moved || source.exists() || !destination.exists()) {
-            return Result(false, message = "无法在同一文件系统原子移动目标；原文件未删除")
-        }
-
         val now = System.currentTimeMillis()
-        val entry = Entry(
-            id = id,
-            originalPath = sourcePath,
-            storedPath = destinationPath,
-            profile = profile.take(MAX_TEXT),
-            category = category.take(MAX_TEXT),
-            label = label.take(MAX_TEXT),
-            risk = risk,
-            snapshotId = snapshotId.take(MAX_TEXT),
-            createdAt = now,
-            expiresAt = now + RETENTION_MS,
-            bytes = stats.bytes,
-            files = stats.files,
-            directories = stats.directories
-        )
-        val metadataWritten = runCatching { writeEntry(entry) }.isSuccess
-        if (!metadataWritten) {
-            val rolledBack = runCatching {
-                source.parentFile?.mkdirs()
-                destination.renameTo(source)
-            }.getOrDefault(false)
-            if (!rolledBack) {
-                runCatching { writeEntry(entry.copy(label = "元数据恢复项 · $label")) }
-                return Result(false, id, stats.bytes, stats.files, stats.directories, "目标已移动，但元数据写入失败；已保留恢复记录")
-            }
-            return Result(false, message = "隔离记录写入失败，已回滚原文件")
-        }
+val entry = Entry(
+    id = id,
+    originalPath = sourcePath,
+    storedPath = destinationPath,
+    profile = profile.take(MAX_TEXT),
+    category = category.take(MAX_TEXT),
+    label = label.take(MAX_TEXT),
+    risk = risk,
+    snapshotId = snapshotId.take(MAX_TEXT),
+    createdAt = now,
+    expiresAt = now + RETENTION_MS,
+    bytes = stats.bytes,
+    files = stats.files,
+    directories = stats.directories
+)
+if (runCatching { writeEntry(entry) }.isFailure) {
+    return Result(false, message = "隔离记录写入失败，原文件未移动")
+}
 
-        return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 7 天内恢复")
+val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
+if (!moved || source.exists() || !destination.exists()) {
+    if (!destination.exists()) deleteMetadata(id)
+    return Result(
+        success = false,
+        id = if (destination.exists()) id else "",
+        bytes = if (destination.exists()) stats.bytes else 0L,
+        files = if (destination.exists()) stats.files else 0L,
+        directories = if (destination.exists()) stats.directories else 0L,
+        message = if (destination.exists()) {
+            "隔离移动状态异常，已保留恢复记录"
+        } else {
+            "无法在同一文件系统原子移动目标；原文件未删除"
+        }
+    )
+}
+
+return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 7 天内恢复")
     }
 
     @Synchronized
@@ -190,6 +193,8 @@ internal class QuarantineRepository(
                 "${original.name}.baize-restored-${entry.id.take(8)}")
         }
         if (destination.exists()) return errorJson("restore_conflict", "原路径和恢复副本路径都已存在")
+        val destinationPath = canonicalWithoutExistence(destination)
+        if (!safeOriginalPath(destinationPath)) return errorJson("unsafe_restore", "恢复目标已超出安全边界")
         destination.parentFile?.mkdirs()
 
         val restored = runCatching { payload.renameTo(destination) }.getOrDefault(false)
@@ -234,7 +239,10 @@ internal class QuarantineRepository(
         for (entry in readEntries()) {
             if (entry.expiresAt > now) continue
             val payload = File(entry.storedPath)
-            if (payload.exists() && isStoredPayload(entry, payload) && !deleteTree(payload)) continue
+            if (payload.exists()) {
+                if (!isStoredPayload(entry, payload)) continue
+                if (!deleteTree(payload)) continue
+            }
             deleteMetadata(entry.id)
             pruneEmptyParents(payload.parentFile)
             purged += 1
