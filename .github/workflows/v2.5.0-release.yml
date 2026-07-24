@@ -63,6 +63,7 @@ jobs:
             busybox ash -n "$script"
           done
           bash v2/tests/test-scheduler-fairness.sh
+          bash v2/tests/test-concurrent-scheduler.sh
           bash v2/tests/test-incremental-index.sh
           bash v2/tests/test-organizer-transactions.sh
           gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
@@ -174,19 +175,38 @@ jobs:
             v2/dist/BaiZe-v2.5.0.apk.sha256
             v2/dist/BaiZe-v2.5.0-signing-certificate.txt
 
-      - name: Publish BaiZe v2.5.0 GitHub Release
+      - name: Publish or refresh BaiZe v2.5.0 GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create v2.5.0 \
-            v2/dist/BaiZe-v2.5.0-Module.zip \
-            v2/dist/BaiZe-v2.5.0-Module.zip.sha256 \
-            v2/dist/BaiZe-v2.5.0.apk \
-            v2/dist/BaiZe-v2.5.0.apk.sha256 \
-            v2/dist/BaiZe-v2.5.0-signing-certificate.txt \
-            --target "$GITHUB_SHA" \
-            --title '白泽 v2.5.0' \
-            --notes-file RELEASE_NOTES_v2.5.0.md \
-            --latest
+          TAG=v2.5.0
+          ZIP=v2/dist/BaiZe-v2.5.0-Module.zip
+          ZIP_SHA=v2/dist/BaiZe-v2.5.0-Module.zip.sha256
+          APK=v2/dist/BaiZe-v2.5.0.apk
+          APK_SHA=v2/dist/BaiZe-v2.5.0.apk.sha256
+          CERT=v2/dist/BaiZe-v2.5.0-signing-certificate.txt
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release edit "$TAG" --title '白泽 v2.5.0' --notes-file RELEASE_NOTES_v2.5.0.md --latest
+            gh release upload "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$ZIP_SHA" "$APK" "$APK_SHA" "$CERT" \
+              --target "$GITHUB_SHA" \
+              --title '白泽 v2.5.0' \
+              --notes-file RELEASE_NOTES_v2.5.0.md \
+              --latest
+          fi
+
+      - name: Upload release diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.5.0-Release-Diagnostics
+          if-no-files-found: warn
+          path: |
+            v2/app/build/reports/lint-results-release.html
+            v2/app/build/reports/lint-results-release.txt
+            v2/dist
