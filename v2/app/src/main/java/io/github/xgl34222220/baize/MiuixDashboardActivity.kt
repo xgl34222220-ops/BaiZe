@@ -66,6 +66,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var pollJob: Job? = null
     private var recoveryProbeJob: Job? = null
     private var schedulerMonitorJob: Job? = null
+    private var queueStallStartedRealtime = 0L
+    private var lastQueueWakeRealtime = 0L
     private var taskCallbackRegistered = false
     private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
         override fun onTaskProgress(stateJson: String?) {
@@ -215,7 +217,22 @@ class MiuixDashboardActivity : ComponentActivity() {
                     val taskJson = runCatching { JSONObject(service.getTaskState()) }.getOrNull()
                     schedulerJson to taskJson
                 }
-                snapshots.first?.let { schedulerState.value = SchedulerUiState.fromJson(it) }
+                snapshots.first?.let { schedulerJson ->
+                    val schedulerSnapshot = SchedulerUiState.fromJson(schedulerJson)
+                    schedulerState.value = schedulerSnapshot
+                    val reason = schedulerSnapshot.runtimeReason
+                    val blocked = reason.contains("息屏") || reason.contains("充电") || reason.contains("电量") ||
+                        reason.contains("空闲") || reason.contains("当前任务") || reason.contains("自动重试") || reason.contains("自动恢复")
+                    val pending = schedulerSnapshot.queueCount > 0 && schedulerSnapshot.runtimeState != "running" && !blocked
+                    val nowRealtime = SystemClock.elapsedRealtime()
+                    if (pending) {
+                        if (queueStallStartedRealtime == 0L) queueStallStartedRealtime = nowRealtime
+                        if (nowRealtime - queueStallStartedRealtime >= 2_000L && nowRealtime - lastQueueWakeRealtime >= 2_500L) {
+                            lastQueueWakeRealtime = nowRealtime
+                            withContext(Dispatchers.IO) { runCatching { service.runModuleTask("scheduler-wake") } }
+                        }
+                    } else queueStallStartedRealtime = 0L
+                }
                 val task = snapshots.second
                 if (task?.optBoolean("running") == true) {
                     idleConfirmations = 0

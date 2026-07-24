@@ -1,45 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# BEGIN ONE-TIME QUEUE DISPATCH FIX
-if [ -f .github/scripts/apply-queue-dispatch-insets-fix.py ]; then
-  LOG=$(mktemp)
-  set +e
-  (
-    set -e
-    python3 .github/scripts/apply-queue-dispatch-insets-fix.py
-    git diff --check
-    sh -n service.sh
-    busybox ash -n service.sh
-    sh -n v2/module/supervisor.sh
-    busybox ash -n v2/module/supervisor.sh
-    sh -n v2/module/task-worker.sh
-    busybox ash -n v2/module/task-worker.sh
-    timeout 70 env BAIZE_QUEUE_DISPATCH_PATCH_APPLIED=1 bash "$0"
-  ) >"$LOG" 2>&1
-  CODE=$?
-  set -e
-  if [ "$CODE" -ne 0 ]; then
-    cp "$LOG" /tmp/queue-dispatch-fix-error.log
-    git reset --hard HEAD
-    cp /tmp/queue-dispatch-fix-error.log .queue-dispatch-fix-error.log
-    git config user.name 'github-actions[bot]'
-    git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-    git add -f .queue-dispatch-fix-error.log
-    git commit -m 'chore: capture queue dispatch fix failure'
-    git push origin HEAD:agent/dual-theme-ui-redesign
-    exit "$CODE"
-  fi
-  rm -f "$LOG" .queue-dispatch-fix-error.log
-  git config user.name 'github-actions[bot]'
-  git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-  git add -A
-  git commit -m 'fix(scheduler): guarantee Root queue dispatch and respect system bars'
-  git push origin HEAD:agent/dual-theme-ui-redesign
-  exit 0
-fi
-# END ONE-TIME QUEUE DISPATCH FIX
-
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=${TMPDIR:-/tmp}/baize-v240-scheduler-test
 rm -rf "$T"; mkdir -p "$T/module/config" "$T/state/scheduler-requests" "$T/state/scheduler-skips"
@@ -120,9 +81,15 @@ rm -f "$T/state/last_cache_run.epoch"
 sed -i 's/^schedule_empty_enabled=.*/schedule_empty_enabled=0/; s/^schedule_organize_enabled=.*/schedule_organize_enabled=0/' "$T/state/config.conf"
 run_once
 grep -q '^state=waiting$' "$T/state/scheduler.env"
-grep -q '^reason=等待自动重试$' "$T/state/scheduler.env"
+grep -q '^reason=后台任务正在重新拉起$' "$T/state/scheduler.env"
 test -s "$T/state/scheduler-retry-cache.until"
+retry_until=$(sed -n '1p' "$T/state/scheduler-retry-cache.until")
+retry_delay=$((retry_until - $(date +%s)))
+[ "$retry_delay" -ge 0 ] && [ "$retry_delay" -le 3 ]
 ! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
+grep -q 'QUEUE_RETRY_SECONDS=.*1' "$ROOT/service.sh"
+grep -q 'queue_dispatch_stalled' "$ROOT/v2/module/supervisor.sh"
+grep -q 'QUEUE_RESTART_AFTER_SECONDS=.*12' "$ROOT/v2/module/supervisor.sh"
 echo 'scheduler fairness: ok'
 # Deep scheduled tasks must request the atomic scan -> clean chain.
 cat > "$T/module/task-worker.sh" <<'SH'

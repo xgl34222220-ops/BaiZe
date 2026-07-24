@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-queue-dispatch-insets-fix.py", line 80, in <module>
-    text = replace_required(text, old_result, new_result, 'task result recovery')
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-queue-dispatch-insets-fix.py", line 19, in replace_required
-    raise RuntimeError(f'{label}: anchor not found')
-RuntimeError: task result recovery: anchor not found

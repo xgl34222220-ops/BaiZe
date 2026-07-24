@@ -484,6 +484,7 @@ fun BaiZeMiuixApp(
                         style = UiStyle.MATERIAL,
                         modifier = Modifier
                             .fillMaxSize()
+                            .statusBarsPadding()
                     ) { targetPage ->
                         when (targetPage) {
                             BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
@@ -519,6 +520,7 @@ fun BaiZeMiuixApp(
                             style = UiStyle.MIUIX,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .statusBarsPadding()
                         ) { targetPage ->
                             when (targetPage) {
                                 BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }

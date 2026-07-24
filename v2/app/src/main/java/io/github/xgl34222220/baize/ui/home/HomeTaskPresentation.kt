@@ -52,8 +52,9 @@ internal fun taskCountdownLabel(
             scheduler.runtimeState == "running" -> "等待当前后台任务完成"
             reason.contains("息屏") || reason.contains("充电") || reason.contains("电量") ||
                 reason.contains("空闲") || reason.contains("当前任务") || reason.contains("手动任务") ||
-                reason.contains("队列将在完成") || reason.contains("重试") -> reason
-            scheduler.queueCount > 0 && scheduler.nextTask == task.id -> "已进入 Root 队列"
+                reason.contains("队列将在完成") || reason.contains("重试") || reason.contains("恢复") ||
+                reason.contains("重新拉起") -> reason
+            scheduler.queueCount > 0 && scheduler.nextTask == task.id -> "正在唤醒 Root Worker"
             scheduler.queueCount > 0 -> "等待队列前序任务完成"
             else -> "正在提交 Root Worker"
         }

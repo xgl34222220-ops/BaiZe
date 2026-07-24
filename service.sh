@@ -17,6 +17,7 @@ RUNNING_FILE="$STATE_DIR/running.env"
 MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-1}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
 CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-5}
+QUEUE_RETRY_SECONDS=${BAIZE_QUEUE_RETRY_SECONDS:-1}
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
 QUEUE_COUNT=0
@@ -121,19 +122,24 @@ clear_group_retry() {
     "$STATE_DIR/scheduler-fail-$1.count" "$STATE_DIR/scheduler-pause-$1.until" 2>/dev/null || true
 }
 record_group_retry() {
-  rr_group=$1; rr_count_file=$(retry_count_file "$rr_group"); rr_until_file=$(retry_until_file "$rr_group")
+  rr_group=$1; rr_base=${2:-15}; rr_count_file=$(retry_count_file "$rr_group"); rr_until_file=$(retry_until_file "$rr_group")
+  case "$rr_base" in ''|*[!0-9]*) rr_base=15 ;; esac
+  [ "$rr_base" -lt 1 ] && rr_base=1
   rr_count=$(sed -n '1p' "$rr_count_file" 2>/dev/null)
   case "$rr_count" in ''|*[!0-9]*) rr_count=0 ;; esac
-  rr_count=$((rr_count + 1)); printf '%s\n' "$rr_count" >"$rr_count_file"
+  rr_count=$((rr_count + 1)); printf '%s
+' "$rr_count" >"$rr_count_file"
   case "$rr_count" in
-    1) rr_delay=300 ;;
-    2) rr_delay=900 ;;
-    3) rr_delay=1800 ;;
-    4) rr_delay=3600 ;;
-    *) rr_delay=7200 ;;
+    1) rr_delay=$rr_base ;;
+    2) rr_delay=$((rr_base * 2)) ;;
+    3) rr_delay=$((rr_base * 4)) ;;
+    4) rr_delay=$((rr_base * 8)) ;;
+    *) rr_delay=$((rr_base * 16)) ;;
   esac
+  [ "$rr_delay" -gt 300 ] && rr_delay=300
   RETRY_DELAY_SECONDS=$rr_delay
-  printf '%s\n' $(( $(date +%s) + rr_delay )) >"$rr_until_file"
+  printf '%s
+' $(( $(date +%s) + rr_delay )) >"$rr_until_file"
 }
 group_retry_remaining() {
   gr_group=$1; gr_until_file=$(retry_until_file "$gr_group")
@@ -314,10 +320,18 @@ handle_task_result() {
       [ -n "$hr_request" ] && rm -f "$hr_request"
       write_scheduler_state waiting "$hr_group" "等待自动重试"
       ;;
+    4|5|6|7|8|127)
+      clear_stale_task_markers
+      record_group_retry "$hr_group" 2
+      printf '%s
+' "$(date '+%Y-%m-%d %H:%M:%S') task=$hr_group launch_exit=$hr_code recovery=${RETRY_DELAY_SECONDS}s" >>"$hr_run_log"
+      write_scheduler_state waiting "$hr_group" "后台任务正在重新拉起"
+      ;;
     *)
-      record_group_retry "$hr_group"
-      printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') task=$hr_group exit=$hr_code retry=${RETRY_DELAY_SECONDS}s" >>"$hr_run_log"
-      write_scheduler_state waiting "$hr_group" "等待自动重试"
+      record_group_retry "$hr_group" 15
+      printf '%s
+' "$(date '+%Y-%m-%d %H:%M:%S') task=$hr_group exit=$hr_code recovery=${RETRY_DELAY_SECONDS}s" >>"$hr_run_log"
+      write_scheduler_state waiting "$hr_group" "后台正在自动恢复"
       ;;
   esac
 }
@@ -329,7 +343,7 @@ run_next_fair_task() {
   while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
     [ -n "${rn_group:-}" ] || continue
     if group_retry_remaining "$rn_group" >/dev/null; then
-      rn_reason="${rn_group}:等待自动重试"
+      rn_reason="${rn_group}:后台正在自动恢复"
       [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
       continue
     fi
@@ -354,7 +368,7 @@ run_next_fair_task() {
 clamp_sleep() { cs_value=$1; [ "$cs_value" -lt "$MIN_SLEEP_SECONDS" ] && cs_value=$MIN_SLEEP_SECONDS; [ "$cs_value" -gt "$MAX_SLEEP_SECONDS" ] && cs_value=$MAX_SLEEP_SECONDS; echo "$cs_value"; }
 compute_next_sleep() {
   [ "$TASK_EXECUTED" = 1 ] && { echo "$MIN_SLEEP_SECONDS"; return; }
-  [ "$QUEUE_COUNT" -gt 0 ] && { echo "$CONDITION_RETRY_SECONDS"; return; }
+  [ "$QUEUE_COUNT" -gt 0 ] && { [ -n "$BLOCKED_GROUPS" ] && echo "$CONDITION_RETRY_SECONDS" || echo "$QUEUE_RETRY_SECONDS"; return; }
   cn_now=$(date +%s); cn_minimum=0
   for cn_group in cache empty rules fragment deep organize; do
     group_spec "$cn_group" || continue; [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
