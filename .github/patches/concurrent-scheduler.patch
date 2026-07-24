@@ -1,0 +1,364 @@
+diff --git a/service.sh b/service.sh
+index 533cfae..b8f02cd 100755
+--- a/service.sh
++++ b/service.sh
+@@ -1,6 +1,6 @@
+ #!/system/bin/sh
+-# BaiZe v2.4 unified Root scheduler.
+-# App only submits configuration/commands. This process owns fairness, conditions, locking and recovery.
++# BaiZe v2.5 resource-lane Root scheduler.
++# App only submits configuration/commands. Compatible jobs may share a batch; destructive overlaps remain serialized.
+ set -u
+ 
+ MODDIR=${BAIZE_MODULE_DIR:-${0%/*}}
+@@ -14,6 +14,7 @@ QUEUE_FILE="$STATE_DIR/scheduler-queue.tsv"
+ REQUEST_DIR="$STATE_DIR/scheduler-requests"
+ SKIP_DIR="$STATE_DIR/scheduler-skips"
+ LOCK_DIR="$STATE_DIR/run.lock"
++CACHE_LANE_WORKER="$MODDIR/cache-lane-worker.sh"
+ STOP_FILE="$STATE_DIR/stop"
+ RUNNING_FILE="$STATE_DIR/running.env"
+ MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-1}
+@@ -339,10 +340,86 @@ handle_task_result() {
+   esac
+ }
+ 
++select_parallel_cache_organize() {
++  pc_found=0; po_found=0; rp_runnable=0
++  while IFS="$(printf '\t')" read -r rp_priority rp_due rp_group rp_mode rp_kind rp_request rp_cycle; do
++    [ -n "${rp_group:-}" ] || continue
++    group_retry_remaining "$rp_group" >/dev/null && continue
++    conditions_allow_task "$rp_group" || continue
++    rp_runnable=$((rp_runnable + 1))
++    [ "$rp_runnable" -le 2 ] || break
++    case "$rp_group:$rp_kind" in
++      cache:interval|cache:daily)
++        pc_found=1; pc_priority=$rp_priority; pc_due=$rp_due; pc_mode=$rp_mode
++        pc_kind=$rp_kind; pc_request=$rp_request; pc_cycle=$rp_cycle
++        ;;
++      organize:interval|organize:daily)
++        po_found=1; po_priority=$rp_priority; po_due=$rp_due; po_mode=$rp_mode
++        po_kind=$rp_kind; po_request=$rp_request; po_cycle=$rp_cycle
++        ;;
++      *) return 1 ;;
++    esac
++  done <"$QUEUE_FILE"
++  [ "$rp_runnable" -eq 2 ] && [ "$pc_found" -eq 1 ] && [ "$po_found" -eq 1 ] && [ -f "$CACHE_LANE_WORKER" ]
++}
++
++run_parallel_cache_organize() {
++  pc_log="$LOG_DIR/scheduler-cache.log"
++  po_log="$LOG_DIR/scheduler-organize.log"
++  rotate_scheduler_log "$pc_log"; rotate_scheduler_log "$po_log"
++  pc_task_id="scheduled-cache-$(date +%s)-$$"
++  po_task_id="scheduled-organize-$(date +%s)-$$"
++  write_scheduler_state running "cache+organize" "正在并行执行应用缓存与文件归类"
++
++  BAIZE_STATE_DIR="$STATE_DIR" sh "$CACHE_LANE_WORKER" "$pc_mode" "scheduler:$pc_kind" "$pc_task_id" wait >>"$pc_log" 2>&1 &
++  pc_pid=$!
++  sh "$MODDIR/task-worker.sh" "$po_mode" "scheduler:$po_kind" "$po_task_id" wait >>"$po_log" 2>&1 &
++  po_pid=$!
++
++  wait "$pc_pid" 2>/dev/null; pc_code=$?
++  wait "$po_pid" 2>/dev/null; po_code=$?
++  TASK_EXECUTED=1
++  handle_task_result "$pc_code" cache "$pc_kind" "$pc_cycle" "$pc_request" "$pc_log"
++  handle_task_result "$po_code" organize "$po_kind" "$po_cycle" "$po_request" "$po_log"
++  if [ "$pc_code" -eq 0 ] && [ "$po_code" -eq 0 ]; then
++    write_scheduler_state completed "cache+organize" "2 项兼容任务已并行完成"
++  else
++    write_scheduler_state waiting "cache+organize" "并行批次部分完成，异常任务将自动恢复"
++  fi
++}
++
+ run_next_fair_task() {
+   TASK_EXECUTED=0; BLOCKED_GROUPS=
+   [ -s "$QUEUE_FILE" ] || { write_scheduler_state waiting "" "没有到期任务"; return 0; }
+   if scheduler_task_alive; then write_scheduler_state waiting "" "已有手动任务运行，队列将在完成后继续"; return 0; fi
++  if select_parallel_cache_organize; then
++    run_parallel_cache_organize
++    return 0
++  fi
+   while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
+     [ -n "${rn_group:-}" ] || continue
+     if group_retry_remaining "$rn_group" >/dev/null; then
+diff --git a/v2/module/cache-lane-worker.sh b/v2/module/cache-lane-worker.sh
+new file mode 100755
+index 0000000..de4cce1
+--- /dev/null
++++ b/v2/module/cache-lane-worker.sh
+@@ -0,0 +1,145 @@
++#!/system/bin/sh
++set -u
++
++MODDIR=${0%/*}
++MODE=${1:-cache-auto}
++TRIGGER=${2:-scheduler:interval}
++TASK_ID=${3:-cache-$(date +%s)-$$}
++WAIT_MODE=${4:-wait}
++ROOT_STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
++SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
++LANE_ROOT="$ROOT_STATE_DIR/cache-lane"
++TASK_STATE="$LANE_ROOT/$TASK_ID"
++LANE_LOCK="$ROOT_STATE_DIR/cache-lane.lock"
++ROOT_RESULT_DIR="$ROOT_STATE_DIR/task-results"
++ROOT_RUNNING="$ROOT_STATE_DIR/running.env"
++GLOBAL_LOCK="$ROOT_STATE_DIR/run.lock"
++GLOBAL_STOP="$ROOT_STATE_DIR/stop"
++CHILD_PID=0
++
++[ "$MODE" = cache-auto ] || { echo "缓存并行通道只接受 cache-auto" >&2; exit 2; }
++[ -f "$MODDIR/task-worker.sh" ] || { echo "统一 Root Worker 缺失" >&2; exit 5; }
++
++lane_owner_alive() {
++  owner=$(sed -n '1p' "$LANE_LOCK/pid" 2>/dev/null)
++  case "$owner" in ''|*[!0-9]*) return 1 ;; esac
++  [ "$owner" -gt 1 ] && kill -0 "$owner" 2>/dev/null
++}
++
++if ! mkdir "$LANE_LOCK" 2>/dev/null; then
++  if lane_owner_alive; then
++    echo "应用缓存并行通道已有任务运行" >&2
++    exit 3
++  fi
++  rm -rf -- "$LANE_LOCK" 2>/dev/null || true
++  mkdir "$LANE_LOCK" 2>/dev/null || { echo "无法恢复应用缓存并行通道" >&2; exit 4; }
++fi
++printf '%s\n' "$$" >"$LANE_LOCK/pid"
++
++cleanup_lane() {
++  [ "$CHILD_PID" -gt 1 ] 2>/dev/null && kill "$CHILD_PID" 2>/dev/null || true
++  current=$(sed -n 's/^task_id=//p' "$ROOT_RUNNING" 2>/dev/null | tail -n 1)
++  [ "$current" = "$TASK_ID" ] && rm -f "$ROOT_RUNNING" 2>/dev/null || true
++  rm -rf -- "$TASK_STATE" "$LANE_LOCK" 2>/dev/null || true
++}
++handle_signal() {
++  trap - EXIT INT TERM
++  : >"$TASK_STATE/stop" 2>/dev/null || true
++  cleanup_lane
++  exit 9
++}
++trap cleanup_lane EXIT
++trap handle_signal INT TERM
++
++rm -rf -- "$TASK_STATE"
++mkdir -p "$TASK_STATE/logs" "$TASK_STATE/reports" "$TASK_STATE/task-results" "$ROOT_RESULT_DIR" "$LANE_ROOT"
++chmod 0700 "$TASK_STATE" 2>/dev/null || true
++for shared in config.conf whitelist.conf custom.rules native-cache-packages.conf totals.env; do
++  [ -f "$ROOT_STATE_DIR/$shared" ] && cp -f "$ROOT_STATE_DIR/$shared" "$TASK_STATE/$shared"
++done
++
++mirror_progress() {
++  [ -d "$GLOBAL_LOCK" ] && return 0
++  [ -f "$TASK_STATE/running.env" ] || return 0
++  tmp="$ROOT_RUNNING.tmp.cache.$$"
++  {
++    cat "$TASK_STATE/running.env"
++    echo "task_id=$TASK_ID"
++    echo "lane=cache"
++    echo "parallel_capable=1"
++  } >"$tmp" && mv -f "$tmp" "$ROOT_RUNNING"
++  chmod 0600 "$ROOT_RUNNING" 2>/dev/null || true
++}
++
++BAIZE_ROOT_STATE_DIR="$ROOT_STATE_DIR" BAIZE_STATE_DIR="$TASK_STATE" BAIZE_SHELL_BIN="$SHELL_BIN" \
++  "$SHELL_BIN" "$MODDIR/task-worker.sh" "$MODE" "$TRIGGER" "$TASK_ID" "$WAIT_MODE" &
++CHILD_PID=$!
++
++while kill -0 "$CHILD_PID" 2>/dev/null; do
++  [ -f "$GLOBAL_STOP" ] && : >"$TASK_STATE/stop" 2>/dev/null || true
++  mirror_progress
++  sleep 1
++done
++wait "$CHILD_PID" 2>/dev/null
++CODE=$?
++CHILD_PID=0
++
++# The paired main-lane task owns the legacy state files. Wait until it releases them before merging
++# cache history and latest-result state, avoiding two writers truncating history.tsv at once.
++waited=0
++while [ -d "$GLOBAL_LOCK" ] && [ "$waited" -lt 900 ]; do
++  [ -f "$GLOBAL_STOP" ] && : >"$TASK_STATE/stop" 2>/dev/null || true
++  sleep 1
++  waited=$((waited + 1))
++done
++
++if [ -f "$TASK_STATE/task-results/$TASK_ID.env" ]; then
++  cp -f "$TASK_STATE/task-results/$TASK_ID.env" "$ROOT_RESULT_DIR/$TASK_ID.env"
++fi
++if [ -s "$TASK_STATE/history.tsv" ]; then
++  cat "$TASK_STATE/history.tsv" >>"$ROOT_STATE_DIR/history.tsv"
++  tail -n 100 "$ROOT_STATE_DIR/history.tsv" >"$ROOT_STATE_DIR/history.tsv.tmp.$$" 2>/dev/null &&
++    mv -f "$ROOT_STATE_DIR/history.tsv.tmp.$$" "$ROOT_STATE_DIR/history.tsv"
++fi
++if [ -f "$TASK_STATE/latest.env" ]; then
++  cp -f "$TASK_STATE/latest.env" "$ROOT_STATE_DIR/latest.env.tmp.$$" &&
++    mv -f "$ROOT_STATE_DIR/latest.env.tmp.$$" "$ROOT_STATE_DIR/latest.env"
++fi
++if [ -f "$TASK_STATE/totals.env" ]; then
++  cp -f "$TASK_STATE/totals.env" "$ROOT_STATE_DIR/totals.env.tmp.$$" &&
++    mv -f "$ROOT_STATE_DIR/totals.env.tmp.$$" "$ROOT_STATE_DIR/totals.env"
++fi
++for file in "$TASK_STATE"/logs/*; do
++  [ -f "$file" ] || continue
++  cp -f "$file" "$ROOT_STATE_DIR/logs/cache-lane-$TASK_ID-${file##*/}"
++done
++for file in "$TASK_STATE"/reports/*; do
++  [ -f "$file" ] || continue
++  cp -f "$file" "$ROOT_STATE_DIR/reports/cache-lane-$TASK_ID-${file##*/}"
++done
++
++current=$(sed -n 's/^task_id=//p' "$ROOT_RUNNING" 2>/dev/null | tail -n 1)
++[ "$current" = "$TASK_ID" ] && rm -f "$ROOT_RUNNING" 2>/dev/null || true
++rm -rf -- "$TASK_STATE" "$LANE_LOCK" 2>/dev/null || true
++trap - EXIT INT TERM
++exit "$CODE"
+diff --git a/v2/scripts/package-module.sh b/v2/scripts/package-module.sh
+index ff64f33..d599141 100755
+--- a/v2/scripts/package-module.sh
++++ b/v2/scripts/package-module.sh
+@@ -36,7 +36,7 @@ sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE
+ sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
+ 
+ cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
+-chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/organizer-worker.sh"
++chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
+ chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
+ chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
+ chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
+@@ -66,6 +66,8 @@ unzip -l "$OUTPUT" | grep -q 'one-pass-scan.sh'
+ unzip -l "$OUTPUT" | grep -q 'storage-index.sh'
+ unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
++unzip -l "$OUTPUT" | grep -q 'cache-lane-worker.sh'
++unzip -p "$OUTPUT" cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
+ unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
+ unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5'
+ unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
+diff --git a/v2/module/customize.sh b/v2/module/customize.sh
+index 2b54f65..db373ef 100755
+--- a/v2/module/customize.sh
++++ b/v2/module/customize.sh
+@@ -38,6 +38,7 @@ ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"
+ [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
+ [ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+ [ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
++[ -f "$MODPATH/cache-lane-worker.sh" ] || abort "! 模块包中缺少应用缓存并行 Worker"
+ [ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
+ [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
+@@ -52,7 +53,8 @@ pkill -f '/data/adb/modules/baize_v2/worker-runner.sh' >/dev/null 2>&1 || true
+ pkill -f '/data/adb/modules/baize_v2/task-worker.sh' >/dev/null 2>&1 || true
+ pkill -f '/data/adb/modules/baize_v2/scheduler.sh' >/dev/null 2>&1 || true
+ pkill -f '/data/adb/modules/baize_v2/supervisor.sh' >/dev/null 2>&1 || true
+-rm -rf "$STATE_DIR/run.lock"
++pkill -f '/data/adb/modules/baize_v2/cache-lane-worker.sh' >/dev/null 2>&1 || true
++rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/cache-lane.lock" "$STATE_DIR/cache-lane"
+ rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
+@@ -69,7 +71,7 @@ rm -f "$STATE_DIR"/scheduler-retry-*.count "$STATE_DIR"/scheduler-retry-*.
+ rm -rf "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
+ mkdir -p "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
+-echo 'deep-pipeline-v1' >"$STATE_DIR/runtime-schema"
++echo 'concurrent-lanes-v1' >"$STATE_DIR/runtime-schema"
+@@ -99,7 +101,7 @@ chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH
+ chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
++chmod 0755 "$MODPATH/cache-lane-worker.sh" 2>/dev/null
+ 
+ install_app() {
+diff --git a/v2/module/service.sh b/v2/module/service.sh
+index fe177d3..f469127 100755
+--- a/v2/module/service.sh
++++ b/v2/module/service.sh
+@@ -8,15 +8,15 @@ CONFIG="$STATE_DIR/config.conf"
+ rm -rf "$MODDIR/webroot" "$MODDIR/webui" "$MODDIR/www" "$MODDIR/ksu-webui" 2>/dev/null || true
+ mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
+ chmod 0700 "$STATE_DIR"
+-RUNTIME_SCHEMA=deep-pipeline-v1
++RUNTIME_SCHEMA=concurrent-lanes-v1
+ SCHEMA_FILE="$STATE_DIR/runtime-schema"
+ current_schema=$(sed -n '1p' "$SCHEMA_FILE" 2>/dev/null)
+ if [ "$current_schema" != "$RUNTIME_SCHEMA" ]; then
+-  rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
++  rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/cache-lane.lock" "$STATE_DIR/cache-lane" "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
+   rm -f "$STATE_DIR/running.env" "$STATE_DIR/worker.env" "$STATE_DIR/scheduler.env" \
+     "$STATE_DIR/supervisor.env" "$STATE_DIR/scheduler-queue.tsv" "$STATE_DIR/supervisor.stop" \
+     "$STATE_DIR/stop" "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
+diff --git a/v2/tests/test-scheduler-fairness.sh b/v2/tests/test-scheduler-fairness.sh
+index 8e99c93..b31a5c7 100755
+--- a/v2/tests/test-scheduler-fairness.sh
++++ b/v2/tests/test-scheduler-fairness.sh
+@@ -7,6 +7,7 @@ ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
+ T=${TMPDIR:-/tmp}/baize-v240-scheduler-test
+ rm -rf "$T"; mkdir -p "$T/module/config" "$T/state/scheduler-requests" "$T/state/scheduler-skips"
+ cp "$ROOT/service.sh" "$T/module/scheduler.sh"
++cp "$ROOT/v2/module/cache-lane-worker.sh" "$T/module/cache-lane-worker.sh"
+ cat > "$T/module/task-worker.sh" <<'SH2'
+ #!/bin/sh
+ printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"${BAIZE_STATE_DIR}/executed.tsv"
+@@ -164,6 +165,49 @@ grep -q '^exit_code=0$' "$W/state/task-results/nonempty.env"
+ 
+ grep -q 'deep-pipeline-v1' "$ROOT/v2/module/service.sh"
+ grep -q 'scheduler-retry-.*until' "$ROOT/v2/module/customize.sh"
+-echo 'scheduler fairness and deep pipeline: ok'
++
++# Two compatible scheduled jobs must start in the same batch instead of waiting for one another.
++rm -rf "$T/state"; mkdir -p "$T/state/scheduler-requests" "$T/state/scheduler-skips"
++cat > "$T/state/config.conf" <<'CONF'
++enabled=1
++screen_off_only=0
++charging_only=0
++device_idle_only=0
++min_battery=0
++daily_schedule_enabled=0
++schedule_cache_enabled=1
++schedule_cache_minutes=30
++schedule_cache_hours=1
++schedule_empty_enabled=0
++schedule_rules_enabled=0
++schedule_fragment_enabled=0
++schedule_deep_enabled=0
++schedule_organize_enabled=1
++schedule_organize_minutes=30
++schedule_organize_hours=1
++organize_screen_off_only=0
++organize_charging_only=0
++organize_device_idle_only=0
++CONF
++now=$(date +%s)
++printf '%s\n' $((now-7200)) >"$T/state/last_cache_run.epoch"
++printf '%s\n' $((now-7200)) >"$T/state/last_organize_run.epoch"
++cat > "$T/module/task-worker.sh" <<'SH2'
++#!/bin/sh
++root=${BAIZE_ROOT_STATE_DIR:-$BAIZE_STATE_DIR}
++mkdir -p "$BAIZE_STATE_DIR/task-results"
++started=$(date +%s)
++printf 'start\t%s\t%s\n' "$1" "$started" >>"$root/parallel.tsv"
++sleep 2
++ended=$(date +%s)
++printf 'end\t%s\t%s\n' "$1" "$ended" >>"$root/parallel.tsv"
++printf 'exit_code=0\n' >"$BAIZE_STATE_DIR/task-results/$3.env"
++exit 0
++SH2
++chmod +x "$T/module/task-worker.sh" "$T/module/cache-lane-worker.sh"
++run_once
++cache_start=$(awk -F '\t' '$1=="start" && $2=="cache-auto" {print $3; exit}' "$T/state/parallel.tsv")
++organize_start=$(awk -F '\t' '$1=="start" && $2=="organize" {print $3; exit}' "$T/state/parallel.tsv")
++cache_end=$(awk -F '\t' '$1=="end" && $2=="cache-auto" {print $3; exit}' "$T/state/parallel.tsv")
++organize_end=$(awk -F '\t' '$1=="end" && $2=="organize" {print $3; exit}' "$T/state/parallel.tsv")
++[ -n "$cache_start" ] && [ -n "$organize_start" ] && [ -n "$cache_end" ] && [ -n "$organize_end" ]
++start_gap=$((cache_start - organize_start)); [ "$start_gap" -lt 0 ] && start_gap=$((-start_gap))
++[ "$start_gap" -le 1 ]
++grep -q '^group=cache+organize$' "$T/state/scheduler.env"
++grep -q '^reason=2 项兼容任务已并行完成$' "$T/state/scheduler.env"
++
++grep -q 'concurrent-lanes-v1' "$ROOT/v2/module/service.sh"
++grep -q 'scheduler-retry-.*until' "$ROOT/v2/module/customize.sh"
++echo 'scheduler fairness, deep pipeline and compatible concurrency: ok'
+diff --git a/RELEASE_NOTES_v2.5.0.md b/RELEASE_NOTES_v2.5.0.md
+index 9b72875..c9ae180 100644
+--- a/RELEASE_NOTES_v2.5.0.md
++++ b/RELEASE_NOTES_v2.5.0.md
+@@ -10,6 +10,7 @@
+ - 修复深度清理执行链，定时任务统一执行 `deep-scan → deep-clean`，无候选项时正常完成，不再进入重复重试。
+ - 加固 Root Worker 生命周期、快速任务标记清理、调度器自动恢复和文件归类任务状态。
++- 定时调度改为资源通道：应用缓存与文件自动归类可在同一批次并行执行，可能操作相同路径的删除任务仍保持互斥。
+ - 优化自动任务默认执行条件和倒计时展示，减少长期停留在等待或唤醒状态的情况。
+ - 正式构建继续校验 Root 脚本、ARM64 扫描器、Android Release、Lint、Macrobenchmark、模块封包、正式签名与模块内 APK 一致性。
