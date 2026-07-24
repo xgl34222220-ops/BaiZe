@@ -19,6 +19,7 @@ MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-1}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
 CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-5}
 QUEUE_RETRY_SECONDS=${BAIZE_QUEUE_RETRY_SECONDS:-1}
+EMPTY_FIELD=-
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
 QUEUE_COUNT=0
@@ -76,6 +77,7 @@ write_scheduler_state() {
     echo "queue_groups=$(sanitize_env "${QUEUE_GROUPS:-}")"
     echo "next_task=$(sanitize_env "${NEXT_TASK:-}")"
     echo "blocked_groups=$(sanitize_env "${BLOCKED_GROUPS:-}")"
+    echo "queue_schema=fixed-seven-fields-v1"
   } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
   chmod 0600 "$SCHEDULER_STATE" 2>/dev/null || true
 }
@@ -183,7 +185,20 @@ daily_cycle_info() {
 }
 
 CANDIDATES=
-add_candidate() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "${6:-}" "${7:-}" >>"$CANDIDATES"; }
+candidate_optional() {
+  value=$(sanitize_env "${1:-}")
+  [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$EMPTY_FIELD"
+}
+add_candidate() {
+  ac_request=$(candidate_optional "${6:-}")
+  ac_cycle=$(candidate_optional "${7:-}")
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$ac_request" "$ac_cycle" >>"$CANDIDATES"
+}
+decode_candidate_optional_fields() {
+  request=${request:-$EMPTY_FIELD}; cycle=${cycle:-$EMPTY_FIELD}
+  [ "$request" = "$EMPTY_FIELD" ] && request=
+  [ "$cycle" = "$EMPTY_FIELD" ] && cycle=
+}
 collect_manual_requests() {
   for file in "$REQUEST_DIR"/*.env; do
     [ -f "$file" ] || continue
@@ -244,7 +259,13 @@ refresh_queue_snapshot() {
 mark_group_completed() {
   group=$1; kind=$2; cycle=${3:-}; now=$(date +%s)
   printf '%s\n' "$now" >"$STATE_DIR/last_${group}_run.epoch"
-  [ "$kind" != daily ] || printf '%s\n' "$cycle" >"$STATE_DIR/last_${group}_daily.date"
+  if [ "$kind" = daily ]; then
+    case "$cycle" in
+      [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]|previous) ;;
+      *) daily_cycle_info && cycle=$DAILY_CYCLE || cycle=$(date +%F 2>/dev/null) ;;
+    esac
+    [ -n "$cycle" ] && printf '%s\n' "$cycle" >"$STATE_DIR/last_${group}_daily.date"
+  fi
 }
 handle_task_result() {
   code=$1; group=$2; kind=$3; cycle=$4; request=$5; log=$6
@@ -261,6 +282,7 @@ select_parallel_pair() {
   first=0; pc_found=0; po_found=0
   while IFS="$(printf '\t')" read -r priority due group mode kind request cycle; do
     [ -n "${group:-}" ] || continue
+    decode_candidate_optional_fields
     group_retry_remaining "$group" >/dev/null && continue
     conditions_allow_task "$group" || continue
     first=$((first+1)); [ "$first" -le 2 ] || break
@@ -297,6 +319,7 @@ run_next_fair_task() {
   if select_parallel_pair; then run_parallel_pair; return 0; fi
   while IFS="$(printf '\t')" read -r priority due group mode kind request cycle; do
     [ -n "${group:-}" ] || continue
+    decode_candidate_optional_fields
     if group_retry_remaining "$group" >/dev/null; then reason="$group:后台正在自动恢复"; [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$reason" || BLOCKED_GROUPS=$reason; continue; fi
     if ! conditions_allow_task "$group"; then reason="$group:$SCHEDULE_REASON"; [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$reason" || BLOCKED_GROUPS=$reason; continue; fi
     write_scheduler_state running "$group" "按超期时间与请求顺序执行"
