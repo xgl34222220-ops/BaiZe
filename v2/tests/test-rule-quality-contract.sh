@@ -55,7 +55,8 @@ grep -Fq 'class RuleQualityActivity' "$ACTIVITY"
 for label in '规则质量中心' '高失败' '频繁保护' '零命中' '低收益' '只读人工审核'; do
   grep -Fq "$label" "$ACTIVITY"
 done
-grep -Fq '不会自动停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
+grep -Fq '只自动重新打开审核状态' "$ACTIVITY"
+grep -Fq '不会停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
 grep -Fq 'RuleQualityActivity::class.java' "$AUDIT_UI"
 grep -Fq 'android:name=".RuleQualityActivity"' "$MANIFEST"
 
