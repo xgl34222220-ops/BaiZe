@@ -57,7 +57,8 @@ for label in '待审核' '观察中' '已保留' '已忽略' '保留规则' '继
 done
 grep -Fq 'updateRuleQualityReview(item.key, action, note)' "$ACTIVITY"
 grep -Fq '仅保存审核状态和备注' "$ACTIVITY"
-grep -Fq '不会自动停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
+grep -Fq '只自动重新打开审核状态' "$ACTIVITY"
+grep -Fq '不会停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
 
 # Permanent Root regression executes this contract.
 grep -Fq 'test-rule-review-closed-loop-contract.sh' "$WORKFLOW"
