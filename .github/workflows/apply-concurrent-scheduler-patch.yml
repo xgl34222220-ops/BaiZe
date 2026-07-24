@@ -1,0 +1,31 @@
+name: Apply concurrent scheduler patch
+
+on:
+  push:
+    branches:
+      - fix/concurrent-scheduler-lanes
+    paths:
+      - .github/patches/concurrent-scheduler.patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/concurrent-scheduler-lanes
+          fetch-depth: 0
+      - name: Apply reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git apply --check .github/patches/concurrent-scheduler.patch
+          git apply --index .github/patches/concurrent-scheduler.patch
+          git rm -f .github/patches/concurrent-scheduler.patch .github/workflows/apply-concurrent-scheduler-patch.yml
+          git commit -m "feat(v2.5.0): run compatible scheduled tasks concurrently"
+          git push origin HEAD:fix/concurrent-scheduler-lanes
