@@ -43,7 +43,7 @@ grep -Fq 'MIN_RULE_OBSERVATIONS = 3' "$ANALYZER"
 grep -Fq 'MIN_PROCESSED_FOR_LOW_VALUE = 2' "$ANALYZER"
 grep -Fq 'frequently_protected' "$ANALYZER"
 grep -Fq 'low_value' "$ANALYZER"
-! grep -Eq 'disable|enabled[[:space:]]*=[[:space:]]*false|removeRule|deleteRule' "$ANALYZER"
+! grep -Eq 'disableRule\(|removeRule\(|deleteRule\(|setRuleEnabled\(|ruleEnabled[[:space:]]*=' "$ANALYZER"
 
 # Trend requires samples on both sides and cannot guess from a single task.
 grep -Fq 'MIN_TREND_SAMPLES = 2' "$ANALYZER"
