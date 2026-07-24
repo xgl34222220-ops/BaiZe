@@ -28,19 +28,8 @@ jobs:
           from pathlib import Path
           path = Path('.github/scripts/apply-immediate-scheduler-fix.py')
           text = path.read_text(encoding='utf-8')
-          text = text.replace(
-              'return path.read_text(encoding="utf-8")',
-              'return path.read_text(encoding="utf-8", errors="ignore")',
-              1,
-          )
           old = 'scheduler = find_unique("scheduler.sh", "BaiZe v2.4 unified Root scheduler")'
-          new = '''scheduler_matches = [
-              p for p in ROOT.rglob("*")
-              if p.is_file() and "CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}" in read(p)
-          ]
-          if len(scheduler_matches) != 1:
-              raise RuntimeError(f"scheduler source: expected one match, found {scheduler_matches}")
-          scheduler = scheduler_matches[0]'''
+          new = 'scheduler = ROOT / "service.sh"'
           if old not in text:
               raise SystemExit('scheduler locator line not found')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
@@ -75,13 +64,13 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          scheduler=$(grep -rl 'BAIZE_CONDITION_RETRY_SECONDS:-15' . | head -n 1)
+          scheduler=service.sh
           defaults=$(grep -rl 'schedule_cache_enabled=1' . --include='default.conf' | head -n 1)
-          test -n "$scheduler"
           test -n "$defaults"
           sh -n "$scheduler"
           bash -n "$scheduler"
           ! grep -q 'sleep 120' "$scheduler"
+          grep -q 'BAIZE_CONDITION_RETRY_SECONDS:-15' "$scheduler"
           ! grep -q '等待电池降温' "$scheduler"
           grep -q '^screen_off_only=0$' "$defaults"
           grep -q '^organize_screen_off_only=0$' "$defaults"
