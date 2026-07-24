@@ -31,6 +31,16 @@ jobs:
         if: ${{ hashFiles('.progress-patch-error.txt') == '' }}
         shell: bash
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/scripts/apply-persistent-task-progress.py')
+          text = path.read_text(encoding='utf-8')
+          needle = "    '''    private fun renderTaskState(json: JSONObject) {"
+          replacement = "    r'''    private fun renderTaskState(json: JSONObject) {"
+          if needle not in text:
+              raise SystemExit('renderTaskState patch literal not found')
+          path.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+          PY
           set +e
           python3 .github/scripts/apply-persistent-task-progress.py >.progress-patch-output.txt 2>&1
           code=$?
