@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
@@ -141,6 +142,7 @@ class AuditActivity : ComponentActivity() {
                         onRefresh = ::loadTimeline,
                         onClear = ::clearTimeline,
                         onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) }
+                        onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) }
                     )
                 }
             }
@@ -339,6 +341,7 @@ private fun AuditScreen(
     onRefresh: () -> Unit,
     onClear: () -> Unit,
     onOpenPolicy: () -> Unit
+    onOpenEffectiveness: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
@@ -373,6 +376,7 @@ private fun AuditScreen(
                 )
             }
             item { AuditSummary(state, horizontal, cardShape) }
+            item { EffectivenessEntryCard(horizontal, cardShape, onOpenEffectiveness) }
             state.advice?.let { advice ->
                 item { AuditPolicyAdviceCard(advice, horizontal, cardShape, onOpenPolicy) }
             }
@@ -507,6 +511,37 @@ private fun AuditMetric(label: String, value: String, modifier: Modifier = Modif
         Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
             Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
             Text(value, fontWeight = FontWeight.Black, fontSize = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun EffectivenessEntryCard(
+    horizontal: androidx.compose.ui.unit.Dp,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpen: () -> Unit
+) {
+    Card(
+        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(45.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = .14f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("清理效果评分", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text("查看安全性、收益、耗时、稳定性和规则趋势", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onOpen) { Text("查看") }
         }
     }
 }
