@@ -174,27 +174,27 @@ internal class QuarantineRepository(
     @Synchronized
     fun restore(id: String?): String {
         val entry = readEntry(id.orEmpty())
-            ?: return error("not_found", "隔离记录不存在或已经过期")
+            ?: return errorJson("not_found", "隔离记录不存在或已经过期")
         val payload = File(entry.storedPath)
         if (!isStoredPayload(entry, payload) || !payload.exists() || isSymlink(payload)) {
             deleteMetadata(entry.id)
-            return error("payload_missing", "隔离内容已不存在，记录已清理")
+            return errorJson("payload_missing", "隔离内容已不存在，记录已清理")
         }
 
         val original = File(entry.originalPath)
-        if (!safeOriginalPath(canonicalWithoutExistence(original))) return error("unsafe_restore", "原路径已超出恢复安全边界")
+        if (!safeOriginalPath(canonicalWithoutExistence(original))) return errorJson("unsafe_restore", "原路径已超出恢复安全边界")
         val destination = if (!original.exists()) {
             original
         } else {
-            File(original.parentFile ?: return error("restore_conflict", "原路径已存在且无法创建恢复副本"),
+            File(original.parentFile ?: return errorJson("restore_conflict", "原路径已存在且无法创建恢复副本"),
                 "${original.name}.baize-restored-${entry.id.take(8)}")
         }
-        if (destination.exists()) return error("restore_conflict", "原路径和恢复副本路径都已存在")
+        if (destination.exists()) return errorJson("restore_conflict", "原路径和恢复副本路径都已存在")
         destination.parentFile?.mkdirs()
 
         val restored = runCatching { payload.renameTo(destination) }.getOrDefault(false)
         if (!restored || payload.exists() || !destination.exists()) {
-            return error("restore_failed", "恢复移动失败，隔离内容保持不变")
+            return errorJson("restore_failed", "恢复移动失败，隔离内容保持不变")
         }
         deleteMetadata(entry.id)
         pruneEmptyParents(payload.parentFile)
@@ -212,11 +212,11 @@ internal class QuarantineRepository(
     @Synchronized
     fun purge(id: String?): String {
         val entry = readEntry(id.orEmpty())
-            ?: return error("not_found", "隔离记录不存在")
+            ?: return errorJson("not_found", "隔离记录不存在")
         val payload = File(entry.storedPath)
         if (payload.exists()) {
-            if (!isStoredPayload(entry, payload)) return error("unsafe_payload", "隔离路径校验失败，拒绝永久删除")
-            if (!deleteTree(payload)) return error("purge_failed", "部分隔离内容无法永久删除")
+            if (!isStoredPayload(entry, payload)) return errorJson("unsafe_payload", "隔离路径校验失败，拒绝永久删除")
+            if (!deleteTree(payload)) return errorJson("purge_failed", "部分隔离内容无法永久删除")
         }
         deleteMetadata(entry.id)
         pruneEmptyParents(payload.parentFile)
@@ -415,7 +415,7 @@ internal class QuarantineRepository(
 
     private fun isSymlink(file: File): Boolean = runCatching { Files.isSymbolicLink(file.toPath()) }.getOrDefault(false)
 
-    private fun error(code: String, message: String): String = JSONObject()
+    private fun errorJson(code: String, message: String): String = JSONObject()
         .put("success", false)
         .put("error", code)
         .put("message", message)

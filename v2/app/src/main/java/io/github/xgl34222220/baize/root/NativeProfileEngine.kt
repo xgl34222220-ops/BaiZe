@@ -25,7 +25,7 @@ import kotlin.math.min
 internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
-    private val quarantineRepository: QuarantineRepository
+    private val quarantineRepository: QuarantineRepository = QuarantineRepository()
 ) {
     data class Progress(
         val phase: String,
