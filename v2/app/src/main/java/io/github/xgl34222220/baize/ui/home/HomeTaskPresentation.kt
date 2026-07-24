@@ -35,11 +35,27 @@ internal fun List<HomeTaskPresentation>.nextTask(nowEpoch: Long): HomeTaskPresen
         ?: enabledItems.first()
 }
 
-internal fun taskCountdownLabel(task: HomeTaskPresentation?, nowEpoch: Long): String {
+internal fun taskCountdownLabel(
+    task: HomeTaskPresentation?,
+    nowEpoch: Long,
+    scheduler: SchedulerUiState
+): String {
     if (task == null || !task.enabled) return "自动任务已关闭"
+    if (scheduler.runtimeState == "running" && scheduler.runtimeGroup == task.id) return "正在后台执行"
+    if (scheduler.runtimeStale) return "后台调度正在自动恢复"
+
     val remaining = task.nextEpoch - nowEpoch
     if (task.nextEpoch <= 0L) return "正在计算执行时间"
-    if (remaining <= 30L) return "已到期，等待自动执行"
+    if (remaining <= 30L) {
+        val reason = scheduler.runtimeReason.trim()
+        return when {
+            reason.contains("息屏") || reason.contains("充电") || reason.contains("电量") ||
+                reason.contains("空闲") || reason.contains("当前任务") || reason.contains("重试") -> reason
+            scheduler.queueCount > 0 && scheduler.nextTask == task.id -> "已进入队列，即将执行"
+            scheduler.queueCount > 0 -> "等待当前任务完成"
+            else -> "即将启动后台任务"
+        }
+    }
     val minutes = (remaining + 59L) / 60L
     if (minutes < 60L) return "还有 ${minutes} 分钟执行"
     val hours = minutes / 60L

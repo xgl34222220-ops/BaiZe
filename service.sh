@@ -16,7 +16,7 @@ STOP_FILE="$STATE_DIR/stop"
 RUNNING_FILE="$STATE_DIR/running.env"
 MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-30}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
-CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-60}
+CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-15}
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
 QUEUE_COUNT=0
@@ -34,9 +34,7 @@ trap wake_scheduler USR1 HUP
 trap 'wake_scheduler; exit 0' INT TERM
 
 if [ "${BAIZE_SKIP_BOOT_WAIT:-0}" != 1 ]; then
-  while [ "$(getprop sys.boot_completed 2>/dev/null)" != "1" ]; do sleep 10; done
-  # Wait for storage/package/media services to settle. Tests opt out with BAIZE_SKIP_BOOT_WAIT=1.
-  sleep 120
+  while [ "$(getprop sys.boot_completed 2>/dev/null)" != "1" ]; do sleep 2; done
 fi
 
 mkdir -p "$LOG_DIR" "$REQUEST_DIR" "$SKIP_DIR"
@@ -192,13 +190,6 @@ conditions_allow_task() {
   ca_level=$(printf '%s\n' "$ca_battery_dump" | sed -n 's/^[[:space:]]*level: //p' | head -n 1)
   case "$ca_level" in ''|*[!0-9]*) ca_level=100 ;; esac
   [ "$ca_level" -ge "$ca_min" ] || { SCHEDULE_REASON="等待电量达到 ${ca_min}%（当前 ${ca_level}%）"; return 1; }
-  ca_max_temp=$(uint_value max_battery_temp 45 30 60)
-  ca_temp=$(printf '%s\n' "$ca_battery_dump" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)
-  case "$ca_temp" in ''|*[!0-9]*) ca_temp=0 ;; esac
-  if [ "$ca_temp" -gt $((ca_max_temp * 10)) ]; then
-    ca_temp_text=$(awk -v t="$ca_temp" 'BEGIN {printf "%.1f", t/10}')
-    SCHEDULE_REASON="等待电池降温（当前 ${ca_temp_text}°C，上限 ${ca_max_temp}°C）"; return 1
-  fi
   return 0
 }
 
@@ -321,12 +312,12 @@ handle_task_result() {
       ;;
     9)
       [ -n "$hr_request" ] && rm -f "$hr_request"
-      write_scheduler_state waiting "$hr_group" "待执行"
+      write_scheduler_state waiting "$hr_group" "等待自动重试"
       ;;
     *)
       record_group_retry "$hr_group"
       printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') task=$hr_group exit=$hr_code retry=${RETRY_DELAY_SECONDS}s" >>"$hr_run_log"
-      write_scheduler_state waiting "$hr_group" "待执行"
+      write_scheduler_state waiting "$hr_group" "等待自动重试"
       ;;
   esac
 }
@@ -338,7 +329,7 @@ run_next_fair_task() {
   while IFS="$(printf '\t')" read -r rn_priority rn_due rn_group rn_mode rn_kind rn_request rn_cycle; do
     [ -n "${rn_group:-}" ] || continue
     if group_retry_remaining "$rn_group" >/dev/null; then
-      rn_reason="${rn_group}:待执行"
+      rn_reason="${rn_group}:等待自动重试"
       [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$rn_reason" || BLOCKED_GROUPS=$rn_reason
       continue
     fi

@@ -1,1 +1,0 @@
-Verify organizer safety and scheduler wording fixes on PR #123.

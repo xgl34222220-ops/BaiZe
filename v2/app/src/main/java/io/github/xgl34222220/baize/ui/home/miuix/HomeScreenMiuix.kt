@@ -75,7 +75,7 @@ fun HomeScreenMiuix(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item { MiuixHomeHeader(state, scheduler.enabled, actions.refresh) }
-        item { MiuixNextTaskPanel(nextTask, nowEpoch, scheduler.enabled, onOpenClean) }
+        item { MiuixNextTaskPanel(nextTask, nowEpoch, scheduler, onOpenClean) }
         item {
             MiuixPrimaryActions(
                 enabled = state.ready && !state.running,
@@ -85,7 +85,7 @@ fun HomeScreenMiuix(
         }
         if (state.running) item { MiuixRunningTaskCard(state) }
         item { MiuixSectionTitle("任务计划", "所有任务按条件自动运行") }
-        item { MiuixTaskGroup(tasks, nowEpoch, onOpenClean) }
+        item { MiuixTaskGroup(tasks, nowEpoch, scheduler, onOpenClean) }
         item { MiuixSectionTitle("最近状态", "最近一次自动任务的结果") }
         item { MiuixRecentGroup(state) }
         item { MiuixServiceRow(state) }
@@ -142,7 +142,7 @@ private fun MiuixHomeHeader(
 private fun MiuixNextTaskPanel(
     task: HomeTaskPresentation?,
     nowEpoch: Long,
-    automaticEnabled: Boolean,
+    scheduler: SchedulerUiState,
     onClick: () -> Unit
 ) {
     Surface(
@@ -182,7 +182,7 @@ private fun MiuixNextTaskPanel(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    if (automaticEnabled) taskCountdownLabel(task, nowEpoch) else "自动任务已关闭",
+                    if (scheduler.enabled) taskCountdownLabel(task, nowEpoch, scheduler) else "自动任务已关闭",
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
@@ -282,6 +282,7 @@ private fun MiuixSectionTitle(title: String, subtitle: String) {
 private fun MiuixTaskGroup(
     tasks: List<HomeTaskPresentation>,
     nowEpoch: Long,
+    scheduler: SchedulerUiState,
     onClick: () -> Unit
 ) {
     Surface(
@@ -295,7 +296,7 @@ private fun MiuixTaskGroup(
     ) {
         Column {
             tasks.forEachIndexed { index, task ->
-                MiuixTaskRow(task, nowEpoch)
+                MiuixTaskRow(task, nowEpoch, scheduler)
                 if (index != tasks.lastIndex) {
                     HorizontalDivider(
                         modifier = Modifier.padding(start = 68.dp),
@@ -308,7 +309,7 @@ private fun MiuixTaskGroup(
 }
 
 @Composable
-private fun MiuixTaskRow(task: HomeTaskPresentation, nowEpoch: Long) {
+private fun MiuixTaskRow(task: HomeTaskPresentation, nowEpoch: Long, scheduler: SchedulerUiState) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -342,7 +343,7 @@ private fun MiuixTaskRow(task: HomeTaskPresentation, nowEpoch: Long) {
             )
         }
         Text(
-            taskCountdownLabel(task, nowEpoch),
+            taskCountdownLabel(task, nowEpoch, scheduler),
             color = if (task.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
             fontSize = 11.sp,
             lineHeight = 15.sp,

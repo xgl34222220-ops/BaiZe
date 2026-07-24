@@ -282,6 +282,7 @@ internal class SchedulerRepository(
         raw.contains("电量") -> "等待电量满足条件"
         raw.contains("空闲") -> "等待系统空闲后执行"
         raw.contains("已有") || raw.contains("当前任务") -> "等待当前任务完成"
+        raw.contains("重试") -> "等待自动重试"
         raw.contains("没有到期") || raw.contains("下次") -> "等待下次执行"
         else -> "等待自动执行"
     }

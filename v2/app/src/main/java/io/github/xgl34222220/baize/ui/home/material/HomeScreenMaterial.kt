@@ -81,7 +81,7 @@ fun HomeScreenMaterial(
         item {
             MaterialNextTaskCard(
                 task = nextTask,
-                countdown = taskCountdownLabel(nextTask, nowEpoch),
+                countdown = taskCountdownLabel(nextTask, nowEpoch, scheduler),
                 enabled = scheduler.enabled,
                 onClick = onOpenClean
             )
@@ -95,7 +95,7 @@ fun HomeScreenMaterial(
         }
         if (state.running) item { MaterialRunningTaskCard(state) }
         item { MaterialSectionHeader("任务计划", "每项任务独立显示下一次执行时间", onOpenClean) }
-        item { MaterialTaskScheduleCard(tasks, nowEpoch, onOpenClean) }
+        item { MaterialTaskScheduleCard(tasks, nowEpoch, scheduler, onOpenClean) }
         item { MaterialSectionHeader("最近状态", "只保留最有用的结果与存储信息") }
         item { MaterialRecentSummary(state) }
         item { MaterialServiceStatus(state) }
@@ -311,6 +311,7 @@ private fun MaterialSectionHeader(
 private fun MaterialTaskScheduleCard(
     tasks: List<HomeTaskPresentation>,
     nowEpoch: Long,
+    scheduler: SchedulerUiState,
     onClick: () -> Unit
 ) {
     Card(
@@ -323,7 +324,7 @@ private fun MaterialTaskScheduleCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         tasks.forEachIndexed { index, task ->
-            MaterialTaskRow(task, nowEpoch)
+            MaterialTaskRow(task, nowEpoch, scheduler)
             if (index != tasks.lastIndex) {
                 HorizontalDivider(
                     modifier = Modifier.padding(start = 68.dp),
@@ -335,7 +336,7 @@ private fun MaterialTaskScheduleCard(
 }
 
 @Composable
-private fun MaterialTaskRow(task: HomeTaskPresentation, nowEpoch: Long) {
+private fun MaterialTaskRow(task: HomeTaskPresentation, nowEpoch: Long, scheduler: SchedulerUiState) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -374,7 +375,7 @@ private fun MaterialTaskRow(task: HomeTaskPresentation, nowEpoch: Long) {
             )
         }
         Text(
-            taskCountdownLabel(task, nowEpoch),
+            taskCountdownLabel(task, nowEpoch, scheduler),
             color = if (task.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
             style = MaterialTheme.typography.labelMedium,
             maxLines = 2
