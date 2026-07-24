@@ -13,9 +13,11 @@ on:
       - 'v2/native/**'
       - 'v2/scripts/**'
       - 'v2/tests/**'
+      - '.github/release-v2.5.2.trigger'
       - '.github/workflows/v2.5-concurrent-scheduler-ci.yml'
       - '.github/workflows/v2.5.1-release.yml'
       - '.github/workflows/v2.5.2-release.yml'
+      - '.github/workflows/v2.5.2-tag-publisher.yml'
   push:
     branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2]
 
