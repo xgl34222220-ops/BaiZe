@@ -1,0 +1,3 @@
+release_tag=v2.5.2
+target_sha=bfd437727d476d3f4a386cf0cea62402abe027ce
+policy=one-time-immutable
