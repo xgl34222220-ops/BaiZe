@@ -77,6 +77,10 @@ internal class SchedulerRepository(
         val normalized = command.trim().lowercase(Locale.ROOT)
         return when {
             normalized == "scheduler-wake" -> wakeSupervisor("app-watchdog")
+            normalized == "scheduler-health" -> schedulerHealth()
+            normalized == "scheduler-self-test" -> schedulerSelfTest()
+            normalized == "scheduler-repair" -> repairScheduler()
+            normalized == "scheduler-export-diagnostics" -> exportDiagnostics()
             normalized == "scheduler-run-now:all" -> {
                 val config = configJsonObject()
                 val groups = GROUPS.filter { config.optInt("schedule_${it}_enabled", 0) == 1 }
@@ -98,6 +102,172 @@ internal class SchedulerRepository(
                 JSONObject().put("success", true).put("action", "stop-requested").toString()
             }
             else -> error("unsupported_scheduler_command", "不支持的调度命令", normalized)
+        }
+    }
+
+    private fun schedulerHealth(): String {
+        val runtime = runtimeJsonObject()
+        val stale = runtime.optBoolean("stale")
+        val reason = runtime.optString("reason")
+        val code = runtime.optString("reasonCode")
+        return JSONObject()
+            .put("success", !stale)
+            .put("action", "health")
+            .put(
+                "message",
+                if (stale) "自动任务服务异常：$code · $reason"
+                else "自动任务体检正常：$code · $reason"
+            )
+            .put("runtime", runtime)
+            .toString()
+    }
+
+    private fun schedulerSelfTest(): String = runCatching {
+        stateDir.mkdirs()
+        ensureConfig()
+        val checks = JSONArray()
+        var passed = 0
+
+        fun record(id: String, label: String, ok: Boolean, detail: String = "") {
+            if (ok) passed += 1
+            checks.put(
+                JSONObject()
+                    .put("id", id)
+                    .put("label", label)
+                    .put("passed", ok)
+                    .apply { if (detail.isNotBlank()) put("detail", detail) }
+            )
+        }
+
+        record("module", "模块目录", moduleDir.isDirectory, moduleDir.path)
+        record("scheduler", "调度器脚本", File(moduleDir, "scheduler.sh").isFile)
+        record("supervisor", "守护脚本", File(moduleDir, "supervisor.sh").isFile)
+        record("config", "计划配置", File(RootPaths.CONFIG_FILE).isFile)
+        record("rules", "深度规则库", File(moduleDir, "config/deep.rules").isFile)
+
+        val probeDir = File(stateDir, "scheduler-health").apply { mkdirs() }
+        val probe = File(probeDir, "probe-${Process.myPid()}-${System.nanoTime()}.tmp")
+        val writable = runCatching {
+            RootFileStore.writeAtomic(probe, "probe=${System.currentTimeMillis()}\n")
+            probe.isFile && probe.delete()
+        }.getOrDefault(false)
+        record("state_write", "状态目录读写", writable, stateDir.path)
+
+        val runtime = runtimeJsonObject()
+        record("supervisor_process", "Supervisor 进程", runtime.optBoolean("supervisorHealthy"))
+        record("scheduler_process", "Scheduler 进程", runtime.optBoolean("schedulerHealthy"))
+        record(
+            "queue_schema",
+            "队列格式",
+            runtime.optString("queueSchema").let { it.isBlank() || it == "fixed-seven-fields-v1" },
+            runtime.optString("queueSchema", "尚未生成")
+        )
+
+        val total = checks.length()
+        val failed = total - passed
+        JSONObject()
+            .put("success", failed == 0)
+            .put("action", "self-test")
+            .put("passed", passed)
+            .put("failed", failed)
+            .put("checks", checks)
+            .put("runtime", runtime)
+            .put(
+                "message",
+                if (failed == 0) "自动任务体检完成：$passed/$total 项通过"
+                else "自动任务体检发现 $failed 项异常，建议点击一键修复"
+            )
+            .toString()
+    }.getOrElse { throwable ->
+        error("scheduler_self_test_failed", throwable.message ?: throwable.javaClass.simpleName)
+    }
+
+    private fun repairScheduler(): String = runCatching {
+        stateDir.mkdirs()
+        File(stateDir, "supervisor.stop").delete()
+        File(stateDir, "stop").delete()
+        clearStaleTaskMarkers()
+        stateDir.listFiles()
+            ?.filter {
+                it.name.startsWith("scheduler-candidates.tmp") ||
+                    it.name.startsWith("scheduler-queue.tsv.tmp") ||
+                    it.name.startsWith("scheduler.env.tmp") ||
+                    it.name.startsWith("supervisor.env.tmp")
+            }
+            ?.forEach { it.deleteRecursively() }
+
+        val wake = JSONObject(wakeSupervisor("manual-health-repair"))
+        val success = wake.optBoolean("success")
+        JSONObject()
+            .put("success", success)
+            .put("action", "repair")
+            .put(
+                "message",
+                if (success) "后台服务修复请求已发送，正在重新建立心跳与任务队列"
+                else "后台服务修复失败：${wake.optString("error", "无法启动 Supervisor")}"
+            )
+            .put("schedulerWake", wake)
+            .put("runtime", runtimeJsonObject())
+            .toString()
+    }.getOrElse { throwable ->
+        error("scheduler_repair_failed", throwable.message ?: throwable.javaClass.simpleName)
+    }
+
+    private fun exportDiagnostics(): String = runCatching {
+        val script = File(moduleDir, "diagnostics-export.sh")
+        require(script.isFile) { "diagnostics_export_missing" }
+        val process = ProcessBuilder("/system/bin/sh", script.absolutePath)
+            .redirectErrorStream(true)
+            .start()
+        val completed = process.waitFor(45, TimeUnit.SECONDS)
+        if (!completed) {
+            process.destroyForcibly()
+            error("diagnostics_timeout", "诊断包导出超时")
+        } else {
+            val output = process.inputStream.bufferedReader().use { it.readText().takeLast(16_000) }.trim()
+            val code = process.exitValue()
+            val path = output.lineSequence().lastOrNull().orEmpty()
+            JSONObject()
+                .put("success", code == 0)
+                .put("action", "export-diagnostics")
+                .put("exitCode", code)
+                .put("path", path)
+                .put("output", output)
+                .put(
+                    "message",
+                    if (code == 0 && path.isNotBlank()) "脱敏诊断包已导出：$path"
+                    else "诊断包导出失败${if (output.isNotBlank()) "：$output" else ""}"
+                )
+                .toString()
+        }
+    }.getOrElse { throwable ->
+        error("diagnostics_export_failed", throwable.message ?: throwable.javaClass.simpleName)
+    }
+
+    private fun clearStaleTaskMarkers() {
+        val lockDir = File(stateDir, "run.lock")
+        if (!lockDir.isDirectory) return
+        val pid = readEpoch(File(lockDir, "pid"))
+        val ticks = readEpoch(File(lockDir, "start_ticks"))
+        val alive = processMatches(
+            pid,
+            ticks,
+            listOf(
+                "task-worker.sh",
+                "worker-runner.sh",
+                "organizer-worker.sh",
+                "cleaner.sh",
+                "native-cleaner.sh",
+                "profile-cleaner.sh",
+                "baize_engine",
+                "baize_deep_snapshot"
+            )
+        )
+        if (!alive) {
+            lockDir.deleteRecursively()
+            if (!File(stateDir, "cache-lane.lock").isDirectory) {
+                File(stateDir, "running.env").delete()
+            }
         }
     }
 
@@ -197,10 +367,10 @@ internal class SchedulerRepository(
             .put("action", "supervisor-started")
             .put("reason", reason)
             .toString()
-    }.getOrElse { error ->
+    }.getOrElse { throwable ->
         JSONObject()
             .put("success", false)
-            .put("error", error.message ?: error.javaClass.simpleName)
+            .put("error", throwable.message ?: throwable.javaClass.simpleName)
             .put("reason", reason)
             .toString()
     }
@@ -229,11 +399,12 @@ internal class SchedulerRepository(
         val schedulerPid = scheduler.optLong("scheduler_pid", 0L)
         val supervisorPid = supervisor.optLong("pid", 0L)
         val supervisorInstance = supervisor.optString("instance_id")
+        val schedulerHeartbeat = scheduler.optLong("heartbeat_epoch", 0L)
         val schedulerHealthy = processMatches(
             schedulerPid,
             scheduler.optLong("scheduler_start_ticks", 0L),
             listOf("scheduler.sh", "service.sh"),
-            scheduler.optLong("heartbeat_epoch", 0L),
+            schedulerHeartbeat,
             expectedInstance = supervisorInstance.takeIf { it.isNotBlank() },
             actualInstance = scheduler.optString("instance_id")
         )
@@ -245,34 +416,79 @@ internal class SchedulerRepository(
             supervisorHeartbeat
         )
         val now = System.currentTimeMillis() / 1000L
-        val heartbeatAge = if (supervisorHeartbeat > 0L) (now - supervisorHeartbeat).coerceAtLeast(0L) else -1L
+        val schedulerHeartbeatAge = if (schedulerHeartbeat > 0L) (now - schedulerHeartbeat).coerceAtLeast(0L) else -1L
+        val supervisorHeartbeatAge = if (supervisorHeartbeat > 0L) (now - supervisorHeartbeat).coerceAtLeast(0L) else -1L
         val config = configJsonObject()
         val publicState = when {
             config.optInt("enabled", 1) != 1 -> "disabled"
             scheduler.optString("state") == "running" -> "running"
             else -> "waiting"
         }
+        val rawReason = scheduler.optString("reason")
+        val blockedGroups = scheduler.optString("blocked_groups")
+        val queueCount = scheduler.optInt("queue_count", queue.length()).coerceAtLeast(0)
+        val stale = !schedulerHealthy || !supervisorHealthy
+        val reasonCode = schedulerReasonCode(publicState, rawReason, blockedGroups, stale, queueCount)
+        val healthState = when {
+            publicState == "disabled" -> "disabled"
+            stale -> "unhealthy"
+            reasonCode == "RECOVERING" || reasonCode == "RETRY_BACKOFF" -> "recovering"
+            else -> "healthy"
+        }
         return JSONObject()
             .put("state", publicState)
+            .put("healthState", healthState)
             .put("group", scheduler.optString("group"))
-            .put("reason", publicSchedulerReason(publicState, scheduler.optString("reason")))
+            .put("reason", publicSchedulerReason(publicState, rawReason))
+            .put("reasonCode", reasonCode)
+            .put("reasonDetail", rawReason)
             .put("nextCheckEpoch", scheduler.optLong("next_check_epoch", 0L))
-            .put("heartbeatEpoch", scheduler.optLong("heartbeat_epoch", 0L))
-            .put("queueCount", scheduler.optInt("queue_count", queue.length()))
+            .put("updatedEpoch", scheduler.optLong("updated", 0L))
+            .put("heartbeatEpoch", schedulerHeartbeat)
+            .put("schedulerHeartbeatAge", schedulerHeartbeatAge)
+            .put("queueCount", queueCount)
             .put("queueGroups", scheduler.optString("queue_groups"))
             .put("nextTask", scheduler.optString("next_task"))
-            .put("blockedGroups", "")
+            .put("blockedGroups", blockedGroups)
+            .put("queueSchema", scheduler.optString("queue_schema"))
             .put("nextRuns", nextRunsJsonObject(config, now))
             .put("queue", queue)
             .put("schedulerHealthy", schedulerHealthy)
             .put("supervisorHealthy", supervisorHealthy)
             .put("supervisorStatus", supervisor.optString("status", "unknown"))
+            .put("supervisorReason", supervisor.optString("reason"))
             .put("supervisorRestartCount", supervisor.optInt("restart_count", 0))
             .put("supervisorHeartbeatEpoch", supervisorHeartbeat)
-            .put("supervisorHeartbeatAge", heartbeatAge)
-            .put("stale", !schedulerHealthy || !supervisorHealthy)
+            .put("supervisorHeartbeatAge", supervisorHeartbeatAge)
+            .put("stale", stale)
     }
 
+    private fun schedulerReasonCode(
+        state: String,
+        rawReason: String,
+        blockedGroups: String,
+        stale: Boolean,
+        queueCount: Int
+    ): String {
+        val reason = "$rawReason,$blockedGroups"
+        return when {
+            state == "disabled" -> "SCHEDULER_DISABLED"
+            stale -> "SERVICE_UNHEALTHY"
+            state == "running" -> "RUNNING"
+            reason.contains("息屏") -> "WAIT_SCREEN_OFF"
+            reason.contains("充电") -> "WAIT_CHARGING"
+            reason.contains("电量") -> "WAIT_BATTERY"
+            reason.contains("空闲") -> "WAIT_IDLE"
+            reason.contains("停止") -> "USER_STOPPED"
+            reason.contains("已有") || reason.contains("当前任务") || reason.contains("手动任务") -> "TASK_CONFLICT"
+            reason.contains("重新拉起") || reason.contains("自动恢复") -> "RECOVERING"
+            reason.contains("重试") -> "RETRY_BACKOFF"
+            reason.contains("跳过") -> "SKIPPED"
+            queueCount > 0 -> "QUEUED"
+            reason.contains("没有到期") || reason.contains("下次") -> "WAIT_NEXT_RUN"
+            else -> "WAITING"
+        }
+    }
 
     private fun publicSchedulerReason(state: String, raw: String): String = when {
         state == "disabled" -> "自动任务已关闭"
@@ -284,6 +500,7 @@ internal class SchedulerRepository(
         raw.contains("已有") || raw.contains("当前任务") -> "等待当前任务完成"
         raw.contains("恢复") || raw.contains("重新拉起") -> "后台正在自动恢复"
         raw.contains("重试") -> "等待自动重试"
+        raw.contains("停止") -> "任务已停止，等待下一次调度"
         raw.contains("没有到期") || raw.contains("下次") -> "等待下次执行"
         else -> "等待自动执行"
     }
