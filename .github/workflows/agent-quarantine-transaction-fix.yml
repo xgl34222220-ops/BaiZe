@@ -1,0 +1,146 @@
+name: Agent Quarantine Transaction Fix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/quarantine-undo
+          fetch-depth: 0
+      - name: Harden quarantine transaction ordering
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('v2/app/src/main/java/io/github/xgl34222220/baize/root/QuarantineRepository.kt')
+          text = path.read_text()
+          text = text.replace(
+              'Payloads are moved to a quarantine directory on the same filesystem, so a failed\n * move leaves the original untouched. Metadata is written after the move and rolled back on error.',
+              'Metadata is committed before the same-filesystem atomic move. A failed move removes\n * the pending record and leaves the original untouched; a successful move always remains recoverable.',
+              1,
+          )
+          old = '''        val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
+          if (!moved || source.exists() || !destination.exists()) {
+              return Result(false, message = "无法在同一文件系统原子移动目标；原文件未删除")
+          }
+
+          val now = System.currentTimeMillis()
+          val entry = Entry(
+              id = id,
+              originalPath = sourcePath,
+              storedPath = destinationPath,
+              profile = profile.take(MAX_TEXT),
+              category = category.take(MAX_TEXT),
+              label = label.take(MAX_TEXT),
+              risk = risk,
+              snapshotId = snapshotId.take(MAX_TEXT),
+              createdAt = now,
+              expiresAt = now + RETENTION_MS,
+              bytes = stats.bytes,
+              files = stats.files,
+              directories = stats.directories
+          )
+          val metadataWritten = runCatching { writeEntry(entry) }.isSuccess
+          if (!metadataWritten) {
+              val rolledBack = runCatching {
+                  source.parentFile?.mkdirs()
+                  destination.renameTo(source)
+              }.getOrDefault(false)
+              if (!rolledBack) {
+                  runCatching { writeEntry(entry.copy(label = "元数据恢复项 · $label")) }
+                  return Result(false, id, stats.bytes, stats.files, stats.directories, "目标已移动，但元数据写入失败；已保留恢复记录")
+              }
+              return Result(false, message = "隔离记录写入失败，已回滚原文件")
+          }
+
+          return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 7 天内恢复")'''
+          new = '''        val now = System.currentTimeMillis()
+          val entry = Entry(
+              id = id,
+              originalPath = sourcePath,
+              storedPath = destinationPath,
+              profile = profile.take(MAX_TEXT),
+              category = category.take(MAX_TEXT),
+              label = label.take(MAX_TEXT),
+              risk = risk,
+              snapshotId = snapshotId.take(MAX_TEXT),
+              createdAt = now,
+              expiresAt = now + RETENTION_MS,
+              bytes = stats.bytes,
+              files = stats.files,
+              directories = stats.directories
+          )
+          if (runCatching { writeEntry(entry) }.isFailure) {
+              return Result(false, message = "隔离记录写入失败，原文件未移动")
+          }
+
+          val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
+          if (!moved || source.exists() || !destination.exists()) {
+              if (!destination.exists()) deleteMetadata(id)
+              return Result(
+                  success = false,
+                  id = if (destination.exists()) id else "",
+                  bytes = if (destination.exists()) stats.bytes else 0L,
+                  files = if (destination.exists()) stats.files else 0L,
+                  directories = if (destination.exists()) stats.directories else 0L,
+                  message = if (destination.exists()) {
+                      "隔离移动状态异常，已保留恢复记录"
+                  } else {
+                      "无法在同一文件系统原子移动目标；原文件未删除"
+                  }
+              )
+          }
+
+          return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 7 天内恢复")'''
+          if old not in text:
+              raise SystemExit('quarantine move block not found')
+          text = text.replace(old, new, 1)
+
+          old_expired = '''            val payload = File(entry.storedPath)
+              if (payload.exists() && isStoredPayload(entry, payload) && !deleteTree(payload)) continue
+              deleteMetadata(entry.id)'''
+          new_expired = '''            val payload = File(entry.storedPath)
+              if (payload.exists()) {
+                  if (!isStoredPayload(entry, payload)) continue
+                  if (!deleteTree(payload)) continue
+              }
+              deleteMetadata(entry.id)'''
+          if old_expired not in text:
+              raise SystemExit('expired purge block not found')
+          text = text.replace(old_expired, new_expired, 1)
+
+          old_restore = '''        if (destination.exists()) return errorJson("restore_conflict", "原路径和恢复副本路径都已存在")
+          destination.parentFile?.mkdirs()
+
+          val restored ='''
+          new_restore = '''        if (destination.exists()) return errorJson("restore_conflict", "原路径和恢复副本路径都已存在")
+          val destinationPath = canonicalWithoutExistence(destination)
+          if (!safeOriginalPath(destinationPath)) return errorJson("unsafe_restore", "恢复目标已超出安全边界")
+          destination.parentFile?.mkdirs()
+
+          val restored ='''
+          if old_restore not in text:
+              raise SystemExit('restore destination block not found')
+          text = text.replace(old_restore, new_restore, 1)
+          path.write_text(text)
+          PY
+          git diff --check
+          git diff --stat
+      - name: Commit transaction hardening
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/root/QuarantineRepository.kt
+          git commit -m 'fix: guarantee recoverable quarantine transactions'
+          git push origin HEAD:agent/quarantine-undo
