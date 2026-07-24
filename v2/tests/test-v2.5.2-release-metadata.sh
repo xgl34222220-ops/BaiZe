@@ -27,8 +27,8 @@ PY
 
 WORKFLOW=.github/workflows/v2.5.2-release.yml
 test -s "$WORKFLOW"
-grep -q "tags:" "$WORKFLOW"
-grep -q "- 'v2.5.2'" "$WORKFLOW"
+grep -q 'tags:' "$WORKFLOW"
+grep -q -- "- 'v2.5.2'" "$WORKFLOW"
 ! grep -q 'workflow_dispatch' "$WORKFLOW"
 grep -q 'Reject an existing v2.5.2 Release' "$WORKFLOW"
 grep -q 'gh release create v2.5.2' "$WORKFLOW"
