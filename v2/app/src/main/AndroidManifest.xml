@@ -36,6 +36,7 @@
         <activity android:name=".CleanupPolicyActivity" android:exported="false" />
         <activity android:name=".QuarantineActivity" android:exported="false" />
         <activity android:name=".AuditActivity" android:exported="false" />
+        <activity android:name=".CleanupEffectivenessActivity" android:exported="false" />
         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
         <activity android:name=".DashboardActivity" android:exported="false" />

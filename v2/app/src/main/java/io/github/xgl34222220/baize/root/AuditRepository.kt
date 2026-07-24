@@ -22,6 +22,7 @@ internal class AuditRepository(
     private val metaFile = File(stateDir, "audit.meta")
     private val historyFile = File(stateDir, "history.tsv")
     private val policyAdvisor = PolicyAdvisor()
+    private val effectivenessAnalyzer = CleanupEffectivenessAnalyzer()
 
     @Synchronized
     fun recordResult(
@@ -87,6 +88,7 @@ internal class AuditRepository(
         }
 
         val advisor = policyAdvisor.evaluate(combined)
+        val effectiveness = effectivenessAnalyzer.analyze(combined)
 
         return JSONObject()
             .put("success", true)
@@ -102,6 +104,7 @@ internal class AuditRepository(
             .put("quarantinedBytes", quarantinedBytes)
             .put("protectedCount", protectedCount)
             .put("advisor", advisor)
+            .put("effectiveness", effectiveness)
             .put("events", page)
             .toString()
     }
