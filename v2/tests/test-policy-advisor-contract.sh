@@ -29,7 +29,10 @@ grep -Fq 'MAX_INPUT_EVENTS = 120' "$ADVISOR"
 ! grep -Fq 'pathTail' "$ADVISOR"
 ! grep -Fq 'originalPath' "$ADVISOR"
 
-# Safety evidence always wins over low-storage pressure, and insufficient evidence keeps the current preset.
+# Safety evidence always wins. Upgrades and pressure-relief changes require a real history sample.
+grep -Fq 'storage.freePercent in 0..8 && evidenceCount >= MIN_EVIDENCE' "$ADVISOR"
+grep -Fq 'storage.freePercent in 9..15 && evidenceCount >= MIN_EVIDENCE' "$ADVISOR"
+grep -Fq 'storage.freePercent >= 20 && evidenceCount >= MIN_EVIDENCE' "$ADVISOR"
 python3 - "$ADVISOR" <<'PY'
 from pathlib import Path
 import sys
