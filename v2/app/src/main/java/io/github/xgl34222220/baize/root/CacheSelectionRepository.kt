@@ -12,7 +12,7 @@ import java.security.MessageDigest
  *
  * The UI may only authorize candidate roots already present in cache_scan.items.tsv. The manifest
  * is filtered by matching package/category/root relationships; no new deletion path is accepted.
- * The original namespace is replaced atomically because every clean consumes the snapshot anyway.
+ * The original namespace is replaced safely because every clean consumes the snapshot anyway.
  */
 internal class CacheSelectionRepository(
     private val stateDir: File = File(RootPaths.STATE_DIR)
@@ -28,7 +28,7 @@ internal class CacheSelectionRepository(
 
     fun prepare(snapshotId: String?, selectionJson: String?): String = runCatching {
         val requestedId = snapshotId.orEmpty().trim()
-        if (requestedId.isBlank()) return error("snapshot_required", "没有可用的缓存扫描快照")
+        if (requestedId.isBlank()) return jsonError("snapshot_required", "没有可用的缓存扫描快照")
 
         val stateFile = File(stateDir, "cache_scan.env")
         val targetsFile = File(stateDir, "cache_scan.targets")
@@ -37,16 +37,16 @@ internal class CacheSelectionRepository(
         val whitelistFile = File(stateDir, "whitelist.conf")
         val packageWhitelistFile = File(stateDir, "native-cache-packages.conf")
         val required = listOf(stateFile, targetsFile, itemsFile, manifestFile)
-        if (required.any { !it.isFile }) return error("snapshot_missing", "缓存扫描快照不完整，请重新扫描")
+        if (required.any { !it.isFile }) return jsonError("snapshot_missing", "缓存扫描快照不完整，请重新扫描")
 
         val state = readEnv(stateFile)
-        if (state["snapshot_id"] != requestedId) return error("snapshot_changed", "缓存扫描快照已变化，请重新打开结果")
+        if (state["snapshot_id"] != requestedId) return jsonError("snapshot_changed", "缓存扫描快照已变化，请重新打开结果")
         val epoch = state["epoch"]?.toLongOrNull() ?: 0L
         val age = System.currentTimeMillis() / 1_000L - epoch
         if (epoch <= 0L || age !in 0L..SNAPSHOT_TTL_SECONDS) {
-            return error("snapshot_expired", "缓存扫描快照已过期，请重新扫描")
+            return jsonError("snapshot_expired", "缓存扫描快照已过期，请重新扫描")
         }
-        if (state["manifest_format"] != "nul-v2") return error("unsupported_manifest", "缓存快照格式不受支持")
+        if (state["manifest_format"] != "nul-v2") return jsonError("unsupported_manifest", "缓存快照格式不受支持")
 
         verifyHash(targetsFile, state["targets_sha"], "缓存目标快照")
         verifyHash(itemsFile, state["items_sha"], "缓存摘要快照")
@@ -69,8 +69,8 @@ internal class CacheSelectionRepository(
 
         val candidates = parseItems(itemsFile)
         val selected = candidates.filter { selection.optBoolean(it.path, false) }
-        if (selected.isEmpty()) return error("empty_selection", "没有勾选任何应用缓存项目")
-        if (selected.size > MAX_SELECTED_CANDIDATES) return error("selection_too_large", "勾选项目过多，请减少后重试")
+        if (selected.isEmpty()) return jsonError("empty_selection", "没有勾选任何应用缓存项目")
+        if (selected.size > MAX_SELECTED_CANDIDATES) return jsonError("selection_too_large", "勾选项目过多，请减少后重试")
 
         val roots = selected.groupBy { "${it.packageName}\u0000${it.category}" }
             .mapValues { (_, values) -> values.map { normalizePath(it.path) }.distinct().sortedByDescending(String::length) }
@@ -108,7 +108,7 @@ internal class CacheSelectionRepository(
                         val category = record[1]
                         val path = normalizePath(record[9])
                         val allowedRoots = roots["$packageName\u0000$category"].orEmpty()
-                        if (allowedRoots.any { root -> path == root || path.startsWith("$root/") }) {
+                        if (path.isNotBlank() && allowedRoots.any { root -> path == root || path.startsWith("$root/") }) {
                             record.forEach { field ->
                                 output.write(field.toByteArray(Charsets.UTF_8))
                                 output.write(0)
@@ -118,7 +118,7 @@ internal class CacheSelectionRepository(
                     }
                 }
             }
-            if (manifestRecords <= 0L) return error("empty_manifest", "所选缓存项目没有可授权文件，请重新扫描")
+            if (manifestRecords <= 0L) return jsonError("empty_manifest", "所选缓存项目没有可授权文件，请重新扫描")
 
             val nextState = LinkedHashMap(state)
             val now = System.currentTimeMillis() / 1_000L
@@ -139,6 +139,8 @@ internal class CacheSelectionRepository(
                 nextState.forEach { (key, value) -> writer.append(key).append('=').append(value).append('\n') }
             }
 
+            // State is published last. An interruption before that point only causes hash rejection;
+            // the cleaner will never consume a mixed snapshot.
             publish(targetsTmp, targetsFile)
             publish(itemsTmp, itemsFile)
             publish(manifestTmp, manifestFile)
@@ -160,7 +162,7 @@ internal class CacheSelectionRepository(
             tempFiles.forEach { if (it.exists()) it.delete() }
         }
     }.getOrElse { throwable ->
-        error("cache_selection_failed", throwable.message ?: throwable.javaClass.simpleName)
+        jsonError("cache_selection_failed", throwable.message ?: throwable.javaClass.simpleName)
     }
 
     private fun parseItems(file: File): List<CacheCandidate> = buildList {
@@ -170,7 +172,7 @@ internal class CacheSelectionRepository(
             val packageName = columns[0].trim()
             val category = columns[1].trim()
             val path = normalizePath(columns[5])
-            if (!RootValidation.packageName.matches(packageName) || !path.startsWith('/')) return@forEachLine
+            if (!RootValidation.packageName.matches(packageName) || path.isBlank()) return@forEachLine
             add(
                 CacheCandidate(
                     packageName = packageName,
@@ -189,7 +191,7 @@ internal class CacheSelectionRepository(
         val fields = ArrayList<String>(MANIFEST_FIELD_COUNT)
         fields += first
         repeat(MANIFEST_FIELD_COUNT - 1) {
-            fields += readNulField(input) ?: error("缓存逐文件快照记录不完整")
+            fields += readNulField(input) ?: throw IllegalStateException("缓存逐文件快照记录不完整")
         }
         return fields
     }
@@ -198,9 +200,12 @@ internal class CacheSelectionRepository(
         val output = ByteArrayOutputStream()
         while (true) {
             val value = input.read()
-            if (value < 0) return if (output.size() == 0) null else error("缓存逐文件快照字段未结束")
+            if (value < 0) {
+                if (output.size() == 0) return null
+                throw IllegalStateException("缓存逐文件快照字段未结束")
+            }
             if (value == 0) return output.toString(Charsets.UTF_8.name())
-            if (output.size() >= MAX_MANIFEST_FIELD_BYTES) error("缓存逐文件快照字段过长")
+            if (output.size() >= MAX_MANIFEST_FIELD_BYTES) throw IllegalStateException("缓存逐文件快照字段过长")
             output.write(value)
         }
     }
@@ -216,7 +221,9 @@ internal class CacheSelectionRepository(
     }
 
     private fun verifyHash(file: File, expected: String?, label: String) {
-        if (expected.isNullOrBlank() || sha256(file) != expected) error("$label 校验失败，请重新扫描")
+        if (expected.isNullOrBlank() || !file.isFile || sha256(file) != expected) {
+            throw IllegalStateException("$label 校验失败，请重新扫描")
+        }
     }
 
     private fun sha256(file: File): String {
@@ -234,16 +241,18 @@ internal class CacheSelectionRepository(
 
     private fun normalizePath(raw: String): String {
         val value = raw.trim().replace(Regex("/+"), "/")
-        if (!value.startsWith('/') || value.contains('\u0000') || value.contains('\n') || value.contains('\r')) return ""
+        if (!value.startsWith('/') || value.length > 4_096 || value.contains('\u0000') || value.contains('\n') || value.contains('\r')) return ""
+        val components = value.split('/').filter { it.isNotEmpty() }
+        if (components.any { it == "." || it == ".." }) return ""
         return value.trimEnd('/').ifBlank { "/" }
     }
 
     private fun publish(source: File, target: File) {
-        if (target.exists() && !target.delete()) error("无法替换 ${target.name}")
-        if (!source.renameTo(target)) error("无法发布 ${target.name}")
+        if (target.exists() && !target.delete()) throw IllegalStateException("无法替换 ${target.name}")
+        if (!source.renameTo(target)) throw IllegalStateException("无法发布 ${target.name}")
     }
 
-    private fun error(code: String, message: String): String = JSONObject()
+    private fun jsonError(code: String, message: String): String = JSONObject()
         .put("success", false)
         .put("error", code)
         .put("message", message)
