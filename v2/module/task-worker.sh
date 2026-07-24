@@ -65,13 +65,10 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.4"
+  echo "worker=detached-root-worker-v2.5"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
-# Publish the task id before launch so even a sub-second worker can remove its own marker.
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then
-  # The scheduler already owns a persistent Root process. Keep the runner as its real child so wait()
-  # observes the actual job instead of a short-lived setsid launcher.
   "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
 elif command -v setsid >/dev/null 2>&1; then
   setsid "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
@@ -82,7 +79,6 @@ else
 fi
 pid=$!
 case "$pid" in ''|*[!0-9]*) cleanup_worker_marker; rm -f "$RUNNING_FILE"; echo "无法启动 Root Worker" >&2; exit 6 ;; esac
-# Do not recreate a marker that a very fast runner already removed.
 [ "$(worker_marker_id)" = "$TASK_ID" ] && write_worker_marker "$pid"
 sleep 1
 if ! kill -0 "$pid" 2>/dev/null && [ ! -f "$RESULT_FILE" ]; then
