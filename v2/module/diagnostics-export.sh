@@ -31,7 +31,18 @@ done
 
 # Paths are privacy-sensitive: retain only basename and a stable short hash.
 if [ -f "$STATE_DIR/reports/latest.tsv" ]; then
-  awk -F '\t' 'BEGIN{OFS="\t"} NR==1{print;next} {path=$6; cmd="printf %s \\"" path "\\" | sha256sum"; cmd|getline hash; close(cmd); n=split(path,a,"/"); $6="…/" a[n] "#" substr(hash,1,10); print}' "$STATE_DIR/reports/latest.tsv" >"$STAGE/latest-redacted.tsv" 2>/dev/null || true
+  tab=$(printf '\t')
+  {
+    IFS= read -r header || true
+    [ -n "${header:-}" ] && printf '%s\n' "$header"
+    while IFS="$tab" read -r action risk category items bytes path extra; do
+      [ -n "${action:-}${risk:-}${category:-}${items:-}${bytes:-}${path:-}" ] || continue
+      hash=$(printf '%s' "$path" | sha256sum 2>/dev/null | awk '{print substr($1,1,10)}')
+      [ -n "$hash" ] || hash=unavailable
+      base=${path##*/}
+      printf '%s\t%s\t%s\t%s\t%s\t…/%s#%s\n' "$action" "$risk" "$category" "$items" "$bytes" "$base" "$hash"
+    done
+  } <"$STATE_DIR/reports/latest.tsv" >"$STAGE/latest-redacted.tsv" 2>/dev/null || true
 fi
 
 for log in $(ls -1t "$STATE_DIR"/logs/*.log 2>/dev/null | head -n 3); do
