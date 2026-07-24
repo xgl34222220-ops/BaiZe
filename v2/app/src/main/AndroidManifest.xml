@@ -28,6 +28,7 @@
             android:name=".ProfileActivity"
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
+        <activity android:name=".ScanWorkbenchActivity" android:exported="false" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />

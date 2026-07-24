@@ -20,6 +20,7 @@ class BaiZeProfileRootService : RootService() {
     private val historyRepository = HistoryRepository()
     private val packageCatalog = PackageCatalog()
     private val whitelistRepository = WhitelistRepository()
+    private val cacheSelectionRepository = CacheSelectionRepository()
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
 
     private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled) }
@@ -91,6 +92,9 @@ class BaiZeProfileRootService : RootService() {
                 )
             }
         }
+
+        override fun prepareCacheSelection(snapshotId: String?, selectionJson: String?): String =
+            cacheSelectionRepository.prepare(snapshotId, selectionJson)
 
         override fun runMaintenanceTool(tool: String?, optionsJson: String?): String =
             diagnostics.runMaintenanceTool(tool, optionsJson)
@@ -200,6 +204,8 @@ class BaiZeProfileRootService : RootService() {
         override fun getWhitelistPackages(): String = whitelistRepository.packagesJson()
         override fun saveWhitelistPackages(packagesJson: String?): String =
             whitelistRepository.savePackages(packagesJson.orEmpty())
+        override fun getWhitelistPaths(): String = whitelistRepository.pathsJson()
+        override fun addWhitelistPath(path: String?): String = whitelistRepository.addPath(path)
 
         override fun getTaskState(): String = coordinator.currentState()
         override fun registerTaskProgressCallback(callback: ITaskProgressCallback?) = coordinator.register(callback)

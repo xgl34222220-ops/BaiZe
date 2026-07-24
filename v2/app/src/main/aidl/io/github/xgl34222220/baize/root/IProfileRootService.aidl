@@ -8,6 +8,7 @@ interface IProfileRootService {
     String scanProfile(String profile, String optionsJson);
     String getProfilePage(String snapshotId, int offset, int limit);
     String cleanProfileSelected(String snapshotId, String selectionJson, String optionsJson);
+    String prepareCacheSelection(String snapshotId, String selectionJson);
 
     String runModuleTask(String mode);
     String runMaintenanceTool(String tool, String optionsJson);
@@ -30,6 +31,8 @@ interface IProfileRootService {
     String getInstalledPackageCatalog();
     String getWhitelistPackages();
     String saveWhitelistPackages(String packagesJson);
+    String getWhitelistPaths();
+    String addWhitelistPath(String path);
 
     String getTaskState();
     void registerTaskProgressCallback(ITaskProgressCallback callback);
