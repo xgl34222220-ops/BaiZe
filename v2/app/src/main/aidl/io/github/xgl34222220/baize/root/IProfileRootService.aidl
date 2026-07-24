@@ -21,6 +21,8 @@ interface IProfileRootService {
     String getModuleState();
     String getTaskHistory(int limit);
     String getTaskHistoryPage(int offset, int limit);
+    String getAuditTimelinePage(int offset, int limit);
+    String clearAuditTimeline();
     String getScanCoverage();
     String clearTaskHistory();
     String getRawLog(int maxChars);
