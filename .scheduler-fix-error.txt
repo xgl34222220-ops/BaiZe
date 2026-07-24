@@ -1,4 +1,7 @@
 Traceback (most recent call last):
-  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 35, in <module>
-    raise RuntimeError(f"scheduler source: expected one match, found {scheduler_matches}")
-RuntimeError: scheduler source: expected one match, found [PosixPath('/home/runner/work/BaiZe/BaiZe/service.sh'), PosixPath('/home/runner/work/BaiZe/BaiZe/.scheduler-fix-error.txt'), PosixPath('/home/runner/work/BaiZe/BaiZe/.github/workflows/apply-immediate-scheduler-fix.yml'), PosixPath('/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py')]
+  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 70, in <module>
+    text = replace_once(text, "screen_off_only=1", "screen_off_only=0", "default screen-off condition")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/BaiZe/BaiZe/.github/scripts/apply-immediate-scheduler-fix.py", line 18, in replace_once
+    raise RuntimeError(f"{label}: expected one match, found {count}")
+RuntimeError: default screen-off condition: expected one match, found 2
