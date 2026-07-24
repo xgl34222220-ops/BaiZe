@@ -8,6 +8,7 @@ TASK_ID=${3:-cache-$(date +%s)-$$}
 WAIT_MODE=${4:-wait}
 ROOT_STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
+[ -x "$SHELL_BIN" ] || SHELL_BIN=$(command -v sh 2>/dev/null || echo /bin/sh)
 LANE_ROOT="$ROOT_STATE_DIR/cache-lane"
 TASK_STATE="$LANE_ROOT/$TASK_ID"
 LANE_LOCK="$ROOT_STATE_DIR/cache-lane.lock"
@@ -19,6 +20,7 @@ CHILD_PID=0
 
 [ "$MODE" = cache-auto ] || { echo "缓存并行通道只接受 cache-auto" >&2; exit 2; }
 [ -f "$MODDIR/task-worker.sh" ] || { echo "统一 Root Worker 缺失" >&2; exit 5; }
+[ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 
 lane_owner_alive() {
   owner=$(sed -n '1p' "$LANE_LOCK/pid" 2>/dev/null)
