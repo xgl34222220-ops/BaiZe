@@ -103,16 +103,16 @@
 .github/workflows/diagnose-immediate-scheduler-tests.yml-34-          git commit -m 'ci: capture scheduler regression contracts'
 .github/workflows/diagnose-immediate-scheduler-tests.yml-35-          git push origin HEAD:agent/dual-theme-ui-redesign
 === old boot delay assertions ===
-./.github/workflows/diagnose-immediate-scheduler-tests.yml:27:            grep -R -n -E 'sleep 120|BOOT_WAIT|max_battery_temp|等待电池降温|screen_off_only=1|CONDITION_RETRY_SECONDS.*60' . --exclude-dir=.git --exclude='*.apk' --exclude='*.zip' || true
-./webctl.sh:25:    max_battery_temp) cfg_min=30; cfg_max=60 ;;
-./customize.sh:58:  charging_only=0 device_idle_only=0 max_battery_temp=45 max_run_minutes=45 daily_grace_minutes=240 deep_high_risk_enabled=0; do
 ./webroot/index.html:148:            <label><span>电池温度上限</span><div><input type="number" min="30" max="60" data-key="max_battery_temp"><em>°C</em></div></label>
-./v2/tests/test-scheduler-fairness.sh:19:max_battery_temp=60
+./status.sh:199:  enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 \
+./webctl.sh:25:    max_battery_temp) cfg_min=30; cfg_max=60 ;;
+./.github/workflows/diagnose-immediate-scheduler-tests.yml:27:            grep -R -n -E 'sleep 120|BOOT_WAIT|max_battery_temp|等待电池降温|screen_off_only=1|CONDITION_RETRY_SECONDS.*60' . --exclude-dir=.git --exclude='*.apk' --exclude='*.zip' || true
+./config/default.conf:7:max_battery_temp=0
+./v2/tests/test-scheduler-fairness.sh:19:max_battery_temp=0
 ./v2/tests/test-scheduler-fairness.sh:49:  BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 sh "$T/module/scheduler.sh"
 ./v2/tests/test-scheduler-fairness.sh:59:sed -i 's/^organize_screen_off_only=.*/organize_screen_off_only=1/' "$T/state/config.conf"
 ./v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt:426:            "max_battery_temp" to 30..60,
+./customize.sh:58:  charging_only=0 device_idle_only=0 max_battery_temp=45 max_run_minutes=45 daily_grace_minutes=240 deep_high_risk_enabled=0; do
 ./service.sh:36:if [ "${BAIZE_SKIP_BOOT_WAIT:-0}" != 1 ]; then
-./status.sh:199:  enabled:1 screen_off_only:1 charging_only:0 device_idle_only:0 min_battery:25 max_battery_temp:45 \
-./config/default.conf:7:max_battery_temp=0
 ./docs/README-detailed.md:198:screen_off_only=1
 ./docs/README-detailed.md:202:max_battery_temp=45
