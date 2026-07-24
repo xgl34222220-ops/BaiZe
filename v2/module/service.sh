@@ -1,5 +1,6 @@
 #!/system/bin/sh
 # Canonical Magisk module root: /data/adb/modules/baize_v2; MODDIR remains portable for KernelSU and APatch.
+# Runtime migration supersedes the previous deep-pipeline-v1 schema and clears stale single-lane locks.
 MODDIR=${0%/*}
 APP_ID=io.github.xgl34222220.baize
 STATE_DIR=/data/adb/baize-v2
