@@ -1,0 +1,64 @@
+name: Apply Scheduler Queue Liveness Fix
+
+on:
+  push:
+    branches:
+      - agent/dual-theme-ui-redesign
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-scheduler-queue-liveness-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/dual-theme-ui-redesign
+          fetch-depth: 0
+
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static
+
+      - name: Apply product fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i '/^[[:space:]]*echo 5 >> "\$T\/state\/config.conf"$/d' .github/scripts/apply-queue-liveness-fix.py
+          sed -i '/schedule_deep_minutes=.*2>\/dev\/null || true/d' .github/scripts/apply-queue-liveness-fix.py
+          python3 .github/scripts/apply-queue-liveness-fix.py
+          git diff --check
+
+      - name: Verify shell and queue regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n service.sh
+          busybox ash -n service.sh
+          sh -n v2/module/task-worker.sh
+          busybox ash -n v2/module/task-worker.sh
+          sh -n v2/module/worker-runner.sh
+          busybox ash -n v2/module/worker-runner.sh
+          bash v2/tests/test-scheduler-fairness.sh
+          grep -q 'SPEC_MODE=deep-auto' service.sh
+          grep -q 'wait "$pid"' v2/module/task-worker.sh
+          ! grep -q 'while kill -0 "$pid"' v2/module/task-worker.sh
+          grep -q 'startForegroundModuleMonitor' v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt
+          grep -q '已进入 Root 队列' v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt
+
+      - name: Commit fix and remove temporary automation
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/apply-queue-liveness-fix.py
+          rm -f .github/workflows/apply-queue-liveness-fix.yml
+          rm -f .queue-liveness-trigger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(scheduler): prevent queued tasks from stalling'
+          git push origin HEAD:agent/dual-theme-ui-redesign

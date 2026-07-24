@@ -3,8 +3,8 @@ package io.github.xgl34222220.baize.ui.appearance
 import androidx.compose.runtime.Immutable
 
 enum class UiStyle(val label: String) {
-    MATERIAL("Material"),
-    MIUIX("Miuix");
+    MATERIAL("Material 3"),
+    MIUIX("MIUIx / HyperOS");
 
     companion object {
         fun fromStorage(value: String?): UiStyle =
@@ -55,15 +55,16 @@ data class AccentOption(
     val argb: Int
 )
 
+// 低饱和高级色为主，保留「白泽蓝」「霞光橘」两个较饱和选项给喜欢鲜艳的用户。
 val AccentOptions = listOf(
-    AccentOption("default", "白泽蓝", 0xFF3975F4.toInt()),
-    AccentOption("red", "朱红", 0xFFC70018.toInt()),
-    AccentOption("pink", "玫粉", 0xFFC50056.toInt()),
-    AccentOption("purple", "曜紫", 0xFFAF00C7.toInt()),
-    AccentOption("deep_purple", "深紫", 0xFF7900F5.toInt()),
-    AccentOption("indigo", "靛蓝", 0xFF1559F4.toInt()),
-    AccentOption("blue", "湖蓝", 0xFF0A79B8.toInt()),
-    AccentOption("light_blue", "青蓝", 0xFF0080A0.toInt())
+    AccentOption("default", "雾蓝", 0xFF7C93AB.toInt()),
+    AccentOption("sage", "鼠尾草绿", 0xFF8FA98F.toInt()),
+    AccentOption("sand", "暖沙", 0xFFC2AE8B.toInt()),
+    AccentOption("terracotta", "陶土", 0xFFBE8A72.toInt()),
+    AccentOption("mauve", "雾霾紫", 0xFFA494B8.toInt()),
+    AccentOption("slate", "岩青", 0xFF7FA3A8.toInt()),
+    AccentOption("azure", "白泽蓝", 0xFF3975F4.toInt()),
+    AccentOption("amber", "霞光橘", 0xFFD98E4A.toInt())
 )
 
 fun accentOptionFor(argb: Int): AccentOption =
@@ -74,7 +75,7 @@ data class AppearanceSettings(
     val uiStyle: UiStyle = UiStyle.MIUIX,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val seedArgb: Int = AccentOptions.first().argb,
-    val kolorStyle: KolorStyle = KolorStyle.VIBRANT,
+    val kolorStyle: KolorStyle = KolorStyle.SOFT,
     val monetEnabled: Boolean = false,
     val amoledBlack: Boolean = false,
     val blurEnabled: Boolean = true,

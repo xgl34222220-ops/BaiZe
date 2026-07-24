@@ -51,7 +51,7 @@ fun schedulerBlockedGroupsLabel(raw: String): String = raw
 fun schedulerRuntimeStateLabel(raw: String): String = when (raw.trim().lowercase()) {
     "running" -> "正在执行"
     "disabled" -> "自动任务已关闭"
-    else -> "待执行"
+    else -> "等待自动执行"
 }
 
 fun schedulerSupervisorStatusLabel(raw: String): String = when (raw.trim().lowercase()) {
@@ -59,10 +59,18 @@ fun schedulerSupervisorStatusLabel(raw: String): String = when (raw.trim().lower
     else -> "自动恢复中"
 }
 
-fun schedulerReasonLabel(raw: String): String = if (raw.trim().equals("执行中", ignoreCase = true)) {
-    "执行中"
-} else {
-    "待执行"
+fun schedulerReasonLabel(raw: String): String {
+    val value = raw.trim()
+    return when {
+        value.equals("执行中", ignoreCase = true) -> "执行中"
+        value.contains("息屏") -> "等待息屏后执行"
+        value.contains("充电") -> "等待充电后执行"
+        value.contains("电量") -> "等待电量满足条件"
+        value.contains("空闲") -> "等待系统空闲后执行"
+        value.contains("当前任务") || value.contains("已有") -> "等待当前任务完成"
+        value.contains("下次") || value.contains("没有到期") -> "等待下次执行"
+        else -> "等待自动执行"
+    }
 }
 
 fun schedulerCountdownLabel(
@@ -74,7 +82,8 @@ fun schedulerCountdownLabel(
     if (!enabled) return "已关闭"
     if (running) return "执行中"
     val remaining = nextEpoch - nowEpoch
-    if (nextEpoch <= 0L || remaining <= 30L) return "待执行"
+    if (nextEpoch <= 0L) return "正在计算执行时间"
+    if (remaining <= 30L) return "已到期，等待自动执行"
     val minutes = (remaining + 59L) / 60L
     if (minutes < 60L) return "还有 ${minutes} 分钟执行"
     val hours = minutes / 60L
