@@ -1,0 +1,76 @@
+name: BaiZe v2.5.2 Release Status Probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-v2.5.2.status'
+      - '.github/workflows/v2.5.2-release-status-probe.yml'
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report-release-status:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: bfd437727d476d3f4a386cf0cea62402abe027ce
+      REPORT_PR: '132'
+    steps:
+      - name: Query v2.5.2 release workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/workflows/v2.5.2-release.yml/runs" \
+            -f event=push -f per_page=20 > /tmp/runs.json
+          python3 - <<'PY' > /tmp/selected.json
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/runs.json').read_text())
+          runs = [r for r in data.get('workflow_runs', []) if r.get('head_sha') == 'bfd437727d476d3f4a386cf0cea62402abe027ce']
+          if not runs:
+              raise SystemExit('没有找到指向固定 v2.5.2 提交的发布流水线')
+          runs.sort(key=lambda r: r.get('created_at', ''), reverse=True)
+          print(json.dumps(runs[0]))
+          PY
+          run_id=$(python3 -c "import json; print(json.load(open('/tmp/selected.json'))['id'])")
+          gh api -X GET "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs" -f filter=latest -f per_page=100 > /tmp/jobs.json
+
+      - name: Comment exact workflow status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/status.md
+          import json
+          from pathlib import Path
+          print('<!-- baize-v2.5.2-release-status -->')
+          print('## v2.5.2 发布流水线状态')
+          print()
+          selected = Path('/tmp/selected.json')
+          jobs_file = Path('/tmp/jobs.json')
+          if not selected.exists():
+              print('未找到指向固定发布提交的 v2.5.2 流水线。')
+          else:
+              run = json.loads(selected.read_text())
+              print(f"- 状态：`{run.get('status')}`")
+              print(f"- 结论：`{run.get('conclusion')}`")
+              print(f"- Run：{run.get('html_url')}")
+              print(f"- 创建：`{run.get('created_at')}`")
+              print(f"- 更新：`{run.get('updated_at')}`")
+              print(f"- 提交：`{run.get('head_sha')}`")
+              if jobs_file.exists():
+                  jobs = json.loads(jobs_file.read_text()).get('jobs', [])
+                  print()
+                  print('### 作业与步骤')
+                  for job in jobs:
+                      print(f"- **{job.get('name')}**：`{job.get('status')}` / `{job.get('conclusion')}`")
+                      for step in job.get('steps') or []:
+                          if step.get('conclusion') in {'failure', 'cancelled', 'timed_out', 'action_required'} or step.get('status') == 'in_progress':
+                              print(f"  - {step.get('name')}：`{step.get('status')}` / `{step.get('conclusion')}`")
+          PY
+          gh pr comment "$REPORT_PR" --body-file /tmp/status.md
