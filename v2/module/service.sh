@@ -1,5 +1,6 @@
 #!/system/bin/sh
 # Canonical Magisk module root: /data/adb/modules/baize_v2; MODDIR remains portable for KernelSU and APatch.
+# Runtime migration supersedes the previous deep-pipeline-v1 schema and clears stale single-lane locks.
 MODDIR=${0%/*}
 APP_ID=io.github.xgl34222220.baize
 STATE_DIR=/data/adb/baize-v2
@@ -8,11 +9,11 @@ CONFIG="$STATE_DIR/config.conf"
 rm -rf "$MODDIR/webroot" "$MODDIR/webui" "$MODDIR/www" "$MODDIR/ksu-webui" 2>/dev/null || true
 mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
 chmod 0700 "$STATE_DIR"
-RUNTIME_SCHEMA=deep-pipeline-v1
+RUNTIME_SCHEMA=concurrent-lanes-v1
 SCHEMA_FILE="$STATE_DIR/runtime-schema"
 current_schema=$(sed -n '1p' "$SCHEMA_FILE" 2>/dev/null)
 if [ "$current_schema" != "$RUNTIME_SCHEMA" ]; then
-  rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
+  rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/cache-lane.lock" "$STATE_DIR/cache-lane" "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
   rm -f "$STATE_DIR/running.env" "$STATE_DIR/worker.env" "$STATE_DIR/scheduler.env" \
     "$STATE_DIR/supervisor.env" "$STATE_DIR/scheduler-queue.tsv" "$STATE_DIR/supervisor.stop" \
     "$STATE_DIR/stop" "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
