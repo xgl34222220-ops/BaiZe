@@ -84,10 +84,3 @@ replace_once(
     '    private fun kindFor(operation: String): String = when {\n        operation.contains("rule-review") -> "review"\n        operation.contains("quarantine") || operation.contains("restore") || operation.contains("purge") || operation.contains("expire") -> "safety"\n',
     'audit review kind',
 )
-
-replace_once(
-    '.github/workflows/v2.5-concurrent-scheduler-ci.yml',
-    '      - name: Rule quality center contract\n        run: bash v2/tests/test-rule-quality-contract.sh\n      - name: Concurrent scheduler regression\n',
-    '      - name: Rule quality center contract\n        run: bash v2/tests/test-rule-quality-contract.sh\n      - name: Rule review closed-loop contract\n        run: bash v2/tests/test-rule-review-closed-loop-contract.sh\n      - name: Concurrent scheduler regression\n',
-    'permanent review contract',
-)
