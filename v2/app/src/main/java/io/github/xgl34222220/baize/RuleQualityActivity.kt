@@ -35,12 +35,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,8 +51,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -81,6 +85,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Date
 
 class RuleQualityActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -128,7 +134,8 @@ class RuleQualityActivity : ComponentActivity() {
                         state = state,
                         miuix = appearance.uiStyle == UiStyle.MIUIX,
                         onBack = ::finish,
-                        onRefresh = ::load
+                        onRefresh = ::load,
+                        onReview = ::submitReview
                     )
                 }
             }
@@ -179,6 +186,34 @@ class RuleQualityActivity : ComponentActivity() {
         }
     }
 
+    private fun submitReview(item: RuleQualityItem, action: String, note: String) {
+        val root = service ?: return
+        if (state.loading) return
+        state = state.copy(loading = true, message = "正在保存 ${item.category} 的审核记录…")
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val update = JSONObject(root.updateRuleQualityReview(item.key, action, note))
+                    if (!update.optBoolean("success", false)) {
+                        error(update.optString("message").ifBlank { update.optString("error", "审核记录保存失败") })
+                    }
+                    val reportJson = JSONObject(root.getAuditTimelinePage(0, 100)).optJSONObject("ruleQuality") ?: JSONObject()
+                    update to reportJson
+                }
+            }
+            result.onSuccess { (update, reportJson) ->
+                val report = parseReport(reportJson)
+                state = state.copy(
+                    loading = false,
+                    report = report,
+                    message = update.optString("message", "审核记录已保存")
+                )
+            }.onFailure {
+                state = state.copy(loading = false, message = "保存审核记录失败：${it.message ?: it.javaClass.simpleName}")
+            }
+        }
+    }
+
     private fun parseReport(json: JSONObject): RuleQualityReport {
         val queue = buildList {
             val array = json.optJSONArray("reviewQueue")
@@ -201,7 +236,10 @@ class RuleQualityActivity : ComponentActivity() {
                         protectionRate = item.optInt("protectionRate").coerceIn(0, 100),
                         failureRate = item.optInt("failureRate").coerceIn(0, 100),
                         bytes = item.optLong("bytes").coerceAtLeast(0L),
-                        averageBytes = item.optLong("averageBytes").coerceAtLeast(0L)
+                        averageBytes = item.optLong("averageBytes").coerceAtLeast(0L),
+                        reviewState = item.optString("reviewState", "pending"),
+                        reviewNote = item.optString("reviewNote"),
+                        reviewedAt = item.optLong("reviewedAt").coerceAtLeast(0L)
                     )
                 )
             }
@@ -213,11 +251,17 @@ class RuleQualityActivity : ComponentActivity() {
             eventSampleCount = json.optInt("eventSampleCount").coerceAtLeast(0),
             ruleCount = json.optInt("ruleCount").coerceAtLeast(0),
             needsReview = json.optInt("needsReview").coerceAtLeast(0),
+            pendingCount = json.optInt("pendingCount").coerceAtLeast(0),
+            observingCount = json.optInt("observingCount").coerceAtLeast(0),
+            keptCount = json.optInt("keptCount").coerceAtLeast(0),
+            ignoredCount = json.optInt("ignoredCount").coerceAtLeast(0),
+            reviewedCount = json.optInt("reviewedCount").coerceAtLeast(0),
             highPriorityCount = json.optInt("highPriorityCount").coerceAtLeast(0),
             healthyCount = json.optInt("healthyCount").coerceAtLeast(0),
             insufficientCount = json.optInt("insufficientCount").coerceAtLeast(0),
             reviewQueue = queue,
-            readOnly = json.optBoolean("readOnly", true)
+            readOnly = json.optBoolean("readOnly", true),
+            reviewStateWritable = json.optBoolean("reviewStateWritable", false)
         )
     }
 }
@@ -236,11 +280,17 @@ private data class RuleQualityReport(
     val eventSampleCount: Int = 0,
     val ruleCount: Int = 0,
     val needsReview: Int = 0,
+    val pendingCount: Int = 0,
+    val observingCount: Int = 0,
+    val keptCount: Int = 0,
+    val ignoredCount: Int = 0,
+    val reviewedCount: Int = 0,
     val highPriorityCount: Int = 0,
     val healthyCount: Int = 0,
     val insufficientCount: Int = 0,
     val reviewQueue: List<RuleQualityItem> = emptyList(),
-    val readOnly: Boolean = true
+    val readOnly: Boolean = true,
+    val reviewStateWritable: Boolean = false
 )
 
 private data class RuleQualityItem(
@@ -259,7 +309,10 @@ private data class RuleQualityItem(
     val protectionRate: Int,
     val failureRate: Int,
     val bytes: Long,
-    val averageBytes: Long
+    val averageBytes: Long,
+    val reviewState: String,
+    val reviewNote: String,
+    val reviewedAt: Long
 )
 
 @Composable
@@ -267,13 +320,16 @@ private fun RuleQualityScreen(
     state: RuleQualityUiState,
     miuix: Boolean,
     onBack: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onReview: (RuleQualityItem, String, String) -> Unit
 ) {
-    var filter by remember { mutableStateOf("all") }
+    var stateFilter by remember { mutableStateOf("pending") }
+    var typeFilter by remember { mutableStateOf("all") }
     val horizontal = if (miuix) 18.dp else 20.dp
     val shape = if (miuix) RoundedCornerShape(27.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.reviewQueue.filter { item ->
-        when (filter) {
+        val stateMatches = stateFilter == "all" || item.reviewState == stateFilter
+        val typeMatches = when (typeFilter) {
             "high" -> item.severity == "high"
             "protected" -> item.type == "frequently_protected"
             "failure" -> item.type == "high_failure"
@@ -281,6 +337,7 @@ private fun RuleQualityScreen(
             "low" -> item.type == "low_value"
             else -> true
         }
+        stateMatches && typeMatches
     }
 
     LazyColumn(
@@ -288,40 +345,70 @@ private fun RuleQualityScreen(
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
+        item { RuleQualityHeader(state.message, state.loading, onBack, onRefresh) }
+        item { RuleQualitySummary(state.report, horizontal, shape, state.loading) }
+        item { ReadOnlyRuleCard(horizontal, shape) }
         item {
-            RuleQualityHeader(state.message, state.loading, onBack, onRefresh)
+            FilterRow(
+                horizontal = horizontal,
+                selected = stateFilter,
+                values = listOf(
+                    "pending" to "待审核 ${state.report.pendingCount}",
+                    "observing" to "观察中 ${state.report.observingCount}",
+                    "kept" to "已保留 ${state.report.keptCount}",
+                    "ignored" to "已忽略 ${state.report.ignoredCount}",
+                    "all" to "全部"
+                ),
+                onSelected = { stateFilter = it }
+            )
         }
         item {
-            RuleQualitySummary(state.report, horizontal, shape, state.loading)
-        }
-        item {
-            ReadOnlyRuleCard(horizontal, shape)
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = horizontal),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(
-                    "all" to "全部 ${state.report.needsReview}",
+            FilterRow(
+                horizontal = horizontal,
+                selected = typeFilter,
+                values = listOf(
+                    "all" to "全部类型",
                     "high" to "高优先级",
                     "failure" to "高失败",
                     "protected" to "频繁保护",
                     "zero" to "零命中",
                     "low" to "低收益"
-                ).forEach { (id, label) ->
-                    FilterChip(selected = filter == id, onClick = { filter = id }, label = { Text(label) })
-                }
-            }
+                ),
+                onSelected = { typeFilter = it }
+            )
         }
         if (filtered.isEmpty() && !state.loading) {
-            item { RuleQualityEmpty(horizontal, shape, state.report.available, filter) }
+            item { RuleQualityEmpty(horizontal, shape, state.report.available, stateFilter, typeFilter) }
         } else {
             items(filtered, key = { it.key }) { item ->
-                RuleQualityCard(item, horizontal, shape)
+                RuleQualityCard(
+                    item = item,
+                    horizontal = horizontal,
+                    shape = shape,
+                    saving = state.loading,
+                    reviewEnabled = state.report.reviewStateWritable,
+                    onReview = onReview
+                )
             }
         }
         item { Spacer(Modifier.navigationBarsPadding()) }
+    }
+}
+
+@Composable
+private fun FilterRow(
+    horizontal: androidx.compose.ui.unit.Dp,
+    selected: String,
+    values: List<Pair<String, String>>,
+    onSelected: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = horizontal),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        values.forEach { (id, label) ->
+            FilterChip(selected = selected == id, onClick = { onSelected(id) }, label = { Text(label) })
+        }
     }
 }
 
@@ -379,20 +466,20 @@ private fun RuleQualitySummary(
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${report.needsReview} 项待审核", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("${report.pendingCount} 项待审核", fontSize = 22.sp, fontWeight = FontWeight.Black)
                     Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 }
                 if (loading) CircularProgressIndicator(Modifier.size(24.dp))
             }
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                QualityMetric("规则分类", report.ruleCount.toString(), Modifier.weight(1f))
                 QualityMetric("高优先级", report.highPriorityCount.toString(), Modifier.weight(1f))
-                QualityMetric("表现正常", report.healthyCount.toString(), Modifier.weight(1f))
+                QualityMetric("观察中", report.observingCount.toString(), Modifier.weight(1f))
+                QualityMetric("已处理", report.reviewedCount.toString(), Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "基于最近 ${report.lookbackDays} 天 ${report.eventSampleCount} 条审计事件；${report.insufficientCount} 项因样本不足暂不评价。",
+                "最近 ${report.lookbackDays} 天 ${report.eventSampleCount} 条审计事件 · ${report.healthyCount} 项正常 · ${report.insufficientCount} 项样本不足",
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
                 fontSize = 10.sp
             )
@@ -413,7 +500,7 @@ private fun ReadOnlyRuleCard(horizontal: androidx.compose.ui.unit.Dp, shape: and
             Column(Modifier.weight(1f)) {
                 Text("只读人工审核", fontWeight = FontWeight.Bold)
                 Text(
-                    "这里只汇总建议，不会自动停用规则、删除文件、修改清理策略或改变任何定时周期。",
+                    "仅保存审核状态和备注。这里只汇总建议，不会自动停用规则、删除文件、修改清理策略或改变任何定时周期。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     lineHeight = 17.sp
@@ -427,10 +514,16 @@ private fun ReadOnlyRuleCard(horizontal: androidx.compose.ui.unit.Dp, shape: and
 private fun RuleQualityCard(
     item: RuleQualityItem,
     horizontal: androidx.compose.ui.unit.Dp,
-    shape: androidx.compose.ui.graphics.Shape
+    shape: androidx.compose.ui.graphics.Shape,
+    saving: Boolean,
+    reviewEnabled: Boolean,
+    onReview: (RuleQualityItem, String, String) -> Unit
 ) {
     val visual = qualityVisual(item)
     val context = androidx.compose.ui.platform.LocalContext.current
+    var pendingAction by remember(item.key, item.reviewState) { mutableStateOf<String?>(null) }
+    var note by remember(item.key, item.reviewNote) { mutableStateOf(item.reviewNote) }
+
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
@@ -452,18 +545,24 @@ private fun RuleQualityCard(
                     Text(item.category, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(typeLabel(item.type), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                 }
-                Surface(shape = CircleShape, color = visual.tint.copy(alpha = .12f)) {
+                Surface(shape = CircleShape, color = reviewStateColor(item.reviewState).copy(alpha = .13f)) {
                     Text(
-                        recommendationLabel(item.recommendation),
+                        reviewStateLabel(item.reviewState),
                         Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = visual.tint,
+                        color = reviewStateColor(item.reviewState),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Text(item.message, fontSize = 12.sp, lineHeight = 18.sp)
+            Text(
+                "系统建议：${recommendationLabel(item.recommendation)}",
+                color = visual.tint,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+            )
             Spacer(Modifier.height(11.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
             Spacer(Modifier.height(10.dp))
@@ -482,7 +581,71 @@ private fun RuleQualityCard(
             if (item.risk.isNotBlank()) {
                 Text("风险级别：${riskLabel(item.risk)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
             }
+            if (item.reviewNote.isNotBlank() || item.reviewedAt > 0L) {
+                Spacer(Modifier.height(9.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                ) {
+                    Column(Modifier.padding(11.dp)) {
+                        if (item.reviewNote.isNotBlank()) {
+                            Text("审核备注：${item.reviewNote}", fontSize = 10.sp)
+                        }
+                        if (item.reviewedAt > 0L) {
+                            Text(
+                                "审核时间：${formatReviewTime(item.reviewedAt)}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(enabled = reviewEnabled && !saving, onClick = { pendingAction = "keep" }) { Text("保留规则") }
+                TextButton(enabled = reviewEnabled && !saving, onClick = { pendingAction = "observe" }) { Text("继续观察") }
+                TextButton(enabled = reviewEnabled && !saving, onClick = { pendingAction = "ignore" }) { Text("忽略提醒") }
+                if (item.reviewState != "pending") {
+                    TextButton(enabled = reviewEnabled && !saving, onClick = { pendingAction = "reset" }) { Text("重置审核") }
+                }
+            }
         }
+    }
+
+    pendingAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingAction = null },
+            title = { Text(reviewActionTitle(action)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${item.category} · ${typeLabel(item.type)}")
+                    if (action != "reset") {
+                        OutlinedTextField(
+                            value = note,
+                            onValueChange = { note = it.take(200) },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("审核备注（可选）") },
+                            maxLines = 4
+                        )
+                        Text("${note.length}/200", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                    } else {
+                        Text("重置后该项目会重新回到待审核列表，原备注会一并清除。")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingAction = null
+                    onReview(item, action, if (action == "reset") "" else note)
+                }) { Text("确认") }
+            },
+            dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("取消") } }
+        )
     }
 }
 
@@ -491,7 +654,8 @@ private fun RuleQualityEmpty(
     horizontal: androidx.compose.ui.unit.Dp,
     shape: androidx.compose.ui.graphics.Shape,
     available: Boolean,
-    filter: String
+    stateFilter: String,
+    typeFilter: String
 ) {
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
@@ -499,11 +663,15 @@ private fun RuleQualityEmpty(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Rounded.Security, contentDescription = null, modifier = Modifier.size(42.dp), tint = BaiZeTokens.colors.success)
+            Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(42.dp), tint = BaiZeTokens.colors.success)
             Spacer(Modifier.height(10.dp))
-            Text(if (!available) "暂无足够样本" else if (filter == "all") "当前没有待审核规则" else "该筛选没有项目", fontWeight = FontWeight.Bold)
+            Text(if (!available) "暂无足够样本" else "当前筛选没有项目", fontWeight = FontWeight.Bold)
             Text(
-                if (!available) "继续正常扫描和清理后，系统会基于脱敏审计记录形成规则质量报告。" else "当前规则表现正常，或尚未达到人工审核阈值。",
+                if (!available) {
+                    "继续正常扫描和清理后，系统会基于脱敏审计记录形成规则质量报告。"
+                } else {
+                    "状态 ${reviewStateLabel(stateFilter)}、类型 ${typeFilterLabel(typeFilter)} 下没有规则。"
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp
             )
@@ -531,12 +699,29 @@ private fun qualityVisual(item: RuleQualityItem): QualityVisual = when (item.typ
     else -> QualityVisual(Icons.Rounded.Visibility, MaterialTheme.colorScheme.primary)
 }
 
+@Composable
+private fun reviewStateColor(value: String): androidx.compose.ui.graphics.Color = when (value) {
+    "kept" -> BaiZeTokens.colors.success
+    "observing" -> MaterialTheme.colorScheme.tertiary
+    "ignored" -> MaterialTheme.colorScheme.onSurfaceVariant
+    else -> MaterialTheme.colorScheme.error
+}
+
 private fun typeLabel(type: String): String = when (type) {
     "high_failure" -> "高失败规则"
     "frequently_protected" -> "频繁受保护"
     "zero_hit" -> "长期零命中"
     "low_value" -> "长期低收益"
     else -> "规则观察"
+}
+
+private fun typeFilterLabel(type: String): String = when (type) {
+    "high" -> "高优先级"
+    "failure" -> "高失败"
+    "protected" -> "频繁保护"
+    "zero" -> "零命中"
+    "low" -> "低收益"
+    else -> "全部类型"
 }
 
 private fun recommendationLabel(value: String): String = when (value) {
@@ -546,6 +731,21 @@ private fun recommendationLabel(value: String): String = when (value) {
     else -> "建议保留"
 }
 
+private fun reviewStateLabel(value: String): String = when (value) {
+    "observing" -> "观察中"
+    "kept" -> "已保留"
+    "ignored" -> "已忽略"
+    "all" -> "全部"
+    else -> "待审核"
+}
+
+private fun reviewActionTitle(action: String): String = when (action) {
+    "keep" -> "保留规则"
+    "observe" -> "继续观察"
+    "ignore" -> "忽略提醒"
+    else -> "重置审核"
+}
+
 private fun riskLabel(value: String): String = when (value) {
     "critical" -> "关键"
     "high" -> "高"
@@ -553,3 +753,7 @@ private fun riskLabel(value: String): String = when (value) {
     "low" -> "低"
     else -> value
 }
+
+private fun formatReviewTime(epoch: Long): String = runCatching {
+    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(epoch))
+}.getOrDefault("-")
