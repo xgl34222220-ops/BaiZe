@@ -25,10 +25,16 @@ case "$MODE" in
   apk-clean)
     run_script "$MODDIR/apk-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
-  deep-clean|corpse-clean)
+  deep-scan)
+    run_script "$MODDIR/deep-scan-manifest.sh" "$MODE" "$TRIGGER"
+    ;;
+  deep-clean)
+    run_script "$MODDIR/deep-manifest-clean.sh" "$MODE" "$TRIGGER"
+    ;;
+  corpse-clean)
     run_script "$MODDIR/profile-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
-  cache-scan|deep-scan|corpse-scan)
+  cache-scan|corpse-scan)
     run_script "$MODDIR/native-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
   *)
