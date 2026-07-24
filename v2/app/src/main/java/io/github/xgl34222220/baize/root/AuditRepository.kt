@@ -21,6 +21,7 @@ internal class AuditRepository(
     private val auditFile = File(stateDir, "audit.jsonl")
     private val metaFile = File(stateDir, "audit.meta")
     private val historyFile = File(stateDir, "history.tsv")
+    private val policyAdvisor = PolicyAdvisor()
 
     @Synchronized
     fun recordResult(
@@ -85,6 +86,8 @@ internal class AuditRepository(
             protectedCount += event.optLong("protected").coerceAtLeast(0L)
         }
 
+        val advisor = policyAdvisor.evaluate(combined)
+
         return JSONObject()
             .put("success", true)
             .put("schema", SCHEMA_VERSION)
@@ -98,6 +101,7 @@ internal class AuditRepository(
             .put("releasedBytes", releasedBytes)
             .put("quarantinedBytes", quarantinedBytes)
             .put("protectedCount", protectedCount)
+            .put("advisor", advisor)
             .put("events", page)
             .toString()
     }

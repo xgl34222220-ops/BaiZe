@@ -67,6 +67,8 @@ jobs:
         run: bash v2/tests/test-audit-center-contract.sh
       - name: Cleanup policy safety contract
         run: bash v2/tests/test-cleanup-policy-contract.sh
+      - name: Adaptive policy advisor contract
+        run: bash v2/tests/test-policy-advisor-contract.sh
       - name: Concurrent scheduler regression
         shell: bash
         run: |
