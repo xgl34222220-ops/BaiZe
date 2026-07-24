@@ -130,6 +130,45 @@ printf '0\n' >"$WORK/protected.cursor"
 grep -q '^files=0$' "$WORK/protected.env"
 grep -q $'^protected\tlow\t' "$WORK/protected.tsv"
 
+# Exercise the module wrapper, including state validation, native summary parsing, latest.env and
+# successful snapshot cleanup. This catches integration errors that a direct C test cannot see.
+MODULE="$WORK/module"
+STATE="$WORK/module-state"
+INTEGRATION_TARGET="$HOST_ROOT/integration-cache"
+mkdir -p "$MODULE/bin/arm64-v8a" "$STATE/reports" "$STATE/logs" "$INTEGRATION_TARGET"
+cp "$ROOT/module/deep-manifest-clean.sh" "$MODULE/deep-manifest-clean.sh"
+cp "$BIN" "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
+chmod +x "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
+printf 'integration' >"$INTEGRATION_TARGET/item.bin"
+printf '%s\tlow\n' "$INTEGRATION_TARGET" >"$STATE/deep_scan.targets"
+: >"$STATE/whitelist.conf"
+printf '%s\n' "$INTEGRATION_TARGET" >"$STATE/rules.conf"
+"$BIN" build \
+  --targets "$STATE/deep_scan.targets" \
+  --manifest "$STATE/deep_scan.manifest0" \
+  --summary "$STATE/deep_scan.manifest.env" \
+  --progress "$STATE/progress.env" \
+  --stop "$STATE/stop" \
+  --max-file-bytes 1048576
+printf '0\n' >"$STATE/deep_scan.cursor"
+cat >"$STATE/deep_scan.env" <<EOF
+epoch=$(date +%s)
+snapshot_id=integration-snapshot
+targets_sha=$(sha256sum "$STATE/deep_scan.targets" | awk '{print $1}')
+whitelist_sha=$(sha256sum "$STATE/whitelist.conf" | awk '{print $1}')
+rules_sha=$(sha256sum "$STATE/rules.conf" | awk '{print $1}')
+max_file_bytes=1048576
+manifest_sha=$(sha256sum "$STATE/deep_scan.manifest0" | awk '{print $1}')
+EOF
+BAIZE_STATE_DIR="$STATE" BAIZE_DEEP_RULES="$STATE/rules.conf" \
+  bash "$MODULE/deep-manifest-clean.sh" deep-clean integration >/dev/null
+[ ! -e "$INTEGRATION_TARGET/item.bin" ]
+[ ! -e "$STATE/deep_scan.env" ]
+[ ! -e "$STATE/deep_scan.manifest0" ]
+grep -q '^files=1$' "$STATE/latest.env"
+grep -q '^engine=deep-manifest-v1$' "$STATE/latest.env"
+grep -q '^deep_remaining_records=0$' "$STATE/latest.env"
+
 # Cleanup scripts are manifest consumers; directory rediscovery is forbidden.
 ! grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]' "$ROOT/module/deep-manifest-clean.sh"
 grep -q 'snapshot_schema=deep-file-manifest-v1' "$ROOT/module/deep-scan-manifest.sh"
