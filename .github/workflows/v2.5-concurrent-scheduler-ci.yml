@@ -55,6 +55,8 @@ jobs:
         run: bash v2/tests/test-scheduler-fairness.sh
       - name: Daily scheduler field regression
         run: bash v2/tests/test-scheduler-daily-fields.sh
+      - name: Scheduler health diagnostics regression
+        run: bash v2/tests/test-scheduler-health-diagnostics.sh
       - name: Concurrent scheduler regression
         shell: bash
         run: |
