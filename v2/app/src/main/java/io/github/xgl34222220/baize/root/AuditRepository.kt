@@ -91,7 +91,14 @@ internal class AuditRepository(
 
         val advisor = policyAdvisor.evaluate(combined)
         val effectiveness = effectivenessAnalyzer.analyze(combined)
-        val ruleQuality = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
+        val preliminaryRuleQuality = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
+        val reconciliation = ruleQualityReviewRepository.reconcile(preliminaryRuleQuality)
+        recordAutomaticReopens(reconciliation.reopened)
+        val ruleQuality = if (reconciliation.changed) {
+            ruleQualityAnalyzer.analyze(combined, reconciliation.reviews)
+        } else {
+            preliminaryRuleQuality
+        }
 
         return JSONObject()
             .put("success", true)
@@ -120,18 +127,23 @@ internal class AuditRepository(
             .distinctBy { it.optString("id") }
             .sortedByDescending { it.optLong("timeEpoch") }
             .take(MAX_EVENTS)
-        val report = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
+        val preliminary = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
+        val reconciliation = ruleQualityReviewRepository.reconcile(preliminary)
+        recordAutomaticReopens(reconciliation.reopened)
+        val report = if (reconciliation.changed) {
+            ruleQualityAnalyzer.analyze(combined, reconciliation.reviews)
+        } else {
+            preliminary
+        }
         val queue = report.optJSONArray("reviewQueue") ?: JSONArray()
-        val validKeys = linkedSetOf<String>()
         val categories = linkedMapOf<String, String>()
         for (index in 0 until queue.length()) {
             val item = queue.optJSONObject(index) ?: continue
             val key = item.optString("key")
             if (key.isBlank()) continue
-            validKeys += key
             categories[key] = sanitize(item.optString("category"), 100)
         }
-        val raw = ruleQualityReviewRepository.update(ruleKey, action, note, validKeys)
+        val raw = ruleQualityReviewRepository.update(ruleKey, action, note, report)
         val result = runCatching { JSONObject(raw) }.getOrElse { return raw }
         if (result.optBoolean("success", false)) {
             val key = result.optString("ruleKey")
@@ -149,6 +161,27 @@ internal class AuditRepository(
             recordResult("rule-review-$state", "app-rule-review", auditResult.toString())
         }
         return raw
+    }
+
+    private fun recordAutomaticReopens(items: List<RuleQualityReopen>) {
+        items.forEach { item ->
+            val details = JSONArray().put(
+                JSONObject()
+                    .put("action", "reopened")
+                    .put("category", item.category)
+                    .put("reason", item.reason)
+            )
+            val result = JSONObject()
+                .put("success", true)
+                .put("message", "规则审核已自动重新打开：${item.category} · ${item.reason}")
+                .put("profile", item.category)
+                .put("processed", 1)
+                .put("details", details)
+                .put("rulesChanged", false)
+                .put("policyUntouched", true)
+                .put("scheduleUntouched", true)
+            recordResult("rule-review-reopened", "system-rule-review", result.toString(), item.reopenedAt)
+        }
     }
 
     @Synchronized

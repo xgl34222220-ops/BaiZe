@@ -239,7 +239,13 @@ class RuleQualityActivity : ComponentActivity() {
                         averageBytes = item.optLong("averageBytes").coerceAtLeast(0L),
                         reviewState = item.optString("reviewState", "pending"),
                         reviewNote = item.optString("reviewNote"),
-                        reviewedAt = item.optLong("reviewedAt").coerceAtLeast(0L)
+                        reviewedAt = item.optLong("reviewedAt").coerceAtLeast(0L),
+                        newEventsSinceReview = item.optInt("newEventsSinceReview").coerceAtLeast(0),
+                        newObservationsSinceReview = item.optInt("newObservationsSinceReview").coerceAtLeast(0),
+                        reopened = item.optBoolean("reopened", false),
+                        reopenedAt = item.optLong("reopenedAt").coerceAtLeast(0L),
+                        reopenReason = item.optString("reopenReason"),
+                        previousReviewState = item.optString("previousReviewState")
                     )
                 )
             }
@@ -252,6 +258,7 @@ class RuleQualityActivity : ComponentActivity() {
             ruleCount = json.optInt("ruleCount").coerceAtLeast(0),
             needsReview = json.optInt("needsReview").coerceAtLeast(0),
             pendingCount = json.optInt("pendingCount").coerceAtLeast(0),
+            reopenedCount = json.optInt("reopenedCount").coerceAtLeast(0),
             observingCount = json.optInt("observingCount").coerceAtLeast(0),
             keptCount = json.optInt("keptCount").coerceAtLeast(0),
             ignoredCount = json.optInt("ignoredCount").coerceAtLeast(0),
@@ -281,6 +288,7 @@ private data class RuleQualityReport(
     val ruleCount: Int = 0,
     val needsReview: Int = 0,
     val pendingCount: Int = 0,
+    val reopenedCount: Int = 0,
     val observingCount: Int = 0,
     val keptCount: Int = 0,
     val ignoredCount: Int = 0,
@@ -312,7 +320,13 @@ private data class RuleQualityItem(
     val averageBytes: Long,
     val reviewState: String,
     val reviewNote: String,
-    val reviewedAt: Long
+    val reviewedAt: Long,
+    val newEventsSinceReview: Int,
+    val newObservationsSinceReview: Int,
+    val reopened: Boolean,
+    val reopenedAt: Long,
+    val reopenReason: String,
+    val previousReviewState: String
 )
 
 @Composable
@@ -328,7 +342,11 @@ private fun RuleQualityScreen(
     val horizontal = if (miuix) 18.dp else 20.dp
     val shape = if (miuix) RoundedCornerShape(27.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.reviewQueue.filter { item ->
-        val stateMatches = stateFilter == "all" || item.reviewState == stateFilter
+        val stateMatches = when (stateFilter) {
+            "all" -> true
+            "reopened" -> item.reopened
+            else -> item.reviewState == stateFilter
+        }
         val typeMatches = when (typeFilter) {
             "high" -> item.severity == "high"
             "protected" -> item.type == "frequently_protected"
@@ -353,6 +371,7 @@ private fun RuleQualityScreen(
                 horizontal = horizontal,
                 selected = stateFilter,
                 values = listOf(
+                    "reopened" to "重新打开 ${state.report.reopenedCount}",
                     "pending" to "待审核 ${state.report.pendingCount}",
                     "observing" to "观察中 ${state.report.observingCount}",
                     "kept" to "已保留 ${state.report.keptCount}",
@@ -473,9 +492,9 @@ private fun RuleQualitySummary(
             }
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QualityMetric("重新打开", report.reopenedCount.toString(), Modifier.weight(1f))
                 QualityMetric("高优先级", report.highPriorityCount.toString(), Modifier.weight(1f))
                 QualityMetric("观察中", report.observingCount.toString(), Modifier.weight(1f))
-                QualityMetric("已处理", report.reviewedCount.toString(), Modifier.weight(1f))
             }
             Spacer(Modifier.height(10.dp))
             Text(
@@ -500,7 +519,7 @@ private fun ReadOnlyRuleCard(horizontal: androidx.compose.ui.unit.Dp, shape: and
             Column(Modifier.weight(1f)) {
                 Text("只读人工审核", fontWeight = FontWeight.Bold)
                 Text(
-                    "仅保存审核状态和备注。这里只汇总建议，不会自动停用规则、删除文件、修改清理策略或改变任何定时周期。",
+                    "仅保存审核状态和备注；证据明显恶化时只自动重新打开审核状态，不会停用规则、删除文件、修改清理策略或改变任何定时周期。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     lineHeight = 17.sp
@@ -521,6 +540,7 @@ private fun RuleQualityCard(
 ) {
     val visual = qualityVisual(item)
     val context = androidx.compose.ui.platform.LocalContext.current
+    val stateTint = if (item.reopened) MaterialTheme.colorScheme.error else reviewStateColor(item.reviewState)
     var pendingAction by remember(item.key, item.reviewState) { mutableStateOf<String?>(null) }
     var note by remember(item.key, item.reviewNote) { mutableStateOf(item.reviewNote) }
 
@@ -545,11 +565,11 @@ private fun RuleQualityCard(
                     Text(item.category, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(typeLabel(item.type), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                 }
-                Surface(shape = CircleShape, color = reviewStateColor(item.reviewState).copy(alpha = .13f)) {
+                Surface(shape = CircleShape, color = stateTint.copy(alpha = .13f)) {
                     Text(
-                        reviewStateLabel(item.reviewState),
+                        if (item.reopened) "重新审核" else reviewStateLabel(item.reviewState),
                         Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = reviewStateColor(item.reviewState),
+                        color = stateTint,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -580,6 +600,27 @@ private fun RuleQualityCard(
             )
             if (item.risk.isNotBlank()) {
                 Text("风险级别：${riskLabel(item.risk)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+            }
+            if (item.reopened) {
+                Spacer(Modifier.height(9.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Column(Modifier.padding(11.dp)) {
+                        Text("审核已自动重新打开", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(item.reopenReason, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 10.sp)
+                        Text(
+                            "原状态：${reviewStateLabel(item.previousReviewState)} · 审核后新增 ${item.newEventsSinceReview} 次任务 / ${item.newObservationsSinceReview} 条记录",
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = .75f),
+                            fontSize = 9.sp
+                        )
+                        if (item.reopenedAt > 0L) {
+                            Text("重新打开时间：${formatReviewTime(item.reopenedAt)}", color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = .75f), fontSize = 9.sp)
+                        }
+                    }
+                }
             }
             if (item.reviewNote.isNotBlank() || item.reviewedAt > 0L) {
                 Spacer(Modifier.height(9.dp))
@@ -732,6 +773,7 @@ private fun recommendationLabel(value: String): String = when (value) {
 }
 
 private fun reviewStateLabel(value: String): String = when (value) {
+    "reopened" -> "重新打开"
     "observing" -> "观察中"
     "kept" -> "已保留"
     "ignored" -> "已忽略"

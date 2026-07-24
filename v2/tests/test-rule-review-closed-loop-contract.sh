@@ -20,7 +20,7 @@ grep -Fq 'MAX_RECORDS = 200' "$REVIEW_REPO"
 grep -Fq 'MAX_NOTE_LENGTH = 200' "$REVIEW_REPO"
 grep -Fq 'Regex("^[0-9a-f]{16}$")' "$REVIEW_REPO"
 grep -Fq 'setOf("keep", "observe", "ignore", "reset")' "$REVIEW_REPO"
-grep -Fq 'ruleKey !in validKeys' "$REVIEW_REPO"
+grep -Fq 'val currentEvidence = evidence[ruleKey]' "$REVIEW_REPO"
 grep -Fq 'RootFileStore.writeAtomic(reviewFile' "$REVIEW_REPO"
 
 # Review writes cannot mutate real cleaner rules, files, policies, tasks or scheduling.
@@ -47,7 +47,7 @@ grep -Fq 'TASK_KINDS' "$ANALYZER"
 grep -Fq 'String updateRuleQualityReview(String ruleKey, String action, String note);' "$AIDL"
 grep -Fq 'override fun updateRuleQualityReview' "$SERVICE"
 grep -Fq 'updateRuleQualityReviewJson' "$AUDIT_REPO"
-grep -Fq 'validKeys' "$AUDIT_REPO"
+grep -Fq 'ruleQualityReviewRepository.update(ruleKey, action, note, report)' "$AUDIT_REPO"
 grep -Fq 'rule-review-' "$AUDIT_REPO"
 grep -Fq 'operation.contains("rule-review") -> "review"' "$AUDIT_REPO"
 
