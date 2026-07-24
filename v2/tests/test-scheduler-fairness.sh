@@ -25,7 +25,7 @@ if [ -f .github/scripts/apply-queue-dispatch-insets-fix.py ]; then
     cp /tmp/queue-dispatch-fix-error.log .queue-dispatch-fix-error.log
     git config user.name 'github-actions[bot]'
     git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-    git add .queue-dispatch-fix-error.log
+    git add -f .queue-dispatch-fix-error.log
     git commit -m 'chore: capture queue dispatch fix failure'
     git push origin HEAD:agent/dual-theme-ui-redesign
     exit "$CODE"
