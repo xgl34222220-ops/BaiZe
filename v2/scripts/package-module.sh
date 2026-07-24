@@ -8,12 +8,15 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
+DEEP_NATIVE="$ROOT/build/native/arm64-v8a/baize_deep_snapshot"
 OUTPUT="$OUT/BaiZe-v2.5.1-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
+[ -x "$DEEP_NATIVE" ] || { echo "未找到 arm64 深度不可变快照引擎：$DEEP_NATIVE" >&2; exit 1; }
 bash "$ROOT/tests/test-concurrent-scheduler.sh"
 bash "$ROOT/tests/test-deep-clean-budget.sh"
+bash "$ROOT/tests/test-deep-manifest.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
@@ -35,9 +38,10 @@ sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/
 sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
 
 cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
+cp -f "$DEEP_NATIVE" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
 chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
-chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
-chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine"
+chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/deep-scan-manifest.sh" "$STAGE/deep-manifest-clean.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
+chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
 chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
 
@@ -66,17 +70,25 @@ unzip -p "$OUTPUT" cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
 unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
+unzip -p "$OUTPUT" scheduler.sh | grep -q 'fixed-seven-fields-v1'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5.1'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'build_fallback_index'
 unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
-unzip -p "$OUTPUT" profile-cleaner.sh | grep -q 'profile-snapshot-v42.8-stream-batch'
-unzip -p "$OUTPUT" profile-cleaner.sh | grep -q 'deep_clean_batch_files'
-unzip -p "$OUTPUT" profile-cleaner.sh | grep -q '正在连续批量清理'
-if unzip -p "$OUTPUT" profile-cleaner.sh | grep -Eq '跳过.*慢目标|目录超时保护|deep_clean_target_timeout_seconds|deep_clean_stage_limit_seconds'; then
-  echo "深度清理器不得通过超时跳过慢目标" >&2
+unzip -l "$OUTPUT" | grep -q 'deep-scan-manifest.sh'
+unzip -l "$OUTPUT" | grep -q 'deep-manifest-clean.sh'
+unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
+unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-scan-manifest.sh'
+unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-manifest-clean.sh'
+unzip -p "$OUTPUT" deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
+unzip -p "$OUTPUT" deep-scan-manifest.sh | grep -q 'manifest_sha='
+unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
+unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -q 'deep_remaining_records'
+unzip -p "$OUTPUT" service.sh | grep -q 'RUNTIME_SCHEMA=deep-manifest-v1'
+if unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]'; then
+  echo "深度不可变快照清理器不得重新枚举目录" >&2
   exit 1
 fi
 unzip -l "$OUTPUT" | grep -q 'apk-scanner.sh'
@@ -99,7 +111,6 @@ unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'parallel_overlap_milli'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
-unzip -p "$OUTPUT" config/default.conf | grep -q '^deep_clean_batch_files=512$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
@@ -122,4 +133,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.5.1 完整强化模块：$OUTPUT"
+echo "已生成白泽 v2.5.1 深度不可变快照模块：$OUTPUT"

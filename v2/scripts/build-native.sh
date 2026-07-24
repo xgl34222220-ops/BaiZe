@@ -3,7 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUT="$ROOT/build/native/arm64-v8a"
-SOURCE="$ROOT/native/baize_engine_42_4.c"
+ENGINE_SOURCE="$ROOT/native/baize_engine_42_4.c"
+DEEP_SOURCE="$ROOT/native/baize_deep_snapshot.c"
 API=${ANDROID_API:-26}
 
 find_ndk() {
@@ -26,12 +27,16 @@ CC="$TOOLCHAIN/aarch64-linux-android${API}-clang"
 STRIP="$TOOLCHAIN/llvm-strip"
 
 [ -x "$CC" ] || { echo "未找到编译器：$CC" >&2; exit 1; }
-[ -f "$SOURCE" ] || { echo "未找到白泽 v2 原生引擎源码：$SOURCE" >&2; exit 1; }
+[ -f "$ENGINE_SOURCE" ] || { echo "未找到白泽原生扫描引擎源码：$ENGINE_SOURCE" >&2; exit 1; }
+[ -f "$DEEP_SOURCE" ] || { echo "未找到深度不可变快照源码：$DEEP_SOURCE" >&2; exit 1; }
 mkdir -p "$OUT"
-"$CC" -std=c11 -O2 -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-  -Wall -Wextra -Wformat=2 -Wshadow -Wconversion \
-  "$SOURCE" -o "$OUT/baize_engine"
-"$STRIP" --strip-unneeded "$OUT/baize_engine"
-chmod 0755 "$OUT/baize_engine"
-file "$OUT/baize_engine"
-echo "已生成白泽 v2.1.0 Alpha 4 有限并发/路径索引/不可变快照引擎：$OUT/baize_engine"
+
+COMMON_FLAGS='-std=c11 -O2 -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion'
+# shellcheck disable=SC2086
+"$CC" $COMMON_FLAGS "$ENGINE_SOURCE" -o "$OUT/baize_engine"
+# shellcheck disable=SC2086
+"$CC" $COMMON_FLAGS "$DEEP_SOURCE" -o "$OUT/baize_deep_snapshot"
+"$STRIP" --strip-unneeded "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
+chmod 0755 "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
+file "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
+echo "已生成白泽 ARM64 扫描引擎与深度不可变快照引擎：$OUT"

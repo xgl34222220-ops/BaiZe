@@ -25,10 +25,17 @@ case "$MODE" in
   apk-clean)
     run_script "$MODDIR/apk-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
-  deep-clean|corpse-clean)
+  deep-scan)
+    # Keep a recognized task marker in /proc/<pid>/cmdline so the scheduler cannot clear a live lock.
+    run_script "$MODDIR/deep-scan-manifest.sh" "$MODE" "$TRIGGER" "profile-cleaner.sh"
+    ;;
+  deep-clean)
+    run_script "$MODDIR/deep-manifest-clean.sh" "$MODE" "$TRIGGER" "profile-cleaner.sh"
+    ;;
+  corpse-clean)
     run_script "$MODDIR/profile-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
-  cache-scan|deep-scan|corpse-scan)
+  cache-scan|corpse-scan)
     run_script "$MODDIR/native-cleaner.sh" "$MODE" "$TRIGGER"
     ;;
   *)
