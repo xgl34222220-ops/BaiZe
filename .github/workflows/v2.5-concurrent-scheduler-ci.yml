@@ -7,12 +7,13 @@ on:
       - 'service.sh'
       - 'config/**'
       - 'v2/module/**'
+      - 'v2/native/**'
       - 'v2/scripts/**'
       - 'v2/tests/**'
       - '.github/workflows/v2.5-concurrent-scheduler-ci.yml'
       - '.github/workflows/v2.5.1-release.yml'
   push:
-    branches: [feat/v2.5.2-stability]
+    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest]
 
 permissions:
   contents: read
@@ -36,6 +37,10 @@ jobs:
             sh -n "$script"
             busybox ash -n "$script"
           done
+      - name: Compile native engines with warnings as errors
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+          gcc -std=c11 -O2 -Wall -Wextra -Werror v2/native/baize_deep_snapshot.c -o /tmp/baize_deep_snapshot
       - name: Existing scheduler regression
         run: bash v2/tests/test-scheduler-fairness.sh
       - name: Daily scheduler field regression
@@ -48,13 +53,21 @@ jobs:
           code=$?
           tail -n 80 /tmp/concurrent-scheduler.log
           exit "$code"
-      - name: Deep clean continuous batch regression
+      - name: Legacy profile cleaner regression
         shell: bash
         run: |
           set +e
           bash -x v2/tests/test-deep-clean-budget.sh > /tmp/deep-clean-stream.log 2>&1
           code=$?
           tail -n 120 /tmp/deep-clean-stream.log
+          exit "$code"
+      - name: Immutable deep manifest regression
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-deep-manifest.sh > /tmp/deep-manifest.log 2>&1
+          code=$?
+          tail -n 160 /tmp/deep-manifest.log
           exit "$code"
       - name: Upload Root diagnostics
         if: failure()
@@ -64,9 +77,11 @@ jobs:
           path: |
             /tmp/concurrent-scheduler.log
             /tmp/deep-clean-stream.log
+            /tmp/deep-manifest.log
             /tmp/baize-v250-concurrent-scheduler-test
             /tmp/baize-deep-clean-stream-test
             /tmp/baize-scheduler-daily-fields-test
+            /tmp/baize-deep-manifest-state-*
           if-no-files-found: warn
       - name: Incremental index regression
         run: bash v2/tests/test-incremental-index.sh
