@@ -4,6 +4,7 @@ import io.github.xgl34222220.baize.CleanupPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -78,19 +79,19 @@ internal class PolicyAdvisor(
                 if (quarantines >= 2 && restoreRate >= 25) reasons += "隔离内容恢复率为 $restoreRate%，建议降低清理干预"
                 if (selected >= 10L && protectionRate >= 40) reasons += "受保护项目占比为 $protectionRate%"
             }
-            storage.freePercent in 0..8 && failureRate <= 15 && restoreRate <= 10 -> {
+            storage.freePercent in 0..8 && evidenceCount >= MIN_EVIDENCE && failureRate <= 15 && restoreRate <= 10 -> {
                 recommended = CleanupPolicy.AGGRESSIVE
                 decision = "critical_storage"
                 reasons += "当前最紧张存储区域仅剩 ${storage.freePercent}% 可用空间"
                 reasons += "近期任务稳定，未发现明显误清理或恢复信号"
             }
-            storage.freePercent in 9..15 && evidenceCount >= 3 && failureRate < 20 && restoreRate < 15 -> {
+            storage.freePercent in 9..15 && evidenceCount >= MIN_EVIDENCE && failureRate < 20 && restoreRate < 15 -> {
                 recommended = if (current == CleanupPolicy.CONSERVATIVE) CleanupPolicy.BALANCED else CleanupPolicy.AGGRESSIVE
                 decision = "low_storage"
                 reasons += "当前最紧张存储区域剩余 ${storage.freePercent}%"
                 reasons += "近期清理失败率较低，可适度扩大普通垃圾覆盖"
             }
-            current == CleanupPolicy.AGGRESSIVE && storage.freePercent >= 20 -> {
+            current == CleanupPolicy.AGGRESSIVE && storage.freePercent >= 20 && evidenceCount >= MIN_EVIDENCE -> {
                 recommended = CleanupPolicy.BALANCED
                 decision = "pressure_relieved"
                 reasons += "可用空间已恢复到 ${storage.freePercent}%"
@@ -114,7 +115,7 @@ internal class PolicyAdvisor(
 
         val confidence = when {
             evidenceCount >= 10 && storage.freePercent >= 0 -> "high"
-            evidenceCount >= MIN_EVIDENCE || storage.freePercent in 0..8 -> "medium"
+            evidenceCount >= MIN_EVIDENCE -> "medium"
             else -> "low"
         }
         val summary = when {
@@ -181,13 +182,13 @@ internal class PolicyAdvisor(
     private fun formatSeconds(milliseconds: Long): String = if (milliseconds < 1_000L) {
         "${milliseconds}ms"
     } else {
-        String.format("%.1fs", milliseconds / 1_000.0)
+        String.format(Locale.US, "%.1fs", milliseconds / 1_000.0)
     }
 
     private fun humanBytes(bytes: Long): String = when {
-        bytes >= 1024L * 1024L * 1024L -> String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-        bytes >= 1024L * 1024L -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
-        bytes >= 1024L -> String.format("%.1f KB", bytes / 1024.0)
+        bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes >= 1024L -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
         else -> "$bytes B"
     }
 
