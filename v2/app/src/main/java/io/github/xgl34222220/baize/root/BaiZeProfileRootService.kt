@@ -21,9 +21,10 @@ class BaiZeProfileRootService : RootService() {
     private val packageCatalog = PackageCatalog()
     private val whitelistRepository = WhitelistRepository()
     private val cacheSelectionRepository = CacheSelectionRepository()
+    private val quarantineRepository = QuarantineRepository()
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
 
-    private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled) }
+    private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled, quarantineRepository) }
     private val instantCacheEngine by lazy {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
     }
@@ -37,7 +38,7 @@ class BaiZeProfileRootService : RootService() {
             .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
-            .put("engine", "unified-root-task-coordinator-v2")
+            .put("engine", "unified-root-task-coordinator-v2-quarantine")
             .toString()
 
         override fun getProfileCatalog(): String = profileEngine.catalog()
@@ -93,8 +94,55 @@ class BaiZeProfileRootService : RootService() {
             }
         }
 
+        override fun quarantineProfileSelected(
+            snapshotId: String?,
+            selectionJson: String?,
+            optionsJson: String?
+        ): String = coordinator.runExclusive(
+            operation = "profile-quarantine",
+            phase = "正在隔离高风险项目",
+            failureCode = "profile_quarantine_failed"
+        ) { started ->
+            profileEngine.quarantine(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { progress ->
+                coordinator.update(
+                    operation = "profile-quarantine",
+                    phase = progress.phase,
+                    current = progress.current,
+                    total = progress.total,
+                    currentPath = progress.path,
+                    startedRealtime = started,
+                    deletedBytes = progress.bytes,
+                    deletedFiles = progress.files,
+                    failures = progress.failures
+                )
+            }
+        }
+
         override fun prepareCacheSelection(snapshotId: String?, selectionJson: String?): String =
             cacheSelectionRepository.prepare(snapshotId, selectionJson)
+
+        override fun getQuarantinePage(offset: Int, limit: Int): String {
+            if (coordinator.isBusy()) return coordinator.busy("quarantine-page")
+            return quarantineRepository.page(offset, limit)
+        }
+
+        override fun restoreQuarantineItem(id: String?): String = coordinator.runExclusive(
+            operation = "quarantine-restore",
+            phase = "正在恢复隔离内容",
+            failureCode = "quarantine_restore_failed"
+        ) { quarantineRepository.restore(id) }
+
+        override fun purgeQuarantineItem(id: String?): String = coordinator.runExclusive(
+            operation = "quarantine-purge",
+            phase = "正在永久删除隔离内容",
+            failureCode = "quarantine_purge_failed"
+        ) { quarantineRepository.purge(id) }
+
+        override fun purgeExpiredQuarantine(): String = coordinator.runExclusive(
+            operation = "quarantine-expire",
+            phase = "正在清理过期隔离项",
+            failureCode = "quarantine_expire_failed"
+        ) { quarantineRepository.purgeExpired() }
 
         override fun runMaintenanceTool(tool: String?, optionsJson: String?): String =
             diagnostics.runMaintenanceTool(tool, optionsJson)
