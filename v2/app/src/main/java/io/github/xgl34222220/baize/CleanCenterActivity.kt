@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderOff
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Storage
@@ -112,6 +113,7 @@ class CleanCenterActivity : ComponentActivity() {
                                 finish()
                             },
                             onOpenCache = { startActivity(Intent(this, CacheActivity::class.java)) },
+                            onOpenQuarantine = { startActivity(Intent(this, QuarantineActivity::class.java)) },
                             onOpenProfile = ::openProfile
                         )
                     )
@@ -132,6 +134,7 @@ private data class CleanCenterActions(
     val onBack: () -> Unit,
     val onQuickClean: () -> Unit,
     val onOpenCache: () -> Unit,
+    val onOpenQuarantine: () -> Unit,
     val onOpenProfile: (String) -> Unit
 )
 
@@ -203,6 +206,7 @@ private fun CleanCenterMaterial(
         CleanCenterItem(Icons.Rounded.Apps, "残留碎片", "过期临时文件、旋转日志与中断下载", "保留期", profile = "fragments")
     )
     val advanced = listOf(
+        CleanCenterItem(Icons.Rounded.Inventory2, "隔离区", "恢复或永久删除已隔离的高风险内容", "可撤销", directAction = actions.onOpenQuarantine),
         CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对 data、obb、media 与应用私有目录", "二次确认", profile = "corpses", dangerous = true),
         CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "完整规则库扫描并按风险分级", "二次确认", profile = "deep", dangerous = true)
     )
@@ -413,6 +417,7 @@ private fun CleanCenterMiuix(
         CleanCenterItem(Icons.Rounded.Apps, "残留碎片", "临时文件与中断下载", "保留期", profile = "fragments")
     )
     val advanced = listOf(
+        CleanCenterItem(Icons.Rounded.Inventory2, "隔离区", "恢复或永久删除高风险内容", "可撤销", directAction = actions.onOpenQuarantine),
         CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对无主应用目录", "确认", profile = "corpses", dangerous = true),
         CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "4,714 条规则风险分级", "确认", profile = "deep", dangerous = true)
     )
