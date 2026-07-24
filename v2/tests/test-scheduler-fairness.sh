@@ -3,15 +3,33 @@ set -euo pipefail
 
 # BEGIN ONE-TIME QUEUE DISPATCH FIX
 if [ -f .github/scripts/apply-queue-dispatch-insets-fix.py ]; then
-  python3 .github/scripts/apply-queue-dispatch-insets-fix.py
-  git diff --check
-  sh -n service.sh
-  busybox ash -n service.sh
-  sh -n v2/module/supervisor.sh
-  busybox ash -n v2/module/supervisor.sh
-  sh -n v2/module/task-worker.sh
-  busybox ash -n v2/module/task-worker.sh
-  BAIZE_QUEUE_DISPATCH_PATCH_APPLIED=1 bash "$0"
+  LOG=$(mktemp)
+  set +e
+  {
+    python3 .github/scripts/apply-queue-dispatch-insets-fix.py
+    git diff --check
+    sh -n service.sh
+    busybox ash -n service.sh
+    sh -n v2/module/supervisor.sh
+    busybox ash -n v2/module/supervisor.sh
+    sh -n v2/module/task-worker.sh
+    busybox ash -n v2/module/task-worker.sh
+    BAIZE_QUEUE_DISPATCH_PATCH_APPLIED=1 bash "$0"
+  } >"$LOG" 2>&1
+  CODE=$?
+  set -e
+  if [ "$CODE" -ne 0 ]; then
+    cp "$LOG" /tmp/queue-dispatch-fix-error.log
+    git reset --hard HEAD
+    cp /tmp/queue-dispatch-fix-error.log .queue-dispatch-fix-error.log
+    git config user.name 'github-actions[bot]'
+    git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+    git add .queue-dispatch-fix-error.log
+    git commit -m 'chore: capture queue dispatch fix failure'
+    git push origin HEAD:agent/dual-theme-ui-redesign
+    exit "$CODE"
+  fi
+  rm -f "$LOG" .queue-dispatch-fix-error.log
   git config user.name 'github-actions[bot]'
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
   git add -A
