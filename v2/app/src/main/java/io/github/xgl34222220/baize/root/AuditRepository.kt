@@ -26,6 +26,7 @@ internal class AuditRepository(
     private val ruleQualityAnalyzer = RuleQualityAnalyzer()
     private val ruleQualityReviewRepository = RuleQualityReviewRepository(stateDir)
     private val ruleReviewTrendAnalyzer = RuleReviewTrendAnalyzer()
+    private val ruleImprovementDraftAnalyzer = RuleImprovementDraftAnalyzer()
 
     @Synchronized
     fun recordResult(
@@ -109,6 +110,7 @@ internal class AuditRepository(
             combined
         }
         val ruleReviewTrends = ruleReviewTrendAnalyzer.analyze(trendEvents, ruleQuality)
+        val ruleImprovementDrafts = ruleImprovementDraftAnalyzer.analyze(ruleQuality, ruleReviewTrends)
 
         return JSONObject()
             .put("success", true)
@@ -127,6 +129,7 @@ internal class AuditRepository(
             .put("effectiveness", effectiveness)
             .put("ruleQuality", ruleQuality)
             .put("ruleReviewTrends", ruleReviewTrends)
+            .put("ruleImprovementDrafts", ruleImprovementDrafts)
             .put("events", page)
             .toString()
     }

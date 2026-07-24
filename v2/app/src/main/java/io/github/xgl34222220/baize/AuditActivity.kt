@@ -146,7 +146,8 @@ class AuditActivity : ComponentActivity() {
                         onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
                         onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) },
                         onOpenRuleQuality = { startActivity(Intent(this, RuleQualityActivity::class.java)) },
-                        onOpenReviewTrends = { startActivity(Intent(this, RuleReviewTrendsActivity::class.java)) }
+                        onOpenReviewTrends = { startActivity(Intent(this, RuleReviewTrendsActivity::class.java)) },
+                        onOpenImprovementDrafts = { startActivity(Intent(this, RuleImprovementDraftsActivity::class.java)) }
                     )
                 }
             }
@@ -347,7 +348,8 @@ private fun AuditScreen(
     onOpenPolicy: () -> Unit,
     onOpenEffectiveness: () -> Unit,
     onOpenRuleQuality: () -> Unit,
-    onOpenReviewTrends: () -> Unit
+    onOpenReviewTrends: () -> Unit,
+    onOpenImprovementDrafts: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
@@ -385,6 +387,7 @@ private fun AuditScreen(
             item { EffectivenessEntryCard(horizontal, cardShape, onOpenEffectiveness) }
             item { RuleQualityEntryCard(horizontal, cardShape, onOpenRuleQuality) }
             item { RuleReviewTrendsEntryCard(horizontal, cardShape, onOpenReviewTrends) }
+            item { RuleImprovementDraftsEntryCard(horizontal, cardShape, onOpenImprovementDrafts) }
             state.advice?.let { advice ->
                 item { AuditPolicyAdviceCard(advice, horizontal, cardShape, onOpenPolicy) }
             }
@@ -612,6 +615,38 @@ private fun RuleReviewTrendsEntryCard(
                 Text("查看反复重开、恶化原因与人工处理周期", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("趋势") }
+        }
+    }
+}
+
+
+@Composable
+private fun RuleImprovementDraftsEntryCard(
+    horizontal: androidx.compose.ui.unit.Dp,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpen: () -> Unit
+) {
+    Card(
+        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(45.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = .13f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Rule, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("规则改进建议草案", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text("查看缩小范围、增强保护、观察或停用评估草案", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onOpen) { Text("草案") }
         }
     }
 }
