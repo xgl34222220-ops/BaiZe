@@ -25,7 +25,11 @@ jobs:
             capture && /^          PY$/ { capture=0; exit }
             capture { sub(/^          /, ""); print }
           ' .github/workflows/agent-quarantine-patch.yml > /tmp/quarantine-patch.py
-          python3 /tmp/quarantine-patch.py
+          set +e
+          python3 /tmp/quarantine-patch.py > /tmp/quarantine-patch.log 2>&1
+          code=$?
+          cat /tmp/quarantine-patch.log
+          [ "$code" -eq 0 ] || exit "$code"
           git diff --check
           git diff --stat
       - name: Commit quarantine integration
