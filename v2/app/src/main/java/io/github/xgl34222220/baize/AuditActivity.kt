@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Tune
@@ -142,7 +143,8 @@ class AuditActivity : ComponentActivity() {
                         onRefresh = ::loadTimeline,
                         onClear = ::clearTimeline,
                         onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
-                        onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) }
+                        onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) },
+                        onOpenRuleQuality = { startActivity(Intent(this, RuleQualityActivity::class.java)) }
                     )
                 }
             }
@@ -341,7 +343,8 @@ private fun AuditScreen(
     onRefresh: () -> Unit,
     onClear: () -> Unit,
     onOpenPolicy: () -> Unit,
-    onOpenEffectiveness: () -> Unit
+    onOpenEffectiveness: () -> Unit,
+    onOpenRuleQuality: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
@@ -377,6 +380,7 @@ private fun AuditScreen(
             }
             item { AuditSummary(state, horizontal, cardShape) }
             item { EffectivenessEntryCard(horizontal, cardShape, onOpenEffectiveness) }
+            item { RuleQualityEntryCard(horizontal, cardShape, onOpenRuleQuality) }
             state.advice?.let { advice ->
                 item { AuditPolicyAdviceCard(advice, horizontal, cardShape, onOpenPolicy) }
             }
@@ -542,6 +546,37 @@ private fun EffectivenessEntryCard(
                 Text("查看安全性、收益、耗时、稳定性和规则趋势", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("查看") }
+        }
+    }
+}
+
+@Composable
+private fun RuleQualityEntryCard(
+    horizontal: androidx.compose.ui.unit.Dp,
+    shape: androidx.compose.ui.graphics.Shape,
+    onOpen: () -> Unit
+) {
+    Card(
+        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(45.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = .12f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Rule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("规则质量中心", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text("集中审核高失败、频繁保护、零命中与低收益规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            OutlinedButton(onClick = onOpen) { Text("审核") }
         }
     }
 }
