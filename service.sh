@@ -199,7 +199,7 @@ group_spec() {
     empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=30; SPEC_MODE=empty-clean ;;
     rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=30; SPEC_MODE=rules-clean ;;
     fragment) SPEC_ENABLED=schedule_fragment_enabled; SPEC_MINUTES=schedule_fragment_minutes; SPEC_HOURS=schedule_fragment_hours; SPEC_FALLBACK=30; SPEC_MODE=fragment-clean ;;
-    deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=10080; SPEC_MODE=deep-clean ;;
+    deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=10080; SPEC_MODE=deep-auto ;;
     organize) SPEC_ENABLED=schedule_organize_enabled; SPEC_MINUTES=schedule_organize_minutes; SPEC_HOURS=schedule_organize_hours; SPEC_FALLBACK=1440; SPEC_MODE=organize ;;
     *) return 1 ;;
   esac

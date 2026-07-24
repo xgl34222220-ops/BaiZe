@@ -12,7 +12,7 @@ WORKER_FILE="$STATE_DIR/worker.env"
 LOCK_DIR="$STATE_DIR/run.lock"
 RESULT_FILE="$STATE_DIR/task-results/$TASK_ID.env"
 RUNNER="$MODDIR/worker-runner.sh"
-case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
+case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
@@ -79,10 +79,9 @@ echo "统一 Root Worker 已启动：$pid"
 [ "$WAIT_MODE" = wait ] || exit 0
 # No global task deadline: long cleanups keep running and individual scanners retain their own
 # directory-level safety guards. User stop requests are consumed by the worker at checkpoints.
-while kill -0 "$pid" 2>/dev/null; do
-  sleep 2
-done
-wait "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null
+runner_code=$?
 code=$(sed -n 's/^exit_code=//p' "$RESULT_FILE" 2>/dev/null | tail -n 1)
+case "$code" in ''|*[!0-9]*) code=$runner_code ;; esac
 case "$code" in ''|*[!0-9]*) code=8 ;; esac
 exit "$code"

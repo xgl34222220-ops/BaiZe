@@ -49,11 +49,13 @@ internal fun taskCountdownLabel(
     if (remaining <= 30L) {
         val reason = scheduler.runtimeReason.trim()
         return when {
+            scheduler.runtimeState == "running" -> "等待当前后台任务完成"
             reason.contains("息屏") || reason.contains("充电") || reason.contains("电量") ||
-                reason.contains("空闲") || reason.contains("当前任务") || reason.contains("重试") -> reason
-            scheduler.queueCount > 0 && scheduler.nextTask == task.id -> "已进入队列，即将执行"
-            scheduler.queueCount > 0 -> "等待当前任务完成"
-            else -> "即将启动后台任务"
+                reason.contains("空闲") || reason.contains("当前任务") || reason.contains("手动任务") ||
+                reason.contains("队列将在完成") || reason.contains("重试") -> reason
+            scheduler.queueCount > 0 && scheduler.nextTask == task.id -> "已进入 Root 队列"
+            scheduler.queueCount > 0 -> "等待队列前序任务完成"
+            else -> "正在提交 Root Worker"
         }
     }
     val minutes = (remaining + 59L) / 60L

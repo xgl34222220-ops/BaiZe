@@ -65,6 +65,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var pendingModuleTask: String? = null
     private var pollJob: Job? = null
     private var recoveryProbeJob: Job? = null
+    private var schedulerMonitorJob: Job? = null
     private var taskCallbackRegistered = false
     private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
         override fun onTaskProgress(stateJson: String?) {
@@ -189,6 +190,55 @@ class MiuixDashboardActivity : ComponentActivity() {
             recoverRemoteTaskOrRefresh()
         } else {
             connectServices()
+        }
+        startForegroundModuleMonitor()
+    }
+
+    override fun onPause() {
+        schedulerMonitorJob?.cancel()
+        schedulerMonitorJob = null
+        super.onPause()
+    }
+
+    private fun startForegroundModuleMonitor() {
+        schedulerMonitorJob?.cancel()
+        schedulerMonitorJob = lifecycleScope.launch {
+            var idleConfirmations = 0
+            while (isActive) {
+                val service = rootService
+                if (service == null) {
+                    delay(750L)
+                    continue
+                }
+                val snapshots = withContext(Dispatchers.IO) {
+                    val schedulerJson = runCatching { JSONObject(service.getSchedulerConfig()) }.getOrNull()
+                    val taskJson = runCatching { JSONObject(service.getTaskState()) }.getOrNull()
+                    schedulerJson to taskJson
+                }
+                snapshots.first?.let { schedulerState.value = SchedulerUiState.fromJson(it) }
+                val task = snapshots.second
+                if (task?.optBoolean("running") == true) {
+                    idleConfirmations = 0
+                    renderTaskState(task)
+                } else if (dashboardState.value.running) {
+                    idleConfirmations += 1
+                    if (idleConfirmations >= 2) {
+                        idleConfirmations = 0
+                        dashboardState.value = dashboardState.value.copy(
+                            running = false,
+                            scanCompleted = false,
+                            taskPhase = "后台任务已结束，正在读取结果…"
+                        )
+                        refreshAll()
+                    }
+                } else {
+                    idleConfirmations = 0
+                }
+                val fast = dashboardState.value.running ||
+                    schedulerState.value.runtimeState == "running" ||
+                    schedulerState.value.queueCount > 0
+                delay(if (fast) 750L else 3_000L)
+            }
         }
     }
 
@@ -1696,6 +1746,7 @@ class MiuixDashboardActivity : ComponentActivity() {
 
         pollJob?.cancel()
         recoveryProbeJob?.cancel()
+        schedulerMonitorJob?.cancel()
         if (profileBound) runCatching { RootService.unbind(profileConnection) }
         if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
         super.onDestroy()

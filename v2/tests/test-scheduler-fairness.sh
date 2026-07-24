@@ -102,4 +102,33 @@ grep -q '^state=waiting$' "$T/state/scheduler.env"
 grep -q '^reason=等待自动重试$' "$T/state/scheduler.env"
 test -s "$T/state/scheduler-retry-cache.until"
 ! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
-echo 'scheduler fairness: ok'
+# Deep scheduled tasks must request the atomic scan -> clean chain.
+cat > "$T/module/task-worker.sh" <<'SH'
+#!/bin/sh
+printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"${BAIZE_STATE_DIR}/executed.tsv"
+exit 0
+SH
+chmod +x "$T/module/task-worker.sh"
+: > "$T/state/executed.tsv"
+sed -i 's/^schedule_cache_enabled=.*/schedule_cache_enabled=0/; s/^schedule_deep_enabled=.*/schedule_deep_enabled=1/' "$T/state/config.conf"
+printf '%s\n' $((now-7200)) > "$T/state/last_deep_run.epoch"
+run_once
+[ "$(sed -n '1s/\t.*//p' "$T/state/executed.tsv")" = deep-auto ]
+
+# Worker wait mode must reap the child and deep-auto must run scan before clean.
+W="$T/worker-lifecycle"
+rm -rf "$W"; mkdir -p "$W/module" "$W/state/task-results" "$W/state/logs"
+cp "$ROOT/v2/module/task-worker.sh" "$W/module/task-worker.sh"
+cp "$ROOT/v2/module/worker-runner.sh" "$W/module/worker-runner.sh"
+cat > "$W/module/cleaner.sh" <<'SH'
+#!/bin/sh
+printf '%s\n' "$1" >>"${BAIZE_STATE_DIR}/deep-chain.log"
+exit 0
+SH
+chmod +x "$W/module/"*.sh
+BAIZE_STATE_DIR="$W/state" BAIZE_SHELL_BIN=/bin/sh timeout 8 sh "$W/module/task-worker.sh" deep-auto test lifecycle wait
+[ "$(sed -n '1p' "$W/state/deep-chain.log")" = deep-scan ]
+[ "$(sed -n '2p' "$W/state/deep-chain.log")" = deep-clean ]
+grep -q '^exit_code=0$' "$W/state/task-results/lifecycle.env"
+
+echo 'scheduler fairness: ok' 
