@@ -3,14 +3,11 @@ package io.github.xgl34222220.baize.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -25,77 +22,77 @@ import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 
+// Material 3 使用更清晰的层级和较克制的圆角。
 private val MaterialShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(28.dp)
+)
+
+// MIUIx / HyperOS 使用更紧凑的系统分组圆角，不与 Material 共用形状。
+private val MiuixShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(24.dp)
 )
 
 private val MaterialTypography = Typography(
-    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 43.sp, fontWeight = FontWeight.Black),
-    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 37.sp, fontWeight = FontWeight.Black),
-    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    displaySmall = TextStyle(fontSize = 40.sp, lineHeight = 46.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
     bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 23.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
-)
-
-private val MiuixShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp)
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
+    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold)
 )
 
 private val MiuixTypography = Typography(
-    displaySmall = TextStyle(fontSize = 42.sp, lineHeight = 47.sp, fontWeight = FontWeight.Black),
-    headlineLarge = TextStyle(fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Black),
-    headlineMedium = TextStyle(fontSize = 27.sp, lineHeight = 32.sp, fontWeight = FontWeight.Black),
-    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold),
-    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
+    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
 )
-
-@Immutable
-data class MiuixTokens(
-    val pageBackground: Color,
-    val cardBackground: Color,
-    val elevatedCardBackground: Color,
-    val textPrimary: Color,
-    val textSecondary: Color,
-    val success: Color = Color(0xFF27BE83),
-    val warning: Color = Color(0xFFF0A532)
-)
-
-val LocalMiuixTokens = staticCompositionLocalOf {
-    MiuixTokens(
-        pageBackground = Color(0xFFF4F4F6),
-        cardBackground = Color.White,
-        elevatedCardBackground = Color.White,
-        textPrimary = Color(0xFF16171B),
-        textSecondary = Color(0xFF70727C)
-    )
-}
 
 @Composable
 fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
-    when (settings.uiStyle) {
-        UiStyle.MATERIAL -> BaiZeMaterialTheme(settings, content)
-        UiStyle.MIUIX -> BaiZeMiuixTheme(settings, content)
+    val dark = resolveDark(settings.themeMode)
+    val amoled = dark && settings.amoledBlack
+    val baiZeColors = when {
+        amoled -> AmoledBaiZeColors
+        dark -> DarkBaiZeColors
+        else -> LightBaiZeColors
+    }
+    CompositionLocalProvider(
+        LocalBaiZeColors provides baiZeColors,
+        LocalBaiZeCorners provides DefaultBaiZeCorners,
+        LocalBaiZeSpacing provides DefaultBaiZeSpacing,
+        LocalBaiZeTypeScale provides DefaultBaiZeTypeScale
+    ) {
+        when (settings.uiStyle) {
+            UiStyle.MATERIAL -> BaiZeMaterialTheme(settings, dark, content)
+            UiStyle.MIUIX -> BaiZeMiuixTheme(settings, dark, content)
+        }
     }
 }
 
 @Composable
-private fun BaiZeMaterialTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
+private fun BaiZeMaterialTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
     DynamicMaterialTheme(
         seedColor = resolveSeedColor(settings),
-        useDarkTheme = resolveDark(settings.themeMode),
+        useDarkTheme = dark,
         withAmoled = settings.amoledBlack,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = MaterialShapes,
@@ -106,40 +103,17 @@ private fun BaiZeMaterialTheme(settings: AppearanceSettings, content: @Composabl
 }
 
 @Composable
-private fun BaiZeMiuixTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
-    val dark = resolveDark(settings.themeMode)
-    val pureBlack = dark && settings.amoledBlack
+private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
     DynamicMaterialTheme(
         seedColor = resolveSeedColor(settings),
         useDarkTheme = dark,
-        withAmoled = pureBlack,
+        withAmoled = dark && settings.amoledBlack,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = MiuixShapes,
         typography = MiuixTypography,
-        animate = true
-    ) {
-        val scheme = MaterialTheme.colorScheme
-        val tokens = MiuixTokens(
-            pageBackground = when {
-                pureBlack -> Color.Black
-                dark -> Color(0xFF101114)
-                else -> Color(0xFFF4F4F6)
-            },
-            cardBackground = when {
-                pureBlack -> Color(0xFF080808)
-                dark -> Color(0xFF1C1D21)
-                else -> Color.White
-            },
-            elevatedCardBackground = when {
-                pureBlack -> Color(0xFF111111)
-                dark -> Color(0xFF24252A)
-                else -> Color(0xFFFDFDFE)
-            },
-            textPrimary = scheme.onSurface,
-            textSecondary = scheme.onSurfaceVariant
-        )
-        CompositionLocalProvider(LocalMiuixTokens provides tokens, content = content)
-    }
+        animate = true,
+        content = content
+    )
 }
 
 @Composable

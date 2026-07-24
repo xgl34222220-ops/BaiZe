@@ -2,7 +2,6 @@ package io.github.xgl34222220.baize.ui.home.material
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,17 +22,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
-import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.InstallMobile
+import androidx.compose.material.icons.rounded.FolderCopy
+import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.rounded.Rule
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,212 +42,293 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.baize.BuildConfig
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
-import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
-
-private data class MaterialCleanCategory(
-    val icon: ImageVector,
-    val title: String,
-    val description: String,
-    val onClick: () -> Unit
-)
+import io.github.xgl34222220.baize.SchedulerUiState
+import io.github.xgl34222220.baize.ui.home.HomeTaskPresentation
+import io.github.xgl34222220.baize.ui.home.homeTaskItems
+import io.github.xgl34222220.baize.ui.home.nextTask
+import io.github.xgl34222220.baize.ui.home.rememberHomeNowEpoch
+import io.github.xgl34222220.baize.ui.home.taskCountdownLabel
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun HomeScreenMaterial(
     state: DashboardUiState,
+    scheduler: SchedulerUiState,
     actions: DashboardActions,
     onOpenClean: () -> Unit
 ) {
-    val settings = LocalAppearanceSettings.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val scheme = MaterialTheme.colorScheme
+    val nowEpoch = rememberHomeNowEpoch()
+    val tasks = scheduler.homeTaskItems()
+    val nextTask = tasks.nextTask(nowEpoch)
 
-    Box(
-        Modifier
+    LazyColumn(
+        modifier = Modifier
             .fillMaxSize()
-            .background(scheme.background)
-            .drawBehind {
-                if (!settings.glassEnabled) return@drawBehind
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(scheme.primary.copy(alpha = .15f), Color.Transparent),
-                        center = Offset(size.width, 0f),
-                        radius = size.width * .82f
-                    ),
-                    radius = size.width * .82f,
-                    center = Offset(size.width, 0f)
-                )
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(scheme.tertiary.copy(alpha = .11f), Color.Transparent),
-                        center = Offset(0f, size.height * .58f),
-                        radius = size.width
-                    ),
-                    radius = size.width,
-                    center = Offset(0f, size.height * .58f)
-                )
-            }
+            .background(MaterialTheme.colorScheme.background),
+        contentPadding = PaddingValues(bottom = bottomInset + 104.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item { MaterialPageHeader(actions.refresh) }
-            item { MaterialHeroCard(state) }
-            item { MaterialStorageCard(state) }
-            item { MaterialCleanButton(state, actions) }
-            item { MaterialServiceCard(state) }
-            if (state.scanCompleted) item { MaterialScanResultCard(state, actions) }
-            item { MaterialSectionTitle("QUICK ACTIONS", "快捷操作") }
-            item { MaterialQuickActions(actions, onOpenClean) }
+        item { MaterialHomeHeader(state, scheduler.enabled, actions.refresh) }
+        item {
+            MaterialNextTaskCard(
+                task = nextTask,
+                countdown = taskCountdownLabel(nextTask, nowEpoch, scheduler),
+                enabled = scheduler.enabled,
+                onClick = onOpenClean
+            )
         }
+        item {
+            MaterialPrimaryActions(
+                enabled = state.ready && !state.running,
+                onClean = actions.clean,
+                onOrganize = actions.organize
+            )
+        }
+        if (state.running) item { MaterialRunningTaskCard(state) }
+        item { MaterialSectionHeader("任务计划", "每项任务独立显示下一次执行时间", onOpenClean) }
+        item { MaterialTaskScheduleCard(tasks, nowEpoch, scheduler, onOpenClean) }
+        item { MaterialSectionHeader("最近状态", "只保留最有用的结果与存储信息") }
+        item { MaterialRecentSummary(state) }
+        item { MaterialServiceStatus(state) }
     }
 }
 
 @Composable
-private fun MaterialPageHeader(onRefresh: () -> Unit) {
+private fun MaterialHomeHeader(
+    state: DashboardUiState,
+    automaticEnabled: Boolean,
+    onRefresh: () -> Unit
+) {
     Row(
-        Modifier
+        modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 15.dp),
+            .padding(horizontal = 20.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                "SMART CLEAN",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.4.sp
-            )
-            Spacer(Modifier.height(5.dp))
-            Text("白泽", style = MaterialTheme.typography.headlineLarge)
-            Text(
-                "Material 3 清理概览 · v${BuildConfig.VERSION_NAME}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-        FilledTonalIconButton(onClick = onRefresh, modifier = Modifier.size(56.dp)) {
-            Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(26.dp))
-        }
-    }
-}
-
-@Composable
-private fun MaterialHeroCard(state: DashboardUiState) {
-    val context = LocalContext.current
-    val scheme = MaterialTheme.colorScheme
-    val title = when {
-        state.running -> "清理任务执行中"
-        state.scanCompleted -> "扫描结果已就绪"
-        state.ready -> "清理引擎已就绪"
-        state.connected -> "Root 服务已连接"
-        else -> "正在连接清理引擎"
-    }
-
-    Box(
-        Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth()
-            .shadow(16.dp, MaterialTheme.shapes.extraLarge)
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(Brush.linearGradient(listOf(scheme.primary, scheme.tertiary)))
-            .border(1.dp, Color.White.copy(alpha = .22f), MaterialTheme.shapes.extraLarge)
-            .drawBehind {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = .23f), Color.Transparent)
-                    ),
-                    size = size.copy(height = size.height * .43f)
-                )
-            }
-            .padding(24.dp)
-    ) {
-        Column {
+            Text("白泽", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .size(10.dp)
+                        .size(8.dp)
                         .clip(CircleShape)
-                        .background(if (state.ready || state.scanCompleted) Color(0xFF78EEB8) else Color(0xFFFFD36F))
+                        .background(
+                            when {
+                                !automaticEnabled -> MaterialTheme.colorScheme.outline
+                                state.running -> MaterialTheme.colorScheme.primary
+                                state.ready -> BaiZeTokens.colors.success
+                                else -> BaiZeTokens.colors.warning
+                            }
+                        )
                 )
-                Spacer(Modifier.width(9.dp))
-                Text(state.device, color = Color.White.copy(alpha = .88f), fontWeight = FontWeight.Bold)
-                Text("  ·  ${state.android}", color = Color.White.copy(alpha = .66f), fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    when {
+                        !automaticEnabled -> "自动任务已关闭"
+                        state.running -> "正在自动执行"
+                        state.ready -> "自动清理与归类已就绪"
+                        else -> "正在连接 Root 服务"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-            Spacer(Modifier.height(25.dp))
-            Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(7.dp))
-            Text(
-                state.taskPhase,
-                color = Color.White.copy(alpha = .74f),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(28.dp))
-            Text("最近一次释放", color = Color.White.copy(alpha = .64f), fontSize = 12.sp)
-            Text(
-                Formatter.formatFileSize(context, state.lastReleased),
-                color = Color.White,
-                style = MaterialTheme.typography.displaySmall
-            )
+        }
+        FilledTonalIconButton(onClick = onRefresh, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
         }
     }
 }
 
 @Composable
-private fun MaterialStorageCard(state: DashboardUiState) {
-    val context = LocalContext.current
+private fun MaterialNextTaskCard(
+    task: HomeTaskPresentation?,
+    countdown: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .92f)
+            containerColor = if (enabled) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(
-                    progress = { state.storagePercent.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxSize(),
-                    strokeWidth = 9.dp,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                )
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 17.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${(state.storagePercent * 100).toInt()}%",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Black
+                    "下一个任务",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.height(10.dp))
+            Text(
+                task?.title ?: "自动清理",
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                countdown,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 19.sp,
+                lineHeight = 25.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(7.dp))
+            Text(
+                "点击查看和调整所有任务周期",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun MaterialPrimaryActions(
+    enabled: Boolean,
+    onClean: () -> Unit,
+    onOrganize: () -> Unit
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        MaterialActionButton(
+            title = "一键清理",
+            subtitle = "按当前规则立即执行",
+            icon = Icons.Rounded.CleaningServices,
+            primary = true,
+            enabled = enabled,
+            onClick = onClean,
+            modifier = Modifier.weight(1f)
+        )
+        MaterialActionButton(
+            title = "一键归类",
+            subtitle = "整理明确的用户文件",
+            icon = Icons.Rounded.FolderCopy,
+            primary = false,
+            enabled = enabled,
+            onClick = onOrganize,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun MaterialActionButton(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    primary: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(74.dp)
+            .clip(MaterialTheme.shapes.large)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        color = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(10.dp))
             Column {
-                Text("可用空间", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    Formatter.formatFileSize(context, state.storageFree),
-                    style = MaterialTheme.typography.headlineLarge
-                )
-                Text(
-                    "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, fontSize = 10.sp, maxLines = 2, lineHeight = 14.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialSectionHeader(
+    title: String,
+    subtitle: String,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(
+                subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        if (onClick != null) {
+            Icon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun MaterialTaskScheduleCard(
+    tasks: List<HomeTaskPresentation>,
+    nowEpoch: Long,
+    scheduler: SchedulerUiState,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        tasks.forEachIndexed { index, task ->
+            MaterialTaskRow(task, nowEpoch, scheduler)
+            if (index != tasks.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 68.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f)
                 )
             }
         }
@@ -257,174 +336,151 @@ private fun MaterialStorageCard(state: DashboardUiState) {
 }
 
 @Composable
-private fun MaterialCleanButton(state: DashboardUiState, actions: DashboardActions) {
-    val enabled = state.running || state.ready || state.scanCompleted
-    Button(
-        onClick = when {
-            state.running -> actions.stop
-            state.scanCompleted -> actions.cleanScan
-            else -> actions.clean
-        },
-        enabled = enabled,
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(70.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 10.dp)
+private fun MaterialTaskRow(task: HomeTaskPresentation, nowEpoch: Long, scheduler: SchedulerUiState) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            when {
-                state.running -> Icons.Rounded.Stop
-                state.scanCompleted -> Icons.Rounded.DeleteSweep
-                else -> Icons.Rounded.AutoAwesome
-            },
-            contentDescription = null
-        )
-        Spacer(Modifier.width(10.dp))
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = if (task.enabled) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    taskIcon(task.id),
+                    contentDescription = null,
+                    modifier = Modifier.size(21.dp),
+                    tint = if (task.enabled) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(task.title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (task.enabled) "自动执行" else "已关闭",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
         Text(
-            when {
-                state.running -> "安全停止任务"
-                state.scanCompleted -> "按扫描结果清理"
-                else -> "一键智能清理"
-            },
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold
+            taskCountdownLabel(task, nowEpoch, scheduler),
+            color = if (task.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2
         )
     }
 }
 
 @Composable
-private fun MaterialServiceCard(state: DashboardUiState) {
+private fun MaterialRecentSummary(state: DashboardUiState) {
+    val context = LocalContext.current
     Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(Modifier.padding(horizontal = 18.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(20.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                MaterialMetric(
+                    label = "最近释放",
+                    value = Formatter.formatFileSize(context, state.lastReleased),
+                    modifier = Modifier.weight(1f)
+                )
+                MaterialMetric(
+                    label = "可用空间",
+                    value = Formatter.formatFileSize(context, state.storageFree),
+                    modifier = Modifier.weight(1f)
+                )
+                MaterialMetric(
+                    label = "累计任务",
+                    value = state.lifetimeRuns.toString(),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            if (state.lastTaskTime.isNotBlank()) {
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f))
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "上次执行 · ${state.lastTaskTime}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(5.dp))
+        Text(value, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun MaterialServiceStatus(state: DashboardUiState) {
+    Surface(
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
-                Modifier.size(10.dp).clip(CircleShape)
-                    .background(if (state.ready || state.scanCompleted) Color(0xFF2DBE87) else Color(0xFFF2A93B))
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(if (state.ready) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                if (state.scanCompleted) "扫描快照已就绪" else state.serviceText,
+                state.serviceText,
                 modifier = Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
-                when {
-                    state.scanCompleted -> "可清理"
-                    state.ready -> "运行正常"
-                    else -> "未就绪"
-                },
+                if (state.running) "执行中" else if (state.ready) "运行正常" else "连接中",
                 color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp
+                style = MaterialTheme.typography.labelMedium
             )
         }
     }
 }
 
-@Composable
-private fun MaterialScanResultCard(state: DashboardUiState, actions: DashboardActions) {
-    Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
-    ) {
-        Column(Modifier.padding(19.dp)) {
-            Text("清理准备完成", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "发现 ${state.scanFiles} 项 · 空文件 ${state.scanEmptyFiles} · 空目录 ${state.scanEmptyDirs} · 碎片 ${state.scanFragments} · 异常 ${state.scanErrors}",
-                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = .72f),
-                fontSize = 12.sp
-            )
-            Spacer(Modifier.height(15.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = actions.dismissScan,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = .72f),
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) { Text("关闭") }
-                Button(onClick = actions.cleanScan, modifier = Modifier.weight(1.5f)) {
-                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("立即清理")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MaterialSectionTitle(eyebrow: String, title: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 4.dp)) {
-        Text(
-            eyebrow,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.sp
-        )
-        Text(title, style = MaterialTheme.typography.headlineMedium)
-    }
-}
-
-@Composable
-private fun MaterialQuickActions(
-    actions: DashboardActions,
-    onOpenClean: () -> Unit
-) {
-    val categories = listOf(
-        MaterialCleanCategory(Icons.Rounded.InstallMobile, "安装包", "查找安装包", actions.apkScan),
-        MaterialCleanCategory(Icons.Rounded.CleaningServices, "全部选项", "进入清理页", onOpenClean)
-    )
-    Card(
-        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            categories.forEach { item ->
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.large)
-                        .clickable(onClick = item.onClick)
-                        .padding(horizontal = 6.dp, vertical = 13.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        }
-                    }
-                    Text(
-                        item.title,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        item.description,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+private fun taskIcon(id: String): ImageVector = when (id) {
+    "cache" -> Icons.Rounded.CleaningServices
+    "empty" -> Icons.Rounded.FolderDelete
+    "rules" -> Icons.Rounded.Rule
+    "fragment" -> Icons.Rounded.AutoAwesome
+    "deep" -> Icons.Rounded.Security
+    "organize" -> Icons.Rounded.FolderCopy
+    else -> Icons.Rounded.CleaningServices
 }
