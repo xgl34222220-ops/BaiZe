@@ -15,7 +15,7 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete test releases, test tags, and non-default branches
+      - name: Delete test releases, tags, and branches
         env:
           GH_TOKEN: ${{ github.token }}
           CLEANUP_BRANCH: ${{ github.ref_name }}
@@ -29,11 +29,7 @@ jobs:
           test_re='(^|[./_ -])(alpha[0-9.]*|beta[0-9.]*|rc[0-9.]*|test|preview|debug|dev|canary|nightly|snapshot|candidate|pre[-_ ]?release)([./_ -]|$)'
 
           encode_ref() {
-            python3 - "$1" <<'PY'
-import sys
-from urllib.parse import quote
-print(quote(sys.argv[1], safe=""))
-PY
+            jq -rn --arg ref "$1" '$ref | @uri'
           }
 
           deleted_releases=0
@@ -89,17 +85,13 @@ PY
             fi
           done
 
-          summary=$(cat <<EOF
-          仓库清理已执行：
-
-          - 保留默认分支：\`$default_branch\`
-          - 保留所有非草稿、非预发行且名称不含测试标记的正式 Release
-          - 已删除测试/草稿/预发行 Release：$deleted_releases 个
-          - 已删除测试标签：$deleted_tags 个
-          - 已删除其他分支：$deleted_branches 个
-          - 删除失败的受保护分支：$failed_branches 个
-          EOF
-          )
+          printf -v summary '%s\n\n%s\n%s\n%s\n%s\n%s\n' \
+            '仓库清理已执行：' \
+            "- 保留默认分支：\`$default_branch\`" \
+            '- 保留所有非草稿、非预发行且名称不含测试标记的正式 Release' \
+            "- 已删除测试/草稿/预发行 Release：$deleted_releases 个" \
+            "- 已删除测试标签：$deleted_tags 个" \
+            "- 已删除其他分支：$deleted_branches 个；失败：$failed_branches 个"
 
           if [[ -n "$pr_number" ]]; then
             gh api --method POST "repos/$repo/issues/$pr_number/comments" -f body="$summary"
