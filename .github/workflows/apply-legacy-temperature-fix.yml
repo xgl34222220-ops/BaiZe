@@ -1,0 +1,83 @@
+name: Apply legacy temperature compatibility fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-legacy-temperature-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fix zero temperature fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch agent/bugfix-scheduler-hardening \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"{path}: expected one match, found {text.count(old)}: {old!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          scheduler = "v2/module/scheduler-v2.5.sh"
+          replace_once(
+              scheduler,
+              'daily_mode_enabled() { [ "$(schedule_mode_value)" = 2 ] && echo 1 || echo 0; }',
+              '''daily_mode_enabled() { [ "$(schedule_mode_value)" = 2 ] && echo 1 || echo 0; }
+          max_battery_temp_value() {
+            value=$(config_value max_battery_temp)
+            case "$value" in ''|0|*[!0-9]*) value=42 ;; esac
+            [ "$value" -lt 30 ] && value=30
+            [ "$value" -gt 60 ] && value=60
+            echo "$value"
+          }''',
+          )
+          replace_once(
+              scheduler,
+              '  maximum_temp=$(uint_value max_battery_temp 42 30 60)',
+              '  maximum_temp=$(max_battery_temp_value)',
+          )
+
+          thermal = "v2/tests/test-scheduler-thermal-contract.sh"
+          replace_once(
+              thermal,
+              '''PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=410 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \\
+            BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$TMP/state" BAIZE_CONFIG_PATH="$TMP/state/config.conf" \\
+            sh "$TMP/module/scheduler.sh"
+          grep -q 'cache-auto scheduler:interval' "$TMP/state/worker-invocations.log"''',
+              '''sed -i 's/^max_battery_temp=42$/max_battery_temp=0/' "$TMP/state/config.conf"
+          PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=350 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \\
+            BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$TMP/state" BAIZE_CONFIG_PATH="$TMP/state/config.conf" \\
+            sh "$TMP/module/scheduler.sh"
+          grep -q 'cache-auto scheduler:interval' "$TMP/state/worker-invocations.log"''',
+          )
+
+          contract = "v2/tests/test-schedule-modes-contract.sh"
+          replace_once(
+              contract,
+              "grep -q 'maximum_temp=$(uint_value max_battery_temp 42 30 60)' \"$SCHEDULER\"",
+              "grep -q 'maximum_temp=$(max_battery_temp_value)' \"$SCHEDULER\"\n"
+              "grep -q 'case \"$value\" in '\"'\"''|0|' \"$SCHEDULER\"",
+          )
+          PY
+          sh -n v2/module/scheduler-v2.5.sh
+          bash v2/tests/test-schedule-modes-contract.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add v2/module/scheduler-v2.5.sh v2/tests/test-schedule-modes-contract.sh v2/tests/test-scheduler-thermal-contract.sh
+          git commit -m 'fix: preserve legacy zero temperature fallback'
+          git push origin HEAD:agent/bugfix-scheduler-hardening
