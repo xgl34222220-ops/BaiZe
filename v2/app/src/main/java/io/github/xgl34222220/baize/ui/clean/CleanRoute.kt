@@ -6,8 +6,8 @@ import androidx.compose.ui.platform.LocalContext
 import io.github.xgl34222220.baize.ApkScanActivity
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
-import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.FileOrganizerActivity
+import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
@@ -46,8 +46,8 @@ fun CleanRoute(
         onCategoryIntervalChanged = { id, minutes ->
             applyAndSave(scheduler.withCategoryInterval(id, minutes))
         },
-        onDailyScheduleChanged = { enabled ->
-            applyAndSave(scheduler.withDailySchedule(enabled))
+        onScheduleModeChanged = { mode ->
+            applyAndSave(scheduler.withScheduleMode(mode))
         },
         onDailyTimeChanged = { hour, minute ->
             applyAndSave(scheduler.withDailyTime(hour, minute))

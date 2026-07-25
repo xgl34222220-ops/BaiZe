@@ -13,6 +13,33 @@ enum class CleanCategoryId {
     ORGANIZE
 }
 
+enum class CleanScheduleMode(
+    val id: Int,
+    val title: String,
+    val description: String
+) {
+    SMART(
+        0,
+        "智能定时",
+        "以你设置的周期为基准，连续低收益时自动延长；存储紧张时恢复基础周期"
+    ),
+    STRICT_INTERVAL(
+        1,
+        "严格间隔",
+        "完全按照各任务设置的间隔执行，不根据清理收益自动延长"
+    ),
+    FIXED_DAILY(
+        2,
+        "每日固定",
+        "每天在指定时间执行已启用的清理任务"
+    );
+
+    companion object {
+        fun fromId(id: Int): CleanScheduleMode =
+            entries.firstOrNull { it.id == id } ?: SMART
+    }
+}
+
 @Immutable
 data class CleanCategoryUiItem(
     val id: CleanCategoryId,
@@ -30,6 +57,7 @@ data class CleanUiState(
     val serviceText: String,
     val automaticCleaningEnabled: Boolean,
     val categories: List<CleanCategoryUiItem>,
+    val scheduleMode: CleanScheduleMode,
     val dailyEnabled: Boolean,
     val dailyHour: Int,
     val dailyMinute: Int,
@@ -45,10 +73,10 @@ data class CleanUiState(
         get() = "%02d:%02d".format(dailyHour, dailyMinute)
 
     val scheduleSummary: String
-        get() = if (dailyEnabled) {
-            "每天 $dailyTimeText · 补做 ${formatMinutes(dailyGraceMinutes)}"
-        } else {
-            "各类别独立周期"
+        get() = when (scheduleMode) {
+            CleanScheduleMode.SMART -> "智能定时 · 各类别独立基础周期"
+            CleanScheduleMode.STRICT_INTERVAL -> "严格间隔 · 完全按设置周期执行"
+            CleanScheduleMode.FIXED_DAILY -> "每天 $dailyTimeText · 补做 ${formatMinutes(dailyGraceMinutes)}"
         }
 }
 
@@ -56,7 +84,7 @@ data class CleanUiActions(
     val onAutomaticCleaningChanged: (Boolean) -> Unit,
     val onCategoryEnabledChanged: (CleanCategoryId, Boolean) -> Unit,
     val onCategoryIntervalChanged: (CleanCategoryId, Int) -> Unit,
-    val onDailyScheduleChanged: (Boolean) -> Unit,
+    val onScheduleModeChanged: (CleanScheduleMode) -> Unit,
     val onDailyTimeChanged: (hour: Int, minute: Int) -> Unit,
     val onDailyGraceChanged: (minutes: Int) -> Unit,
     val onApkPackagesChanged: (Boolean) -> Unit,
@@ -125,7 +153,8 @@ fun SchedulerUiState.toCleanUiState(
             intervalMinutes = organizeMinutes
         )
     ),
-    dailyEnabled = dailyEnabled,
+    scheduleMode = CleanScheduleMode.fromId(scheduleMode),
+    dailyEnabled = scheduleMode == CleanScheduleMode.FIXED_DAILY.id,
     dailyHour = dailyHour,
     dailyMinute = dailyMinute,
     dailyGraceMinutes = dailyGraceMinutes,
@@ -164,8 +193,8 @@ fun SchedulerUiState.withCategoryInterval(
     }
 }
 
-fun SchedulerUiState.withDailySchedule(enabled: Boolean): SchedulerUiState =
-    copy(dailyEnabled = enabled)
+fun SchedulerUiState.withScheduleMode(mode: CleanScheduleMode): SchedulerUiState =
+    copy(scheduleMode = mode.id, dailyEnabled = mode == CleanScheduleMode.FIXED_DAILY)
 
 fun SchedulerUiState.withDailyTime(hour: Int, minute: Int): SchedulerUiState =
     copy(dailyHour = hour.coerceIn(0, 23), dailyMinute = minute.coerceIn(0, 59))
