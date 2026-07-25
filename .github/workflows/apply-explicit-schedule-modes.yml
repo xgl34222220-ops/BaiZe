@@ -6,6 +6,11 @@ on:
     paths:
       - 'v2/patches/schedule-mode-*.patch'
       - '.github/workflows/apply-explicit-schedule-modes.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'v2/patches/schedule-mode-*.patch'
+      - '.github/workflows/apply-explicit-schedule-modes.yml'
 
 permissions:
   contents: write
@@ -17,6 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: agent/explicit-schedule-modes
           fetch-depth: 0
       - name: Apply reviewed patches
         shell: bash
