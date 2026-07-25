@@ -5,6 +5,7 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 STATE="$STATE_DIR/supervisor.env"
 SCHEDULER_STATE="$STATE_DIR/scheduler.env"
 SCHEDULER="$MODDIR/scheduler.sh"
+AUTOPILOT="$MODDIR/autopilot-controller.sh"
 STOP="$STATE_DIR/supervisor.stop"
 HEARTBEAT_SECONDS=${BAIZE_SUPERVISOR_HEARTBEAT_SECONDS:-5}
 QUEUE_WAKE_AFTER_SECONDS=${BAIZE_QUEUE_WAKE_AFTER_SECONDS:-2}
@@ -18,6 +19,12 @@ signal_child() { [ -n "${child:-}" ] && kill -USR1 "$child" 2>/dev/null || true;
 stop_all() { touch "$STOP"; [ -n "${heartbeat_pid:-}" ] && kill "$heartbeat_pid" 2>/dev/null || true; [ -n "${child:-}" ] && kill "$child" 2>/dev/null || true; exit 0; }
 trap stop_all INT TERM
 trap signal_child USR1 HUP
+run_autopilot() {
+  force=${1:-0}
+  [ -f "$AUTOPILOT" ] || return 0
+  BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" BAIZE_FORCE_AUTOPILOT="$force" \
+    sh "$AUTOPILOT" >>"$STATE_DIR/logs/autopilot.log" 2>&1 || true
+}
 write_state() {
   status=$1; code=${2:-0}; reason=${3:-}; now=$(date +%s); tmp="$STATE.tmp.$$"
   { echo "status=$status"; echo "pid=$$"; echo "pid_start_ticks=$SUPERVISOR_START_TICKS"; echo "instance_id=$INSTANCE_ID"; echo "scheduler_pid=${child:-0}"; echo "scheduler_start_ticks=$([ -n "${child:-}" ] && proc_start_ticks "$child" || echo 0)"; echo "restart_count=$restart_count"; echo "last_exit_code=$code"; echo "reason=$reason"; echo "heartbeat_epoch=$now"; echo "updated=$now"; } >"$tmp" && mv -f "$tmp" "$STATE"
@@ -37,12 +44,14 @@ queue_dispatch_stalled() {
 }
 while [ ! -f "$STOP" ]; do
   [ -f "$SCHEDULER" ] || { write_state failed 127 scheduler_missing; sleep 60; continue; }
+  run_autopilot 1
   write_state starting 0 launching_scheduler
   BAIZE_SUPERVISOR_INSTANCE="$INSTANCE_ID" sh "$SCHEDULER" >>"$STATE_DIR/logs/supervisor-scheduler.log" 2>&1 & child=$!
   write_state running 0 scheduler_running
   while kill -0 "$child" 2>/dev/null && [ ! -f "$STOP" ]; do
     sleep "$HEARTBEAT_SECONDS" & heartbeat_pid=$!; wait "$heartbeat_pid" 2>/dev/null || true; heartbeat_pid=
     if kill -0 "$child" 2>/dev/null; then
+      run_autopilot 0
       backoff=1
       if queue_dispatch_stalled; then
         if [ "$RESCUE_AGE" -ge "$QUEUE_RESTART_AFTER_SECONDS" ]; then write_state recovering 0 "scheduler_queue_stalled_${RESCUE_AGE}s"; kill "$child" 2>/dev/null || true
