@@ -7,6 +7,7 @@ AIDL="$ROOT/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootServi
 SELECTION="$APP/root/CacheSelectionRepository.kt"
 WORKBENCH="$APP/ScanWorkbenchActivity.kt"
 HOME="$APP/ui/home/HomeRoute.kt"
+CLEAN="$APP/ui/clean/CleanRoute.kt"
 MANIFEST="$ROOT/app/src/main/AndroidManifest.xml"
 
 for method in prepareCacheSelection getWhitelistPaths addWhitelistPath; do
@@ -27,7 +28,9 @@ CLEAN_SECTION=$(sed -n '/private fun cleanSelection()/,/private fun quarantineIt
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanCandidates'
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanProfile'
 
-grep -q 'ScanWorkbenchActivity::class.java' "$HOME"
+# The detailed workbench remains available from the clean page and must not intercept home one-tap clean.
+grep -q 'ScanWorkbenchActivity::class.java' "$CLEAN"
+! grep -q 'ScanWorkbenchActivity::class.java' "$HOME"
 grep -q 'android:name=".ScanWorkbenchActivity"' "$MANIFEST"
 grep -q '不会直接删除，可单独移入隔离区' "$WORKBENCH"
 grep -q '关键风险项目，只展示不自动清理' "$WORKBENCH"
