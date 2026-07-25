@@ -1,0 +1,5 @@
+version=v2.5.3
+versionCode=25003
+channel=stable
+signing=required
+assets=module,apk,sha256,certificate
