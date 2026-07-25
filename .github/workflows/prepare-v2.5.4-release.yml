@@ -1,0 +1,44 @@
+name: Prepare BaiZe v2.5.4 Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/prepare-v2.5.4-release.yml'
+      - 'v2/scripts/prepare-v2.5.4-release.py'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare metadata and contracts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch release/v2.5.4 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 v2/scripts/prepare-v2.5.4-release.py
+          git diff --check
+          cmp module.prop v2/module/module.prop
+          grep -q 'versionName = "2.5.4"' v2/app/build.gradle.kts
+          grep -q 'versionCode = 25004' v2/app/build.gradle.kts
+          bash v2/tests/test-release-v2.5.3-contract.sh
+          test -s RELEASE_NOTES_v2.5.4.md
+          test -s v2/release/v2.5.4-release.yml.template
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add module.prop update.json RELEASE_NOTES_v2.5.4.md \
+                  v2/module/module.prop v2/app/build.gradle.kts \
+                  v2/scripts/package-module.sh v2/module/task-worker.sh \
+                  v2/module/customize.sh v2/tests/test-release-v2.5.3-contract.sh \
+                  v2/tests/test-release-v2.5.4-contract.sh \
+                  v2/release/v2.5.4-release.yml.template
+          git commit -m 'release: prepare v2.5.4 metadata'
+          git push origin HEAD:release/v2.5.4
