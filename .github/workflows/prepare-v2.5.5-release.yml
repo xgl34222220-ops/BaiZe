@@ -29,7 +29,8 @@ jobs:
           cmp module.prop v2/module/module.prop
           grep -q 'versionName = "2.5.5"' v2/app/build.gradle.kts
           grep -q 'versionCode = 25005' v2/app/build.gradle.kts
-          grep -q '__BAIZE_V255_TARGET_SHA__' .github/workflows/v2.5.5-release.yml
+          grep -q '__BAIZE_V255_TARGET_SHA__' v2/release/v2.5.5-release.yml.template
+          grep -q 'Verify v2.5.5 release metadata' v2/release/v2.5-concurrent-scheduler-ci.yml.template
           bash v2/tests/test-release-v2.5.4-contract.sh
           bash v2/tests/test-uninstall-cleanup.sh
           git config user.name github-actions[bot]
@@ -39,7 +40,7 @@ jobs:
                   v2/scripts/package-module.sh v2/module/task-worker.sh \
                   v2/module/customize.sh v2/tests/test-release-v2.5.4-contract.sh \
                   v2/tests/test-release-v2.5.5-contract.sh \
-                  .github/workflows/v2.5.5-release.yml \
-                  .github/workflows/v2.5-concurrent-scheduler-ci.yml
+                  v2/release/v2.5.5-release.yml.template \
+                  v2/release/v2.5-concurrent-scheduler-ci.yml.template
           git commit -m 'release: prepare v2.5.5 metadata'
           git push origin HEAD:release/v2.5.5
