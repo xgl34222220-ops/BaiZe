@@ -1,0 +1,12 @@
+status=published
+tag=v2.5.3
+draft=false
+prerelease=false
+asset_count=5
+published_at=2026-07-25T05:41:33Z
+url=https://github.com/xgl34222220-ops/BaiZe/releases/tag/v2.5.3
+asset=BaiZe-v2.5.3-Module.zip.sha256|size=98|digest=sha256:a35cc6079fea885c4b0cd5b028638d6827f4b7523c0ea4375ae2958d64d94408
+asset=BaiZe-v2.5.3-Module.zip|size=3182649|digest=sha256:b0d95bf880be9b9c990004b0ae4d8cefc7070fcb37232fda6cc78911d0f0d706
+asset=BaiZe-v2.5.3-signing-certificate.txt|size=1098|digest=sha256:88dbc6742a059653c26d9d418cd7041fdde065158bb13ccbcda8f187e7994aaf
+asset=BaiZe-v2.5.3.apk.sha256|size=91|digest=sha256:31fa3e2cf3fe0601a156caef7a2bbe387e0f02d281230b6358465738ffa9033e
+asset=BaiZe-v2.5.3.apk|size=3915562|digest=sha256:164587310dce4da30a51575772c0e0bf3502863d4f911e796eedafa9280ee9f3
