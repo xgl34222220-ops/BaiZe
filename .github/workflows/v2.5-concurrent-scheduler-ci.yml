@@ -77,6 +77,8 @@ jobs:
         run: bash v2/tests/test-home-one-tap-actions-contract.sh
       - name: Quarantine authorization and restore contract
         run: bash v2/tests/test-quarantine-contract.sh
+      - name: Complete uninstall cleanup regression
+        run: bash v2/tests/test-uninstall-cleanup.sh
       - name: Cleaning audit center contract
         run: bash v2/tests/test-audit-center-contract.sh
       - name: Cleanup policy safety contract

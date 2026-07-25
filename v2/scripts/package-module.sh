@@ -18,6 +18,7 @@ bash "$ROOT/tests/test-concurrent-scheduler.sh"
 bash "$ROOT/tests/test-deep-clean-budget.sh"
 bash "$ROOT/tests/test-deep-manifest.sh"
 bash "$ROOT/tests/test-autopilot-controller.sh"
+bash "$ROOT/tests/test-uninstall-cleanup.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
@@ -43,7 +44,7 @@ cp -f "$DEEP_NATIVE" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
 chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/deep-scan-manifest.sh" "$STAGE/deep-manifest-clean.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
-chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
+chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh" "$STAGE/uninstall.sh"
 chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/autopilot-controller.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
@@ -59,6 +60,10 @@ rm -f "$OUTPUT"
 
 unzip -tq "$OUTPUT" >/dev/null
 unzip -l "$OUTPUT" | grep -q 'app/baize.apk'
+unzip -l "$OUTPUT" | grep -q 'uninstall.sh'
+unzip -p "$OUTPUT" uninstall.sh | grep -q 'signal_owned_processes'
+unzip -p "$OUTPUT" uninstall.sh | grep -q 'baize-v2-quarantine-recovery'
+zipinfo -l "$OUTPUT" | grep -Eq '^-rwxr-xr-x.*uninstall\.sh$'
 unzip -l "$OUTPUT" | grep -q 'cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'native-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'cache-snapshot-clean.sh'
