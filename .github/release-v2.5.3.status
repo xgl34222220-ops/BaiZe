@@ -3,6 +3,8 @@ tag=v2.5.3
 draft=false
 prerelease=false
 asset_count=5
+run_id=30145996223
+run_url=https://github.com/xgl34222220-ops/BaiZe/actions/runs/30145996223
 published_at=2026-07-25T05:41:33Z
 url=https://github.com/xgl34222220-ops/BaiZe/releases/tag/v2.5.3
 asset=BaiZe-v2.5.3-Module.zip.sha256|size=98|digest=sha256:a35cc6079fea885c4b0cd5b028638d6827f4b7523c0ea4375ae2958d64d94408
