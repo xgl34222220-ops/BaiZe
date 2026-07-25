@@ -9,6 +9,7 @@ on:
       - 'update.json'
       - 'RELEASE_NOTES_v2.5.2.md'
       - 'RELEASE_NOTES_v2.5.3.md'
+      - 'RELEASE_NOTES_v2.5.4.md'
       - 'config/**'
       - 'v2/module/**'
       - 'v2/native/**'
@@ -20,8 +21,9 @@ on:
       - '.github/workflows/v2.5.2-release.yml'
       - '.github/workflows/v2.5.2-tag-publisher.yml'
       - '.github/workflows/v2.5.3-release.yml'
+      - '.github/workflows/v2.5.4-release.yml'
   push:
-    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2, release/v2.5.3]
+    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2, release/v2.5.3, release/v2.5.4]
 
 permissions:
   contents: read
@@ -53,8 +55,10 @@ jobs:
             v2/native/baize_deep_snapshot.c -o /tmp/baize_deep_snapshot
       - name: Verify frozen v2.5.2 release metadata
         run: bash v2/tests/test-v2.5.2-release-metadata.sh
-      - name: Verify v2.5.3 release metadata
+      - name: Verify frozen v2.5.3 release metadata
         run: bash v2/tests/test-release-v2.5.3-contract.sh
+      - name: Verify v2.5.4 release metadata
+        run: bash v2/tests/test-release-v2.5.4-contract.sh
       - name: Existing scheduler regression
         run: bash v2/tests/test-scheduler-fairness.sh
       - name: Daily scheduler field regression

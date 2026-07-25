@@ -1,7 +1,7 @@
 id=baize_v2
 name=白泽 v2
-version=v2.5.3
-versionCode=25003
+version=v2.5.4
+versionCode=25004
 author=惜故里丶
 description=用于清理应用缓存、安装包、卸载残留和深度垃圾，并整理应用下载、接收、附件与导出文件。
 updateJson=https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/update.json
