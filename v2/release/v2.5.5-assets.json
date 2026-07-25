@@ -1,0 +1,38 @@
+{
+  "result": "success",
+  "target": "9829ad5d28cc33594a46d7b3325e1a85f6ee4970",
+  "tagSha": "9829ad5d28cc33594a46d7b3325e1a85f6ee4970",
+  "tag_name": "v2.5.5",
+  "name": "白泽 v2.5.5",
+  "draft": false,
+  "prerelease": false,
+  "html_url": "https://github.com/xgl34222220-ops/BaiZe/releases/tag/v2.5.5",
+  "published_at": "2026-07-25T08:35:10Z",
+  "assets": [
+    {
+      "name": "BaiZe-v2.5.5-Module.zip",
+      "size": 3185867,
+      "digest": "sha256:3bd8840203bccfa39da743c2a5e3d79d368e30365ff7bc3f1f6b61e1153dd272"
+    },
+    {
+      "name": "BaiZe-v2.5.5-Module.zip.sha256",
+      "size": 98,
+      "digest": "sha256:70ba51ba4b802bbfb0781303268eac02dd67015773b16831fde4a1feadcc7522"
+    },
+    {
+      "name": "BaiZe-v2.5.5-signing-certificate.txt",
+      "size": 1098,
+      "digest": "sha256:88dbc6742a059653c26d9d418cd7041fdde065158bb13ccbcda8f187e7994aaf"
+    },
+    {
+      "name": "BaiZe-v2.5.5.apk",
+      "size": 3915552,
+      "digest": "sha256:de073a9bee7cefeb61d35632feea5cecd15fc0e23ee8c58cd189cac50acf4573"
+    },
+    {
+      "name": "BaiZe-v2.5.5.apk.sha256",
+      "size": 91,
+      "digest": "sha256:e1ccc1f89fce19831bcf901fe7c1a8c0025d9161deeb3bce7dac95b98b239965"
+    }
+  ]
+}
