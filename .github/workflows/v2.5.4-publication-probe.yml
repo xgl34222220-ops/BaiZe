@@ -86,21 +86,22 @@ jobs:
               assets_json=$(printf '%s' "$release_json" | jq -c '[.assets[] | {name,size,digest}]')
               draft=$(printf '%s' "$release_json" | jq -r '.draft')
               prerelease=$(printf '%s' "$release_json" | jq -r '.prerelease')
-              expected=$(cat <<'EOF'
-BaiZe-v2.5.4-Module.zip
-BaiZe-v2.5.4-Module.zip.sha256
-BaiZe-v2.5.4-signing-certificate.txt
-BaiZe-v2.5.4.apk
-BaiZe-v2.5.4.apk.sha256
-EOF
-              )
+              expected=$(printf '%s\n' \
+                'BaiZe-v2.5.4-Module.zip' \
+                'BaiZe-v2.5.4-Module.zip.sha256' \
+                'BaiZe-v2.5.4-signing-certificate.txt' \
+                'BaiZe-v2.5.4.apk' \
+                'BaiZe-v2.5.4.apk.sha256' | sort)
               actual=$(printf '%s' "$release_json" | jq -r '.assets[].name' | sort)
               if [ "$tag_sha" != "$RELEASE_TARGET_SHA" ]; then
-                result='failure'; detail="tag target mismatch: $tag_sha"
+                result='failure'
+                detail="tag target mismatch: $tag_sha"
               elif [ "$draft" != false ] || [ "$prerelease" != false ]; then
-                result='failure'; detail="release flags invalid: draft=$draft prerelease=$prerelease"
-              elif [ "$actual" != "$(printf '%s\n' "$expected" | sort)" ]; then
-                result='failure'; detail='release asset set mismatch'
+                result='failure'
+                detail="release flags invalid: draft=$draft prerelease=$prerelease"
+              elif [ "$actual" != "$expected" ]; then
+                result='failure'
+                detail='release asset set mismatch'
               else
                 detail='v2.5.4 workflow, immutable tag and five formal assets verified'
               fi
