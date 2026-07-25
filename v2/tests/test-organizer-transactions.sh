@@ -28,4 +28,5 @@ CONF
 }
 run_case 1
 run_case 2
+bash "$ROOT/v2/tests/test-organizer-auto-budget.sh"
 echo 'organizer transactions: ok'
