@@ -1,0 +1,42 @@
+name: Apply Active Task Heartbeat Fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-active-task-heartbeat-fix.yml'
+      - 'v2/scripts/apply-active-task-heartbeat-fix.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply fix and run focused regressions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch fix/active-task-heartbeat \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 v2/scripts/apply-active-task-heartbeat-fix.py
+          git diff --check
+          sh -n v2/module/scheduler-v2.5.sh
+          bash v2/tests/test-active-task-heartbeat-contract.sh
+          bash v2/tests/test-scheduler-health-contract.sh
+          bash v2/tests/test-schedule-modes-contract.sh
+          bash v2/tests/test-concurrent-scheduler.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt \
+                  v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt \
+                  v2/module/scheduler-v2.5.sh \
+                  v2/tests/test-active-task-heartbeat-contract.sh \
+                  v2/tests/test-scheduler-health-contract.sh
+          git commit -m 'fix: keep scheduler healthy during active tasks'
+          git push origin HEAD:fix/active-task-heartbeat
