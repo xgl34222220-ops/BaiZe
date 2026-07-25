@@ -1,6 +1,38 @@
 {
   "version": "v2.5.4",
-  "result": "probing",
-  "detail": "publication probe is running",
-  "target": "9cf1056055a3f2fb1b74b566ec41cd268f5e853b"
+  "result": "success",
+  "detail": "v2.5.4 workflow, immutable tag and five formal assets verified",
+  "runId": "30148975174",
+  "status": "completed",
+  "conclusion": "success",
+  "target": "9cf1056055a3f2fb1b74b566ec41cd268f5e853b",
+  "tagSha": "9cf1056055a3f2fb1b74b566ec41cd268f5e853b",
+  "releaseUrl": "https://github.com/xgl34222220-ops/BaiZe/releases/tag/v2.5.4",
+  "assets": [
+    {
+      "name": "BaiZe-v2.5.4-Module.zip",
+      "size": 3183964,
+      "digest": "sha256:d8c8ff41b88f706bcb0364684884a4dd244bda3fdde855657d10b4a9c9437711"
+    },
+    {
+      "name": "BaiZe-v2.5.4-Module.zip.sha256",
+      "size": 98,
+      "digest": "sha256:d2ed736dac60ccdd6900d2ad514bc2d5fa7fcd1ebc45c232e190cf84c71fdbca"
+    },
+    {
+      "name": "BaiZe-v2.5.4-signing-certificate.txt",
+      "size": 1098,
+      "digest": "sha256:88dbc6742a059653c26d9d418cd7041fdde065158bb13ccbcda8f187e7994aaf"
+    },
+    {
+      "name": "BaiZe-v2.5.4.apk",
+      "size": 3915557,
+      "digest": "sha256:065507dc90ad2f53b11d9247b1a64858de2b04ce685ee54b9dc287f5543fee09"
+    },
+    {
+      "name": "BaiZe-v2.5.4.apk.sha256",
+      "size": 91,
+      "digest": "sha256:421ea9090fd310f073de4003494fc34b87cbc65c532305b1f188e760c7c370e9"
+    }
+  ]
 }
