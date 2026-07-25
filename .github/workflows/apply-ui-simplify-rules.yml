@@ -1,0 +1,40 @@
+name: Apply UI simplification and curated rules
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-ui-simplify-rules.yml'
+      - 'v2/scripts/apply-ui-simplify-rules.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Apply focused product cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch agent/ui-simplify-rules \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 -m py_compile v2/scripts/apply-ui-simplify-rules.py
+          python3 v2/scripts/apply-ui-simplify-rules.py
+          git diff --check
+          sh -n v2/module/scheduler-v2.5.sh
+          sh -n v2/module/autopilot-controller.sh
+          bash v2/tests/test-schedule-modes-contract.sh
+          bash v2/tests/test-autopilot-controller.sh
+          bash v2/tests/test-scheduler-health-contract.sh
+          bash v2/tests/test-audit-center-contract.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'feat: simplify primary UI and expand safe rules'
+          git push origin HEAD:agent/ui-simplify-rules
