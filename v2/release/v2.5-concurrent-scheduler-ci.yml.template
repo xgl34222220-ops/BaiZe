@@ -1,0 +1,145 @@
+name: BaiZe v2.5 Root Stability CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'service.sh'
+      - 'module.prop'
+      - 'update.json'
+      - 'RELEASE_NOTES_v2.5.2.md'
+      - 'RELEASE_NOTES_v2.5.3.md'
+      - 'RELEASE_NOTES_v2.5.4.md'
+      - 'RELEASE_NOTES_v2.5.5.md'
+      - 'config/**'
+      - 'v2/module/**'
+      - 'v2/native/**'
+      - 'v2/scripts/**'
+      - 'v2/tests/**'
+      - '.github/release-v2.5.2.trigger'
+      - '.github/workflows/v2.5-concurrent-scheduler-ci.yml'
+      - '.github/workflows/v2.5.1-release.yml'
+      - '.github/workflows/v2.5.2-release.yml'
+      - '.github/workflows/v2.5.2-tag-publisher.yml'
+      - '.github/workflows/v2.5.3-release.yml'
+      - '.github/workflows/v2.5.4-release.yml'
+      - '.github/workflows/v2.5.5-release.yml'
+  push:
+    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2, release/v2.5.3, release/v2.5.4, release/v2.5.5]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-root-stability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  root-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shell compatibility tools
+        run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
+      - name: Verify shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+      - name: Compile native engines with release warnings
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion \
+            v2/native/baize_deep_snapshot.c -o /tmp/baize_deep_snapshot
+      - name: Verify frozen v2.5.2 release metadata
+        run: bash v2/tests/test-v2.5.2-release-metadata.sh
+      - name: Verify frozen v2.5.3 release metadata
+        run: bash v2/tests/test-release-v2.5.3-contract.sh
+      - name: Verify frozen v2.5.4 release metadata
+        run: bash v2/tests/test-release-v2.5.4-contract.sh
+      - name: Verify v2.5.5 release metadata
+        run: bash v2/tests/test-release-v2.5.5-contract.sh
+      - name: Existing scheduler regression
+        run: bash v2/tests/test-scheduler-fairness.sh
+      - name: Daily scheduler field regression
+        run: bash v2/tests/test-scheduler-daily-fields.sh
+      - name: Scheduler health diagnostics regression
+        run: |
+          bash v2/tests/test-scheduler-health-contract.sh
+          bash v2/tests/test-scheduler-health-diagnostics.sh
+      - name: Autopilot scheduling regression
+        run: bash v2/tests/test-autopilot-controller.sh
+      - name: Explicit schedule modes contract
+        run: bash v2/tests/test-schedule-modes-contract.sh
+      - name: Scan workbench snapshot contract
+        run: bash v2/tests/test-scan-workbench-contract.sh
+      - name: Home one-tap actions contract
+        run: bash v2/tests/test-home-one-tap-actions-contract.sh
+      - name: Quarantine authorization and restore contract
+        run: bash v2/tests/test-quarantine-contract.sh
+      - name: Complete uninstall cleanup regression
+        run: bash v2/tests/test-uninstall-cleanup.sh
+      - name: Cleaning audit center contract
+        run: bash v2/tests/test-audit-center-contract.sh
+      - name: Cleanup policy safety contract
+        run: bash v2/tests/test-cleanup-policy-contract.sh
+      - name: Adaptive policy advisor contract
+        run: bash v2/tests/test-policy-advisor-contract.sh
+      - name: Cleanup effectiveness scoring contract
+        run: bash v2/tests/test-cleanup-effectiveness-contract.sh
+      - name: Rule quality center contract
+        run: bash v2/tests/test-rule-quality-contract.sh
+      - name: Rule review closed-loop contract
+        run: bash v2/tests/test-rule-review-closed-loop-contract.sh
+      - name: Rule review auto-reopen contract
+        run: bash v2/tests/test-rule-review-auto-reopen-contract.sh
+      - name: Rule review trends contract
+        run: bash v2/tests/test-rule-review-trends-contract.sh
+      - name: Rule improvement drafts contract
+        run: bash v2/tests/test-rule-improvement-drafts-contract.sh
+      - name: Concurrent scheduler regression
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-concurrent-scheduler.sh > /tmp/concurrent-scheduler.log 2>&1
+          code=$?
+          tail -n 80 /tmp/concurrent-scheduler.log
+          exit "$code"
+      - name: Legacy profile cleaner regression
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-deep-clean-budget.sh > /tmp/deep-clean-stream.log 2>&1
+          code=$?
+          tail -n 120 /tmp/deep-clean-stream.log
+          exit "$code"
+      - name: Immutable deep manifest regression
+        shell: bash
+        run: |
+          set +e
+          bash -x v2/tests/test-deep-manifest.sh > /tmp/deep-manifest.log 2>&1
+          code=$?
+          tail -n 160 /tmp/deep-manifest.log
+          exit "$code"
+      - name: Upload Root diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: root-regression-diagnostics
+          path: |
+            /tmp/concurrent-scheduler.log
+            /tmp/deep-clean-stream.log
+            /tmp/deep-manifest.log
+            /tmp/baize-v250-concurrent-scheduler-test
+            /tmp/baize-deep-clean-stream-test
+            /tmp/baize-scheduler-daily-fields-test
+            /tmp/baize-deep-manifest-state-*
+          if-no-files-found: warn
+      - name: Incremental index regression
+        run: bash v2/tests/test-incremental-index.sh
+      - name: Organizer transaction regression
+        run: bash v2/tests/test-organizer-transactions.sh

@@ -14,7 +14,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.5.4"
+ui_print "- 正在安装白泽 v2.5.5"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
