@@ -1,0 +1,40 @@
+name: Apply Automatic Organizer Performance Fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-organizer-auto-performance-fix.yml'
+      - 'v2/scripts/apply-organizer-auto-performance-fix.py'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply fix and run focused regressions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch fix/organizer-run-when-due \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 v2/scripts/apply-organizer-auto-performance-fix.py
+          git diff --check
+          sh -n v2/module/organizer-worker.sh
+          busybox ash -n v2/module/organizer-worker.sh
+          bash v2/tests/test-organizer-auto-budget.sh
+          bash v2/tests/test-organizer-transactions.sh
+          bash v2/tests/test-active-task-heartbeat-contract.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add v2/module/organizer-worker.sh \
+                  v2/tests/test-organizer-auto-budget.sh \
+                  v2/tests/test-organizer-transactions.sh
+          git commit -m 'fix: bound automatic organizer runtime'
+          git push origin HEAD:fix/organizer-run-when-due
