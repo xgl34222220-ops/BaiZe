@@ -9,7 +9,7 @@ STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
 DEEP_NATIVE="$ROOT/build/native/arm64-v8a/baize_deep_snapshot"
-OUTPUT="$OUT/BaiZe-v2.5.3-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.5.4-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 [ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
@@ -75,7 +75,7 @@ unzip -p "$OUTPUT" supervisor.sh | grep -q 'run_autopilot'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'fixed-seven-fields-v1'
-unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5.3'
+unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5.4'
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'
@@ -123,9 +123,9 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'storage-files.nul'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.5.3$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=25003$'
-unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.5.3"'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.5.4$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=25004$'
+unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.5.4"'
 if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.5\.2|versionCode=25002|v2\.5\.1|versionCode=25001|v2\.5\.0|versionCode=25000|v2\.4\.0|versionCode=24000'; then
   echo "安装脚本仍包含旧版发布标识，禁止发布" >&2
   exit 1
@@ -140,4 +140,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.5.3 深度不可变快照模块：$OUTPUT"
+echo "已生成白泽 v2.5.4 深度不可变快照模块：$OUTPUT"
