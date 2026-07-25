@@ -28,8 +28,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check v2/patches/schedule-mode-*.patch
-          git apply v2/patches/schedule-mode-*.patch
+          git apply --recount --check v2/patches/schedule-mode-*.patch
+          git apply --recount v2/patches/schedule-mode-*.patch
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
