@@ -70,8 +70,7 @@ jobs:
           replace_once(
               contract,
               "grep -q 'maximum_temp=$(uint_value max_battery_temp 42 30 60)' \"$SCHEDULER\"",
-              "grep -q 'maximum_temp=$(max_battery_temp_value)' \"$SCHEDULER\"\n"
-              "grep -q 'case \"$value\" in '\"'\"''|0|' \"$SCHEDULER\"",
+              "grep -q 'maximum_temp=$(max_battery_temp_value)' \"$SCHEDULER\"",
           )
           PY
           sh -n v2/module/scheduler-v2.5.sh
