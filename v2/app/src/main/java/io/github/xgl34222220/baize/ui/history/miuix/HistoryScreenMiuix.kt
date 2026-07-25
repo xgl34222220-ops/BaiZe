@@ -76,7 +76,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 136.dp),
+        contentPadding = PaddingValues(bottom = bottomInset + 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "history-header") { MiuixHistoryHeader(actions) }
@@ -159,7 +159,7 @@ private fun MiuixHistoryHeader(actions: HistoryUiActions) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text("清理记录", fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold)
+            Text("清理记录", fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
             Text(
                 "自动任务结果与累计统计",
@@ -250,6 +250,17 @@ private fun MiuixSectionTitle(title: String, subtitle: String) {
     }
 }
 
+private fun currentResultTitle(raw: String, hasResult: Boolean): String {
+    if (!hasResult) return "暂无最近结果"
+    val value = sanitizeText(raw)
+    return when {
+        value.contains("扫描") -> "最近一次扫描已完成"
+        value.contains("归类") -> "文件归类已完成"
+        value.contains("清理") -> "最近一次清理已完成"
+        else -> "最近一次任务已完成"
+    }
+}
+
 @Composable
 private fun MiuixCurrentResultGroup(state: HistoryUiState) {
     val context = LocalContext.current
@@ -274,9 +285,7 @@ private fun MiuixCurrentResultGroup(state: HistoryUiState) {
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        sanitizeText(state.latestResult).ifBlank {
-                            if (state.hasCurrentResult) "任务已完成" else "暂无最近结果"
-                        },
+                        currentResultTitle(state.latestResult, state.hasCurrentResult),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,

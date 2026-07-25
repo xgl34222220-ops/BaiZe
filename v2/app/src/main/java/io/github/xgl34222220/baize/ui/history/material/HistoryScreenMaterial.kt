@@ -198,6 +198,17 @@ private fun MaterialSectionHeader(title: String, subtitle: String) {
     }
 }
 
+private fun materialCurrentResultTitle(raw: String, hasResult: Boolean): String {
+    if (!hasResult) return "暂无最近结果"
+    val value = raw.trim()
+    return when {
+        value.contains("扫描") -> "最近一次扫描已完成"
+        value.contains("归类") -> "文件归类已完成"
+        value.contains("清理") -> "最近一次清理已完成"
+        else -> "最近一次任务已完成"
+    }
+}
+
 @Composable
 private fun MaterialCurrentResult(state: HistoryUiState) {
     val context = LocalContext.current
@@ -219,7 +230,7 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
                 )
                 Spacer(Modifier.width(9.dp))
                 Text(
-                    state.latestResult.ifBlank { if (state.hasCurrentResult) "任务已完成" else "暂无最近结果" },
+                    materialCurrentResultTitle(state.latestResult, state.hasCurrentResult),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )

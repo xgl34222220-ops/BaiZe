@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
@@ -63,7 +62,6 @@ import io.github.xgl34222220.baize.ui.clean.CleanUiState
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
 import io.github.xgl34222220.baize.ui.clean.formatMinutes
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 private val intervalOptions = listOf(30, 60, 180, 360, 720, 1_440, 10_080, 43_200)
 
@@ -102,7 +100,7 @@ fun CleanScreenMaterial(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(bottom = bottomInset + 104.dp),
+        contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { MaterialCleanHeader() }
@@ -134,13 +132,12 @@ fun CleanScreenMaterial(
                 modifier = Modifier
                     .padding(horizontal = 20.dp)
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(52.dp),
                 shape = MaterialTheme.shapes.extraLarge
             ) {
-                Text(if (state.saving) "正在保存…" else "保存自动任务设置", fontWeight = FontWeight.Bold)
+                Text(if (state.saving) "正在保存…" else "保存设置", fontWeight = FontWeight.Bold)
             }
         }
-        item { MaterialEngineStatus(state) }
     }
 }
 
@@ -155,7 +152,7 @@ private fun MaterialCleanHeader() {
         Text("清理计划", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(4.dp))
         Text(
-            "设置自动清理和文件归类的执行周期",
+            "选择执行模式与清理项目",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
@@ -479,37 +476,6 @@ private fun MaterialValueRow(label: String, value: String, onClick: () -> Unit) 
         Text(value, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.width(4.dp))
         Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
-    }
-}
-
-@Composable
-private fun MaterialEngineStatus(state: CleanUiState) {
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 22.dp)
-            .fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(if (state.engineReady) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(
-            state.serviceText,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            if (state.running) "执行中" else if (state.engineReady) "运行正常" else "连接中",
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.labelMedium
-        )
     }
 }
 
