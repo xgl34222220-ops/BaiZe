@@ -28,6 +28,20 @@ jobs:
         run: |
           set -u
           mkdir -p v2/release
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          jq -n \
+            --arg version 'v2.5.4' \
+            --arg result 'probing' \
+            --arg detail 'publication probe is running' \
+            --arg target "$RELEASE_TARGET_SHA" \
+            '{version:$version,result:$result,detail:$detail,target:$target}' \
+            > v2/release/v2.5.4-publish-status.json
+          git add v2/release/v2.5.4-publish-status.json
+          git commit -m 'release: record v2.5.4 publication probe start' || true
+          git push origin HEAD:main || true
+
           run_id=''
           status='waiting'
           conclusion=''
@@ -107,9 +121,8 @@ EOF
             '{version:$version,result:$result,detail:$detail,runId:$runId,status:$status,conclusion:$conclusion,target:$target,tagSha:$tagSha,releaseUrl:$releaseUrl,assets:$assets}' \
             > v2/release/v2.5.4-publish-status.json
 
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase origin main || true
           git add v2/release/v2.5.4-publish-status.json
           git commit -m "release: record v2.5.4 publication status ($result)" || true
-          git push origin HEAD:main
+          git push origin HEAD:main || true
           [ "$result" = success ]
