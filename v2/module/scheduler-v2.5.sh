@@ -64,6 +64,13 @@ schedule_mode_value() {
   esac
 }
 daily_mode_enabled() { [ "$(schedule_mode_value)" = 2 ] && echo 1 || echo 0; }
+max_battery_temp_value() {
+  value=$(config_value max_battery_temp)
+  case "$value" in ''|0|*[!0-9]*) value=42 ;; esac
+  [ "$value" -lt 30 ] && value=30
+  [ "$value" -gt 60 ] && value=60
+  echo "$value"
+}
 valid_interval_seconds() {
   minutes=$(config_value "$1")
   case "$minutes" in ''|*[!0-9]*) hours=$(uint_value "$2" "$3" 1 720); minutes=$((hours * 60)) ;; esac
@@ -160,7 +167,7 @@ conditions_allow_task() {
   if [ "$(bool_value "$screen_key")" = 1 ] && ! is_screen_off; then SCHEDULE_REASON="等待息屏"; return 1; fi
   if [ "$(bool_value "$idle_key")" = 1 ] && ! is_device_idle; then SCHEDULE_REASON="等待系统进入空闲状态"; return 1; fi
   battery=$(dumpsys battery 2>/dev/null)
-  maximum_temp=$(uint_value max_battery_temp 42 30 60)
+  maximum_temp=$(max_battery_temp_value)
   temperature=$(printf '%s\n' "$battery" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)
   case "$temperature" in ''|*[!0-9]*) temperature=0 ;; esac
   if [ "$temperature" -gt 0 ] && [ "$temperature" -ge $((maximum_temp * 10)) ]; then

@@ -58,7 +58,8 @@ PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=430 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER
 test ! -s "$TMP/state/worker-invocations.log"
 grep -q '温度' "$TMP/state/scheduler.env"
 
-PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=410 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
+sed -i 's/^max_battery_temp=42$/max_battery_temp=0/' "$TMP/state/config.conf"
+PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=350 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
   BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$TMP/state" BAIZE_CONFIG_PATH="$TMP/state/config.conf" \
   sh "$TMP/module/scheduler.sh"
 grep -q 'cache-auto scheduler:interval' "$TMP/state/worker-invocations.log"
