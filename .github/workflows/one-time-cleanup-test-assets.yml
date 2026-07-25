@@ -1,0 +1,110 @@
+name: One-time cleanup test assets
+
+on:
+  push:
+    branches:
+      - temp/cleanup-test-assets-20260725
+    paths:
+      - .github/cleanup-test-assets.trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete test releases, test tags, and non-default branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLEANUP_BRANCH: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          repo="$GITHUB_REPOSITORY"
+          owner="${repo%%/*}"
+          default_branch="$(gh api "repos/$repo" --jq '.default_branch')"
+          test_re='(^|[./_ -])(alpha[0-9.]*|beta[0-9.]*|rc[0-9.]*|test|preview|debug|dev|canary|nightly|snapshot|candidate|pre[-_ ]?release)([./_ -]|$)'
+
+          encode_ref() {
+            python3 - "$1" <<'PY'
+import sys
+from urllib.parse import quote
+print(quote(sys.argv[1], safe=""))
+PY
+          }
+
+          deleted_releases=0
+          deleted_tags=0
+          deleted_branches=0
+          failed_branches=0
+
+          pr_number="$(gh api -X GET "repos/$repo/pulls" -f state=open -f head="$owner:$CLEANUP_BRANCH" --jq '.[0].number // empty')"
+
+          while IFS= read -r packed; do
+            release_json="$(printf '%s' "$packed" | base64 --decode)"
+            release_id="$(jq -r '.id' <<<"$release_json")"
+            tag="$(jq -r '.tag_name // ""' <<<"$release_json")"
+            name="$(jq -r '.name // ""' <<<"$release_json")"
+            draft="$(jq -r '.draft' <<<"$release_json")"
+            prerelease="$(jq -r '.prerelease' <<<"$release_json")"
+            label="$(printf '%s %s' "$tag" "$name" | tr '[:upper:]' '[:lower:]')"
+
+            if [[ "$draft" == "true" || "$prerelease" == "true" || "$label" =~ $test_re ]]; then
+              gh api --method DELETE "repos/$repo/releases/$release_id"
+              deleted_releases=$((deleted_releases + 1))
+
+              if [[ -n "$tag" ]]; then
+                encoded_tag="$(encode_ref "$tag")"
+                if gh api --method DELETE "repos/$repo/git/refs/tags/$encoded_tag" >/dev/null 2>&1; then
+                  deleted_tags=$((deleted_tags + 1))
+                fi
+              fi
+            fi
+          done < <(gh api --paginate "repos/$repo/releases?per_page=100" --jq '.[] | @base64')
+
+          while IFS= read -r tag; do
+            lower_tag="$(printf '%s' "$tag" | tr '[:upper:]' '[:lower:]')"
+            if [[ "$lower_tag" =~ $test_re ]]; then
+              encoded_tag="$(encode_ref "$tag")"
+              if gh api --method DELETE "repos/$repo/git/refs/tags/$encoded_tag" >/dev/null 2>&1; then
+                deleted_tags=$((deleted_tags + 1))
+              fi
+            fi
+          done < <(gh api --paginate "repos/$repo/tags?per_page=100" --jq '.[].name')
+
+          mapfile -t branches < <(gh api --paginate "repos/$repo/branches?per_page=100" --jq '.[].name')
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "$default_branch" || "$branch" == "$CLEANUP_BRANCH" ]]; then
+              continue
+            fi
+
+            encoded_branch="$(encode_ref "$branch")"
+            if gh api --method DELETE "repos/$repo/git/refs/heads/$encoded_branch" >/dev/null 2>&1; then
+              deleted_branches=$((deleted_branches + 1))
+            else
+              failed_branches=$((failed_branches + 1))
+            fi
+          done
+
+          summary=$(cat <<EOF
+          仓库清理已执行：
+
+          - 保留默认分支：\`$default_branch\`
+          - 保留所有非草稿、非预发行且名称不含测试标记的正式 Release
+          - 已删除测试/草稿/预发行 Release：$deleted_releases 个
+          - 已删除测试标签：$deleted_tags 个
+          - 已删除其他分支：$deleted_branches 个
+          - 删除失败的受保护分支：$failed_branches 个
+          EOF
+          )
+
+          if [[ -n "$pr_number" ]]; then
+            gh api --method POST "repos/$repo/issues/$pr_number/comments" -f body="$summary"
+            gh api --method PATCH "repos/$repo/pulls/$pr_number" -f state=closed >/dev/null
+          fi
+
+          encoded_cleanup_branch="$(encode_ref "$CLEANUP_BRANCH")"
+          gh api --method DELETE "repos/$repo/git/refs/heads/$encoded_cleanup_branch" >/dev/null
