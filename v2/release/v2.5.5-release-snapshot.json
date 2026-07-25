@@ -1,0 +1,133 @@
+{
+  "run": {
+    "id": 30151091697,
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-07-25T08:26:00Z",
+    "updated_at": "2026-07-25T08:35:26Z"
+  },
+  "jobs": [
+    {
+      "name": "verify-build-release",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout immutable v2.5.5 target",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify v2.5.5 metadata",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Create or verify immutable v2.5.5 tag",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reject an existing v2.5.5 Release",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install compatibility tools",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify Root scripts, native sources and regressions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up JDK 17",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Android SDK",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install Android platform and NDK",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Set up Gradle",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Prepare formal signing certificate",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build ARM64 native engines",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build signed Android Release",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Package v2.5.5 module",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable formal artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload verified artifacts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Publish immutable BaiZe v2.5.5 GitHub Release",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Upload release diagnostics",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Set up Gradle",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Set up JDK 17",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Checkout immutable v2.5.5 target",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}
