@@ -37,6 +37,7 @@ TMP=${TMPDIR:-/tmp}/baize-schedule-mode-contract-$$
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/module"
 cp "$AUTOPILOT" "$TMP/module/autopilot-controller.sh"
+cp "$SCHEDULER" "$TMP/module/scheduler.sh"
 
 run_mode() {
   mode=$1
@@ -78,6 +79,24 @@ EOF_CONFIG
 run_mode 0 1 0 idle
 run_mode 1 0 0 disabled strict_interval
 run_mode 2 0 1 disabled fixed_daily
+
+legacy="$TMP/legacy-daily"
+mkdir -p "$legacy"
+cat >"$legacy/config.conf" <<'EOF_LEGACY'
+enabled=1
+autopilot_enabled=1
+daily_schedule_enabled=1
+schedule_cache_enabled=0
+schedule_empty_enabled=0
+schedule_rules_enabled=0
+schedule_fragment_enabled=0
+schedule_deep_enabled=0
+schedule_organize_enabled=0
+EOF_LEGACY
+BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
+  BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$legacy" BAIZE_CONFIG_PATH="$legacy/config.conf" \
+  sh "$TMP/module/scheduler.sh"
+grep -q '^state=waiting$' "$legacy/scheduler.env"
 
 bash "$ROOT/v2/tests/test-scheduler-thermal-contract.sh"
 

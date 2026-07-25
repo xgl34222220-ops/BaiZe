@@ -56,7 +56,7 @@ schedule_mode_value() {
   case "$value" in
     0|1|2) echo "$value" ;;
     *)
-      if [ "$(daily_mode_enabled)" = 1 ]; then echo 2
+      if [ "$(bool_value daily_schedule_enabled)" = 1 ]; then echo 2
       elif [ "$(config_value autopilot_enabled)" = 0 ]; then echo 1
       else echo 0
       fi
