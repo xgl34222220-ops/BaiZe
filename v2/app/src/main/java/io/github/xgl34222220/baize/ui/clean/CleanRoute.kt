@@ -8,6 +8,7 @@ import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.FileOrganizerActivity
+import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.material.CleanScreenMaterial
@@ -58,7 +59,7 @@ fun CleanRoute(
             applyAndSave(scheduler.copy(apkPackagesEnabled = enabled))
         },
         onSave = { dashboardActions.saveScheduler(scheduler) },
-        onScan = {},
+        onScan = { context.startActivity(Intent(context, ScanWorkbenchActivity::class.java)) },
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
         onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
         onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },

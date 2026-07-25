@@ -61,6 +61,8 @@ jobs:
           bash v2/tests/test-scheduler-health-diagnostics.sh
       - name: Scan workbench snapshot contract
         run: bash v2/tests/test-scan-workbench-contract.sh
+      - name: Home one-tap actions contract
+        run: bash v2/tests/test-home-one-tap-actions-contract.sh
       - name: Quarantine authorization and restore contract
         run: bash v2/tests/test-quarantine-contract.sh
       - name: Cleaning audit center contract
