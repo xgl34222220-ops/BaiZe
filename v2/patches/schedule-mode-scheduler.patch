@@ -1,0 +1,50 @@
+diff --git a/v2/module/scheduler-v2.5.sh b/v2/module/scheduler-v2.5.sh
+--- a/v2/module/scheduler-v2.5.sh
++++ b/v2/module/scheduler-v2.5.sh
+@@ -52,6 +52,19 @@ uint_value() {
+   [ "$value" -gt "$maximum" ] && value=$maximum
+   echo "$value"
+ }
++schedule_mode_value() {
++  value=$(config_value schedule_mode)
++  case "$value" in
++    0|1|2) echo "$value" ;;
++    *)
++      if [ "$(bool_value daily_schedule_enabled)" = 1 ]; then echo 2
++      elif [ "$(config_value autopilot_enabled)" = 0 ]; then echo 1
++      else echo 0
++      fi
++      ;;
++  esac
++}
++daily_mode_enabled() { [ "$(schedule_mode_value)" = 2 ] && echo 1 || echo 0; }
+ valid_interval_seconds() {
+   minutes=$(config_value "$1")
+   case "$minutes" in ''|*[!0-9]*) hours=$(uint_value "$2" "$3" 1 720); minutes=$((hours * 60)) ;; esac
+@@ -212,7 +225,7 @@ collect_manual_requests() {
+ collect_scheduled_candidates() {
+   [ "$(bool_value enabled)" = 1 ] || return 0
+   now=$(date +%s); daily=0
+-  [ "$(bool_value daily_schedule_enabled)" = 1 ] && daily_cycle_info && daily=1
++  [ "$(daily_mode_enabled)" = 1 ] && daily_cycle_info && daily=1
+   for group in cache empty rules fragment deep organize; do
+     group_spec "$group" || continue
+     [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
+@@ -221,7 +234,7 @@ collect_scheduled_candidates() {
+       stamp="$STATE_DIR/last_${group}_daily.date"
+       [ "$(sed -n '1p' "$stamp" 2>/dev/null)" = "$DAILY_CYCLE" ] && continue
+       add_candidate 1 "$DAILY_DUE_AT" "$group" "$SPEC_MODE" daily "" "$DAILY_CYCLE"
+-    elif [ "$group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ]; then
++    elif [ "$group" != organize ] && [ "$(daily_mode_enabled)" = 1 ]; then
+       continue
+     else
+       interval=$(valid_interval_seconds "$SPEC_MINUTES" "$SPEC_HOURS" "$SPEC_FALLBACK")
+@@ -239,7 +252,7 @@ apply_skip_requests() {
+     if group_spec "$group"; then
+       rm -f "$REQUEST_DIR"/*-"$group".env 2>/dev/null || true
+       printf '%s\n' "$(date +%s)" >"$STATE_DIR/last_${group}_run.epoch"
+-      if [ "$group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ] && daily_cycle_info; then
++      if [ "$group" != organize ] && [ "$(daily_mode_enabled)" = 1 ] && daily_cycle_info; then
+         printf '%s\n' "$DAILY_CYCLE" >"$STATE_DIR/last_${group}_daily.date"
+       fi
+       write_scheduler_state skipped "$group" "已跳过本次任务"
