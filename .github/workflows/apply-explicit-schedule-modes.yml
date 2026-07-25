@@ -20,15 +20,14 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/explicit-schedule-modes
-          fetch-depth: 1
-          show-progress: false
       - name: Apply reviewed patches
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          git clone --quiet --depth=1 --branch agent/explicit-schedule-modes \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" .
           for patch in v2/patches/schedule-mode-*.patch; do
             echo "checking $patch"
             git apply --recount --check "$patch"
