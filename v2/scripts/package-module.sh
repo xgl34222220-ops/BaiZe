@@ -17,6 +17,7 @@ OUTPUT="$OUT/BaiZe-v2.5.2-Module.zip"
 bash "$ROOT/tests/test-concurrent-scheduler.sh"
 bash "$ROOT/tests/test-deep-clean-budget.sh"
 bash "$ROOT/tests/test-deep-manifest.sh"
+bash "$ROOT/tests/test-autopilot-controller.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
@@ -43,7 +44,7 @@ chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/deep-scan-manifest.sh" "$STAGE/deep-manifest-clean.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
 chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh"
-chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
+chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/autopilot-controller.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
 chmod 0644 "$STAGE/app/baize.apk"
@@ -68,6 +69,9 @@ unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
 unzip -l "$OUTPUT" | grep -q 'cache-lane-worker.sh'
 unzip -p "$OUTPUT" cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
 unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
+unzip -l "$OUTPUT" | grep -q 'autopilot-controller.sh'
+unzip -p "$OUTPUT" autopilot-controller.sh | grep -q 'autopilot_zero_yield_streak'
+unzip -p "$OUTPUT" supervisor.sh | grep -q 'run_autopilot'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'fixed-seven-fields-v1'
@@ -111,6 +115,9 @@ unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
 unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'parallel_overlap_milli'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^autopilot_enabled=1$'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^schedule_cache_minutes=1440$'
+unzip -p "$OUTPUT" config/default.conf | grep -q '^app_cache_days=2$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
