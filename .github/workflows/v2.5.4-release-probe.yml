@@ -76,3 +76,5 @@ EOF
           }
           printf '%s' "$release_json" | jq -r '{tag_name,name,draft,prerelease,html_url,published_at,assets:[.assets[] | {name,size,digest}]}'
           echo 'BaiZe v2.5.4 publication verified'
+
+# synchronize trigger
