@@ -1,0 +1,35 @@
+name: Apply scheduler hardening concise
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-scheduler-hardening-debug.yml'
+      - '.github/workflows/apply-scheduler-hardening.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-concise:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Run existing focused fixer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch agent/bugfix-scheduler-hardening \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          sed -n '/^        run: |$/,$p' .github/workflows/apply-scheduler-hardening.yml \
+            | tail -n +2 | sed 's/^          //' > /tmp/apply-scheduler-hardening.sh
+          bash -x /tmp/apply-scheduler-hardening.sh
+          rm -f .github/workflows/apply-scheduler-hardening-debug.yml
+          if ! git diff --quiet -- .github/workflows/apply-scheduler-hardening-debug.yml; then
+            git add -A
+            git commit -m 'chore: remove scheduler hardening helper'
+            git push origin HEAD:agent/bugfix-scheduler-hardening
+          fi
