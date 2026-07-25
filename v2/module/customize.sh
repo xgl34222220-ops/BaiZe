@@ -38,6 +38,7 @@ chmod 0700 "$STATE_DIR"
 [ -f "$DEEP_SNAPSHOT_ENGINE" ] || abort "! 模块包中缺少 arm64 深度快照引擎"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+[ -f "$MODPATH/autopilot-controller.sh" ] || abort "! 模块包中缺少自动驾驶控制器"
 [ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
 [ -f "$MODPATH/cache-lane-worker.sh" ] || abort "! 模块包中缺少应用缓存并行 Worker"
 [ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
@@ -100,11 +101,41 @@ if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ];
   fi
 fi
 
+# Upgrade only the untouched legacy default schedule. Explicit user-customized schedules are preserved.
+CONFIG_FILE="$STATE_DIR/config.conf"
+if [ -f "$CONFIG_FILE" ] && [ ! -f "$STATE_DIR/autopilot-defaults-migrated" ]; then
+  value_of() { sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -n 1; }
+  if [ "$(value_of screen_off_only)" = 0 ] && \
+     [ "$(value_of schedule_cache_minutes)" = 60 ] && \
+     [ "$(value_of schedule_empty_minutes)" = 60 ] && \
+     [ "$(value_of schedule_rules_minutes)" = 360 ] && \
+     [ "$(value_of schedule_fragment_minutes)" = 720 ] && \
+     [ "$(value_of app_cache_days)" = 0 ] && \
+     [ "$(value_of external_cache_days)" = 0 ]; then
+    sed -i \
+      -e 's/^screen_off_only=0$/screen_off_only=1/' \
+      -e 's/^max_battery_temp=0$/max_battery_temp=42/' \
+      -e 's/^schedule_cache_hours=1$/schedule_cache_hours=24/' \
+      -e 's/^schedule_empty_hours=1$/schedule_empty_hours=24/' \
+      -e 's/^schedule_rules_hours=1$/schedule_rules_hours=24/' \
+      -e 's/^schedule_fragment_hours=1$/schedule_fragment_hours=72/' \
+      -e 's/^schedule_cache_minutes=60$/schedule_cache_minutes=1440/' \
+      -e 's/^schedule_empty_minutes=60$/schedule_empty_minutes=1440/' \
+      -e 's/^schedule_rules_minutes=360$/schedule_rules_minutes=1440/' \
+      -e 's/^schedule_fragment_minutes=720$/schedule_fragment_minutes=4320/' \
+      -e 's/^app_cache_days=0$/app_cache_days=2/' \
+      -e 's/^external_cache_days=0$/external_cache_days=2/' \
+      "$CONFIG_FILE"
+    ui_print "- 已将旧默认计划升级为自动驾驶安全周期"
+  fi
+  touch "$STATE_DIR/autopilot-defaults-migrated"
+fi
+
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/cache-lane-worker.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" "$MODPATH/deep-scan-manifest.sh" "$MODPATH/deep-manifest-clean.sh" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
-chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
+chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/autopilot-controller.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
