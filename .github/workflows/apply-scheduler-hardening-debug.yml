@@ -7,6 +7,7 @@ on:
       - '.github/workflows/apply-scheduler-hardening-debug.yml'
       - '.github/workflows/apply-scheduler-hardening.yml'
       - 'v2/scripts/apply-scheduler-hardening.py'
+      - 'v2/scripts/patch-scheduler-hardening-fixer.py'
 
 permissions:
   contents: write
@@ -25,6 +26,7 @@ jobs:
           git clone --quiet --depth=1 --branch agent/bugfix-scheduler-hardening \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
           cd repo
+          python3 v2/scripts/patch-scheduler-hardening-fixer.py
           python3 v2/scripts/apply-scheduler-hardening.py
           sh -n v2/module/scheduler-v2.5.sh
           bash v2/tests/test-schedule-modes-contract.sh
