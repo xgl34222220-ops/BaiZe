@@ -24,4 +24,6 @@ grep -q '"schedule_fragment_minutes" to 5..43_200' "$REPOSITORY"
 grep -q '"schedule_deep_minutes" to 5..43_200' "$REPOSITORY"
 grep -q '"schedule_organize_minutes" to 15..43_200' "$REPOSITORY"
 
+bash "$ROOT/tests/test-active-task-heartbeat-contract.sh"
+
 echo "scheduler health contract regression passed"
