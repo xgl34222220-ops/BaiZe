@@ -64,6 +64,13 @@ schedule_mode_value() {
   esac
 }
 daily_mode_enabled() { [ "$(schedule_mode_value)" = 2 ] && echo 1 || echo 0; }
+max_battery_temp_value() {
+  value=$(config_value max_battery_temp)
+  case "$value" in ''|0|*[!0-9]*) value=42 ;; esac
+  [ "$value" -lt 30 ] && value=30
+  [ "$value" -gt 60 ] && value=60
+  echo "$value"
+}
 valid_interval_seconds() {
   minutes=$(config_value "$1")
   case "$minutes" in ''|*[!0-9]*) hours=$(uint_value "$2" "$3" 1 720); minutes=$((hours * 60)) ;; esac
@@ -160,6 +167,14 @@ conditions_allow_task() {
   if [ "$(bool_value "$screen_key")" = 1 ] && ! is_screen_off; then SCHEDULE_REASON="等待息屏"; return 1; fi
   if [ "$(bool_value "$idle_key")" = 1 ] && ! is_device_idle; then SCHEDULE_REASON="等待系统进入空闲状态"; return 1; fi
   battery=$(dumpsys battery 2>/dev/null)
+  maximum_temp=$(max_battery_temp_value)
+  temperature=$(printf '%s\n' "$battery" | sed -n 's/^[[:space:]]*temperature: //p' | head -n 1)
+  case "$temperature" in ''|*[!0-9]*) temperature=0 ;; esac
+  if [ "$temperature" -gt 0 ] && [ "$temperature" -ge $((maximum_temp * 10)) ]; then
+    temp_whole=$((temperature / 10)); temp_decimal=$((temperature % 10))
+    SCHEDULE_REASON="等待电池温度降低（当前 ${temp_whole}.${temp_decimal}°C，上限 ${maximum_temp}°C）"
+    return 1
+  fi
   if [ "$(bool_value "$charge_key")" = 1 ]; then
     if ! printf '%s\n' "$battery" | grep -Eq '^[[:space:]]*(AC powered|USB powered|Wireless powered|Dock powered): true'; then
       status=$(printf '%s\n' "$battery" | sed -n 's/^[[:space:]]*status: //p' | head -n 1)
@@ -175,10 +190,10 @@ conditions_allow_task() {
 
 group_spec() {
   case "$1" in
-    cache) SPEC_ENABLED=schedule_cache_enabled; SPEC_MINUTES=schedule_cache_minutes; SPEC_HOURS=schedule_cache_hours; SPEC_FALLBACK=1; SPEC_MODE=cache-auto;;
-    empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=1; SPEC_MODE=empty-clean;;
-    rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=6; SPEC_MODE=rules-clean;;
-    fragment) SPEC_ENABLED=schedule_fragment_enabled; SPEC_MINUTES=schedule_fragment_minutes; SPEC_HOURS=schedule_fragment_hours; SPEC_FALLBACK=12; SPEC_MODE=fragment-clean;;
+    cache) SPEC_ENABLED=schedule_cache_enabled; SPEC_MINUTES=schedule_cache_minutes; SPEC_HOURS=schedule_cache_hours; SPEC_FALLBACK=24; SPEC_MODE=cache-auto;;
+    empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=24; SPEC_MODE=empty-clean;;
+    rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=24; SPEC_MODE=rules-clean;;
+    fragment) SPEC_ENABLED=schedule_fragment_enabled; SPEC_MINUTES=schedule_fragment_minutes; SPEC_HOURS=schedule_fragment_hours; SPEC_FALLBACK=72; SPEC_MODE=fragment-clean;;
     deep) SPEC_ENABLED=schedule_deep_enabled; SPEC_MINUTES=schedule_deep_minutes; SPEC_HOURS=schedule_deep_hours; SPEC_FALLBACK=168; SPEC_MODE=deep-auto;;
     organize) SPEC_ENABLED=schedule_organize_enabled; SPEC_MINUTES=schedule_organize_minutes; SPEC_HOURS=schedule_organize_hours; SPEC_FALLBACK=24; SPEC_MODE=organize;;
     *) return 1;;
@@ -350,14 +365,14 @@ compute_next_sleep() {
   now=$(date +%s); minimum=0
   for group in cache empty rules fragment deep organize; do
     group_spec "$group" || continue; [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
-    if [ "$group" != organize ] && [ "$(bool_value daily_schedule_enabled)" = 1 ]; then continue; fi
+    if [ "$group" != organize ] && [ "$(daily_mode_enabled)" = 1 ]; then continue; fi
     interval=$(valid_interval_seconds "$SPEC_MINUTES" "$SPEC_HOURS" "$SPEC_FALLBACK")
     last=$(sed -n '1p' "$STATE_DIR/last_${group}_run.epoch" 2>/dev/null); case "$last" in ''|*[!0-9]*) last=$now ;; esac
     remaining=$((last+interval-now)); [ "$remaining" -lt 0 ] && remaining=0
     [ "$minimum" -eq 0 ] || [ "$remaining" -ge "$minimum" ] || minimum=$remaining
     [ "$minimum" -ne 0 ] || minimum=$remaining
   done
-  if [ "$(bool_value daily_schedule_enabled)" = 1 ]; then
+  if [ "$(daily_mode_enabled)" = 1 ]; then
     hour=$(uint_value daily_schedule_hour 3 0 23); minute=$(uint_value daily_schedule_minute 30 0 59)
     h=$(date +%H | sed 's/^0//'); [ -n "$h" ] || h=0; m=$(date +%M | sed 's/^0//'); [ -n "$m" ] || m=0; s=$(date +%S | sed 's/^0//'); [ -n "$s" ] || s=0
     now_min=$((h*60+m)); target=$((hour*60+minute))

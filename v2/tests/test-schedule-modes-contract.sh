@@ -26,11 +26,18 @@ grep -q '"每日固定"' "$CONTRACT"
 grep -q 'CleanScheduleMode.entries.forEach' "$MATERIAL"
 grep -q 'CleanScheduleMode.entries.forEach' "$MIUIX"
 grep -q 'daily_mode_enabled' "$SCHEDULER"
+grep -q 'SPEC_FALLBACK=24; SPEC_MODE=cache-auto' "$SCHEDULER"
+grep -q 'SPEC_FALLBACK=72; SPEC_MODE=fragment-clean' "$SCHEDULER"
+grep -q 'maximum_temp=$(max_battery_temp_value)' "$SCHEDULER"
+grep -q 'val cacheMinutes: Int = 1_440' "$APP_STATE"
+grep -q 'val fragmentMinutes: Int = 4_320' "$APP_STATE"
+grep -q 'val screenOffOnly: Boolean = true' "$APP_STATE"
 
 TMP=${TMPDIR:-/tmp}/baize-schedule-mode-contract-$$
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/module"
 cp "$AUTOPILOT" "$TMP/module/autopilot-controller.sh"
+cp "$SCHEDULER" "$TMP/module/scheduler.sh"
 
 run_mode() {
   mode=$1
@@ -72,5 +79,25 @@ EOF_CONFIG
 run_mode 0 1 0 idle
 run_mode 1 0 0 disabled strict_interval
 run_mode 2 0 1 disabled fixed_daily
+
+legacy="$TMP/legacy-daily"
+mkdir -p "$legacy"
+cat >"$legacy/config.conf" <<'EOF_LEGACY'
+enabled=1
+autopilot_enabled=1
+daily_schedule_enabled=1
+schedule_cache_enabled=0
+schedule_empty_enabled=0
+schedule_rules_enabled=0
+schedule_fragment_enabled=0
+schedule_deep_enabled=0
+schedule_organize_enabled=0
+EOF_LEGACY
+BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
+  BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$legacy" BAIZE_CONFIG_PATH="$legacy/config.conf" \
+  sh "$TMP/module/scheduler.sh"
+grep -q '^state=waiting$' "$legacy/scheduler.env"
+
+bash "$ROOT/v2/tests/test-scheduler-thermal-contract.sh"
 
 echo "schedule modes contract passed"

@@ -492,6 +492,7 @@ internal class SchedulerRepository(
             state == "running" -> "RUNNING"
             reason.contains("息屏") -> "WAIT_SCREEN_OFF"
             reason.contains("充电") -> "WAIT_CHARGING"
+            reason.contains("温度") || reason.contains("过热") -> "WAIT_TEMPERATURE"
             reason.contains("电量") -> "WAIT_BATTERY"
             reason.contains("空闲") -> "WAIT_IDLE"
             reason.contains("停止") -> "USER_STOPPED"
@@ -510,6 +511,7 @@ internal class SchedulerRepository(
         state == "running" -> "执行中"
         raw.contains("息屏") -> "等待息屏后执行"
         raw.contains("充电") -> "等待充电后执行"
+        raw.contains("温度") || raw.contains("过热") -> "等待设备降温后执行"
         raw.contains("电量") -> "等待电量满足条件"
         raw.contains("空闲") -> "等待系统空闲后执行"
         raw.contains("已有") || raw.contains("当前任务") -> "等待当前任务完成"
@@ -522,7 +524,10 @@ internal class SchedulerRepository(
 
     private fun nextRunsJsonObject(config: JSONObject, now: Long): JSONObject {
         val result = JSONObject()
-        val dailyEnabled = config.optInt("daily_schedule_enabled", 0) == 1
+        val dailyEnabled = when {
+            config.has("schedule_mode") -> config.optInt("schedule_mode", 0).coerceIn(0, 2) == 2
+            else -> config.optInt("daily_schedule_enabled", 0) == 1
+        }
         for (group in GROUPS) {
             val enabled = config.optInt("schedule_${group}_enabled", 0) == 1
             if (!enabled || config.optInt("enabled", 1) != 1) {
@@ -539,11 +544,11 @@ internal class SchedulerRepository(
                 continue
             }
             val fallbackMinutes = when (group) {
-                "rules" -> 360
-                "fragment" -> 720
+                "cache", "empty", "rules" -> 1_440
+                "fragment" -> 4_320
                 "deep" -> 10_080
                 "organize" -> 1_440
-                else -> 60
+                else -> 1_440
             }
             val minutes = config.optInt(
                 "schedule_${group}_minutes",

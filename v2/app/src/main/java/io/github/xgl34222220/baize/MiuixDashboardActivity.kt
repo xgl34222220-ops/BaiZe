@@ -222,7 +222,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                     schedulerState.value = schedulerSnapshot
                     val reason = schedulerSnapshot.runtimeReason
                     val blocked = reason.contains("息屏") || reason.contains("充电") || reason.contains("电量") ||
-                        reason.contains("空闲") || reason.contains("当前任务") || reason.contains("自动重试") || reason.contains("自动恢复")
+                        reason.contains("温度") || reason.contains("过热") || reason.contains("空闲") ||
+                        reason.contains("当前任务") || reason.contains("自动重试") || reason.contains("自动恢复")
                     val pending = schedulerSnapshot.queueCount > 0 && schedulerSnapshot.runtimeState != "running" && !blocked
                     val nowRealtime = SystemClock.elapsedRealtime()
                     if (pending) {
