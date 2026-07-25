@@ -1,0 +1,58 @@
+name: Probe BaiZe v2.5.3 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/release-v2.5.3.probe'
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for published release and record assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            if json=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v2.5.3" 2>/dev/null); then
+              draft=$(printf '%s' "$json" | jq -r '.draft')
+              prerelease=$(printf '%s' "$json" | jq -r '.prerelease')
+              count=$(printf '%s' "$json" | jq -r '.assets | length')
+              names=$(printf '%s' "$json" | jq -r '.assets[].name' | sort)
+              required='BaiZe-v2.5.3-Module.zip
+          BaiZe-v2.5.3-Module.zip.sha256
+          BaiZe-v2.5.3-signing-certificate.txt
+          BaiZe-v2.5.3.apk
+          BaiZe-v2.5.3.apk.sha256'
+              if [ "$draft" = false ] && [ "$prerelease" = false ] && [ "$count" -eq 5 ] && [ "$names" = "$required" ]; then
+                published=$(printf '%s' "$json" | jq -r '.published_at')
+                url=$(printf '%s' "$json" | jq -r '.html_url')
+                digest_lines=$(printf '%s' "$json" | jq -r '.assets[] | "asset=" + .name + "|size=" + (.size|tostring) + "|digest=" + (.digest // "")' | sort)
+                {
+                  echo 'status=published'
+                  echo 'tag=v2.5.3'
+                  echo 'draft=false'
+                  echo 'prerelease=false'
+                  echo 'asset_count=5'
+                  echo "published_at=$published"
+                  echo "url=$url"
+                  printf '%s\n' "$digest_lines"
+                } > /tmp/release-status
+                encoded=$(base64 -w0 /tmp/release-status)
+                gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/.github/release-v2.5.3.status" \
+                  -f message='release: record published v2.5.3 assets' \
+                  -f content="$encoded" \
+                  -f branch=main >/dev/null
+                exit 0
+              fi
+            fi
+            sleep 30
+          done
+          echo 'v2.5.3 release did not publish all required assets within the probe window' >&2
+          exit 1
