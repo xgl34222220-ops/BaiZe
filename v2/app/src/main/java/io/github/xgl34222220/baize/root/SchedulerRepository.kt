@@ -657,6 +657,8 @@ internal class SchedulerRepository(
         private val GROUPS = listOf("cache", "empty", "rules", "fragment", "deep", "organize")
         val ALLOWED_CONFIG: Map<String, IntRange> = mapOf(
             "enabled" to 0..1,
+            "schedule_mode" to 0..2,
+            "autopilot_enabled" to 0..1,
             "cleanup_policy" to 0..2,
             "screen_off_only" to 0..1,
             "charging_only" to 0..1,
