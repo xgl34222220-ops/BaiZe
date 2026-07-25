@@ -154,3 +154,161 @@ com.baidu.searchbox|app_textures|0
 com.tencent.news|app_bugly|0
 com.tencent.news|app_crashrecord|0
 com.tencent.news|app_textures|0
+
+# 2026.07.25：补充常见应用的可再生日志、崩溃记录、性能与 WebView 渲染缓存。
+com.xingin.xhs|app_bugly|0
+com.xingin.xhs|app_crashrecord|0
+com.xingin.xhs|app_textures|0
+com.xingin.xhs|app_webview/Default/GPUCache|0
+com.xingin.xhs|app_webview/Default/Code Cache|0
+com.xingin.xhs|app_webview/Default/Service Worker/CacheStorage|0
+com.xingin.xhs|files/log|0
+com.xingin.xhs|files/logs|0
+com.xingin.xhs|files/xlog|0
+com.xingin.xhs|files/MiPushLog|0
+com.sina.weibo|app_bugly|0
+com.sina.weibo|app_crashrecord|0
+com.sina.weibo|app_textures|0
+com.sina.weibo|app_webview/Default/GPUCache|0
+com.sina.weibo|app_webview/Default/Code Cache|0
+com.sina.weibo|app_webview/Default/Service Worker/CacheStorage|0
+com.sina.weibo|files/log|0
+com.sina.weibo|files/logs|0
+com.sina.weibo|files/xlog|0
+com.sina.weibo|files/MiPushLog|0
+com.zhihu.android|app_bugly|0
+com.zhihu.android|app_crashrecord|0
+com.zhihu.android|app_textures|0
+com.zhihu.android|app_webview/Default/GPUCache|0
+com.zhihu.android|app_webview/Default/Code Cache|0
+com.zhihu.android|app_webview/Default/Service Worker/CacheStorage|0
+com.zhihu.android|files/log|0
+com.zhihu.android|files/logs|0
+com.zhihu.android|files/xlog|0
+com.zhihu.android|files/MiPushLog|0
+com.ss.android.ugc.aweme|app_webview/Default/GPUCache|0
+com.ss.android.ugc.aweme|app_webview/Default/Code Cache|0
+com.ss.android.ugc.aweme|app_webview/Default/Service Worker/CacheStorage|0
+com.ss.android.ugc.aweme|files/log|0
+com.ss.android.ugc.aweme|files/logs|0
+com.ss.android.ugc.aweme|files/xlog|0
+com.ss.android.ugc.aweme|files/MiPushLog|0
+com.ss.android.ugc.aweme|files/perf|0
+com.ss.android.ugc.aweme|files/perfUploading|0
+com.smile.gifmaker|app_bugly|0
+com.smile.gifmaker|app_crashrecord|0
+com.smile.gifmaker|app_webview/Default/GPUCache|0
+com.smile.gifmaker|app_webview/Default/Code Cache|0
+com.smile.gifmaker|app_webview/Default/Service Worker/CacheStorage|0
+com.smile.gifmaker|files/log|0
+com.smile.gifmaker|files/logs|0
+com.smile.gifmaker|files/xlog|0
+com.smile.gifmaker|files/MiPushLog|0
+com.smile.gifmaker|files/perf|0
+com.smile.gifmaker|files/perfUploading|0
+tv.danmaku.bili|app_crashrecord|0
+tv.danmaku.bili|app_webview/Default/GPUCache|0
+tv.danmaku.bili|app_webview/Default/Code Cache|0
+tv.danmaku.bili|app_webview/Default/Service Worker/CacheStorage|0
+tv.danmaku.bili|files/log|0
+tv.danmaku.bili|files/logs|0
+tv.danmaku.bili|files/xlog|0
+tv.danmaku.bili|files/MiPushLog|0
+tv.danmaku.bili|files/perf|0
+tv.danmaku.bili|files/perfUploading|0
+com.netease.cloudmusic|app_bugly|0
+com.netease.cloudmusic|app_crashrecord|0
+com.netease.cloudmusic|app_textures|0
+com.netease.cloudmusic|app_webview/Default/GPUCache|0
+com.netease.cloudmusic|app_webview/Default/Code Cache|0
+com.netease.cloudmusic|files/log|0
+com.netease.cloudmusic|files/logs|0
+com.netease.cloudmusic|files/xlog|0
+com.netease.cloudmusic|files/MiPushLog|0
+com.eg.android.AlipayGphone|app_bugly|0
+com.eg.android.AlipayGphone|app_crashrecord|0
+com.eg.android.AlipayGphone|app_webview/Default/GPUCache|0
+com.eg.android.AlipayGphone|app_webview/Default/Code Cache|0
+com.eg.android.AlipayGphone|app_webview/Default/Service Worker/CacheStorage|0
+com.eg.android.AlipayGphone|files/log|0
+com.eg.android.AlipayGphone|files/logs|0
+com.eg.android.AlipayGphone|files/tnetlogs|0
+com.eg.android.AlipayGphone|files/MiPushLog|0
+com.taobao.taobao|app_bugly|0
+com.taobao.taobao|app_crashrecord|0
+com.taobao.taobao|app_webview/Default/GPUCache|0
+com.taobao.taobao|app_webview/Default/Code Cache|0
+com.taobao.taobao|app_webview/Default/Service Worker/CacheStorage|0
+com.taobao.taobao|files/log|0
+com.taobao.taobao|files/logs|0
+com.taobao.taobao|files/tnetlogs|0
+com.taobao.taobao|files/MiPushLog|0
+com.jingdong.app.mall|app_bugly|0
+com.jingdong.app.mall|app_crashrecord|0
+com.jingdong.app.mall|app_webview/Default/GPUCache|0
+com.jingdong.app.mall|app_webview/Default/Code Cache|0
+com.jingdong.app.mall|app_webview/Default/Service Worker/CacheStorage|0
+com.jingdong.app.mall|files/log|0
+com.jingdong.app.mall|files/logs|0
+com.jingdong.app.mall|files/tnetlogs|0
+com.jingdong.app.mall|files/MiPushLog|0
+com.xunmeng.pinduoduo|app_bugly|0
+com.xunmeng.pinduoduo|app_crashrecord|0
+com.xunmeng.pinduoduo|app_webview/Default/Code Cache|0
+com.xunmeng.pinduoduo|app_webview/Default/Service Worker/CacheStorage|0
+com.xunmeng.pinduoduo|files/log|0
+com.xunmeng.pinduoduo|files/logs|0
+com.xunmeng.pinduoduo|files/tnetlogs|0
+com.xunmeng.pinduoduo|files/MiPushLog|0
+com.sankuai.meituan|app_bugly|0
+com.sankuai.meituan|app_crashrecord|0
+com.sankuai.meituan|app_webview/Default/GPUCache|0
+com.sankuai.meituan|app_webview/Default/Code Cache|0
+com.sankuai.meituan|app_webview/Default/Service Worker/CacheStorage|0
+com.sankuai.meituan|files/log|0
+com.sankuai.meituan|files/logs|0
+com.sankuai.meituan|files/tnetlogs|0
+com.sankuai.meituan|files/MiPushLog|0
+me.ele|app_bugly|0
+me.ele|app_crashrecord|0
+me.ele|app_textures|0
+me.ele|app_webview/Default/GPUCache|0
+me.ele|app_webview/Default/Code Cache|0
+me.ele|app_webview/Default/Service Worker/CacheStorage|0
+me.ele|files/log|0
+me.ele|files/logs|0
+me.ele|files/tnetlogs|0
+me.ele|files/MiPushLog|0
+com.autonavi.minimap|app_bugly|0
+com.autonavi.minimap|app_crashrecord|0
+com.autonavi.minimap|app_textures|0
+com.autonavi.minimap|app_webview/Default/GPUCache|0
+com.autonavi.minimap|app_webview/Default/Code Cache|0
+com.autonavi.minimap|files/log|0
+com.autonavi.minimap|files/logs|0
+com.autonavi.minimap|files/MiPushLog|0
+com.baidu.BaiduMap|app_bugly|0
+com.baidu.BaiduMap|app_crashrecord|0
+com.baidu.BaiduMap|app_textures|0
+com.baidu.BaiduMap|app_webview/Default/GPUCache|0
+com.baidu.BaiduMap|app_webview/Default/Code Cache|0
+com.baidu.BaiduMap|files/log|0
+com.baidu.BaiduMap|files/logs|0
+com.baidu.BaiduMap|files/MiPushLog|0
+com.android.chrome|app_chrome/Default/GPUCache|0
+com.android.chrome|app_chrome/Default/Code Cache|0
+com.android.chrome|app_chrome/Default/Service Worker/CacheStorage|0
+com.android.chrome|app_chrome/component_crx_cache|0
+com.xiaomi.market|app_bugly|0
+com.xiaomi.market|app_crashrecord|0
+com.xiaomi.market|files/log|0
+com.xiaomi.market|files/logs|0
+com.miui.gallery|app_bugly|0
+com.miui.gallery|app_crashrecord|0
+com.miui.gallery|files/log|0
+com.miui.gallery|files/logs|0
+com.miui.video|app_bugly|0
+com.miui.video|app_crashrecord|0
+com.miui.video|app_textures|0
+com.miui.video|files/log|0
+com.miui.video|files/logs|0

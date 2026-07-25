@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -99,8 +98,8 @@ fun CleanScreenMiuix(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 100.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { MiuixCleanHeader() }
         item { MiuixAutomaticPanel(state, actions) }
@@ -137,17 +136,17 @@ fun CleanScreenMiuix(
         item {
             Surface(
                 modifier = Modifier
-                    .padding(horizontal = 18.dp)
+                    .padding(horizontal = 20.dp)
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(20.dp))
                     .clickable(enabled = !state.saving, onClick = actions.onSave),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        if (state.saving) "正在保存…" else "保存自动任务设置",
+                        if (state.saving) "正在保存…" else "保存设置",
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -155,7 +154,6 @@ fun CleanScreenMiuix(
                 }
             }
         }
-        item { MiuixEngineStatus(state) }
     }
 }
 
@@ -167,10 +165,10 @@ private fun MiuixCleanHeader() {
             .statusBarsPadding()
             .padding(horizontal = 22.dp, vertical = 20.dp)
     ) {
-        Text("清理计划", fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold)
+        Text("清理计划", fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(5.dp))
         Text(
-            "自动清理与文件归类",
+            "选择执行模式与清理项目",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp
         )
@@ -484,38 +482,6 @@ private fun MiuixDivider() {
         modifier = Modifier.padding(start = 68.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .50f)
     )
-}
-
-@Composable
-private fun MiuixEngineStatus(state: CleanUiState) {
-    Row(
-        modifier = Modifier
-            .padding(horizontal = 22.dp, vertical = 2.dp)
-            .fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(if (state.engineReady) BaiZeTokens.colors.success else BaiZeTokens.colors.warning)
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(
-            state.serviceText,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            if (state.running) "执行中" else if (state.engineReady) "运行正常" else "连接中",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
 }
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {

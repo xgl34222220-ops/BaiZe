@@ -67,10 +67,10 @@ run_controller 5000 50 1 350
 [ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 1700 ]
 [ "$(value "$STATE/autopilot-empty.env" screen_hold)" = 1 ]
 
-# High battery temperature extends the next interval task beyond the thermal hold window.
+# Battery temperature remains diagnostic telemetry and no longer delays any schedule mode.
 run_controller 5000 50 0 430
-[ "$(value "$STATE/autopilot-empty.env" temperature_hold)" = 1 ]
-[ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 2000 ]
-[ "$(value "$STATE/autopilot.env" reason)" = temperature_high ]
+[ "$(value "$STATE/autopilot-empty.env" temperature_hold)" = 0 ]
+[ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 500 ]
+[ "$(value "$STATE/autopilot.env" reason)" = normal ]
 
 echo "autopilot controller contract ok"

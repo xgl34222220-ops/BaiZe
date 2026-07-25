@@ -81,7 +81,7 @@ fun SettingsScreenMaterial(state: SettingsUiState, actions: SettingsUiActions) {
                 modifier = Modifier
                     .padding(horizontal = 20.dp)
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(52.dp),
                 shape = MaterialTheme.shapes.extraLarge
             ) {
                 Text(if (state.scheduler.saving) "正在保存…" else "保存设置", fontWeight = FontWeight.Bold)
@@ -299,11 +299,17 @@ private fun MaterialServiceStatus(state: SettingsUiState) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                if (state.running) "执行中" else if (state.ready) "运行正常" else "自动恢复中",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.labelMedium
-            )
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Text(
+                    if (state.running) "执行中" else if (state.ready) "正常" else "恢复中",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
         }
     }
 }

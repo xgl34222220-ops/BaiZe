@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-TMP=${TMPDIR:-/tmp}/baize-scheduler-thermal-$$
+TMP=${TMPDIR:-/tmp}/baize-scheduler-temperature-nonblocking-$$
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/module" "$TMP/state" "$TMP/bin"
 cp "$ROOT/v2/module/scheduler-v2.5.sh" "$TMP/module/scheduler.sh"
@@ -55,13 +55,7 @@ EOF_CONFIG
 PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=430 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
   BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$TMP/state" BAIZE_CONFIG_PATH="$TMP/state/config.conf" \
   sh "$TMP/module/scheduler.sh"
-test ! -s "$TMP/state/worker-invocations.log"
-grep -q '温度' "$TMP/state/scheduler.env"
-
-sed -i 's/^max_battery_temp=42$/max_battery_temp=0/' "$TMP/state/config.conf"
-PATH="$TMP/bin:$PATH" BAIZE_TEST_TEMP=350 BAIZE_SKIP_BOOT_WAIT=1 BAIZE_SCHEDULER_ONCE=1 \
-  BAIZE_MODULE_DIR="$TMP/module" BAIZE_STATE_DIR="$TMP/state" BAIZE_CONFIG_PATH="$TMP/state/config.conf" \
-  sh "$TMP/module/scheduler.sh"
 grep -q 'cache-auto scheduler:interval' "$TMP/state/worker-invocations.log"
+! grep -q '温度' "$TMP/state/scheduler.env"
 
-echo 'scheduler thermal contract passed'
+echo 'scheduler temperature nonblocking contract passed'

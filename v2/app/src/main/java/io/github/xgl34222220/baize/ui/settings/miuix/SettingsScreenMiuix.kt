@@ -58,7 +58,7 @@ fun SettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomInset + 100.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { MiuixSettingsHeader() }
         item { MiuixAppearancePanel(state, actions) }
@@ -77,13 +77,13 @@ fun SettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions) {
                 modifier = Modifier
                     .padding(horizontal = 18.dp)
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(20.dp))
                     .clickable(
                         enabled = !state.scheduler.saving,
                         onClick = { actions.onSaveScheduler(state.scheduler) }
                     ),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -300,12 +300,18 @@ private fun MiuixServiceGroup(state: SettingsUiState) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                if (state.running) "执行中" else if (state.ready) "运行正常" else "自动恢复中",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+            ) {
+                Text(
+                    if (state.running) "执行中" else if (state.ready) "正常" else "恢复中",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

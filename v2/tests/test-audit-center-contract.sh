@@ -40,9 +40,9 @@ grep -Fq '累计统计和清理历史未修改' "$AUDIT"
 grep -Fq '"workbench-clean"' "$HISTORY"
 grep -Fq 'require(mode in NATIVE_MODES)' "$HISTORY"
 
-# Both themes reach the same audit activity from the history page.
-grep -Fq 'AuditActivity::class.java' "$ROUTE"
-grep -Fq 'Text("审计中心")' "$ROUTE"
+# The audit backend stays available for compatibility, but no persistent floating entry covers the history page.
+! grep -Fq 'AuditActivity::class.java' "$ROUTE"
+! grep -Fq 'Text("审计中心")' "$ROUTE"
 grep -Fq '<activity android:name=".AuditActivity"' "$MANIFEST"
 grep -Fq 'getAuditTimelinePage(0, 100)' "$ACTIVITY"
 grep -Fq '只隐藏当前时间点之前的审计事件' "$ACTIVITY"
