@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Apply and verify release preparation
         shell: bash
@@ -24,8 +25,10 @@ jobs:
           git clone --quiet --depth=1 --branch release/v2.5.3 \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
           cd repo
-          python3 -m py_compile v2/scripts/prepare-v2.5.3.py
+          sed -i 's|\.github/workflows/v2\.5\.3-release\.yml|.github/v2.5.3-release.yml.template|g' \
+            v2/scripts/prepare-v2.5.3.py
           python3 v2/scripts/prepare-v2.5.3.py
+          rm -rf v2/scripts/__pycache__
           git diff --check
           sh -n v2/scripts/package-module.sh
           sh -n v2/module/task-worker.sh
