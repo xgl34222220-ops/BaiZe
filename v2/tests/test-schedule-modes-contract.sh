@@ -26,6 +26,12 @@ grep -q '"每日固定"' "$CONTRACT"
 grep -q 'CleanScheduleMode.entries.forEach' "$MATERIAL"
 grep -q 'CleanScheduleMode.entries.forEach' "$MIUIX"
 grep -q 'daily_mode_enabled' "$SCHEDULER"
+grep -q 'SPEC_FALLBACK=24; SPEC_MODE=cache-auto' "$SCHEDULER"
+grep -q 'SPEC_FALLBACK=72; SPEC_MODE=fragment-clean' "$SCHEDULER"
+grep -q 'maximum_temp=$(uint_value max_battery_temp 42 30 60)' "$SCHEDULER"
+grep -q 'val cacheMinutes: Int = 1_440' "$APP_STATE"
+grep -q 'val fragmentMinutes: Int = 4_320' "$APP_STATE"
+grep -q 'val screenOffOnly: Boolean = true' "$APP_STATE"
 
 TMP=${TMPDIR:-/tmp}/baize-schedule-mode-contract-$$
 trap 'rm -rf "$TMP"' EXIT
@@ -72,5 +78,7 @@ EOF_CONFIG
 run_mode 0 1 0 idle
 run_mode 1 0 0 disabled strict_interval
 run_mode 2 0 1 disabled fixed_daily
+
+bash "$ROOT/v2/tests/test-scheduler-thermal-contract.sh"
 
 echo "schedule modes contract passed"

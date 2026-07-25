@@ -65,6 +65,7 @@ fun schedulerReasonLabel(raw: String): String {
         value.equals("执行中", ignoreCase = true) -> "执行中"
         value.contains("息屏") -> "等待息屏后执行"
         value.contains("充电") -> "等待充电后执行"
+        value.contains("温度") || value.contains("过热") -> "等待设备降温后执行"
         value.contains("电量") -> "等待电量满足条件"
         value.contains("空闲") -> "等待系统空闲后执行"
         value.contains("当前任务") || value.contains("已有") -> "等待当前任务完成"
