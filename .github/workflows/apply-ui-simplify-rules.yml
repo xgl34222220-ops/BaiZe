@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/apply-ui-simplify-rules.yml'
       - 'v2/scripts/apply-ui-simplify-rules.py'
+      - 'v2/scripts/fix-ui-simplify-patcher.py'
 
 permissions:
   contents: write
@@ -24,6 +25,7 @@ jobs:
           git clone --quiet --depth=1 --branch agent/ui-simplify-rules \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
           cd repo
+          python3 v2/scripts/fix-ui-simplify-patcher.py
           python3 -m py_compile v2/scripts/apply-ui-simplify-rules.py
           python3 v2/scripts/apply-ui-simplify-rules.py
           git diff --check
