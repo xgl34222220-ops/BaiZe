@@ -38,15 +38,23 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Compile and lint UI
+      - name: Compile, lint, and assemble test APK
         working-directory: v2
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
+          gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :app:assembleDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
           code=$?
           tail -n 200 /tmp/baize-android-ui.log
           exit "$code"
+
+      - name: Upload test APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baize-test-apk-20260725
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Upload Android diagnostics
         if: failure()
