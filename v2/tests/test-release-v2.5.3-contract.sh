@@ -11,7 +11,7 @@ grep -q 'BaiZe-v2.5.3-Module.zip' "$ROOT/v2/scripts/package-module.sh"
 grep -q 'detached-root-worker-v2.5.3' "$ROOT/v2/module/task-worker.sh"
 grep -Fqx 'ui_print "- 正在安装白泽 v2.5.3"' "$ROOT/v2/module/customize.sh"
 grep -q 'BAIZE_RELEASE_TARGET_SHA: __TARGET_SHA__' "$ROOT/.github/workflows/v2.5.3-release.yml"
-grep -q "--latest" "$ROOT/.github/workflows/v2.5.3-release.yml"
+grep -q -- '--latest' "$ROOT/.github/workflows/v2.5.3-release.yml"
 test -s "$ROOT/RELEASE_NOTES_v2.5.3.md"
 python3 - "$ROOT/update.json" <<'PY'
 import json, sys
