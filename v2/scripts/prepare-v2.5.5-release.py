@@ -46,7 +46,6 @@ v2.5.5 是针对模块卸载后 `/data/adb` 残留问题的正式热修版本。
 安装 v2.5.5 后再执行卸载，并在 Root 管理器中完成重启，模块本体目录才会由管理器最终移除。
 """)
 
-# v2.5.4 becomes an immutable historical release contract.
 (ROOT / "v2/tests/test-release-v2.5.4-contract.sh").write_text("""#!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -92,7 +91,9 @@ PY
 echo 'v2.5.5 release metadata contract passed'
 """)
 
-# Generate the immutable release workflow from the last proven formal workflow.
+release_dir = ROOT / "v2/release"
+release_dir.mkdir(parents=True, exist_ok=True)
+
 source = (ROOT / ".github/workflows/v2.5.4-release.yml").read_text()
 workflow = source.replace("v2.5.4", "v2.5.5").replace("2.5.4", "2.5.5").replace("25004", "25005").replace("v254", "v255")
 workflow = workflow.replace("9cf1056055a3f2fb1b74b566ec41cd268f5e853b", "__BAIZE_V255_TARGET_SHA__")
@@ -100,9 +101,8 @@ needle = "          bash v2/tests/test-audit-center-contract.sh\n"
 if needle not in workflow:
     raise SystemExit("release workflow test insertion point not found")
 workflow = workflow.replace(needle, needle + "          bash v2/tests/test-uninstall-cleanup.sh\n", 1)
-(ROOT / ".github/workflows/v2.5.5-release.yml").write_text(workflow)
+(release_dir / "v2.5.5-release.yml.template").write_text(workflow)
 
-# Extend Root CI for current and frozen release contracts.
 ci = (ROOT / ".github/workflows/v2.5-concurrent-scheduler-ci.yml").read_text()
 ci = ci.replace("      - 'RELEASE_NOTES_v2.5.4.md'\n", "      - 'RELEASE_NOTES_v2.5.4.md'\n      - 'RELEASE_NOTES_v2.5.5.md'\n", 1)
 ci = ci.replace("      - '.github/workflows/v2.5.4-release.yml'\n", "      - '.github/workflows/v2.5.4-release.yml'\n      - '.github/workflows/v2.5.5-release.yml'\n", 1)
@@ -112,6 +112,6 @@ ci = ci.replace(
     "      - name: Verify frozen v2.5.4 release metadata\n        run: bash v2/tests/test-release-v2.5.4-contract.sh\n      - name: Verify v2.5.5 release metadata\n        run: bash v2/tests/test-release-v2.5.5-contract.sh\n",
     1,
 )
-(ROOT / ".github/workflows/v2.5-concurrent-scheduler-ci.yml").write_text(ci)
+(release_dir / "v2.5-concurrent-scheduler-ci.yml.template").write_text(ci)
 
 print("v2.5.5 release metadata prepared")
