@@ -1,0 +1,41 @@
+name: Prepare BaiZe v2.5.3 Release
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/prepare-v2.5.3.yml'
+      - 'v2/scripts/prepare-v2.5.3.py'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Apply and verify release preparation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth=1 --branch release/v2.5.3 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          python3 -m py_compile v2/scripts/prepare-v2.5.3.py
+          python3 v2/scripts/prepare-v2.5.3.py
+          git diff --check
+          sh -n v2/scripts/package-module.sh
+          sh -n v2/module/task-worker.sh
+          sh -n v2/module/customize.sh
+          bash v2/tests/test-release-v2.5.3-contract.sh
+          bash v2/tests/test-schedule-modes-contract.sh
+          bash v2/tests/test-autopilot-controller.sh
+          bash v2/tests/test-curated-rules-contract.sh
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'release: prepare BaiZe v2.5.3'
+          git push origin HEAD:release/v2.5.3
