@@ -1,0 +1,78 @@
+name: Verify BaiZe v2.5.4 Publication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/v2.5.4-release-probe.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify-publication:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for immutable release and verify assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TRIGGER_SHA: 31e39752f5fe486d7b4c73f9496e69eabb1abcc4
+          RELEASE_TARGET_SHA: 9cf1056055a3f2fb1b74b566ec41cd268f5e853b
+        run: |
+          set -euo pipefail
+          run_id=''
+          for attempt in $(seq 1 100); do
+            row=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/v2.5.4-release.yml/runs?branch=main&event=push&per_page=20" \
+              --jq ".workflow_runs[] | select(.head_sha == \"$RELEASE_TRIGGER_SHA\") | [.id,.status,(.conclusion // \"\")] | @tsv" | head -n 1 || true)
+            if [ -n "$row" ]; then
+              run_id=$(printf '%s' "$row" | cut -f1)
+              status=$(printf '%s' "$row" | cut -f2)
+              conclusion=$(printf '%s' "$row" | cut -f3)
+              echo "release_run=$run_id status=$status conclusion=${conclusion:-pending}"
+              if [ "$status" = completed ]; then
+                [ "$conclusion" = success ] || {
+                  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs" \
+                    --jq '.jobs[] | {name,status,conclusion,steps:[.steps[] | {name,status,conclusion}]}' || true
+                  exit 1
+                }
+                break
+              fi
+            else
+              echo "waiting for v2.5.4 release run to appear"
+            fi
+            sleep 15
+          done
+          [ -n "$run_id" ] || { echo 'v2.5.4 release run was not found' >&2; exit 1; }
+          status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq .status)
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion // ""')
+          [ "$status" = completed ] && [ "$conclusion" = success ] || {
+            echo "release did not finish successfully: status=$status conclusion=$conclusion" >&2
+            exit 1
+          }
+
+          actual_tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v2.5.4" --jq .object.sha)
+          [ "$actual_tag_sha" = "$RELEASE_TARGET_SHA" ] || {
+            echo "tag target mismatch: $actual_tag_sha" >&2
+            exit 1
+          }
+
+          release_json=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v2.5.4")
+          printf '%s' "$release_json" | jq -e '.draft == false and .prerelease == false' >/dev/null
+          expected=$(cat <<'EOF'
+BaiZe-v2.5.4-Module.zip
+BaiZe-v2.5.4-Module.zip.sha256
+BaiZe-v2.5.4-signing-certificate.txt
+BaiZe-v2.5.4.apk
+BaiZe-v2.5.4.apk.sha256
+EOF
+          )
+          actual=$(printf '%s' "$release_json" | jq -r '.assets[].name' | sort)
+          [ "$actual" = "$(printf '%s\n' "$expected" | sort)" ] || {
+            echo 'release asset set mismatch' >&2
+            printf 'expected:\n%s\nactual:\n%s\n' "$expected" "$actual" >&2
+            exit 1
+          }
+          printf '%s' "$release_json" | jq -r '{tag_name,name,draft,prerelease,html_url,published_at,assets:[.assets[] | {name,size,digest}]}'
+          echo 'BaiZe v2.5.4 publication verified'
