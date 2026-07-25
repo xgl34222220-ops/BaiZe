@@ -1,0 +1,49 @@
+diff --git a/v2/module/autopilot-controller.sh b/v2/module/autopilot-controller.sh
+--- a/v2/module/autopilot-controller.sh
++++ b/v2/module/autopilot-controller.sh
+@@ -25,6 +25,17 @@ uint_value() {
+   [ "$value" -gt "$maximum" ] && value=$maximum
+   echo "$value"
+ }
++schedule_mode_value() {
++  value=$(config_value schedule_mode)
++  case "$value" in
++    0|1|2) echo "$value" ;;
++    *)
++      if [ "$(bool_value daily_schedule_enabled)" = 1 ]; then echo 2
++      elif [ "$(bool_value_default autopilot_enabled 1)" = 1 ]; then echo 0
++      else echo 1
++      fi
++      ;;
++  esac
++}
+ read_state_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1; }
+ write_atomic() {
+   target=$1; shift
+@@ -47,10 +58,20 @@ fi
+ printf '%s\n' "$NOW" >"$LAST_CHECK_FILE"
+ chmod 0600 "$LAST_CHECK_FILE" 2>/dev/null || true
+ 
+-if [ "$(bool_value_default autopilot_enabled 1)" != 1 ]; then
++SCHEDULE_MODE=$(schedule_mode_value)
++if [ "$SCHEDULE_MODE" != 0 ] || [ "$(bool_value_default autopilot_enabled 1)" != 1 ]; then
++  DISABLED_REASON=autopilot_disabled
++  case "$SCHEDULE_MODE" in
++    1) DISABLED_REASON=strict_interval ;;
++    2) DISABLED_REASON=fixed_daily ;;
++  esac
+   write_atomic "$GLOBAL_STATE" <<EOF_STATE
+ status=disabled
++reason=$DISABLED_REASON
++schedule_mode=$SCHEDULE_MODE
+ updated=$NOW
+ EOF_STATE
+   exit 0
+@@ -268,6 +289,7 @@ storage_pressure=$PRESSURE
+ screen_interactive=$INTERACTIVE
+ require_screen_off=$REQUIRE_SCREEN_OFF
+ battery_temp_tenths=$TEMP_TENTHS
++schedule_mode=$SCHEDULE_MODE
+ max_battery_temp_c=$MAX_TEMP_C
+ daily_schedule=$DAILY
+ updated=$NOW
