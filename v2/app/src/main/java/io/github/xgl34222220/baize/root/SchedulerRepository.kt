@@ -415,14 +415,35 @@ internal class SchedulerRepository(
         val supervisorPid = supervisor.optLong("pid", 0L)
         val supervisorInstance = supervisor.optString("instance_id")
         val schedulerHeartbeat = scheduler.optLong("heartbeat_epoch", 0L)
-        val schedulerHealthy = processMatches(
+        val now = System.currentTimeMillis() / 1000L
+        val worker = RootFileStore.readEnv(File(stateDir, "worker.env"))
+        val activeWorkerHealthy = processMatches(
+            worker.optLong("pid", 0L),
+            worker.optLong("start_ticks", 0L),
+            listOf(
+                "task-worker.sh",
+                "worker-runner.sh",
+                "organizer-worker.sh",
+                "cache-lane-worker.sh",
+                "cleaner.sh",
+                "native-cleaner.sh",
+                "profile-cleaner.sh",
+                "deep-scan-manifest.sh",
+                "deep-manifest-clean.sh",
+                "baize_engine",
+                "baize_deep_snapshot"
+            )
+        )
+        val schedulerProcessAlive = processMatches(
             schedulerPid,
             scheduler.optLong("scheduler_start_ticks", 0L),
             listOf("scheduler.sh", "service.sh"),
-            schedulerHeartbeat,
             expectedInstance = supervisorInstance.takeIf { it.isNotBlank() },
             actualInstance = scheduler.optString("instance_id")
         )
+        val schedulerHeartbeatFresh = schedulerHeartbeat <= 0L ||
+            now - schedulerHeartbeat <= HEARTBEAT_STALE_SECONDS
+        val schedulerHealthy = schedulerProcessAlive && (schedulerHeartbeatFresh || activeWorkerHealthy)
         val supervisorHeartbeat = supervisor.optLong("heartbeat_epoch", supervisor.optLong("updated", 0L))
         val supervisorHealthy = processMatches(
             supervisorPid,
@@ -430,7 +451,6 @@ internal class SchedulerRepository(
             listOf("supervisor.sh"),
             supervisorHeartbeat
         )
-        val now = System.currentTimeMillis() / 1000L
         val schedulerHeartbeatAge = if (schedulerHeartbeat > 0L) (now - schedulerHeartbeat).coerceAtLeast(0L) else -1L
         val supervisorHeartbeatAge = if (supervisorHeartbeat > 0L) (now - supervisorHeartbeat).coerceAtLeast(0L) else -1L
         val config = configJsonObject()
@@ -469,6 +489,7 @@ internal class SchedulerRepository(
             .put("nextRuns", nextRunsJsonObject(config, now))
             .put("queue", queue)
             .put("schedulerHealthy", schedulerHealthy)
+            .put("activeWorkerHealthy", activeWorkerHealthy)
             .put("supervisorHealthy", supervisorHealthy)
             .put("supervisorStatus", supervisor.optString("status", "unknown"))
             .put("supervisorReason", supervisor.optString("reason"))

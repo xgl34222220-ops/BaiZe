@@ -19,9 +19,11 @@ MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-1}
 MAX_SLEEP_SECONDS=${BAIZE_MAX_SLEEP_SECONDS:-900}
 CONDITION_RETRY_SECONDS=${BAIZE_CONDITION_RETRY_SECONDS:-5}
 QUEUE_RETRY_SECONDS=${BAIZE_QUEUE_RETRY_SECONDS:-1}
+ACTIVE_HEARTBEAT_SECONDS=${BAIZE_ACTIVE_HEARTBEAT_SECONDS:-5}
 EMPTY_FIELD=-
 NEXT_CHECK_EPOCH=0
 SLEEP_PID=
+ACTIVE_HEARTBEAT_PID=
 QUEUE_COUNT=0
 QUEUE_GROUPS=
 NEXT_TASK=
@@ -93,6 +95,28 @@ write_scheduler_state() {
     echo "queue_schema=fixed-seven-fields-v1"
   } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
   chmod 0600 "$SCHEDULER_STATE" 2>/dev/null || true
+}
+start_active_heartbeat() {
+  ah_group=$1; ah_reason=$2; shift 2
+  (
+    while true; do
+      alive=0
+      for ah_pid in "$@"; do kill -0 "$ah_pid" 2>/dev/null && alive=1; done
+      [ "$alive" -eq 1 ] || exit 0
+      sleep "$ACTIVE_HEARTBEAT_SECONDS"
+      alive=0
+      for ah_pid in "$@"; do kill -0 "$ah_pid" 2>/dev/null && alive=1; done
+      [ "$alive" -eq 1 ] || exit 0
+      write_scheduler_state running "$ah_group" "$ah_reason"
+    done
+  ) &
+  ACTIVE_HEARTBEAT_PID=$!
+}
+stop_active_heartbeat() {
+  [ -n "${ACTIVE_HEARTBEAT_PID:-}" ] || return 0
+  kill "$ACTIVE_HEARTBEAT_PID" 2>/dev/null || true
+  wait "$ACTIVE_HEARTBEAT_PID" 2>/dev/null || true
+  ACTIVE_HEARTBEAT_PID=
 }
 refresh_next_check() {
   NEXT_CHECK_EPOCH=$1
@@ -314,8 +338,10 @@ run_parallel_pair() {
   write_scheduler_state running "cache+organize" "正在并行执行应用缓存与文件归类"
   BAIZE_STATE_DIR="$STATE_DIR" sh "$CACHE_LANE_WORKER" "$pc_mode" "scheduler:$pc_kind" "$cache_id" wait >>"$cache_log" 2>&1 & cache_pid=$!
   sh "$MODDIR/task-worker.sh" "$po_mode" "scheduler:$po_kind" "$organize_id" wait >>"$organize_log" 2>&1 & organize_pid=$!
+  start_active_heartbeat "cache+organize" "正在并行执行应用缓存与文件归类" "$cache_pid" "$organize_pid"
   wait "$cache_pid" 2>/dev/null; cache_code=$?
   wait "$organize_pid" 2>/dev/null; organize_code=$?
+  stop_active_heartbeat
   TASK_EXECUTED=1
   handle_task_result "$cache_code" cache "$pc_kind" "$pc_cycle" "$pc_request" "$cache_log"
   handle_task_result "$organize_code" organize "$po_kind" "$po_cycle" "$po_request" "$organize_log"
@@ -337,8 +363,11 @@ run_next_fair_task() {
     if ! conditions_allow_task "$group"; then reason="$group:$SCHEDULE_REASON"; [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$reason" || BLOCKED_GROUPS=$reason; continue; fi
     write_scheduler_state running "$group" "按超期时间与请求顺序执行"
     log="$LOG_DIR/scheduler-${group}.log"; rotate_log "$log"; task_id="scheduled-${group}-$(date +%s)-$$"
-    sh "$MODDIR/task-worker.sh" "$mode" "scheduler:$kind" "$task_id" wait >>"$log" 2>&1
-    code=$?; TASK_EXECUTED=1; handle_task_result "$code" "$group" "$kind" "$cycle" "$request" "$log"; return 0
+    sh "$MODDIR/task-worker.sh" "$mode" "scheduler:$kind" "$task_id" wait >>"$log" 2>&1 & task_pid=$!
+    start_active_heartbeat "$group" "按超期时间与请求顺序执行" "$task_pid"
+    wait "$task_pid" 2>/dev/null; code=$?
+    stop_active_heartbeat
+    TASK_EXECUTED=1; handle_task_result "$code" "$group" "$kind" "$cycle" "$request" "$log"; return 0
   done <"$QUEUE_FILE"
   write_scheduler_state waiting "" "${BLOCKED_GROUPS:-所有到期任务都在等待执行条件}"
 }

@@ -41,8 +41,15 @@ internal fun taskCountdownLabel(
     scheduler: SchedulerUiState
 ): String {
     if (task == null || !task.enabled) return "自动任务已关闭"
-    if (scheduler.runtimeState == "running" && scheduler.runtimeGroup == task.id) return "正在后台执行"
-    if (scheduler.runtimeStale) return "后台调度正在自动恢复"
+    val runningGroups = scheduler.runtimeGroup
+        .split('+', ',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+        .toSet()
+    if (scheduler.runtimeState == "running") {
+        return if (task.id in runningGroups) "正在后台执行" else "等待当前后台任务完成"
+    }
+    if (scheduler.runtimeStale && scheduler.nextTask == task.id) return "后台调度正在自动恢复"
 
     val remaining = task.nextEpoch - nowEpoch
     if (task.nextEpoch <= 0L) return "正在计算执行时间"
