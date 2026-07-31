@@ -12,7 +12,7 @@ import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.material.CleanScreenMaterial
-import io.github.xgl34222220.baize.ui.clean.miuix.CleanScreenMiuix
+import io.github.xgl34222220.baize.ui.clean.miuix.VideoCleanScreenMiuix
 
 @Composable
 fun CleanRoute(
@@ -75,7 +75,7 @@ fun CleanRoute(
             expandedCategory = expandedCategory,
             onExpandedCategoryChanged = onExpandedCategoryChanged
         )
-        UiStyle.MIUIX -> CleanScreenMiuix(
+        UiStyle.MIUIX -> VideoCleanScreenMiuix(
             state = state,
             actions = actions,
             expandedCategory = expandedCategory,
