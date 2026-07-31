@@ -6,7 +6,7 @@ import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.home.material.HomeScreenMaterial
-import io.github.xgl34222220.baize.ui.home.miuix.HomeScreenMiuix
+import io.github.xgl34222220.baize.ui.home.miuix.VideoHomeScreenMiuix
 
 @Composable
 fun HomeRoute(
@@ -18,6 +18,6 @@ fun HomeRoute(
 ) {
     when (style) {
         UiStyle.MATERIAL -> HomeScreenMaterial(state, scheduler, actions, onOpenClean)
-        UiStyle.MIUIX -> HomeScreenMiuix(state, scheduler, actions, onOpenClean)
+        UiStyle.MIUIX -> VideoHomeScreenMiuix(state, scheduler, actions, onOpenClean)
     }
 }
