@@ -55,15 +55,18 @@ data class AccentOption(
     val argb: Int
 )
 
-// 低饱和高级色为主，保留「白泽蓝」「霞光橘」两个较饱和选项给喜欢鲜艳的用户。
+/**
+ * 默认使用规范主色 #245FD3；动态取色不可用或对比不足时回退到该颜色。
+ * 其余低饱和色保留为手动主题选项。
+ */
 val AccentOptions = listOf(
-    AccentOption("default", "雾蓝", 0xFF7C93AB.toInt()),
+    AccentOption("default", "白泽蓝", 0xFF245FD3.toInt()),
+    AccentOption("mist", "雾蓝", 0xFF7C93AB.toInt()),
     AccentOption("sage", "鼠尾草绿", 0xFF8FA98F.toInt()),
     AccentOption("sand", "暖沙", 0xFFC2AE8B.toInt()),
     AccentOption("terracotta", "陶土", 0xFFBE8A72.toInt()),
     AccentOption("mauve", "雾霾紫", 0xFFA494B8.toInt()),
     AccentOption("slate", "岩青", 0xFF7FA3A8.toInt()),
-    AccentOption("azure", "白泽蓝", 0xFF3975F4.toInt()),
     AccentOption("amber", "霞光橘", 0xFFD98E4A.toInt())
 )
 
@@ -76,7 +79,8 @@ data class AppearanceSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val seedArgb: Int = AccentOptions.first().argb,
     val kolorStyle: KolorStyle = KolorStyle.SOFT,
-    val monetEnabled: Boolean = false,
+    /** Android 12+ 默认启用 Monet；旧系统自动使用白泽蓝。 */
+    val monetEnabled: Boolean = true,
     val amoledBlack: Boolean = false,
     val blurEnabled: Boolean = true,
     val glassEnabled: Boolean = true,
