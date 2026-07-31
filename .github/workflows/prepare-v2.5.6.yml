@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/prepare-v2.5.6.yml'
       - 'v2/scripts/prepare-release-v2.5.6-stage.py'
+      - 'v2/scripts/run-prepare-release-v2.5.6.sh'
 
 permissions:
   contents: write
@@ -32,4 +33,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
       - name: Prepare immutable release content
-        run: python3 v2/scripts/prepare-release-v2.5.6-stage.py
+        run: bash v2/scripts/run-prepare-release-v2.5.6.sh
