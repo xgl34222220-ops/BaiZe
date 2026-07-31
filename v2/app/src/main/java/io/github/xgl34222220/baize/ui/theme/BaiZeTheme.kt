@@ -22,64 +22,75 @@ import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 
-/** Material 3：标准化控件皮肤，与 MIUIX 共用同一圆角等级。 */
 private val MaterialShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(14.dp),
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
     large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    extraLarge = RoundedCornerShape(24.dp)
 )
 
-/** MIUIX / HyperOS：分组卡片更圆润，悬浮层使用 28–32dp 圆角。 */
 private val MiuixShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(12.dp),
+    extraSmall = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(14.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(32.dp)
 )
 
 private val MaterialTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
+    displaySmall = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
     headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
     headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 23.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
 )
 
 private val MiuixTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    displaySmall = TextStyle(fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
     titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium)
 )
 
 @Composable
 fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
     val dark = resolveDark(settings.themeMode)
     val amoled = dark && settings.amoledBlack
-    val baiZeColors = when {
+    val colors = when {
         amoled -> AmoledBaiZeColors
         dark -> DarkBaiZeColors
         else -> LightBaiZeColors
     }
+    val corners = when (settings.uiStyle) {
+        UiStyle.MATERIAL -> MaterialBaiZeCorners
+        UiStyle.MIUIX -> MiuixBaiZeCorners
+    }
+    val spacing = when (settings.uiStyle) {
+        UiStyle.MATERIAL -> MaterialBaiZeSpacing
+        UiStyle.MIUIX -> MiuixBaiZeSpacing
+    }
+    val typeScale = when (settings.uiStyle) {
+        UiStyle.MATERIAL -> MaterialBaiZeTypeScale
+        UiStyle.MIUIX -> MiuixBaiZeTypeScale
+    }
+
     CompositionLocalProvider(
-        LocalBaiZeColors provides baiZeColors,
-        LocalBaiZeCorners provides DefaultBaiZeCorners,
-        LocalBaiZeSpacing provides DefaultBaiZeSpacing,
-        LocalBaiZeTypeScale provides DefaultBaiZeTypeScale
+        LocalBaiZeColors provides colors,
+        LocalBaiZeCorners provides corners,
+        LocalBaiZeSpacing provides spacing,
+        LocalBaiZeTypeScale provides typeScale
     ) {
         when (settings.uiStyle) {
             UiStyle.MATERIAL -> BaiZeMaterialTheme(settings, dark, content)
