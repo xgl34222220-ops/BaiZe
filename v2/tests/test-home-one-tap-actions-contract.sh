@@ -41,4 +41,7 @@ grep -Fq 'import io.github.xgl34222220.baize.ScanWorkbenchActivity' "$CLEAN"
 grep -Fq 'onScan = { context.startActivity(Intent(context, ScanWorkbenchActivity::class.java)) }' "$CLEAN"
 grep -Fq 'test-home-one-tap-actions-contract.sh' "$CI"
 
+# 同一次回归同时锁定四个路由、两套 token 与完整清理工具入口。
+bash "$ROOT/v2/tests/test-dual-style-ui-contract.sh"
+
 echo "home one-tap actions contract ok"
