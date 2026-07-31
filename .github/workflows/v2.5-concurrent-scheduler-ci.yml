@@ -11,6 +11,7 @@ on:
       - 'RELEASE_NOTES_v2.5.3.md'
       - 'RELEASE_NOTES_v2.5.4.md'
       - 'RELEASE_NOTES_v2.5.5.md'
+      - 'RELEASE_NOTES_v2.5.6.md'
       - 'config/**'
       - 'v2/module/**'
       - 'v2/native/**'
@@ -24,8 +25,9 @@ on:
       - '.github/workflows/v2.5.3-release.yml'
       - '.github/workflows/v2.5.4-release.yml'
       - '.github/workflows/v2.5.5-release.yml'
+      - '.github/workflows/v2.5.6-release.yml'
   push:
-    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2, release/v2.5.3, release/v2.5.4, release/v2.5.5]
+    branches: [feat/v2.5.2-stability, feat/v2.5.2-deep-manifest, release/v2.5.2, release/v2.5.3, release/v2.5.4, release/v2.5.5, release/v2.5.6]
 
 permissions:
   contents: read
@@ -63,6 +65,8 @@ jobs:
         run: bash v2/tests/test-release-v2.5.4-contract.sh
       - name: Verify v2.5.5 release metadata
         run: bash v2/tests/test-release-v2.5.5-contract.sh
+      - name: Verify v2.5.6 release metadata
+        run: bash v2/tests/test-release-v2.5.6-contract.sh
       - name: Existing scheduler regression
         run: bash v2/tests/test-scheduler-fairness.sh
       - name: Daily scheduler field regression
@@ -79,6 +83,8 @@ jobs:
         run: bash v2/tests/test-scan-workbench-contract.sh
       - name: Home one-tap actions contract
         run: bash v2/tests/test-home-one-tap-actions-contract.sh
+      - name: APK retention and manual scan contract
+        run: bash v2/tests/test-apk-retention-contract.sh
       - name: Quarantine authorization and restore contract
         run: bash v2/tests/test-quarantine-contract.sh
       - name: Complete uninstall cleanup regression
