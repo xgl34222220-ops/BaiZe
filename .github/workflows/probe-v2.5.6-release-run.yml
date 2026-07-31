@@ -1,0 +1,56 @@
+name: Probe BaiZe v2.5.6 Release Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/probe-v2.5.6.trigger'
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Wait for release workflow conclusion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          found=0
+          for attempt in $(seq 1 80); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/v2.5.6-release.yml/runs?branch=main&per_page=10" > /tmp/v256-runs.json
+            python3 - <<'PY' && found=1 || true
+          import json
+          from pathlib import Path
+          data=json.loads(Path('/tmp/v256-runs.json').read_text())
+          runs=[r for r in data.get('workflow_runs',[]) if r.get('name')=='BaiZe v2.5.6 Immutable Release']
+          assert runs
+          run=sorted(runs,key=lambda x:x.get('created_at',''),reverse=True)[0]
+          Path('/tmp/v256-run.json').write_text(json.dumps({
+            'id':run['id'],'name':run['name'],'status':run['status'],'conclusion':run.get('conclusion'),
+            'created_at':run.get('created_at'),'updated_at':run.get('updated_at'),'html_url':run.get('html_url'),
+            'head_sha':run.get('head_sha'),'event':run.get('event'),'run_number':run.get('run_number')
+          },indent=2)+'\n')
+          assert run['status']=='completed'
+          PY
+            if [ "$found" -eq 1 ]; then break; fi
+            sleep 15
+          done
+          test -s /tmp/v256-run.json
+          cp /tmp/v256-run.json .github/release-v2.5.6.run-status.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/release-v2.5.6.run-status.json
+          git commit -m 'ci: record BaiZe v2.5.6 release run status'
+          git push origin HEAD:main
+          conclusion=$(python3 -c "import json;print(json.load(open('/tmp/v256-run.json')).get('conclusion') or '')")
+          test "$conclusion" = success
