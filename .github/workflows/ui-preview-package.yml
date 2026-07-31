@@ -1,0 +1,40 @@
+name: Package UI Preview Test
+
+on:
+  push:
+    branches:
+      - ui/unified-design-v1-preview
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout preview branch
+        uses: actions/checkout@v4
+
+      - name: Build flashable module ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          zip -r "dist/BaiZe-v2.5.5-UI-Preview-Test.zip" . \
+            -x '.git/*' \
+            -x '.github/*' \
+            -x 'dist/*' \
+            -x '*.md' \
+            -x 'docs/*' \
+            -x 'screenshots/*'
+          unzip -l "dist/BaiZe-v2.5.5-UI-Preview-Test.zip" | head -80
+
+      - name: Upload test module
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.5.5-UI-Preview-Test
+          path: dist/BaiZe-v2.5.5-UI-Preview-Test.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
