@@ -1,0 +1,62 @@
+name: Build Native UI Preview APK
+
+on:
+  push:
+    branches:
+      - ui/native-unified-design-v1-test
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'v2/app/**'
+      - '.github/workflows/native-ui-preview-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-native-ui-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout preview branch
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile and assemble debug APK
+        working-directory: v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon :app:compileDebugKotlin :app:assembleDebug
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/BaiZe-v2.5.5-Native-UI-Preview.apk
+
+      - name: Upload native UI preview APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-v2.5.5-Native-UI-Preview-APK
+          path: v2/app/build/outputs/apk/debug/BaiZe-v2.5.5-Native-UI-Preview.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
