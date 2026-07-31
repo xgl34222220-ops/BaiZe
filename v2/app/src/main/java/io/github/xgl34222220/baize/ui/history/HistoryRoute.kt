@@ -5,7 +5,7 @@ import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.history.material.HistoryScreenMaterial
-import io.github.xgl34222220.baize.ui.history.miuix.HistoryScreenMiuix
+import io.github.xgl34222220.baize.ui.history.miuix.VideoHistoryScreenMiuix
 
 @Composable
 fun HistoryRoute(
@@ -22,6 +22,6 @@ fun HistoryRoute(
 
     when (style) {
         UiStyle.MATERIAL -> HistoryScreenMaterial(state, actions)
-        UiStyle.MIUIX -> HistoryScreenMiuix(state, actions)
+        UiStyle.MIUIX -> VideoHistoryScreenMiuix(state, actions)
     }
 }
