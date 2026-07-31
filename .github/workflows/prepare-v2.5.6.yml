@@ -1,28 +1,23 @@
 name: Prepare BaiZe v2.5.6 Release
 
 on:
-  push:
-    branches:
-      - release/v2.5.6
-    paths:
-      - '.github/workflows/prepare-v2.5.6.yml'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/prepare-v2.5.6.yml'
-      - 'v2/scripts/prepare-release-v2.5.6.py'
+      - 'v2/scripts/prepare-release-v2.5.6-stage.py'
 
 permissions:
   contents: write
 
 concurrency:
-  group: prepare-baize-v256-${{ github.event.pull_request.number || github.ref }}
+  group: prepare-baize-v256-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   prepare:
-    if: github.event_name == 'push' || github.head_ref == 'release/v2.5.6'
+    if: github.head_ref == 'release/v2.5.6'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release branch
@@ -36,5 +31,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-      - name: Prepare immutable release
-        run: python3 v2/scripts/prepare-release-v2.5.6.py
+      - name: Prepare immutable release content
+        run: python3 v2/scripts/prepare-release-v2.5.6-stage.py
