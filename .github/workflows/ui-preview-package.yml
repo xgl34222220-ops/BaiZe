@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ui/unified-design-v1-preview
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
