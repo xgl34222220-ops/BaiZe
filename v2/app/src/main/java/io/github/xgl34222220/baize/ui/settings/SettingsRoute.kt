@@ -6,9 +6,8 @@ import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
-import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
-import io.github.xgl34222220.baize.ui.miuix.VideoSkin
-import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
+import io.github.xgl34222220.baize.ui.settings.material.SettingsScreenMaterial
+import io.github.xgl34222220.baize.ui.settings.miuix.SettingsScreenMiuix
 
 @Composable
 fun SettingsRoute(
@@ -31,11 +30,8 @@ fun SettingsRoute(
         onOpenCrashDiagnostics = dashboardActions.crash
     )
 
-    val skin = when (style) {
-        UiStyle.MATERIAL -> VideoSkin.MATERIAL3
-        UiStyle.MIUIX -> VideoSkin.MIUIX
-    }
-    ProvideVideoSkin(skin) {
-        VideoSettingsScreenMiuix(state, actions)
+    when (style) {
+        UiStyle.MATERIAL -> SettingsScreenMaterial(state = state, actions = actions)
+        UiStyle.MIUIX -> SettingsScreenMiuix(state = state, actions = actions)
     }
 }
