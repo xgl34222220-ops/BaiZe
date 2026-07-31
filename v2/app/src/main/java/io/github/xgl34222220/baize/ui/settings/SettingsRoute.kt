@@ -7,7 +7,7 @@ import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.settings.material.SettingsScreenMaterial
-import io.github.xgl34222220.baize.ui.settings.miuix.SettingsScreenMiuix
+import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
 
 @Composable
 fun SettingsRoute(
@@ -32,6 +32,6 @@ fun SettingsRoute(
 
     when (style) {
         UiStyle.MATERIAL -> SettingsScreenMaterial(state, actions)
-        UiStyle.MIUIX -> SettingsScreenMiuix(state, actions)
+        UiStyle.MIUIX -> VideoSettingsScreenMiuix(state, actions)
     }
 }
