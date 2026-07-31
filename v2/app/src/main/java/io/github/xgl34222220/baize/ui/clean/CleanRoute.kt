@@ -66,7 +66,10 @@ fun CleanRoute(
         onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
-        onAudit = dashboardActions.audit
+        onAudit = dashboardActions.audit,
+        onApkPackageDaysChanged = { days ->
+            applyAndSave(scheduler.withApkPackageDays(days))
+        }
     )
 
     val skin = when (style) {
