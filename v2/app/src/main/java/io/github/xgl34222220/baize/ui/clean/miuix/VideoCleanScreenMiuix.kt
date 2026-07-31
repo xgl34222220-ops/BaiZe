@@ -88,6 +88,7 @@ fun VideoCleanScreenMiuix(
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
+    var showApkRetentionDialog by remember { mutableStateOf(false) }
 
     if (showDailyTimeDialog) {
         TimeValueDialog(
@@ -106,6 +107,17 @@ fun VideoCleanScreenMiuix(
             suffix = "分钟",
             onDismiss = { showDailyGraceDialog = false },
             onConfirm = actions.onDailyGraceChanged
+        )
+    }
+    if (showApkRetentionDialog) {
+        IntValueDialog(
+            title = "安装包保留时间",
+            description = "只影响后台自动清理。手动安装包扫描始终显示全部安装包；设置为 0 天表示扫描到后即可进入自动清理范围。",
+            initialValue = state.apkPackageDays,
+            range = 0..365,
+            suffix = "天",
+            onDismiss = { showApkRetentionDialog = false },
+            onConfirm = actions.onApkPackageDaysChanged
         )
     }
 
@@ -154,9 +166,22 @@ fun VideoCleanScreenMiuix(
                         VideoSwitchRow(
                             icon = Icons.Rounded.InstallMobile,
                             title = "过期安装包",
-                            subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
+                            subtitle = "自动处理超过保留时间的 APK、APKS、XAPK 与 APKM",
                             checked = state.apkPackagesEnabled,
                             onCheckedChange = actions.onApkPackagesChanged
+                        )
+                        VideoDivider()
+                        VideoListRow(
+                            icon = Icons.Rounded.CalendarMonth,
+                            title = "安装包保留时间",
+                            subtitle = if (state.apkPackagesEnabled) {
+                                "超过该时间才进入后台自动清理；手动扫描不受影响"
+                            } else {
+                                "开启过期安装包后可修改"
+                            },
+                            value = apkRetentionText(state.apkPackageDays),
+                            enabled = state.apkPackagesEnabled,
+                            onClick = { showApkRetentionDialog = true }
                         )
                     }
                 }
@@ -521,6 +546,9 @@ private fun ApplyButton(saving: Boolean, onClick: () -> Unit) {
         }
     }
 }
+
+private fun apkRetentionText(days: Int): String =
+    if (days <= 0) "不保留" else "$days 天"
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.CACHE -> Icons.Rounded.CleaningServices
