@@ -138,27 +138,42 @@ human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/107
 should_stop() { [ -f "$STOP_FILE" ]; }
 
 CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)
-# 手动安装包扫描必须展示当前能找到的全部安装包；保留期只用于自动任务。
-if [ "$TRIGGER" = "manual" ]; then DAYS=0; else DAYS=$CONFIG_DAYS; fi
+# App 内点击、命令行手动扫描都必须展示当前可找到的全部安装包；保留期只用于自动任务。
+case "$TRIGGER" in
+  manual|app|ui) DAYS=0 ;;
+  *) DAYS=$CONFIG_DAYS ;;
+esac
 MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 INDEX_FILE="$STATE_DIR/index/storage-files.nul"
+APK_INDEX="$STATE_DIR/index/apk-files.nul"
 COVERAGE_FILE="$STATE_DIR/index/coverage.tsv"
-set_phase "正在建立全应用共享存储索引" 0 0 "$MEDIA_ROOT"
-if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$MODDIR/storage-index.sh" refresh "$TRIGGER"; then
-  echo "共享存储索引失败" >&2
+
+# 旧实现每次点击都强制 refresh 全部共享存储，并再次遍历全量文件索引筛 APK。
+# 现在使用增量 ensure，并直接消费 storage-index.sh 已生成的专用 APK NUL 索引。
+set_phase "正在更新安装包快速索引" 0 0 "$MEDIA_ROOT"
+if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$MODDIR/storage-index.sh" ensure "$TRIGGER"; then
+  echo "安装包索引更新失败" >&2
   exit 5
 fi
-[ -s "$INDEX_FILE" ] || { echo "共享存储索引为空" >&2; exit 5; }
+[ -f "$INDEX_FILE" ] || { echo "共享存储索引缺失" >&2; exit 5; }
+[ -f "$APK_INDEX" ] || { echo "安装包快速索引缺失" >&2; exit 5; }
 
-root_total=$(awk -F '\t' 'NR>1 && ($1=="scanned" || $1=="partial"){n++} END{print n+0}' "$COVERAGE_FILE" 2>/dev/null)
+root_total=$(awk -F '\t' 'NR>1{n++} END{print n+0}' "$COVERAGE_FILE" 2>/dev/null)
 root_current=$root_total
+apk_total=$(tr -cd '\000' <"$APK_INDEX" 2>/dev/null | wc -c | tr -d ' ')
+case "$apk_total" in ''|*[!0-9]*) apk_total=0 ;; esac
 protected=0
 errors=0
 cutoff=$((START_EPOCH - DAYS * 86400))
-set_phase "正在从共享索引筛选安装包" 0 "$root_total" "$INDEX_FILE"
+current=0
+set_phase "正在校验安装包文件" 0 "$apk_total" "$APK_INDEX"
 while IFS= read -r -d '' candidate; do
   should_stop && handle_signal
+  current=$((current + 1))
+  if [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$apk_total" ]; then
+    set_phase "正在校验安装包文件" "$current" "$apk_total" "$candidate"
+  fi
   [ -f "$candidate" ] || continue
   ext=$(printf '%s' "${candidate##*.}" | tr '[:upper:]' '[:lower:]')
   case "$ext" in apk|apks|xapk|apkm) ;; *) continue ;; esac
@@ -174,7 +189,7 @@ while IFS= read -r -d '' candidate; do
     continue
   fi
   printf '%s\0' "$candidate" >>"$TARGETS_TMP"
-done <"$INDEX_FILE"
+done <"$APK_INDEX"
 
 files=0
 bytes=0
@@ -247,7 +262,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "----------------------------------------"
   echo "$result"
   echo "扫描快照: $snapshot_id"
-  echo "扫描根目录: $root_total | 手动扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否)"
+  echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否)"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
   echo "扫描覆盖来源: $root_total（详情见 $COVERAGE_FILE）"
 } >>"$LOG_FILE"
@@ -258,7 +273,7 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 
 echo "$result"
-echo "扫描快照: $snapshot_id | 安装包: $files 个 | 扫描根: $root_total | 受保护: $protected | 耗时: ${elapsed}s"
+echo "扫描快照: $snapshot_id | 安装包: $files 个 | 索引候选: $apk_total | 扫描根: $root_total | 受保护: $protected | 耗时: ${elapsed}s"
 cleanup_lock
 trap - EXIT INT TERM
 exit 0

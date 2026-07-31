@@ -95,7 +95,8 @@ data class CleanUiActions(
     val onFileOrganizer: () -> Unit,
     val onDeepClean: () -> Unit,
     val onCorpses: () -> Unit,
-    val onAudit: () -> Unit
+    val onAudit: () -> Unit,
+    val onApkPackageDaysChanged: (Int) -> Unit = {}
 )
 
 fun SchedulerUiState.toCleanUiState(
@@ -201,6 +202,9 @@ fun SchedulerUiState.withDailyTime(hour: Int, minute: Int): SchedulerUiState =
 
 fun SchedulerUiState.withDailyGrace(minutes: Int): SchedulerUiState =
     copy(dailyGraceMinutes = minutes.coerceIn(15, 720))
+
+fun SchedulerUiState.withApkPackageDays(days: Int): SchedulerUiState =
+    copy(apkPackageDays = days.coerceIn(0, 365))
 
 internal fun formatHours(hours: Int): String = when {
     hours % 24 == 0 -> "${hours / 24} 天"
