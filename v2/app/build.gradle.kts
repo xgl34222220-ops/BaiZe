@@ -116,14 +116,14 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // The MIUIX presentation is backed by the actual compose-miuix-ui modules.
-    // Modules are kept explicit so the dependency report and license page show the
-    // same UI stack the user supplied instead of a Material-only imitation.
+    // The MIUIX branch is backed by the complete public 0.9.3 stack. The
+    // development snapshot calls its navigation module miuix-nav; the Maven
+    // Central 0.9.3 release publishes that module as miuix-navigation3-ui.
     implementation("top.yukonga.miuix.kmp:miuix-core-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-preference-android:$miuixVersion")
-    implementation("top.yukonga.miuix.kmp:miuix-nav-android:$miuixVersion")
+    implementation("top.yukonga.miuix.kmp:miuix-navigation3-ui-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-squircle-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-shader-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:$miuixVersion")
