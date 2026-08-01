@@ -2,7 +2,6 @@ package io.github.xgl34222220.baize.ui.home.miuix
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -34,16 +33,11 @@ import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,9 +53,20 @@ import io.github.xgl34222220.baize.ui.home.homeTaskItems
 import io.github.xgl34222220.baize.ui.home.nextTask
 import io.github.xgl34222220.baize.ui.home.rememberHomeNowEpoch
 import io.github.xgl34222220.baize.ui.home.taskCountdownLabel
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.miuix.MiuixOverviewHero
+import top.yukonga.miuix.kmp.basic.Button as MiuixButton
+import top.yukonga.miuix.kmp.basic.ButtonDefaults as MiuixButtonDefaults
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
+import top.yukonga.miuix.kmp.basic.Icon as MiuixIcon
+import top.yukonga.miuix.kmp.basic.IconButton as MiuixIconButton
+import top.yukonga.miuix.kmp.basic.Text as MiuixText
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** MIUIX / HyperOS 独立首页：大标题、浅紫灰底、超椭圆独立卡片和更舒展的留白。 */
+/**
+ * MIUIX 首页只使用 compose-miuix-ui 的 Card、Button、IconButton、Text 与主题色。
+ * 信息密度按手机宽度重新收紧，任务名称不再被倒计时挤成省略号。
+ */
 @Composable
 fun HomeScreenMiuix(
     state: DashboardUiState,
@@ -77,38 +82,64 @@ fun HomeScreenMiuix(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 106.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(bottom = bottomInset + 132.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { MiuixHomeHeader(state, scheduler.enabled, actions.refresh) }
+        item { HomeHeader(state, scheduler.enabled, actions.refresh) }
         item {
-            MiuixStatusHero(
-                state = state,
-                released = Formatter.formatFileSize(context, state.lastReleased)
+            MiuixOverviewHero(
+                device = state.device,
+                android = state.android,
+                statusTitle = when {
+                    state.running -> "清理任务执行中"
+                    state.scanCompleted -> "扫描结果已就绪"
+                    state.ready -> "清理引擎已就绪"
+                    state.connected -> "Root 服务已连接"
+                    else -> "正在恢复 Root 服务"
+                },
+                taskPhase = if (state.running) {
+                    state.taskProgressPath.ifBlank { state.taskPhase }
+                } else {
+                    state.serviceText
+                },
+                releasedText = Formatter.formatFileSize(context, state.lastReleased),
+                positive = state.ready || state.scanCompleted,
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
-        item { MiuixActionRow(state, actions) }
-        item { MiuixSectionTitle("自动任务", "独立卡片展示每项任务的状态与时间") }
-        tasks.forEach { task ->
-            item(key = task.id) {
-                MiuixTaskCard(task, nowEpoch, scheduler, onOpenClean)
-            }
-        }
+        item { ActionRow(state, actions) }
+        item { SectionTitle("自动任务", "每项任务独立显示状态和下次执行时间") }
+
         if (tasks.isEmpty()) {
             item {
-                MiuixReferenceCard(
+                TaskCard(
                     icon = Icons.Rounded.CleaningServices,
                     title = "暂无自动任务",
-                    subtitle = "进入清理页选择需要的类别",
-                    value = "设置",
+                    subtitle = "进入清理页启用需要的类别",
+                    schedule = "去设置",
+                    enabled = false,
                     onClick = onOpenClean
                 )
             }
+        } else {
+            tasks.forEach { task ->
+                item(key = task.id) {
+                    TaskCard(
+                        icon = taskIcon(task.id),
+                        title = task.title,
+                        subtitle = if (task.enabled) "自动执行" else "已关闭",
+                        schedule = taskCountdownLabel(task, nowEpoch, scheduler),
+                        enabled = task.enabled,
+                        onClick = onOpenClean
+                    )
+                }
+            }
         }
-        item { MiuixSectionTitle("设备与服务", "保留最关键的存储与 Root 状态") }
-        item { MiuixStorageCard(state) }
+
+        item { SectionTitle("设备与服务", "存储空间与 Root 后台状态") }
+        item { StorageCard(state) }
         item {
-            MiuixReferenceCard(
+            InfoCard(
                 icon = Icons.Rounded.Security,
                 title = when {
                     state.running -> "Root 任务执行中"
@@ -117,7 +148,7 @@ fun HomeScreenMiuix(
                     else -> "Root 服务正在恢复"
                 },
                 subtitle = state.serviceText,
-                value = when {
+                trailing = when {
                     state.running -> "执行中"
                     state.ready -> "正常"
                     else -> "恢复中"
@@ -126,13 +157,13 @@ fun HomeScreenMiuix(
         }
         if (nextTask != null) {
             item {
-                Text(
-                    text = "下一项 ${nextTask.title} · ${taskCountdownLabel(nextTask, nowEpoch, scheduler)}",
+                MiuixText(
+                    text = "下一项：${nextTask.title} · ${taskCountdownLabel(nextTask, nowEpoch, scheduler)}",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
+                        .padding(horizontal = 20.dp, vertical = 5.dp),
+                    color = MiuixTheme.colorScheme.onSurfaceContainer.copy(alpha = .58f),
+                    fontSize = 11.sp,
                     textAlign = TextAlign.Center
                 )
             }
@@ -141,143 +172,68 @@ fun HomeScreenMiuix(
 }
 
 @Composable
-private fun MiuixHomeHeader(
+private fun HomeHeader(
     state: DashboardUiState,
     automaticEnabled: Boolean,
     onRefresh: () -> Unit
 ) {
+    val colors = MiuixTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 24.dp, end = 16.dp, top = 24.dp, bottom = 10.dp),
+            .padding(start = 20.dp, end = 14.dp, top = 18.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
+            MiuixText(
                 text = "白泽",
-                fontSize = 34.sp,
-                lineHeight = 41.sp,
+                fontSize = 32.sp,
+                lineHeight = 38.sp,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(4.dp))
-            Text(
+            Spacer(Modifier.height(2.dp))
+            MiuixText(
                 text = when {
                     !automaticEnabled -> "自动清理已关闭"
                     state.running -> "正在执行清理任务"
                     state.ready -> "智能清理与文件归类"
                     else -> "正在连接 Root 服务"
                 },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp,
-                lineHeight = 20.sp
+                color = colors.onSurfaceContainer.copy(alpha = .60f),
+                fontSize = 13.sp,
+                lineHeight = 18.sp
             )
         }
-        Surface(
-            modifier = Modifier.size(48.dp),
-            shape = RoundedCornerShape(17.dp),
-            color = BaiZeTokens.colors.surfaceRaised
+        MiuixIconButton(
+            onClick = onRefresh,
+            modifier = Modifier.size(44.dp),
+            backgroundColor = colors.surfaceContainer,
+            cornerRadius = 15.dp,
+            minHeight = 44.dp,
+            minWidth = 44.dp
         ) {
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(23.dp))
-            }
+            MiuixIcon(
+                Icons.Rounded.Refresh,
+                contentDescription = "刷新",
+                modifier = Modifier.size(22.dp),
+                tint = colors.onSurfaceContainer
+            )
         }
     }
 }
 
 @Composable
-private fun MiuixStatusHero(state: DashboardUiState, released: String) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(
-                                when {
-                                    state.running -> BaiZeTokens.colors.warning
-                                    state.ready || state.scanCompleted -> BaiZeTokens.colors.success
-                                    else -> MaterialTheme.colorScheme.outline
-                                }
-                            )
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = when {
-                            state.running -> "运行中"
-                            state.scanCompleted -> "扫描完成"
-                            state.ready -> "已就绪"
-                            else -> "连接中"
-                        },
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = if (state.running) state.taskPhase else released,
-                    fontSize = 30.sp,
-                    lineHeight = 36.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = if (state.running) {
-                        state.taskProgressPath.ifBlank { state.taskOperation }
-                    } else if (state.scanCompleted) {
-                        "${state.scanFiles} 项 · 扫描结果可直接清理"
-                    } else {
-                        "最近一次释放 · ${state.device}"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .size(76.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .50f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (state.running) Icons.Rounded.CleaningServices else Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    modifier = Modifier.size(46.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MiuixActionRow(state: DashboardUiState, actions: DashboardActions) {
+private fun ActionRow(state: DashboardUiState, actions: DashboardActions) {
     Row(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(9.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        MiuixActionCard(
+        ActionButton(
             icon = if (state.running) Icons.Rounded.Stop else Icons.Rounded.CleaningServices,
-            title = if (state.running) "停止" else "清理",
+            label = if (state.running) "停止" else "清理",
             primary = true,
             enabled = state.running || state.ready || state.scanCompleted,
             onClick = when {
@@ -287,16 +243,16 @@ private fun MiuixActionRow(state: DashboardUiState, actions: DashboardActions) {
             },
             modifier = Modifier.weight(1f)
         )
-        MiuixActionCard(
+        ActionButton(
             icon = Icons.Rounded.Search,
-            title = "扫描",
+            label = "扫描",
             enabled = !state.running,
             onClick = actions.scan,
             modifier = Modifier.weight(1f)
         )
-        MiuixActionCard(
+        ActionButton(
             icon = Icons.Rounded.FolderCopy,
-            title = "归类",
+            label = "归类",
             enabled = state.ready && !state.running,
             onClick = actions.organize,
             modifier = Modifier.weight(1f)
@@ -305,193 +261,256 @@ private fun MiuixActionRow(state: DashboardUiState, actions: DashboardActions) {
 }
 
 @Composable
-private fun MiuixActionCard(
+private fun ActionButton(
     icon: ImageVector,
-    title: String,
+    label: String,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     primary: Boolean = false
 ) {
-    val container = when {
-        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = .045f)
-        primary -> MaterialTheme.colorScheme.primary
-        else -> BaiZeTokens.colors.surfaceRaised
-    }
-    val content = when {
-        !enabled -> MaterialTheme.colorScheme.outline
-        primary -> MaterialTheme.colorScheme.onPrimary
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        modifier = modifier
-            .height(76.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = container,
-        contentColor = content
+    MiuixButton(
+        onClick = onClick,
+        modifier = modifier.height(48.dp),
+        enabled = enabled,
+        cornerRadius = 16.dp,
+        minHeight = 48.dp,
+        colors = if (primary) {
+            MiuixButtonDefaults.buttonColorsPrimary()
+        } else {
+            MiuixButtonDefaults.buttonColors()
+        },
+        insideMargin = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(23.dp))
-            Spacer(Modifier.height(6.dp))
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        }
+        MiuixIcon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        MiuixText(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
-private fun MiuixSectionTitle(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 24.dp, vertical = 6.dp)) {
-        Text(title, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(2.dp))
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+private fun SectionTitle(title: String, subtitle: String) {
+    val colors = MiuixTheme.colorScheme
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 7.dp)) {
+        MiuixText(title, fontSize = 21.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(1.dp))
+        MiuixText(
+            subtitle,
+            color = colors.onSurfaceContainer.copy(alpha = .58f),
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
     }
 }
 
 @Composable
-private fun MiuixTaskCard(
-    task: HomeTaskPresentation,
-    nowEpoch: Long,
-    scheduler: SchedulerUiState,
-    onClick: () -> Unit
-) {
-    MiuixReferenceCard(
-        icon = taskIcon(task.id),
-        title = task.title,
-        subtitle = if (task.enabled) "自动执行" else "已关闭",
-        value = taskCountdownLabel(task, nowEpoch, scheduler),
-        enabled = task.enabled,
-        onClick = onClick
-    )
-}
-
-@Composable
-private fun MiuixStorageCard(state: DashboardUiState) {
-    val context = LocalContext.current
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = BaiZeTokens.colors.surfaceRaised
-    ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Text("可用空间", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        Formatter.formatFileSize(context, state.storageFree),
-                        fontSize = 27.sp,
-                        lineHeight = 33.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    "${(state.storagePercent.coerceIn(0f, 1f) * 100).toInt()}% 已用",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Spacer(Modifier.height(13.dp))
-            LinearProgressIndicator(
-                progress = state.storagePercent.coerceIn(0f, 1f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(7.dp)
-                    .clip(CircleShape),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = BaiZeTokens.colors.surfaceOverlay
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "已用 ${Formatter.formatFileSize(context, state.storageUsed)} / ${Formatter.formatFileSize(context, state.storageTotal)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun MiuixReferenceCard(
+private fun TaskCard(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    value: String,
-    enabled: Boolean = true,
-    onClick: (() -> Unit)? = null
+    schedule: String,
+    enabled: Boolean,
+    onClick: () -> Unit
 ) {
-    Surface(
+    val colors = MiuixTheme.colorScheme
+    MiuixCard(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier),
-        shape = RoundedCornerShape(24.dp),
-        color = BaiZeTokens.colors.surfaceRaised
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        cornerRadius = 20.dp,
+        insideMargin = PaddingValues(horizontal = 15.dp, vertical = 13.dp),
+        colors = MiuixCardDefaults.defaultColors(
+            color = colors.surfaceContainer,
+            contentColor = colors.onSurfaceContainer
+        ),
+        onClick = onClick
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(icon = icon, enabled = enabled)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                MiuixText(
+                    title,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip
+                )
+                Spacer(Modifier.height(2.dp))
+                MiuixText(
+                    subtitle,
+                    color = colors.onSurfaceContainer.copy(alpha = .58f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            MiuixIcon(
+                Icons.Rounded.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = colors.onSurfaceContainer.copy(alpha = .60f)
+            )
+        }
+        Spacer(Modifier.height(9.dp))
         Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 50.dp),
             verticalAlignment = Alignment.CenterVertically
+        ) {
+            MiuixText(
+                "下次执行",
+                color = colors.onSurfaceContainer.copy(alpha = .50f),
+                fontSize = 10.sp
+            )
+            Spacer(Modifier.width(8.dp))
+            MiuixText(
+                schedule,
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(max = 210.dp),
+                color = if (enabled) colors.primary else colors.onSurfaceContainer.copy(alpha = .42f),
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Clip,
+                textAlign = TextAlign.End
+            )
+        }
+    }
+}
+
+@Composable
+private fun StorageCard(state: DashboardUiState) {
+    val context = LocalContext.current
+    val colors = MiuixTheme.colorScheme
+    val progress = state.storagePercent.coerceIn(0f, 1f)
+
+    MiuixCard(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        cornerRadius = 20.dp,
+        insideMargin = PaddingValues(horizontal = 17.dp, vertical = 15.dp),
+        colors = MiuixCardDefaults.defaultColors(
+            color = colors.surfaceContainer,
+            contentColor = colors.onSurfaceContainer
+        )
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                MiuixText(
+                    "可用空间",
+                    color = colors.onSurfaceContainer.copy(alpha = .58f),
+                    fontSize = 11.sp
+                )
+                Spacer(Modifier.height(2.dp))
+                MiuixText(
+                    Formatter.formatFileSize(context, state.storageFree),
+                    fontSize = 25.sp,
+                    lineHeight = 31.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            MiuixText(
+                "${(progress * 100).toInt()}% 已用",
+                color = colors.primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        Spacer(Modifier.height(11.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp)
+                .clip(CircleShape)
+                .background(colors.surfaceContainerHigh)
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = .10f)
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = .05f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(21.dp),
-                    tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                )
-            }
-            Spacer(Modifier.width(14.dp))
+                    .fillMaxWidth(progress)
+                    .height(7.dp)
+                    .clip(CircleShape)
+                    .background(colors.primary)
+            )
+        }
+        Spacer(Modifier.height(7.dp))
+        MiuixText(
+            "已用 ${Formatter.formatFileSize(context, state.storageUsed)} / ${Formatter.formatFileSize(context, state.storageTotal)}",
+            color = colors.onSurfaceContainer.copy(alpha = .54f),
+            fontSize = 10.sp
+        )
+    }
+}
+
+@Composable
+private fun InfoCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    trailing: String
+) {
+    val colors = MiuixTheme.colorScheme
+    MiuixCard(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth(),
+        cornerRadius = 20.dp,
+        insideMargin = PaddingValues(horizontal = 15.dp, vertical = 13.dp),
+        colors = MiuixCardDefaults.defaultColors(
+            color = colors.surfaceContainer,
+            contentColor = colors.onSurfaceContainer
+        )
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(icon, true)
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    fontSize = 16.sp,
-                    lineHeight = 21.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                MiuixText(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(2.dp))
-                Text(
+                MiuixText(
                     subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
+                    color = colors.onSurfaceContainer.copy(alpha = .56f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                value,
-                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-                maxLines = 2
+            Spacer(Modifier.width(10.dp))
+            MiuixText(
+                trailing,
+                color = colors.primary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
             )
-            if (onClick != null) {
-                Spacer(Modifier.width(4.dp))
-                Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(21.dp))
-            }
         }
+    }
+}
+
+@Composable
+private fun IconTile(icon: ImageVector, enabled: Boolean) {
+    val colors = MiuixTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(
+                if (enabled) colors.primary.copy(alpha = .10f)
+                else colors.onSurfaceContainer.copy(alpha = .05f)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        MiuixIcon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = if (enabled) colors.primary else colors.onSurfaceContainer.copy(alpha = .36f)
+        )
     }
 }
 
