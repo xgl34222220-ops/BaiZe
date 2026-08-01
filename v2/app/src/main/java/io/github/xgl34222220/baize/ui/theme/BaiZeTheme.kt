@@ -21,6 +21,11 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.theme.MiuixTheme as NativeMiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeColorSpec
+import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
 private val MaterialShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -115,16 +120,32 @@ private fun BaiZeMaterialTheme(settings: AppearanceSettings, dark: Boolean, cont
 
 @Composable
 private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
+    val seed = resolveSeedColor(settings)
+    val mode = if (dark) ColorSchemeMode.MonetDark else ColorSchemeMode.MonetLight
+    val palette = settings.kolorStyle.toMiuixPaletteStyle()
+    val controller = remember(mode, seed, palette) {
+        ThemeController(
+            colorSchemeMode = mode,
+            keyColor = seed,
+            colorSpec = ThemeColorSpec.Spec2021,
+            paletteStyle = palette,
+            isDark = dark
+        )
+    }
+
+    // Keep MaterialTheme available for legacy business dialogs while the MIUIX
+    // page tree is driven by the real MiuixTheme and its component tokens.
     DynamicMaterialTheme(
-        seedColor = resolveSeedColor(settings),
+        seedColor = seed,
         useDarkTheme = dark,
         withAmoled = dark && settings.amoledBlack,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = MiuixShapes,
         typography = MiuixTypography,
-        animate = true,
-        content = content
-    )
+        animate = true
+    ) {
+        NativeMiuixTheme(controller = controller, content = content)
+    }
 }
 
 @Composable
@@ -151,4 +172,10 @@ private fun KolorStyle.toPaletteStyle(): PaletteStyle = when (this) {
     KolorStyle.SOFT -> PaletteStyle.TonalSpot
     KolorStyle.VIBRANT -> PaletteStyle.Vibrant
     KolorStyle.NEUTRAL -> PaletteStyle.Neutral
+}
+
+private fun KolorStyle.toMiuixPaletteStyle(): ThemePaletteStyle = when (this) {
+    KolorStyle.SOFT -> ThemePaletteStyle.TonalSpot
+    KolorStyle.VIBRANT -> ThemePaletteStyle.Vibrant
+    KolorStyle.NEUTRAL -> ThemePaletteStyle.Neutral
 }
