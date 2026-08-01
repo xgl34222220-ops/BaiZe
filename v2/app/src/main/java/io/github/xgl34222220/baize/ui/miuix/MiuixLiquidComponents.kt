@@ -1,7 +1,6 @@
 package io.github.xgl34222220.baize.ui.miuix
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,6 +42,9 @@ import top.yukonga.miuix.kmp.basic.NavigationBar as NativeNavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem as NativeNavigationBarItem
 import top.yukonga.miuix.kmp.basic.Text as NativeText
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.theme.MiuixTheme as NativeMiuixTheme
 
 /** Bottom navigation item used by the real Miuix NavigationBar. */
@@ -52,9 +54,8 @@ data class MiuixLiquidNavItem(
 )
 
 /**
- * Real Miuix navigation bar. The old hand-drawn Material/Haze imitation was
- * removed; insets, item sizing, press feedback and selected typography now
- * come from compose-miuix-ui itself.
+ * Real Miuix navigation bar. Insets, item sizing, press feedback, selected
+ * typography and the main Home/Settings glyphs are supplied by compose-miuix-ui.
  */
 @Composable
 fun MiuixLiquidDock(
@@ -69,7 +70,7 @@ fun MiuixLiquidDock(
 
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val targetIndex = selectedIndex.coerceIn(items.indices)
-    val container = NativeMiuixTheme.colorScheme.surfaceContainer
+    val colors = NativeMiuixTheme.colorScheme
 
     Column(
         modifier = modifier
@@ -82,8 +83,8 @@ fun MiuixLiquidDock(
             cornerRadius = if (floating) 30.dp else 0.dp,
             insideMargin = PaddingValues(0.dp),
             colors = NativeCardDefaults.defaultColors(
-                color = container.copy(alpha = if (floating) .97f else 1f),
-                contentColor = NativeMiuixTheme.colorScheme.onSurfaceContainer
+                color = colors.surfaceContainer.copy(alpha = if (floating) .97f else 1f),
+                contentColor = colors.onSurfaceContainer
             )
         ) {
             NativeNavigationBar(
@@ -93,10 +94,15 @@ fun MiuixLiquidDock(
                 mode = NavigationBarDisplayMode.IconAndText
             ) {
                 items.forEachIndexed { index, item ->
+                    val nativeIcon = when (item.title) {
+                        "首页" -> MiuixIcons.Home
+                        "设置" -> MiuixIcons.Settings
+                        else -> item.icon
+                    }
                     NativeNavigationBarItem(
                         selected = index == targetIndex,
                         onClick = { onSelected(index) },
-                        icon = item.icon,
+                        icon = nativeIcon,
                         label = item.title
                     )
                 }
