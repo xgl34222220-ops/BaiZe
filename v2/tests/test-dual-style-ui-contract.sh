@@ -36,17 +36,22 @@ assert_contains "$APP/ui/theme/BaiZeTheme.kt" "ThemeController"
 assert_contains "$APP/ui/theme/BaiZeTheme.kt" "MaterialBaiZeCorners"
 assert_contains "$APP/ui/theme/BaiZeTheme.kt" "MiuixBaiZeCorners"
 
-for module in core ui icons preference nav squircle shader blur; do
+for module in core ui icons preference squircle shader blur; do
   assert_contains "$GRADLE" "miuix-${module}-android:\$miuixVersion"
 done
+assert_contains "$GRADLE" "miuix-navigation3-ui-android:\$miuixVersion"
 
 assert_contains "$APP/ui/miuix/MiuixLiquidComponents.kt" "NavigationBar as NativeNavigationBar"
 assert_contains "$APP/ui/miuix/MiuixLiquidComponents.kt" "Card as NativeCard"
 assert_contains "$APP/ui/miuix/MiuixLiquidComponents.kt" "Button as NativeButton"
+assert_contains "$APP/ui/miuix/MiuixLiquidComponents.kt" "MiuixIcons.Home"
+assert_contains "$APP/ui/miuix/MiuixLiquidComponents.kt" "MiuixIcons.Settings"
 assert_contains "$APP/ui/home/miuix/HomeScreenMiuix.kt" "Card as MiuixCard"
 assert_contains "$APP/ui/home/miuix/HomeScreenMiuix.kt" "Button as MiuixButton"
 assert_contains "$APP/ui/clean/miuix/CleanScreenMiuix.kt" "SwitchPreference"
 assert_contains "$APP/ui/clean/miuix/CleanScreenMiuix.kt" "Switch as MiuixSwitch"
+assert_contains "$APP/ui/history/miuix/HistoryScreenMiuix.kt" "Card as MiuixCard"
+assert_contains "$APP/ui/history/miuix/HistoryScreenMiuix.kt" "IconButton as MiuixIconButton"
 assert_contains "$APP/ui/settings/miuix/SettingsScreenMiuix.kt" "ArrowPreference"
 assert_contains "$APP/ui/settings/miuix/SettingsScreenMiuix.kt" "SwitchPreference"
 assert_contains "$APP/ui/settings/miuix/SettingsScreenMiuix.kt" "Slider as MiuixSlider"
@@ -54,6 +59,7 @@ assert_contains "$APP/ui/settings/miuix/SettingsScreenMiuix.kt" "Slider as Miuix
 for file in \
   "$APP/ui/home/miuix/HomeScreenMiuix.kt" \
   "$APP/ui/clean/miuix/CleanScreenMiuix.kt" \
+  "$APP/ui/history/miuix/HistoryScreenMiuix.kt" \
   "$APP/ui/settings/miuix/SettingsScreenMiuix.kt"; do
   ! grep -Fq 'androidx.compose.material3.Surface' "$file"
   ! grep -Fq 'androidx.compose.material3.Switch' "$file"
