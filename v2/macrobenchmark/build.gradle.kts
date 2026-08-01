@@ -2,12 +2,11 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.test")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
     namespace = "io.github.xgl34222220.baize.macrobenchmark"
-    compileSdk = 36
+    compileSdk = 37
     targetProjectPath = ":app"
     defaultConfig {
         minSdk = 28
