@@ -2,7 +2,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -19,7 +18,7 @@ val releaseSigningReady = listOf(
 
 android {
     namespace = "io.github.xgl34222220.baize"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.xgl34222220.baize"
@@ -116,9 +115,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // The MIUIX branch is backed by the complete public 0.9.3 stack. The
-    // development snapshot calls its navigation module miuix-nav; the Maven
-    // Central 0.9.3 release publishes that module as miuix-navigation3-ui.
     implementation("top.yukonga.miuix.kmp:miuix-core-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:$miuixVersion")
     implementation("top.yukonga.miuix.kmp:miuix-icons-android:$miuixVersion")
