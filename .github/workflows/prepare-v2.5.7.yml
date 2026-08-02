@@ -7,6 +7,13 @@ on:
     paths:
       - '.github/workflows/prepare-v2.5.7.yml'
       - 'v2/scripts/prepare-release-v2.5.7.py'
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/prepare-v2.5.7.yml'
+      - 'v2/scripts/prepare-release-v2.5.7.py'
 
 permissions:
   contents: write
