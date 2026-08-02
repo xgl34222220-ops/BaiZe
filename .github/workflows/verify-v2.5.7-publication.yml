@@ -1,0 +1,85 @@
+name: Verify BaiZe v2.5.7 Publication
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/verify-v2.5.7.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v257-publication-verifier
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Wait for and verify published release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v2.5.7" > /tmp/release.json 2>/dev/null; then
+              if python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/release.json').read_text())
+          expected = {
+              'BaiZe-v2.5.7-Module.zip',
+              'BaiZe-v2.5.7-Module.zip.sha256',
+              'BaiZe-v2.5.7.apk',
+              'BaiZe-v2.5.7.apk.sha256',
+              'BaiZe-v2.5.7-signing-certificate.txt',
+          }
+          assets = data.get('assets', [])
+          names = {item.get('name') for item in assets}
+          assert data.get('tag_name') == 'v2.5.7'
+          assert data.get('name') == '白泽 v2.5.7'
+          assert data.get('draft') is False
+          assert data.get('prerelease') is False
+          assert names == expected, (names, expected)
+          assert all(item.get('state') == 'uploaded' and int(item.get('size', 0)) > 0 for item in assets)
+          PY
+              then
+                break
+              fi
+            fi
+            test "$attempt" -lt 60
+            sleep 15
+          done
+
+      - name: Record verified publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/release.json').read_text())
+          lines = [
+              'tag=v2.5.7',
+              f"release_id={data['id']}",
+              f"published_at={data['published_at']}",
+              f"target_commitish={data['target_commitish']}",
+          ]
+          for asset in sorted(data['assets'], key=lambda item: item['name']):
+              lines.append(f"asset={asset['name']}|{asset['size']}|{asset.get('digest', '')}")
+          Path('.github/release-v2.5.7.verified').write_text('\n'.join(lines) + '\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- .github/release-v2.5.7.verified
+          git commit -m 'ci: record verified BaiZe v2.5.7 publication'
+          git push origin HEAD:main
