@@ -1,0 +1,37 @@
+name: Prepare BaiZe v2.5.7
+
+on:
+  push:
+    branches:
+      - release/v2.5.7
+    paths:
+      - '.github/workflows/prepare-v2.5.7.yml'
+      - 'v2/scripts/prepare-release-v2.5.7.py'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-v257-preparation
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/v2.5.7
+          fetch-depth: 0
+
+      - name: Configure release commit identity
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Prepare immutable v2.5.7 content
+        run: python3 v2/scripts/prepare-release-v2.5.7.py
+
+      - name: Push prepared release branch
+        run: git push origin HEAD:release/v2.5.7
