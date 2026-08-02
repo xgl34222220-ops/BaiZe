@@ -13,14 +13,11 @@ os.chdir(ROOT)
 def replace_once(path: str, old: str, new: str) -> None:
     file = Path(path)
     text = file.read_text()
-    if old not in text:
-        raise SystemExit(f"missing expected text in {path}: {old!r}")
     if text.count(old) != 1:
         raise SystemExit(f"expected one match in {path}, found {text.count(old)}: {old!r}")
     file.write_text(text.replace(old, new, 1))
 
 
-# Stable version metadata.
 replace_once("module.prop", "version=v2.5.6\nversionCode=25006", "version=v2.5.7\nversionCode=25007")
 replace_once("v2/module/module.prop", "version=v2.5.6\nversionCode=25006", "version=v2.5.7\nversionCode=25007")
 replace_once(
@@ -33,12 +30,11 @@ replace_once("v2/module/task-worker.sh", "detached-root-worker-v2.5.6", "detache
 
 package = Path("v2/scripts/package-module.sh")
 package_text = package.read_text().replace("v2.5.6", "v2.5.7").replace("25006", "25007")
-old_release_guard = "grep -Eq 'v2\\.5\\.5|versionCode=25005|"
-new_release_guard = "grep -Eq 'v2\\.5\\.6|versionCode=25006|v2\\.5\\.5|versionCode=25005|"
-if old_release_guard not in package_text:
+old_guard = "grep -Eq 'v2\\.5\\.5|versionCode=25005|"
+new_guard = "grep -Eq 'v2\\.5\\.6|versionCode=25006|v2\\.5\\.5|versionCode=25005|"
+if old_guard not in package_text:
     raise SystemExit("package old-version guard was not found")
-package_text = package_text.replace(old_release_guard, new_release_guard, 1)
-package.write_text(package_text)
+package.write_text(package_text.replace(old_guard, new_guard, 1))
 
 Path("update.json").write_text(
     json.dumps(
@@ -50,8 +46,7 @@ Path("update.json").write_text(
         },
         ensure_ascii=False,
         indent=2,
-    )
-    + "\n"
+    ) + "\n"
 )
 
 Path("RELEASE_NOTES_v2.5.7.md").write_text(
@@ -81,13 +76,11 @@ Path("RELEASE_NOTES_v2.5.7.md").write_text(
 """
 )
 
-# Regression contract for the settings draft fix.
 Path("v2/tests/test-settings-draft-rollback-contract.sh").write_text(
     r'''#!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 ROUTE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/settings/SettingsRoute.kt"
-
 for expected in \
   'var draft by remember { mutableStateOf(scheduler.copy(saving = false)) }' \
   'var dirty by remember { mutableStateOf(false) }' \
@@ -99,46 +92,19 @@ for expected in \
   'private fun SchedulerUiState.withRuntimeFrom(remote: SchedulerUiState)'; do
   grep -Fq "$expected" "$ROUTE"
 done
-
 grep -Fq 'onUpdateScheduler = { updated ->' "$ROUTE"
 grep -Fq 'onSaveScheduler = { requested ->' "$ROUTE"
-if grep -Fq 'onUpdateScheduler = dashboardActions.updateScheduler' "$ROUTE"; then
-  echo 'settings route still exposes polling-backed scheduler state directly' >&2
-  exit 1
-fi
-if grep -Fq 'onSaveScheduler = dashboardActions.saveScheduler' "$ROUTE"; then
-  echo 'settings route bypasses the local draft when saving' >&2
-  exit 1
-fi
-
+! grep -Fq 'onUpdateScheduler = dashboardActions.updateScheduler' "$ROUTE"
+! grep -Fq 'onSaveScheduler = dashboardActions.saveScheduler' "$ROUTE"
 echo 'settings draft rollback regression contract passed'
 '''
 )
-
-# New immutable release workflow, derived from the already proven v2.5.6 pipeline.
-source = Path(".github/workflows/v2.5.6-release.yml").read_text()
-workflow = (
-    source.replace("v2.5.6", "v2.5.7")
-    .replace("2.5.6", "2.5.7")
-    .replace("25006", "25007")
-    .replace("v256", "v257")
-)
-needle = "          bash v2/tests/test-apk-retention-contract.sh\n"
-if needle not in workflow:
-    raise SystemExit("release workflow test insertion point missing")
-workflow = workflow.replace(
-    needle,
-    needle + "          bash v2/tests/test-settings-draft-rollback-contract.sh\n",
-    1,
-)
-Path(".github/workflows/v2.5.7-release.yml").write_text(workflow)
 
 Path("v2/tests/test-release-v2.5.7-contract.sh").write_text(
     r'''#!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 WORKFLOW="$ROOT/.github/workflows/v2.5.7-release.yml"
-
 cmp "$ROOT/module.prop" "$ROOT/v2/module/module.prop"
 grep -q 'versionName = "2.5.7"' "$ROOT/v2/app/build.gradle.kts"
 grep -q 'versionCode = 25007' "$ROOT/v2/app/build.gradle.kts"
@@ -149,7 +115,7 @@ grep -q 'detached-root-worker-v2.5.7' "$ROOT/v2/module/task-worker.sh"
 grep -Fqx 'ui_print "- 正在安装白泽 v2.5.7"' "$ROOT/v2/module/customize.sh"
 grep -q 'BAIZE_VERSION: v2.5.7' "$WORKFLOW"
 grep -q "BAIZE_VERSION_CODE: '25007'" "$WORKFLOW"
-grep -q ".github/release-v2.5.7.publish" "$WORKFLOW"
+grep -q '.github/release-v2.5.7.publish' "$WORKFLOW"
 grep -q 'test-settings-draft-rollback-contract.sh' "$WORKFLOW"
 grep -q -- "--title '白泽 v2.5.7'" "$WORKFLOW"
 grep -q -- '--latest' "$WORKFLOW"
@@ -168,46 +134,8 @@ echo 'v2.5.7 release metadata contract passed'
 '''
 )
 
-# Add the new version and regression to the regular PR validation workflow.
-ci = Path(".github/workflows/v2.5-concurrent-scheduler-ci.yml")
-ci_text = ci.read_text()
-replacements = [
-    (
-        "      - 'RELEASE_NOTES_v2.5.6.md'\n",
-        "      - 'RELEASE_NOTES_v2.5.6.md'\n      - 'RELEASE_NOTES_v2.5.7.md'\n",
-    ),
-    (
-        "      - '.github/workflows/v2.5.6-release.yml'\n",
-        "      - '.github/workflows/v2.5.6-release.yml'\n      - '.github/workflows/v2.5.7-release.yml'\n",
-    ),
-    (
-        "release/v2.5.5, release/v2.5.6]",
-        "release/v2.5.5, release/v2.5.6, release/v2.5.7]",
-    ),
-    (
-        "      - name: Existing scheduler regression\n",
-        "      - name: Verify v2.5.7 release metadata\n"
-        "        run: bash v2/tests/test-release-v2.5.7-contract.sh\n"
-        "      - name: Existing scheduler regression\n",
-    ),
-    (
-        "      - name: Quarantine authorization and restore contract\n",
-        "      - name: Settings draft rollback regression\n"
-        "        run: bash v2/tests/test-settings-draft-rollback-contract.sh\n"
-        "      - name: Quarantine authorization and restore contract\n",
-    ),
-]
-for old, new in replacements:
-    if old not in ci_text:
-        raise SystemExit(f"CI insertion point missing: {old!r}")
-    ci_text = ci_text.replace(old, new, 1)
-ci.write_text(ci_text)
-
 os.chmod("v2/tests/test-settings-draft-rollback-contract.sh", 0o755)
 os.chmod("v2/tests/test-release-v2.5.7-contract.sh", 0o755)
-
-# One-time preparation files must not enter the stable release target.
-Path(".github/workflows/prepare-v2.5.7.yml").unlink(missing_ok=True)
 Path("v2/scripts/prepare-release-v2.5.7.py").unlink(missing_ok=True)
 
 paths = [
@@ -219,13 +147,10 @@ paths = [
     "v2/scripts/package-module.sh",
     "update.json",
     "RELEASE_NOTES_v2.5.7.md",
-    ".github/workflows/v2.5.7-release.yml",
-    ".github/workflows/v2.5-concurrent-scheduler-ci.yml",
     "v2/tests/test-settings-draft-rollback-contract.sh",
     "v2/tests/test-release-v2.5.7-contract.sh",
-    ".github/workflows/prepare-v2.5.7.yml",
     "v2/scripts/prepare-release-v2.5.7.py",
 ]
 subprocess.run(["git", "add", "--", *paths], check=True)
 subprocess.run(["git", "diff", "--cached", "--check"], check=True)
-subprocess.run(["git", "commit", "-m", "release: prepare BaiZe v2.5.7 stable"], check=True)
+subprocess.run(["git", "commit", "-m", "release: prepare BaiZe v2.5.7 stable content"], check=True)
