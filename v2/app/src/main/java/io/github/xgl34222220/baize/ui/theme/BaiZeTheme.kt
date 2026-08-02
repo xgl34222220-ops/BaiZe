@@ -9,11 +9,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.res.ResourcesCompat
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
@@ -148,12 +149,21 @@ private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content
 }
 
 @Composable
-private fun resolveSeedColor(settings: AppearanceSettings): Color =
-    if (settings.monetEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        colorResource(android.R.color.system_accent1_500)
-    } else {
-        Color(settings.seedArgb)
+private fun resolveSeedColor(settings: AppearanceSettings): Color {
+    if (!settings.monetEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        return Color(settings.seedArgb)
     }
+
+    val resources = LocalResources.current
+    val accentArgb = remember(resources, settings.seedArgb) {
+        runCatching {
+            ResourcesCompat.getColor(resources, android.R.color.system_accent1_500, null)
+        }.getOrElse {
+            settings.seedArgb
+        }
+    }
+    return Color(accentArgb)
+}
 
 @Composable
 private fun resolveDark(mode: ThemeMode): Boolean = when (mode) {
