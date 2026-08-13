@@ -1,0 +1,96 @@
+name: BaiZe formal release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Immutable release tag, for example v2.5.8'
+        required: true
+        type: string
+      confirm:
+        description: 'Type RELEASE after reviewing real-device evidence'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  checks: read
+
+concurrency:
+  group: baize-formal-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: inputs.confirm == 'RELEASE'
+    runs-on: ubuntu-latest
+    environment: formal-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Validate immutable tag and device evidence
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH"
+          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' v2/app/build.gradle.kts | head -n 1)
+          test "$RELEASE_TAG" = "v$version"
+          test -z "$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG")"
+          evidence="v2/release-evidence/$RELEASE_TAG.json"
+          test -f "$evidence"
+          python3 v2/scripts/validate-release-evidence.py "$evidence" "$RELEASE_TAG"
+          test -s "RELEASE_NOTES_$RELEASE_TAG.md"
+      - name: Require successful unified CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name == "verify" and .conclusion == "success")] | length')" -ge 1
+      - name: Decode release signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/baize-release.jks"
+          chmod 0600 "$RUNNER_TEMP/baize-release.jks"
+      - name: Build ARM64 engines, signed app and module
+        env:
+          BAIZE_KEYSTORE_PATH: ${{ runner.temp }}/baize-release.jks
+          BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          BAIZE_KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS }}
+          BAIZE_KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y busybox-static toybox zip
+          sdkmanager 'ndk;27.2.12479018'
+          cc="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          mkdir -p v2/build/native/arm64-v8a
+          "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion v2/native/baize_engine_42_4.c -o v2/build/native/arm64-v8a/baize_engine
+          "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion v2/native/baize_deep_snapshot.c -o v2/build/native/arm64-v8a/baize_deep_snapshot
+          gradle --no-daemon -p v2 :app:assembleRelease :app:lintRelease
+          sh v2/scripts/package-module.sh
+      - name: Publish checksummed immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cp v2/app/build/outputs/apk/release/app-release.apk "v2/dist/BaiZe-$RELEASE_TAG.apk"
+          (cd v2/dist && sha256sum ./* > SHA256SUMS)
+          gh release create "$RELEASE_TAG" v2/dist/BaiZe-* v2/dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --title "白泽 $RELEASE_TAG" \
+            --notes-file "RELEASE_NOTES_$RELEASE_TAG.md" --latest

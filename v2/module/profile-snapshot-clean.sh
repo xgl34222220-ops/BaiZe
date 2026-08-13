@@ -30,6 +30,8 @@ case "$MODE" in
     ;;
   *) echo "不支持的快照清理模式：$MODE" >&2; exit 2 ;;
 esac
+case "$MODE" in corpse-*) SCOPED_WHITELIST="$STATE_DIR/whitelist.corpses.conf" ;; *) SCOPED_WHITELIST="$STATE_DIR/whitelist.deep.conf" ;; esac
+[ -f "$SCOPED_WHITELIST" ] && WHITELIST="$SCOPED_WHITELIST"
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$WHITELIST" ] || : >"$WHITELIST"

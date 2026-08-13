@@ -36,7 +36,13 @@ proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat"
 index_lock_alive() {
   il_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
   il_ticks=$(sed -n '1p' "$LOCK_DIR/start_ticks" 2>/dev/null)
-  case "$il_pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$il_pid" in ''|*[!0-9]*)
+    il_mtime=$(stat -c %Y "$LOCK_DIR" 2>/dev/null || echo 0); il_now=$(date +%s)
+    case "$il_mtime" in ''|*[!0-9]*) il_mtime=0 ;; esac
+    [ $((il_now - il_mtime)) -ge 5 ] && return 1
+    return 0
+    ;;
+  esac
   kill -0 "$il_pid" 2>/dev/null || return 1
   il_actual=$(proc_start_ticks "$il_pid")
   case "$il_ticks" in ''|*[!0-9]*) il_ticks=0 ;; esac
@@ -108,7 +114,32 @@ add_user_root() {
   done
   discover_app_user_roots "$au_user" "$au_volume" "$au_root"
 }
-for userdir in "$MEDIA_ROOT"/[0-9]*; do [ -d "$userdir" ] && add_user_root "${userdir##*/}" "$userdir" internal; done
+DECLARED_USERS="$TMP/declared-users"
+: >"$DECLARED_USERS"
+if [ "$MEDIA_ROOT" = /data/media ] && command -v cmd >/dev/null 2>&1; then
+  cmd user list 2>/dev/null | sed -n 's/.*UserInfo{\([0-9][0-9]*\):.*/\1/p' >>"$DECLARED_USERS"
+fi
+for userdir in "$MEDIA_ROOT"/[0-9]*; do
+  [ -d "$userdir" ] || continue
+  printf '%s\n' "${userdir##*/}" >>"$DECLARED_USERS"
+done
+sort -nu "$DECLARED_USERS" -o "$DECLARED_USERS" 2>/dev/null || true
+while IFS= read -r declared_user; do
+  case "$declared_user" in ''|*[!0-9]*) continue ;; esac
+  declared_root="$MEDIA_ROOT/$declared_user"
+  if [ ! -d "$declared_root" ]; then
+    printf 'missing\t共享存储\t%s\tinternal\t0\t0\t%s\t用户存储目录不存在或尚未挂载\n' "$declared_user" "$(safe "$declared_root")" >>"$COVERAGE"
+    continue
+  fi
+  if [ "$MEDIA_ROOT" = /data/media ] && command -v cmd >/dev/null 2>&1; then
+    unlocked=$(cmd user is-user-unlocked "$declared_user" 2>/dev/null | tail -n 1)
+    if [ "$unlocked" != true ]; then
+      printf 'locked\t共享存储\t%s\tinternal\t0\t0\t%s\t用户尚未解锁，已安全跳过\n' "$declared_user" "$(safe "$declared_root")" >>"$COVERAGE"
+      continue
+    fi
+  fi
+  add_user_root "$declared_user" "$declared_root" internal
+done <"$DECLARED_USERS"
 if [ -n "${BAIZE_EXTRA_STORAGE_ROOTS:-}" ]; then
   old_ifs=$IFS; IFS=:
   for extra in $BAIZE_EXTRA_STORAGE_ROOTS; do [ -d "$extra" ] && add_user_root 0 "$extra" test; done

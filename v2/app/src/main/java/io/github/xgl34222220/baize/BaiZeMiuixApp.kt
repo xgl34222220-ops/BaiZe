@@ -66,6 +66,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -440,6 +441,7 @@ data class DashboardActions(
     val deep: () -> Unit,
     val corpses: () -> Unit,
     val audit: () -> Unit,
+    val storageTools: () -> Unit,
     val updateScheduler: (SchedulerUiState) -> Unit,
     val saveScheduler: (SchedulerUiState) -> Unit,
     val schedulerCommand: (String) -> Unit,
@@ -823,6 +825,12 @@ internal fun HomeScreenMiuix(
                         title = "安装包",
                         modifier = Modifier.weight(1f),
                         onClick = actions.apkScan
+                    )
+                    MiuixHomeQuickAction(
+                        icon = Icons.Rounded.Storage,
+                        title = "存储分析",
+                        modifier = Modifier.weight(1f),
+                        onClick = actions.storageTools
                     )
                     MiuixHomeQuickAction(
                         icon = Icons.Rounded.CleaningServices,

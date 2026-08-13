@@ -146,7 +146,7 @@ object ThemeManager {
     }
 
     fun isMonetEnabled(context: Context): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && prefs(context).getBoolean(KEY_MONET, false)
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && prefs(context).getBoolean(KEY_MONET, true)
 
     fun isAmoledEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_AMOLED, false)
 
@@ -349,6 +349,7 @@ object ThemeManager {
             else -> editor.putString(KEY_ACCENT, if (oldPalette == "blue") "default" else normalizeAccent(oldPalette))
         }
         if (!preferences.contains(KEY_MONET_STYLE)) editor.putString(KEY_MONET_STYLE, "vibrant")
+        if (!preferences.contains(KEY_MONET)) editor.putBoolean(KEY_MONET, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
         if (!preferences.contains(KEY_COLOR_STANDARD)) editor.putString(KEY_COLOR_STANDARD, "m3_2021")
         if (!preferences.contains(KEY_BLUR)) editor.putBoolean(KEY_BLUR, true)
         if (!preferences.contains(KEY_FLOATING_DOCK)) editor.putBoolean(KEY_FLOATING_DOCK, true)

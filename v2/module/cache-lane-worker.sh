@@ -105,10 +105,8 @@ if [ -f "$TASK_STATE/latest.env" ]; then
   cp -f "$TASK_STATE/latest.env" "$ROOT_STATE_DIR/latest.env.tmp.$$" &&
     mv -f "$ROOT_STATE_DIR/latest.env.tmp.$$" "$ROOT_STATE_DIR/latest.env"
 fi
-if [ -f "$TASK_STATE/totals.env" ]; then
-  cp -f "$TASK_STATE/totals.env" "$ROOT_STATE_DIR/totals.env.tmp.$$" &&
-    mv -f "$ROOT_STATE_DIR/totals.env.tmp.$$" "$ROOT_STATE_DIR/totals.env"
-fi
+# Lifetime totals are committed directly to ROOT_STATE_DIR by record-clean-event.sh.
+# Never copy a lane-local snapshot over the shared ledger after concurrent work.
 for file in "$TASK_STATE"/logs/*; do
   [ -f "$file" ] || continue
   cp -f "$file" "$ROOT_STATE_DIR/logs/cache-lane-$TASK_ID-${file##*/}"

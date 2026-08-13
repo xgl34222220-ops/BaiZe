@@ -174,6 +174,7 @@ GLOBAL_STATUS=idle
 GLOBAL_REASON=normal
 [ "$PRESSURE" = 1 ] && { GLOBAL_STATUS=pressure; GLOBAL_REASON=storage_pressure; }
 [ "$REQUIRE_SCREEN_OFF" = 1 ] && [ "$INTERACTIVE" = 1 ] && { GLOBAL_STATUS=waiting; GLOBAL_REASON=screen_active; }
+[ "$HOT" = 1 ] && { GLOBAL_STATUS=waiting; GLOBAL_REASON=battery_hot; }
 
 for group in cache empty rules fragment deep; do
   [ "$(bool_value "schedule_${group}_enabled")" = 1 ] || continue
@@ -248,6 +249,16 @@ for group in cache empty rules fragment deep; do
     screen_due=$((NOW + HOLD_SECONDS))
     [ "$screen_due" -gt "$desired_due" ] && desired_due=$screen_due
   fi
+  temperature_hold=0
+  case "$group" in
+    fragment|deep)
+      if [ "$HOT" = 1 ]; then
+        thermal_due=$((NOW + HOLD_SECONDS))
+        [ "$thermal_due" -gt "$desired_due" ] && desired_due=$thermal_due
+        temperature_hold=1
+      fi
+      ;;
+  esac
 
   # Fixed daily schedules remain explicit user intent. Autopilot still records yield but does not rewrite their daily cycle.
   if [ "$DAILY" != 1 ] && [ "$desired_due" -gt 0 ]; then
@@ -268,7 +279,7 @@ last_bytes=$last_bytes
 desired_due=$desired_due
 storage_pressure=$PRESSURE
 screen_hold=$([ "$REQUIRE_SCREEN_OFF" = 1 ] && [ "$INTERACTIVE" = 1 ] && echo 1 || echo 0)
-temperature_hold=0
+temperature_hold=$temperature_hold
 updated=$NOW
 EOF_STATE
 done

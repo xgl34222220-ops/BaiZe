@@ -1,12 +1,14 @@
 #!/system/bin/sh
 
 MODDIR=${0%/*}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 TRIGGER=${2:-${1:-manual}}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
 CONFIG="$STATE_DIR/config.conf"
-WHITELIST="$STATE_DIR/whitelist.conf"
+WHITELIST="$STATE_DIR/whitelist.cache.conf"
+[ -f "$WHITELIST" ] || WHITELIST="$STATE_DIR/whitelist.conf"
 PACKAGE_WHITELIST=${BAIZE_PACKAGE_WHITELIST:-$STATE_DIR/native-cache-packages.conf}
 REPORT_DIR="$STATE_DIR/reports"
 LOG_DIR="$STATE_DIR/logs"
@@ -267,6 +269,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "cache-clean" "$deleted_bytes" "$deleted_files" "0" "$errors" \
   "$result" "$TRIGGER" "应用缓存|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+"$SHELL_BIN" "$MODDIR/record-clean-event.sh" "cache:$snapshot_id:$START_EPOCH:$$" cache-clean "$deleted_bytes" "$deleted_files" 0 0 0 "$elapsed" "$TRIGGER" || \
+  echo "累计统计写入失败" >>"$LOG_FILE"
 
 echo "$result"
 echo "扫描快照: $snapshot_id | 实际清理: $deleted_files 个 | 变化或跳过: $skipped | 失败: $errors | 耗时: ${elapsed}s"

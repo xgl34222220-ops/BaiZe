@@ -9,7 +9,8 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
 CONFIG="$STATE_DIR/config.conf"
-WHITELIST="$STATE_DIR/whitelist.conf"
+case "$MODE" in corpse-*) WHITELIST="$STATE_DIR/whitelist.corpses.conf" ;; *) WHITELIST="$STATE_DIR/whitelist.cache.conf" ;; esac
+[ -f "$WHITELIST" ] || WHITELIST="$STATE_DIR/whitelist.conf"
 PACKAGE_WHITELIST=${BAIZE_PACKAGE_WHITELIST:-$STATE_DIR/native-cache-packages.conf}
 REPORT_DIR="$STATE_DIR/reports"
 LOG_DIR="$STATE_DIR/logs"

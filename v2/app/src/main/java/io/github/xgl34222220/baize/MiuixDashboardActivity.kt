@@ -128,6 +128,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
+        restoreSnapshotHandles()
         updateStorage()
         FileOrganizerWorker.ensureWatchdog(this)
         dashboardState.value = dashboardState.value.copy(
@@ -152,6 +153,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     deep = { confirmDeepClean() },
                     corpses = { openProfile("corpses") },
                     audit = { startActivity(Intent(this, CleanCenterActivity::class.java)) },
+                    storageTools = { startActivity(Intent(this, StorageToolsActivity::class.java)) },
                     updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
                     schedulerCommand = { controlScheduler(it) },
@@ -982,6 +984,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val successfulScan = (cacheOk || safeOk) && !cancelled
             if (successfulScan && total > 0) {
                 snapshotExpiresAtElapsed = SystemClock.elapsedRealtime() + SNAPSHOT_TTL_MS
+                persistSnapshotHandles()
             } else {
                 clearSnapshotHandles()
             }
@@ -1059,6 +1062,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             var cleanedCandidates = 0
             var failures = 0
             var cancelled = false
+            var timedOut = false
             var stale = false
             val protectedItems = ArrayList<ProtectedUiItem>()
             val selection = JSONObject().put("__all_safe__", true).toString()
@@ -1068,6 +1072,13 @@ class MiuixDashboardActivity : ComponentActivity() {
                 if (result.has("error")) {
                     failures += 1
                     stale = stale || result.optString("error").contains("snapshot")
+                    if (profileResult) {
+                        safeSnapshotId = ""
+                        safeSnapshotCount = 0
+                    } else {
+                        cacheSnapshotId = ""
+                        cacheSnapshotCount = 0
+                    }
                     return
                 }
                 deletedBytes += result.optLong("deletedBytes", 0L).coerceAtLeast(0L)
@@ -1076,6 +1087,16 @@ class MiuixDashboardActivity : ComponentActivity() {
                 cleanedCandidates += result.optInt("cleanedCandidates", 0).coerceAtLeast(0)
                 failures += result.optInt("failures", 0).coerceAtLeast(0)
                 cancelled = cancelled || result.optBoolean("cancelled")
+                timedOut = timedOut || result.optBoolean("timedOut")
+                if (!result.optBoolean("cancelled") && !result.optBoolean("timedOut")) {
+                    if (profileResult) {
+                        safeSnapshotId = ""
+                        safeSnapshotCount = 0
+                    } else {
+                        cacheSnapshotId = ""
+                        cacheSnapshotCount = 0
+                    }
+                }
                 if (profileResult) {
                     val details = result.optJSONArray("details") ?: JSONArray()
                     for (index in 0 until details.length()) {
@@ -1115,7 +1136,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     }
                     consume(result, profileResult = false)
                 }
-                if (!cancelled && needsProfileEngine) {
+                if (!cancelled && !timedOut && needsProfileEngine) {
                     dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理安全项目快照…")
                     val result = withContext(Dispatchers.IO) {
                         JSONObject(requireNotNull(profileEngine).cleanProfileSelected(safeSnapshotId, selection, optionsJson()))
@@ -1131,6 +1152,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val title = when {
                 cancelled -> "白泽快照清理已停止"
+                timedOut -> "白泽快照清理已暂停"
                 stale -> "部分扫描结果已过期"
                 failures > 0 -> "白泽快照清理完成，但有异常"
                 else -> "白泽快照清理完成"
@@ -1138,6 +1160,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val resultLine = when {
                 stale -> "扫描快照已过期，没有重新扫描；请手动再次扫描"
                 cancelled -> "任务已安全停止，已释放 ${formatBytes(deletedBytes)}"
+                timedOut -> "本轮达到时间预算，已释放 ${formatBytes(deletedBytes)}，可继续原快照"
                 else -> "释放 ${formatBytes(deletedBytes)} · 处理 $cleanedCandidates 项"
             }
             val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
@@ -1145,7 +1168,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             saveProtectedItems(protectedItems)
             dashboardState.value = dashboardState.value.copy(
                 running = false,
-                scanCompleted = false,
+                scanCompleted = hasUsableScanSnapshots(),
                 lastReleased = deletedBytes,
                 lastTaskTime = taskTime,
                 protectedItems = protectedItems,
@@ -1155,39 +1178,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                 .putLong("last_clean_bytes", deletedBytes)
                 .putString("last_report_text", "$resultLine\n$detailLine")
                 .apply()
-            val recorder = profileEngine ?: rootService
-            if (recorder != null) {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        recorder.recordNativeTask(
-                            JSONObject()
-                                .put("mode", "snapshot-clean")
-                                .put("success", !cancelled && failures == 0)
-                                .put("cancelled", cancelled)
-                                .put("bytes", deletedBytes)
-                                .put("files", deletedFiles)
-                                .put("emptyFiles", emptyFiles)
-                                .put("emptyDirs", emptyDirs)
-                                .put("fragments", fragments)
-                                .put("errors", failures)
-                                .put("elapsedSeconds", elapsed / 1000L)
-                                .put("result", resultLine)
-                                .put(
-                                    "categorySummary",
-                                    buildList {
-                                        if (deletedFiles > 0) add("扫描快照|$deletedBytes|$deletedFiles")
-                                        if (emptyFiles > 0) add("空文件|0|$emptyFiles")
-                                        if (emptyDirs > 0) add("空目录|0|$emptyDirs")
-                                        if (fragments > 0) add("残留碎片|0|$fragments")
-                                    }.joinToString(";")
-                                )
-                                .toString()
-                        )
-                    }
-                }
-            }
             notifyCleanResult(title, resultLine, detailLine, deletedBytes)
-            clearSnapshotHandles()
+            if (hasUsableScanSnapshots()) persistSnapshotHandles() else clearSnapshotHandles()
             refreshHistory()
             refreshModuleState()
             updateStorage()
@@ -1251,6 +1243,38 @@ class MiuixDashboardActivity : ComponentActivity() {
         cacheSnapshotCount = 0
         safeSnapshotCount = 0
         snapshotExpiresAtElapsed = 0L
+        preferences.edit()
+            .remove(KEY_CACHE_SNAPSHOT_ID)
+            .remove(KEY_SAFE_SNAPSHOT_ID)
+            .remove(KEY_CACHE_SNAPSHOT_COUNT)
+            .remove(KEY_SAFE_SNAPSHOT_COUNT)
+            .remove(KEY_SNAPSHOT_EXPIRES_AT)
+            .apply()
+    }
+
+    private fun persistSnapshotHandles() {
+        val remaining = (snapshotExpiresAtElapsed - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        preferences.edit()
+            .putString(KEY_CACHE_SNAPSHOT_ID, cacheSnapshotId)
+            .putString(KEY_SAFE_SNAPSHOT_ID, safeSnapshotId)
+            .putInt(KEY_CACHE_SNAPSHOT_COUNT, cacheSnapshotCount)
+            .putInt(KEY_SAFE_SNAPSHOT_COUNT, safeSnapshotCount)
+            .putLong(KEY_SNAPSHOT_EXPIRES_AT, System.currentTimeMillis() + remaining)
+            .apply()
+    }
+
+    private fun restoreSnapshotHandles() {
+        val expiresAt = preferences.getLong(KEY_SNAPSHOT_EXPIRES_AT, 0L)
+        val remaining = expiresAt - System.currentTimeMillis()
+        if (remaining <= 0L || remaining > SNAPSHOT_TTL_MS) {
+            clearSnapshotHandles()
+            return
+        }
+        cacheSnapshotId = preferences.getString(KEY_CACHE_SNAPSHOT_ID, "").orEmpty()
+        safeSnapshotId = preferences.getString(KEY_SAFE_SNAPSHOT_ID, "").orEmpty()
+        cacheSnapshotCount = preferences.getInt(KEY_CACHE_SNAPSHOT_COUNT, 0).coerceAtLeast(0)
+        safeSnapshotCount = preferences.getInt(KEY_SAFE_SNAPSHOT_COUNT, 0).coerceAtLeast(0)
+        snapshotExpiresAtElapsed = SystemClock.elapsedRealtime() + remaining
     }
 
     private fun clearScanResult() {
@@ -1777,6 +1801,11 @@ class MiuixDashboardActivity : ComponentActivity() {
     companion object {
         const val EXTRA_RUN_SMART_CLEAN = "io.github.xgl34222220.baize.RUN_SMART_CLEAN"
         private const val SNAPSHOT_TTL_MS = 30L * 60L * 1000L
+        private const val KEY_CACHE_SNAPSHOT_ID = "active_cache_snapshot_id"
+        private const val KEY_SAFE_SNAPSHOT_ID = "active_safe_snapshot_id"
+        private const val KEY_CACHE_SNAPSHOT_COUNT = "active_cache_snapshot_count"
+        private const val KEY_SAFE_SNAPSHOT_COUNT = "active_safe_snapshot_count"
+        private const val KEY_SNAPSHOT_EXPIRES_AT = "active_snapshot_expires_at_epoch"
         private const val RAW_LOG_LIMIT = 16_000
     }
 }

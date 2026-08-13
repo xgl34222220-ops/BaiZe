@@ -30,7 +30,8 @@ schedule_empty_enabled=1
 schedule_empty_minutes=60
 schedule_rules_enabled=0
 schedule_fragment_enabled=0
-schedule_deep_enabled=0
+schedule_deep_enabled=1
+schedule_deep_minutes=60
 CONF
 : >"$HISTORY"
 
@@ -67,10 +68,11 @@ run_controller 5000 50 1 350
 [ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 1700 ]
 [ "$(value "$STATE/autopilot-empty.env" screen_hold)" = 1 ]
 
-# Battery temperature remains diagnostic telemetry and no longer delays any schedule mode.
+# Battery temperature is reported globally; lightweight empty cleanup is not delayed.
 run_controller 5000 50 0 430
 [ "$(value "$STATE/autopilot-empty.env" temperature_hold)" = 0 ]
 [ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 500 ]
-[ "$(value "$STATE/autopilot.env" reason)" = normal ]
+[ "$(value "$STATE/autopilot.env" reason)" = battery_hot ]
+[ "$(value "$STATE/autopilot-deep.env" temperature_hold)" = 1 ]
 
 echo "autopilot controller contract ok"

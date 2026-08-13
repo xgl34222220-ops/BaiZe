@@ -7,7 +7,7 @@ AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRep
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/CleanupEffectivenessActivity.kt"
 AUDIT_UI="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
+WORKFLOW="$ROOT/.github/workflows/ci.yml"
 
 for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST" "$WORKFLOW"; do
   test -f "$file" || { echo "missing effectiveness contract file: $file" >&2; exit 1; }
@@ -61,6 +61,6 @@ grep -Fq 'CleanupEffectivenessActivity::class.java' "$AUDIT_UI"
 grep -Fq 'android:name=".CleanupEffectivenessActivity"' "$MANIFEST"
 
 # Permanent Root regression must execute this contract.
-grep -Fq 'test-cleanup-effectiveness-contract.sh' "$WORKFLOW"
+grep -Fq 'for test_file in v2/tests/test-*.sh' "$WORKFLOW"
 
 echo "cleanup effectiveness scoring contract ok"

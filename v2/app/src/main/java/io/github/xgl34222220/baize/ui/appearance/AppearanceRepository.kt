@@ -53,7 +53,7 @@ class AppearanceRepository(private val context: Context) {
                 kolorStyle = KolorStyle.fromStorage(
                     preferences[Keys.kolorStyle] ?: preferences[Keys.legacyMonetStyle]
                 ),
-                monetEnabled = preferences[Keys.monetEnabled] ?: false,
+                monetEnabled = preferences[Keys.monetEnabled] ?: true,
                 amoledBlack = preferences[Keys.amoledBlack] ?: false,
                 blurEnabled = preferences[Keys.blurEnabled] ?: true,
                 glassEnabled = preferences[Keys.glassEnabled] ?: true,

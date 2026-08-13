@@ -9,6 +9,9 @@ RUNNING_FILE="$STATE_DIR/running.env"
 STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 CACHE_PREFIX=cache_auto
+BASE_PACKAGE_WHITELIST="$STATE_DIR/native-cache-packages.conf"
+ACTIVE_PACKAGE_WHITELIST="$STATE_DIR/active-cache-packages.conf"
+ACTIVE_PACKAGE_REASONS="$STATE_DIR/reports/active-package-skips.tsv"
 
 mkdir -p "$STATE_DIR" "$STATE_DIR/logs" "$STATE_DIR/reports"
 
@@ -37,12 +40,22 @@ fi
 printf '%s\n' "$$" >"$LOCK_DIR/pid"
 mkdir -p "$LOCK_DIR/tmp"
 rm -f "$STOP_FILE"
+[ -f "$BASE_PACKAGE_WHITELIST" ] || : >"$BASE_PACKAGE_WHITELIST"
+active_tmp="$LOCK_DIR/active-cache-detected"
+if [ -f "$MODDIR/active-package-guard.sh" ]; then
+  "$SHELL_BIN" "$MODDIR/active-package-guard.sh" "$active_tmp" "$ACTIVE_PACKAGE_REASONS" 2>/dev/null || : >"$active_tmp"
+else
+  : >"$active_tmp"
+fi
+{ cat "$BASE_PACKAGE_WHITELIST"; cat "$active_tmp"; } | sed '/^[[:space:]]*$/d' | sort -u >"$ACTIVE_PACKAGE_WHITELIST"
+chmod 0600 "$ACTIVE_PACKAGE_WHITELIST" 2>/dev/null || true
 
 CHILD_PID=0
 cleanup_transaction() {
   [ "$CHILD_PID" -gt 1 ] 2>/dev/null && kill "$CHILD_PID" 2>/dev/null
   rm -f "$RUNNING_FILE" 2>/dev/null
   rm -rf -- "$LOCK_DIR" 2>/dev/null
+  rm -f "$ACTIVE_PACKAGE_WHITELIST" 2>/dev/null
 }
 handle_signal() {
   trap - EXIT INT TERM
@@ -62,6 +75,7 @@ run_component() {
   shift
   BAIZE_LOCK_HELD=1 \
   BAIZE_CACHE_PREFIX="$CACHE_PREFIX" \
+  BAIZE_PACKAGE_WHITELIST="$ACTIVE_PACKAGE_WHITELIST" \
   BAIZE_SUPPRESS_SCAN_HISTORY=1 \
   "$SHELL_BIN" "$component" "$@" &
   CHILD_PID=$!

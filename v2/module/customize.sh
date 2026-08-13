@@ -14,11 +14,17 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.5.7"
+ui_print "- 正在安装白泽 v2.6.0"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
 ui_print "- 配套白泽 App 用于操作、白名单和定时任务设置"
+
+device_arch=${ARCH:-$(uname -m 2>/dev/null)}
+case "$device_arch" in
+  arm64|aarch64) ;;
+  *) abort "! 白泽当前仅支持 ARM64 设备，检测到：$device_arch" ;;
+esac
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
@@ -33,6 +39,7 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/profile-cleaner.sh" ] || abort "! 模块包中缺少卸载残留快照执行器"
 [ -f "$MODPATH/deep-scan-manifest.sh" ] || abort "! 模块包中缺少深度不可变快照扫描器"
 [ -f "$MODPATH/deep-manifest-clean.sh" ] || abort "! 模块包中缺少深度不可变快照清理器"
+[ -f "$MODPATH/record-clean-event.sh" ] || abort "! 模块包中缺少统一累计统计账本"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
 [ -f "$DEEP_SNAPSHOT_ENGINE" ] || abort "! 模块包中缺少 arm64 深度快照引擎"
@@ -134,7 +141,7 @@ fi
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
 chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/cache-lane-worker.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" "$MODPATH/deep-scan-manifest.sh" "$MODPATH/deep-manifest-clean.sh" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
+chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/record-clean-event.sh" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
 chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/autopilot-controller.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
 install_app() {

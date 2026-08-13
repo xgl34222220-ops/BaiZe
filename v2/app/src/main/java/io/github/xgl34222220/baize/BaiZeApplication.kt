@@ -11,6 +11,8 @@ class BaiZeApplication : Application() {
         ThemeManager.install(this)
         NativeNotifier.ensureChannel(this)
         DisplayPerformanceController.install(this)
+        // Register the Android wake bridge independently of any Activity lifecycle.
+        FileOrganizerWorker.ensureWatchdog(this)
         Shell.enableVerboseLogging = BuildConfig.DEBUG
         Shell.setDefaultBuilder(
             Shell.Builder.create()

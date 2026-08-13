@@ -34,6 +34,8 @@ case "$MODE" in
     ;;
   *) echo "不支持的快照清理模式：$MODE" >&2; exit 2 ;;
 esac
+case "$MODE" in corpse-*) SCOPED_WHITELIST="$STATE_DIR/whitelist.corpses.conf" ;; *) SCOPED_WHITELIST="$STATE_DIR/whitelist.deep.conf" ;; esac
+[ -f "$SCOPED_WHITELIST" ] && WHITELIST="$SCOPED_WHITELIST"
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || { [ -f "$MODDIR/config/default.conf" ] && cp -f "$MODDIR/config/default.conf" "$CONFIG" || : >"$CONFIG"; }
@@ -487,6 +489,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "$MODE" "$deleted_bytes" "$deleted_files" "$deleted_dirs" "$errors" \
   "$result" "$TRIGGER" "$TITLE|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+${BAIZE_SHELL_BIN:-/system/bin/sh} "$MODDIR/record-clean-event.sh" "profile:$snapshot_id:$MODE:$START_EPOCH:$$" "$MODE" "$deleted_bytes" "$deleted_files" 0 "$deleted_dirs" 0 "$elapsed" "$TRIGGER" || \
+  echo "累计统计写入失败" >>"$LOG_FILE"
 
 echo "$result"
 echo "扫描快照: $snapshot_id | 清理目标: $cleaned_targets | 文件: $deleted_files | 目录: $deleted_dirs | 批次: $total_batches | 剩余: $remaining_targets | 跳过: $skipped | 失败: $errors"

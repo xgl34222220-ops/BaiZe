@@ -30,7 +30,7 @@ enum class RefreshRateMode(val label: String) {
 
     companion object {
         fun fromStorage(value: String?): RefreshRateMode =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: HIGH
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: SYSTEM
     }
 }
 
@@ -85,7 +85,7 @@ data class AppearanceSettings(
     val blurEnabled: Boolean = true,
     val glassEnabled: Boolean = true,
     val floatingDock: Boolean = true,
-    val refreshRateMode: RefreshRateMode = RefreshRateMode.HIGH,
+    val refreshRateMode: RefreshRateMode = RefreshRateMode.SYSTEM,
     val adaptiveSmoothMode: Boolean = true
 ) {
     val accent: AccentOption

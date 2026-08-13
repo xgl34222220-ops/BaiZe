@@ -2,10 +2,12 @@
 set -u
 
 MODDIR=${0%/*}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 CONFIG="$STATE_DIR/config.conf"
-WHITELIST="$STATE_DIR/whitelist.conf"
+WHITELIST="$STATE_DIR/whitelist.deep.conf"
+[ -f "$WHITELIST" ] || WHITELIST="$STATE_DIR/whitelist.conf"
 DEEP_RULES=${BAIZE_DEEP_RULES:-$MODDIR/config/deep.rules}
 LOCK_DIR="$STATE_DIR/run.lock"
 RUNNING_FILE="$STATE_DIR/running.env"
@@ -87,12 +89,15 @@ acc_dirs=$(uint_value "$(sed -n 's/^dirs=//p' "$ACCUM_FILE" 2>/dev/null | tail -
 acc_bytes=$(uint_value "$(sed -n 's/^bytes=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
 acc_skipped=$(uint_value "$(sed -n 's/^skipped=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
 acc_errors=$(uint_value "$(sed -n 's/^errors=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
+cursor_before=$(uint_value "$(sed -n '1p' "$CURSOR_FILE" 2>/dev/null)" 0)
 
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-deep-clean.tsv"
 SUMMARY_FILE="$LOCK_DIR/deep-clean-summary.env"
 LOG_FILE="$LOG_DIR/$STAMP-deep-clean.log"
 START_EPOCH=$(date +%s)
+SAFE_ONLY=0
+case "$TRIGGER" in scheduler:*) SAFE_ONLY=1 ;; esac
 
 "$SNAPSHOT_ENGINE" clean \
   --manifest "$MANIFEST_FILE" \
@@ -102,6 +107,7 @@ START_EPOCH=$(date +%s)
   --whitelist "$WHITELIST" \
   --progress "$RUNNING_FILE" \
   --stop "$STOP_FILE" \
+  --safe-only "$SAFE_ONLY" \
   --max-file-bytes "$max_file_bytes"
 code=$?
 
@@ -187,6 +193,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" deep-clean "$run_bytes" "$run_files" "$run_dirs" "$run_errors" \
   "$result" "$TRIGGER" "深度不可变快照|$run_bytes|$run_files" "$snapshot_id" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+"$SHELL_BIN" "$MODDIR/record-clean-event.sh" "deep:$snapshot_id:$cursor_before:$cursor" deep-clean "$run_bytes" "$run_files" 0 "$run_dirs" 0 "$elapsed" "$TRIGGER" || \
+  echo "累计统计写入失败" >>"$LOG_FILE"
 
 echo "$result"
 echo "进度: $cursor/$records | 剩余: $remaining | 文件: $total_files | 目录: $total_dirs | 跳过: $total_skipped | 失败: $total_errors"

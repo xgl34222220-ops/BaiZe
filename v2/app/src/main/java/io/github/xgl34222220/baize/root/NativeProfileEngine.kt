@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize.root
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -11,6 +13,7 @@ import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
 import kotlin.math.max
@@ -25,7 +28,8 @@ import kotlin.math.min
 internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
-    private val quarantineRepository: QuarantineRepository = QuarantineRepository()
+    private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
+    private val stateDir: File = File(RootPaths.STATE_DIR)
 ) {
     data class Progress(
         val phase: String,
@@ -56,13 +60,16 @@ internal class NativeProfileEngine(
         val path: String,
         val packageName: String = "",
         val appName: String = "",
+        val userId: Int = -1,
         val deleteRoot: Boolean = false,
         var bytes: Long = -1L,
         var files: Long = -1L,
         var directories: Long = -1L,
         var measured: Boolean = false,
         var complete: Boolean = false,
-        val note: String = ""
+        val note: String = "",
+        var manifestComplete: Boolean = false,
+        val records: MutableList<SnapshotRecord> = mutableListOf()
     ) {
         fun json(): JSONObject = JSONObject()
             .put("id", id)
@@ -73,14 +80,26 @@ internal class NativeProfileEngine(
             .put("path", path)
             .put("packageName", packageName)
             .put("appName", appName.ifBlank { packageName.ifBlank { label } })
+            .put("userId", userId)
             .put("deleteRoot", deleteRoot)
             .put("bytes", bytes)
             .put("files", files)
             .put("directories", directories)
             .put("measured", measured)
             .put("complete", complete)
+            .put("manifestComplete", manifestComplete)
             .put("note", note)
     }
+
+    private data class SnapshotRecord(
+        val path: String,
+        val kind: String,
+        val device: Long,
+        val inode: Long,
+        val size: Long,
+        val mtime: Long,
+        val ctime: Long
+    )
 
     private data class Snapshot(
         val id: String,
@@ -88,7 +107,10 @@ internal class NativeProfileEngine(
         val createdAt: Long,
         val ruleSha: String,
         val options: Options,
-        val candidates: MutableList<Candidate>
+        val candidates: MutableList<Candidate>,
+        var state: String = "READY",
+        var cursor: Int = 0,
+        var selectionJson: String = ""
     )
 
     private data class Stats(
@@ -102,6 +124,7 @@ internal class NativeProfileEngine(
     private data class Node(val file: File, val depth: Int, val post: Boolean = false)
 
     private val snapshots = ConcurrentHashMap<String, Snapshot>()
+    private val transactionDir = File(stateDir, "transactions/profile")
 
     fun catalog(): String = JSONObject()
         .put("profiles", JSONArray().apply {
@@ -143,7 +166,23 @@ internal class NativeProfileEngine(
 
         val snapshotId = UUID.randomUUID().toString()
         val list = candidates.values.toMutableList()
-        snapshots[snapshotId] = Snapshot(snapshotId, id, System.currentTimeMillis(), ruleSha, options, list)
+        val manifestDeadline = SystemClock.elapsedRealtime() + if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS
+        var totalRecords = 0
+        for ((index, candidate) in list.withIndex()) {
+            if (cancelled.get() || SystemClock.elapsedRealtime() >= manifestDeadline || totalRecords >= MAX_SNAPSHOT_RECORDS) break
+            if (index == 0 || index % 32 == 0) {
+                progress(Progress("固化不可变清理清单", index, list.size, candidate.path))
+            }
+            candidate.manifestComplete = captureManifest(
+                candidate,
+                manifestDeadline,
+                MAX_SNAPSHOT_RECORDS - totalRecords
+            )
+            totalRecords += candidate.records.size
+        }
+        val snapshot = Snapshot(snapshotId, id, System.currentTimeMillis(), ruleSha, options, list)
+        snapshots[snapshotId] = snapshot
+        persistSnapshot(snapshot)
         progress(Progress("${label(id)}扫描完成", list.size, list.size))
         return JSONObject()
             .put("success", true)
@@ -160,6 +199,8 @@ internal class NativeProfileEngine(
             .put("knownBytes", list.filter { it.measured }.sumOf { it.bytes.coerceAtLeast(0L) })
             .put("measuredCandidates", list.count { it.measured })
             .put("unmeasuredCandidates", list.count { !it.measured })
+            .put("immutableCandidates", list.count { it.manifestComplete })
+            .put("protectedIncompleteCandidates", list.count { !it.manifestComplete })
             .put("emptyFiles", list.count { it.category == "empty_file" })
             .put("emptyDirs", list.count { it.category == "empty_dir" })
             .put("fragmentFiles", list.count { it.category == "fragment" })
@@ -272,6 +313,7 @@ internal class NativeProfileEngine(
         val end = min(snapshot.candidates.size, start + count)
         val pageDeadline = SystemClock.elapsedRealtime() + PAGE_BUDGET_MS
         val array = JSONArray()
+        var snapshotChanged = false
         for (index in start until end) {
             if (cancelled.get()) break
             val item = snapshot.candidates[index]
@@ -282,9 +324,11 @@ internal class NativeProfileEngine(
                 item.directories = stat.directories
                 item.measured = true
                 item.complete = stat.complete
+                snapshotChanged = true
             }
             array.put(item.json())
         }
+        if (snapshotChanged) persistSnapshot(snapshot)
         return JSONObject()
             .put("success", true)
             .put("snapshotId", snapshotId)
@@ -308,6 +352,7 @@ internal class NativeProfileEngine(
             val current = sha256(deepRules())
             if (snapshot.ruleSha.isBlank() || current != snapshot.ruleSha) {
                 snapshots.remove(snapshotId)
+                deleteSnapshot(snapshotId)
                 return JSONObject().put("error", "rules_changed").put("message", "深度规则已变化，请重新扫描").toString()
             }
         }
@@ -322,6 +367,14 @@ internal class NativeProfileEngine(
         if (selected.isEmpty()) {
             return JSONObject().put("error", "empty_selection").put("message", "没有明确勾选任何项目").toString()
         }
+        val normalizedSelection = selectionJson.take(MAX_SELECTION_JSON)
+        val resumeCursor = if (snapshot.state in setOf("STOPPED", "CLEANING") && snapshot.selectionJson == normalizedSelection) {
+            snapshot.cursor.coerceIn(0, selected.size)
+        } else 0
+        snapshot.state = "CLEANING"
+        snapshot.selectionJson = normalizedSelection
+        snapshot.cursor = resumeCursor
+        persistSnapshot(snapshot)
 
         val started = SystemClock.elapsedRealtime()
         val deadline = started + CLEAN_TOTAL_MS
@@ -334,13 +387,16 @@ internal class NativeProfileEngine(
         var cleaned = 0
         var skipped = 0
 
-        for ((index, candidate) in selected.withIndex()) {
+        for (index in resumeCursor until selected.size) {
+            val candidate = selected[index]
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
             progress(Progress("正在清理${candidate.label}", index, selected.size, candidate.path, deletedBytes, deletedFiles, failures))
             val reason = validate(candidate, options, mounts)
             if (reason != null) {
                 skipped += 1
                 details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
+                snapshot.cursor = index + 1
+                persistSnapshot(snapshot)
                 continue
             }
 
@@ -360,16 +416,25 @@ internal class NativeProfileEngine(
             val complete = result.complete && if (candidate.deleteRoot) !target.exists() else isEmptyDirectory(target)
             if (complete || actualBytes > 0L || actualFiles > 0L || actualDirs > 0L) cleaned += 1 else skipped += 1
             details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else "仍有受保护或未删除项目", actualBytes, actualFiles, actualDirs))
+            snapshot.cursor = index + 1
+            persistSnapshot(snapshot)
         }
-
-        snapshots.remove(snapshotId)
         val timedOut = SystemClock.elapsedRealtime() >= deadline
         val wasCancelled = cancelled.get()
+        if (wasCancelled || timedOut) {
+            snapshot.state = "STOPPED"
+            persistSnapshot(snapshot)
+        } else {
+            snapshots.remove(snapshotId)
+            deleteSnapshot(snapshotId)
+        }
         progress(Progress(if (wasCancelled) "清理已停止" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
         return JSONObject()
             .put("success", true)
             .put("profile", snapshot.profile)
             .put("selected", selected.size)
+            .put("startCursor", resumeCursor)
+            .put("endCursor", snapshot.cursor)
             .put("cleanedCandidates", cleaned)
             .put("skippedCandidates", skipped)
             .put("failures", failures)
@@ -395,6 +460,7 @@ internal class NativeProfileEngine(
         val current = sha256(deepRules())
         if (snapshot.ruleSha.isBlank() || current != snapshot.ruleSha) {
             snapshots.remove(snapshotId)
+            deleteSnapshot(snapshotId)
             return JSONObject().put("error", "rules_changed").put("message", "深度规则已变化，请重新扫描").toString()
         }
     }
@@ -408,6 +474,14 @@ internal class NativeProfileEngine(
     if (selected.isEmpty()) {
         return JSONObject().put("error", "empty_selection").put("message", "没有明确选择高风险隔离项目").toString()
     }
+    val normalizedSelection = selectionJson.take(MAX_SELECTION_JSON)
+    val resumeCursor = if (snapshot.state in setOf("STOPPED", "CLEANING") && snapshot.selectionJson == normalizedSelection) {
+        snapshot.cursor.coerceIn(0, selected.size)
+    } else 0
+    snapshot.state = "CLEANING"
+    snapshot.selectionJson = normalizedSelection
+    snapshot.cursor = resumeCursor
+    persistSnapshot(snapshot)
 
     val options = parseOptions(optionsJson).copy(allowHighRisk = true)
     val mounts = mountPoints()
@@ -419,13 +493,16 @@ internal class NativeProfileEngine(
     var failures = 0
     val started = SystemClock.elapsedRealtime()
     val deadline = started + CLEAN_TOTAL_MS
-    for ((index, candidate) in selected.withIndex()) {
+    for (index in resumeCursor until selected.size) {
+        val candidate = selected[index]
         if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
         progress(Progress("正在隔离${candidate.label}", index, selected.size, candidate.path, quarantinedBytes, quarantinedFiles, failures))
         val reason = validate(candidate, options, mounts)
         if (reason != null) {
             failures += 1
             details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
+            snapshot.cursor = index + 1
+            persistSnapshot(snapshot)
             continue
         }
         val result = quarantineRepository.quarantine(
@@ -451,15 +528,25 @@ internal class NativeProfileEngine(
                 .put("path", candidate.path)
                 .put("action", if (result.success) "quarantined" else "failed")
         )
+        snapshot.cursor = index + 1
+        persistSnapshot(snapshot)
     }
-    snapshots.remove(snapshotId)
     val wasCancelled = cancelled.get()
     val timedOut = SystemClock.elapsedRealtime() >= deadline
+    if (wasCancelled || timedOut) {
+        snapshot.state = "STOPPED"
+        persistSnapshot(snapshot)
+    } else {
+        snapshots.remove(snapshotId)
+        deleteSnapshot(snapshotId)
+    }
     progress(Progress(if (wasCancelled) "隔离已停止" else "隔离完成", selected.size, selected.size, bytes = quarantinedBytes, files = quarantinedFiles, failures = failures))
     return JSONObject()
         .put("success", true)
         .put("profile", snapshot.profile)
         .put("selected", selected.size)
+        .put("startCursor", resumeCursor)
+        .put("endCursor", snapshot.cursor)
         .put("quarantinedCandidates", quarantined)
         .put("quarantinedBytes", quarantinedBytes)
         .put("quarantinedFiles", quarantinedFiles)
@@ -619,7 +706,6 @@ internal class NativeProfileEngine(
         progress: (Progress) -> Unit,
         started: Long
     ) {
-        val installed = installedPackages()
         val roots = ArrayList<File>()
         for (storage in storageRoots()) {
             roots.add(File(storage, "Android/data"))
@@ -629,6 +715,8 @@ internal class NativeProfileEngine(
         for ((index, root) in existing.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描卸载残留", index, existing.size, root.path))
+            val userId = storageUserId(root.parentFile?.parentFile ?: root)
+            val installed = installedPackages(userId) ?: continue
             val children = root.listFiles() ?: emptyArray()
             for (child in children) {
                 if (cancelled.get()) return
@@ -642,6 +730,7 @@ internal class NativeProfileEngine(
                     child,
                     packageName,
                     packageName,
+                    userId,
                     true
                 )
                 add(out, item, options, true)
@@ -672,7 +761,12 @@ internal class NativeProfileEngine(
         if (whitelisted(candidate, options)) return "白名单保护"
         if (candidate.risk == "critical") return "关键风险只允许审计"
         if (candidate.risk == "high" && !options.allowHighRisk) return "高风险清理未启用"
-        if (candidate.profile == "corpses" && installedPackages().containsKey(candidate.packageName)) return "应用已重新安装"
+        if (!candidate.manifestComplete || candidate.records.isEmpty()) return "不可变清单不完整，拒绝清理"
+        if (!manifestStillMatches(candidate, mounts)) return "目标内容在扫描后发生变化"
+        if (candidate.profile == "corpses") {
+            val installed = installedPackages(candidate.userId) ?: return "无法确认该用户的安装包列表"
+            if (installed.containsKey(candidate.packageName)) return "应用已重新安装"
+        }
         if (!stillMatches(candidate, target, options)) return "目标不再符合扫描条件"
         return null
     }
@@ -682,61 +776,47 @@ internal class NativeProfileEngine(
         "fragments" -> target.isFile &&
             target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
             fragmentNameMatches(target.name)
-        "corpses" -> corpsePath(canonical(target)) && !installedPackages().containsKey(candidate.packageName)
+        "corpses" -> corpsePath(canonical(target)) &&
+            (installedPackages(candidate.userId)?.containsKey(candidate.packageName) == false)
         "rules", "deep" -> mutationRoot(canonical(target))
         else -> false
     }
 
     private fun deleteCandidate(candidate: Candidate, target: File, maxFileBytes: Long, mounts: Set<String>, deadline: Long): Stats {
-        if (target.isFile) {
-            if (target.length() > maxFileBytes) return Stats(0L, 0L, 0L, true)
-            val size = target.length()
-            val ok = runCatching { target.delete() }.getOrDefault(false)
-            return Stats(if (ok) size else 0L, if (ok) 1L else 0L, 0L, true, if (ok) 0 else 1)
-        }
-        if (candidate.category == "empty_dir") {
-            val ok = runCatching { target.delete() }.getOrDefault(false)
-            return Stats(0L, 0L, if (ok) 1L else 0L, true, if (ok) 0 else 1)
-        }
-
-        val stack = ArrayDeque<Node>()
-        stack.add(Node(target, 0, false))
+        if (!candidate.manifestComplete || candidate.records.isEmpty()) return Stats(0L, 0L, 0L, false, 1)
         var bytes = 0L
         var files = 0L
         var directories = 0L
         var failures = 0
         var complete = true
-        while (stack.isNotEmpty()) {
+        val ordered = candidate.records.sortedWith(compareBy<SnapshotRecord> { it.kind == "dir" }.thenByDescending { it.path.length })
+        for (record in ordered) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) {
                 complete = false
                 break
             }
-            val node = stack.removeLast()
-            val file = node.file
-            if (node.post) {
-                if ((file != target || candidate.deleteRoot) && runCatching { file.delete() }.getOrDefault(false)) directories += 1L
+            val file = File(record.path)
+            val unchanged = if (record.kind == "dir") {
+                file.isDirectory && !isSymlink(file)
+            } else {
+                recordMatches(file, record)
+            }
+            if (record.path != canonical(file) || mounts.contains(record.path) || !unchanged) {
+                complete = false
+                failures += 1
                 continue
             }
-            if (!file.exists() || isSymlink(file)) continue
-            val path = canonical(file)
-            if (file != target && mounts.contains(path)) continue
-            if (file.isFile) {
-                val size = file.length()
-                if (size > maxFileBytes) continue
-                if (runCatching { file.delete() }.getOrDefault(false)) {
-                    bytes += size
+            if (record.kind == "file") {
+                if (record.size > maxFileBytes) {
+                    complete = false
+                } else if (runCatching { file.delete() }.getOrDefault(false)) {
+                    bytes += record.size
                     files += 1L
                 } else failures += 1
-                continue
-            }
-            if (file.isDirectory) {
-                stack.add(Node(file, node.depth, true))
-                val children = file.listFiles()
-                if (children == null) {
-                    failures += 1
-                } else {
-                    for (child in children) stack.add(Node(child, node.depth + 1, false))
-                }
+            } else if ((file != target || candidate.deleteRoot) && runCatching { file.delete() }.getOrDefault(false)) {
+                directories += 1L
+            } else if (file.exists() && (file != target || candidate.deleteRoot)) {
+                complete = false
             }
         }
         return Stats(bytes, files, directories, complete, failures)
@@ -936,11 +1016,12 @@ internal class NativeProfileEngine(
         file: File,
         packageName: String = "",
         appName: String = "",
+        userId: Int = -1,
         deleteRoot: Boolean = false,
         note: String = ""
     ): Candidate {
         val path = canonical(file)
-        return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, deleteRoot, note = note)
+        return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, userId, deleteRoot, note = note)
     }
 
     private fun profile(id: String, title: String, subtitle: String, risk: String): JSONObject = JSONObject()
@@ -977,20 +1058,44 @@ internal class NativeProfileEngine(
 
     private fun deepRules(): File? = rulesDirectory()?.resolve("deep.rules")?.takeIf { it.isFile }
 
-    private fun installedPackages(): Map<String, String> = runCatching {
-        @Suppress("DEPRECATION")
-        context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA).associate { info ->
-            info.packageName to context.packageManager.getApplicationLabel(info).toString().ifBlank { info.packageName }
-        }
-    }.getOrDefault(emptyMap())
+    private fun storageUserId(storage: File): Int = storage.name.toIntOrNull()
+        ?: Regex("/(?:emulated|media)/(\\d+)(?:/|$)").find(canonical(storage))?.groupValues?.get(1)?.toIntOrNull()
+        ?: 0
+
+    /** Null means the user/package state could not be proven, so corpse deletion must fail closed. */
+    private fun installedPackages(userId: Int): Map<String, String>? {
+        val normalizedUser = userId.coerceAtLeast(0)
+        val commandResult = runCatching {
+            val process = ProcessBuilder("cmd", "package", "list", "packages", "--user", normalizedUser.toString())
+                .redirectErrorStream(true).start()
+            if (!process.waitFor(4, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+            if (process.exitValue() != 0) return@runCatching null
+            process.inputStream.bufferedReader().useLines { lines ->
+                lines.map { it.trim().removePrefix("package:").substringBefore(' ') }
+                    .filter(RootValidation.packageName::matches).associateWith { it }
+            }.takeIf { it.containsKey("android") }
+        }.getOrNull()
+        if (commandResult != null) return commandResult
+        if (normalizedUser != 0) return null
+        return runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA).associate { info ->
+                info.packageName to context.packageManager.getApplicationLabel(info).toString().ifBlank { info.packageName }
+            }.takeIf { it.containsKey("android") }
+        }.getOrNull()
+    }
 
     private fun risk(path: String): String {
-        val value = path.lowercase()
+        val components = path.lowercase().split('/').filter { it.isNotBlank() }.toSet()
         return when {
-            CRITICAL.any { value.contains(it) } -> "critical"
-            HIGH.any { value.contains(it) } -> "high"
-            MEDIUM.any { value.contains(it) } -> "medium"
-            else -> "low"
+            CRITICAL.any { it in components } -> "critical"
+            HIGH.any { it in components } -> "high"
+            MEDIUM.any { it in components } -> "medium"
+            LOW.any { it in components } -> "low"
+            else -> "high"
         }
     }
 
@@ -1086,10 +1191,191 @@ internal class NativeProfileEngine(
         .put("files", files)
         .put("directories", directories)
 
+    private fun captureManifest(candidate: Candidate, deadline: Long, remainingRecords: Int): Boolean {
+        if (remainingRecords <= 0) return false
+        val root = File(candidate.path)
+        val mounts = mountPoints()
+        val stack = ArrayDeque<File>()
+        stack.add(root)
+        var complete = true
+        while (stack.isNotEmpty()) {
+            if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline || candidate.records.size >= remainingRecords) {
+                complete = false
+                break
+            }
+            val file = stack.removeLast()
+            val path = canonical(file)
+            if (!pathRelation(candidate.path, path) || isSymlink(file) || (file != root && mounts.contains(path))) {
+                complete = false
+                continue
+            }
+            val record = snapshotRecord(file, path)
+            if (record == null) {
+                complete = false
+                continue
+            }
+            candidate.records += record
+            if (record.kind == "dir") {
+                val children = file.listFiles()
+                if (children == null) complete = false else children.forEach(stack::add)
+            }
+        }
+        candidate.records.sortBy { it.path }
+        return complete && candidate.records.isNotEmpty()
+    }
+
+    private fun snapshotRecord(file: File, path: String): SnapshotRecord? = runCatching {
+        val stat = Os.lstat(path)
+        val kind = when {
+            OsConstants.S_ISREG(stat.st_mode) -> "file"
+            OsConstants.S_ISDIR(stat.st_mode) -> "dir"
+            else -> return null
+        }
+        SnapshotRecord(
+            path = path,
+            kind = kind,
+            device = stat.st_dev,
+            inode = stat.st_ino,
+            size = if (kind == "file") stat.st_size.coerceAtLeast(0L) else 0L,
+            mtime = stat.st_mtime,
+            ctime = stat.st_ctime
+        )
+    }.getOrNull()
+
+    private fun recordMatches(file: File, expected: SnapshotRecord): Boolean {
+        if (!file.exists() || isSymlink(file)) return false
+        val actual = snapshotRecord(file, canonical(file)) ?: return false
+        return actual == expected
+    }
+
+    private fun manifestStillMatches(candidate: Candidate, mounts: Set<String>): Boolean {
+        if (!candidate.manifestComplete || candidate.records.isEmpty()) return false
+        val expectedPaths = candidate.records.asSequence().mapTo(hashSetOf()) { it.path }
+        for (record in candidate.records) {
+            val file = File(record.path)
+            if (!pathRelation(candidate.path, record.path) || mounts.contains(record.path) || !recordMatches(file, record)) return false
+            if (record.kind == "dir") {
+                val children = file.listFiles() ?: return false
+                if (children.any { child -> canonical(child) !in expectedPaths }) return false
+            }
+        }
+        return true
+    }
+
+    private fun pathRelation(parent: String, child: String): Boolean =
+        child == parent || child.startsWith(parent.trimEnd('/') + "/")
+
+    private fun persistSnapshot(snapshot: Snapshot) = runCatching {
+        transactionDir.mkdirs()
+        RootFileStore.writeAtomic(snapshotFile(snapshot.id), snapshotJson(snapshot).toString())
+    }
+
+    private fun deleteSnapshot(id: String) {
+        if (SNAPSHOT_ID.matches(id)) snapshotFile(id).delete()
+    }
+
+    private fun snapshotFile(id: String): File = File(transactionDir, "$id.json")
+
+    private fun snapshotJson(snapshot: Snapshot): JSONObject = JSONObject()
+        .put("schema", SNAPSHOT_SCHEMA)
+        .put("id", snapshot.id)
+        .put("profile", snapshot.profile)
+        .put("createdAt", snapshot.createdAt)
+        .put("expiresAt", snapshot.createdAt + SNAPSHOT_TTL_MS)
+        .put("ruleSha", snapshot.ruleSha)
+        .put("state", snapshot.state)
+        .put("cursor", snapshot.cursor)
+        .put("selectionJson", snapshot.selectionJson)
+        .put("options", JSONObject()
+            .put("whitelistPackages", JSONArray(snapshot.options.whitelistPackages.toList()))
+            .put("whitelistPaths", JSONArray(snapshot.options.whitelistPaths.toList()))
+            .put("maxFileBytes", snapshot.options.maxFileBytes)
+            .put("fragmentDays", snapshot.options.fragmentDays)
+            .put("allowHighRisk", snapshot.options.allowHighRisk)
+            .put("maxAutoRisk", snapshot.options.maxAutoRisk)
+            .put("highRiskMode", snapshot.options.highRiskMode))
+        .put("candidates", JSONArray().apply {
+            snapshot.candidates.forEach { candidate ->
+                put(candidate.json().put("records", JSONArray().apply {
+                    candidate.records.forEach { record ->
+                        put(JSONObject()
+                            .put("path", record.path).put("kind", record.kind)
+                            .put("device", record.device).put("inode", record.inode)
+                            .put("size", record.size).put("mtime", record.mtime).put("ctime", record.ctime))
+                    }
+                }))
+            }
+        })
+
+    private fun restoreSnapshot(id: String): Snapshot? {
+        if (!SNAPSHOT_ID.matches(id)) return null
+        val file = snapshotFile(id)
+        if (!file.isFile || file.length() !in 1..MAX_SNAPSHOT_FILE_BYTES) return null
+        return runCatching {
+            val json = JSONObject(file.readText())
+            require(json.optInt("schema") == SNAPSHOT_SCHEMA && json.optString("id") == id)
+            val createdAt = json.optLong("createdAt")
+            val age = System.currentTimeMillis() - createdAt
+            require(createdAt > 0L && age in -MAX_CLOCK_SKEW_MS..SNAPSHOT_TTL_MS)
+            val optionJson = json.getJSONObject("options")
+            val options = Options(
+                whitelistPackages = jsonStringSet(optionJson.optJSONArray("whitelistPackages")),
+                whitelistPaths = jsonStringSet(optionJson.optJSONArray("whitelistPaths")),
+                maxFileBytes = optionJson.optLong("maxFileBytes", DEFAULT_MAX_FILE_BYTES).coerceIn(1L, Long.MAX_VALUE / 4),
+                fragmentDays = optionJson.optInt("fragmentDays", 7).coerceIn(1, 365),
+                allowHighRisk = optionJson.optBoolean("allowHighRisk"),
+                maxAutoRisk = optionJson.optString("maxAutoRisk", "low").takeIf { it == "low" || it == "medium" } ?: "low",
+                highRiskMode = optionJson.optString("highRiskMode", "audit").takeIf { it in setOf("audit", "quarantine", "delete") } ?: "audit"
+            )
+            val candidatesJson = json.getJSONArray("candidates")
+            require(candidatesJson.length() <= MAX_CANDIDATES)
+            val candidates = mutableListOf<Candidate>()
+            var recordCount = 0
+            for (index in 0 until candidatesJson.length()) {
+                val item = candidatesJson.getJSONObject(index)
+                val recordsJson = item.optJSONArray("records") ?: JSONArray()
+                recordCount += recordsJson.length()
+                require(recordCount <= MAX_SNAPSHOT_RECORDS)
+                val records = mutableListOf<SnapshotRecord>()
+                for (recordIndex in 0 until recordsJson.length()) {
+                    val record = recordsJson.getJSONObject(recordIndex)
+                    val path = record.optString("path")
+                    val kind = record.optString("kind")
+                    require(path.startsWith('/') && kind in setOf("file", "dir"))
+                    records += SnapshotRecord(path, kind, record.optLong("device"), record.optLong("inode"),
+                        record.optLong("size"), record.optLong("mtime"), record.optLong("ctime"))
+                }
+                candidates += Candidate(
+                    id = item.getString("id"), profile = item.getString("profile"), category = item.getString("category"),
+                    label = item.optString("categoryLabel"), risk = item.getString("risk"), path = item.getString("path"),
+                    packageName = item.optString("packageName"), appName = item.optString("appName"),
+                    userId = item.optInt("userId", -1),
+                    deleteRoot = item.optBoolean("deleteRoot"), bytes = item.optLong("bytes", -1L),
+                    files = item.optLong("files", -1L), directories = item.optLong("directories", -1L),
+                    measured = item.optBoolean("measured"), complete = item.optBoolean("complete"),
+                    note = item.optString("note"), manifestComplete = item.optBoolean("manifestComplete"), records = records
+                )
+            }
+            Snapshot(id, json.getString("profile"), createdAt, json.optString("ruleSha"), options, candidates,
+                state = json.optString("state", "READY"), cursor = json.optInt("cursor", 0).coerceAtLeast(0),
+                selectionJson = json.optString("selectionJson").take(MAX_SELECTION_JSON))
+        }.getOrElse {
+            file.delete()
+            null
+        }
+    }
+
+    private fun jsonStringSet(array: JSONArray?): Set<String> = buildSet {
+        if (array != null) for (index in 0 until array.length()) array.optString(index).trim().takeIf { it.isNotEmpty() }?.let(::add)
+    }
+
     private fun validSnapshot(id: String): Snapshot? {
-        val snapshot = snapshots[id] ?: return null
-        if (System.currentTimeMillis() - snapshot.createdAt > SNAPSHOT_TTL_MS) {
+        if (!SNAPSHOT_ID.matches(id)) return null
+        val snapshot = snapshots[id] ?: restoreSnapshot(id)?.also { snapshots[id] = it } ?: return null
+        val age = System.currentTimeMillis() - snapshot.createdAt
+        if (age !in -MAX_CLOCK_SKEW_MS..SNAPSHOT_TTL_MS) {
             snapshots.remove(id)
+            deleteSnapshot(id)
             return null
         }
         return snapshot
@@ -1097,7 +1383,14 @@ internal class NativeProfileEngine(
 
     private fun pruneSnapshots() {
         val now = System.currentTimeMillis()
-        for ((key, value) in snapshots) if (now - value.createdAt > SNAPSHOT_TTL_MS) snapshots.remove(key)
+        for ((key, value) in snapshots) if (now - value.createdAt > SNAPSHOT_TTL_MS) {
+            snapshots.remove(key)
+            deleteSnapshot(key)
+        }
+        transactionDir.listFiles()?.forEach { file ->
+            if (!file.isFile || !file.name.endsWith(".json")) return@forEach
+            if (now - file.lastModified() > SNAPSHOT_TTL_MS + SNAPSHOT_PRUNE_GRACE_MS) file.delete()
+        }
     }
 
     private fun stop(started: Long, budget: Long): Boolean = cancelled.get() || SystemClock.elapsedRealtime() - started >= budget
@@ -1113,10 +1406,17 @@ internal class NativeProfileEngine(
         private const val DEFAULT_MAX_FILE_BYTES = 512L * 1024 * 1024
         private const val MAX_PAGE_SIZE = 60
         private const val MAX_CANDIDATES = 20_000
+        private const val MAX_SNAPSHOT_RECORDS = 250_000
+        private const val MAX_SNAPSHOT_FILE_BYTES = 96L * 1024L * 1024L
+        private const val MAX_SELECTION_JSON = 2_000_000
+        private const val SNAPSHOT_SCHEMA = 3
+        private const val SNAPSHOT_PRUNE_GRACE_MS = 5L * 60_000L
+        private const val MAX_CLOCK_SKEW_MS = 5L * 60_000L
         private const val MAX_RULE_LINES = 12_000
         private const val MAX_EXPANSIONS = 256
 
         private val HIDDEN_TRASH_NAMES = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
+        private val SNAPSHOT_ID = Regex("^[0-9a-fA-F-]{36}$")
 
         private val HARD_EXACT = setOf(
             "/", "/data", "/data/adb", "/data/system", "/data/misc", "/storage", "/storage/emulated", "/sdcard"
@@ -1132,10 +1432,11 @@ internal class NativeProfileEngine(
             ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine"
         )
         private val CRITICAL = setOf(
-            "/download", "/documents", "/dcim", "/pictures", "/movies", "/music", "/android/obb",
-            "/databases", "/shared_prefs", "backup", "draft", ".db"
+            "download", "downloads", "documents", "dcim", "pictures", "movies", "music", "obb",
+            "databases", "database", "shared_prefs", "backup", "backups", "draft", "drafts"
         )
-        private val HIGH = setOf("/files", "/app_webview", "/webview", "/user_data", "/profile")
+        private val HIGH = setOf("files", "app_webview", "webview", "user_data", "profile")
         private val MEDIUM = setOf("tombstone", "minidump", "heapdump", "crash", "trace", "dump", "debug")
+        private val LOW = setOf("cache", "code_cache", "gpucache", "code cache", "tmp", "temp", "logs", "log", ".cache", ".thumbnails")
     }
 }

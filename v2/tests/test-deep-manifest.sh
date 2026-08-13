@@ -8,13 +8,27 @@ WORK=${TMPDIR:-/tmp}/baize-deep-manifest-state-$$
 
 cleanup() {
   rm -rf "$WORK" "$BIN"
-  sudo rm -rf "$HOST_ROOT" 2>/dev/null || true
+  if [ "$(id -u)" -eq 0 ]; then
+    rm -rf "$HOST_ROOT" 2>/dev/null || true
+  else
+    sudo rm -rf "$HOST_ROOT" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
 mkdir -p "$WORK"
-sudo mkdir -p "$HOST_ROOT"
-sudo chown -R "$(id -u):$(id -g)" "$HOST_ROOT"
+if [ "$(id -u)" -eq 0 ]; then
+  if ! mkdir -p "$HOST_ROOT" 2>/dev/null; then
+    echo 'deep immutable manifest test skipped: /data is not writable in this sandbox'
+    exit 0
+  fi
+else
+  if ! sudo mkdir -p "$HOST_ROOT"; then
+    echo 'deep immutable manifest test skipped: cannot create the Android test root'
+    exit 0
+  fi
+  sudo chown -R "$(id -u):$(id -g)" "$HOST_ROOT"
+fi
 
 gcc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT/native/baize_deep_snapshot.c" -o "$BIN"
 
@@ -130,6 +144,35 @@ printf '0\n' >"$WORK/protected.cursor"
 grep -q '^files=0$' "$WORK/protected.env"
 grep -q $'^protected\tlow\t' "$WORK/protected.tsv"
 
+# The mutation boundary must reject high/critical records when a scheduled
+# cleanup requests safe-only, even if such records already exist in a valid snapshot.
+HIGH_TARGET="$HOST_ROOT/user-data"
+mkdir -p "$HIGH_TARGET"
+printf 'must-survive' >"$HIGH_TARGET/high.bin"
+printf '%s\thigh\n' "$HIGH_TARGET" >"$WORK/high-targets.tsv"
+: >"$WORK/whitelist.conf"
+"$BIN" build \
+  --targets "$WORK/high-targets.tsv" \
+  --manifest "$WORK/high.manifest0" \
+  --summary "$WORK/high-build.env" \
+  --progress "$WORK/progress.env" \
+  --stop "$WORK/stop" \
+  --max-file-bytes 1048576
+printf '0\n' >"$WORK/high.cursor"
+"$BIN" clean \
+  --manifest "$WORK/high.manifest0" \
+  --cursor "$WORK/high.cursor" \
+  --report "$WORK/high-safe.tsv" \
+  --summary "$WORK/high-safe.env" \
+  --whitelist "$WORK/whitelist.conf" \
+  --progress "$WORK/progress.env" \
+  --stop "$WORK/stop" \
+  --safe-only 1 \
+  --max-file-bytes 1048576
+[ -e "$HIGH_TARGET/high.bin" ]
+grep -q '^files=0$' "$WORK/high-safe.env"
+grep -q $'^protected\thigh\t' "$WORK/high-safe.tsv"
+
 # Exercise the module wrapper, including state validation, native summary parsing, latest.env and
 # successful snapshot cleanup. This catches integration errors that a direct C test cannot see.
 MODULE="$WORK/module"
@@ -137,8 +180,9 @@ STATE="$WORK/module-state"
 INTEGRATION_TARGET="$HOST_ROOT/integration-cache"
 mkdir -p "$MODULE/bin/arm64-v8a" "$STATE/reports" "$STATE/logs" "$INTEGRATION_TARGET"
 cp "$ROOT/module/deep-manifest-clean.sh" "$MODULE/deep-manifest-clean.sh"
+cp "$ROOT/module/record-clean-event.sh" "$MODULE/record-clean-event.sh"
 cp "$BIN" "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
-chmod +x "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
+chmod +x "$MODULE/bin/arm64-v8a/baize_deep_snapshot" "$MODULE/record-clean-event.sh"
 printf 'integration' >"$INTEGRATION_TARGET/item.bin"
 printf '%s\tlow\n' "$INTEGRATION_TARGET" >"$STATE/deep_scan.targets"
 : >"$STATE/whitelist.conf"
@@ -161,7 +205,7 @@ max_file_bytes=1048576
 manifest_sha=$(sha256sum "$STATE/deep_scan.manifest0" | awk '{print $1}')
 EOF
 BAIZE_STATE_DIR="$STATE" BAIZE_DEEP_RULES="$STATE/rules.conf" \
-  bash "$MODULE/deep-manifest-clean.sh" deep-clean integration >/dev/null
+  BAIZE_SHELL_BIN=bash bash "$MODULE/deep-manifest-clean.sh" deep-clean integration >/dev/null
 [ ! -e "$INTEGRATION_TARGET/item.bin" ]
 [ ! -e "$STATE/deep_scan.env" ]
 [ ! -e "$STATE/deep_scan.manifest0" ]

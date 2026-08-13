@@ -327,6 +327,11 @@ internal class SchedulerRepository(
 
     fun wakeSupervisor(reason: String = "workmanager-fallback"): String = runCatching {
         stateDir.mkdirs()
+        RootFileStore.writeAtomic(File(stateDir, "scheduler-wake.env"), buildString {
+            append("awakened_at=").append(System.currentTimeMillis() / 1_000L).append('\n')
+            append("reason=").append(reason.replace('\n', ' ').replace('\r', ' ')).append('\n')
+            append("source=android-workmanager\n")
+        })
         val schedulerState = RootFileStore.readEnv(File(stateDir, "scheduler.env"))
         val supervisorState = RootFileStore.readEnv(File(stateDir, "supervisor.env"))
         val schedulerPid = schedulerState.optLong("scheduler_pid", 0L)

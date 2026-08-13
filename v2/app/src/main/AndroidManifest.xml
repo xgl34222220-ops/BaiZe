@@ -3,7 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -29,6 +28,7 @@
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
         <activity android:name=".ScanWorkbenchActivity" android:exported="false" />
+        <activity android:name=".StorageToolsActivity" android:exported="false" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
@@ -59,14 +59,6 @@
             tools:ignore="Instantiatable" />
         <service
             android:name=".root.BaiZeProfileRootService"
-            android:exported="false"
-            tools:ignore="Instantiatable" />
-        <service
-            android:name=".root.PersistentCleanPlanRootService"
-            android:exported="false"
-            tools:ignore="Instantiatable" />
-        <service
-            android:name=".root.CleanPlanResumeRootService"
             android:exported="false"
             tools:ignore="Instantiatable" />
     </application>

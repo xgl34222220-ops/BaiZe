@@ -7,7 +7,7 @@ AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRep
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/RuleImprovementDraftsActivity.kt"
 AUDIT_UI="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
+WORKFLOW="$ROOT/.github/workflows/ci.yml"
 
 for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST" "$WORKFLOW"; do
   test -f "$file" || { echo "missing rule improvement drafts contract file: $file" >&2; exit 1; }
@@ -69,6 +69,6 @@ grep -Fq '规则改进建议草案' "$AUDIT_UI"
 grep -Fq 'android:name=".RuleImprovementDraftsActivity"' "$MANIFEST"
 
 # Permanent Root regression executes this contract.
-grep -Fq 'test-rule-improvement-drafts-contract.sh' "$WORKFLOW"
+grep -Fq 'for test_file in v2/tests/test-*.sh' "$WORKFLOW"
 
 echo "rule improvement drafts contract ok"

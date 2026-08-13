@@ -4,11 +4,13 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -98,7 +100,7 @@ private fun BaiZeMaterialTheme(settings: AppearanceSettings, dark: Boolean, cont
         shapes = MaterialShapes,
         typography = MaterialTypography,
         animate = true,
-        content = content
+        content = { DynamicBaiZeTokens(dark && settings.amoledBlack, content) }
     )
 }
 
@@ -112,8 +114,22 @@ private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content
         shapes = MiuixShapes,
         typography = MiuixTypography,
         animate = true,
-        content = content
+        content = { DynamicBaiZeTokens(dark && settings.amoledBlack, content) }
     )
+}
+
+@Composable
+private fun DynamicBaiZeTokens(amoled: Boolean, content: @Composable () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val semantic = if (scheme.background.luminance() < 0.5f) DarkBaiZeColors else LightBaiZeColors
+    val colors = semantic.copy(
+        info = scheme.primary,
+        danger = scheme.error,
+        surfaceBase = if (amoled) Color.Black else scheme.surface,
+        surfaceRaised = if (amoled) Color(0xFF0C0C0D) else scheme.surfaceContainer,
+        surfaceOverlay = if (amoled) Color(0xFF171719) else scheme.surfaceContainerHigh
+    )
+    CompositionLocalProvider(LocalBaiZeColors provides colors, content = content)
 }
 
 @Composable

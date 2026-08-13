@@ -42,6 +42,9 @@ interface IProfileRootService {
     String saveWhitelistPackages(String packagesJson);
     String getWhitelistPaths();
     String addWhitelistPath(String path);
+    String getExclusions();
+    String addExclusion(String exclusionJson);
+    String removeExclusion(String id);
 
     String getTaskState();
     void registerTaskProgressCallback(ITaskProgressCallback callback);

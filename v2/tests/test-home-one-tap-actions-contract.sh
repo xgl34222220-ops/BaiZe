@@ -5,7 +5,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 HOME="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeRoute.kt"
 CLEAN="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt"
 DASH="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/MiuixDashboardActivity.kt"
-CI="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
+CI="$ROOT/.github/workflows/ci.yml"
 
 for file in "$HOME" "$CLEAN" "$DASH" "$CI"; do
   test -f "$file" || exit 1
@@ -27,6 +27,6 @@ grep -Fq 'service.runModuleTask("organize")' "$DASH"
 # 详细扫描继续只放在清理页专项入口。
 grep -Fq 'import io.github.xgl34222220.baize.ScanWorkbenchActivity' "$CLEAN"
 grep -Fq 'onScan = { context.startActivity(Intent(context, ScanWorkbenchActivity::class.java)) }' "$CLEAN"
-grep -Fq 'test-home-one-tap-actions-contract.sh' "$CI"
+grep -Fq 'for test_file in v2/tests/test-*.sh' "$CI"
 
 echo "home one-tap actions contract ok"

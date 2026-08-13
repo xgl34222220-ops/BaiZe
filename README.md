@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v1.0.3-1677ff)
+![Version](https://img.shields.io/badge/version-v2.6.0-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -25,13 +25,13 @@
 
 - 应用内部缓存、`code_cache` 与 `Android/data` 外部缓存清理
 - 空文件、空目录、隐藏垃圾、系统日志和残留碎片清理
-- 4,746 条深度规则分级扫描与安全执行
+- 4,755 条原始深度规则经构建审计后启用 4,714 条唯一有效规则
 - 卸载应用残留扫描，清理前再次检查应用是否重新安装
 - 每组任务独立周期或每日固定时间
 - 息屏、充电、系统空闲、电量、温度和运行时长条件
 - 扫描快照、规则 SHA 校验、白名单与单文件上限保护
 - 实际删除后复核，通知和累计统计只记录真正释放的空间
-- WebUI 审计报告、任务历史、日志复制和原子配置保存
+- 原生 App 审计报告、任务历史、日志复制和原子配置保存
 - 深度扫描实时进度、慢目录限时保护与缓存根目录合并扫描
 
 ## 安全边界
@@ -52,7 +52,7 @@
 1. 从 GitHub Releases 下载最新 ZIP。
 2. 在 Magisk、KernelSU 或 APatch 中选择该 ZIP 安装。
 3. 重启设备。
-4. KernelSU / APatch 可直接打开 WebUI；Magisk 可使用模块 Action 按钮和定时服务。
+4. 安装模块内置的白泽 App；模块管理器的 Action 可用于快速启动与诊断。
 5. 第一次完整深度清理前，先执行深度扫描并检查审计报告。
 
 ## 从源码构建
@@ -69,15 +69,14 @@ sh scripts/build.sh
 ## 文档
 
 - [详细使用说明](docs/README-detailed.md)
-- [v1.0.3 更新日志](CHANGELOG-v1.0.3.md)
-- [v1.0.2 更新日志](CHANGELOG-v1.0.2.md)
+- [最新版本说明](RELEASE_NOTES_v2.6.0.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
 - [来源与致谢](NOTICE.md)
 
 ## 兼容性
 
-- Android 8.0+
+- Android 8.0+、ARM64
 - Magisk
 - KernelSU
 - APatch

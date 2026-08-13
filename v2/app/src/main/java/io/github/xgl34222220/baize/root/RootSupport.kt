@@ -11,6 +11,7 @@ internal object RootPaths {
     const val CONFIG_FILE = "$STATE_DIR/config.conf"
     const val WHITELIST_FILE = "$STATE_DIR/whitelist.conf"
     const val WHITELIST_PACKAGES_FILE = "$STATE_DIR/whitelist.packages"
+    const val EXCLUSIONS_FILE = "$STATE_DIR/exclusions.json"
 }
 
 internal object RootValidation {

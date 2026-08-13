@@ -31,6 +31,7 @@ typedef struct {
     const char *progress;
     const char *stop;
     uint64_t max_file_bytes;
+    bool safe_only;
 } Options;
 
 typedef struct {
@@ -122,6 +123,10 @@ static bool deep_allowed(const char *path) {
 static bool valid_risk(const char *risk) {
     return risk && (strcmp(risk, "low") == 0 || strcmp(risk, "medium") == 0 ||
                     strcmp(risk, "high") == 0 || strcmp(risk, "critical") == 0);
+}
+
+static bool safe_risk(const char *risk) {
+    return risk && (strcmp(risk, "low") == 0 || strcmp(risk, "medium") == 0);
 }
 
 static void load_whitelist(void) {
@@ -438,7 +443,8 @@ static int clean_manifest(void) {
                            parse_u64(record.field[7], &mtime_nsec) &&
                            parse_u64(record.field[8], &ctime_sec) &&
                            parse_u64(record.field[9], &ctime_nsec);
-        bool common_ok = metadata_ok && valid_risk(risk) && deep_allowed(target) &&
+        bool common_ok = metadata_ok && valid_risk(risk) &&
+                         (!g_options.safe_only || safe_risk(risk)) && deep_allowed(target) &&
                          deep_allowed(path) && path_relation(target, path) &&
                          !whitelist_conflict(path) && size <= g_options.max_file_bytes;
         if (!common_ok || (strcmp(kind, "file") != 0 && strcmp(kind, "dir") != 0)) {
@@ -524,6 +530,7 @@ static void parse_options(int argc, char **argv) {
         else if (strcmp(argument, "--progress") == 0) g_options.progress = option_value(argc, argv, &i);
         else if (strcmp(argument, "--stop") == 0) g_options.stop = option_value(argc, argv, &i);
         else if (strcmp(argument, "--max-file-bytes") == 0) g_options.max_file_bytes = strtoull(option_value(argc, argv, &i), NULL, 10);
+        else if (strcmp(argument, "--safe-only") == 0) g_options.safe_only = strcmp(option_value(argc, argv, &i), "1") == 0;
         else die("unknown option");
     }
 }

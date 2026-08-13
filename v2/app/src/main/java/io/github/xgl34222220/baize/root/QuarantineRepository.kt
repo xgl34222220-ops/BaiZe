@@ -5,8 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
-import java.security.MessageDigest
+import java.nio.file.StandardCopyOption
 import java.util.ArrayDeque
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -59,7 +60,8 @@ internal class QuarantineRepository(
         val expiresAt: Long,
         val bytes: Long,
         val files: Long,
-        val directories: Long
+        val directories: Long,
+        val state: String = "ready"
     ) {
         fun json(includeStoredPath: Boolean = false): JSONObject = JSONObject()
             .put("id", id)
@@ -74,6 +76,7 @@ internal class QuarantineRepository(
             .put("bytes", bytes)
             .put("files", files)
             .put("directories", directories)
+            .put("state", state)
             .apply { if (includeStoredPath) put("storedPath", storedPath) }
     }
 
@@ -104,6 +107,18 @@ internal class QuarantineRepository(
 
         val stats = runCatching { measure(source, SystemClock.elapsedRealtime() + MEASURE_BUDGET_MS) }
             .getOrElse { return Result(false, message = it.message ?: "无法核对隔离目标") }
+        val maxBytes = quarantineMaxBytes()
+        var usedBytes = 0L
+        for (entry in readEntries().filter { it.state == "ready" || it.state == "pending" }) {
+            if (entry.bytes > maxBytes - usedBytes) {
+                usedBytes = maxBytes
+                break
+            }
+            usedBytes += entry.bytes
+        }
+        if (stats.bytes > maxBytes || usedBytes > maxBytes - stats.bytes) {
+            return Result(false, message = "隔离区容量上限为 ${humanBytes(maxBytes)}，请先恢复或永久删除旧项目")
+        }
         val id = UUID.randomUUID().toString()
         val destinationRoot = quarantineRootFor(sourcePath)
         val destination = File(File(destinationRoot, "items"), "$id-${safeName(source.name)}")
@@ -129,7 +144,8 @@ val entry = Entry(
     expiresAt = now + retentionDays * DAY_MS,
     bytes = stats.bytes,
     files = stats.files,
-    directories = stats.directories
+    directories = stats.directories,
+    state = "pending"
 )
 if (runCatching { writeEntry(entry) }.isFailure) {
     return Result(false, message = "隔离记录写入失败，原文件未移动")
@@ -152,11 +168,16 @@ if (!moved || source.exists() || !destination.exists()) {
     )
 }
 
+if (runCatching { writeEntry(entry.copy(state = "ready")) }.isFailure) {
+    return Result(false, id, stats.bytes, stats.files, stats.directories, "内容已隔离，但完成记录写入失败；保留待恢复记录")
+}
+
 return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 $retentionDays 天内恢复")
     }
 
     @Synchronized
     fun page(offset: Int, limit: Int): String {
+        reconcilePendingEntries()
         val now = System.currentTimeMillis()
         val expired = purgeExpiredInternal(now)
         val entries = readEntries().sortedByDescending { it.createdAt }
@@ -180,6 +201,7 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
     fun restore(id: String?): String {
         val entry = readEntry(id.orEmpty())
             ?: return errorJson("not_found", "隔离记录不存在或已经过期")
+        if (entry.state != "ready") return errorJson("pending_entry", "隔离事务尚未完成，请刷新后重试")
         val payload = File(entry.storedPath)
         if (!isStoredPayload(entry, payload) || !payload.exists() || isSymlink(payload)) {
             deleteMetadata(entry.id)
@@ -258,10 +280,17 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         val target = File(metadataDir, "${entry.id}.json")
         val temporary = File(metadataDir, "${entry.id}.json.tmp.${android.os.Process.myPid()}")
         temporary.writeText(entry.json(includeStoredPath = true).toString())
+        runCatching { java.io.FileOutputStream(temporary, true).use { it.fd.sync() } }
         temporary.setReadable(true, true)
         temporary.setWritable(true, true)
-        if (target.exists() && !target.delete()) error("无法替换隔离记录")
-        if (!temporary.renameTo(target)) error("无法发布隔离记录")
+        runCatching {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        }.recoverCatching {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }.getOrElse {
+            temporary.delete()
+            error("无法原子发布隔离记录")
+        }
     }
 
     private fun readEntries(): List<Entry> = metadataDir.listFiles()
@@ -297,7 +326,8 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
             expiresAt = json.optLong("expiresAt"),
             bytes = json.optLong("bytes").coerceAtLeast(0L),
             files = json.optLong("files").coerceAtLeast(0L),
-            directories = json.optLong("directories").coerceAtLeast(0L)
+            directories = json.optLong("directories").coerceAtLeast(0L),
+            state = json.optString("state", "ready").takeIf { it == "ready" || it == "pending" } ?: "pending"
         )
     }
 
@@ -365,6 +395,28 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         .optInt("quarantine_retention_days", DEFAULT_RETENTION_DAYS)
         .coerceIn(1, 30)
 
+    private fun quarantineMaxBytes(): Long = RootFileStore.readEnv(configFile)
+        .optLong("quarantine_max_bytes", DEFAULT_MAX_BYTES)
+        .coerceIn(MIN_MAX_BYTES, ABSOLUTE_MAX_BYTES)
+
+    private fun reconcilePendingEntries() {
+        for (entry in readEntries().filter { it.state == "pending" }) {
+            val source = File(entry.originalPath)
+            val payload = File(entry.storedPath)
+            when {
+                payload.exists() && !source.exists() && isStoredPayload(entry, payload) ->
+                    runCatching { writeEntry(entry.copy(state = "ready")) }
+                source.exists() && !payload.exists() -> deleteMetadata(entry.id)
+            }
+        }
+    }
+
+    private fun humanBytes(value: Long): String = when {
+        value >= 1_073_741_824L -> String.format(Locale.US, "%.1f GB", value / 1_073_741_824.0)
+        value >= 1_048_576L -> String.format(Locale.US, "%.1f MB", value / 1_048_576.0)
+        else -> "$value B"
+    }
+
     private fun quarantineRootFor(path: String): File {
         val emulated = Regex("^/storage/emulated/([0-9]+)(?:/.*)?$").find(path)
         if (emulated != null) return File("/storage/emulated/${emulated.groupValues[1]}/.baize-quarantine")
@@ -390,8 +442,9 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
     private fun safeOriginalPath(path: String): Boolean {
         if (!path.startsWith('/') || path.length !in 2..4096) return false
         if (path.contains('\u0000') || path.contains('\n') || path.contains('\r')) return false
-        if (path.split('/').any { it == ".." }) return false
+        if (path.split('/').any { it == "." || it == ".." }) return false
         if (isQuarantinePath(path)) return false
+        if (path in setOf("/data", "/data/user", "/data/user_de", "/data/media", "/storage", "/sdcard")) return false
         val blocked = listOf("/data/adb", "/proc", "/sys", "/dev", "/metadata", "/system", "/vendor", "/product", "/odm", "/apex")
         return blocked.none { path == it || path.startsWith("$it/") }
     }
@@ -442,6 +495,9 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         private const val MAX_NODES = 200_000
         private const val MAX_TEXT = 512
         private const val MAX_PAGE_SIZE = 200
+        private const val DEFAULT_MAX_BYTES = 8L * 1024L * 1024L * 1024L
+        private const val MIN_MAX_BYTES = 256L * 1024L * 1024L
+        private const val ABSOLUTE_MAX_BYTES = 64L * 1024L * 1024L * 1024L
         private val ID_PATTERN = Regex("^[0-9a-fA-F-]{36}$")
     }
 }

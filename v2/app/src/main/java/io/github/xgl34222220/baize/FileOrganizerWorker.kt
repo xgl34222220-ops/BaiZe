@@ -7,9 +7,10 @@ import android.content.ServiceConnection
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import androidx.work.Constraints
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -60,6 +61,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             // not depend on App process lifetime or a second WorkManager registration.
             if (config.optInt("enabled", 1) != 1) {
                 writeResult(applicationContext, "Root 自动任务已关闭，看门狗保持待命")
+                WorkManager.getInstance(applicationContext).cancelUniqueWork(UNIQUE_DUE_WORK)
                 return Result.success()
             }
             val response = runCatching { JSONObject(session.service.runModuleTask("scheduler-wake")) }.getOrElse {
@@ -77,6 +79,8 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
                     else -> "Root 调度器已检查队列"
                 }
                 writeResult(applicationContext, action)
+                val refreshed = runCatching { JSONObject(session.service.getSchedulerConfig()) }.getOrNull()
+                scheduleNextDue(applicationContext, refreshed?.optJSONObject("runtime")?.optLong("nextCheckEpoch", 0L) ?: 0L)
                 Result.success()
             }
         } finally {
@@ -149,6 +153,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         private const val KEY_LAST_RUN = "last_run_epoch"
         private const val KEY_LAST_RESULT = "last_result"
         private const val UNIQUE_WORK = "baize_root_scheduler_watchdog"
+        private const val UNIQUE_DUE_WORK = "baize_root_scheduler_next_due"
         private const val ROOT_BIND_TIMEOUT_MS = 20_000L
         private const val ROOT_BIND_ATTEMPTS = 3
         private const val ROOT_BIND_RETRY_DELAY_MS = 800L
@@ -210,16 +215,33 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         }
 
         fun ensureWatchdog(context: Context) {
-            val constraints = Constraints.Builder().setRequiresBatteryNotLow(true).build()
             val request = PeriodicWorkRequestBuilder<FileOrganizerWorker>(
                 WATCHDOG_INTERVAL_MINUTES, TimeUnit.MINUTES,
                 WATCHDOG_FLEX_MINUTES, TimeUnit.MINUTES
             ).setInitialDelay(WATCHDOG_INTERVAL_MINUTES, TimeUnit.MINUTES)
-                .setConstraints(constraints)
                 .build()
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 UNIQUE_WORK,
                 ExistingPeriodicWorkPolicy.UPDATE,
+                request
+            )
+            scheduleNextDue(context, 0L)
+        }
+
+        fun scheduleNextDue(context: Context, nextEpochSeconds: Long) {
+            val now = System.currentTimeMillis() / 1_000L
+            val delaySeconds = if (nextEpochSeconds > now) {
+                (nextEpochSeconds - now).coerceIn(MIN_DUE_DELAY_SECONDS, MAX_DUE_DELAY_SECONDS)
+            } else {
+                MIN_DUE_DELAY_SECONDS
+            }
+            val request = OneTimeWorkRequestBuilder<FileOrganizerWorker>()
+                .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+                .addTag(UNIQUE_DUE_WORK)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                UNIQUE_DUE_WORK,
+                ExistingWorkPolicy.REPLACE,
                 request
             )
         }
@@ -245,5 +267,8 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
                 .putString(KEY_LAST_RESULT, result)
                 .apply()
         }
+
+        private const val MIN_DUE_DELAY_SECONDS = 60L
+        private const val MAX_DUE_DELAY_SECONDS = 24L * 60L * 60L
     }
 }

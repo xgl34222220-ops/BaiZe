@@ -1,11 +1,13 @@
 #!/system/bin/sh
 
 MODDIR=${0%/*}
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 MODE=${1:-apk-clean}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
-WHITELIST="$STATE_DIR/whitelist.conf"
+WHITELIST="$STATE_DIR/whitelist.apk.conf"
+[ -f "$WHITELIST" ] || WHITELIST="$STATE_DIR/whitelist.conf"
 STATE_FILE="$STATE_DIR/apk_scan.env"
 TARGETS_FILE="$STATE_DIR/apk_scan.targets"
 REPORT_DIR="$STATE_DIR/reports"
@@ -277,6 +279,8 @@ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "apk-clean" "$deleted_bytes" "$deleted_files" 0 "$errors" \
   "$result" "$TRIGGER" "APK安装包|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+"$SHELL_BIN" "$MODDIR/record-clean-event.sh" "apk:$snapshot_id:$START_EPOCH:$$" apk-clean "$deleted_bytes" "$deleted_files" 0 0 0 "$elapsed" "$TRIGGER" || \
+  echo "累计统计写入失败" >>"$LOG_FILE"
 
 echo "$result"
 echo "扫描快照: $snapshot_id | 清理: $deleted_files 个 | 跳过: $skipped | 失败: $errors"

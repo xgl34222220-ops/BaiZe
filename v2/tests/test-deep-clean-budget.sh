@@ -6,7 +6,8 @@ T=${TMPDIR:-/tmp}/baize-deep-clean-stream-test
 rm -rf "$T"
 mkdir -p "$T/module/config" "$T/state" "$T/media/0/Android/data/com.example/cache/nested" "$T/bin"
 cp "$ROOT/module/profile-snapshot-clean-fast.sh" "$T/module/profile-cleaner.sh"
-chmod +x "$T/module/profile-cleaner.sh"
+cp "$ROOT/module/record-clean-event.sh" "$T/module/record-clean-event.sh"
+chmod +x "$T/module/profile-cleaner.sh" "$T/module/record-clean-event.sh"
 printf '%s\n' "$T/media/0/Android/data/com.example/cache" >"$T/module/config/deep.rules"
 : >"$T/state/whitelist.conf"
 cat >"$T/state/config.conf" <<'CONF'

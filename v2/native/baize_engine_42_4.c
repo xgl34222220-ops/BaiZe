@@ -1189,15 +1189,28 @@ static void lower_copy(char *out, size_t cap, const char *in) {
     for (; in[i] && i + 1 < cap; i++) out[i] = (char)tolower((unsigned char)in[i]);
     out[i] = '\0';
 }
+static bool path_component_contains(const char *path, const char *needle) {
+    if (!path || !needle || !*needle) return false;
+    size_t needle_len = strlen(needle);
+    const char *cursor = path;
+    while ((cursor = strstr(cursor, needle)) != NULL) {
+        bool left_ok = cursor == path || cursor[-1] == '/';
+        char right = cursor[needle_len];
+        bool right_ok = right == '\0' || right == '/';
+        if (left_ok && right_ok) return true;
+        cursor++;
+    }
+    return false;
+}
 static const char *deep_risk(const char *p) {
     char s[PATH_MAX];
     lower_copy(s, sizeof(s), p);
-    const char *critical[] = {"/download", "/documents", "/dcim", "/pictures", "/movies", "/music", "/android/obb", "/backup", "/backups", "/draft", "/drafts", "/database", "/databases", "/shared_prefs"};
-    for (size_t i = 0; i < sizeof(critical) / sizeof(critical[0]); i++) if (strstr(s, critical[i])) return "critical";
-    const char *low[] = {"/cache", "/code_cache", "/gpucache", "/code cache", "/crashpad/completed", "/tmp", "/temp", "/logs", "/log", "/.cache", "/.thumbnails"};
-    for (size_t i = 0; i < sizeof(low) / sizeof(low[0]); i++) if (strstr(s, low[i])) return "low";
-    const char *medium[] = {"/crash", "/tombstone", "/debug", "/trace", "/dump"};
-    for (size_t i = 0; i < sizeof(medium) / sizeof(medium[0]); i++) if (strstr(s, medium[i])) return "medium";
+    const char *critical[] = {"download", "downloads", "documents", "dcim", "pictures", "movies", "music", "obb", "backup", "backups", "draft", "drafts", "database", "databases", "shared_prefs"};
+    for (size_t i = 0; i < sizeof(critical) / sizeof(critical[0]); i++) if (path_component_contains(s, critical[i])) return "critical";
+    const char *low[] = {"cache", "code_cache", "gpucache", "code cache", "tmp", "temp", "logs", "log", ".cache", ".thumbnails"};
+    for (size_t i = 0; i < sizeof(low) / sizeof(low[0]); i++) if (path_component_contains(s, low[i])) return "low";
+    const char *medium[] = {"crash", "tombstone", "debug", "trace", "dump"};
+    for (size_t i = 0; i < sizeof(medium) / sizeof(medium[0]); i++) if (path_component_contains(s, medium[i])) return "medium";
     return "high";
 }
 static bool child_of(const char *parent, const char *child) { return path_relation(parent, child) && strcmp(parent, child) != 0; }

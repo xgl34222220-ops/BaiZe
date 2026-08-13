@@ -82,7 +82,7 @@ class BaiZeProfileRootService : RootService() {
                 phase = "正在清理已选择项目",
                 failureCode = "profile_clean_failed"
             ) { started ->
-                profileEngine.clean(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { progress ->
+                val response = profileEngine.clean(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { progress ->
                     coordinator.update(
                         operation = "profile-clean",
                         phase = progress.phase,
@@ -95,6 +95,8 @@ class BaiZeProfileRootService : RootService() {
                         failures = progress.failures
                     )
                 }
+                runCatching { recordProfileClean(snapshotId.orEmpty(), response) }
+                response
             }
         }
 
@@ -285,11 +287,36 @@ class BaiZeProfileRootService : RootService() {
             whitelistRepository.savePackages(packagesJson.orEmpty())
         override fun getWhitelistPaths(): String = whitelistRepository.pathsJson()
         override fun addWhitelistPath(path: String?): String = whitelistRepository.addPath(path)
+        override fun getExclusions(): String = whitelistRepository.exclusionsJson()
+        override fun addExclusion(exclusionJson: String?): String = whitelistRepository.addExclusion(exclusionJson.orEmpty())
+        override fun removeExclusion(id: String?): String = whitelistRepository.removeExclusion(id.orEmpty())
 
         override fun getTaskState(): String = coordinator.currentState()
         override fun registerTaskProgressCallback(callback: ITaskProgressCallback?) = coordinator.register(callback)
         override fun unregisterTaskProgressCallback(callback: ITaskProgressCallback?) = coordinator.unregister(callback)
         override fun cancelCurrentTask() = coordinator.cancelCurrentTask()
+    }
+
+    private fun recordProfileClean(snapshotId: String, response: String) {
+        val result = JSONObject(response)
+        if (!result.optBoolean("success") || result.has("error")) return
+        val profile = result.optString("profile")
+        val files = result.optLong("deletedFiles", 0L).coerceAtLeast(0L)
+        val directories = result.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
+        val interrupted = result.optBoolean("cancelled") || result.optBoolean("timedOut")
+        val eventId = "profile:$snapshotId:${result.optInt("startCursor", 0)}:${result.optInt("endCursor", 0)}"
+        historyRepository.recordNativeTaskJson(
+            JSONObject().put("mode", "profile-clean").put("eventId", eventId)
+                .put("success", !interrupted).put("cancelled", interrupted)
+                .put("bytes", result.optLong("deletedBytes", 0L).coerceAtLeast(0L)).put("files", files)
+                .put("emptyFiles", if (profile == "empty") files else 0L)
+                .put("emptyDirs", directories)
+                .put("fragments", if (profile == "fragments") files else 0L)
+                .put("errors", result.optInt("failures", 0).coerceAtLeast(0))
+                .put("elapsedSeconds", result.optLong("elapsedMs", 0L).coerceAtLeast(0L) / 1_000L)
+                .put("result", if (interrupted) "原生快照清理已停止" else "原生快照清理完成")
+                .toString()
+        )
     }
 
     private fun audited(operation: String, source: String = "app", block: () -> String): String {

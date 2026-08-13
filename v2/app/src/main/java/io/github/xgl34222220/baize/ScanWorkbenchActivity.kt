@@ -116,19 +116,21 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private var profileBound = false
     private var cacheBound = false
     private var autoScanStarted = false
+    private var restoreAttempted = false
     private var cacheSnapshotId = ""
     private var profileSnapshotId = ""
     private var snapshotExpiresAtRealtime = 0L
     private var cleanupPolicy = CleanupPolicy.BALANCED
     private var pollJob: Job? = null
     private var screenState by mutableStateOf(WorkbenchUiState())
+    private val sessionPreferences by lazy { getSharedPreferences(WORKBENCH_SESSION, MODE_PRIVATE) }
 
     private val profileConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             profileService = IProfileRootService.Stub.asInterface(binder)
             profileBound = true
             screenState = screenState.copy(profileConnected = true)
-            maybeStartScan()
+            maybeRestoreOrScan()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -147,7 +149,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
             cacheService = IBaiZeRootService.Stub.asInterface(binder)
             cacheBound = true
             screenState = screenState.copy(cacheConnected = true)
-            maybeStartScan()
+            maybeRestoreOrScan()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -166,6 +168,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
+        restoreSessionHandles()
 
         setContent {
             val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
@@ -236,13 +239,90 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun maybeStartScan() {
+    private fun maybeRestoreOrScan() {
         if (profileService == null || cacheService == null || autoScanStarted) return
         autoScanStarted = true
         lifecycleScope.launch {
             delay(180L)
+            if (!restoreAttempted && hasPersistedSession()) {
+                restoreAttempted = true
+                if (restoreSession()) return@launch
+                clearPersistedSession()
+            }
             runScan()
         }
+    }
+
+    private fun restoreSessionHandles() {
+        val expiresAtEpoch = sessionPreferences.getLong(KEY_EXPIRES_AT_EPOCH, 0L)
+        val remaining = expiresAtEpoch - System.currentTimeMillis()
+        if (remaining <= 0L || remaining > SNAPSHOT_TTL_MS) {
+            clearPersistedSession()
+            return
+        }
+        cacheSnapshotId = sessionPreferences.getString(KEY_CACHE_SNAPSHOT, "").orEmpty()
+        profileSnapshotId = sessionPreferences.getString(KEY_PROFILE_SNAPSHOT, "").orEmpty()
+        snapshotExpiresAtRealtime = SystemClock.elapsedRealtime() + remaining
+    }
+
+    private fun hasPersistedSession(): Boolean = snapshotExpiresAtRealtime > SystemClock.elapsedRealtime() &&
+        (cacheSnapshotId.isNotBlank() || profileSnapshotId.isNotBlank())
+
+    private suspend fun restoreSession(): Boolean {
+        val profile = profileService ?: return false
+        val cache = cacheService ?: return false
+        screenState = screenState.copy(running = true, phase = "正在恢复上次不可变清理事务…")
+        val restored = runCatching {
+            withContext(Dispatchers.IO) {
+                val config = JSONObject(profile.getSchedulerConfig())
+                cleanupPolicy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
+                coroutineScope {
+                    val cacheItems = async { if (cacheSnapshotId.isBlank()) emptyList() else loadCacheItems(cache, cacheSnapshotId) }
+                    val profileItems = async { if (profileSnapshotId.isBlank()) emptyList() else loadProfileItems(profile, profileSnapshotId) }
+                    cacheItems.await() + profileItems.await()
+                }
+            }
+        }.getOrElse { return false }
+        if (restored.isEmpty()) return false
+        val persistedSelection = runCatching {
+            val array = JSONArray(sessionPreferences.getString(KEY_SELECTED_IDS, "[]"))
+            buildSet { for (index in 0 until array.length()) add(array.optString(index)) }
+        }.getOrDefault(emptySet())
+        val validIds = restored.asSequence().mapTo(hashSetOf()) { it.id }
+        val selected = persistedSelection.filterTo(linkedSetOf()) { it in validIds }
+            .ifEmpty {
+                restored.asSequence().filter { it.selectable && cleanupPolicy.defaultSelected(it.risk) }
+                    .mapTo(linkedSetOf()) { it.id }
+            }
+        screenState = screenState.copy(
+            running = false,
+            scanReady = true,
+            phase = "已恢复上次扫描结果，可直接继续清理",
+            items = restored.sortedWith(compareByDescending<WorkbenchItem> { it.bytes.coerceAtLeast(0L) }.thenBy { it.groupTitle }),
+            selectedIds = selected,
+            expiresAtRealtime = snapshotExpiresAtRealtime,
+            policyTitle = cleanupPolicy.title,
+            policyKey = cleanupPolicy.key,
+            highRiskMode = cleanupPolicy.highRiskMode,
+            resultText = "未重新扫描，正在使用 Root 持久化快照"
+        )
+        persistSession()
+        return true
+    }
+
+    private fun persistSession() {
+        if (cacheSnapshotId.isBlank() && profileSnapshotId.isBlank()) return
+        val remaining = (snapshotExpiresAtRealtime - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        sessionPreferences.edit()
+            .putString(KEY_CACHE_SNAPSHOT, cacheSnapshotId)
+            .putString(KEY_PROFILE_SNAPSHOT, profileSnapshotId)
+            .putLong(KEY_EXPIRES_AT_EPOCH, System.currentTimeMillis() + remaining)
+            .putString(KEY_SELECTED_IDS, JSONArray(screenState.selectedIds.toList()).toString())
+            .apply()
+    }
+
+    private fun clearPersistedSession() {
+        sessionPreferences.edit().clear().apply()
     }
 
     private fun runScan() {
@@ -256,6 +336,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         cacheSnapshotId = ""
         profileSnapshotId = ""
         snapshotExpiresAtRealtime = 0L
+        clearPersistedSession()
         screenState = screenState.copy(
             running = true,
             scanReady = false,
@@ -358,6 +439,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     "${cleanupPolicy.title}档默认勾选低风险与中风险项目"
                 }
             )
+            persistSession()
         }
     }
 
@@ -482,6 +564,10 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     var files = 0L
                     var failures = 0
                     var cleanedCandidates = 0
+                    var cancelled = false
+                    var timedOut = false
+                    var cacheConsumed = false
+                    var profileConsumed = false
                     val messages = ArrayList<String>()
 
                     if (cacheItems.isNotEmpty()) {
@@ -492,6 +578,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                             error(prepared.optString("message", prepared.optString("error", "无法裁剪缓存快照")))
                         }
                         val selectedSnapshotId = prepared.optString("snapshotId")
+                        cacheSnapshotId = selectedSnapshotId
                         val cacheResult = JSONObject(
                             cache.cleanSelected(
                                 selectedSnapshotId,
@@ -503,10 +590,13 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         files += cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         failures += cacheResult.optInt("failures", if (cacheResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
                         cleanedCandidates += cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        cancelled = cancelled || cacheResult.optBoolean("cancelled")
+                        timedOut = timedOut || cacheResult.optBoolean("timedOut")
+                        cacheConsumed = !cacheResult.has("error") && !cacheResult.optBoolean("cancelled") && !cacheResult.optBoolean("timedOut")
                         messages += cacheResult.optString("message", "应用缓存处理完成")
                     }
 
-                    if (profileItems.isNotEmpty()) {
+                    if (!cancelled && !timedOut && profileItems.isNotEmpty()) {
                         val selection = JSONObject()
                         profileItems.forEach { selection.put(it.id.removePrefix("profile:"), true) }
                         val profileResult = JSONObject(
@@ -516,44 +606,51 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         files += profileResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         failures += profileResult.optInt("failures", if (profileResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
                         cleanedCandidates += profileResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        cancelled = cancelled || profileResult.optBoolean("cancelled")
+                        timedOut = timedOut || profileResult.optBoolean("timedOut")
+                        profileConsumed = !profileResult.has("error") && !profileResult.optBoolean("cancelled") && !profileResult.optBoolean("timedOut")
                         messages += profileResult.optString("message", "安全项目处理完成")
                     }
-
-                    runCatching {
-                        profile.recordNativeTask(
-                            JSONObject()
-                                .put("mode", "workbench-clean")
-                                .put("success", failures == 0)
-                                .put("bytes", bytes)
-                                .put("files", files)
-                                .put("errors", failures)
-                                .put("result", "工作台清理完成，处理 $cleanedCandidates 个候选")
-                                .toString()
-                        )
-                    }
-                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages)
+                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages, cancelled, timedOut, cacheConsumed, profileConsumed)
                 }
             }
             pollJob?.cancel()
-            cacheSnapshotId = ""
-            profileSnapshotId = ""
-            snapshotExpiresAtRealtime = 0L
             response.onSuccess { result ->
-                screenState = screenState.copy(
-                    running = false,
-                    scanReady = false,
-                    items = emptyList(),
-                    selectedIds = emptySet(),
-                    phase = if (result.failures == 0) "已完成所选项目清理" else "清理完成，但有 ${result.failures} 个异常",
-                    resultText = "释放 ${formatBytes(result.bytes)} · 文件 ${result.files} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}"
-                )
+                if (result.cancelled || result.timedOut) {
+                    if (result.cacheConsumed) cacheSnapshotId = ""
+                    if (result.profileConsumed) profileSnapshotId = ""
+                    val remaining = screenState.items.filterNot {
+                        (result.cacheConsumed && it.source == "cache") || (result.profileConsumed && it.source == "profile")
+                    }
+                    val remainingIds = remaining.mapTo(hashSetOf()) { it.id }
+                    screenState = screenState.copy(
+                        running = false,
+                        scanReady = remaining.isNotEmpty(),
+                        phase = if (result.cancelled) "清理已停止，可从原快照继续" else "本轮达到时间预算，可从原快照继续",
+                        resultText = "本轮实际释放 ${formatBytes(result.bytes)} · 文件 ${result.files}",
+                        items = remaining,
+                        selectedIds = screenState.selectedIds.filterTo(linkedSetOf()) { it in remainingIds }
+                    )
+                    if (remaining.isEmpty()) clearPersistedSession() else persistSession()
+                } else {
+                    cacheSnapshotId = ""
+                    profileSnapshotId = ""
+                    snapshotExpiresAtRealtime = 0L
+                    clearPersistedSession()
+                    screenState = screenState.copy(
+                        running = false,
+                        scanReady = false,
+                        items = emptyList(),
+                        selectedIds = emptySet(),
+                        phase = if (result.failures == 0) "已完成所选项目清理" else "清理完成，但有 ${result.failures} 个异常",
+                        resultText = "释放 ${formatBytes(result.bytes)} · 文件 ${result.files} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}"
+                    )
+                }
             }.onFailure {
                 screenState = screenState.copy(
                     running = false,
-                    scanReady = false,
-                    items = emptyList(),
-                    selectedIds = emptySet(),
-                    phase = "所选项目清理失败：${it.message ?: it.javaClass.simpleName}"
+                    scanReady = hasPersistedSession(),
+                    phase = "所选项目清理失败：${it.message ?: it.javaClass.simpleName}；原快照仍保留"
                 )
             }
         }
@@ -585,6 +682,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 cacheSnapshotId = ""
                 profileSnapshotId = ""
                 snapshotExpiresAtRealtime = 0L
+                clearPersistedSession()
                 screenState = screenState.copy(
                     running = false,
                     scanReady = false,
@@ -631,6 +729,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     cacheSnapshotId = ""
                     profileSnapshotId = ""
                     snapshotExpiresAtRealtime = 0L
+                    clearPersistedSession()
                     screenState = screenState.copy(
                         scanReady = false,
                         items = emptyList(),
@@ -655,6 +754,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         val selected = screenState.selectedIds.toMutableSet()
         if (!selected.add(id)) selected.remove(id)
         screenState = screenState.copy(selectedIds = selected)
+        persistSession()
     }
 
     private fun toggleGroup(groupKey: String) {
@@ -665,6 +765,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         val shouldSelect = group.any { it.id !in selected }
         group.forEach { if (shouldSelect) selected += it.id else selected -= it.id }
         screenState = screenState.copy(selectedIds = selected)
+        persistSession()
     }
 
     private fun selectAllSafe() {
@@ -672,10 +773,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
         screenState = screenState.copy(
             selectedIds = screenState.items.asSequence().filter { it.selectable }.mapTo(linkedSetOf()) { it.id }
         )
+        persistSession()
     }
 
     private fun clearSelection() {
-        if (!screenState.running) screenState = screenState.copy(selectedIds = emptySet())
+        if (!screenState.running) {
+            screenState = screenState.copy(selectedIds = emptySet())
+            persistSession()
+        }
     }
 
     private fun stopTask() {
@@ -748,6 +853,11 @@ class ScanWorkbenchActivity : ComponentActivity() {
         private const val PAGE_SIZE = 100
         private const val MAX_ITEMS = 2_000
         private const val SNAPSHOT_TTL_MS = 30L * 60L * 1_000L
+        private const val WORKBENCH_SESSION = "scan_workbench_session_v2"
+        private const val KEY_CACHE_SNAPSHOT = "cache_snapshot_id"
+        private const val KEY_PROFILE_SNAPSHOT = "profile_snapshot_id"
+        private const val KEY_EXPIRES_AT_EPOCH = "expires_at_epoch"
+        private const val KEY_SELECTED_IDS = "selected_ids"
     }
 }
 
@@ -756,7 +866,11 @@ private data class CleanAggregate(
     val files: Long,
     val failures: Int,
     val candidates: Int,
-    val messages: List<String>
+    val messages: List<String>,
+    val cancelled: Boolean,
+    val timedOut: Boolean,
+    val cacheConsumed: Boolean,
+    val profileConsumed: Boolean
 )
 
 private data class WorkbenchItem(

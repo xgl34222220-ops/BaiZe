@@ -21,7 +21,7 @@ fi
 ZIP="$OUT_DIR/BaiZe-diagnostics-$STAMP.zip"
 trap 'rm -rf "$STAGE"' EXIT INT TERM
 
-for f in module.env supervisor.env scheduler.env worker.env running.env latest.env totals.env app-install.env root-worker-profile.env runtime-schema; do
+for f in module.env supervisor.env scheduler.env scheduler-wake.env worker.env running.env latest.env totals.env clean-events-base.env app-install.env root-worker-profile.env runtime-schema; do
   [ -f "$STATE_DIR/$f" ] && cp -f "$STATE_DIR/$f" "$STAGE/$f"
 done
 [ -f "$STATE_DIR/config.conf" ] && sed -E 's#^([^=]*(path|dir|folder)[^=]*)=.*$#\1=<redacted>#' "$STATE_DIR/config.conf" >"$STAGE/config-redacted.conf" 2>/dev/null || true

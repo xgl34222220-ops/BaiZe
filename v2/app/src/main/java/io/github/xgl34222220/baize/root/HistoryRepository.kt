@@ -7,6 +7,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 internal class HistoryRepository(
     private val moduleDir: File = File(RootPaths.MODULE_DIR),
@@ -120,23 +121,13 @@ internal class HistoryRepository(
         val retained = history.readLines().takeLast(100)
         RootFileStore.writeAtomic(history, retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))
 
-        if (success && !cancelled) {
-            val totalsFile = File(stateDir, "totals.env")
-            val totals = RootFileStore.readEnv(totalsFile)
-            val updated = linkedMapOf(
-                "runs" to totals.optLong("runs", 0L) + 1L,
-                "regular_files" to totals.optLong("regular_files", 0L) + files,
-                "empty_files" to totals.optLong("empty_files", 0L) + emptyFiles,
-                "empty_dirs" to totals.optLong("empty_dirs", 0L) + emptyDirs,
-                "hidden_items" to totals.optLong("hidden_items", 0L),
-                "fragment_files" to totals.optLong("fragment_files", 0L) + fragments,
-                "bytes" to totals.optLong("bytes", 0L) + bytes,
-                "elapsed" to totals.optLong("elapsed", 0L) + elapsedSeconds
+        val actualMutations = bytes > 0L || files > 0L || emptyFiles > 0L || emptyDirs > 0L || fragments > 0L
+        if (actualMutations || (success && !cancelled)) {
+            val eventId = input.optString("eventId").trim().takeIf { EVENT_ID.matches(it) }
+                ?: "native-${System.currentTimeMillis()}-${Process.myPid()}"
+            val updated = commitCleanEvent(
+                eventId, mode, bytes, files, emptyFiles, emptyDirs, fragments, elapsedSeconds, "app-native"
             )
-            RootFileStore.writeAtomic(totalsFile, buildString {
-                updated.forEach { (key, value) -> append(key).append('=').append(value.coerceAtLeast(0L)).append('\n') }
-                append("last_time=").append(SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())).append('\n')
-            })
             updateModuleDescription(updated)
         }
 
@@ -203,6 +194,36 @@ internal class HistoryRepository(
         RootFileStore.writeAtomic(moduleProp, lines.joinToString("\n", postfix = "\n"), worldReadable = true)
     }
 
+    private fun commitCleanEvent(
+        eventId: String,
+        mode: String,
+        bytes: Long,
+        files: Long,
+        emptyFiles: Long,
+        emptyDirs: Long,
+        fragments: Long,
+        elapsed: Long,
+        trigger: String
+    ): Map<String, Long> {
+        val recorder = File(moduleDir, "record-clean-event.sh")
+        require(recorder.isFile) { "clean_event_recorder_missing" }
+        val process = ProcessBuilder(
+            "/system/bin/sh", recorder.path, eventId, mode, bytes.toString(), files.toString(),
+            emptyFiles.toString(), emptyDirs.toString(), fragments.toString(), elapsed.toString(), trigger
+        ).redirectErrorStream(true).start()
+        val completed = process.waitFor(25L, TimeUnit.SECONDS)
+        if (!completed) {
+            process.destroy()
+            process.waitFor(2L, TimeUnit.SECONDS)
+            if (process.isAlive) process.destroyForcibly()
+            error("clean_event_recorder_timeout")
+        }
+        val output = process.inputStream.bufferedReader().use { it.readText().take(1_000) }
+        require(process.exitValue() == 0) { output.ifBlank { "clean_event_recorder_failed" } }
+        val totals = RootFileStore.readEnv(File(stateDir, "totals.env"))
+        return TOTAL_KEYS.associateWith { totals.optLong(it, 0L).coerceAtLeast(0L) }
+    }
+
     private fun humanBytes(value: Long): String {
         val bytes = value.coerceAtLeast(0L).toDouble()
         return when {
@@ -214,6 +235,10 @@ internal class HistoryRepository(
     }
 
     companion object {
+        private val EVENT_ID = Regex("[A-Za-z0-9._:-]{1,160}")
+        private val TOTAL_KEYS = listOf(
+            "runs", "regular_files", "empty_files", "empty_dirs", "hidden_items", "fragment_files", "bytes", "elapsed"
+        )
         private val NATIVE_MODES = setOf(
             "smart-clean",
             "snapshot-clean",

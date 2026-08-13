@@ -1,0 +1,67 @@
+name: BaiZe CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.6'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Install Root script test tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y busybox-static toybox
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          sdkmanager 'ndk;27.2.12479018'
+      - name: Validate sources and rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          actionlint
+          for script in v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh service.sh cleaner.sh; do
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          python3 v2/scripts/validate-rules.py
+          tmp=$(mktemp -d)
+          python3 v2/scripts/compile-deep-rules.py config/deep.rules "$tmp/deep.rules" "$tmp/rules.meta.env" --index "$tmp/rules.index.jsonl"
+          BAIZE_RULES_PATH="$tmp/deep.rules" BAIZE_RULES_META="$tmp/rules.meta.env" sh v2/module/rules-validator.sh
+      - name: Compile native engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc="$ANDROID_SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion v2/native/baize_engine_42_4.c -o /tmp/baize_engine
+          "$cc" -std=c11 -O2 -Wall -Wextra -Werror -Wformat=2 -Wshadow -Wconversion v2/native/baize_deep_snapshot.c -o /tmp/baize_deep_snapshot
+          file /tmp/baize_engine /tmp/baize_deep_snapshot | tee /tmp/native-file.txt
+          grep -q 'ARM aarch64' /tmp/native-file.txt
+      - name: Run Root and contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in v2/tests/test-*.py; do python3 "$test_file"; done
+          for test_file in v2/tests/test-*.sh; do bash "$test_file"; done
+      - name: Build App and benchmark target
+        working-directory: v2
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug :macrobenchmark:assemble

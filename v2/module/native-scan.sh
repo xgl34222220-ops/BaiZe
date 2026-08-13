@@ -7,7 +7,8 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
 CONFIG="$STATE_DIR/config.conf"
-WHITELIST="$STATE_DIR/whitelist.conf"
+case "$MODE" in corpse-*) WHITELIST="$STATE_DIR/whitelist.corpses.conf" ;; *) WHITELIST="$STATE_DIR/whitelist.cache.conf" ;; esac
+[ -f "$WHITELIST" ] || WHITELIST="$STATE_DIR/whitelist.conf"
 PACKAGE_WHITELIST=${BAIZE_PACKAGE_WHITELIST:-$STATE_DIR/native-cache-packages.conf}
 REPORT_DIR="$STATE_DIR/reports"
 LOG_DIR="$STATE_DIR/logs"
@@ -170,6 +171,9 @@ case "$MODE" in
     [ -f "$DEEP_RULES" ] || { echo "完整深度规则库缺失" >&2; exit 8; }
     allow_high=$(sed -n 's/^deep_high_risk_enabled=//p' "$CONFIG" 2>/dev/null | tail -n 1)
     [ "$allow_high" = "1" ] || allow_high=0
+    # Scheduled cleanup is always safe-only.  This is an execution boundary,
+    # not a UI preference: legacy or manually edited config must not widen it.
+    case "$TRIGGER" in scheduler:*) allow_high=0 ;; esac
     set_phase "启动 C 原生深度规则扫描" 0 0 ""
     "$NATIVE_ENGINE" scan-deep --rules "$DEEP_RULES" --whitelist "$WHITELIST" \
       --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$allow_high" \

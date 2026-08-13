@@ -6,7 +6,7 @@ REVIEW_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/RuleQua
 ANALYZER="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/RuleQualityAnalyzer.kt"
 AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRepository.kt"
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/RuleQualityActivity.kt"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
+WORKFLOW="$ROOT/.github/workflows/ci.yml"
 
 for file in "$REVIEW_REPO" "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$WORKFLOW"; do
   test -f "$file" || { echo "missing auto-reopen contract file: $file" >&2; exit 1; }
@@ -53,6 +53,6 @@ grep -Fq 'operation.contains("rule-review") -> "review"' "$AUDIT_REPO"
 for label in '重新打开' '审核已自动重新打开' '只自动重新打开审核状态'; do
   grep -Fq "$label" "$ACTIVITY"
 done
-grep -Fq 'test-rule-review-auto-reopen-contract.sh' "$WORKFLOW"
+grep -Fq 'for test_file in v2/tests/test-*.sh' "$WORKFLOW"
 
 echo "rule review auto-reopen contract ok"
