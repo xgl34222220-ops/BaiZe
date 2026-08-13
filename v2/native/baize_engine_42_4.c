@@ -1325,7 +1325,7 @@ int main(int argc, char **argv) {
     g_started_ms = monotonic_ms();
     Options o;
     parse_options(argc, argv, &o);
-    int rc;
+    int rc = 0;
     if (strcmp(argv[1], "scan-corpses") == 0) rc = scan_corpses(&o);
     else if (strcmp(argv[1], "scan-cache") == 0) rc = scan_cache(&o);
     else if (strcmp(argv[1], "scan-external-one-pass") == 0) rc = scan_external_one_pass(&o);
