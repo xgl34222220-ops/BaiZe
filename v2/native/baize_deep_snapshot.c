@@ -539,7 +539,7 @@ int main(int argc, char **argv) {
     if (argc < 2) die("usage: baize_deep_snapshot <build|clean> [options]");
     g_started_epoch = (uint64_t)time(NULL);
     parse_options(argc, argv);
-    int result;
+    int result = 0;
     if (strcmp(argv[1], "build") == 0) result = build_manifest();
     else if (strcmp(argv[1], "clean") == 0) result = clean_manifest();
     else die("unsupported command");
