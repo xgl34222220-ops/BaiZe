@@ -1604,7 +1604,6 @@
 /storage/emulated/0/MT2/jks
 
 #MT管理器 缓存
-/storage/emulated/0/Android/data/bin.mt.plus/cache
 
 #MT管理器注入日志记录功能默认日志文件
 /storage/emulated/0/MT2/logs
@@ -1749,7 +1748,6 @@
 /storage/emulated/0/KuwoMusic/music
 
 #酷我音乐缓存
-/storage/emulated/0/Android/data/cn.kuwo.player/cache
 
 #cn.lightink.reader
 /storage/emulated/0/Android/data/cn.lightink.reader/cache
@@ -1787,7 +1785,6 @@
 /storage/emulated/0/Android/data/cn.wenyu.bodian/cache
 
 #cn.wps.moffice_eng
-/storage/emulated/0/Android/data/cn.wps.moffice_eng/cache
 
 #files
 /storage/emulated/0/Android/data/cn.wps.moffice_eng/files
@@ -2017,7 +2014,6 @@
 /storage/emulated/0/Download/email
 
 #电子邮件缓存文件
-/storage/emulated/0/Android/data/com.android.email/cache
 
 #com.android.fileexplorer
 /storage/emulated/0/Android/data/com.android.fileexplorer/cache
@@ -2237,7 +2233,6 @@
 /storage/emulated/0/Tencent/opensdk/logs/com.baidu.homework
 
 #com.baidu.input
-/storage/emulated/0/Android/data/com.baidu.input/cache
 /storage/emulated/0/Baidu/ime
 /storage/emulated/0/Com.baidu.input
 /storage/emulated/0/Flywheel/nativecrash
@@ -2607,7 +2602,6 @@
 /storage/emulated/0/Android/data/com.coolapk.market/cachett_ad
 
 #酷安数据目录
-/storage/emulated/0/Android/data/com.coolapk.market/cache
 
 #com.corp21cn.mail189
 /storage/emulated/0/Android/data/com.corp21cn.mail189/cache
@@ -2991,7 +2985,6 @@
 /storage/emulated/0/Android/data/com.guoshi.httpcanary.premium/cache
 
 #临时数据
-/storage/emulated/0/Android/data/com.guoshi.httpcanary.premium/cache
 
 #小黄鸟抓包数据
 /storage/emulated/0/HttpCanary
@@ -3216,7 +3209,6 @@
 /storage/emulated/0/Android/data/com.huawei.hilink.framework/cache
 
 #com.huawei.himovie
-/storage/emulated/0/Android/data/com.huawei.himovie/cache
 
 #com.huawei.hitouch
 /storage/emulated/0/Android/data/com.huawei.hitouch/cache
@@ -3271,7 +3263,6 @@
 /storage/emulated/0/Android/data/com.huawei.intelligent/files/Log
 
 #华为智慧助手图片缓存
-/storage/emulated/0/Android/data/com.huawei.intelligent/cache
 
 #智慧助手·今天图片缓存
 
@@ -3300,7 +3291,6 @@
 /storage/emulated/0/Android/data/com.huawei.notepad/cache
 
 #图库缓存文件
-/storage/emulated/0/Android/data/com.android.gallery3d/cache
 
 #com.huawei.ohos.suggestion
 /storage/emulated/0/Android/data/com.huawei.ohos.suggestion/cache
@@ -3670,7 +3660,6 @@
 #CapCut
 
 #com.lemon.lvoverseas
-/storage/emulated/0/Android/data/com.lemon.lvoverseas/cache
 
 #SHAREit
 /storage/emulated/0/Android/data/com.lenovo.anyshare.gps/files/SHAREit
@@ -3881,9 +3870,7 @@
 /storage/emulated/0/Android/data/com.miHoYo.wd/cache
 
 #未定事件簿
-/storage/emulated/0/Android/data/com.miHoYo.wd/cache
 /storage/emulated/0/Android/data/com.miHoYo.wd.bilibili/cache
-/storage/emulated/0/Android/data/com.miHoYo.wd.mi/cache
 
 #未定事件簿下载的资源
 /storage/emulated/0/Android/data/com.miHoYo.wd.mi/cache/UnityShaderCache
@@ -3898,7 +3885,6 @@
 /storage/emulated/0/Android/data/com.miHoYo.wd.mi/files/AssetbundlesCache
 
 #资源缓存
-/storage/emulated/0/Android/data/com.miHoYo.wd.bilibili/cache
 /storage/emulated/0/Android/data/com.miHoYo.wd/files/RawTexturesCache
 
 #com.miHoYo.Yuanshen
@@ -3911,7 +3897,6 @@
 /storage/emulated/0/android/data/com.miHoYo.Yuanshen
 
 #原神缓存，删了会卡
-/storage/emulated/0/Android/data/com.miHoYo.Yuanshen/cache
 
 #原神（天空岛）游戏数据
 /storage/emulated/0/Android/data/com.miHoYo.Yuanshen/files
@@ -5674,7 +5659,6 @@
 /storage/emulated/0/Android/data/player.normal.np/cache
 
 #player.normal.np
-/storage/emulated/0/Android/data/player.normal.np/cache
 
 #.360explorer
 /storage/emulated/0/.360explorer
@@ -5820,7 +5804,6 @@
 /storage/emulated/0/Android/data/com.tencent.mobileqq/qzone
 
 #QQ缓存
-/storage/emulated/0/Android/data/com.tencent.mobileqq/cache
 /storage/emulated/0/qmt
 /storage/emulated/0/Tencent/MobileQQ/doodle_template
 /storage/emulated/0/Tencent/blob/mqq
@@ -5965,7 +5948,6 @@
 #qq聊天图片缓存
 
 #com.tencent.qqmusic
-/storage/emulated/0/Android/data/com.tencent.qqmusic/cache
 
 #DTS音效配置文件
 /storage/emulated/0/qqmusic/dts_auto
@@ -6170,7 +6152,6 @@
 /storage/emulated/0/Android/data/com.tencent.tim/files/tbslog
 
 #Tim缓存
-/storage/emulated/0/Android/data/com.tencent.tim/cache
 
 #Tim聊天图片缓存
 /storage/emulated/0/Android/data/com.tencent.tim/Tencent/Tim/chatpic/chatthumb
@@ -6388,13 +6369,10 @@
 /storage/emulated/0/com.tencent.karaoke_KcSdk
 
 #<id>202010301727226924439207<id><name>Ⅲ<name><rule><rule><userId>oZrwWv_AiOpHq-nAxWxNLborFSA0<userId>
-<id>202010301727226924439207<id><name>Ⅲ<name><rule><rule><userId>oZrwWv_AiOpHq-nAxWxNLborFSA0<userId>
 
 #<id>20201030223721118501839<id><name>这个人一点都不想起名字<name><rule><rule><userId>oZrwWvwz4IMXWtIAWLnP1I4hU87k<userId>
-<id>20201030223721118501839<id><name>这个人一点都不想起名字<name><rule><rule><userId>oZrwWvwz4IMXWtIAWLnP1I4hU87k<userId>
 
 #<id>202305050751079070013770<id><name>Bill_1000<name><rule><description>动漫之家<rule><userId>oZrwWv6p_vuDOT6ItA3bQizWwm0A<userId>
-<id>202305050751079070013770<id><name>Bill_1000<name><rule><description>动漫之家<rule><userId>oZrwWv6p_vuDOT6ItA3bQizWwm0A<userId>
 
 #华为云盘缩略图
 /storage/emulated/0/Huawei/CloudDrive/.thumbnail/category
@@ -6489,7 +6467,6 @@
 /storage/emulated/0/Quark
 
 #夸克浏览器缓存
-/storage/emulated/0/Android/data/com.quark.browser/cache
 
 #夸克网盘下载文件
 /storage/emulated/0/Quark/Download/CloudDrive
@@ -6611,7 +6588,6 @@
 /storage/emulated/0/Android/data/com.tencent.mm/MicroMsg/CheckResUpdate
 
 #微信用户数据主文件
-/storage/emulated/0/Android/data/com.tencent.mm/cache
 
 #微信缓存
 /storage/emulated/0/Android/data/com.tencent.mm/MicroMsg/wxacache
@@ -6664,7 +6640,6 @@
 /storage/emulated/0/.ScreenShotTemp
 
 #com.ss.android.ugc.aweme
-/storage/emulated/0/Android/data/com.ss.android.ugc.aweme/cache
 
 #抖音
 /storage/emulated/0/Android/obb/com.ss.android.ugc.aweme
@@ -6695,7 +6670,6 @@
 /storage/emulated/0/alipay/com.eg.android.AlipayGphone/applogic
 
 #支付宝缓存
-/storage/emulated/0/Android/data/com.eg.android.AlipayGphone/cache
 /storage/emulated/0/alipay/com.eg.android.AlipayGphone
 
 #支付宝聊天语音及大图
@@ -7200,8 +7174,6 @@
 #360清理大师
 /storage/emulated/0/.android/com.tencent.qqmusic
 /storage/emulated/0/.cmbox/android/data/com.tencent.qqmusic
-/storage/emulated/0/Android/data/com.qihoo.cleandroid_cn/cache
-/storage/emulated/0/Android/data/com.tencent.qqmusic-ext/cache
 /storage/emulated/0/Audiostat
 /storage/emulated/0/Com.hotgame.hl.uc
 /storage/emulated/0/Com.tencent.qqmusic
@@ -7456,7 +7428,6 @@
 /storage/emulated/0/Jtyh_guide_pic
 
 #com.cainiao.wireless
-/storage/emulated/0/Android/data/com.cainiao.wireless/cache
 /storage/emulated/0/Apps_images/com.cainiao.wireless
 /storage/emulated/0/Cainiao
 /storage/emulated/0/Com.cainiao.wireless
@@ -7717,7 +7688,6 @@
 /storage/emulated/0/Android/obb/com.jiubang.fastestflashlight
 
 #com.kmxs.reader
-/storage/emulated/0/Android/data/com.kmxs.reader/cache
 /storage/emulated/0/Download/com.kmxs.reader
 /storage/emulated/0/Kmxsreader
 
@@ -7861,7 +7831,6 @@
 /storage/emulated/0/1/sina/.ids
 /storage/emulated/0/Aboutlivewbsdk
 /storage/emulated/0/Android/data/.log/com.sina.weibo
-/storage/emulated/0/Android/data/com.sina.weibo/cache
 /storage/emulated/0/Android/data/com.sina.weibo.game.football/cache
 /storage/emulated/0/Android/data/com.sina.weibocom.sina.weibo.game.football/cache
 /storage/emulated/0/Asinapush
@@ -7898,7 +7867,6 @@
 /storage/emulated/0/.com.snda.wifilocating
 /storage/emulated/0/.wk
 /storage/emulated/0/Android/data/.com.punchbox/cache
-/storage/emulated/0/Android/data/com.snda.wifilocating/cache
 /storage/emulated/0/Bddownload
 /storage/emulated/0/Com.snda.wifilocating
 /storage/emulated/0/Download/kb
@@ -8017,7 +7985,6 @@
 
 #com.tencent.karaoke
 /storage/emulated/0/.cmbox/android/data/com.tencent.karaoke
-/storage/emulated/0/Android/data/com.tencent.karaoke/cache
 /storage/emulated/0/Android/data/com.tencent.karaoke-ext/cache
 /storage/emulated/0/Apps_images/com.tencent.karaoke
 /storage/emulated/0/Com.tencent.karaoke
@@ -8406,7 +8373,6 @@
 /storage/emulated/0/Ucnewsapp
 /storage/emulated/0/Video_cache
 /storage/emulated/0/Videobox
-/storage/emulated/0/Android/data/com.UCMobile/cache
 
 #Widgetone
 /storage/emulated/0/Widgetone
@@ -8459,7 +8425,6 @@
 /storage/emulated/0/Weibointernational
 
 #快手
-/storage/emulated/0/Android/data/com.smile.gifmaker/cache
 /storage/emulated/0/Android/obb/com.smile.gifmaker
 /storage/emulated/0/Com.smile.gifmaker
 /storage/emulated/0/Data/data/com.smile.gifmaker
@@ -8959,7 +8924,7 @@
 /storage/emulated/0/360/mobilesafe/backup/bc/video
 
 #360浏览器
-第360章 清理大师
+#第360章 清理大师
 
 #Baidumap
 /storage/emulated/0/百度地图
@@ -8969,7 +8934,7 @@
 
 #Binco
 /storage/emulated/0/binco/download/dn-android.qbox.me/android/soft
-＃蓝牙
+#蓝牙
 #Com
 /storage/emulated/0/com/cn21/ecloud/file/download/完成
 /storage/emulated/0/com/cn21/ecloud/file/download/unfinished
@@ -8980,7 +8945,7 @@
 
 #Dbop
 /storage/emulated/0/dbop/resources/ui/hud/dynamicactivity
-＃下载
+#下载
 
 #Htc市场
 /storage/emulated/0/htcmarket/app/data/apk
@@ -9028,13 +8993,13 @@
 #兰布拉
 /storage/emulated/0/rambla/filecache/datevalid/com.appbox/cachemainhomeimage
 /storage/emulated/0/rambla/filecache/datevalid/com.appbox/cachemainhomeimagelist
-新浪
+#新浪
 /storage/emulated/0/sina/weibo/SinaAppMarket/apk
 
 #标准游戏中心
 /storage/emulated/0/standardgamecenter/filecache/datevalid/com.iruluplay.market/cachejson
 /storage/emulated/0/standardgamecenter/filecache/datevalid/com.standard.gamecenter/cachejson
-＃系统
+#系统
 /storage/emulated/0/System/APK/COMMON/apk
 /storage/emulated/0/System/APK/RU/apk
 
@@ -9066,7 +9031,7 @@
 /storage/emulated/0/yanosik-new/pl/segments
 /storage/emulated/0/yanosik-new/pl/segments_2
 /storage/emulated/0/yanosik-new/pl/traffic
-优酷
+#优酷
 /storage/emulated/0/优酷
 
 #杂雪

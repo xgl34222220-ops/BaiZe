@@ -7,21 +7,19 @@ OUT="$ROOT/dist"
 MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
-NATIVE="$ROOT/build/native/arm64-v8a/baize_engine"
-DEEP_NATIVE="$ROOT/build/native/arm64-v8a/baize_deep_snapshot"
+NATIVE_DIR="$ROOT/build/native"
 OUTPUT="$OUT/BaiZe-v2.5.7-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
-[ -x "$NATIVE" ] || { echo "未找到 arm64 原生扫描器：$NATIVE" >&2; exit 1; }
-[ -x "$DEEP_NATIVE" ] || { echo "未找到 arm64 深度不可变快照引擎：$DEEP_NATIVE" >&2; exit 1; }
-bash "$ROOT/tests/test-concurrent-scheduler.sh"
-bash "$ROOT/tests/test-deep-clean-budget.sh"
-bash "$ROOT/tests/test-deep-manifest.sh"
-bash "$ROOT/tests/test-autopilot-controller.sh"
-bash "$ROOT/tests/test-uninstall-cleanup.sh"
+# arm64 是必须产物；其余 ABI 有就打进去，没有就跳过。
+[ -x "$NATIVE_DIR/arm64-v8a/baize_engine" ] || { echo "未找到 arm64 原生扫描器" >&2; exit 1; }
+[ -x "$NATIVE_DIR/arm64-v8a/baize_deep_snapshot" ] || { echo "未找到 arm64 深度不可变快照引擎" >&2; exit 1; }
+
+# 打包前跑全量回归，而不是手工列举五个测试。
+bash "$ROOT/tests/run-all.sh"
 
 rm -rf "$STAGE"
-mkdir -p "$OUT" "$STAGE/app" "$STAGE/bin/arm64-v8a"
+mkdir -p "$OUT" "$STAGE/app"
 cp -a "$MODULE/." "$STAGE/"
 rm -rf "$STAGE/webroot" "$STAGE/webui" "$STAGE/www" "$STAGE/ksu-webui"
 cp -a "$REPO/config" "$STAGE/config"
@@ -34,16 +32,40 @@ cp -f "$STAGE/apk-snapshot-clean.sh" "$STAGE/apk-cleaner.sh"
 cp -f "$STAGE/scheduler-v2.5.sh" "$STAGE/scheduler.sh"
 rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
 
+# 兼容清理引擎直接拷贝，不再做构建期 sed 改写。
+# STATE_DIR 与 MODULE_TAG 已改为环境变量注入且默认值即 v2 的取值，
+# 源码与打包产物行为一致，本地可直接复现。
 cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
 cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
-sed -i 's|STATE_DIR=/data/adb/safesweep|STATE_DIR=/data/adb/baize-v2|g' "$STAGE/cleaner.sh.compat"
-sed -i 's|\*safesweep\*cleaner.sh\*|*baize_v2*cleaner.sh*|g; s|\*safesweep\*job-runner.sh\*|*baize_v2*job-runner.sh*|g; s|\*safesweep\*webctl.sh\*|*baize_v2*webctl.sh*|g' "$STAGE/cleaner.sh.compat"
+grep -q 'STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}' "$STAGE/cleaner.sh.compat" || {
+  echo "兼容引擎未使用 v2 状态目录默认值，拒绝打包" >&2
+  exit 1
+}
+grep -q 'MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}' "$STAGE/cleaner.sh.compat" || {
+  echo "兼容引擎未使用 v2 模块标识默认值，拒绝打包" >&2
+  exit 1
+}
 
-cp -f "$NATIVE" "$STAGE/bin/arm64-v8a/baize_engine"
-cp -f "$DEEP_NATIVE" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
+# 把构建出来的每个 ABI 都打进包里，安装时由 abi-resolve.sh 选取。
+packed_abis=""
+for abidir in "$NATIVE_DIR"/*/; do
+  [ -d "$abidir" ] || continue
+  abi=$(basename "$abidir")
+  [ -x "$abidir/baize_engine" ] || continue
+  [ -x "$abidir/baize_deep_snapshot" ] || continue
+  mkdir -p "$STAGE/bin/$abi"
+  cp -f "$abidir/baize_engine" "$STAGE/bin/$abi/baize_engine"
+  cp -f "$abidir/baize_deep_snapshot" "$STAGE/bin/$abi/baize_deep_snapshot"
+  chmod 0755 "$STAGE/bin/$abi/baize_engine" "$STAGE/bin/$abi/baize_deep_snapshot"
+  packed_abis="$packed_abis $abi"
+done
+[ -n "$packed_abis" ] || { echo "没有可打包的原生引擎" >&2; exit 1; }
+echo "已打包 ABI：$packed_abis"
+
 chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
 chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/deep-scan-manifest.sh" "$STAGE/deep-manifest-clean.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
-chmod 0755 "$STAGE/cleaner.sh.compat" "$STAGE/bin/arm64-v8a/baize_engine" "$STAGE/bin/arm64-v8a/baize_deep_snapshot"
+chmod 0644 "$STAGE/abi-resolve.sh"
+chmod 0755 "$STAGE/cleaner.sh.compat"
 chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh" "$STAGE/uninstall.sh"
 chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/autopilot-controller.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
 
@@ -80,7 +102,7 @@ unzip -p "$OUTPUT" supervisor.sh | grep -q 'run_autopilot'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
 unzip -p "$OUTPUT" scheduler.sh | grep -q 'fixed-seven-fields-v1'
-unzip -p "$OUTPUT" task-worker.sh | grep -q 'detached-root-worker-v2.5.7'
+unzip -p "$OUTPUT" task-worker.sh | grep -q "detached-root-worker-$(sed -n 's/^version=//p' "$REPO/module.prop" | head -n1)"
 unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
 unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'
@@ -89,6 +111,8 @@ unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-scan-manifest.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-manifest-clean.sh'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
+unzip -l "$OUTPUT" | grep -q 'abi-resolve.sh'
+unzip -l "$OUTPUT" | grep -q 'config/risk-overrides.conf'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-scan-manifest.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-manifest-clean.sh'
 unzip -p "$OUTPUT" deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'

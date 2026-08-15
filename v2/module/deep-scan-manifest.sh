@@ -13,7 +13,25 @@ MANIFEST_FILE="$STATE_DIR/deep_scan.manifest0"
 CURSOR_FILE="$STATE_DIR/deep_scan.cursor"
 BUILD_SUMMARY="$STATE_DIR/deep_scan.manifest.env"
 NATIVE_SCANNER="$MODDIR/native-cleaner.sh"
-SNAPSHOT_ENGINE="$MODDIR/bin/arm64-v8a/baize_deep_snapshot"
+# ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
+if [ -f "$MODDIR/abi-resolve.sh" ]; then
+  . "$MODDIR/abi-resolve.sh"
+else
+  baize_device_abis() { printf 'arm64-v8a\narmeabi-v7a\nx86_64\n'; }
+  baize_resolve_engine() {
+    for _abi in $(baize_device_abis); do
+      [ -x "$1/bin/$_abi/$2" ] && { printf '%s\n' "$1/bin/$_abi/$2"; return 0; }
+    done
+    return 1
+  }
+  baize_require_engine() {
+    [ -n "${3:-}" ] && [ -x "$3" ] && { printf '%s\n' "$3"; return 0; }
+    baize_resolve_engine "$1" "$2" && return 0
+    echo "当前架构没有可用的 $2，请重新刷入完整模块" >&2
+    return 8
+  }
+fi
+SNAPSHOT_ENGINE=$(baize_require_engine "$MODDIR" baize_deep_snapshot "${BAIZE_DEEP_SNAPSHOT_ENGINE:-}" 2>/dev/null || true)
 
 mkdir -p "$STATE_DIR"
 

@@ -29,6 +29,22 @@ write_result() {
 [ -f "$APK" ] || { write_result failed apk_missing; echo "内置 App 缺失" >&2; exit 5; }
 bundle_hash=$(apk_hash "$APK")
 [ -n "$bundle_hash" ] || { write_result failed hash_failed; exit 5; }
+
+# 与打包时写入的期望校验值比对。HASH_FILE 此前只声明未使用，
+# 下面的 saved_hash 比较是"和上次安装的是否一致"，不是完整性校验。
+if [ -f "$HASH_FILE" ]; then
+  expected_hash=$(tr -d ' \t\r\n' <"$HASH_FILE")
+  if [ -n "$expected_hash" ] && [ "$expected_hash" != "$bundle_hash" ]; then
+    write_result failed apk_integrity_mismatch
+    echo "内置 App 校验失败，模块包可能已损坏或被篡改" >&2
+    exit 13
+  fi
+else
+  write_result failed apk_hash_file_missing
+  echo "缺少内置 App 校验文件，拒绝安装" >&2
+  exit 13
+fi
+
 installed=0
 pm path "$APP_ID" >/dev/null 2>&1 && installed=1
 saved_hash=$(sed -n '1p' "$INSTALLED_HASH" 2>/dev/null | tr -d '\r\n ')

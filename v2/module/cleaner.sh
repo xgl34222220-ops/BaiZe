@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
 
 MODDIR=${0%/*}
 COMPAT_ENGINE="$MODDIR/cleaner.sh.compat"
@@ -24,7 +27,49 @@ CACHE_SCAN_STATE="$STATE_DIR/cache_scan.env"
 CACHE_SCAN_ITEMS="$STATE_DIR/cache_scan.items.tsv"
 CACHE_SCAN_TARGETS="$STATE_DIR/cache_scan.targets"
 DEEP_RULES=${BAIZE_DEEP_RULES:-$MODDIR/config/deep.rules}
-NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$MODDIR/bin/arm64-v8a/baize_engine}
+RISK_OVERRIDES=${BAIZE_RISK_OVERRIDES:-$STATE_DIR/risk-overrides.conf}
+# ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
+if [ -f "$MODDIR/abi-resolve.sh" ]; then
+  . "$MODDIR/abi-resolve.sh"
+else
+  baize_device_abis() { printf 'arm64-v8a\narmeabi-v7a\nx86_64\n'; }
+  baize_resolve_engine() {
+    for _abi in $(baize_device_abis); do
+      [ -x "$1/bin/$_abi/$2" ] && { printf '%s\n' "$1/bin/$_abi/$2"; return 0; }
+    done
+    return 1
+  }
+  baize_require_engine() {
+    [ -n "${3:-}" ] && [ -x "$3" ] && { printf '%s\n' "$3"; return 0; }
+    baize_resolve_engine "$1" "$2" && return 0
+    echo "当前架构没有可用的 $2，请重新刷入完整模块" >&2
+    return 8
+  }
+fi
+NATIVE_ENGINE=$(baize_require_engine "$MODDIR" baize_engine "${BAIZE_NATIVE_ENGINE:-}" 2>/dev/null || true)
+
+# 解析允许自动删除的最高风险等级，语义与 native-scan.sh 保持一致。
+deep_max_auto_risk() {
+  _trigger=$1
+  _allow_high=$2
+  case "$_trigger" in
+    manual|user|ui) _key=deep_manual_max_risk ;;
+    *) _key=deep_scheduled_max_risk ;;
+  esac
+  _value=$(sed -n "s/^$_key=//p" "$CONFIG" 2>/dev/null | tail -n 1)
+  case "$_value" in
+    low|medium|high|critical) ;;
+    *) [ "$_key" = "deep_manual_max_risk" ] && _value=high || _value=medium ;;
+  esac
+  if [ "$_allow_high" != "1" ]; then
+    case "$_value" in high|critical) _value=medium ;; esac
+  fi
+  case "$_trigger" in
+    manual|user|ui) ;;
+    *) case "$_value" in high|critical) _value=medium ;; esac ;;
+  esac
+  printf '%s\n' "$_value"
+}
 
 fallback() {
   [ -f "$COMPAT_ENGINE" ] || { echo "兼容清理引擎缺失" >&2; exit 5; }
@@ -42,18 +87,12 @@ mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$PACKAGE_WHITELIST" ] || : >"$PACKAGE_WHITELIST"
 
 if [ "$REQUEST_MODE" != "cache-clean" ]; then
-  [ -x "$NATIVE_ENGINE" ] || {
+  # 架构支持由 baize_require_engine 判定：包里有对应 ABI 的引擎就能跑。
+  # 找不到时退回兼容引擎，而不是按 uname 白名单一律拒绝。
+  [ -n "$NATIVE_ENGINE" ] && [ -x "$NATIVE_ENGINE" ] || {
     [ "$REQUEST_MODE" = "cache-scan" ] && { echo "原生缓存扫描器不可用" >&2; exit 8; }
     fallback "$@"
   }
-  case "$(uname -m 2>/dev/null)" in
-    aarch64|arm64) ;;
-    x86_64) [ -n "${BAIZE_NATIVE_TEST:-}" ] || {
-      [ "$REQUEST_MODE" = "cache-scan" ] && exit 8
-      fallback "$@"
-    } ;;
-    *) [ "$REQUEST_MODE" = "cache-scan" ] && exit 8; fallback "$@" ;;
-  esac
   native_enabled=$(sed -n 's/^native_scanner_enabled=//p' "$CONFIG" 2>/dev/null | tail -n 1)
   [ "$native_enabled" = "0" ] && {
     [ "$REQUEST_MODE" = "cache-scan" ] && exit 8
@@ -390,9 +429,11 @@ case "$REQUEST_MODE" in
     [ -f "$DEEP_RULES" ] || { cleanup_lock; trap - EXIT INT TERM; fallback "$@"; }
     high=$(sed -n 's/^deep_high_risk_enabled=//p' "$CONFIG" 2>/dev/null | tail -n 1)
     [ "$high" = "1" ] || high=0
+    max_auto_risk=$(deep_max_auto_risk "$TRIGGER" "$high")
     set_phase "启动 C 原生深度规则扫描"
     "$NATIVE_ENGINE" scan-deep --rules "$DEEP_RULES" --whitelist "$WHITELIST" \
-      --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$high" --report "$REPORT_FILE" \
+      --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$high" \
+      --max-auto-risk "$max_auto_risk" --risk-overrides "$RISK_OVERRIDES" --report "$REPORT_FILE" \
       --targets "$TARGETS_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
   cache-scan)

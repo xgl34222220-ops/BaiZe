@@ -1,6 +1,13 @@
 #!/system/bin/sh
+# 兼容清理引擎（v1）。当 v2 原生引擎不可用时由 v2/module/cleaner.sh 退回到这里，
+# 打包为 cleaner.sh.compat。
+#
+# STATE_DIR 与 MODULE_TAG 通过环境变量注入，默认值即 v2 的取值。
+# 此前打包脚本靠构建期 sed 改写这两处，源码与产物行为不一致且难以本地复现。
 MODDIR=${0%/*}
-STATE_DIR=/data/adb/safesweep
+STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# 进程匹配用的模块目录名，v1 独立安装时为 safesweep。
+MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}
 CONFIG="$STATE_DIR/config.conf"
 WHITELIST="$STATE_DIR/whitelist.conf"
 CUSTOM_RULES="$STATE_DIR/custom.rules"
@@ -55,7 +62,7 @@ pid_is_safesweep() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *safesweep*cleaner.sh*|*safesweep*job-runner.sh*|*safesweep*webctl.sh*) return 0 ;;
+    *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*) return 0 ;;
   esac
   return 1
 }

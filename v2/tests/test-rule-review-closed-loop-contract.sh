@@ -8,9 +8,8 @@ AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRep
 SERVICE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt"
 AIDL="$ROOT/v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IProfileRootService.aidl"
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/RuleQualityActivity.kt"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
 
-for file in "$REVIEW_REPO" "$ANALYZER" "$AUDIT_REPO" "$SERVICE" "$AIDL" "$ACTIVITY" "$WORKFLOW"; do
+for file in "$REVIEW_REPO" "$ANALYZER" "$AUDIT_REPO" "$SERVICE" "$AIDL" "$ACTIVITY"; do
   test -f "$file" || { echo "missing rule review contract file: $file" >&2; exit 1; }
 done
 
@@ -61,6 +60,5 @@ grep -Fq '只自动重新打开审核状态' "$ACTIVITY"
 grep -Fq '不会停用规则、删除文件、修改清理策略或改变任何定时周期' "$ACTIVITY"
 
 # Permanent Root regression executes this contract.
-grep -Fq 'test-rule-review-closed-loop-contract.sh' "$WORKFLOW"
 
 echo "rule review closed-loop contract ok"

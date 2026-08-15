@@ -159,6 +159,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     clearRawLog = { confirmClearRawLogs() },
                     reviewProtected = { startActivity(Intent(this, ProtectedReviewActivity::class.java)) },
                     whitelist = { startActivity(Intent(this, WhitelistActivity::class.java)) },
+                    resumableScan = { startActivity(Intent(this, ResumableSmartScanActivity::class.java)) },
                     theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
                     resetScanPerformance = { resetScanPerformance() },

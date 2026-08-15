@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
 
 APP_ID="io.github.xgl34222220.baize"
 STATE_DIR="/data/adb/baize-v2"
@@ -7,8 +10,11 @@ OLD_UPDATE="/data/adb/modules_update/safesweep"
 OLD_STATE="/data/adb/safesweep"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
-NATIVE_ENGINE="$MODPATH/bin/arm64-v8a/baize_engine"
-DEEP_SNAPSHOT_ENGINE="$MODPATH/bin/arm64-v8a/baize_deep_snapshot"
+# 按设备实际 ABI 解析引擎路径，不再假定 arm64。
+. "$MODPATH/abi-resolve.sh"
+NATIVE_ENGINE=$(baize_resolve_engine "$MODPATH" baize_engine 2>/dev/null || true)
+DEEP_SNAPSHOT_ENGINE=$(baize_resolve_engine "$MODPATH" baize_deep_snapshot 2>/dev/null || true)
+DEVICE_ABIS=$(baize_device_abis 2>/dev/null | tr '\n' ' ')
 
 for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/baize_v2"; do
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
@@ -34,8 +40,11 @@ chmod 0700 "$STATE_DIR"
 [ -f "$MODPATH/deep-scan-manifest.sh" ] || abort "! 模块包中缺少深度不可变快照扫描器"
 [ -f "$MODPATH/deep-manifest-clean.sh" ] || abort "! 模块包中缺少深度不可变快照清理器"
 [ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
-[ -f "$NATIVE_ENGINE" ] || abort "! 模块包中缺少 arm64 原生扫描器"
-[ -f "$DEEP_SNAPSHOT_ENGINE" ] || abort "! 模块包中缺少 arm64 深度快照引擎"
+[ -n "$NATIVE_ENGINE" ] && [ -f "$NATIVE_ENGINE" ] || \
+  abort "! 模块包中没有适配当前架构（$DEVICE_ABIS）的原生扫描器"
+[ -n "$DEEP_SNAPSHOT_ENGINE" ] && [ -f "$DEEP_SNAPSHOT_ENGINE" ] || \
+  abort "! 模块包中没有适配当前架构（$DEVICE_ABIS）的深度快照引擎"
+ui_print "- 已匹配架构：$(dirname "$NATIVE_ENGINE" | sed 's|.*/||')"
 [ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
 [ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
 [ -f "$MODPATH/autopilot-controller.sh" ] || abort "! 模块包中缺少自动驾驶控制器"
@@ -56,8 +65,9 @@ pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/deep-scan-manifest.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/deep-manifest-clean.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_engine' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/bin/arm64-v8a/baize_deep_snapshot' >/dev/null 2>&1 || true
+# 匹配任意 ABI 目录下的引擎进程
+pkill -f '/data/adb/modules/baize_v2/bin/.*/baize_engine' >/dev/null 2>&1 || true
+pkill -f '/data/adb/modules/baize_v2/bin/.*/baize_deep_snapshot' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/organizer-worker.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/worker-runner.sh' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/task-worker.sh' >/dev/null 2>&1 || true
@@ -137,13 +147,51 @@ chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-sn
 chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
 chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/autopilot-controller.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
 
+# 安装前校验 APK 完整性。打包脚本会生成 baize.apk.sha256，
+# 此前该文件只被复制到 state 目录，从未真正比对过，等于没有校验。
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  elif command -v toybox >/dev/null 2>&1; then
+    toybox sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+verify_apk() {
+  [ -f "$APK" ] || { ui_print "! 模块内缺少 APK"; return 1; }
+  [ -f "$HASH_FILE" ] || { ui_print "! 缺少 APK 校验文件，拒绝安装"; return 1; }
+  expected=$(tr -d ' \t\r\n' <"$HASH_FILE")
+  case "$expected" in
+    ????????????????????????????????????????????????????????????????) ;;
+    *) ui_print "! APK 校验文件格式非法，拒绝安装"; return 1 ;;
+  esac
+  actual=$(sha256_of "$APK")
+  if [ -z "$actual" ]; then
+    ui_print "! 设备缺少 sha256 工具，无法校验 APK，拒绝安装"
+    return 1
+  fi
+  if [ "$actual" != "$expected" ]; then
+    ui_print "! APK 校验失败，模块包可能已损坏或被篡改"
+    ui_print "  期望 $expected"
+    ui_print "  实际 $actual"
+    return 1
+  fi
+  ui_print "- APK 校验通过"
+  return 0
+}
+
 install_app() {
   pm install -r -d --user 0 "$APK" >/dev/null 2>&1 && return 0
   pm install -r -d "$APK" >/dev/null 2>&1 && return 0
   return 1
 }
 
-if command -v pm >/dev/null 2>&1; then
+if ! verify_apk; then
+  ui_print "! 已跳过 App 安装，模块脚本部分仍会安装"
+  ui_print "  请重新下载完整模块 ZIP 后再刷入"
+elif command -v pm >/dev/null 2>&1; then
   if install_app; then
     ui_print "- 白泽 App 已安装或更新"
     [ -f "$HASH_FILE" ] && cp -f "$HASH_FILE" "$STATE_DIR/installed-app.sha256"

@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * v2.1.0 Alpha 6 performance-panel adaptive-worker path-indexed One-pass cache task bridge.
@@ -39,38 +40,129 @@ class BaiZeRootService : RootService() {
     private val cancelled = AtomicBoolean(false)
     private val resultLock = Any()
 
-    @Volatile private var snapshotId = ""
-    @Volatile private var snapshotCreatedAt = 0L
-    @Volatile private var snapshotFiles = 0L
-    @Volatile private var snapshotBytes = 0L
-    @Volatile private var snapshotWhitelisted = 0
-    @Volatile private var snapshotVisitedFiles = 0L
-    @Volatile private var snapshotVisitedDirs = 0L
-    @Volatile private var snapshotFirstResultMs = 0L
-    @Volatile private var snapshotEngineElapsedMs = 0L
-    @Volatile private var snapshotItemsPerSecond = 0L
-    @Volatile private var snapshotOnePassAppDirs = 0L
-    @Volatile private var snapshotOnePassInstalledDirs = 0L
-    @Volatile private var snapshotOnePassOrphanDirs = 0L
-    @Volatile private var snapshotWhitelistIndexEntries = 0L
-    @Volatile private var snapshotWhitelistIndexQueries = 0L
-    @Volatile private var snapshotWhitelistAncestorHits = 0L
-    @Volatile private var snapshotWhitelistDescendantHits = 0L
-    @Volatile private var snapshotPrunedSubtrees = 0L
-    @Volatile private var snapshotRootWorkers = 1L
-    @Volatile private var snapshotParallelWallMs = 0L
-    @Volatile private var snapshotInternalWorkerMs = 0L
-    @Volatile private var snapshotExternalWorkerMs = 0L
-    @Volatile private var snapshotParallelOverlapMilli = 1000L
-    @Volatile private var snapshotWorkerPolicy = "auto"
-    @Volatile private var snapshotWorkerReason = "none"
-    @Volatile private var snapshotRecommendedWorkers = 1L
-    @Volatile private var snapshotParallelGainPercent = 0L
-    @Volatile private var snapshotWorkerProfileRuns = 0L
-    @Volatile private var snapshotSerialProfileRate = 0L
-    @Volatile private var snapshotParallelProfileRate = 0L
-    @Volatile private var snapshotNextProbeRun = 0L
-    @Volatile private var snapshotParallelBlockedUntil = 0L
+    /**
+     * 扫描快照的全部元数据。
+     *
+     * 此前这是 32 个独立的 `@Volatile var`：restoreSnapshotFromDisk() 逐个赋值，
+     * ping() 逐个读取，两者之间没有任何同步。读取方完全可能拿到半新半旧的组合
+     * —— 例如 snapshotId 已指向新一轮扫描，而 files 还是上一轮的值，
+     * 界面就会显示对不上的统计。改为不可变对象 + AtomicReference 原子替换。
+     */
+    private data class SnapshotState(
+        val id: String = "",
+        val createdAt: Long = 0L,
+        val files: Long = 0L,
+        val bytes: Long = 0L,
+        val whitelisted: Int = 0,
+        val visitedFiles: Long = 0L,
+        val visitedDirs: Long = 0L,
+        val firstResultMs: Long = 0L,
+        val engineElapsedMs: Long = 0L,
+        val itemsPerSecond: Long = 0L,
+        val onePassAppDirs: Long = 0L,
+        val onePassInstalledDirs: Long = 0L,
+        val onePassOrphanDirs: Long = 0L,
+        val whitelistIndexEntries: Long = 0L,
+        val whitelistIndexQueries: Long = 0L,
+        val whitelistAncestorHits: Long = 0L,
+        val whitelistDescendantHits: Long = 0L,
+        val prunedSubtrees: Long = 0L,
+        val rootWorkers: Long = 1L,
+        val parallelWallMs: Long = 0L,
+        val internalWorkerMs: Long = 0L,
+        val externalWorkerMs: Long = 0L,
+        val parallelOverlapMilli: Long = 1000L,
+        val workerPolicy: String = "auto",
+        val workerReason: String = "none",
+        val recommendedWorkers: Long = 1L,
+        val parallelGainPercent: Long = 0L,
+        val workerProfileRuns: Long = 0L,
+        val serialProfileRate: Long = 0L,
+        val parallelProfileRate: Long = 0L,
+        val nextProbeRun: Long = 0L,
+        val parallelBlockedUntil: Long = 0L
+    ) {
+        /** 写入 ping() 响应。ready=false 时统一输出默认值。 */
+        fun putInto(json: JSONObject, ready: Boolean, itemCount: Int): JSONObject {
+            val s = if (ready) this else EMPTY
+            json.put("snapshotReady", ready)
+            json.put("snapshotItems", if (ready) itemCount else 0)
+            json.put("snapshotId", s.id)
+            json.put("snapshotFiles", s.files)
+            json.put("snapshotBytes", s.bytes)
+            json.put("snapshotWhitelisted", s.whitelisted)
+            json.put("visitedFiles", s.visitedFiles)
+            json.put("visitedDirs", s.visitedDirs)
+            json.put("firstResultMs", s.firstResultMs)
+            json.put("engineElapsedMs", s.engineElapsedMs)
+            json.put("itemsPerSecond", s.itemsPerSecond)
+            json.put("onePassAppDirs", s.onePassAppDirs)
+            json.put("onePassInstalledDirs", s.onePassInstalledDirs)
+            json.put("onePassOrphanDirs", s.onePassOrphanDirs)
+            json.put("whitelistIndexEntries", s.whitelistIndexEntries)
+            json.put("whitelistIndexQueries", s.whitelistIndexQueries)
+            json.put("whitelistAncestorHits", s.whitelistAncestorHits)
+            json.put("whitelistDescendantHits", s.whitelistDescendantHits)
+            json.put("prunedSubtrees", s.prunedSubtrees)
+            json.put("rootWorkers", s.rootWorkers)
+            json.put("parallelWallMs", s.parallelWallMs)
+            json.put("internalWorkerMs", s.internalWorkerMs)
+            json.put("externalWorkerMs", s.externalWorkerMs)
+            json.put("parallelOverlapMilli", s.parallelOverlapMilli)
+            json.put("workerPolicy", s.workerPolicy)
+            json.put("workerReason", s.workerReason)
+            json.put("recommendedWorkers", s.recommendedWorkers)
+            json.put("parallelGainPercent", s.parallelGainPercent)
+            json.put("workerProfileRuns", s.workerProfileRuns)
+            json.put("serialProfileRate", s.serialProfileRate)
+            json.put("parallelProfileRate", s.parallelProfileRate)
+            json.put("nextProbeRun", s.nextProbeRun)
+            json.put("parallelBlockedUntil", s.parallelBlockedUntil)
+            json.put("snapshotCreatedAt", s.createdAt)
+            return json
+        }
+
+        /** 写入一次扫描完成后的汇总响应。 */
+        fun putScanSummary(json: JSONObject): JSONObject {
+            json.put("whitelisted", whitelisted)
+            json.put("totalFiles", files)
+            json.put("totalBytes", bytes)
+            json.put("visitedFiles", visitedFiles)
+            json.put("visitedDirs", visitedDirs)
+            json.put("firstResultMs", firstResultMs)
+            json.put("engineElapsedMs", engineElapsedMs)
+            json.put("itemsPerSecond", itemsPerSecond)
+            json.put("onePassAppDirs", onePassAppDirs)
+            json.put("onePassInstalledDirs", onePassInstalledDirs)
+            json.put("onePassOrphanDirs", onePassOrphanDirs)
+            json.put("whitelistIndexEntries", whitelistIndexEntries)
+            json.put("whitelistIndexQueries", whitelistIndexQueries)
+            json.put("whitelistAncestorHits", whitelistAncestorHits)
+            json.put("whitelistDescendantHits", whitelistDescendantHits)
+            json.put("prunedSubtrees", prunedSubtrees)
+            json.put("rootWorkers", rootWorkers)
+            json.put("parallelWallMs", parallelWallMs)
+            json.put("internalWorkerMs", internalWorkerMs)
+            json.put("externalWorkerMs", externalWorkerMs)
+            json.put("parallelOverlapMilli", parallelOverlapMilli)
+            json.put("workerPolicy", workerPolicy)
+            json.put("workerReason", workerReason)
+            json.put("recommendedWorkers", recommendedWorkers)
+            json.put("parallelGainPercent", parallelGainPercent)
+            json.put("workerProfileRuns", workerProfileRuns)
+            json.put("serialProfileRate", serialProfileRate)
+            json.put("parallelProfileRate", parallelProfileRate)
+            json.put("nextProbeRun", nextProbeRun)
+            json.put("parallelBlockedUntil", parallelBlockedUntil)
+            return json
+        }
+
+        companion object {
+            val EMPTY = SnapshotState()
+        }
+    }
+
+    private val snapshotState = AtomicReference(SnapshotState.EMPTY)
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -80,42 +172,18 @@ class BaiZeRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-arm64-cache-v43.7-alpha8-organizer")
-                .put("available", File(MODULE_DIR, "bin/arm64-v8a/baize_engine").canExecute())
-                .put("snapshotReady", ready)
-                .put("snapshotId", if (ready) snapshotId else "")
-                .put("snapshotItems", if (ready) synchronized(resultLock) { items.size } else 0)
-                .put("snapshotFiles", if (ready) snapshotFiles else 0L)
-                .put("snapshotBytes", if (ready) snapshotBytes else 0L)
-                .put("snapshotWhitelisted", if (ready) snapshotWhitelisted else 0)
-                .put("visitedFiles", if (ready) snapshotVisitedFiles else 0L)
-                .put("visitedDirs", if (ready) snapshotVisitedDirs else 0L)
-                .put("firstResultMs", if (ready) snapshotFirstResultMs else 0L)
-                .put("engineElapsedMs", if (ready) snapshotEngineElapsedMs else 0L)
-                .put("itemsPerSecond", if (ready) snapshotItemsPerSecond else 0L)
-                .put("onePassAppDirs", if (ready) snapshotOnePassAppDirs else 0L)
-                .put("onePassInstalledDirs", if (ready) snapshotOnePassInstalledDirs else 0L)
-                .put("onePassOrphanDirs", if (ready) snapshotOnePassOrphanDirs else 0L)
-                .put("whitelistIndexEntries", if (ready) snapshotWhitelistIndexEntries else 0L)
-                .put("whitelistIndexQueries", if (ready) snapshotWhitelistIndexQueries else 0L)
-                .put("whitelistAncestorHits", if (ready) snapshotWhitelistAncestorHits else 0L)
-                .put("whitelistDescendantHits", if (ready) snapshotWhitelistDescendantHits else 0L)
-                .put("prunedSubtrees", if (ready) snapshotPrunedSubtrees else 0L)
-                .put("rootWorkers", if (ready) snapshotRootWorkers else 1L)
-                .put("parallelWallMs", if (ready) snapshotParallelWallMs else 0L)
-                .put("internalWorkerMs", if (ready) snapshotInternalWorkerMs else 0L)
-                .put("externalWorkerMs", if (ready) snapshotExternalWorkerMs else 0L)
-                .put("parallelOverlapMilli", if (ready) snapshotParallelOverlapMilli else 1000L)
-                .put("workerPolicy", if (ready) snapshotWorkerPolicy else "auto")
-                .put("workerReason", if (ready) snapshotWorkerReason else "none")
-                .put("recommendedWorkers", if (ready) snapshotRecommendedWorkers else 1L)
-                .put("parallelGainPercent", if (ready) snapshotParallelGainPercent else 0L)
-                .put("workerProfileRuns", if (ready) snapshotWorkerProfileRuns else 0L)
-                .put("serialProfileRate", if (ready) snapshotSerialProfileRate else 0L)
-                .put("parallelProfileRate", if (ready) snapshotParallelProfileRate else 0L)
-                .put("nextProbeRun", if (ready) snapshotNextProbeRun else 0L)
-                .put("parallelBlockedUntil", if (ready) snapshotParallelBlockedUntil else 0L)
-                .put("snapshotCreatedAt", if (ready) snapshotCreatedAt else 0L)
+                .put("engine", "native-c-cache-v43.7-alpha8-organizer")
+                // 按设备 ABI 查找，不再假定 arm64
+                .put("available", RootPaths.nativeEngine("baize_engine") != null)
+                .put("engineAbi", RootPaths.nativeEngine("baize_engine")?.parentFile?.name ?: "")
+                .also { json ->
+                    // 一次读取原子快照，读取方不会看到半新半旧的字段组合
+                    snapshotState.get().putInto(
+                        json,
+                        ready,
+                        synchronized(resultLock) { items.size }
+                    )
+                }
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
                 .toString()
@@ -300,40 +368,11 @@ class BaiZeRootService : RootService() {
         return JSONObject()
             .put("cancelled", false)
             .put("elapsedMs", elapsed)
-            .put("snapshotId", snapshotId)
+            .put("snapshotId", snapshotState.get().id)
             .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
             .put("totalCandidates", synchronized(resultLock) { items.size })
-            .put("whitelisted", snapshotWhitelisted)
-            .put("totalFiles", snapshotFiles)
-            .put("totalBytes", snapshotBytes)
-            .put("visitedFiles", snapshotVisitedFiles)
-            .put("visitedDirs", snapshotVisitedDirs)
-            .put("firstResultMs", snapshotFirstResultMs)
-            .put("engineElapsedMs", snapshotEngineElapsedMs)
-            .put("itemsPerSecond", snapshotItemsPerSecond)
-            .put("onePassAppDirs", snapshotOnePassAppDirs)
-            .put("onePassInstalledDirs", snapshotOnePassInstalledDirs)
-            .put("onePassOrphanDirs", snapshotOnePassOrphanDirs)
-            .put("whitelistIndexEntries", snapshotWhitelistIndexEntries)
-            .put("whitelistIndexQueries", snapshotWhitelistIndexQueries)
-            .put("whitelistAncestorHits", snapshotWhitelistAncestorHits)
-            .put("whitelistDescendantHits", snapshotWhitelistDescendantHits)
-            .put("prunedSubtrees", snapshotPrunedSubtrees)
-            .put("rootWorkers", snapshotRootWorkers)
-            .put("parallelWallMs", snapshotParallelWallMs)
-            .put("internalWorkerMs", snapshotInternalWorkerMs)
-            .put("externalWorkerMs", snapshotExternalWorkerMs)
-            .put("parallelOverlapMilli", snapshotParallelOverlapMilli)
-            .put("workerPolicy", snapshotWorkerPolicy)
-            .put("workerReason", snapshotWorkerReason)
-            .put("recommendedWorkers", snapshotRecommendedWorkers)
-            .put("parallelGainPercent", snapshotParallelGainPercent)
-            .put("workerProfileRuns", snapshotWorkerProfileRuns)
-            .put("serialProfileRate", snapshotSerialProfileRate)
-            .put("parallelProfileRate", snapshotParallelProfileRate)
-            .put("nextProbeRun", snapshotNextProbeRun)
-            .put("parallelBlockedUntil", snapshotParallelBlockedUntil)
-            .put("engine", "native-c-arm64-adaptive-worker-path-index")
+            .also { json -> snapshotState.get().putScanSummary(json) }
+            .put("engine", "native-c-adaptive-worker-path-index")
             .toString()
     }
 
@@ -436,7 +475,7 @@ class BaiZeRootService : RootService() {
             clearSnapshotMemory()
             return false
         }
-        if (!force && id == snapshotId && snapshotValid(id)) return true
+        if (!force && id == snapshotState.get().id && snapshotValid(id)) return true
 
         val parsed = parseItems(itemFile)
         val expected = state.optInt("items", parsed.size).coerceAtLeast(0)
@@ -445,76 +484,52 @@ class BaiZeRootService : RootService() {
             return false
         }
         synchronized(resultLock) { items = parsed }
-        snapshotId = id
-        snapshotCreatedAt = createdAt
-        snapshotFiles = state.optLong("files", 0L).coerceAtLeast(0L)
-        snapshotBytes = state.optLong("bytes", 0L).coerceAtLeast(0L)
         val latest = readEnv(File(STATE_DIR, "latest.env"))
-        snapshotWhitelisted = latest.optInt("whitelisted", 0).coerceAtLeast(0)
-        snapshotVisitedFiles = state.optLong("visited_files", latest.optLong("visited_files", 0L)).coerceAtLeast(0L)
-        snapshotVisitedDirs = state.optLong("visited_dirs", latest.optLong("visited_dirs", 0L)).coerceAtLeast(0L)
-        snapshotFirstResultMs = state.optLong("first_result_ms", latest.optLong("first_result_ms", 0L)).coerceAtLeast(0L)
-        snapshotEngineElapsedMs = state.optLong("engine_elapsed_ms", latest.optLong("engine_elapsed_ms", 0L)).coerceAtLeast(0L)
-        snapshotItemsPerSecond = state.optLong("items_per_second", latest.optLong("items_per_second", 0L)).coerceAtLeast(0L)
-        snapshotOnePassAppDirs = state.optLong("one_pass_app_dirs", latest.optLong("one_pass_app_dirs", 0L)).coerceAtLeast(0L)
-        snapshotOnePassInstalledDirs = state.optLong("one_pass_installed_dirs", latest.optLong("one_pass_installed_dirs", 0L)).coerceAtLeast(0L)
-        snapshotOnePassOrphanDirs = state.optLong("one_pass_orphan_dirs", latest.optLong("one_pass_orphan_dirs", 0L)).coerceAtLeast(0L)
-        snapshotWhitelistIndexEntries = state.optLong("whitelist_index_entries", latest.optLong("whitelist_index_entries", 0L)).coerceAtLeast(0L)
-        snapshotWhitelistIndexQueries = state.optLong("whitelist_index_queries", latest.optLong("whitelist_index_queries", 0L)).coerceAtLeast(0L)
-        snapshotWhitelistAncestorHits = state.optLong("whitelist_ancestor_hits", latest.optLong("whitelist_ancestor_hits", 0L)).coerceAtLeast(0L)
-        snapshotWhitelistDescendantHits = state.optLong("whitelist_descendant_hits", latest.optLong("whitelist_descendant_hits", 0L)).coerceAtLeast(0L)
-        snapshotPrunedSubtrees = state.optLong("pruned_subtrees", latest.optLong("pruned_subtrees", 0L)).coerceAtLeast(0L)
-        snapshotRootWorkers = state.optLong("root_workers", latest.optLong("root_workers", 1L)).coerceIn(1L, 2L)
-        snapshotParallelWallMs = state.optLong("parallel_wall_ms", latest.optLong("parallel_wall_ms", 0L)).coerceAtLeast(0L)
-        snapshotInternalWorkerMs = state.optLong("internal_worker_ms", latest.optLong("internal_worker_ms", 0L)).coerceAtLeast(0L)
-        snapshotExternalWorkerMs = state.optLong("external_worker_ms", latest.optLong("external_worker_ms", 0L)).coerceAtLeast(0L)
-        snapshotParallelOverlapMilli = state.optLong("parallel_overlap_milli", latest.optLong("parallel_overlap_milli", 1000L)).coerceAtLeast(0L)
-        snapshotWorkerPolicy = state.optString("worker_policy", latest.optString("worker_policy", "auto"))
-        snapshotWorkerReason = state.optString("worker_reason", latest.optString("worker_reason", "none"))
-        snapshotRecommendedWorkers = state.optLong("recommended_workers", latest.optLong("recommended_workers", 1L)).coerceIn(1L, 2L)
-        snapshotParallelGainPercent = state.optLong("parallel_gain_percent", latest.optLong("parallel_gain_percent", 0L))
-        snapshotWorkerProfileRuns = state.optLong("worker_profile_runs", latest.optLong("worker_profile_runs", 0L)).coerceAtLeast(0L)
-        snapshotSerialProfileRate = state.optLong("serial_profile_rate", latest.optLong("serial_profile_rate", 0L)).coerceAtLeast(0L)
-        snapshotParallelProfileRate = state.optLong("parallel_profile_rate", latest.optLong("parallel_profile_rate", 0L)).coerceAtLeast(0L)
-        snapshotNextProbeRun = state.optLong("next_probe_run", latest.optLong("next_probe_run", 0L)).coerceAtLeast(0L)
-        snapshotParallelBlockedUntil = state.optLong("parallel_blocked_until", latest.optLong("parallel_blocked_until", 0L)).coerceAtLeast(0L)
+        fun num(key: String, fallback: Long = 0L): Long =
+            state.optLong(key, latest.optLong(key, fallback))
+        // 先完整构造，再一次性原子替换
+        snapshotState.set(
+            SnapshotState(
+                id = id,
+                createdAt = createdAt,
+                files = state.optLong("files", 0L).coerceAtLeast(0L),
+                bytes = state.optLong("bytes", 0L).coerceAtLeast(0L),
+                whitelisted = latest.optInt("whitelisted", 0).coerceAtLeast(0),
+                visitedFiles = num("visited_files").coerceAtLeast(0L),
+                visitedDirs = num("visited_dirs").coerceAtLeast(0L),
+                firstResultMs = num("first_result_ms").coerceAtLeast(0L),
+                engineElapsedMs = num("engine_elapsed_ms").coerceAtLeast(0L),
+                itemsPerSecond = num("items_per_second").coerceAtLeast(0L),
+                onePassAppDirs = num("one_pass_app_dirs").coerceAtLeast(0L),
+                onePassInstalledDirs = num("one_pass_installed_dirs").coerceAtLeast(0L),
+                onePassOrphanDirs = num("one_pass_orphan_dirs").coerceAtLeast(0L),
+                whitelistIndexEntries = num("whitelist_index_entries").coerceAtLeast(0L),
+                whitelistIndexQueries = num("whitelist_index_queries").coerceAtLeast(0L),
+                whitelistAncestorHits = num("whitelist_ancestor_hits").coerceAtLeast(0L),
+                whitelistDescendantHits = num("whitelist_descendant_hits").coerceAtLeast(0L),
+                prunedSubtrees = num("pruned_subtrees").coerceAtLeast(0L),
+                rootWorkers = num("root_workers", 1L).coerceIn(1L, 2L),
+                parallelWallMs = num("parallel_wall_ms").coerceAtLeast(0L),
+                internalWorkerMs = num("internal_worker_ms").coerceAtLeast(0L),
+                externalWorkerMs = num("external_worker_ms").coerceAtLeast(0L),
+                parallelOverlapMilli = num("parallel_overlap_milli", 1000L).coerceAtLeast(0L),
+                workerPolicy = state.optString("worker_policy", latest.optString("worker_policy", "auto")),
+                workerReason = state.optString("worker_reason", latest.optString("worker_reason", "none")),
+                recommendedWorkers = num("recommended_workers", 1L).coerceIn(1L, 2L),
+                parallelGainPercent = num("parallel_gain_percent"),
+                workerProfileRuns = num("worker_profile_runs").coerceAtLeast(0L),
+                serialProfileRate = num("serial_profile_rate").coerceAtLeast(0L),
+                parallelProfileRate = num("parallel_profile_rate").coerceAtLeast(0L),
+                nextProbeRun = num("next_probe_run").coerceAtLeast(0L),
+                parallelBlockedUntil = num("parallel_blocked_until").coerceAtLeast(0L)
+            )
+        )
         return true
     }
 
     private fun clearSnapshotMemory() {
         synchronized(resultLock) { items = emptyList() }
-        snapshotId = ""
-        snapshotCreatedAt = 0L
-        snapshotFiles = 0L
-        snapshotBytes = 0L
-        snapshotWhitelisted = 0
-        snapshotVisitedFiles = 0L
-        snapshotVisitedDirs = 0L
-        snapshotFirstResultMs = 0L
-        snapshotEngineElapsedMs = 0L
-        snapshotItemsPerSecond = 0L
-        snapshotOnePassAppDirs = 0L
-        snapshotOnePassInstalledDirs = 0L
-        snapshotOnePassOrphanDirs = 0L
-        snapshotWhitelistIndexEntries = 0L
-        snapshotWhitelistIndexQueries = 0L
-        snapshotWhitelistAncestorHits = 0L
-        snapshotWhitelistDescendantHits = 0L
-        snapshotPrunedSubtrees = 0L
-        snapshotRootWorkers = 1L
-        snapshotParallelWallMs = 0L
-        snapshotInternalWorkerMs = 0L
-        snapshotExternalWorkerMs = 0L
-        snapshotParallelOverlapMilli = 1000L
-        snapshotWorkerPolicy = "auto"
-        snapshotWorkerReason = "none"
-        snapshotRecommendedWorkers = 1L
-        snapshotParallelGainPercent = 0L
-        snapshotWorkerProfileRuns = 0L
-        snapshotSerialProfileRate = 0L
-        snapshotParallelProfileRate = 0L
-        snapshotNextProbeRun = 0L
-        snapshotParallelBlockedUntil = 0L
+        snapshotState.set(SnapshotState.EMPTY)
     }
 
     private fun moduleTaskAlive(): Boolean {
@@ -608,8 +623,9 @@ class BaiZeRootService : RootService() {
     }
 
     private fun snapshotValid(id: String): Boolean =
-        id.isNotBlank() && id == snapshotId &&
-            System.currentTimeMillis() - snapshotCreatedAt in 0..SNAPSHOT_MAX_AGE_MS
+        id.isNotBlank() && snapshotState.get().let { snap ->
+            id == snap.id && System.currentTimeMillis() - snap.createdAt in 0..SNAPSHOT_MAX_AGE_MS
+        }
 
     private fun readEnv(file: File): JSONObject {
         val result = JSONObject()

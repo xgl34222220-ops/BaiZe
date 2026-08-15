@@ -1,284 +1,159 @@
-# 白泽 v1.0.3
+# 白泽 详细使用说明
 
 作者：惜故里丶。面向 Android 8.0+ 的缓存、日志与存储垃圾清理模块。
 
-本版本重点不是继续堆叠路径，而是在**完整保留 v0.9.9 深度规则库**的前提下，补齐实际清理统计、风险分级、扫描审计、卸载残留识别和定时任务状态管理。
+本文档说明日常使用与配置。版本历史见 [CHANGELOG.md](../CHANGELOG.md)，
+项目总览见[根 README](../README.md)。
 
 ## 支持环境
 
-- Magisk：定时任务与 Action 按钮
-- KernelSU / APatch：定时任务、Action 按钮与 WebUI
+- Magisk / KernelSU / APatch
+- Android 8.0+
+- arm64-v8a、armeabi-v7a、x86_64
 - 不修改 `/system`，不依赖 KernelSU 元模块
-- 建议在首次深度清理前先执行一次深度扫描并检查审计报告
+- 首次完整深度清理前，先执行一次深度扫描并检查审计报告
 
+v2 起主界面是原生 App，通过 libsu RootService 调用模块引擎，不再需要 WebUI。
 
+## 风险分级
 
-## v1.0.3 深度扫描与缓存性能优化
+白泽把每条清理目标分成四级：
 
-- 高风险与关键风险路径默认不再递归统计。
-- 通用缓存规则合并到缓存根目录，只扫描一次并保留根目录。
-- 深度目录使用单次遍历统计，并设置单目录 12 秒、深度阶段 5 分钟安全时限。
-- WebUI 显示规则解析进度、候选进度和当前路径。
-- 慢缓存批次会自动逐目录定位，异常目录限时跳过。
-- 挂载点、Bind Mount 与跨文件系统目标默认保护。
+| 等级 | 含义 | 默认行为 |
+|---|---|---|
+| `low` | 明确的缓存、临时文件、日志 | 定时任务自动清理 |
+| `medium` | 崩溃转储、调试痕迹 | 定时任务自动清理 |
+| `high` | 用途不确定的应用数据 | 只扫描，需手动确认 |
+| `critical` | 下载、相册、影音、数据库、备份等用户内容 | 只扫描，且需显式放开上限 |
 
-## v1.0.2 稳定性与深度任务优化
+### 等级是怎么定的
 
-- 修复高风险父目录受保护时，低/中风险子规则也被父目录去重连带跳过的问题。
-- 手动深度清理和卸载残留清理严格绑定上一次扫描的具体候选，扫描后新出现的路径不会被顺带处理。
-- 清理前再次检查规则 SHA、扫描时效、应用安装状态、风险开关、白名单与单文件上限。
-- 扫描授权清理一次后立即失效。
-- 定时受保护目录采用快速跳过，状态写入节流并加入日志轮换。
-- 修复深度任务误报失败、异常状态目录、终止信号退出和旧 PID 复用问题。
-- 每日补做窗口支持跨午夜；单个分组失败不会饿死后续任务，最终仍保留汇总失败状态。
-- WebUI 配置改为原子批量保存，补齐自定义规则开关、厂商日志保留周期、扫描摘要与复制功能。
-- 深度规则文件继续逐字节保留。
+按优先级从高到低：
 
-## v1.0.1 WebUI 精简重构
+1. **用户覆盖** — `config/risk-overrides.conf`，格式 `绝对路径|风险等级`，
+   对该路径及其所有子路径生效，多条命中取最长匹配。
+2. **规则标注** — `config/deep.rules` 中写成 `路径|risk` 的行。
+3. **路径推断** — 按**完整路径分段**匹配关键词。
 
-本版本不修改清理引擎，不删除、改写或合并任何深度规则，重点整理 WebUI 的信息层级：
+第 3 步用的是分段匹配而不是子串匹配。也就是说
+`/files/nfc/logo` 不会因为含有 `log` 就被当成日志，
+`/Cacheapps2sdcard` 也不会因为含有 `cache` 就被当成缓存。
 
-- “深度清理定时”更名为“深度安全项”，明确只自动执行低风险和中风险规则
-- 完整深度规则库仍保留在首页专项工具中，必须先扫描，再在 30 分钟内手动确认
-- 卸载残留扫描与清理由两个按钮合并为一个状态按钮：未扫描时执行扫描，扫描有效时执行清理
-- 首页以“立即清理”为主操作，安全扫描降为次操作；停止按钮仅在任务运行或暂停时显示
-- 应用内部缓存与外部缓存合并显示为“应用缓存”
-- 空文件与空目录合并显示，扩展规则、隐藏垃圾与系统日志合并显示为“规则垃圾”
-- 原有独立开关仍保留在“精细设置”折叠区，可分别控制，不损失功能
-- 完成通知与零结果通知合并为“仅有结果时 / 每次 / 不通知”三种模式
-- 独立间隔、保留天数、电量温度、运行上限、高风险放行和白名单改为折叠展示
-- 日志、审计报告和最近任务记录改为独立折叠区，减少页面长度
+### 调整清理力度
 
-所有后端配置键保持兼容，升级会保留原来的开关、周期、白名单和累计统计。
+编辑 `/data/adb/baize-v2/config.conf`：
 
-## v1.0.0 核心变化
+```conf
+# 定时任务允许自动删除的最高等级，默认 medium
+deep_scheduled_max_risk=medium
 
-### 深度规则全部保留
+# 手动完整深度清理允许的最高等级，默认 high
+deep_manual_max_risk=high
 
-`config/deep.rules` 与 v0.9.9 包中的文件逐字节一致，没有删除、改写或合并任何规则：
-
-- 有效绝对路径规则：4746 条
-- 去重后路径：4714 条
-- 重复项：32 条
-- SHA-256：`73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c`
-
-WebUI 中的规则数量由程序动态统计，不再硬编码版本数字。
-
-### 深度规则分级管控
-
-所有规则仍会参与扫描，但根据目标路径动态分为：
-
-- 低风险：缓存、临时文件、日志、已完成崩溃报告等
-- 中风险：崩溃转储、调试、跟踪和 dump 类目录
-- 高风险：整个 `files`、WebView 持久化目录及归属不明确的路径
-- 关键风险：Download、Documents、媒体目录、OBB、备份、草稿、数据库和 SharedPreferences 等
-
-默认行为：
-
-- 手动深度清理只删除低风险和中风险候选
-- 高风险和关键风险仍显示在报告中，但默认只扫描、不会删除
-- 定时深度清理永远不会执行高风险和关键风险规则
-- 即使用户开启“允许手动高风险深度清理”，也必须先完成一次深度扫描，并在 30 分钟内手动执行清理
-- 深度扫描会记录当前规则文件的 SHA-256；规则文件发生变化后，旧扫描授权立即失效
-- 系统关键目录、模块目录、Root 配置、软链接、隐藏配置目录和用户白名单继续受到硬性保护
-
-这套机制只限制规则的执行权限，不会移除规则。
-
-### 实际删除统计
-
-缓存、规则目录、空文件、空目录、共享存储空项目和深度规则均改为：
-
-1. 删除前统计候选数量与容量
-2. 执行删除
-3. 再次检查仍存在的目标
-4. 仅把真正消失的文件与容量计入“已清理”
-5. 未删除项目按实际剩余数量计入错误统计
-
-因此通知、WebUI、日志和累计统计不再把删除失败的候选算成已释放空间。
-
-### 扫描审计报告
-
-每次任务都会生成 TSV 报告：
-
-`/data/adb/safesweep/reports/<时间>-<任务>.tsv`
-
-最新报告：
-
-`/data/adb/safesweep/reports/latest.tsv`
-
-字段包括：
-
-```text
-action  risk  category  items  bytes  path
-```
-
-WebUI 日志页可以查看：
-
-- 本次候选、已清理、受保护、跳过和失败目标
-- 风险等级
-- 对应路径和容量
-- 最近 100 次任务历史
-
-### 卸载残留扫描
-
-新增独立的“卸载残留”扫描与清理：
-
-- 按 Android 用户读取当前已安装包名
-- 只检查 `Android/data/<包名>` 与 `Android/obb/<包名>`
-- 包名对应的应用仍安装时不会列为残留
-- 不扫描 `Android/media`，避免把用户媒体误认为残留
-- 清理前必须在 30 分钟内完成一次卸载残留扫描
-- 只支持手动执行，不加入定时任务
-- 白名单路径及其父子路径冲突仍会阻止删除
-
-### 定时任务完善
-
-定时任务支持：
-
-- 间隔模式：每组任务独立设置 1–720 小时
-- 每日固定时间模式：开启后替代间隔模式
-- 每日补做窗口：默认 240 分钟，超过窗口当天不再突然补做
-- 仅息屏执行
-- 仅充电执行
-- 仅系统空闲执行
-- 最低电量限制
-- 电池温度上限
-- 单次任务最长运行时间
-- 零清理结果是否发送通知
-
-任务被用户停止或达到运行时长上限时返回独立状态码 9：
-
-- 不写入本周期完成时间
-- 不更新累计清理次数
-- 后续同批定时任务停止继续执行
-- WebUI 显示“已停止”，而不是“任务失败”
-
-## 默认清理范围
-
-### 日常缓存
-
-- 应用内部 `cache`、`code_cache`
-- 外部 `Android/data/<包名>/cache`
-- 系统 ANR、tombstone、dropbox 日志
-- 可选 OEM 日志
-- 可再生的 WebView HTTP Cache、GPUCache、Code Cache 和已完成 Crashpad 报告
-
-日常模式不清理数据库、SharedPreferences、完整下载内容、聊天图片视频、应用主体数据、Dalvik/ART、最近任务或电池统计。
-
-### 空项目
-
-- 零字节空文件
-- 空目录
-- 永久保护 `.nomedia`
-- 保护 `.keep`、`.gitkeep`、`.placeholder` 与锁文件
-- 共享存储扫描剪枝 Android、相册、影音、下载、文档等用户内容目录
-
-### 残留碎片
-
-识别明确的过期临时文件、旋转日志、崩溃转储和中断下载片段。默认至少保留 7 天。
-
-这里的“碎片”是文件级残留，不是闪存碎片整理，也不会定期强制执行 F2FS GC。
-
-### 隐藏垃圾
-
-可清理 `.cache`、`.thumbnails`、`.tmp`、`.temp`、`.logs`、`.debug` 等明确可再生目录。
-
-永久跳过 `.git`、`.ssh`、`.termux`、`.config`、`.local`、`.obsidian`、`.android`、`.vscode`、`.gnupg` 等配置或密钥目录。
-
-## 主要配置
-
-配置文件：
-
-`/data/adb/safesweep/config.conf`
-
-新增或重要选项：
-
-```ini
-# 定时执行条件
-screen_off_only=1
-charging_only=0
-device_idle_only=0
-min_battery=25
-max_battery_temp=45
-
-# 每日定时与补做窗口
-daily_schedule_enabled=0
-daily_schedule_hour=3
-daily_schedule_minute=30
-daily_grace_minutes=240
-
-# 单次运行保护
-max_run_minutes=45
-
-# 通知
-notify_on_complete=1
-notify_zero_result=0
-
-# 高风险深度规则：只影响手动深度清理
+# 高风险总开关，关闭时上面两项都会被压回 medium
 deep_high_risk_enabled=0
 ```
 
-`deep_high_risk_enabled=1` 不会绕过近期扫描、规则 SHA 校验、定时禁用、系统边界和白名单保护。
+无论怎么配置，**定时任务永远不会执行 high 与 critical**——
+这是脚本层的硬边界，把 `deep_scheduled_max_risk` 改成 `critical` 也会被压回 `medium`。
 
-## 自定义规则
+想让定时任务更保守就设成 `low`；想让手动清理连下载和相册都纳入，
+需要同时把 `deep_high_risk_enabled` 设为 `1`、`deep_manual_max_risk` 设为 `critical`。
 
-文件：
+### 保护单个路径
 
-`/data/adb/safesweep/custom.rules`
+三种粒度，保护强度递增：
 
-格式：
+```conf
+# risk-overrides.conf：升级风险等级，手动清理仍可处理
+/storage/emulated/0/MyStuff|high
 
-```text
-绝对目录|保留天数
+# risk-overrides.conf：升到 critical，需要显式放开上限才碰
+/storage/emulated/0/MyStuff|critical
+
+# whitelist.conf：彻底保护，任何清理都不碰
+/storage/emulated/0/MyStuff
 ```
 
-只允许以下范围：
+反过来，确认是缓存的目录也可以下调：
 
-- `/data/local/tmp`
-- `/data/anr`
-- `/data/tombstones`
-- `/data/vendor/tombstones`
-- `/data/system/dropbox`
-- `/data/user/<用户>/<包名>/cache` 或 `code_cache`
-- `/data/user_de/<用户>/<包名>/cache` 或 `code_cache`
-- `/data/media/<用户>/Android/data/<包名>/cache`
-- `/data/media/<用户>/MIUI/debug_log`
-- `/data/media/<用户>/oplus/log`
+```conf
+/storage/emulated/0/Android/data/com.example/webcache|low
+```
 
-自定义规则只清理目录中的普通文件，不删除规则目录，不跟随软链接。
+改完不需要重启，下一次扫描即生效。
 
-## 白名单
+## 定时任务
 
-文件：
+每组任务可以独立设置周期，或统一使用每日固定时刻。
 
-`/data/adb/safesweep/whitelist.conf`
+| 任务组 | 默认周期 |
+|---|---|
+| 应用缓存 | 24 小时 |
+| 空文件与空目录 | 24 小时 |
+| 应用规则 | 24 小时 |
+| 残留碎片 | 72 小时 |
+| 深度规则 | 168 小时（默认关闭） |
+| 文件归类 | 24 小时（默认关闭） |
 
-每行填写一个绝对路径。匹配路径及受保护父子关系的目标会被跳过。WebUI 可直接编辑。
+执行条件可叠加：息屏、充电、系统空闲、最低电量、最高温度。
 
-## 数据与日志
+「智能定时」模式下由自动驾驶控制器根据存储压力和历史清理收益动态调整间隔；
+用户主动发起的一键清理不受其拦截。
 
-- 最新任务状态：`/data/adb/safesweep/latest.env`
-- 最新日志：`/data/adb/safesweep/logs/latest.log`
-- 最新审计报告：`/data/adb/safesweep/reports/latest.tsv`
-- 最近任务历史：`/data/adb/safesweep/history.tsv`
-- 累计统计：`/data/adb/safesweep/totals.env`
-- 深度扫描授权：`/data/adb/safesweep/deep_scan.env`
-- 卸载残留扫描授权：`/data/adb/safesweep/corpse_scan.env`
+## 清理档位
 
-另保留最新日志、最近 10 份历史日志、最新审计报告、最近 20 份历史审计报告；任务历史最多保留最近 100 条。
+三个预设档位只调整普通垃圾的覆盖范围和保留天数，
+**不会**修改任何定时周期，也**不会**开启高风险直删：
 
-## 紧急停止
+| 档位 | 特点 |
+|---|---|
+| 保守 | 只默认勾选低风险；缓存保留 3 天；不提供高风险隔离 |
+| 均衡 | 默认勾选低+中风险；日志碎片保留 7 天；高风险可手动隔离 |
+| 积极 | 启用 OEM 日志；碎片保留 1 天；突出建议手动隔离 |
 
-WebUI 可点击“停止当前任务”，也可以执行：
+## 安全机制
+
+- **不跟随软链接**：全程用 `lstat`，删除用 `unlink`，符号链接只删链接本身
+- **快照一致性**：删除前双次 `lstat` 并与扫描快照的 dev / ino / size / mtime / ctime 比对，
+  文件在扫描后被改动过即跳过
+- **扫描授权一次性**：完整深度清理必须先扫描，授权 30 分钟内有效且用一次即失效
+- **路径白名单**：引擎只允许操作 `/data/data`、`/data/user`、`/data/user_de`、
+  `/data/cache`、`/data/media`、`/data_mirror/data_ce` 前缀，
+  并显式拒绝 `/data/adb`、`/data/app`、`/system` 等
+- **单文件上限**：超过 `max_file_mb` 的文件一律保护
+- **规则完整性**：`config/rules.meta.env` 记录条数与 SHA-256，运行时校验
+- **隔离区**：高风险候选可移入隔离区而非直接删除，默认保留 7 天，卸载模块时自动恢复
+
+## 目录与文件
+
+| 路径 | 内容 |
+|---|---|
+| `/data/adb/modules/baize_v2/` | 模块本体 |
+| `/data/adb/baize-v2/config.conf` | 用户配置 |
+| `/data/adb/baize-v2/whitelist.conf` | 白名单 |
+| `/data/adb/baize-v2/risk-overrides.conf` | 风险覆盖 |
+| `/data/adb/baize-v2/history.tsv` | 任务历史 |
+| `/data/adb/baize-v2/reports/` | 审计报告 |
+| `/data/adb/baize-v2/logs/` | 运行日志 |
+
+## 卸载
+
+在 Root 管理器中卸载模块即可。卸载脚本会：
+
+1. 逐个精确终止白泽后台进程（跳过卸载脚本自身与 Root 管理器父进程）
+2. 恢复隔离区中的用户文件，原路径冲突时转存到 `内部存储/Download/BaiZe恢复`
+3. 删除 `/data/adb/baize-v2` 与历史遗留的 `/data/adb/safesweep`
+4. 卸载白泽 App
+
+模块目录本体按 Magisk / KernelSU / APatch 标准流程在重启后删除。
+
+## 排查
+
+导出诊断信息（已脱敏）：
 
 ```sh
-touch /data/adb/safesweep/stop
+su -c /data/adb/modules/baize_v2/diagnostics-export.sh
 ```
 
-恢复：
-
-```sh
-rm -f /data/adb/safesweep/stop
-```
-
-停止标记会阻止新的定时任务。正在运行的任务会在阶段或目标检查点安全退出；单个正在执行的系统 `find` 或删除命令不会被强制中断。
+提交问题时请附带这份导出，以及 ROM、Android 版本和 Root 方案。

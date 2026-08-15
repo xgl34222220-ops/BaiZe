@@ -1,0 +1,131 @@
+# 白泽 detekt 配置。
+#
+# 起步策略：先只把「明确的缺陷」设为 error，风格类问题设为 warning，
+# 避免 42k 行存量代码一次性把 CI 变红。存量问题清理后再逐条收紧。
+
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+processors:
+  active: true
+
+console-reports:
+  active: true
+
+comments:
+  active: true
+  UndocumentedPublicClass:
+    active: false
+  UndocumentedPublicFunction:
+    active: false
+
+complexity:
+  active: true
+  LongMethod:
+    active: true
+    threshold: 120
+  LongParameterList:
+    active: false      # DashboardActions 这类回调聚合类型天然参数多
+  LargeClass:
+    active: true
+    threshold: 900
+  TooManyFunctions:
+    active: false
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 25
+  NestedBlockDepth:
+    active: true
+    threshold: 6
+
+coroutines:
+  active: true
+  GlobalCoroutineUsage:
+    active: true       # Root 任务不得挂在 GlobalScope 上
+  SuspendFunWithFlowReturnType:
+    active: true
+
+empty-blocks:
+  active: true
+  EmptyCatchBlock:
+    active: true       # 清理项目里吞掉异常等于悄悄删错东西
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+exceptions:
+  active: true
+  TooGenericExceptionCaught:
+    active: false      # Root 边界确实需要 catch Throwable
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - InterruptedException
+      - NumberFormatException
+      - ParseException
+      - MalformedURLException
+  PrintStackTrace:
+    active: true
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    functionPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    excludes: ['**/ui/**']   # Compose 可组合函数用大驼峰
+  TopLevelPropertyNaming:
+    active: true
+
+performance:
+  active: true
+  SpreadOperator:
+    active: false
+  UnnecessaryTemporaryInstantiation:
+    active: true
+
+potential-bugs:
+  active: true
+  ExplicitGarbageCollectionCall:
+    active: true
+  UnsafeCallOnNullableType:
+    active: true
+  UnsafeCast:
+    active: true
+  IgnoredReturnValue:
+    active: true
+  ImplicitDefaultLocale:
+    active: true       # 文件大小/时间格式化必须显式指定 Locale
+  UnconditionalJumpStatementInLoop:
+    active: true
+
+style:
+  active: true
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+    excludeCommentStatements: true
+  ReturnCount:
+    active: false      # Root 边界大量提前返回
+  ThrowsCount:
+    active: false
+  WildcardImport:
+    active: true
+  UnusedImports:
+    active: true
+  UnusedPrivateMember:
+    active: true
+  ForbiddenComment:
+    active: true
+    comments:
+      - reason: '待办事项应登记为 issue，而不是留在代码里'
+        value: 'FIXME:'
+      - reason: '待办事项应登记为 issue'
+        value: 'STOPSHIP:'

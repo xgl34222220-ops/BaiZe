@@ -1,3 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  中文（默认）字符串资源。
+
+  当前 v2 仍有约 2270 处界面文案硬编码在 Kotlin 源码里。
+  迁移工具与逐文件报告见 v2/scripts/extract-strings.py：
+
+      python3 v2/scripts/extract-strings.py              # 查看分布
+      python3 v2/scripts/extract-strings.py --apply --files <文件>
+
+  每迁一个文件立刻运行 ./gradlew :app:compileDebugKotlin 验证，
+  并在 res/values-en/strings.xml 补上同名英文条目。
+-->
 <resources>
     <string name="app_name">白泽</string>
 </resources>

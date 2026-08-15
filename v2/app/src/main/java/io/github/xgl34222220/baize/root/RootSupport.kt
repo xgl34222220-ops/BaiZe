@@ -11,6 +11,19 @@ internal object RootPaths {
     const val CONFIG_FILE = "$STATE_DIR/config.conf"
     const val WHITELIST_FILE = "$STATE_DIR/whitelist.conf"
     const val WHITELIST_PACKAGES_FILE = "$STATE_DIR/whitelist.packages"
+    const val RISK_OVERRIDES_FILE = "$STATE_DIR/risk-overrides.conf"
+
+    /**
+     * 按设备 ABI 优先级查找原生引擎。
+     *
+     * 此前这里硬编码 bin/arm64-v8a/baize_engine，armeabi-v7a 设备即使包里
+     * 带了对应引擎也会被报成"不可用"。
+     */
+    fun nativeEngine(name: String, moduleDir: File = File(MODULE_DIR)): File? =
+        android.os.Build.SUPPORTED_ABIS
+            .asSequence()
+            .map { abi -> File(moduleDir, "bin/$abi/$name") }
+            .firstOrNull { it.canExecute() }
 }
 
 internal object RootValidation {

@@ -38,6 +38,8 @@ data class SettingsUiActions(
     val onSchedulerCommand: (String) -> Unit,
     val onOpenAppearance: () -> Unit,
     val onOpenWhitelist: () -> Unit,
+    /** 打开断点续清工作台：消费已持久化的扫描快照，中断后可继续。 */
+    val onOpenResumableScan: () -> Unit,
     val onReconnect: () -> Unit,
     val onOpenAudit: () -> Unit,
     val onOpenCrashDiagnostics: () -> Unit

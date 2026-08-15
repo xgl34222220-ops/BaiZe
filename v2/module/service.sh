@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
 # Canonical Magisk module root: /data/adb/modules/baize_v2; MODDIR remains portable for KernelSU and APatch.
 # Runtime migration supersedes deep-pipeline-v1 and clears stale queues, locks and pre-manifest deep snapshots.
 MODDIR=${0%/*}

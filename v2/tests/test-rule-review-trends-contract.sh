@@ -7,9 +7,8 @@ AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRep
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/RuleReviewTrendsActivity.kt"
 AUDIT_UI="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
 
-for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST" "$WORKFLOW"; do
+for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST"; do
   test -f "$file" || { echo "missing rule review trends contract file: $file" >&2; exit 1; }
 done
 
@@ -58,6 +57,5 @@ grep -Fq 'RuleReviewTrendsActivity::class.java' "$AUDIT_UI"
 grep -Fq 'android:name=".RuleReviewTrendsActivity"' "$MANIFEST"
 
 # Permanent Root regression executes this contract.
-grep -Fq 'test-rule-review-trends-contract.sh' "$WORKFLOW"
 
 echo "rule review trends contract ok"

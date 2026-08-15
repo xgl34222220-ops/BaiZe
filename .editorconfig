@@ -1,0 +1,37 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{kt,kts}]
+indent_size = 4
+max_line_length = 120
+# ktlint 官方 Kotlin 代码风格
+ktlint_code_style = intellij_idea
+# 项目大量使用中文标识文案，通配符导入与尾随逗号按官方风格处理
+ij_kotlin_allow_trailing_comma = false
+ij_kotlin_allow_trailing_comma_on_call_site = false
+
+[*.{sh,bash}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{xml,json}]
+indent_size = 4
+
+[*.c]
+indent_size = 4
+max_line_length = 120
+
+[*.md]
+trim_trailing_whitespace = false
+
+[{Makefile,*.mk}]
+indent_style = tab

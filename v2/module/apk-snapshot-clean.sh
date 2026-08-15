@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
 
 MODDIR=${0%/*}
 MODE=${1:-apk-clean}

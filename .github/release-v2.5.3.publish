@@ -1,5 +1,0 @@
-release_tag=v2.5.3
-target_sha=15c56f69f07c6a3d9b21ca664c24875a3735efa0
-channel=stable
-policy=immutable-no-overwrite
-signing=fixed-certificate

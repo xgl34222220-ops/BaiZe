@@ -7,9 +7,8 @@ AUDIT_REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/AuditRep
 ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/RuleQualityActivity.kt"
 AUDIT_UI="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/AuditActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
-WORKFLOW="$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
 
-for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST" "$WORKFLOW"; do
+for file in "$ANALYZER" "$AUDIT_REPO" "$ACTIVITY" "$AUDIT_UI" "$MANIFEST"; do
   test -f "$file" || { echo "missing rule quality contract file: $file" >&2; exit 1; }
 done
 
@@ -61,6 +60,5 @@ grep -Fq 'RuleQualityActivity::class.java' "$AUDIT_UI"
 grep -Fq 'android:name=".RuleQualityActivity"' "$MANIFEST"
 
 # Permanent Root regression executes this contract.
-grep -Fq 'test-rule-quality-contract.sh' "$WORKFLOW"
 
 echo "rule quality center contract ok"

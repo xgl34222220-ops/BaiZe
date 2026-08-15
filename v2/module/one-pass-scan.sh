@@ -1,4 +1,7 @@
 #!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
 
 MODDIR=${0%/*}
 MODE=${1:-cache-scan}
@@ -18,7 +21,25 @@ RUNNING_FILE="$STATE_DIR/running.env"
 STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 WORKER_PROFILE="$STATE_DIR/root-worker-profile.env"
-NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$MODDIR/bin/arm64-v8a/baize_engine}
+# ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
+if [ -f "$MODDIR/abi-resolve.sh" ]; then
+  . "$MODDIR/abi-resolve.sh"
+else
+  baize_device_abis() { printf 'arm64-v8a\narmeabi-v7a\nx86_64\n'; }
+  baize_resolve_engine() {
+    for _abi in $(baize_device_abis); do
+      [ -x "$1/bin/$_abi/$2" ] && { printf '%s\n' "$1/bin/$_abi/$2"; return 0; }
+    done
+    return 1
+  }
+  baize_require_engine() {
+    [ -n "${3:-}" ] && [ -x "$3" ] && { printf '%s\n' "$3"; return 0; }
+    baize_resolve_engine "$1" "$2" && return 0
+    echo "当前架构没有可用的 $2，请重新刷入完整模块" >&2
+    return 8
+  }
+fi
+NATIVE_ENGINE=$(baize_require_engine "$MODDIR" baize_engine "${BAIZE_NATIVE_ENGINE:-}") || exit 8
 CACHE_PREFIX=${BAIZE_CACHE_PREFIX:-cache_scan}
 case "$CACHE_PREFIX" in cache_scan|cache_auto) ;; *) echo "无效的缓存快照命名空间" >&2; exit 2 ;; esac
 

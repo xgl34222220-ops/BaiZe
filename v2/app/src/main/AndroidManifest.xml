@@ -20,7 +20,6 @@
         android:theme="@style/Theme.BaiZe"
         android:usesCleartextTraffic="false">
 
-        <activity android:name=".MainActivity" android:exported="false" />
         <activity
             android:name=".ProtectedReviewActivity"
             android:exported="false" />
@@ -29,6 +28,22 @@
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
         <activity android:name=".ScanWorkbenchActivity" android:exported="false" />
+
+        <!--
+            断点续清与持久化清理计划。
+            这两个 Activity 的注册在 Miuix 首页重构时被漏掉，导致
+            PersistentCleanPlanRootService 与 CleanPlanResumeRootService
+            虽然仍在 manifest 中，却没有任何入口能绑定它们，整个
+            "扫描快照持久化 + 断点续清" 子系统对用户不可达。
+            ResumableSmartScanActivity 同时绑定两个服务，是 Persistent 版的后继。
+        -->
+        <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
+        <activity android:name=".ResumableSmartScanActivity" android:exported="false" />
+        <!-- 旧入口名保留为别名，路由到功能更完整的续清流程。 -->
+        <activity-alias
+            android:name=".SmartScanActivity"
+            android:targetActivity=".ResumableSmartScanActivity"
+            android:exported="false" />
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
@@ -42,7 +57,6 @@
         <activity android:name=".RuleImprovementDraftsActivity" android:exported="false" />
         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
-        <activity android:name=".DashboardActivity" android:exported="false" />
 
         <activity
             android:name=".MiuixDashboardActivity"

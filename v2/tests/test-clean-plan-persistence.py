@@ -52,8 +52,11 @@ require("engine.scan(" not in SERVICE[SERVICE.index("private fun cleanPersistedS
 
 require('android:name=".PersistentSmartScanActivity"' in MANIFEST, "persistent activity is not registered")
 require('android:name=".SmartScanActivity"' in MANIFEST, "legacy component alias is missing")
-require('android:targetActivity=".PersistentSmartScanActivity"' in MANIFEST,
-        "legacy smart-scan entry does not route to the persistent activity")
+# 旧入口别名现在路由到 ResumableSmartScanActivity。后者同时绑定
+# PersistentCleanPlanRootService 与 CleanPlanResumeRootService，是本 Activity
+# 的严格后继，因此别名指向它而不是指向持久化版本。
+require('android:targetActivity=".ResumableSmartScanActivity"' in MANIFEST,
+        "legacy smart-scan entry does not route to the resumable activity")
 require('android:name=".root.PersistentCleanPlanRootService"' in MANIFEST,
         "persistent root service is not registered")
 

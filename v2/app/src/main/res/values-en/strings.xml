@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  English resources.
+
+  This file exists so the app has a working non-Chinese locale from day one.
+  Most UI text is still hard-coded in Kotlin sources; see
+  v2/scripts/extract-strings.py for the migration tool and a per-file report.
+
+  When you extract a string into res/values/strings.xml, add its English
+  translation here with the same name.
+-->
+<resources>
+    <string name="app_name">BaiZe</string>
+</resources>

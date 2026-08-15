@@ -447,6 +447,8 @@ data class DashboardActions(
     val clearRawLog: () -> Unit,
     val reviewProtected: () -> Unit,
     val whitelist: () -> Unit,
+    /** 打开断点续清工作台：消费已持久化的扫描快照，支持中断后继续。 */
+    val resumableScan: () -> Unit,
     val theme: () -> Unit,
     val reconnect: () -> Unit,
     val resetScanPerformance: () -> Unit,

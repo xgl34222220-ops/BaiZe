@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=${TMPDIR:-/tmp}/baize-v240-scheduler-test
 rm -rf "$T"; mkdir -p "$T/module/config" "$T/state/scheduler-requests" "$T/state/scheduler-skips"
-cp "$ROOT/service.sh" "$T/module/scheduler.sh"
+cp "$ROOT/v2/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
 cat > "$T/module/task-worker.sh" <<'SH2'
 #!/bin/sh
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"${BAIZE_STATE_DIR}/executed.tsv"
@@ -87,7 +87,7 @@ retry_until=$(sed -n '1p' "$T/state/scheduler-retry-cache.until")
 retry_delay=$((retry_until - $(date +%s)))
 [ "$retry_delay" -ge 0 ] && [ "$retry_delay" -le 3 ]
 ! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
-grep -q 'QUEUE_RETRY_SECONDS=.*1' "$ROOT/service.sh"
+grep -q 'QUEUE_RETRY_SECONDS=.*1' "$ROOT/v2/module/scheduler-v2.5.sh"
 grep -q 'queue_dispatch_stalled' "$ROOT/v2/module/supervisor.sh"
 grep -q 'QUEUE_RESTART_AFTER_SECONDS=.*12' "$ROOT/v2/module/supervisor.sh"
 
@@ -100,6 +100,11 @@ SH2
 chmod +x "$T/module/task-worker.sh"
 : > "$T/state/executed.tsv"
 sed -i 's/^schedule_cache_enabled=.*/schedule_cache_enabled=0/; s/^schedule_deep_enabled=.*/schedule_deep_enabled=1/' "$T/state/config.conf"
+# 显式给出深度任务周期。此前夹具不写周期，依赖调度器兜底值；
+# v2.4 的 valid_interval_seconds 忽略第三个参数、写死 1 小时兜底，
+# v2.5 修复后按 168 小时兜底，夹具里"2 小时前"就不再到期。
+# 测试要验证的是任务排序公平性，不该依赖兜底值。
+printf 'schedule_deep_minutes=60\n' >> "$T/state/config.conf"
 printf '%s\n' $((now-7200)) > "$T/state/last_deep_run.epoch"
 run_once
 [ "$(sed -n '1s/\t.*//p' "$T/state/executed.tsv")" = deep-auto ]

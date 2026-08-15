@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
@@ -201,6 +202,13 @@ fun VideoSettingsScreenMiuix(
                     subtitle = "受保护应用不会被自动清理",
                     value = "${state.whitelistCount} 个",
                     onClick = actions.onOpenWhitelist
+                )
+                VideoDivider()
+                VideoListRow(
+                    icon = Icons.Rounded.PlayArrow,
+                    title = "断点续清",
+                    subtitle = "消费已保存的扫描快照，中断后可继续",
+                    onClick = actions.onOpenResumableScan
                 )
             }
         }

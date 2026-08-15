@@ -65,6 +65,7 @@ fun SettingsRoute(
         onSchedulerCommand = dashboardActions.schedulerCommand,
         onOpenAppearance = dashboardActions.theme,
         onOpenWhitelist = dashboardActions.whitelist,
+        onOpenResumableScan = dashboardActions.resumableScan,
         onReconnect = dashboardActions.reconnect,
         onOpenAudit = onOpenDetails,
         onOpenCrashDiagnostics = dashboardActions.crash

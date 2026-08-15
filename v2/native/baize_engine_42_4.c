@@ -34,12 +34,39 @@ typedef struct {
     const char *package_whitelist_path, *rules_path, *report_path, *targets_path;
     const char *items_path, *manifest_path, *summary_path, *progress_path, *stop_path;
     const char *corpse_report_path, *corpse_targets_path, *corpse_summary_path;
+    const char *risk_overrides_path;
     uint64_t max_file_bytes;
     uint64_t dir_budget_ms;
     uint64_t global_budget_ms;
     int min_age_days;
     bool allow_high_risk;
+    /* 允许自动执行的最高风险等级；-1 表示回退到 allow_high_risk 的旧语义。 */
+    int max_auto_risk;
 } Options;
+
+enum { RISK_LOW = 0, RISK_MEDIUM = 1, RISK_HIGH = 2, RISK_CRITICAL = 3 };
+
+static int risk_rank(const char *risk) {
+    if (!risk) return RISK_CRITICAL;
+    if (strcmp(risk, "low") == 0) return RISK_LOW;
+    if (strcmp(risk, "medium") == 0) return RISK_MEDIUM;
+    if (strcmp(risk, "high") == 0) return RISK_HIGH;
+    return RISK_CRITICAL;
+}
+
+static bool valid_risk_name(const char *risk) {
+    return risk && (strcmp(risk, "low") == 0 || strcmp(risk, "medium") == 0 ||
+                    strcmp(risk, "high") == 0 || strcmp(risk, "critical") == 0);
+}
+
+static const char *risk_name(int rank) {
+    switch (rank) {
+        case RISK_LOW: return "low";
+        case RISK_MEDIUM: return "medium";
+        case RISK_HIGH: return "high";
+        default: return "critical";
+    }
+}
 typedef struct {
     uint64_t files, bytes, dirs, empty_dirs, skipped, errors;
     uint64_t protected_items, protected_bytes, candidates, targets;
@@ -387,6 +414,7 @@ static void parse_options(int argc, char **argv, Options *o) {
     o->max_file_bytes = 256ULL * 1024ULL * 1024ULL;
     o->dir_budget_ms = 8000U;
     o->global_budget_ms = 180000U;
+    o->max_auto_risk = -1;
     for (int i = 2; i < argc; i++) {
         const char *a = argv[i];
         if (strcmp(a, "--media-root") == 0) o->media_root = arg_value(argc, argv, &i);
@@ -410,6 +438,12 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--global-budget-ms") == 0) o->global_budget_ms = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--min-age-days") == 0) o->min_age_days = atoi(arg_value(argc, argv, &i));
         else if (strcmp(a, "--allow-high-risk") == 0) o->allow_high_risk = atoi(arg_value(argc, argv, &i)) != 0;
+        else if (strcmp(a, "--risk-overrides") == 0) o->risk_overrides_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--max-auto-risk") == 0) {
+            const char *v = arg_value(argc, argv, &i);
+            if (!valid_risk_name(v)) die("invalid --max-auto-risk");
+            o->max_auto_risk = risk_rank(v);
+        }
         else die("unknown option");
     }
 }
@@ -1184,20 +1218,150 @@ static bool deep_allowed(const char *p) {
            strncmp(p, "/data/user_de/", 14) == 0 || strncmp(p, "/data/cache/", 12) == 0 ||
            strncmp(p, "/data/media/", 12) == 0 || strncmp(p, "/data_mirror/data_ce/", 21) == 0;
 }
-static void lower_copy(char *out, size_t cap, const char *in) {
+/* 返回 false 表示源路径超长被截断，调用方必须按最保守等级处理。 */
+static bool lower_copy(char *out, size_t cap, const char *in) {
     size_t i = 0;
     for (; in[i] && i + 1 < cap; i++) out[i] = (char)tolower((unsigned char)in[i]);
     out[i] = '\0';
+    return in[i] == '\0';
 }
+
+/*
+ * 判断 seg 是否为 lower_path 中的一个完整路径分段。
+ *
+ * 历史实现直接用 strstr 在整条路径上找子串，导致 /nfc/logo 命中 "log"、
+ * /files/login-identifier.txt 命中 "log"、/Cacheapps2sdcard 命中 "cache"，
+ * 把用户数据误判为 low 风险并被定时任务自动删除。这里要求匹配部分的
+ * 前一个字符是 '/'、后一个字符是 '/' 或字符串结尾。
+ */
+static bool has_path_segment(const char *lower_path, const char *seg) {
+    size_t n = strlen(seg);
+    if (n == 0) return false;
+    const char *p = lower_path;
+    while ((p = strstr(p, seg)) != NULL) {
+        char next = p[n];
+        if (p > lower_path && p[-1] == '/' && (next == '\0' || next == '/')) return true;
+        p += 1;
+    }
+    return false;
+}
+
+/*
+ * 显式风险标注表。来源有两处，后者覆盖前者：
+ *   1. config/deep.rules 中 "路径|risk" 形式的规则标注；
+ *   2. config/risk-overrides.conf 中用户自定义的 "路径|risk"。
+ * 命中时取最长匹配的祖先路径，因此可以对某个目录整体降级或升级。
+ */
+typedef struct { char *path; int rank; bool user; } RiskRule;
+static struct { RiskRule *v; size_t n, cap; } g_risk_rules = {0};
+
+static void risk_rules_add(const char *path, const char *risk, bool user) {
+    if (!path || !*path || path[0] != '/') return;
+    int rank = risk_rank(risk);
+    for (size_t i = 0; i < g_risk_rules.n; i++) {
+        if (strcmp(g_risk_rules.v[i].path, path) == 0) {
+            /* 用户覆盖优先；同来源时取更保守的等级。 */
+            if (user && !g_risk_rules.v[i].user) {
+                g_risk_rules.v[i].rank = rank;
+                g_risk_rules.v[i].user = true;
+            } else if (user == g_risk_rules.v[i].user && rank > g_risk_rules.v[i].rank) {
+                g_risk_rules.v[i].rank = rank;
+            }
+            return;
+        }
+    }
+    if (g_risk_rules.n == g_risk_rules.cap) {
+        size_t cap = g_risk_rules.cap ? g_risk_rules.cap * 2 : 64;
+        RiskRule *grown = realloc(g_risk_rules.v, cap * sizeof(*grown));
+        if (!grown) return;
+        g_risk_rules.v = grown;
+        g_risk_rules.cap = cap;
+    }
+    g_risk_rules.v[g_risk_rules.n].path = xstrdup(path);
+    g_risk_rules.v[g_risk_rules.n].rank = rank;
+    g_risk_rules.v[g_risk_rules.n].user = user;
+    g_risk_rules.n++;
+}
+
+static void risk_rules_free(void) {
+    for (size_t i = 0; i < g_risk_rules.n; i++) free(g_risk_rules.v[i].path);
+    free(g_risk_rules.v);
+    g_risk_rules.v = NULL;
+    g_risk_rules.n = g_risk_rules.cap = 0;
+}
+
+/* 加载用户覆盖文件，每行 "绝对路径|low|medium|high|critical"。 */
+static void load_risk_overrides(const char *path) {
+    if (!path) return;
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    char *line = NULL;
+    size_t cap = 0;
+    while (getline(&line, &cap, f) >= 0) {
+        char *p = line;
+        while (isspace((unsigned char)*p)) p++;
+        char *e = p + strlen(p);
+        while (e > p && isspace((unsigned char)e[-1])) *--e = '\0';
+        if (!*p || *p == '#') continue;
+        char *bar = strrchr(p, '|');
+        if (!bar) continue;
+        *bar = '\0';
+        char *risk = bar + 1;
+        while (isspace((unsigned char)*risk)) risk++;
+        char *pe = p + strlen(p);
+        while (pe > p && isspace((unsigned char)pe[-1])) *--pe = '\0';
+        if (!valid_risk_name(risk)) continue;
+        char *norm = normalize_rule(p);
+        if (!norm) continue;
+        risk_rules_add(norm, risk, true);
+        free(norm);
+    }
+    free(line);
+    fclose(f);
+}
+
+/* 查显式标注：取最长匹配祖先；用户覆盖优先于规则文件标注。 */
+static int explicit_risk_rank(const char *p) {
+    int best = -1;
+    size_t best_len = 0;
+    bool best_user = false;
+    for (size_t i = 0; i < g_risk_rules.n; i++) {
+        const RiskRule *r = &g_risk_rules.v[i];
+        if (!path_relation(r->path, p)) continue;
+        size_t len = strlen(r->path);
+        if (r->user && !best_user) { best = r->rank; best_len = len; best_user = true; continue; }
+        if (r->user == best_user && len >= best_len) { best = r->rank; best_len = len; }
+    }
+    return best;
+}
+
 static const char *deep_risk(const char *p) {
+    int explicit_rank = explicit_risk_rank(p);
+    if (explicit_rank >= 0) return risk_name(explicit_rank);
+
     char s[PATH_MAX];
-    lower_copy(s, sizeof(s), p);
-    const char *critical[] = {"/download", "/documents", "/dcim", "/pictures", "/movies", "/music", "/android/obb", "/backup", "/backups", "/draft", "/drafts", "/database", "/databases", "/shared_prefs"};
-    for (size_t i = 0; i < sizeof(critical) / sizeof(critical[0]); i++) if (strstr(s, critical[i])) return "critical";
-    const char *low[] = {"/cache", "/code_cache", "/gpucache", "/code cache", "/crashpad/completed", "/tmp", "/temp", "/logs", "/log", "/.cache", "/.thumbnails"};
-    for (size_t i = 0; i < sizeof(low) / sizeof(low[0]); i++) if (strstr(s, low[i])) return "low";
-    const char *medium[] = {"/crash", "/tombstone", "/debug", "/trace", "/dump"};
-    for (size_t i = 0; i < sizeof(medium) / sizeof(medium[0]); i++) if (strstr(s, medium[i])) return "medium";
+    /* 路径超长被截断时，尾部的 critical 关键词可能丢失，按最保守等级处理。 */
+    if (!lower_copy(s, sizeof(s), p)) return "critical";
+
+    static const char *critical[] = {"download", "downloads", "documents", "dcim", "pictures",
+                                     "movies", "music", "obb", "backup", "backups", "draft",
+                                     "drafts", "database", "databases", "shared_prefs"};
+    for (size_t i = 0; i < sizeof(critical) / sizeof(critical[0]); i++)
+        if (has_path_segment(s, critical[i])) return "critical";
+
+    static const char *low[] = {"cache", "caches", "code_cache", "code cache", "gpucache",
+                                "tmp", "temp", "log", "logs", ".cache", ".thumbnails"};
+    for (size_t i = 0; i < sizeof(low) / sizeof(low[0]); i++)
+        if (has_path_segment(s, low[i])) return "low";
+    if (strstr(s, "/crashpad/completed/") || has_path_segment(s, "completed")) {
+        if (strstr(s, "/crashpad/")) return "low";
+    }
+
+    static const char *medium[] = {"crash", "tombstone", "tombstones", "debug", "trace",
+                                   "traces", "dump", "dumps"};
+    for (size_t i = 0; i < sizeof(medium) / sizeof(medium[0]); i++)
+        if (has_path_segment(s, medium[i])) return "medium";
+
     return "high";
 }
 static bool child_of(const char *parent, const char *child) { return path_relation(parent, child) && strcmp(parent, child) != 0; }
@@ -1216,10 +1380,30 @@ static int scan_deep(const Options *o) {
         if (stop_requested(o)) { free(line); fclose(rules); vec_free(&cand); return 9; }
         rn++;
         if (rn == 1 || rn % 256 == 0) atomic_progress(o, "deep-scan", "C 原生解析深度规则", rn, 0, line);
+        /*
+         * 规则支持可选的显式风险标注："绝对路径|low|medium|high|critical"。
+         * 未标注的规则继续走路径推断，因此旧规则文件完全兼容。
+         */
+        char *bar = strrchr(line, '|');
+        if (bar) {
+            char risk[16];
+            char *r = bar + 1;
+            while (isspace((unsigned char)*r)) r++;
+            size_t rl = strlen(r);
+            while (rl > 0 && isspace((unsigned char)r[rl - 1])) r[--rl] = '\0';
+            if (rl < sizeof(risk) && valid_risk_name(r)) {
+                snprintf(risk, sizeof(risk), "%s", r);
+                *bar = '\0';
+                char *norm = normalize_rule(line);
+                if (norm) { risk_rules_add(norm, risk, false); free(norm); }
+            }
+        }
         expand_rule(line, &cand);
     }
     free(line);
     fclose(rules);
+    /* 用户覆盖最后加载，优先级高于规则文件内的标注。 */
+    load_risk_overrides(o->risk_overrides_path);
     vec_sort_unique(&cand);
     uint64_t parse_finished_ms = monotonic_ms();
     g_deep_parse_ms = parse_finished_ms >= parse_started_ms ? parse_finished_ms - parse_started_ms : 0U;
@@ -1254,7 +1438,14 @@ static int scan_deep(const Options *o) {
             if (is_dir_nofollow(p)) snprintf(covered_all, sizeof(covered_all), "%s", p);
             continue;
         }
-        bool eligible = strcmp(r, "low") == 0 || strcmp(r, "medium") == 0 || o->allow_high_risk;
+        /*
+         * 允许自动执行的最高风险等级。显式传入 --max-auto-risk 时以它为准；
+         * 未传入时回退到旧的 --allow-high-risk 语义，保证老调用方行为不变。
+         */
+        int ceiling = o->max_auto_risk >= 0
+                          ? o->max_auto_risk
+                          : (o->allow_high_risk ? RISK_CRITICAL : RISK_MEDIUM);
+        bool eligible = risk_rank(r) <= ceiling;
         if (!eligible) {
             t.protected_items++;
             report_row(rep, "protected", r, "深度规则", 1, 0, p);
@@ -1303,6 +1494,7 @@ static int scan_deep(const Options *o) {
     if (targets) fclose(targets);
     write_summary(o, &t);
     vec_free(&cand);
+    risk_rules_free();
     return 0;
 }
 

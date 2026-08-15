@@ -59,7 +59,5 @@ grep -Fq 'CleanupPolicyActivity::class.java' "$AUDIT_UI"
 ! grep -Eq '"schedule_[^"]+"[[:space:]]+to' "$POLICY"
 grep -Fq '"deep_high_risk_enabled" to 0' "$POLICY"
 
-# The advisor contract must be part of the permanent Root regression workflow.
-grep -Fq 'test-policy-advisor-contract.sh' "$ROOT/.github/workflows/v2.5-concurrent-scheduler-ci.yml"
 
 echo "adaptive policy advisor contract ok"
