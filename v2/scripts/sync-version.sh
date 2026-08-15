@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
       MAJOR=$(echo "$NEW_NAME" | cut -d. -f1)
       MINOR=$(echo "$NEW_NAME" | cut -d. -f2)
       PATCH=$(echo "$NEW_NAME" | cut -d. -f3)
-      NEW_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+      NEW_CODE=$((MAJOR * 10000 + MINOR * 1000 + PATCH))
       sed -i.bak "s/^version=.*/version=$NEW/; s/^versionCode=.*/versionCode=$NEW_CODE/" "$MODULE_PROP"
       rm -f "$MODULE_PROP.bak"
       echo "module.prop 已更新为 $NEW (versionCode=$NEW_CODE)"
