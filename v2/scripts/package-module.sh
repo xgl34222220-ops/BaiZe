@@ -152,9 +152,9 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-files.nul'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.5.7$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=25007$'
-unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.5.7"'
+unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.6.0$'
+unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=26000$'
+unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.6.0"'
 if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.5\.6|versionCode=25006|v2\.5\.5|versionCode=25005|v2\.5\.2|versionCode=25002|v2\.5\.1|versionCode=25001|v2\.5\.0|versionCode=25000|v2\.4\.0|versionCode=24000'; then
   echo "安装脚本仍包含旧版发布标识，禁止发布" >&2
   exit 1
@@ -169,4 +169,4 @@ if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.5.7 深度不可变快照模块：$OUTPUT"
+echo "已生成白泽 v2.6.0 深度不可变快照模块：$OUTPUT"
