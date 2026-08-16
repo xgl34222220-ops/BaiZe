@@ -8,7 +8,7 @@ MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE_DIR="$ROOT/build/native"
-OUTPUT="$OUT/BaiZe-v2.6.1-Module.zip"
+OUTPUT="$OUT/BaiZe-v2.6.2-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 # arm64 是必须产物；其余 ABI 有就打进去，没有就跳过。

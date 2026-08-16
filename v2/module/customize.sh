@@ -27,7 +27,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.6.1"
+ui_print "- 正在安装白泽 v2.6.2"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
@@ -201,7 +201,12 @@ if ! verify_apk; then
 elif command -v pm >/dev/null 2>&1; then
   if install_app; then
     ui_print "- 白泽 App 已安装或更新"
-    [ -f "$HASH_FILE" ] && cp -f "$HASH_FILE" "$STATE_DIR/installed-app.sha256"
+    # installed-app.sha256 只是状态记录，写入失败不能让整个模块安装失败。
+    if [ -f "$HASH_FILE" ]; then
+      if ! cp -f "$HASH_FILE" "$STATE_DIR/installed-app.sha256" 2>/dev/null; then
+        ui_print "! App 安装状态记录失败，不影响模块安装"
+      fi
+    fi
   elif pm path "$APP_ID" >/dev/null 2>&1; then
     ui_print "! 白泽 App 更新失败，请手动安装模块内 APK"
   else
@@ -210,3 +215,8 @@ elif command -v pm >/dev/null 2>&1; then
 else
   ui_print "- 重启后将再次尝试安装白泽 App"
 fi
+
+# metainstall/KernelSU/MMRL 以 customize.sh 的最终退出码判断安装结果。
+# 所有必须项在前面已经通过 abort 做硬校验；辅助状态写入不能污染最终退出码。
+ui_print "- 白泽模块安装脚本完成"
+exit 0
