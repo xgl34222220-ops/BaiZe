@@ -50,8 +50,6 @@ VERSION_NAME=${VERSION#v}
 fail=0
 note() { printf '  %s\n' "$1"; }
 
-# ——— 每个目标文件：check 时比对，否则改写 ———
-
 apply() {
   target=$1 pattern=$2 replacement=$3 description=$4
   if [ ! -f "$target" ]; then
@@ -74,7 +72,6 @@ apply() {
 
 echo "版本单一来源：module.prop = $VERSION (versionCode=$VERSION_CODE)"
 
-# v2/module/module.prop 必须与根 module.prop 逐字节相同
 if ! cmp -s "$MODULE_PROP" "$ROOT/v2/module/module.prop"; then
   if [ "$CHECK_ONLY" = "1" ]; then
     note "[不一致] v2/module/module.prop 与根 module.prop 不同"
@@ -96,14 +93,15 @@ apply "$ROOT/v2/module/customize.sh" \
 apply "$ROOT/v2/module/task-worker.sh" \
   'detached-root-worker-v[0-9.]*' "detached-root-worker-$VERSION" "worker 标识 $VERSION"
 
-# update.json 直接重新生成
+# update.json：检测与下载都走 GitHub Raw，避免 Root 管理器对 Release 302 重定向兼容不一致。
+# 正式 Release 仍作为人工下载与归档入口；downloads 分支只保存与正式版 SHA256 一致的模块 ZIP 镜像。
 UPDATE_JSON="$ROOT/update.json"
 EXPECTED_JSON=$(cat <<EOF
 {
   "version": "$VERSION",
   "versionCode": $VERSION_CODE,
-  "zipUrl": "https://github.com/xgl34222220-ops/BaiZe/releases/download/$VERSION/BaiZe-$VERSION-Module.zip",
-  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/CHANGELOG.md"
+  "zipUrl": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/downloads/releases/$VERSION/BaiZe-$VERSION-Module.zip",
+  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_$VERSION.md"
 }
 EOF
 )
