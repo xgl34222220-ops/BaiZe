@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v2.5.7-1677ff)
+![Version](https://img.shields.io/badge/version-v2.6.0-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -81,6 +81,19 @@ python3 v2/scripts/validate-rules.py
 
 安装时会校验内嵌 APK 的 SHA-256，不匹配会拒绝安装 App。
 
+## 在线更新
+
+白泽直接使用 Magisk、KernelSU、APatch 自带的模块更新机制，不需要在 App 里另外下载更新包。
+
+1. 打开 Root 管理器的模块页面并刷新更新。
+2. 出现白泽新版本后直接点击更新。
+3. Root 管理器会下载正式模块 ZIP 并刷入。
+4. 按提示重启设备。
+
+在线更新的版本信息来自 `update.json`，模块 ZIP 使用 GitHub Raw 稳定镜像，避免部分 Root 管理器无法正确处理 GitHub Release 附件重定向的问题。Raw 镜像与 GitHub Releases 中的正式模块 ZIP 保持同一份文件和同一 SHA-256。
+
+GitHub Releases 仍然是正式版本归档和手动下载入口，独立 APK、校验文件和签名证书也继续保留在那里。
+
 ## 从源码构建
 
 需要 JDK 17、Android SDK（platform 36、build-tools 36）与 Android NDK：
@@ -108,8 +121,10 @@ cd v2 && ./gradlew :app:testDebugUnitTest # JVM 单元测试
 ```sh
 sh v2/scripts/sync-version.sh --set v2.6.0
 git commit -am "chore: v2.6.0" && git push
-git tag v2.6.0 && git push origin v2.6.0   # 触发 release workflow
+git tag v2.6.0 && git push origin v2.6.0
 ```
+
+发布正式版后，需要把对应的 `BaiZe-vX.Y.Z-Module.zip` 同步到 `downloads/releases/vX.Y.Z/`。`update.json` 的在线更新地址固定使用该 Raw 镜像；GitHub Releases 继续保存正式归档与独立 APK。
 
 ## 文档
 
