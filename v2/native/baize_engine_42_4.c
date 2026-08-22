@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <fnmatch.h>
 #include <inttypes.h>
@@ -309,50 +310,118 @@ static bool eligible_mtime(const struct stat *st, int days) {
     time_t cutoff = time(NULL) - (time_t)days * 86400;
     return st->st_mtime <= cutoff;
 }
-static int stat_tree_rec(const char *path, dev_t root_dev, uint64_t max_bytes, int days, const Options *o, Stats *s, unsigned depth, uint64_t deadline_ms) {
-    if (depth > 512) { s->incomplete = true; return -1; }
+
+/*
+ * 遍历中止检查的节流计数器。
+ *
+ * 此前 stat_tree_rec() 在每次递归入口调用 stop_requested()，而它是
+ * access(stop_path, F_OK) —— 一次完整的路径解析系统调用。strace 实测
+ * 21600 个文件产生 24004 次 access（正好等于文件数+目录数），全部返回失败。
+ * Android 上这条路径还要逐层过 SELinux avc 检查，成本更高。
+ *
+ * 同理 deadline 检查的 monotonic_ms() 在递归入口和 readdir 循环里各一次，
+ * 等于每个文件两次 clock_gettime。
+ *
+ * 改为按条目计数节流：每 WALK_CHECK_INTERVAL 个条目才真正检查一次。
+ * 用户点停止到实际停下最多晚几毫秒，完全无感。
+ */
+#define WALK_CHECK_MASK 0xFFFU   /* 每 4096 个条目检查一次 */
+static uint64_t g_walk_counter;
+
+/* 返回 0 继续，9 用户中止，124 超时。 */
+static int walk_should_abort(const Options *o, uint64_t deadline_ms) {
+    if ((++g_walk_counter & WALK_CHECK_MASK) != 0U) return 0;
+    if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) return 124;
     if (stop_requested(o)) return 9;
-    if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) { s->timed_out = true; s->incomplete = true; return 124; }
-    struct stat st;
-    if (lstat(path, &st) != 0) { s->incomplete = true; return -1; }
-    if (S_ISLNK(st.st_mode)) return 0;
-    if (S_ISREG(st.st_mode)) {
-        s->visited_files++;
-        if (eligible_mtime(&st, days)) {
-            s->files++;
-            s->bytes += (uint64_t)st.st_size;
-            if ((uint64_t)st.st_size > max_bytes) s->oversized = true;
-        }
-        return 0;
-    }
-    if (!S_ISDIR(st.st_mode)) return 0;
+    return 0;
+}
+
+static void walk_count_file(const struct stat *st, uint64_t max_bytes, int days, Stats *s) {
+    s->visited_files++;
+    if (!eligible_mtime(st, days)) return;
+    s->files++;
+    s->bytes += (uint64_t)st->st_size;
+    if ((uint64_t)st->st_size > max_bytes) s->oversized = true;
+}
+
+/*
+ * 目录遍历。
+ *
+ * 与旧实现的两点差异，语义完全等价但省掉大量系统调用：
+ *   1. 用 fstatat(dirfd, name) 取代 lstat(完整路径)。旧写法每个文件都从 /
+ *      重新解析整条路径，9 层深的路径就是 9 次 dentry 查找加 9 次 SELinux 检查；
+ *      相对 dirfd 只查 1 层。
+ *   2. 先看 readdir 返回的 d_type，目录和符号链接不必再 stat。
+ *      d_type 为 DT_UNKNOWN 的文件系统会自动回退到 fstatat。
+ */
+static int walk_dir(int parent_fd, const char *name, dev_t root_dev, uint64_t max_bytes,
+                    int days, const Options *o, Stats *s, unsigned depth, uint64_t deadline_ms) {
+    if (depth > 512) { s->incomplete = true; return -1; }
+    int fd = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) { s->incomplete = true; return -1; }
+    struct stat dst;
+    if (fstat(fd, &dst) != 0) { close(fd); s->incomplete = true; return -1; }
+    if (depth > 0 && dst.st_dev != root_dev) { s->mount_conflict = true; close(fd); return 0; }
     s->visited_dirs++;
-    if (depth > 0 && st.st_dev != root_dev) { s->mount_conflict = true; return 0; }
-    DIR *d = opendir(path);
-    if (!d) { s->incomplete = true; return -1; }
+    DIR *d = fdopendir(fd);
+    if (!d) { close(fd); s->incomplete = true; return -1; }
+    int this_fd = dirfd(d);
     uint64_t before = s->files;
     struct dirent *de;
+    int rc = 0;
     while ((de = readdir(d)) != NULL) {
-        if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) { s->timed_out = true; s->incomplete = true; closedir(d); return 124; }
+        int abort_code = walk_should_abort(o, deadline_ms);
+        if (abort_code != 0) {
+            if (abort_code == 124) { s->timed_out = true; s->incomplete = true; }
+            rc = abort_code;
+            break;
+        }
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
-        char child[PATH_MAX];
-        int n = snprintf(child, sizeof(child), "%s/%s", path, de->d_name);
-        if (n < 0 || (size_t)n >= sizeof(child)) { s->incomplete = true; continue; }
-        int rc = stat_tree_rec(child, root_dev, max_bytes, days, o, s, depth + 1, deadline_ms);
-        if (rc == 9 || rc == 124) { closedir(d); return rc; }
+        if (de->d_type == DT_LNK) continue;                 /* 不跟随符号链接 */
+        if (de->d_type == DT_DIR) {
+            int sub = walk_dir(this_fd, de->d_name, root_dev, max_bytes, days, o, s,
+                               depth + 1, deadline_ms);
+            if (sub == 9 || sub == 124) { rc = sub; break; }
+            continue;
+        }
+        if (de->d_type != DT_REG && de->d_type != DT_UNKNOWN) continue;
+        struct stat st;
+        if (fstatat(this_fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) { s->incomplete = true; continue; }
+        if (S_ISLNK(st.st_mode)) continue;
+        if (S_ISDIR(st.st_mode)) {                          /* DT_UNKNOWN 的兜底分支 */
+            int sub = walk_dir(this_fd, de->d_name, root_dev, max_bytes, days, o, s,
+                               depth + 1, deadline_ms);
+            if (sub == 9 || sub == 124) { rc = sub; break; }
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) continue;
+        walk_count_file(&st, max_bytes, days, s);
     }
     closedir(d);
+    if (rc != 0) return rc;
     s->dirs++;
     if (s->files == before) s->empty_dirs++;
     return 0;
 }
+
 static int stat_tree_budgeted(const char *path, const Options *o, int days, Stats *s, uint64_t budget_ms) {
     memset(s, 0, sizeof(*s));
     struct stat st;
     if (lstat(path, &st) != 0) return -1;
     uint64_t started_ms = monotonic_ms();
     uint64_t deadline_ms = budget_ms > 0U ? started_ms + budget_ms : 0U;
-    int result = stat_tree_rec(path, st.st_dev, o->max_file_bytes, days, o, s, 0, deadline_ms);
+    g_walk_counter = 0;
+    int result;
+    if (S_ISLNK(st.st_mode)) {
+        result = 0;                                          /* 不跟随符号链接 */
+    } else if (S_ISREG(st.st_mode)) {
+        walk_count_file(&st, o->max_file_bytes, days, s);    /* 规则可以直接指向文件 */
+        result = 0;
+    } else if (!S_ISDIR(st.st_mode)) {
+        result = 0;
+    } else {
+        result = walk_dir(AT_FDCWD, path, st.st_dev, o->max_file_bytes, days, o, s, 0, deadline_ms);
+    }
     uint64_t finished_ms = monotonic_ms();
     s->elapsed_ms = finished_ms >= started_ms ? finished_ms - started_ms : 0U;
     return result;

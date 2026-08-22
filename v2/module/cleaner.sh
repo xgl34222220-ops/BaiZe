@@ -85,6 +85,9 @@ mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
 [ -f "$WHITELIST" ] || cp -f "$MODDIR/config/whitelist.conf" "$WHITELIST"
 [ -f "$PACKAGE_WHITELIST" ] || : >"$PACKAGE_WHITELIST"
+# 白名单只在启动时载入一次；匹配时零子进程。
+baize_whitelist_load "$WHITELIST"
+
 
 if [ "$REQUEST_MODE" != "cache-clean" ]; then
   # 架构支持由 baize_require_engine 判定：包里有对应 ABI 的引擎就能跑。
@@ -216,20 +219,50 @@ cache_target_package() {
   printf '%s\n' "$package"
 }
 
-path_conflicts_whitelist() {
-  target=${1%/}
-  [ -f "$WHITELIST" ] || return 1
-  while IFS= read -r raw || [ -n "$raw" ]; do
-    item=$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    case "$item" in ''|'#'*) continue ;; esac
-    case "$item" in /*) ;; *) continue ;; esac
-    item=${item%/}
-    [ -n "$item" ] || item=/
-    case "$target" in "$item"|"$item"/*) return 0 ;; esac
-    case "$item" in "$target"|"$target"/*) return 0 ;; esac
-  done <"$WHITELIST"
-  return 1
-}
+# 白名单匹配。测试夹具可能只暂存部分脚本，缺失时退回内联实现。
+if [ -f "$MODDIR/whitelist-match.sh" ]; then
+  . "$MODDIR/whitelist-match.sh"
+else
+  baize_whitelist_load() {
+    _wl_file=${1:-${WHITELIST:-}}
+    BAIZE_WL_ITEMS=""
+    [ -n "$_wl_file" ] && [ -f "$_wl_file" ] || return 0
+    while IFS= read -r _wl_raw || [ -n "$_wl_raw" ]; do
+      _wl_item=${_wl_raw#"${_wl_raw%%[![:space:]]*}"}
+      _wl_item=${_wl_item%"${_wl_item##*[![:space:]]}"}
+      case "$_wl_item" in ''|'#'*) continue ;; esac
+      case "$_wl_item" in /*) ;; *) continue ;; esac
+      _wl_item=${_wl_item%/}
+      [ -n "$_wl_item" ] || _wl_item=/
+      BAIZE_WL_ITEMS="$BAIZE_WL_ITEMS$_wl_item
+"
+    done <"$_wl_file"
+    return 0
+  }
+  path_conflicts_whitelist() {
+    _wl_target=${1%/}
+    [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
+    _wl_old_ifs=$IFS
+    case "$-" in *f*) _wl_had_f=1 ;; *) _wl_had_f=0 ;; esac
+    IFS='
+'
+    set -f
+    for _wl_item in $BAIZE_WL_ITEMS; do
+      if [ "$_wl_item" = "/" ]; then
+        IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0
+      fi
+      case "$_wl_target" in
+        "$_wl_item"|"$_wl_item"/*) IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0 ;;
+      esac
+      case "$_wl_item" in
+        "$_wl_target"|"$_wl_target"/*) IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0 ;;
+      esac
+    done
+    IFS=$_wl_old_ifs
+    [ "$_wl_had_f" = 1 ] || set +f
+    return 1
+  }
+fi
 
 write_latest() {
   mode=$1 files=$2 bytes=$3 errors=$4 skipped=$5 elapsed=$6 result=$7
