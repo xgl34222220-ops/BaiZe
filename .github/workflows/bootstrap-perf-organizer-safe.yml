@@ -7,10 +7,10 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose-post3:
+  publish-post3:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,7 +20,7 @@ jobs:
           ref: fix/perf-organizer-safe-v2.6.2
           fetch-depth: 0
 
-      - name: Reconstruct and verify safe patch
+      - name: Reconstruct verified series and publish post-3 tree
         shell: bash
         run: |
           set -euo pipefail
@@ -38,30 +38,10 @@ jobs:
           echo 'ae22f24c2fe1a6f081bb787880ee4734a1a3c0a255e990660096948224238b1a  /tmp/baize-safe.patch' | sha256sum -c -
           rm -rf /tmp/mails && mkdir -p /tmp/mails
           git mailsplit -d4 -o/tmp/mails /tmp/baize-safe.patch
-          test -f /tmp/mails/0004
-
-      - name: Apply first three commits and diagnose fourth
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name '惜故里丶'
           git config user.email 'xgl34222220@gmail.com'
           git fetch origin main
           git reset --hard origin/main
           git am /tmp/mails/0001 /tmp/mails/0002 /tmp/mails/0003
-          git mailinfo /tmp/p4.msg /tmp/p4.diff < /tmp/mails/0004 >/tmp/p4.info
-          echo '===== POST-3 WALK CONTEXT ====='
-          grep -n -A28 -B10 'WALK_CHECK_MASK' v2/native/baize_engine_42_4.c || true
-          echo '===== POST-3 SEEN CONTEXT ====='
-          grep -n -A70 -B12 'typedef struct { dev_t dev; ino_t ino; } SeenKey' v2/native/baize_engine_42_4.c || true
-          echo '===== COMMIT 4 CHECK ====='
-          git apply --check --whitespace=nowarn /tmp/p4.diff || true
-          echo '===== COMMIT 4 REJECT APPLY ====='
-          git apply --reject --whitespace=nowarn /tmp/p4.diff || true
-          echo '===== REJECT FILES ====='
-          find . -name '*.rej' -print -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
-          echo '===== NATIVE AFTER PARTIAL APPLY AROUND WALK ====='
-          grep -n -A38 -B14 'WALK_CHECK_MASK' v2/native/baize_engine_42_4.c || true
-          echo '===== NATIVE AFTER PARTIAL APPLY AROUND SEEN ====='
-          grep -n -A90 -B15 'SeenKey' v2/native/baize_engine_42_4.c | head -n 220 || true
-          exit 1
+          git --no-pager log --oneline -4
+          git push --force origin HEAD:refs/heads/tmp/perf-safe-post3
