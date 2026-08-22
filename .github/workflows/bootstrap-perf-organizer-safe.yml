@@ -1,14 +1,10 @@
 name: Bootstrap perf organizer safe
 
 on:
-  push:
-    branches:
-      - fix/perf-organizer-safe-v2.6.2
-    paths:
-      - '.github/workflows/bootstrap-perf-organizer-safe.yml'
   pull_request:
     branches:
-      - main
+      - ci/perf-organizer-bootstrap-base
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -18,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout bootstrap branch
+      - name: Checkout bootstrap head branch
         uses: actions/checkout@v4
         with:
           ref: fix/perf-organizer-safe-v2.6.2
@@ -28,7 +24,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/patch.gz.b64.* | base64 -d | gzip -d > /tmp/baize-safe.patch
+          cat \
+            .bootstrap/patch.gz.b64.00 \
+            .bootstrap/patch.gz.b64.01 \
+            .bootstrap/patch.gz.b64.02 \
+            .bootstrap/patch.gz.b64.03 \
+            .bootstrap/patch.gz.b64.04.0 \
+            .bootstrap/patch.gz.b64.04.1 \
+            .bootstrap/patch.gz.b64.04.2 \
+            .bootstrap/patch.gz.b64.04.3 \
+            .bootstrap/patch.gz.b64.05 \
+            | base64 -d | gzip -d > /tmp/baize-safe.patch
           echo 'ae22f24c2fe1a6f081bb787880ee4734a1a3c0a255e990660096948224238b1a  /tmp/baize-safe.patch' | sha256sum -c -
           test "$(grep -c '^From [0-9a-f]\{40\} Mon Sep 17 00:00:00 2001$' /tmp/baize-safe.patch)" -eq 6
 
