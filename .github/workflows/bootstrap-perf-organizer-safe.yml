@@ -6,6 +6,9 @@ on:
       - fix/perf-organizer-safe-v2.6.2
     paths:
       - '.github/workflows/bootstrap-perf-organizer-safe.yml'
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -18,6 +21,7 @@ jobs:
       - name: Checkout bootstrap branch
         uses: actions/checkout@v4
         with:
+          ref: fix/perf-organizer-safe-v2.6.2
           fetch-depth: 0
 
       - name: Reconstruct and verify safe patch
