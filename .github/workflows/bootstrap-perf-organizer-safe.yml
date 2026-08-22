@@ -7,12 +7,12 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-and-verify:
+  diagnose-post3:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Checkout bootstrap head branch
         uses: actions/checkout@v4
@@ -36,9 +36,11 @@ jobs:
             .bootstrap/patch.gz.b64.05 \
             | base64 -d | gzip -d > /tmp/baize-safe.patch
           echo 'ae22f24c2fe1a6f081bb787880ee4734a1a3c0a255e990660096948224238b1a  /tmp/baize-safe.patch' | sha256sum -c -
-          test "$(grep -c '^From [0-9a-f]\{40\} Mon Sep 17 00:00:00 2001$' /tmp/baize-safe.patch)" -eq 6
+          rm -rf /tmp/mails && mkdir -p /tmp/mails
+          git mailsplit -d4 -o/tmp/mails /tmp/baize-safe.patch
+          test -f /tmp/mails/0004
 
-      - name: Apply six clean commits on current main
+      - name: Apply first three commits and diagnose fourth
         shell: bash
         run: |
           set -euo pipefail
@@ -46,48 +48,20 @@ jobs:
           git config user.email 'xgl34222220@gmail.com'
           git fetch origin main
           git reset --hard origin/main
-          git am /tmp/baize-safe.patch
-          echo 'Applied commits:'
-          git --no-pager log --oneline --decorate -8
-
-      - name: Install test prerequisites
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq busybox-static
-
-      - name: Run full BaiZe regression suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash v2/tests/run-all.sh
-
-      - name: Check version and rules consistency
-        shell: bash
-        run: |
-          set -euo pipefail
-          sh v2/scripts/sync-version.sh --check
-          python3 v2/scripts/validate-rules.py --check
-          sh scripts/check.sh
-
-      - name: Run Android unit tests and release build
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x v2/gradlew
-          cd v2
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
-
-      - name: Verify clean worktree and commit count
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -z "$(git status --porcelain)"
-          test "$(git rev-list --count origin/main..HEAD)" -eq 6
-
-      - name: Publish verified clean branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git push --force-with-lease origin HEAD:refs/heads/fix/perf-organizer-safe-v2.6.2
+          git am /tmp/mails/0001 /tmp/mails/0002 /tmp/mails/0003
+          git mailinfo /tmp/p4.msg /tmp/p4.diff < /tmp/mails/0004 >/tmp/p4.info
+          echo '===== POST-3 WALK CONTEXT ====='
+          grep -n -A28 -B10 'WALK_CHECK_MASK' v2/native/baize_engine_42_4.c || true
+          echo '===== POST-3 SEEN CONTEXT ====='
+          grep -n -A70 -B12 'typedef struct { dev_t dev; ino_t ino; } SeenKey' v2/native/baize_engine_42_4.c || true
+          echo '===== COMMIT 4 CHECK ====='
+          git apply --check --whitespace=nowarn /tmp/p4.diff || true
+          echo '===== COMMIT 4 REJECT APPLY ====='
+          git apply --reject --whitespace=nowarn /tmp/p4.diff || true
+          echo '===== REJECT FILES ====='
+          find . -name '*.rej' -print -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
+          echo '===== NATIVE AFTER PARTIAL APPLY AROUND WALK ====='
+          grep -n -A38 -B14 'WALK_CHECK_MASK' v2/native/baize_engine_42_4.c || true
+          echo '===== NATIVE AFTER PARTIAL APPLY AROUND SEEN ====='
+          grep -n -A90 -B15 'SeenKey' v2/native/baize_engine_42_4.c | head -n 220 || true
+          exit 1
