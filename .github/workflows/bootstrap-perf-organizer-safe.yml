@@ -1,0 +1,83 @@
+name: Bootstrap perf organizer safe
+
+on:
+  push:
+    branches:
+      - fix/perf-organizer-safe-v2.6.2
+    paths:
+      - '.github/workflows/bootstrap-perf-organizer-safe.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify safe patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/patch.gz.b64.* | base64 -d | gzip -d > /tmp/baize-safe.patch
+          echo 'ae22f24c2fe1a6f081bb787880ee4734a1a3c0a255e990660096948224238b1a  /tmp/baize-safe.patch' | sha256sum -c -
+          test "$(grep -c '^From [0-9a-f]\{40\} Mon Sep 17 00:00:00 2001$' /tmp/baize-safe.patch)" -eq 6
+
+      - name: Apply six clean commits on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name '惜故里丶'
+          git config user.email 'xgl34222220@gmail.com'
+          git fetch origin main
+          git reset --hard origin/main
+          git am --3way /tmp/baize-safe.patch
+          echo 'Applied commits:'
+          git --no-pager log --oneline --decorate -8
+
+      - name: Install test prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq busybox-static
+
+      - name: Run full BaiZe regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash v2/tests/run-all.sh
+
+      - name: Check version and rules consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh v2/scripts/sync-version.sh --check
+          python3 v2/scripts/validate-rules.py --check
+          sh scripts/check.sh
+
+      - name: Run Android unit tests and release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x v2/gradlew
+          cd v2
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Verify clean worktree and commit count
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          test "$(git rev-list --count origin/main..HEAD)" -eq 6
+
+      - name: Publish verified clean branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --force-with-lease origin HEAD:refs/heads/fix/perf-organizer-safe-v2.6.2
