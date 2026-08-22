@@ -28,6 +28,20 @@ else
   NATIVE_ENGINE=""
 fi
 NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$NATIVE_ENGINE}
+# 归类分类表：索引侧与归类器必须共用同一份来源。打包后位于
+# $MODDIR/config；源码测试直接运行 v2/module/storage-index.sh 时回退仓库根 config。
+ORGANIZER_CATEGORIES=${BAIZE_ORGANIZER_CATEGORIES:-$MODDIR/config/organizer-categories.conf}
+if [ ! -s "$ORGANIZER_CATEGORIES" ] && [ -s "$MODDIR/../../config/organizer-categories.conf" ]; then
+  ORGANIZER_CATEGORIES="$MODDIR/../../config/organizer-categories.conf"
+fi
+[ -s "$ORGANIZER_CATEGORIES" ] || { echo "归类分类表缺失或为空：$ORGANIZER_CATEGORIES" >&2; exit 5; }
+# 退路实现要用的扩展名集合。原生索引器自己读配置，这里只服务 shell 退路。
+ORG_EXTS=""
+while IFS= read -r oc_raw || [ -n "$oc_raw" ]; do
+  case "$oc_raw" in ''|'#'*) continue ;; esac
+  case "$oc_raw" in *=*) ORG_EXTS="$ORG_EXTS${oc_raw#*=} " ;; esac
+done <"$ORGANIZER_CATEGORIES"
+[ -n "$ORG_EXTS" ] || { echo "归类分类表没有可用扩展名" >&2; exit 5; }
 TTL=${BAIZE_INDEX_TTL_SECONDS:-$(sed -n 's/^shared_index_ttl_seconds=//p' "$CONFIG" 2>/dev/null | tail -n 1)}
 case "$TTL" in ''|*[!0-9]*) TTL=300 ;; esac
 [ "$TTL" -lt 30 ] && TTL=30
@@ -180,6 +194,7 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
         --records "$RECORDS" --apk "$TMP/apk.nul" --empty "$TMP/empty.nul" \
         --large "$TMP/large.nul" --organizer "$TMP/organizer.nul" \
         --duplicates "$TMP/duplicates.tsv" --large-bytes "$large_bytes" \
+        --organizer-exts "$ORGANIZER_CATEGORIES" \
         --stop "$STOP_FILE" --summary "$idx_sum" 2>/dev/null; then
       files=$(sed -n 's/^files=//p' "$idx_sum" 2>/dev/null | tail -n 1)
       bytes=$(sed -n 's/^bytes=//p' "$idx_sum" 2>/dev/null | tail -n 1)
@@ -196,6 +211,7 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
     fi
   else
     # 原生索引器不可用时退回旧的逐文件实现，保证功能不缺失。
+    # 扩展名从分类表读（已在顶层载入），不再在这里写死一份。
     mkdir -p "$TMP/seen"
     while IFS= read -r -d '' file; do
       [ -f "$file" ] || continue; [ ! -L "$file" ] || continue
@@ -206,10 +222,11 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
       size=$(stat -c %s "$file" 2>/dev/null || echo 0); case "$size" in ''|*[!0-9]*) size=0 ;; esac
       printf '%s\0' "$file" >>"$RECORDS"; files=$((files + 1)); bytes=$((bytes + size))
       lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
+      ext_lower=${lower##*.}; [ "$ext_lower" = "$lower" ] && ext_lower=""
       case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk) printf '%s\0' "$file" >>"$TMP/apk.nul" ;; esac
       [ "$size" -ne 0 ] || printf '%s\0' "$file" >>"$TMP/empty.nul"
       [ "$size" -lt "$large_bytes" ] || printf '%s\0' "$file" >>"$TMP/large.nul"
-      case "$lower" in *.jpg|*.jpeg|*.png|*.webp|*.gif|*.heic|*.mp4|*.mkv|*.mov|*.avi|*.mp3|*.flac|*.wav|*.pdf|*.doc|*.docx|*.xls|*.xlsx|*.ppt|*.pptx|*.txt|*.md|*.zip|*.7z|*.rar|*.tar|*.gz|*.apk|*.apks|*.xapk|*.apkm) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
+      case " $ORG_EXTS " in *" $ext_lower "*) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
       [ "$size" -le 0 ] || printf '%s\t%s\n' "$size" "$(printf '%s' "$file" | base64 | tr -d '\n')" >>"$TMP/duplicates.tsv"
     done <"$list"
   fi

@@ -1088,19 +1088,41 @@ class FileOrganizerEngine(
         return stem.length >= 24 && stem.all { it in '0'..'9' || it in 'a'..'f' }
     }
 
+    /**
+     * 扩展名到分类的映射。
+     *
+     * 来源是模块内的 config/organizer-categories.conf，与 organizer-worker.sh
+     * 和原生索引器共用同一份。此前这份清单在四个地方各写一遍且已经不一致：
+     * 索引侧只收 31 个扩展名，而归类器认识 68 个，差集里的 .m4a .aac .ogg
+     * .opus .webm .flv .3gp .epub 等文件永远进不了索引，也就永远归类不到。
+     *
+     * 读不到配置时回退到内置副本，保证功能不缺失。
+     */
+    private val categoryByExtension: Map<String, String> by lazy { loadCategories() }
+
+    private fun loadCategories(): Map<String, String> {
+        val file = File(RootPaths.MODULE_DIR, "config/organizer-categories.conf")
+        val parsed = runCatching {
+            if (!file.isFile) return@runCatching emptyMap()
+            buildMap {
+                file.forEachLine { raw ->
+                    val line = raw.trim()
+                    if (line.isEmpty() || line.startsWith("#") || !line.contains('=')) return@forEachLine
+                    val name = line.substringBefore('=').trim()
+                    if (name.isEmpty()) return@forEachLine
+                    line.substringAfter('=').split(' ', '\t')
+                        .filter { it.isNotBlank() }
+                        .forEach { put(it.lowercase(), name) }
+                }
+            }
+        }.getOrDefault(emptyMap())
+        return parsed.ifEmpty { BUILTIN_CATEGORIES }
+    }
+
     private fun category(name: String): String {
         val extension = name.substringAfterLast('.', "").lowercase()
-        return when (extension) {
-            "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "dng", "raw" -> "图片"
-            "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "3gp", "ts" -> "视频"
-            "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "wma", "amr" -> "音频"
-            "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv", "md",
-            "odt", "ods", "odp" -> "文档"
-            "apk", "apks", "xapk", "apkm", "aab" -> "安装包"
-            "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "tgz", "tbz2" -> "压缩包"
-            "epub", "mobi", "azw", "azw3", "fb2", "cbz", "cbr", "djvu" -> "电子书"
-            else -> ""
-        }
+        if (extension.isEmpty()) return ""
+        return categoryByExtension[extension].orEmpty()
     }
 
     private fun sourceGroup(path: String): String {
@@ -1191,6 +1213,21 @@ class FileOrganizerEngine(
         JSONObject().put("success", false).put("error", code).put("message", message).toString()
 
     companion object {
+        /** 配置读不到时的内置回退副本，内容须与 config/organizer-categories.conf 一致。 */
+        private val BUILTIN_CATEGORIES: Map<String, String> = buildMap {
+            // 注意不能把这个辅助函数命名为 put：它会遮蔽 MutableMap.put 并造成无限递归。
+            fun bucket(category: String, vararg exts: String) =
+                exts.forEach { ext -> this[ext] = category }
+            bucket("图片", "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "dng", "raw")
+            bucket("视频", "mp4", "mkv", "mov", "avi", "webm", "flv", "wmv", "m4v", "3gp", "ts")
+            bucket("音频", "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "wma", "amr")
+            bucket("文档", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "csv",
+                "md", "odt", "ods", "odp")
+            bucket("安装包", "apk", "apks", "xapk", "apkm", "aab")
+            bucket("压缩包", "zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst", "tgz", "tbz2")
+            bucket("电子书", "epub", "mobi", "azw", "azw3", "fb2", "cbz", "cbr", "djvu")
+        }
+
         private val ID_PATTERN = Regex("^[a-f0-9]{64}$")
         private val MEDIA_ROOT_FILE = Regex("^/data/media/\\d+/[^/]+$")
         private val APP_MEDIA_FILE = Regex("^/data/media/\\d+/Android/media/[^/]+/.+")

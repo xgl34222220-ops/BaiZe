@@ -41,6 +41,7 @@ typedef struct {
     const char *index_list_path, *index_seen_path, *index_records_path;
     const char *index_apk_path, *index_empty_path, *index_large_path;
     const char *index_organizer_path, *index_duplicates_path;
+    const char *index_organizer_exts_path;
     uint64_t index_large_bytes;
     uint64_t max_file_bytes;
     uint64_t dir_budget_ms;
@@ -531,6 +532,7 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--large") == 0) o->index_large_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--organizer") == 0) o->index_organizer_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--duplicates") == 0) o->index_duplicates_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--organizer-exts") == 0) o->index_organizer_exts_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--large-bytes") == 0) o->index_large_bytes = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--max-auto-risk") == 0) {
             const char *v = arg_value(argc, argv, &i);
@@ -1588,14 +1590,52 @@ static bool is_apk(const char *name) {
     return len >= 8U && strcasecmp(name + len - 8, ".zip.apk") == 0;
 }
 
+/*
+ * 归类扩展名集合。此前是写死在这里的 31 个，而 organizer-worker.sh 的
+ * category_for() 认识 68 个——差集里的 .m4a .aac .ogg .opus .webm .flv
+ * .3gp .epub 等文件永远进不了索引，也就永远归类不到。
+ * 现在改为运行时从 config/organizer-categories.conf 载入，与归类器同源。
+ */
+static StrVec g_organizer_exts = {0};
+
+/* 载入 "分类名=ext1 ext2 ..." 形式的分类表，只取扩展名集合。 */
+static bool load_organizer_exts(const char *path) {
+    vec_free(&g_organizer_exts);
+    if (!path) return false;
+    FILE *f = fopen(path, "r");
+    if (!f) return false;
+    char *line = NULL;
+    size_t cap = 0;
+    while (getline(&line, &cap, f) >= 0) {
+        char *p = line;
+        while (isspace((unsigned char)*p)) p++;
+        if (!*p || *p == '#') continue;
+        char *eq = strchr(p, '=');
+        if (!eq) continue;
+        char *list = eq + 1;
+        char *saveptr = NULL;
+        for (char *tok = strtok_r(list, " \t\r\n", &saveptr); tok;
+             tok = strtok_r(NULL, " \t\r\n", &saveptr)) {
+            if (!*tok) continue;
+            char dotted[64];
+            if ((size_t)snprintf(dotted, sizeof(dotted), ".%s", tok) >= sizeof(dotted)) continue;
+            vec_add(&g_organizer_exts, dotted);
+        }
+    }
+    free(line);
+    fclose(f);
+    vec_sort_unique(&g_organizer_exts);
+    return g_organizer_exts.n > 0U;
+}
+
 static bool is_organizer(const char *name) {
-    static const char *const org[] = {
-        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".mp4", ".mkv", ".mov",
-        ".avi", ".mp3", ".flac", ".wav", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-        ".ppt", ".pptx", ".txt", ".md", ".zip", ".7z", ".rar", ".tar", ".gz",
-        ".apk", ".apks", ".xapk", ".apkm"
-    };
-    return ext_matches(name, org, sizeof(org) / sizeof(org[0]));
+    if (g_organizer_exts.n == 0U) return false;
+    const char *dot = strrchr(name, '.');
+    if (!dot) return false;
+    for (size_t i = 0; i < g_organizer_exts.n; i++) {
+        if (strcasecmp(dot, g_organizer_exts.v[i]) == 0) return true;
+    }
+    return false;
 }
 
 static bool b64_encode(const char *in, FILE *out) {
@@ -1632,6 +1672,11 @@ static int index_files(const Options *o) {
         seen_free(&seen);
         return 5;
     }
+    if (o->index_organizer_path && !load_organizer_exts(o->index_organizer_exts_path)) {
+        fclose(list);
+        seen_free(&seen);
+        return 5;
+    }
 
     FILE *records   = o->index_records_path    ? fopen(o->index_records_path, "ab")    : NULL;
     FILE *apk       = o->index_apk_path        ? fopen(o->index_apk_path, "ab")        : NULL;
@@ -1647,6 +1692,7 @@ static int index_files(const Options *o) {
         if (large) fclose(large); if (organizer) fclose(organizer); if (dups) fclose(dups);
         fclose(list);
         seen_free(&seen);
+        vec_free(&g_organizer_exts);
         return 5;
     }
 
@@ -1720,6 +1766,7 @@ static int index_files(const Options *o) {
     if (rc == 0 && !persisted) rc = 5;
     free(added);
     seen_free(&seen);
+    vec_free(&g_organizer_exts);
 
     if (rc == 0 && o->summary_path) {
         FILE *sum = fopen(o->summary_path, "w");

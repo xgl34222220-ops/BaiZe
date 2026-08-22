@@ -34,6 +34,9 @@ mkdir -p "$T/media/0/带空格 目录"
 printf 'x' > "$T/media/0/带空格 目录/中文文件.apk"
 
 cp "$ROOT/v2/module/storage-index.sh" "$ROOT/v2/module/abi-resolve.sh" "$T/"
+# 归类分类表是模块的一部分，两条路径都要读它
+mkdir -p "$T/config"
+cp "$ROOT/config/organizer-categories.conf" "$T/config/"
 mkdir -p "$T/bin/$(uname -m)"
 cp "$ENGINE" "$T/bin/$(uname -m)/baize_engine" 2>/dev/null || true
 

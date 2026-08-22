@@ -1,7 +1,8 @@
 #!/system/bin/sh
 set -u
 
-MODDIR=${0%/*}
+# $0 不含斜杠时 ${0%/*} 会原样返回脚本名，这里显式兜底
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 MODE=${1:-organize}
 TRIGGER=${2:-app}
 TASK_ID=${3:-$(date +%s)-$$}
@@ -11,6 +12,11 @@ SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 INDEXER="$MODDIR/storage-index.sh"
 ALL_INDEX="$STATE_DIR/index/storage-files.nul"
 ORGANIZER_INDEX="$STATE_DIR/index/organizer-files.nul"
+# 兜底索引必须写自己的文件。此前 build_fallback_index 直接往 $INDEX_FILE 写，
+# 而自动模式把 INDEX_FILE 指向了共享索引，等于定时归类会把
+# organizer-files.nul 覆盖成自己的兜底清单；两者过滤规则不同，
+# 于是 TTL 内的下一次手动归类行为会随上次定时任务而变化。
+FALLBACK_INDEX="$STATE_DIR/index/organizer-fallback.nul"
 INDEX_FILE="$ORGANIZER_INDEX"
 RUNNING_FILE="$STATE_DIR/running.env"
 RESULT_FILE="$STATE_DIR/organizer-result.env"
@@ -125,7 +131,7 @@ write_result() {
 }
 
 cleanup() {
-  rm -f "$RUNNING_FILE" "$MEDIA_QUEUE" 2>/dev/null || true
+  rm -f "$RUNNING_FILE" "$MEDIA_QUEUE" "${UNDO_RAW:-}" 2>/dev/null || true
   if [ -f "$WORKER_FILE" ] && grep -q "^task_id=$TASK_ID$" "$WORKER_FILE" 2>/dev/null; then rm -f "$WORKER_FILE"; fi
   if [ -f "$LOCK_DIR/task_id" ] && [ "$(sed -n '1p' "$LOCK_DIR/task_id" 2>/dev/null)" = "$TASK_ID" ]; then rm -rf -- "$LOCK_DIR" 2>/dev/null || true; fi
 }
@@ -161,6 +167,7 @@ append_known_app_roots() {
 }
 
 build_fallback_index() {
+  INDEX_FILE="$FALLBACK_INDEX"
   mkdir -p "${INDEX_FILE%/*}"
   : >"$INDEX_FILE"
   for fb_user_root in "$MEDIA_ROOT"/[0-9]*; do
@@ -184,21 +191,71 @@ b64() {
   fi
 }
 
+# 分类表从 config/organizer-categories.conf 载入，与索引侧共用同一份来源。
+# 载入结果放进 BAIZE_CAT_MAP，形如 " jpg=图片 png=图片 mp4=视频 ..."，
+# 匹配时用 case 做子串查找，全程零子进程。
+BAIZE_CAT_MAP=" "
+BAIZE_CAT_EXTS=""
+organizer_categories_load() {
+  ocl_file=${1:-$MODDIR/config/organizer-categories.conf}
+  BAIZE_CAT_MAP=" "
+  BAIZE_CAT_EXTS=""
+  [ -f "$ocl_file" ] || return 1
+  while IFS= read -r ocl_raw || [ -n "$ocl_raw" ]; do
+    case "$ocl_raw" in ''|'#'*) continue ;; esac
+    case "$ocl_raw" in *=*) ;; *) continue ;; esac
+    ocl_name=${ocl_raw%%=*}
+    ocl_list=${ocl_raw#*=}
+    [ -n "$ocl_name" ] || continue
+    for ocl_ext in $ocl_list; do
+      [ -n "$ocl_ext" ] || continue
+      BAIZE_CAT_MAP="$BAIZE_CAT_MAP$ocl_ext=$ocl_name "
+      BAIZE_CAT_EXTS="$BAIZE_CAT_EXTS$ocl_ext "
+    done
+  done <"$ocl_file"
+  [ "$BAIZE_CAT_MAP" != " " ]
+}
+
+# 结果写入全局 CATEGORY，不再用 $( ) 起子 shell。
+# 扩展名转小写此前用 printf | tr（每个文件两次 fork），
+# 现在用 shell 的字符替换逐字符处理，零 fork。
+# 结果写入全局 OL_OUT。注意不能用 $( ) 取返回值——命令替换本身就是一次 fork，
+# 那正是这里要消除的开销。
+organizer_lower() {
+  ol_in=$1
+  OL_OUT=""
+  ol_out=""
+  while [ -n "$ol_in" ]; do
+    ol_c=${ol_in%"${ol_in#?}"}
+    case "$ol_c" in
+      A) ol_c=a ;; B) ol_c=b ;; C) ol_c=c ;; D) ol_c=d ;; E) ol_c=e ;; F) ol_c=f ;;
+      G) ol_c=g ;; H) ol_c=h ;; I) ol_c=i ;; J) ol_c=j ;; K) ol_c=k ;; L) ol_c=l ;;
+      M) ol_c=m ;; N) ol_c=n ;; O) ol_c=o ;; P) ol_c=p ;; Q) ol_c=q ;; R) ol_c=r ;;
+      S) ol_c=s ;; T) ol_c=t ;; U) ol_c=u ;; V) ol_c=v ;; W) ol_c=w ;; X) ol_c=x ;;
+      Y) ol_c=y ;; Z) ol_c=z ;;
+    esac
+    ol_out="$ol_out$ol_c"
+    ol_in=${ol_in#?}
+  done
+  OL_OUT=$ol_out
+}
+
 category_for() {
-  name=${1##*/}
-  ext=${name##*.}
-  [ "$ext" = "$name" ] && ext=""
-  ext=$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')
-  case "$ext" in
-    jpg|jpeg|png|gif|webp|bmp|heic|heif|avif|dng|raw) echo 图片 ;;
-    mp4|mkv|mov|avi|webm|flv|wmv|m4v|3gp|ts) echo 视频 ;;
-    mp3|flac|wav|m4a|aac|ogg|opus|ape|wma|amr) echo 音频 ;;
-    pdf|doc|docx|xls|xlsx|ppt|pptx|txt|rtf|csv|md|odt|ods|odp) echo 文档 ;;
-    apk|apks|xapk|apkm|aab) echo 安装包 ;;
-    zip|rar|7z|tar|gz|bz2|xz|zst|tgz|tbz2) echo 压缩包 ;;
-    epub|mobi|azw|azw3|fb2|cbz|cbr|djvu) echo 电子书 ;;
-    *) echo "" ;;
+  CATEGORY=
+  cf_name=${1##*/}
+  cf_ext=${cf_name##*.}
+  [ "$cf_ext" = "$cf_name" ] && return 0
+  # 绝大多数扩展名本来就是小写，含大写时才走逐字符转换
+  case "$cf_ext" in
+    *[A-Z]*) organizer_lower "$cf_ext"; cf_ext=$OL_OUT ;;
   esac
+  case "$BAIZE_CAT_MAP" in
+    *" $cf_ext="*)
+      cf_rest=${BAIZE_CAT_MAP#*" $cf_ext="}
+      CATEGORY=${cf_rest%% *}
+      ;;
+  esac
+  return 0
 }
 
 normalized_path() {
@@ -275,9 +332,14 @@ is_public_user_path() {
 
 allowed_source() {
   path=$1 category=$2
-  case "$path" in "$MEDIA_ROOT"/[0-9]/*) ;; *) return 1 ;; esac
+  # 此前这里写的是 "$MEDIA_ROOT"/[0-9]/*，[0-9] 只匹配一个字符，
+  # 于是工作资料（user 10）和多用户（10 起编号）的文件全部被拒绝——
+  # 它们进了索引、被遍历，最后在这一步被静默丢弃，只计入 skipped。
+  # 索引侧用的是 [0-9]*，Kotlin 侧用的是 \d+，两边本来就是对的。
   relative=${path#"$MEDIA_ROOT"/}
+  [ "$relative" != "$path" ] || return 1
   user=${relative%%/*}
+  case "$user" in ''|*[!0-9]*) return 1 ;; esac
   rest=${relative#*/}
   [ "$rest" != "$relative" ] || return 1
   case "$rest" in BaiZe归类/*|*/BaiZe归类/*) return 1 ;; esac
@@ -321,6 +383,13 @@ skip_file() {
   return 1
 }
 
+# 分类表必须在主循环前载入；载入失败直接退出，避免"扫了但一个都没归类"。
+if ! organizer_categories_load "$MODDIR/config/organizer-categories.conf"; then
+  write_result "归类分类表缺失或为空，请重新刷入完整模块" 0 1 0 0 0 0 0
+  echo "无法载入 config/organizer-categories.conf" >&2
+  exit 5
+fi
+
 STARTED=$(date +%s)
 CONFLICT_POLICY=$(uint_config organizer_conflict_policy 1 0 2)
 UNDO_RETENTION=$(uint_config organizer_undo_retention 10 1 20)
@@ -336,7 +405,6 @@ DEDUPLICATED=0
 rm -f "$STOP_FILE" "$RESULT_FILE" "$MEDIA_QUEUE"
 
 if [ "$AUTO_TRIGGER" = 1 ]; then
-  INDEX_FILE="$ORGANIZER_INDEX"
   write_running "正在快速检查下载与接收目录" 0 0 "" 1
   build_fallback_index
 else
@@ -361,7 +429,14 @@ case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
 REQUESTED=0; MOVED=0; SKIPPED=0; FAILED=0; BYTES=0; CURRENT=0; AUTO_LIMIT_REACHED=0
 AUTO_DEADLINE=$((STARTED + AUTO_MAX_SECONDS))
 UNDO_TMP="$UNDO_DIR/.${TASK_ID}.tmp.$$"
+# 移动过程中先按 NUL 记原始字段，收尾时一次性编码成 JSON。
+UNDO_RAW="$UNDO_DIR/.${TASK_ID}.raw.$$"
+: >"$UNDO_RAW"
 FIRST_MOVE=1
+LAST_DEST_DIR=
+LAST_USER_ID=
+ROOT_UID=0
+ROOT_GID=0
 printf '{"createdAt":%s,"taskId":"%s","trigger":"%s","moves":[' "$(date +%s)000" "$TASK_ID" "$(sanitize_env "$TRIGGER")" >"$UNDO_TMP"
 
 file_sha256() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
@@ -416,7 +491,7 @@ while IFS= read -r -d '' FILE_PATH; do
   [ -f "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   [ ! -L "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   skip_file "$FILE_PATH" && { SKIPPED=$((SKIPPED + 1)); continue; }
-  CATEGORY=$(category_for "$FILE_PATH")
+  category_for "$FILE_PATH"
   [ -n "$CATEGORY" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   allowed_source "$FILE_PATH" "$CATEGORY" || continue
   REQUESTED=$((REQUESTED + 1))
@@ -425,7 +500,21 @@ while IFS= read -r -d '' FILE_PATH; do
   RELATIVE=${FILE_PATH#"$MEDIA_ROOT"/}; USER_ID=${RELATIVE%%/*}
   case "$USER_ID" in ''|*[!0-9]*) SKIPPED=$((SKIPPED + 1)); continue ;; esac
   NAME=${FILE_PATH##*/}; DEST_DIR="$MEDIA_ROOT/$USER_ID/BaiZe归类/$CATEGORY"; PLANNED_DEST="$DEST_DIR/$NAME"
-  mkdir -p "$DEST_DIR" 2>/dev/null || { FAILED=$((FAILED + 1)); continue; }
+  # 目标目录连续多个文件通常相同，只在变化时建目录并设权限
+  if [ "$DEST_DIR" != "$LAST_DEST_DIR" ]; then
+    mkdir -p "$DEST_DIR" 2>/dev/null || { FAILED=$((FAILED + 1)); continue; }
+    if [ "$USER_ID" != "$LAST_USER_ID" ]; then
+      # 目标根的属主是循环不变量，此前每个文件都重新 stat 两次
+      ROOT_UID=$(stat -c %u "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
+      ROOT_GID=$(stat -c %g "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
+      case "$ROOT_UID" in ''|*[!0-9]*) ROOT_UID=0 ;; esac
+      case "$ROOT_GID" in ''|*[!0-9]*) ROOT_GID=0 ;; esac
+      LAST_USER_ID=$USER_ID
+    fi
+    chown "$ROOT_UID:$ROOT_GID" "$DEST_DIR" 2>/dev/null || true
+    chmod 0770 "$DEST_DIR" 2>/dev/null || true
+    LAST_DEST_DIR=$DEST_DIR
+  fi
   resolve_destination "$FILE_PATH" "$PLANNED_DEST"; rd_code=$?
   case "$rd_code" in
     1) SKIPPED=$((SKIPPED + 1)); continue ;;
@@ -434,31 +523,29 @@ while IFS= read -r -d '' FILE_PATH; do
   DEST=$RESOLVED_DEST
   [ "$COLLISION_ACTION" = renamed ] && RENAMED=$((RENAMED + 1))
 
-  SIZE=$(stat -c %s "$FILE_PATH" 2>/dev/null || echo 0)
-  SRC_UID=$(stat -c %u "$FILE_PATH" 2>/dev/null || echo 0)
-  SRC_GID=$(stat -c %g "$FILE_PATH" 2>/dev/null || echo 0)
-  SRC_MODE_OCT=$(stat -c %a "$FILE_PATH" 2>/dev/null || echo 644)
+  # 四个字段一次 stat 取回，取代此前四次独立调用（每次两个进程）。
+  SIZE=0; SRC_UID=0; SRC_GID=0; SRC_MODE_OCT=644
+  SRC_STAT=$(stat -c '%s %u %g %a' "$FILE_PATH" 2>/dev/null) || SRC_STAT=""
+  if [ -n "$SRC_STAT" ]; then
+    SIZE=${SRC_STAT%% *};              SRC_STAT=${SRC_STAT#* }
+    SRC_UID=${SRC_STAT%% *};           SRC_STAT=${SRC_STAT#* }
+    SRC_GID=${SRC_STAT%% *};           SRC_MODE_OCT=${SRC_STAT#* }
+  fi
   case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
   case "$SRC_UID" in ''|*[!0-9]*) SRC_UID=0 ;; esac
   case "$SRC_GID" in ''|*[!0-9]*) SRC_GID=0 ;; esac
   case "$SRC_MODE_OCT" in ''|*[!0-7]*) SRC_MODE_OCT=644 ;; esac
-  SRC_MODE=$(printf '%d' "0$SRC_MODE_OCT" 2>/dev/null || echo 420)
-  ROOT_UID=$(stat -c %u "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
-  ROOT_GID=$(stat -c %g "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
+  SRC_MODE=$((8#$SRC_MODE_OCT))
 
   if mv "$FILE_PATH" "$DEST" 2>>"$LOG_FILE"; then
-    chown "$ROOT_UID:$ROOT_GID" "$DEST_DIR" "$DEST" 2>/dev/null || true
-    chmod 0770 "$DEST_DIR" 2>/dev/null || true
+    chown "$ROOT_UID:$ROOT_GID" "$DEST" 2>/dev/null || true
     chmod 0660 "$DEST" 2>/dev/null || true
+    # 指纹必须在移动成功后立刻记录。若拖到全批次结束才 stat，期间文件被别的
+    # 应用修改会让撤销记录错误地把“修改后状态”当成归类时状态。路径 base64
+    # 仍然留到收尾批处理，因此不会恢复旧版每文件两次 base64|tr 的 fork。
     DEST_FP=$(stat -c '%d:%i:%s:%Y' "$DEST" 2>/dev/null || echo "")
-    SRC_B64=$(printf '%s' "$FILE_PATH" | b64 2>/dev/null || echo "")
-    DEST_B64=$(printf '%s' "$DEST" | b64 2>/dev/null || echo "")
-    if [ -n "$SRC_B64" ] && [ -n "$DEST_B64" ]; then
-      [ "$FIRST_MOVE" -eq 1 ] || printf ',' >>"$UNDO_TMP"
-      FIRST_MOVE=0
-      printf '{"sourceB64":"%s","destinationB64":"%s","destinationFingerprint":"%s","sourceUid":%s,"sourceGid":%s,"sourceMode":%s,"collisionAction":"%s"}' \
-        "$SRC_B64" "$DEST_B64" "$DEST_FP" "$SRC_UID" "$SRC_GID" "$SRC_MODE" "$COLLISION_ACTION" >>"$UNDO_TMP"
-    fi
+    printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0' \
+      "$FILE_PATH" "$DEST" "$DEST_FP" "$SRC_UID" "$SRC_GID" "$SRC_MODE" "$COLLISION_ACTION" >>"$UNDO_RAW"
     queue_media_scan "$FILE_PATH"; queue_media_scan "$DEST"
     MOVED=$((MOVED + 1)); BYTES=$((BYTES + SIZE))
   else
@@ -466,6 +553,24 @@ while IFS= read -r -d '' FILE_PATH; do
   fi
 done <"$INDEX_FILE"
 
+# 把 NUL 中间记录转成与旧版完全一致的 JSON。
+# 路径的 base64 在这里一次性完成，取代此前每个文件两次 base64|tr。
+if [ -s "$UNDO_RAW" ]; then
+  undo_first=1
+  while IFS= read -r -d '' u_src && IFS= read -r -d '' u_dst &&
+        IFS= read -r -d '' u_fp && IFS= read -r -d '' u_uid &&
+        IFS= read -r -d '' u_gid && IFS= read -r -d '' u_mode &&
+        IFS= read -r -d '' u_action; do
+    u_src_b64=$(printf '%s' "$u_src" | b64 2>/dev/null || echo "")
+    u_dst_b64=$(printf '%s' "$u_dst" | b64 2>/dev/null || echo "")
+    [ -n "$u_src_b64" ] && [ -n "$u_dst_b64" ] || continue
+    [ "$undo_first" -eq 1 ] || printf ',' >>"$UNDO_TMP"
+    undo_first=0
+    printf '{"sourceB64":"%s","destinationB64":"%s","destinationFingerprint":"%s","sourceUid":%s,"sourceGid":%s,"sourceMode":%s,"collisionAction":"%s"}' \
+      "$u_src_b64" "$u_dst_b64" "$u_fp" "$u_uid" "$u_gid" "$u_mode" "$u_action" >>"$UNDO_TMP"
+  done <"$UNDO_RAW"
+fi
+rm -f "$UNDO_RAW"
 printf ']}' >>"$UNDO_TMP"
 if [ "$MOVED" -gt 0 ]; then
   UNDO_RECORD="$UNDO_DIR/$(date +%s)000-${TASK_ID}.json"

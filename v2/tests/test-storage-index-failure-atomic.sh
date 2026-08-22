@@ -44,6 +44,7 @@ set +e
     BAIZE_MEDIA_ROOT="$T/media" \
     BAIZE_EXTRA_STORAGE_ROOTS="$T/media/0" \
     BAIZE_NATIVE_ENGINE="$T/fake/engine" \
+    BAIZE_ORGANIZER_CATEGORIES="$ROOT/config/organizer-categories.conf" \
     bash ./storage-index.sh refresh test >/dev/null 2>&1 )
 rc=$?
 set -e
