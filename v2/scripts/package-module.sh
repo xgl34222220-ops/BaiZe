@@ -24,13 +24,12 @@ cp -a "$MODULE/." "$STAGE/"
 rm -rf "$STAGE/webroot" "$STAGE/webui" "$STAGE/www" "$STAGE/ksu-webui"
 cp -a "$REPO/config" "$STAGE/config"
 
-cp -f "$STAGE/cleaner42_6.sh" "$STAGE/cleaner.sh"
 cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
 cp -f "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/profile-cleaner.sh"
 cp -f "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-scanner.sh"
 cp -f "$STAGE/apk-snapshot-clean.sh" "$STAGE/apk-cleaner.sh"
 cp -f "$STAGE/scheduler-v2.5.sh" "$STAGE/scheduler.sh"
-rm -f "$STAGE/cleaner42_6.sh" "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean.sh" "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
+rm -f "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
 
 # 兼容清理引擎直接拷贝，不再做构建期 sed 改写。
 # STATE_DIR 与 MODULE_TAG 已改为环境变量注入且默认值即 v2 的取值，
