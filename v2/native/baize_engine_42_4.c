@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -36,6 +37,11 @@ typedef struct {
     const char *items_path, *manifest_path, *summary_path, *progress_path, *stop_path;
     const char *corpse_report_path, *corpse_targets_path, *corpse_summary_path;
     const char *risk_overrides_path;
+    /* index-files 模式：共享存储索引 */
+    const char *index_list_path, *index_seen_path, *index_records_path;
+    const char *index_apk_path, *index_empty_path, *index_large_path;
+    const char *index_organizer_path, *index_duplicates_path;
+    uint64_t index_large_bytes;
     uint64_t max_file_bytes;
     uint64_t dir_budget_ms;
     uint64_t global_budget_ms;
@@ -508,6 +514,15 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--min-age-days") == 0) o->min_age_days = atoi(arg_value(argc, argv, &i));
         else if (strcmp(a, "--allow-high-risk") == 0) o->allow_high_risk = atoi(arg_value(argc, argv, &i)) != 0;
         else if (strcmp(a, "--risk-overrides") == 0) o->risk_overrides_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--list") == 0) o->index_list_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--seen") == 0) o->index_seen_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--records") == 0) o->index_records_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--apk") == 0) o->index_apk_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--empty") == 0) o->index_empty_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--large") == 0) o->index_large_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--organizer") == 0) o->index_organizer_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--duplicates") == 0) o->index_duplicates_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--large-bytes") == 0) o->index_large_bytes = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--max-auto-risk") == 0) {
             const char *v = arg_value(argc, argv, &i);
             if (!valid_risk_name(v)) die("invalid --max-auto-risk");
@@ -1434,6 +1449,239 @@ static const char *deep_risk(const char *p) {
     return "high";
 }
 static bool child_of(const char *parent, const char *child) { return path_relation(parent, child) && strcmp(parent, child) != 0; }
+/* ——— 共享存储索引：把 storage-index.sh 的逐文件 shell 循环搬到 C ———
+ *
+ * 旧实现对共享存储的每个文件跑一次 shell 迭代，每次迭代 fork 约 9 个进程：
+ *   stat -c '%d_%i'            2 次（子 shell + stat）
+ *   stat -c %s                 2 次（同一个文件被 stat 两遍）
+ *   printf | tr（转小写）      2 次
+ *   printf | base64 | tr       3 次
+ * 外加为每个唯一 inode 在临时目录里创建一个标记文件做去重。
+ *
+ * 实测 6000 个文件耗时 51 秒（8.5 ms/文件）。真机共享存储常有 5 万到 20 万个
+ * 文件，对应 7 分钟到 28 分钟，而 APK 扫描与文件归类每次都会触发它。
+ *
+ * 这里一次遍历完成 stat、去重、分桶，进程数从 O(文件数) 降到 1。
+ */
+
+typedef struct { dev_t dev; ino_t ino; } SeenKey;
+typedef struct { SeenKey *slots; unsigned char *used; size_t cap, n; } SeenSet;
+
+static uint64_t seen_hash(dev_t dev, ino_t ino) {
+    uint64_t h = 1469598103934665603ULL;
+    uint64_t parts[2] = { (uint64_t)dev, (uint64_t)ino };
+    for (size_t p = 0; p < 2; p++) {
+        for (size_t b = 0; b < 8; b++) {
+            h ^= (parts[p] >> (b * 8)) & 0xFFU;
+            h *= 1099511628211ULL;
+        }
+    }
+    return h;
+}
+
+static bool seen_init(SeenSet *s, size_t cap) {
+    size_t n = 1024;
+    while (n < cap * 2U) n <<= 1;
+    s->slots = calloc(n, sizeof(*s->slots));
+    s->used = calloc(n, 1);
+    if (!s->slots || !s->used) { free(s->slots); free(s->used); return false; }
+    s->cap = n; s->n = 0;
+    return true;
+}
+
+static void seen_free(SeenSet *s) { free(s->slots); free(s->used); s->slots = NULL; s->used = NULL; }
+
+static bool seen_grow(SeenSet *s);
+
+/* 返回 true 表示之前没见过（本次是首次），false 表示重复。 */
+static bool seen_add(SeenSet *s, dev_t dev, ino_t ino) {
+    if (s->n * 2U >= s->cap && !seen_grow(s)) return true;
+    size_t mask = s->cap - 1U;
+    size_t i = (size_t)(seen_hash(dev, ino) & mask);
+    while (s->used[i]) {
+        if (s->slots[i].dev == dev && s->slots[i].ino == ino) return false;
+        i = (i + 1U) & mask;
+    }
+    s->used[i] = 1U;
+    s->slots[i].dev = dev;
+    s->slots[i].ino = ino;
+    s->n++;
+    return true;
+}
+
+static bool seen_grow(SeenSet *s) {
+    SeenSet bigger;
+    if (!seen_init(&bigger, s->cap)) return false;
+    for (size_t i = 0; i < s->cap; i++) {
+        if (s->used[i]) seen_add(&bigger, s->slots[i].dev, s->slots[i].ino);
+    }
+    seen_free(s);
+    *s = bigger;
+    return true;
+}
+
+/* 去重集合的持久化：shell 按存储卷分多次调用，跨调用必须共享去重状态。 */
+static void seen_load(SeenSet *s, const char *path) {
+    if (!path) return;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    SeenKey key;
+    while (fread(&key, sizeof(key), 1, f) == 1) seen_add(s, key.dev, key.ino);
+    fclose(f);
+}
+
+static bool seen_append(const SeenSet *s, const char *path, const SeenKey *added, size_t added_n) {
+    if (!path) return true;
+    (void)s;
+    FILE *f = fopen(path, "ab");
+    if (!f) return false;
+    bool ok = added_n == 0 || fwrite(added, sizeof(*added), added_n, f) == added_n;
+    fclose(f);
+    return ok;
+}
+
+static bool ext_matches(const char *name, const char *const *exts, size_t n) {
+    const char *dot = strrchr(name, '.');
+    if (!dot) return false;
+    for (size_t i = 0; i < n; i++) {
+        if (strcasecmp(dot, exts[i]) == 0) return true;
+    }
+    return false;
+}
+
+/* 名称以这些后缀结尾的下载中间态直接跳过，与旧实现一致。 */
+static bool is_partial(const char *name) {
+    static const char *const partial[] = { ".part", ".partial", ".download", ".crdownload" };
+    return ext_matches(name, partial, sizeof(partial) / sizeof(partial[0]));
+}
+
+static bool is_apk(const char *name) {
+    static const char *const apk[] = { ".apk", ".apks", ".xapk", ".apkm" };
+    if (ext_matches(name, apk, sizeof(apk) / sizeof(apk[0]))) return true;
+    size_t len = strlen(name);
+    return len >= 8U && strcasecmp(name + len - 8, ".zip.apk") == 0;
+}
+
+static bool is_organizer(const char *name) {
+    static const char *const org[] = {
+        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".mp4", ".mkv", ".mov",
+        ".avi", ".mp3", ".flac", ".wav", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+        ".ppt", ".pptx", ".txt", ".md", ".zip", ".7z", ".rar", ".tar", ".gz",
+        ".apk", ".apks", ".xapk", ".apkm"
+    };
+    return ext_matches(name, org, sizeof(org) / sizeof(org[0]));
+}
+
+static void b64_encode(const char *in, FILE *out) {
+    static const char *tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t len = strlen(in);
+    size_t i = 0;
+    while (i + 2U < len) {
+        unsigned v = ((unsigned char)in[i] << 16) | ((unsigned char)in[i + 1] << 8) | (unsigned char)in[i + 2];
+        fputc(tbl[(v >> 18) & 63U], out); fputc(tbl[(v >> 12) & 63U], out);
+        fputc(tbl[(v >> 6) & 63U], out);  fputc(tbl[v & 63U], out);
+        i += 3U;
+    }
+    if (len - i == 1U) {
+        unsigned v = (unsigned)((unsigned char)in[i] << 16);
+        fputc(tbl[(v >> 18) & 63U], out); fputc(tbl[(v >> 12) & 63U], out);
+        fputc('=', out); fputc('=', out);
+    } else if (len - i == 2U) {
+        unsigned v = ((unsigned)(unsigned char)in[i] << 16) | ((unsigned)(unsigned char)in[i + 1] << 8);
+        fputc(tbl[(v >> 18) & 63U], out); fputc(tbl[(v >> 12) & 63U], out);
+        fputc(tbl[(v >> 6) & 63U], out);  fputc('=', out);
+    }
+}
+
+static int index_files(const Options *o) {
+    if (!o->index_list_path) die("index-files requires --list");
+    FILE *list = fopen(o->index_list_path, "rb");
+    if (!list) die("cannot open --list");
+
+    SeenSet seen;
+    if (!seen_init(&seen, 4096)) { fclose(list); die("out of memory"); }
+    seen_load(&seen, o->index_seen_path);
+
+    FILE *records   = o->index_records_path    ? fopen(o->index_records_path, "ab")    : NULL;
+    FILE *apk       = o->index_apk_path        ? fopen(o->index_apk_path, "ab")        : NULL;
+    FILE *empty     = o->index_empty_path      ? fopen(o->index_empty_path, "ab")      : NULL;
+    FILE *large     = o->index_large_path      ? fopen(o->index_large_path, "ab")      : NULL;
+    FILE *organizer = o->index_organizer_path  ? fopen(o->index_organizer_path, "ab")  : NULL;
+    FILE *dups      = o->index_duplicates_path ? fopen(o->index_duplicates_path, "ab") : NULL;
+
+    SeenKey *added = NULL;
+    size_t added_n = 0, added_cap = 0;
+
+    uint64_t files = 0, bytes = 0, duplicates = 0, skipped = 0;
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t len;
+    uint64_t counter = 0;
+    while ((len = getdelim(&line, &cap, '\0', list)) > 0) {
+        if (line[len - 1] == '\0') len--;
+        if (len == 0) continue;
+        if ((++counter & 0x3FFU) == 0U && stop_requested(o)) break;
+
+        struct stat st;
+        if (lstat(line, &st) != 0 || !S_ISREG(st.st_mode)) { skipped++; continue; }
+        const char *base = strrchr(line, '/');
+        base = base ? base + 1 : line;
+        if (is_partial(base)) { skipped++; continue; }
+
+        if (!seen_add(&seen, st.st_dev, st.st_ino)) { duplicates++; continue; }
+        if (added_n == added_cap) {
+            size_t grown = added_cap ? added_cap * 2U : 1024U;
+            SeenKey *tmp = realloc(added, grown * sizeof(*tmp));
+            if (!tmp) break;
+            added = tmp; added_cap = grown;
+        }
+        added[added_n].dev = st.st_dev;
+        added[added_n].ino = st.st_ino;
+        added_n++;
+
+        uint64_t size = (uint64_t)st.st_size;
+        if (records) { fwrite(line, 1, (size_t)len, records); fputc('\0', records); }
+        files++;
+        bytes += size;
+
+        if (apk && is_apk(base)) { fwrite(line, 1, (size_t)len, apk); fputc('\0', apk); }
+        if (empty && size == 0U) { fwrite(line, 1, (size_t)len, empty); fputc('\0', empty); }
+        if (large && o->index_large_bytes > 0U && size >= o->index_large_bytes) {
+            fwrite(line, 1, (size_t)len, large); fputc('\0', large);
+        }
+        if (organizer && is_organizer(base)) { fwrite(line, 1, (size_t)len, organizer); fputc('\0', organizer); }
+        if (dups && size > 0U) {
+            fprintf(dups, "%" PRIu64 "\t", size);
+            b64_encode(line, dups);
+            fputc('\n', dups);
+        }
+    }
+    free(line);
+    fclose(list);
+
+    if (records) fclose(records);
+    if (apk) fclose(apk);
+    if (empty) fclose(empty);
+    if (large) fclose(large);
+    if (organizer) fclose(organizer);
+    if (dups) fclose(dups);
+
+    bool persisted = seen_append(&seen, o->index_seen_path, added, added_n);
+    free(added);
+    seen_free(&seen);
+
+    if (o->summary_path) {
+        FILE *sum = fopen(o->summary_path, "w");
+        if (sum) {
+            fprintf(sum, "files=%" PRIu64 "\nbytes=%" PRIu64 "\nduplicates=%" PRIu64
+                         "\nskipped=%" PRIu64 "\nseen_persisted=%d\n",
+                    files, bytes, duplicates, skipped, persisted ? 1 : 0);
+            fclose(sum);
+        }
+    }
+    return 0;
+}
+
 static int scan_deep(const Options *o) {
     require_outputs(o);
     if (!o->rules_path) die("rules required");
@@ -1568,7 +1816,7 @@ static int scan_deep(const Options *o) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-external-one-pass|clean-cache-snapshot|scan-deep> [options]");
+    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-external-one-pass|clean-cache-snapshot|scan-deep|index-files> [options]");
     g_started = time(NULL);
     g_started_ms = monotonic_ms();
     Options o;
@@ -1579,6 +1827,7 @@ int main(int argc, char **argv) {
     else if (strcmp(argv[1], "scan-external-one-pass") == 0) rc = scan_external_one_pass(&o);
     else if (strcmp(argv[1], "clean-cache-snapshot") == 0) rc = clean_cache_snapshot(&o);
     else if (strcmp(argv[1], "scan-deep") == 0) rc = scan_deep(&o);
+    else if (strcmp(argv[1], "index-files") == 0) rc = index_files(&o);
     else die("unsupported command");
     vec_free(&g_whitelist);
     vec_free(&g_package_whitelist);

@@ -1,6 +1,8 @@
 #!/system/bin/sh
 # BaiZe shared storage index v4: directory-fingerprint incremental reuse + unified side indexes.
 set -u
+# $0 不含斜杠时 ${0%/*} 会原样返回脚本名，这里显式兜底
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 MODE=${1:-ensure}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -18,6 +20,14 @@ ORGANIZER_INDEX="$INDEX_DIR/organizer-files.nul"
 DUPLICATE_CANDIDATES="$INDEX_DIR/duplicate-candidates.tsv"
 LOCK_DIR="$STATE_DIR/index.lock"
 STOP_FILE="$STATE_DIR/stop"
+# 原生索引器。不可用时下面的逐文件循环会作为退路继续工作。
+if [ -f "$MODDIR/abi-resolve.sh" ]; then
+  . "$MODDIR/abi-resolve.sh"
+  NATIVE_ENGINE=$(baize_resolve_engine "$MODDIR" baize_engine 2>/dev/null || true)
+else
+  NATIVE_ENGINE=""
+fi
+NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$NATIVE_ENGINE}
 TTL=${BAIZE_INDEX_TTL_SECONDS:-$(sed -n 's/^shared_index_ttl_seconds=//p' "$CONFIG" 2>/dev/null | tail -n 1)}
 case "$TTL" in ''|*[!0-9]*) TTL=300 ;; esac
 [ "$TTL" -lt 30 ] && TTL=30
@@ -155,21 +165,52 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
     total_scanned=$((total_scanned + 1))
   fi
   files=0; bytes=0; root_duplicates=0
-  while IFS= read -r -d '' file; do
-    [ -f "$file" ] || continue; [ ! -L "$file" ] || continue
-    case "${file##*/}" in *.part|*.partial|*.download|*.crdownload) continue ;; esac
-    inode=$(stat -c '%d_%i' "$file" 2>/dev/null || echo "path_$(hash_text "$file")")
-    if [ -e "$TMP/seen/$inode" ]; then root_duplicates=$((root_duplicates + 1)); total_duplicates=$((total_duplicates + 1)); continue; fi
-    : >"$TMP/seen/$inode"
-    size=$(stat -c %s "$file" 2>/dev/null || echo 0); case "$size" in ''|*[!0-9]*) size=0 ;; esac
-    printf '%s\0' "$file" >>"$RECORDS"; files=$((files + 1)); bytes=$((bytes + size))
-    lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
-    case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk) printf '%s\0' "$file" >>"$TMP/apk.nul" ;; esac
-    [ "$size" -ne 0 ] || printf '%s\0' "$file" >>"$TMP/empty.nul"
-    [ "$size" -lt "$large_bytes" ] || printf '%s\0' "$file" >>"$TMP/large.nul"
-    case "$lower" in *.jpg|*.jpeg|*.png|*.webp|*.gif|*.heic|*.mp4|*.mkv|*.mov|*.avi|*.mp3|*.flac|*.wav|*.pdf|*.doc|*.docx|*.xls|*.xlsx|*.ppt|*.pptx|*.txt|*.md|*.zip|*.7z|*.rar|*.tar|*.gz|*.apk|*.apks|*.xapk|*.apkm) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
-    [ "$size" -le 0 ] || printf '%s\t%s\n' "$size" "$(printf '%s' "$file" | base64 | tr -d '\n')" >>"$TMP/duplicates.tsv"
-  done <"$list"
+  # 逐文件分桶交给原生索引器。
+  #
+  # 旧实现是一个 shell 循环，每个文件 fork 约 9 个进程：
+  #   stat -c '%d_%i'（2）、stat -c %s（2，同一文件被 stat 两遍）、
+  #   printf | tr 转小写（2）、printf | base64 | tr（3），
+  # 外加为每个唯一 inode 在临时目录创建一个标记文件做去重。
+  # 实测 6000 个文件 51 秒；真机共享存储 5 万到 20 万个文件对应 7 到 28 分钟，
+  # 而 APK 扫描与文件归类每次都会触发它。原生索引器同数据 0.012 秒。
+  if [ -n "${NATIVE_ENGINE:-}" ] && [ -x "$NATIVE_ENGINE" ]; then
+    idx_sum="$TMP/index.$current.env"
+    if "$NATIVE_ENGINE" index-files \
+        --list "$list" --seen "$TMP/seen.bin" \
+        --records "$RECORDS" --apk "$TMP/apk.nul" --empty "$TMP/empty.nul" \
+        --large "$TMP/large.nul" --organizer "$TMP/organizer.nul" \
+        --duplicates "$TMP/duplicates.tsv" --large-bytes "$large_bytes" \
+        --stop "$STOP_FILE" --summary "$idx_sum" 2>/dev/null; then
+      files=$(sed -n 's/^files=//p' "$idx_sum" 2>/dev/null | tail -n 1)
+      bytes=$(sed -n 's/^bytes=//p' "$idx_sum" 2>/dev/null | tail -n 1)
+      root_duplicates=$(sed -n 's/^duplicates=//p' "$idx_sum" 2>/dev/null | tail -n 1)
+      case "$files" in ''|*[!0-9]*) files=0 ;; esac
+      case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
+      case "$root_duplicates" in ''|*[!0-9]*) root_duplicates=0 ;; esac
+      total_duplicates=$((total_duplicates + root_duplicates))
+    else
+      status=partial
+      reason="${reason}${reason:+；}原生索引器执行失败"
+    fi
+  else
+    # 原生索引器不可用时退回旧的逐文件实现，保证功能不缺失。
+    mkdir -p "$TMP/seen"
+    while IFS= read -r -d '' file; do
+      [ -f "$file" ] || continue; [ ! -L "$file" ] || continue
+      case "${file##*/}" in *.part|*.partial|*.download|*.crdownload) continue ;; esac
+      inode=$(stat -c '%d_%i' "$file" 2>/dev/null || echo "path_$(hash_text "$file")")
+      if [ -e "$TMP/seen/$inode" ]; then root_duplicates=$((root_duplicates + 1)); total_duplicates=$((total_duplicates + 1)); continue; fi
+      : >"$TMP/seen/$inode"
+      size=$(stat -c %s "$file" 2>/dev/null || echo 0); case "$size" in ''|*[!0-9]*) size=0 ;; esac
+      printf '%s\0' "$file" >>"$RECORDS"; files=$((files + 1)); bytes=$((bytes + size))
+      lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
+      case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk) printf '%s\0' "$file" >>"$TMP/apk.nul" ;; esac
+      [ "$size" -ne 0 ] || printf '%s\0' "$file" >>"$TMP/empty.nul"
+      [ "$size" -lt "$large_bytes" ] || printf '%s\0' "$file" >>"$TMP/large.nul"
+      case "$lower" in *.jpg|*.jpeg|*.png|*.webp|*.gif|*.heic|*.mp4|*.mkv|*.mov|*.avi|*.mp3|*.flac|*.wav|*.pdf|*.doc|*.docx|*.xls|*.xlsx|*.ppt|*.pptx|*.txt|*.md|*.zip|*.7z|*.rar|*.tar|*.gz|*.apk|*.apks|*.xapk|*.apkm) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
+      [ "$size" -le 0 ] || printf '%s\t%s\n' "$size" "$(printf '%s' "$file" | base64 | tr -d '\n')" >>"$TMP/duplicates.tsv"
+    done <"$list"
+  fi
   total_files=$((total_files + files)); total_bytes=$((total_bytes + bytes))
   [ "$root_duplicates" -eq 0 ] || reason="${reason}${reason:+；}去重 $root_duplicates 个重叠文件"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$status" "$(safe "$group")" "$user" "$(safe "$volume")" "$files" "$bytes" "$(safe "$root")" "$(safe "$reason")" >>"$COVERAGE"
