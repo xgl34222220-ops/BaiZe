@@ -46,7 +46,7 @@ jobs:
           git config user.email 'xgl34222220@gmail.com'
           git fetch origin main
           git reset --hard origin/main
-          git am --3way /tmp/baize-safe.patch
+          git am /tmp/baize-safe.patch
           echo 'Applied commits:'
           git --no-pager log --oneline --decorate -8
 
