@@ -3,7 +3,7 @@
 # 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
 set -u
 
-MODDIR=${0%/*}
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 MODE=${1:-apk-clean}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -21,9 +21,6 @@ HISTORY_FILE="$STATE_DIR/history.tsv"
 [ "$MODE" = "apk-clean" ] || { echo "不支持的安装包快照模式：$MODE" >&2; exit 2; }
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$WHITELIST" ] || : >"$WHITELIST"
-# 白名单只在启动时载入一次；匹配时零子进程。
-baize_whitelist_load "$WHITELIST"
-
 
 file_sha() {
   file=$1
@@ -161,6 +158,9 @@ else
     return 1
   }
 fi
+# matcher 已可用后再加载；禁止在函数定义前调用导致白名单静默失效。
+baize_whitelist_load "$WHITELIST"
+
 
 apk_path_allowed() {
   path=$1

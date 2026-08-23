@@ -3,7 +3,7 @@
 # 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
 set -u
 
-MODDIR=${0%/*}
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 MODE=${1:-scan}
 TRIGGER=${2:-manual}
 SHELL_BIN=${BAIZE_SHELL:-/system/bin/sh}

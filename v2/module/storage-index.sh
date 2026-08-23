@@ -189,8 +189,10 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
       case "$root_duplicates" in ''|*[!0-9]*) root_duplicates=0 ;; esac
       total_duplicates=$((total_duplicates + root_duplicates))
     else
-      status=partial
-      reason="${reason}${reason:+；}原生索引器执行失败"
+      idx_rc=$?
+      echo "原生索引器执行失败（代码 $idx_rc），保留上一份完整共享索引" >&2
+      # 当前 refresh 的全部产物仍在 index.lock/tmp；直接退出即可事务回滚。
+      exit "$idx_rc"
     fi
   else
     # 原生索引器不可用时退回旧的逐文件实现，保证功能不缺失。

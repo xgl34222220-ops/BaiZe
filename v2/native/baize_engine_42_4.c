@@ -331,15 +331,19 @@ static bool eligible_mtime(const struct stat *st, int days) {
  * 改为按条目计数节流：每 WALK_CHECK_INTERVAL 个条目才真正检查一次。
  * 用户点停止到实际停下最多晚几毫秒，完全无感。
  */
-#define WALK_CHECK_MASK 0xFFFU   /* 每 4096 个条目检查一次 */
+#define WALK_CHECK_MASK 0x1FFU   /* 每 512 个条目检查一次 */
 static uint64_t g_walk_counter;
+
+static int walk_abort_now(const Options *o, uint64_t deadline_ms) {
+    if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) return 124;
+    if (stop_requested(o)) return 9;
+    return 0;
+}
 
 /* 返回 0 继续，9 用户中止，124 超时。 */
 static int walk_should_abort(const Options *o, uint64_t deadline_ms) {
     if ((++g_walk_counter & WALK_CHECK_MASK) != 0U) return 0;
-    if (deadline_ms > 0U && monotonic_ms() >= deadline_ms) return 124;
-    if (stop_requested(o)) return 9;
-    return 0;
+    return walk_abort_now(o, deadline_ms);
 }
 
 static void walk_count_file(const struct stat *st, uint64_t max_bytes, int days, Stats *s) {
@@ -363,6 +367,11 @@ static void walk_count_file(const struct stat *st, uint64_t max_bytes, int days,
 static int walk_dir(int parent_fd, const char *name, dev_t root_dev, uint64_t max_bytes,
                     int days, const Options *o, Stats *s, unsigned depth, uint64_t deadline_ms) {
     if (depth > 512) { s->incomplete = true; return -1; }
+    int entry_abort = walk_abort_now(o, deadline_ms);
+    if (entry_abort != 0) {
+        if (entry_abort == 124) { s->timed_out = true; s->incomplete = true; }
+        return entry_abort;
+    }
     int fd = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) { s->incomplete = true; return -1; }
     struct stat dst;
@@ -1357,7 +1366,7 @@ static void risk_rules_add(const char *path, const char *risk, bool user) {
     if (g_risk_rules.n == g_risk_rules.cap) {
         size_t cap = g_risk_rules.cap ? g_risk_rules.cap * 2 : 64;
         RiskRule *grown = realloc(g_risk_rules.v, cap * sizeof(*grown));
-        if (!grown) return;
+        if (!grown) die("out of memory loading risk rules");
         g_risk_rules.v = grown;
         g_risk_rules.cap = cap;
     }
@@ -1466,6 +1475,7 @@ static bool child_of(const char *parent, const char *child) { return path_relati
 
 typedef struct { dev_t dev; ino_t ino; } SeenKey;
 typedef struct { SeenKey *slots; unsigned char *used; size_t cap, n; } SeenSet;
+typedef enum { SEEN_ERROR = -1, SEEN_DUP = 0, SEEN_NEW = 1 } SeenResult;
 
 static uint64_t seen_hash(dev_t dev, ino_t ino) {
     uint64_t h = 1469598103934665603ULL;
@@ -1493,27 +1503,30 @@ static void seen_free(SeenSet *s) { free(s->slots); free(s->used); s->slots = NU
 
 static bool seen_grow(SeenSet *s);
 
-/* 返回 true 表示之前没见过（本次是首次），false 表示重复。 */
-static bool seen_add(SeenSet *s, dev_t dev, ino_t ino) {
-    if (s->n * 2U >= s->cap && !seen_grow(s)) return true;
+/* 三态：新 inode、重复 inode、内存错误。错误绝不能伪装成“新 inode”。 */
+static SeenResult seen_add(SeenSet *s, dev_t dev, ino_t ino) {
+    if (s->n * 2U >= s->cap && !seen_grow(s)) return SEEN_ERROR;
     size_t mask = s->cap - 1U;
     size_t i = (size_t)(seen_hash(dev, ino) & mask);
     while (s->used[i]) {
-        if (s->slots[i].dev == dev && s->slots[i].ino == ino) return false;
+        if (s->slots[i].dev == dev && s->slots[i].ino == ino) return SEEN_DUP;
         i = (i + 1U) & mask;
     }
     s->used[i] = 1U;
     s->slots[i].dev = dev;
     s->slots[i].ino = ino;
     s->n++;
-    return true;
+    return SEEN_NEW;
 }
 
 static bool seen_grow(SeenSet *s) {
     SeenSet bigger;
     if (!seen_init(&bigger, s->cap)) return false;
     for (size_t i = 0; i < s->cap; i++) {
-        if (s->used[i]) seen_add(&bigger, s->slots[i].dev, s->slots[i].ino);
+        if (s->used[i] && seen_add(&bigger, s->slots[i].dev, s->slots[i].ino) == SEEN_ERROR) {
+            seen_free(&bigger);
+            return false;
+        }
     }
     seen_free(s);
     *s = bigger;
@@ -1521,22 +1534,35 @@ static bool seen_grow(SeenSet *s) {
 }
 
 /* 去重集合的持久化：shell 按存储卷分多次调用，跨调用必须共享去重状态。 */
-static void seen_load(SeenSet *s, const char *path) {
-    if (!path) return;
+static bool seen_load(SeenSet *s, const char *path) {
+    if (!path) return true;
     FILE *f = fopen(path, "rb");
-    if (!f) return;
+    if (!f) return errno == ENOENT;
     SeenKey key;
-    while (fread(&key, sizeof(key), 1, f) == 1) seen_add(s, key.dev, key.ino);
+    bool ok = true;
+    while (fread(&key, sizeof(key), 1, f) == 1) {
+        if (seen_add(s, key.dev, key.ino) == SEEN_ERROR) { ok = false; break; }
+    }
+    if (ferror(f)) ok = false;
     fclose(f);
+    return ok;
 }
 
 static bool seen_append(const SeenSet *s, const char *path, const SeenKey *added, size_t added_n) {
     if (!path) return true;
     (void)s;
-    FILE *f = fopen(path, "ab");
+    FILE *f = fopen(path, "ab+");
     if (!f) return false;
+    if (fseeko(f, 0, SEEK_END) != 0) { fclose(f); return false; }
+    off_t start = ftello(f);
+    if (start < 0) { fclose(f); return false; }
     bool ok = added_n == 0 || fwrite(added, sizeof(*added), added_n, f) == added_n;
-    fclose(f);
+    if (ok && fflush(f) != 0) ok = false;
+    if (!ok) {
+        clearerr(f);
+        (void)ftruncate(fileno(f), start);
+    }
+    if (fclose(f) != 0) ok = false;
     return ok;
 }
 
@@ -1572,7 +1598,7 @@ static bool is_organizer(const char *name) {
     return ext_matches(name, org, sizeof(org) / sizeof(org[0]));
 }
 
-static void b64_encode(const char *in, FILE *out) {
+static bool b64_encode(const char *in, FILE *out) {
     static const char *tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     size_t len = strlen(in);
     size_t i = 0;
@@ -1591,6 +1617,7 @@ static void b64_encode(const char *in, FILE *out) {
         fputc(tbl[(v >> 18) & 63U], out); fputc(tbl[(v >> 12) & 63U], out);
         fputc(tbl[(v >> 6) & 63U], out);  fputc('=', out);
     }
+    return !ferror(out);
 }
 
 static int index_files(const Options *o) {
@@ -1600,7 +1627,11 @@ static int index_files(const Options *o) {
 
     SeenSet seen;
     if (!seen_init(&seen, 4096)) { fclose(list); die("out of memory"); }
-    seen_load(&seen, o->index_seen_path);
+    if (!seen_load(&seen, o->index_seen_path)) {
+        fclose(list);
+        seen_free(&seen);
+        return 5;
+    }
 
     FILE *records   = o->index_records_path    ? fopen(o->index_records_path, "ab")    : NULL;
     FILE *apk       = o->index_apk_path        ? fopen(o->index_apk_path, "ab")        : NULL;
@@ -1608,6 +1639,16 @@ static int index_files(const Options *o) {
     FILE *large     = o->index_large_path      ? fopen(o->index_large_path, "ab")      : NULL;
     FILE *organizer = o->index_organizer_path  ? fopen(o->index_organizer_path, "ab")  : NULL;
     FILE *dups      = o->index_duplicates_path ? fopen(o->index_duplicates_path, "ab") : NULL;
+
+    if ((o->index_records_path && !records) || (o->index_apk_path && !apk) ||
+        (o->index_empty_path && !empty) || (o->index_large_path && !large) ||
+        (o->index_organizer_path && !organizer) || (o->index_duplicates_path && !dups)) {
+        if (records) fclose(records); if (apk) fclose(apk); if (empty) fclose(empty);
+        if (large) fclose(large); if (organizer) fclose(organizer); if (dups) fclose(dups);
+        fclose(list);
+        seen_free(&seen);
+        return 5;
+    }
 
     SeenKey *added = NULL;
     size_t added_n = 0, added_cap = 0;
@@ -1617,10 +1658,11 @@ static int index_files(const Options *o) {
     size_t cap = 0;
     ssize_t len;
     uint64_t counter = 0;
-    while ((len = getdelim(&line, &cap, '\0', list)) > 0) {
+    int rc = stop_requested(o) ? 9 : 0;
+    while (rc == 0 && (len = getdelim(&line, &cap, '\0', list)) > 0) {
         if (line[len - 1] == '\0') len--;
         if (len == 0) continue;
-        if ((++counter & 0x3FFU) == 0U && stop_requested(o)) break;
+        if ((++counter & 0xFFU) == 0U && stop_requested(o)) { rc = 9; break; }
 
         struct stat st;
         if (lstat(line, &st) != 0 || !S_ISREG(st.st_mode)) { skipped++; continue; }
@@ -1628,11 +1670,13 @@ static int index_files(const Options *o) {
         base = base ? base + 1 : line;
         if (is_partial(base)) { skipped++; continue; }
 
-        if (!seen_add(&seen, st.st_dev, st.st_ino)) { duplicates++; continue; }
+        SeenResult seen_result = seen_add(&seen, st.st_dev, st.st_ino);
+        if (seen_result == SEEN_ERROR) { rc = 12; break; }
+        if (seen_result == SEEN_DUP) { duplicates++; continue; }
         if (added_n == added_cap) {
             size_t grown = added_cap ? added_cap * 2U : 1024U;
             SeenKey *tmp = realloc(added, grown * sizeof(*tmp));
-            if (!tmp) break;
+            if (!tmp) { rc = 12; break; }
             added = tmp; added_cap = grown;
         }
         added[added_n].dev = st.st_dev;
@@ -1652,34 +1696,45 @@ static int index_files(const Options *o) {
         if (organizer && is_organizer(base)) { fwrite(line, 1, (size_t)len, organizer); fputc('\0', organizer); }
         if (dups && size > 0U) {
             fprintf(dups, "%" PRIu64 "\t", size);
-            b64_encode(line, dups);
+            if (!b64_encode(line, dups)) { rc = 5; break; }
             fputc('\n', dups);
         }
+        if ((records && ferror(records)) || (apk && ferror(apk)) || (empty && ferror(empty)) ||
+            (large && ferror(large)) || (organizer && ferror(organizer)) || (dups && ferror(dups))) {
+            rc = 5;
+            break;
+        }
     }
+    if (rc == 0 && ferror(list)) rc = 5;
     free(line);
     fclose(list);
 
-    if (records) fclose(records);
-    if (apk) fclose(apk);
-    if (empty) fclose(empty);
-    if (large) fclose(large);
-    if (organizer) fclose(organizer);
-    if (dups) fclose(dups);
+    if (records && fclose(records) != 0 && rc == 0) rc = 5;
+    if (apk && fclose(apk) != 0 && rc == 0) rc = 5;
+    if (empty && fclose(empty) != 0 && rc == 0) rc = 5;
+    if (large && fclose(large) != 0 && rc == 0) rc = 5;
+    if (organizer && fclose(organizer) != 0 && rc == 0) rc = 5;
+    if (dups && fclose(dups) != 0 && rc == 0) rc = 5;
 
-    bool persisted = seen_append(&seen, o->index_seen_path, added, added_n);
+    bool persisted = rc == 0 && seen_append(&seen, o->index_seen_path, added, added_n);
+    if (rc == 0 && !persisted) rc = 5;
     free(added);
     seen_free(&seen);
 
-    if (o->summary_path) {
+    if (rc == 0 && o->summary_path) {
         FILE *sum = fopen(o->summary_path, "w");
-        if (sum) {
+        if (!sum) {
+            rc = 5;
+        } else {
             fprintf(sum, "files=%" PRIu64 "\nbytes=%" PRIu64 "\nduplicates=%" PRIu64
                          "\nskipped=%" PRIu64 "\nseen_persisted=%d\n",
                     files, bytes, duplicates, skipped, persisted ? 1 : 0);
-            fclose(sum);
+            bool sum_ok = !ferror(sum);
+            if (fclose(sum) != 0) sum_ok = false;
+            if (!sum_ok) rc = 5;
         }
     }
-    return 0;
+    return rc;
 }
 
 static int scan_deep(const Options *o) {

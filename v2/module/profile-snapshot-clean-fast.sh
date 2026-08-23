@@ -2,7 +2,7 @@
 
 set -u
 
-MODDIR=${0%/*}
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 MODE=${1:-deep-clean}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -38,9 +38,6 @@ esac
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || { [ -f "$MODDIR/config/default.conf" ] && cp -f "$MODDIR/config/default.conf" "$CONFIG" || : >"$CONFIG"; }
 [ -f "$WHITELIST" ] || : >"$WHITELIST"
-# 白名单只在启动时载入一次；匹配时零子进程。
-baize_whitelist_load "$WHITELIST"
-
 
 get_config_uint() {
   key=$1 fallback=$2 min=$3 max=$4
@@ -195,6 +192,9 @@ else
     return 1
   }
 fi
+# matcher 已可用后再加载；禁止在函数定义前调用导致白名单静默失效。
+baize_whitelist_load "$WHITELIST"
+
 
 deep_path_allowed() {
   path=${1%/}
