@@ -24,6 +24,7 @@ CONF
 start=$(date +%s)
 BAIZE_STATE_DIR="$T/state" \
 BAIZE_MEDIA_ROOT="$T/media" \
+BAIZE_ORGANIZER_CATEGORIES="$ROOT/config/organizer-categories.conf" \
 BAIZE_CONFIG_PATH="$T/state/config.conf" \
 BAIZE_SHELL_BIN=/usr/bin/busybox \
 BAIZE_ORGANIZER_AUTO_MAX_FILES=1 \

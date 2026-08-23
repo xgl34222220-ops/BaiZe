@@ -14,7 +14,8 @@ organizer_undo_retention=2
 organizer_media_scan=0
 max_file_mb=256
 CONF
-  BAIZE_STATE_DIR="$T/state" BAIZE_MEDIA_ROOT="$T/media" BAIZE_CONFIG_PATH="$T/state/config.conf" BAIZE_SHELL_BIN=/usr/bin/busybox \
+  BAIZE_STATE_DIR="$T/state" BAIZE_MEDIA_ROOT="$T/media" BAIZE_ORGANIZER_CATEGORIES="$ROOT/config/organizer-categories.conf" \
+BAIZE_CONFIG_PATH="$T/state/config.conf" BAIZE_SHELL_BIN=/usr/bin/busybox \
     busybox ash "$ROOT/v2/module/organizer-worker.sh" organize ci "case-$policy"
   if [ "$policy" = 1 ]; then
     test -f "$T/media/0/BaiZe归类/文档/same (1).pdf"

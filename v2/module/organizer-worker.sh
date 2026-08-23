@@ -116,10 +116,10 @@ write_result() {
     echo "moved=$wr_moved"
     echo "skipped=$wr_skipped"
     echo "failed=$wr_failed"
-    echo "renamed=$RENAMED"
-    echo "deduplicated=$DEDUPLICATED"
+    echo "renamed=${RENAMED:-0}"
+    echo "deduplicated=${DEDUPLICATED:-0}"
     echo "bytes=$wr_bytes"
-    echo "conflictPolicy=$CONFLICT_POLICY"
+    echo "conflictPolicy=${CONFLICT_POLICY:-1}"
     echo "undoAvailable=$([ "$wr_undo_count" -gt 0 ] && echo true || echo false)"
     echo "undoCount=$wr_undo_count"
     echo "task_id=$TASK_ID"
@@ -387,7 +387,8 @@ skip_file() {
 }
 
 # 分类表必须在主循环前载入；载入失败直接退出，避免"扫了但一个都没归类"。
-if ! organizer_categories_load "$MODDIR/config/organizer-categories.conf"; then
+ORGANIZER_CATEGORIES=${BAIZE_ORGANIZER_CATEGORIES:-$MODDIR/config/organizer-categories.conf}
+if ! organizer_categories_load "$ORGANIZER_CATEGORIES"; then
   write_result "归类分类表缺失或为空，请重新刷入完整模块" 0 1 0 0 0 0 0
   echo "无法载入 config/organizer-categories.conf" >&2
   exit 5

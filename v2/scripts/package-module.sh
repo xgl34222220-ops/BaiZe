@@ -3,12 +3,14 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 REPO=$(CDPATH= cd -- "$ROOT/.." && pwd)
+VERSION=$(sed -n 's/^version=//p' "$REPO/module.prop" | head -n1)
+VERSION_CODE=$(sed -n 's/^versionCode=//p' "$REPO/module.prop" | head -n1)
 OUT="$ROOT/dist"
 MODULE="$ROOT/module"
 STAGE="$ROOT/build/module-stage"
 APK="$ROOT/app/build/outputs/apk/release/app-release.apk"
 NATIVE_DIR="$ROOT/build/native"
-OUTPUT="$OUT/BaiZe-v2.6.2-Module.zip"
+OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"
 
 [ -f "$APK" ] || { echo "未找到已构建 APK：$APK" >&2; exit 1; }
 # arm64 是必须产物；其余 ABI 有就打进去，没有就跳过。
@@ -154,9 +156,10 @@ unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-files.nul'
-unzip -p "$OUTPUT" module.prop | grep -q '^version=v2.6.0$'
-unzip -p "$OUTPUT" module.prop | grep -q '^versionCode=26000$'
-unzip -p "$OUTPUT" customize.sh | grep -Fqx 'ui_print "- 正在安装白泽 v2.6.0"'
+unzip -p "$OUTPUT" module.prop | grep -Fqx "version=$VERSION"
+unzip -p "$OUTPUT" module.prop | grep -Fqx "versionCode=$VERSION_CODE"
+EXPECTED_INSTALL_LINE=$(printf 'ui_print "- 正在安装白泽 %s"' "$VERSION")
+unzip -p "$OUTPUT" customize.sh | grep -Fqx "$EXPECTED_INSTALL_LINE"
 if unzip -p "$OUTPUT" customize.sh | grep -Eq 'v2\.5\.6|versionCode=25006|v2\.5\.5|versionCode=25005|v2\.5\.2|versionCode=25002|v2\.5\.1|versionCode=25001|v2\.5\.0|versionCode=25000|v2\.4\.0|versionCode=24000'; then
   echo "安装脚本仍包含旧版发布标识，禁止发布" >&2
   exit 1
@@ -165,10 +168,11 @@ if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
   echo "模块包中不允许包含 WebUI 资源" >&2
   exit 1
 fi
-unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q '^73d4c898630a292753adca33298c8aabbf6146debf414b2cabbe6b87d1d5c31c'
+EXPECTED_DEEP_SHA=$(sha256sum "$REPO/config/deep.rules" | awk '{print $1}')
+unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q "^$EXPECTED_DEEP_SHA"
 unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -q 'clean-cache-snapshot'
 if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache|xargs[[:space:]].*rm'; then
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
-echo "已生成白泽 v2.6.0 深度不可变快照模块：$OUTPUT"
+echo "已生成白泽 $VERSION 深度不可变快照模块：$OUTPUT"

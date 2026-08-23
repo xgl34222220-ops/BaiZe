@@ -86,8 +86,10 @@ apply "$ROOT/v2/app/build.gradle.kts" \
   'versionCode = [0-9]*' "versionCode = $VERSION_CODE" "versionCode = $VERSION_CODE"
 apply "$ROOT/v2/app/build.gradle.kts" \
   'versionName = "[^"]*"' "versionName = \"$VERSION_NAME\"" "versionName = \"$VERSION_NAME\""
-apply "$ROOT/v2/scripts/package-module.sh" \
-  'BaiZe-v[0-9.]*-Module.zip' "BaiZe-$VERSION-Module.zip" "BaiZe-$VERSION-Module.zip"
+if ! grep -Fq 'OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"' "$ROOT/v2/scripts/package-module.sh"; then
+  apply "$ROOT/v2/scripts/package-module.sh" \
+    'BaiZe-v[0-9.]*-Module.zip' "BaiZe-$VERSION-Module.zip" "BaiZe-$VERSION-Module.zip"
+fi
 apply "$ROOT/v2/module/customize.sh" \
   'ui_print "- 正在安装白泽 v[0-9.]*"' "ui_print \"- 正在安装白泽 $VERSION\"" "安装提示 $VERSION"
 apply "$ROOT/v2/module/task-worker.sh" \

@@ -23,8 +23,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 26002
-        versionName = "2.6.2"
+        versionCode = 26003
+        versionName = "2.6.3"
     }
 
     buildFeatures {
@@ -138,5 +138,6 @@ dependencies {
     // 单元测试。此前 42817 行 Kotlin 没有任何 JVM 测试，
     // 所有"测试"都是 shell 里 grep 源码字符串的 contract 脚本。
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
