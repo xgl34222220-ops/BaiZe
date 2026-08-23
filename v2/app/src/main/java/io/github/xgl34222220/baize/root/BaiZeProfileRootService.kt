@@ -31,6 +31,11 @@ class BaiZeProfileRootService : RootService() {
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
 
+    override fun onCreate() {
+        super.onCreate()
+        RootMediaScanQueue.onServiceStart(this)
+    }
+
     private val binder = object : IProfileRootService.Stub() {
         override fun ping(): String = JSONObject()
             .put("uid", Process.myUid())
@@ -187,7 +192,11 @@ class BaiZeProfileRootService : RootService() {
             }
         }
 
-        override fun getModuleState(): String = moduleTasks.moduleState()
+        override fun getModuleState(): String {
+            val state = moduleTasks.moduleState()
+            RootMediaScanQueue.flush(this@BaiZeProfileRootService)
+            return state
+        }
         override fun getTaskHistory(limit: Int): String = historyRepository.taskHistoryJson(limit)
         override fun getTaskHistoryPage(offset: Int, limit: Int): String =
             historyRepository.taskHistoryPageJson(offset, limit)
@@ -247,7 +256,7 @@ class BaiZeProfileRootService : RootService() {
                     phase = "正在归类文件",
                     failureCode = "file_organizer_apply_failed"
                 ) { started ->
-                    organizerController.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
+                    val result = organizerController.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
                         coordinator.update(
                             operation = "file-organizer-apply",
                             phase = progress.phase,
@@ -257,6 +266,8 @@ class BaiZeProfileRootService : RootService() {
                             startedRealtime = started
                         )
                     }
+                    RootMediaScanQueue.flush(this@BaiZeProfileRootService)
+                    result
                 }
             }
 
@@ -266,7 +277,7 @@ class BaiZeProfileRootService : RootService() {
                 phase = "正在撤销上次归类",
                 failureCode = "file_organizer_undo_failed"
             ) { started ->
-                organizerController.undo { progress ->
+                val result = organizerController.undo { progress ->
                     coordinator.update(
                         operation = "file-organizer-undo",
                         phase = progress.phase,
@@ -276,6 +287,8 @@ class BaiZeProfileRootService : RootService() {
                         startedRealtime = started
                     )
                 }
+                RootMediaScanQueue.flush(this@BaiZeProfileRootService)
+                result
             }
         }
 

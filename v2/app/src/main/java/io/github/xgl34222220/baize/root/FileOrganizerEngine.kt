@@ -1,6 +1,5 @@
 package io.github.xgl34222220.baize.root
 
-import android.net.Uri
 import android.os.SystemClock
 import android.util.Base64
 import android.system.ErrnoException
@@ -270,9 +269,11 @@ class FileOrganizerEngine(
         if (moves.length() > 0) persistUndo(moves)
         snapshot = null
         deleteSnapshot(current.id)
+        val pendingMediaScan = flushMediaScanQueue()
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
+            .put("mediaScanPending", pendingMediaScan)
             .put("requested", selected.size)
             .put("moved", moved)
             .put("skipped", skipped)
@@ -370,9 +371,11 @@ class FileOrganizerEngine(
             persistUndoRecord(record.file, remaining)
         }
         refreshLegacyUndoPointer()
+        val pendingMediaScan = flushMediaScanQueue()
         return JSONObject()
             .put("success", failed == 0)
             .put("cancelled", cancelled.get())
+            .put("mediaScanPending", pendingMediaScan)
             .put("restored", restored)
             .put("skipped", skipped)
             .put("failed", failed)
@@ -971,18 +974,26 @@ class FileOrganizerEngine(
         }
     }.getOrDefault(fallback)
 
+    /**
+     * 归类与撤销只记录需要刷新的路径。真正的媒体库 IPC 由 RootService 的
+     * RootMediaScanQueue 统一完成，避免每个文件启动两个 am 进程，也避免普通
+     * Activity 直接读取 /data/adb。
+     */
+    private val mediaScanPaths = LinkedHashSet<String>()
+
     private fun notifyMediaStore(oldPath: String, newPath: String) {
         if (configInt("organizer_media_scan", 1) != 1) return
-        listOf(oldPath, newPath).forEach { path ->
-            runCatching {
-                val userId = userIdForPath(path) ?: 0
-                ProcessBuilder(
-                    "/system/bin/am", "broadcast", "--user", userId.toString(),
-                    "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-                    "-d", Uri.fromFile(File(path)).toString()
-                ).redirectErrorStream(true).start().apply { waitFor(4, TimeUnit.SECONDS) }
-            }
-        }
+        mediaScanPaths += oldPath
+        mediaScanPaths += newPath
+    }
+
+    private fun flushMediaScanQueue(): Int {
+        if (mediaScanPaths.isEmpty()) return 0
+        val queued = RootMediaScanQueue.enqueue(stateDir, mediaScanPaths)
+        // 只有已经持久化到 pending/spool 后才丢掉内存副本。磁盘写失败时保留，
+        // 后续归类/撤销结束还能再次尝试。
+        if (queued == mediaScanPaths.size) mediaScanPaths.clear()
+        return queued
     }
 
     private fun normalizeSharedOwnership(file: File): Boolean = runCatching {

@@ -131,7 +131,10 @@ write_result() {
 }
 
 cleanup() {
-  rm -f "$RUNNING_FILE" "$MEDIA_QUEUE" "${UNDO_RAW:-}" 2>/dev/null || true
+  rm -f "$RUNNING_FILE" "${UNDO_RAW:-}" 2>/dev/null || true
+  # 队列已经持久化到 pending/spool 时本地临时文件可删；若两条持久化路径都
+  # 失败，则保留 media-scan-*.nul，RootService 只会在它老化后作为 orphan 恢复。
+  [ "${MEDIA_SCAN_PRESERVE_LOCAL:-0}" = 1 ] || rm -f "$MEDIA_QUEUE" 2>/dev/null || true
   if [ -f "$WORKER_FILE" ] && grep -q "^task_id=$TASK_ID$" "$WORKER_FILE" 2>/dev/null; then rm -f "$WORKER_FILE"; fi
   if [ -f "$LOCK_DIR/task_id" ] && [ "$(sed -n '1p' "$LOCK_DIR/task_id" 2>/dev/null)" = "$TASK_ID" ]; then rm -rf -- "$LOCK_DIR" 2>/dev/null || true; fi
 }
@@ -582,11 +585,47 @@ else
   rm -f "$UNDO_TMP"
 fi
 
-if [ "$MEDIA_SCAN" = 1 ] && [ -s "$MEDIA_QUEUE" ] && command -v am >/dev/null 2>&1; then
-  while IFS= read -r -d '' media_path; do
-    media_user=${media_path#"$MEDIA_ROOT"/}; media_user=${media_user%%/*}; case "$media_user" in ''|*[!0-9]*) media_user=0 ;; esac
-    am broadcast --user "$media_user" -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://$media_path" >/dev/null 2>&1 || true
-  done <"$MEDIA_QUEUE"
+# 媒体刷新队列由 RootService 消费。这里绝不覆盖 pending：拿到短目录锁就追加，
+# 锁忙/异常则把本任务队列原子改名成独立 spool，后续 RootService 会合并。
+if [ "$MEDIA_SCAN" = 1 ] && [ -s "$MEDIA_QUEUE" ]; then
+  MEDIA_SCAN_PENDING="$STATE_DIR/organizer-media-scan.nul"
+  MEDIA_SCAN_LOCK="$STATE_DIR/organizer-media-scan.lock"
+  media_scan_owned=0
+  media_scan_saved=0
+
+  # 崩溃留下的锁只保护毫秒级文件操作，超过 30 秒可视为陈旧。
+  if [ -d "$MEDIA_SCAN_LOCK" ]; then
+    media_lock_mtime=$(stat -c %Y "$MEDIA_SCAN_LOCK" 2>/dev/null || echo 0)
+    media_now=$(date +%s)
+    case "$media_lock_mtime" in ''|*[!0-9]*) media_lock_mtime=0 ;; esac
+    [ "$media_lock_mtime" -gt 0 ] && [ $((media_now - media_lock_mtime)) -gt 30 ] && rm -rf -- "$MEDIA_SCAN_LOCK" 2>/dev/null || true
+  fi
+
+  media_try=0
+  while [ "$media_try" -lt 3 ]; do
+    if mkdir "$MEDIA_SCAN_LOCK" 2>/dev/null; then media_scan_owned=1; break; fi
+    media_try=$((media_try + 1))
+    [ "$media_try" -lt 3 ] && sleep 1
+  done
+
+  if [ "$media_scan_owned" = 1 ]; then
+    if cat "$MEDIA_QUEUE" >>"$MEDIA_SCAN_PENDING" 2>/dev/null; then
+      chmod 0600 "$MEDIA_SCAN_PENDING" 2>/dev/null || true
+      media_scan_saved=1
+    fi
+    rmdir "$MEDIA_SCAN_LOCK" 2>/dev/null || true
+  fi
+
+  if [ "$media_scan_saved" != 1 ]; then
+    MEDIA_SCAN_SPOOL="$STATE_DIR/organizer-media-scan.spool.$(date +%s).$$.nul"
+    if mv -f "$MEDIA_QUEUE" "$MEDIA_SCAN_SPOOL" 2>/dev/null; then
+      chmod 0600 "$MEDIA_SCAN_SPOOL" 2>/dev/null || true
+      media_scan_saved=1
+    else
+      MEDIA_SCAN_PRESERVE_LOCAL=1
+      echo "媒体库刷新队列暂存失败，保留本任务队列供 RootService 延后恢复" >>"$LOG_FILE"
+    fi
+  fi
 fi
 
 if [ "$AUTO_LIMIT_REACHED" = 1 ]; then
