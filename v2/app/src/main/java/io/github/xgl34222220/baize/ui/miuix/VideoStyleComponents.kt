@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,7 +33,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,11 +45,9 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 /**
- * 白泽主界面共享组件。
- *
- * 设计语言参考 shadcn/ui：统一语义、低噪音中性容器、清晰 1dp 边界、紧凑圆角、
- * Tabs/Card/Item/Switch/Action 使用一致的组合接口。Android 继续使用 Compose 原生
- * 交互和无障碍语义，不照搬 Web DOM。
+ * 白泽共享组件。
+ * shadcn 负责“怎么组织”，MIUIX / HyperOS 负责“长什么样”：更圆润、更柔和、
+ * 更少硬边框，利用动态色、浅阴影和半透明层级建立原生移动端质感。
  */
 enum class VideoSkin {
     MIUIX,
@@ -64,10 +65,14 @@ fun ProvideVideoSkin(
 }
 
 @Composable
-private fun componentBorder(alpha: Float = .72f): BorderStroke = BorderStroke(
-    1.dp,
-    MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha)
-)
+private fun softBorder(alpha: Float = .32f): BorderStroke {
+    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
+    return BorderStroke(
+        1.dp,
+        if (dark) Color.White.copy(alpha = alpha * .45f)
+        else Color.White.copy(alpha = (.55f + alpha).coerceAtMost(.88f))
+    )
+}
 
 @Composable
 fun VideoTopBar(
@@ -76,24 +81,28 @@ fun VideoTopBar(
     start: @Composable RowScope.() -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .heightIn(min = 64.dp)
-            .padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            .heightIn(min = 70.dp)
+            .padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 8.dp)
     ) {
         Row(
+            modifier = Modifier.align(Alignment.CenterStart),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             content = start
         )
-        Column(Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 74.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = title,
-                style = BaiZeTokens.type.headline,
+                style = BaiZeTokens.type.headline.copy(fontSize = 21.sp, lineHeight = 26.sp),
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -102,14 +111,16 @@ fun VideoTopBar(
                 Spacer(Modifier.height(1.dp))
                 Text(
                     text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = BaiZeTokens.type.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f),
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
         Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             content = actions
@@ -124,26 +135,27 @@ fun VideoIconButton(
     onClick: () -> Unit,
     primary: Boolean = false
 ) {
-    val shape = RoundedCornerShape(10.dp)
-    val container = if (primary) MaterialTheme.colorScheme.primary else BaiZeTokens.colors.surfaceRaised
-    val content = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val shape = RoundedCornerShape(14.dp)
+    val container = if (primary) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        BaiZeTokens.colors.surfaceRaised.copy(alpha = .94f)
+    }
+    val content = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+
     Surface(
         modifier = Modifier
-            .size(40.dp)
+            .size(42.dp)
+            .shadow(2.dp, shape, clip = false)
             .clip(shape)
             .clickable(onClick = onClick),
         shape = shape,
         color = container,
         contentColor = content,
-        border = if (primary) null else componentBorder()
+        border = softBorder(.28f)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = description,
-                modifier = Modifier.size(19.dp),
-                tint = content
-            )
+            Icon(icon, description, modifier = Modifier.size(20.dp), tint = content)
         }
     }
 }
@@ -155,45 +167,41 @@ fun VideoTabs(
     onSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = BaiZeTokens.spacing.pageHorizontal),
-        shape = RoundedCornerShape(11.dp),
-        color = BaiZeTokens.colors.surfaceOverlay,
-        border = componentBorder(.45f)
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            labels.forEachIndexed { index, label ->
-                val selected = index == selectedIndex
-                val shape = RoundedCornerShape(8.dp)
-                Surface(
-                    modifier = Modifier
-                        .height(34.dp)
-                        .clip(shape)
-                        .clickable { onSelected(index) },
-                    shape = shape,
-                    color = if (selected) BaiZeTokens.colors.surfaceRaised else Color.Transparent,
-                    contentColor = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    border = if (selected) componentBorder(.58f) else null,
-                    shadowElevation = if (selected) 1.dp else 0.dp
+        labels.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            val shape = RoundedCornerShape(15.dp)
+            Surface(
+                modifier = Modifier
+                    .height(38.dp)
+                    .clip(shape)
+                    .clickable { onSelected(index) },
+                shape = shape,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    BaiZeTokens.colors.surfaceRaised.copy(alpha = .86f)
+                },
+                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                border = if (selected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .16f)) else softBorder(.18f),
+                shadowElevation = if (selected) 2.dp else 0.dp
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
-                        )
-                    }
+                    Text(
+                        label,
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -206,17 +214,13 @@ fun VideoSectionTitle(
     subtitle: String? = null,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal)) {
-        Text(
-            text = title,
-            style = BaiZeTokens.type.title,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+    Column(modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal + 2.dp)) {
+        Text(title, style = BaiZeTokens.type.title, color = MaterialTheme.colorScheme.onBackground)
         if (!subtitle.isNullOrBlank()) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                subtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .78f),
                 style = BaiZeTokens.type.caption
             )
         }
@@ -230,13 +234,13 @@ fun VideoCard(
     contentPadding: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val resolvedColor = containerColor ?: BaiZeTokens.colors.surfaceRaised
+    val resolvedColor = containerColor ?: BaiZeTokens.colors.surfaceRaised.copy(alpha = .96f)
     Surface(
-        modifier = modifier,
+        modifier = modifier.shadow(1.dp, BaiZeTokens.corners.large, clip = false),
         shape = BaiZeTokens.corners.large,
         color = resolvedColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = componentBorder(.62f),
+        border = softBorder(.20f),
         shadowElevation = 0.dp
     ) {
         Column(
@@ -253,24 +257,19 @@ fun VideoLeadingIcon(
     modifier: Modifier = Modifier
 ) {
     val background = if (primary) {
-        MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = .78f)
     } else {
         BaiZeTokens.colors.surfaceOverlay
     }
     val tint = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier = modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(40.dp)
+            .clip(RoundedCornerShape(13.dp))
             .background(background),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = tint
-        )
+        Icon(icon, null, modifier = Modifier.size(20.dp), tint = tint)
     }
 }
 
@@ -288,18 +287,15 @@ fun VideoListRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .then(
-                if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick)
-                else Modifier
-            )
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+            .padding(horizontal = 15.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        VideoLeadingIcon(icon = icon, primary = enabled)
+        VideoLeadingIcon(icon, primary = enabled)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = title,
+                title,
                 style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold),
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .45f),
                 maxLines = 1,
@@ -308,9 +304,10 @@ fun VideoListRow(
             if (subtitle.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
-                    style = BaiZeTokens.type.caption,
+                    subtitle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) .78f else .40f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -319,11 +316,11 @@ fun VideoListRow(
         if (!value.isNullOrBlank()) {
             Spacer(Modifier.width(8.dp))
             Text(
-                text = value,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.Medium,
+                value,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.End,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -350,20 +347,15 @@ fun VideoSwitchRow(
         title = title,
         subtitle = subtitle,
         modifier = modifier,
-        trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange
-            )
-        }
+        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) }
     )
 }
 
 @Composable
-fun VideoDivider(start: Int = 60) {
+fun VideoDivider(start: Int = 67) {
     HorizontalDivider(
         modifier = Modifier.padding(start = start.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f)
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .24f)
     )
 }
 
@@ -374,27 +366,28 @@ fun VideoMetricTile(
     caption: String,
     modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(18.dp)
     Surface(
         modifier = modifier,
-        shape = BaiZeTokens.corners.medium,
-        color = BaiZeTokens.colors.surfaceOverlay,
-        border = componentBorder(.48f)
+        shape = shape,
+        color = BaiZeTokens.colors.surfaceOverlay.copy(alpha = .90f),
+        border = softBorder(.14f)
     ) {
-        Column(Modifier.padding(horizontal = 13.dp, vertical = 12.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption)
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 13.dp)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .78f), style = BaiZeTokens.type.caption)
             Spacer(Modifier.height(4.dp))
             Text(
                 value,
-                fontSize = 18.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontSize = 19.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 caption,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .68f),
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
                 maxLines = 1,
@@ -413,40 +406,40 @@ fun VideoActionTile(
     modifier: Modifier = Modifier,
     primary: Boolean = false
 ) {
-    val shape = BaiZeTokens.corners.large
-    val container = if (primary) MaterialTheme.colorScheme.primary else BaiZeTokens.colors.surfaceRaised
-    val content = if (primary) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val shape = RoundedCornerShape(21.dp)
+    val container = if (primary) MaterialTheme.colorScheme.primaryContainer else BaiZeTokens.colors.surfaceRaised.copy(alpha = .96f)
+    val content = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     Surface(
         modifier = modifier
+            .shadow(if (primary) 3.dp else 1.dp, shape, clip = false)
             .clip(shape)
             .clickable(onClick = onClick),
         shape = shape,
         color = container,
         contentColor = content,
-        border = if (primary) null else componentBorder(.62f)
+        border = if (primary) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .14f)) else softBorder(.18f)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(15.dp)) {
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (primary) content.copy(alpha = .14f) else MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(
+                        if (primary) MaterialTheme.colorScheme.primary.copy(alpha = .12f)
+                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = if (primary) content else MaterialTheme.colorScheme.primary
-                )
+                Icon(icon, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
             }
             Spacer(Modifier.height(12.dp))
             Text(title, color = content, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold))
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(3.dp))
             Text(
                 subtitle,
-                color = content.copy(alpha = .72f),
-                style = BaiZeTokens.type.caption,
+                color = if (primary) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .76f),
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
