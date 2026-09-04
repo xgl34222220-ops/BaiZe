@@ -8,10 +8,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -154,17 +152,12 @@ private fun BaiZeMiuixTheme(
 }
 
 @Composable
-private fun resolveSeedColor(settings: AppearanceSettings): Color {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    return remember(settings.monetEnabled, settings.seedArgb, configuration) {
-        if (settings.monetEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Color(context.getColor(android.R.color.system_accent1_500))
-        } else {
-            Color(settings.seedArgb)
-        }
+private fun resolveSeedColor(settings: AppearanceSettings): Color =
+    if (settings.monetEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        colorResource(android.R.color.system_accent1_500)
+    } else {
+        Color(settings.seedArgb)
     }
-}
 
 @Composable
 private fun resolveDark(mode: ThemeMode): Boolean = when (mode) {
