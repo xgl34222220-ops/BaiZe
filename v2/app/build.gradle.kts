@@ -17,7 +17,9 @@ val releaseSigningReady = listOf(
 
 android {
     namespace = "io.github.xgl34222220.baize"
-    compileSdk = 36
+    // LuoShu/Miuix 0.9.3 is published against API 37. This is compile-time only;
+    // targetSdk remains 36 so BaiZe does not opt into new runtime behavior here.
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "io.github.xgl34222220.baize"
