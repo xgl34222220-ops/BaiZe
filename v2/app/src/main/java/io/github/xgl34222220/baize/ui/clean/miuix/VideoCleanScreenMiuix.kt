@@ -1,7 +1,6 @@
 package io.github.xgl34222220.baize.ui.clean.miuix
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,16 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -34,7 +30,6 @@ import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -48,12 +43,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryUiItem
 import io.github.xgl34222220.baize.ui.clean.CleanScheduleMode
@@ -74,9 +66,9 @@ import io.github.xgl34222220.baize.ui.miuix.VideoTabs
 import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-private val videoIntervals = listOf(30, 60, 180, 360, 720, 1_440, 4_320, 10_080, 43_200)
+private val cleanIntervals = listOf(30, 60, 180, 360, 720, 1_440, 4_320, 10_080, 43_200)
 
-/** 参考视频的“面板”结构：顶部标签切换计划、类别和工具，避免一条无限长设置列表。 */
+/** 清理中心：计划 / 类别 / 工具三层面板，统一使用 Card、Item、Tabs、Switch 与 Action。 */
 @Composable
 fun VideoCleanScreenMiuix(
     state: CleanUiState,
@@ -85,6 +77,7 @@ fun VideoCleanScreenMiuix(
     onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
@@ -101,7 +94,7 @@ fun VideoCleanScreenMiuix(
     if (showDailyGraceDialog) {
         IntValueDialog(
             title = "补做窗口",
-            description = "固定时间到达后，如果条件暂时不满足，会在此时间内继续等待。",
+            description = "固定执行时间到达后，如果系统条件暂时不满足，会在这个窗口内继续等待。",
             initialValue = state.dailyGraceMinutes,
             range = 15..720,
             suffix = "分钟",
@@ -112,7 +105,7 @@ fun VideoCleanScreenMiuix(
     if (showApkRetentionDialog) {
         IntValueDialog(
             title = "安装包保留时间",
-            description = "只影响后台自动清理。手动安装包扫描始终显示全部安装包；设置为 0 天表示扫描到后即可进入自动清理范围。",
+            description = "只影响后台自动清理。手动安装包扫描仍显示全部结果；0 天表示扫描到后即可进入自动清理范围。",
             initialValue = state.apkPackageDays,
             range = 0..365,
             suffix = "天",
@@ -123,13 +116,13 @@ fun VideoCleanScreenMiuix(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 102.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(bottom = bottomInset + 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             VideoTopBar(
                 title = "清理",
-                subtitle = "计划、类别与专项工具",
+                subtitle = if (state.running) "任务执行中" else state.scheduleSummary,
                 actions = {
                     VideoIconButton(Icons.Rounded.Search, "扫描", actions.onScan)
                     VideoIconButton(Icons.Rounded.InstallMobile, "安装包", actions.onApkScan)
@@ -146,8 +139,25 @@ fun VideoCleanScreenMiuix(
 
         when (selectedTab) {
             0 -> {
-                item { AutomaticHero(state, actions) }
-                item { VideoSectionTitle("执行方式", state.scheduleSummary) }
+                item {
+                    VideoCard(
+                        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
+                    ) {
+                        VideoSwitchRow(
+                            icon = Icons.Rounded.CleaningServices,
+                            title = if (state.automaticCleaningEnabled) "自动清理已开启" else "自动清理已暂停",
+                            subtitle = if (state.engineReady) {
+                                "${state.enabledCategoryCount} 个类别 · ${state.serviceText}"
+                            } else {
+                                "正在连接 Root 清理服务"
+                            },
+                            checked = state.automaticCleaningEnabled,
+                            onCheckedChange = actions.onAutomaticCleaningChanged
+                        )
+                    }
+                }
+
+                item { VideoSectionTitle("执行方式", "决定自动任务何时运行") }
                 item {
                     ScheduleCard(
                         state = state,
@@ -156,12 +166,11 @@ fun VideoCleanScreenMiuix(
                         onEditGrace = { showDailyGraceDialog = true }
                     )
                 }
-                item { VideoSectionTitle("附加清理", "独立于普通缓存类别") }
+
+                item { VideoSectionTitle("附加清理", "安装包使用独立保留策略") }
                 item {
                     VideoCard(
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp)
-                            .fillMaxWidth()
+                        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
                     ) {
                         VideoSwitchRow(
                             icon = Icons.Rounded.InstallMobile,
@@ -174,22 +183,37 @@ fun VideoCleanScreenMiuix(
                         VideoListRow(
                             icon = Icons.Rounded.CalendarMonth,
                             title = "安装包保留时间",
-                            subtitle = if (state.apkPackagesEnabled) {
-                                "超过该时间才进入后台自动清理；手动扫描不受影响"
-                            } else {
-                                "开启过期安装包后可修改"
-                            },
+                            subtitle = if (state.apkPackagesEnabled) "超过该时间才进入后台自动清理" else "开启过期安装包后可修改",
                             value = apkRetentionText(state.apkPackageDays),
                             enabled = state.apkPackagesEnabled,
-                            onClick = { showApkRetentionDialog = true }
+                            onClick = { if (state.apkPackagesEnabled) showApkRetentionDialog = true }
                         )
                     }
                 }
-                item { ApplyButton(state.saving, actions.onSave) }
+
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .padding(horizontal = pagePadding)
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .clickable(enabled = !state.saving, onClick = actions.onSave),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                if (state.saving) "正在保存…" else "保存清理计划",
+                                style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold)
+                            )
+                        }
+                    }
+                }
             }
 
             1 -> {
-                item { VideoSectionTitle("自动清理类别", "每个类别独立开关与周期") }
+                item { VideoSectionTitle("自动清理类别", "每个类别有独立开关和基础周期") }
                 state.categories.forEach { category ->
                     item(key = category.id.name) {
                         CategoryCard(
@@ -198,9 +222,7 @@ fun VideoCleanScreenMiuix(
                             dailyMode = state.scheduleMode == CleanScheduleMode.FIXED_DAILY && category.id != CleanCategoryId.ORGANIZE,
                             onEnabledChanged = { actions.onCategoryEnabledChanged(category.id, it) },
                             onExpandedChanged = {
-                                onExpandedCategoryChanged(
-                                    if (expandedCategory == category.id.name) "" else category.id.name
-                                )
+                                onExpandedCategoryChanged(if (expandedCategory == category.id.name) "" else category.id.name)
                             },
                             onIntervalChanged = { actions.onCategoryIntervalChanged(category.id, it) }
                         )
@@ -209,78 +231,77 @@ fun VideoCleanScreenMiuix(
             }
 
             else -> {
-                item { VideoSectionTitle("专项工具", "低频功能集中放在单独页面") }
+                item { VideoSectionTitle("专项工具", "手动扫描和低频维护集中在这里") }
                 item {
-                    ToolGrid(actions)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AutomaticHero(state: CleanUiState, actions: CleanUiActions) {
-    VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
-        contentPadding = 16
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(17.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .56f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CleaningServices,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(27.dp)
-                )
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (state.automaticCleaningEnabled) BaiZeTokens.colors.success
-                                else MaterialTheme.colorScheme.outline
+                    Column(
+                        modifier = Modifier.padding(horizontal = pagePadding),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            VideoActionTile(
+                                icon = Icons.Rounded.Search,
+                                title = "智能扫描",
+                                subtitle = "只扫描并生成可清理快照",
+                                onClick = actions.onScan,
+                                modifier = Modifier.weight(1f),
+                                primary = true
                             )
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (state.automaticCleaningEnabled) "自动清理已开启" else "自动清理已暂停",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                            VideoActionTile(
+                                icon = Icons.Rounded.CleaningServices,
+                                title = "应用缓存",
+                                subtitle = "立即处理应用缓存",
+                                onClick = actions.onInstantCache,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            VideoActionTile(
+                                icon = Icons.Rounded.FolderCopy,
+                                title = "文件归类",
+                                subtitle = "整理下载、附件与导出文件",
+                                onClick = actions.onFileOrganizer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            VideoActionTile(
+                                icon = Icons.Rounded.Security,
+                                title = "深度清理",
+                                subtitle = "进入受风险上限约束的深度流程",
+                                onClick = actions.onDeepClean,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    "${state.enabledCategoryCount} 个类别",
-                    fontSize = 24.sp,
-                    lineHeight = 29.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (state.engineReady) state.serviceText else "正在连接 Root 清理服务",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                item {
+                    VideoCard(
+                        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
+                    ) {
+                        VideoListRow(
+                            icon = Icons.Rounded.InstallMobile,
+                            title = "安装包扫描",
+                            subtitle = "查找 APK、APKS、XAPK 与 APKM",
+                            value = "扫描",
+                            onClick = actions.onApkScan
+                        )
+                        VideoDivider()
+                        VideoListRow(
+                            icon = Icons.Rounded.FolderDelete,
+                            title = "卸载残留",
+                            subtitle = "按已安装包索引识别残留目录",
+                            value = "检查",
+                            onClick = actions.onCorpses
+                        )
+                        VideoDivider()
+                        VideoListRow(
+                            icon = Icons.Rounded.Rule,
+                            title = "规则与清理明细",
+                            subtitle = "查看规则命中、保护项与风险归属",
+                            value = "查看",
+                            onClick = actions.onAudit
+                        )
+                    }
+                }
             }
-            Switch(
-                checked = state.automaticCleaningEnabled,
-                onCheckedChange = actions.onAutomaticCleaningChanged
-            )
         }
     }
 }
@@ -292,74 +313,41 @@ private fun ScheduleCard(
     onEditTime: () -> Unit,
     onEditGrace: () -> Unit
 ) {
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth(),
         contentPadding = 14
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            CleanScheduleMode.entries.forEach { mode ->
-                val selected = state.scheduleMode == mode
-                Surface(
-                    modifier = Modifier
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { actions.onScheduleModeChanged(mode) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (selected) MaterialTheme.colorScheme.primaryContainer else BaiZeTokens.colors.surfaceOverlay,
-                    border = BorderStroke(
-                        1.dp,
-                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .28f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .22f)
-                    )
-                ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 13.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            mode.title,
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
+        VideoTabs(
+            labels = CleanScheduleMode.entries.map { it.title },
+            selectedIndex = CleanScheduleMode.entries.indexOf(state.scheduleMode).coerceAtLeast(0),
+            onSelected = { index -> actions.onScheduleModeChanged(CleanScheduleMode.entries[index]) },
+            modifier = Modifier.padding(horizontal = 0.dp)
+        )
         Spacer(Modifier.height(10.dp))
         Text(
             state.scheduleMode.description,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 14.sp
+            style = BaiZeTokens.type.caption
         )
 
         if (state.scheduleMode == CleanScheduleMode.FIXED_DAILY) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             VideoDivider(start = 0)
             VideoListRow(
                 icon = Icons.Rounded.CalendarMonth,
                 title = "执行时间",
                 subtitle = "每天固定执行已启用类别",
                 value = state.dailyTimeText,
-                onClick = onEditTime,
-                modifier = Modifier.padding(horizontal = 0.dp)
+                onClick = onEditTime
             )
             VideoDivider(start = 0)
             VideoListRow(
                 icon = Icons.Rounded.AutoAwesome,
                 title = "补做窗口",
-                subtitle = "条件不满足时继续等待",
+                subtitle = "条件暂时不满足时继续等待",
                 value = formatMinutes(state.dailyGraceMinutes),
-                onClick = onEditGrace,
-                modifier = Modifier.padding(horizontal = 0.dp)
+                onClick = onEditGrace
             )
         }
     }
@@ -374,85 +362,50 @@ private fun CategoryCard(
     onExpandedChanged: () -> Unit,
     onIntervalChanged: (Int) -> Unit
 ) {
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth()
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = item.enabled && !dailyMode, onClick = onExpandedChanged)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             VideoLeadingIcon(categoryIcon(item.id))
             Spacer(Modifier.width(12.dp))
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(enabled = item.enabled, onClick = onExpandedChanged)
-            ) {
-                Text(item.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(1.dp))
-                Text(
-                    item.description,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Column(Modifier.weight(1f)) {
+                Text(item.title, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold))
+                Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption)
                 if (item.enabled) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         if (dailyMode) "跟随每日固定时间" else "每 ${formatMinutes(item.intervalMinutes)}执行",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        style = BaiZeTokens.type.caption.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
             }
-            if (item.enabled && !dailyMode) {
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(3.dp))
-            }
+            Spacer(Modifier.width(8.dp))
             Switch(checked = item.enabled, onCheckedChange = onEnabledChanged)
         }
 
         if (expanded && item.enabled && !dailyMode) {
-            VideoDivider(start = 15)
+            VideoDivider(start = 14)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 15.dp, vertical = 11.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                videoIntervals.forEach { minutes ->
-                    val selected = item.intervalMinutes == minutes
-                    Surface(
-                        modifier = Modifier
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(11.dp))
-                            .clickable { onIntervalChanged(minutes) },
-                        shape = RoundedCornerShape(11.dp),
-                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else BaiZeTokens.colors.surfaceOverlay
-                    ) {
-                        Box(
-                            modifier = Modifier.padding(horizontal = 11.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                formatMinutes(minutes),
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                            )
-                        }
-                    }
+                cleanIntervals.forEach { minutes ->
+                    IntervalChip(
+                        label = formatMinutes(minutes),
+                        selected = item.intervalMinutes == minutes,
+                        onClick = { onIntervalChanged(minutes) }
+                    )
                 }
             }
         }
@@ -460,101 +413,35 @@ private fun CategoryCard(
 }
 
 @Composable
-private fun ToolGrid(actions: CleanUiActions) {
-    Column(
-        modifier = Modifier.padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VideoActionTile(
-                icon = Icons.Rounded.Search,
-                title = "扫描工作台",
-                subtitle = "先扫描，再按快照清理",
-                onClick = actions.onScan,
-                modifier = Modifier.weight(1f),
-                primary = true
-            )
-            VideoActionTile(
-                icon = Icons.Rounded.InstallMobile,
-                title = "安装包扫描",
-                subtitle = "识别重复与过期 APK",
-                onClick = actions.onApkScan,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VideoActionTile(
-                icon = Icons.Rounded.CleaningServices,
-                title = "即时缓存",
-                subtitle = "快速处理应用缓存",
-                onClick = actions.onInstantCache,
-                modifier = Modifier.weight(1f)
-            )
-            VideoActionTile(
-                icon = Icons.Rounded.FolderCopy,
-                title = "文件归类",
-                subtitle = "整理下载目录与文件",
-                onClick = actions.onFileOrganizer,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VideoActionTile(
-                icon = Icons.Rounded.AutoAwesome,
-                title = "深度清理",
-                subtitle = "扩大范围并保留保护规则",
-                onClick = actions.onDeepClean,
-                modifier = Modifier.weight(1f)
-            )
-            VideoActionTile(
-                icon = Icons.Rounded.FolderDelete,
-                title = "卸载残留",
-                subtitle = "检查已卸载应用遗留文件",
-                onClick = actions.onCorpses,
-                modifier = Modifier.weight(1f)
-            )
-        }
-        VideoActionTile(
-            icon = Icons.Rounded.Security,
-            title = "规则与安全审计",
-            subtitle = "检查规则命中、保护项和潜在风险",
-            onClick = actions.onAudit,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-
-@Composable
-private fun ApplyButton(saving: Boolean, onClick: () -> Unit) {
+private fun IntervalChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
     Surface(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth()
-            .height(48.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = !saving, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primary
+        modifier = Modifier.height(32.dp).clickable(onClick = onClick),
+        shape = shape,
+        color = if (selected) BaiZeTokens.colors.surfaceOverlay else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            1.dp,
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .42f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .58f)
+        )
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
             Text(
-                if (saving) "正在应用…" else "保存并应用",
-                color = MaterialTheme.colorScheme.onPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
+                label,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = BaiZeTokens.type.caption.copy(fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
             )
         }
     }
 }
-
-private fun apkRetentionText(days: Int): String =
-    if (days <= 0) "不保留" else "$days 天"
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.CACHE -> Icons.Rounded.CleaningServices
     CleanCategoryId.EMPTY -> Icons.Rounded.FolderDelete
     CleanCategoryId.RULES -> Icons.Rounded.Rule
-    CleanCategoryId.FRAGMENTS -> Icons.Rounded.FolderDelete
-    CleanCategoryId.DEEP -> Icons.Rounded.AutoAwesome
+    CleanCategoryId.FRAGMENTS -> Icons.Rounded.AutoAwesome
+    CleanCategoryId.DEEP -> Icons.Rounded.Security
     CleanCategoryId.ORGANIZE -> Icons.Rounded.FolderCopy
 }
+
+private fun apkRetentionText(days: Int): String = if (days <= 0) "立即" else "$days 天"
