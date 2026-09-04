@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'v2/app/**'
+      - 'v2/build.gradle.kts'
       - 'v2/gradle.properties'
       - '.github/workflows/native-ui-preview-apk.yml'
   workflow_dispatch:
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout preview branch
         uses: actions/checkout@v4
@@ -36,13 +37,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '9.5.0'
 
       - name: Compile and assemble debug APK
         working-directory: v2
