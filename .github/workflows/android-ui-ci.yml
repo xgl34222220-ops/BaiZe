@@ -6,6 +6,7 @@ on:
     paths:
       - 'v2/app/**'
       - 'v2/macrobenchmark/**'
+      - 'v2/gradle.properties'
       - '.github/workflows/android-ui-ci.yml'
 
 permissions:
@@ -31,7 +32,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
