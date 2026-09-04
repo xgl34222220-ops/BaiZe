@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-839
+// SPDX-License-Identifier: Apache-2.0
 
 package io.github.xgl34222220.baize.ui.glass
 
@@ -13,8 +13,10 @@ import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.runtimeShaderEffect
 
 /**
- * 与洛书相同的圆角矩形背景折射透镜。
- * 色散只作用于移动选中透镜边缘，图标与文字始终在 shader 内容层之外。
+ * Refracts the captured backdrop through a rounded-rectangle lens.
+ *
+ * The optional chromatic aberration is deliberately kept subtle. It is only visible
+ * around the moving selection rim and never touches the icon/label layer.
  */
 internal fun BackdropEffectScope.liquidGlassLens(
     refractionHeight: Float,
@@ -88,7 +90,7 @@ float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
 }
 
 float2 gradSdRoundedRect(float2 coord, float2 halfSize, float radius) {
-    float2 cornerCoord = abs(coord) - (halfSize - float2(coord.x * 0.0 + radius));
+    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
     if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
         return sign(coord) * normalize(max(cornerCoord, 0.0));
     } else {
@@ -158,7 +160,7 @@ half4 main(float2 coord) {
     sd = min(sd, 0.0);
 
     float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
-    float gradRadius = min(radius, min(halfSize.x, halfSize.y));
+    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
     float2 grad = normalize(
         gradSdRoundedRect(centeredCoord, halfSize, gradRadius) +
         depthEffect * normalize(centeredCoord)
@@ -176,7 +178,7 @@ half4 main(float2 coord) {
     half4 yellow = content.eval(refractedCoord + split * (1.0 / 3.0));
     color.r += yellow.r / 3.5; color.g += yellow.g / 3.5; color.a += yellow.a / 7.0;
     half4 green = content.eval(refractedCoord);
-    color.g += green.g / 3.5; color.a += green.a;
+    color.g += green.g / 3.5; color.a += green.a / 7.0;
     half4 cyan = content.eval(refractedCoord - split * (1.0 / 3.0));
     color.g += cyan.g / 3.5; color.b += cyan.b / 3.0; color.a += cyan.a / 7.0;
     half4 blue = content.eval(refractedCoord - split * (2.0 / 3.0));
