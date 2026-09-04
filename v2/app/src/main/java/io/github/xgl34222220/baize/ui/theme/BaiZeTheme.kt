@@ -3,6 +3,7 @@ package io.github.xgl34222220.baize.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
@@ -22,61 +23,58 @@ import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 
-/** Material 3：标准化控件皮肤，与 MIUIX 共用同一圆角等级。 */
 private val MaterialShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(28.dp)
-)
-
-/** MIUIX / HyperOS：分组卡片更圆润，悬浮层使用 28–32dp 圆角。 */
-private val MiuixShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(20.dp),
     extraLarge = RoundedCornerShape(32.dp)
 )
 
 private val MaterialTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
+    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 43.sp, fontWeight = FontWeight.Black),
+    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 37.sp, fontWeight = FontWeight.Black),
+    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 23.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+    labelSmall = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = .4.sp)
 )
 
+/** 与洛书 main 完全相同的 MIUIX Shape 阶梯。 */
+private val MiuixShapes = Shapes(
+    extraSmall = RoundedCornerShape(7.dp),
+    small = RoundedCornerShape(11.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(26.dp)
+)
+
+/** 与洛书 main 完全相同的 MIUIX Typography。 */
 private val MiuixTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
+    displaySmall = TextStyle(fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Black),
+    headlineLarge = TextStyle(fontSize = 30.sp, lineHeight = 35.sp, fontWeight = FontWeight.Black),
+    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Black),
+    headlineSmall = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Bold),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
+    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
+    bodySmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp),
+    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+    labelSmall = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = .4.sp)
 )
 
 @Composable
 fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
     val dark = resolveDark(settings.themeMode)
-    val amoled = dark && settings.amoledBlack
-    val baiZeColors = when {
-        amoled -> AmoledBaiZeColors
-        dark -> DarkBaiZeColors
-        else -> LightBaiZeColors
-    }
     CompositionLocalProvider(
-        LocalBaiZeColors provides baiZeColors,
         LocalBaiZeCorners provides DefaultBaiZeCorners,
         LocalBaiZeSpacing provides DefaultBaiZeSpacing,
         LocalBaiZeTypeScale provides DefaultBaiZeTypeScale
@@ -89,31 +87,70 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun BaiZeMaterialTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
+private fun BaiZeMaterialTheme(
+    settings: AppearanceSettings,
+    dark: Boolean,
+    content: @Composable () -> Unit
+) {
+    val amoled = dark && settings.amoledBlack
+    val colors = when {
+        amoled -> AmoledBaiZeColors
+        dark -> DarkBaiZeColors
+        else -> LightBaiZeColors
+    }
     DynamicMaterialTheme(
         seedColor = resolveSeedColor(settings),
         useDarkTheme = dark,
-        withAmoled = dark && settings.amoledBlack,
+        withAmoled = amoled,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = MaterialShapes,
         typography = MaterialTypography,
-        animate = true,
-        content = content
-    )
+        animate = true
+    ) {
+        CompositionLocalProvider(LocalBaiZeColors provides colors, content = content)
+    }
 }
 
 @Composable
-private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
+private fun BaiZeMiuixTheme(
+    settings: AppearanceSettings,
+    dark: Boolean,
+    content: @Composable () -> Unit
+) {
+    val pureBlack = dark && settings.amoledBlack
     DynamicMaterialTheme(
         seedColor = resolveSeedColor(settings),
         useDarkTheme = dark,
-        withAmoled = dark && settings.amoledBlack,
+        withAmoled = pureBlack,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = MiuixShapes,
         typography = MiuixTypography,
-        animate = true,
-        content = content
-    )
+        animate = true
+    ) {
+        val scheme = MaterialTheme.colorScheme
+        val colors = BaiZeColors(
+            success = Color(0xFF27BE83),
+            warning = Color(0xFFF0A532),
+            danger = if (dark) Color(0xFFFF8585) else Color(0xFFD83A3A),
+            info = if (dark) Color(0xFF8EAFFF) else Color(0xFF245FD3),
+            surfaceBase = when {
+                pureBlack -> Color.Black
+                dark -> scheme.surfaceContainerLowest
+                else -> Color(0xFFF5F3FC)
+            },
+            surfaceRaised = when {
+                pureBlack -> Color(0xFF080808)
+                dark -> scheme.surfaceContainer
+                else -> scheme.surfaceContainerLowest
+            },
+            surfaceOverlay = when {
+                pureBlack -> Color(0xFF111111)
+                dark -> scheme.surfaceContainerHigh
+                else -> scheme.surfaceContainer
+            }
+        )
+        CompositionLocalProvider(LocalBaiZeColors provides colors, content = content)
+    }
 }
 
 @Composable
