@@ -15,9 +15,8 @@ import androidx.compose.ui.unit.sp
 /**
  * 白泽统一原生 UI 设计 token。
  *
- * 设计基线改为 shadcn/ui 式的移动端语义系统：中性底色、清晰边框、紧凑圆角、
- * 更克制的层级与排版。Material / MIUIX 继续共享同一套信息架构与 token，
- * 不复制 Web DOM，也不把 Android 控件伪装成网页组件。
+ * shadcn/ui 只提供组件组织与信息层级；视觉回归白泽自己的移动端气质：
+ * MIUIX / HyperOS 式圆润层级、Monet 动态色、轻玻璃与克制渐变。
  */
 
 @Immutable
@@ -31,54 +30,49 @@ data class BaiZeColors(
     val surfaceOverlay: Color
 )
 
-/** 浅色：接近 shadcn neutral/zinc 的干净中性层级。 */
+/** 浅色：微冷的蓝紫灰底，让白色卡片自然浮起，不做网页式纯白平铺。 */
 val LightBaiZeColors = BaiZeColors(
-    success = Color(0xFF15803D),
-    warning = Color(0xFFA16207),
-    danger = Color(0xFFDC2626),
-    info = Color(0xFF2563EB),
-    surfaceBase = Color(0xFFFAFAFA),
-    surfaceRaised = Color(0xFFFFFFFF),
-    surfaceOverlay = Color(0xFFF4F4F5)
+    success = Color(0xFF0A9D63),
+    warning = Color(0xFFB97408),
+    danger = Color(0xFFD94545),
+    info = Color(0xFF3469D8),
+    surfaceBase = Color(0xFFF0F1F8),
+    surfaceRaised = Color(0xFFFBFBFE),
+    surfaceOverlay = Color(0xFFF3F3FA)
 )
 
-/** 深色：避免蓝紫染色，使用纯中性阶差。 */
+/** 深色：蓝黑而非死黑，保留玻璃和卡片之间的空气感。 */
 val DarkBaiZeColors = BaiZeColors(
-    success = Color(0xFF4ADE80),
-    warning = Color(0xFFFACC15),
-    danger = Color(0xFFF87171),
-    info = Color(0xFF60A5FA),
-    surfaceBase = Color(0xFF09090B),
-    surfaceRaised = Color(0xFF18181B),
-    surfaceOverlay = Color(0xFF27272A)
+    success = Color(0xFF45D49A),
+    warning = Color(0xFFF0B75E),
+    danger = Color(0xFFFF858B),
+    info = Color(0xFF8FB0FF),
+    surfaceBase = Color(0xFF0D1018),
+    surfaceRaised = Color(0xFF171B26),
+    surfaceOverlay = Color(0xFF222837)
 )
 
-/** AMOLED：保持真正黑底，组件仍保留必要边界。 */
+/** AMOLED：页面保持真黑，浮层仍保留极轻层级，避免所有元素糊成一片。 */
 val AmoledBaiZeColors = DarkBaiZeColors.copy(
     surfaceBase = Color(0xFF000000),
-    surfaceRaised = Color(0xFF0A0A0A),
-    surfaceOverlay = Color(0xFF171717)
+    surfaceRaised = Color(0xFF0B0D12),
+    surfaceOverlay = Color(0xFF161922)
 )
 
 @Immutable
 data class BaiZeCorners(
-    /** Badge、紧凑按钮、图标容器。 */
     val small: Shape,
-    /** 输入框、列表项、设置分组。 */
     val medium: Shape,
-    /** Card、统计卡、主要内容容器。 */
     val large: Shape,
-    /** Sheet、Dock 与高层级浮层。 */
     val extraLarge: Shape,
-    /** 胶囊和圆形状态。 */
     val full: Shape
 )
 
 val DefaultBaiZeCorners = BaiZeCorners(
-    small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
-    extraLarge = RoundedCornerShape(20.dp),
+    small = RoundedCornerShape(13.dp),
+    medium = RoundedCornerShape(19.dp),
+    large = RoundedCornerShape(25.dp),
+    extraLarge = RoundedCornerShape(34.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -91,8 +85,7 @@ data class BaiZeSpacing(
     val xl: Dp = 20.dp,
     val xxl: Dp = 24.dp,
     val huge: Dp = 32.dp,
-    /** shadcn 风格统一页面左右留白，提升主页面对齐感。 */
-    val pageHorizontal: Dp = 16.dp
+    val pageHorizontal: Dp = 14.dp
 )
 
 val DefaultBaiZeSpacing = BaiZeSpacing()
@@ -109,15 +102,15 @@ data class BaiZeTypeScale(
 )
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
-    caption = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+    caption = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal),
     body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    headline = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-    display = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
+    title = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    headline = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
+    display = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
     hero = TextStyle(
-        fontSize = 38.sp,
-        lineHeight = 44.sp,
+        fontSize = 40.sp,
+        lineHeight = 46.sp,
         fontWeight = FontWeight.Bold,
         fontFeatureSettings = "tnum"
     )
