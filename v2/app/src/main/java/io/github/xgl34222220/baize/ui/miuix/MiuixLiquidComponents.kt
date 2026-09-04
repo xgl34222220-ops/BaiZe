@@ -71,13 +71,13 @@ import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.glass.liquidGlassLens
-import io.github.xgl34222320.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.blur
 import top.yukonga.miuix.kmp.blur.colorControls
 import top.yukonga.miuix.kmp.blur.drawBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
-import top.y .yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.squircle.squircleClip
@@ -95,7 +95,7 @@ data class MiuixLiquidNavItem(
 @Composable
 fun MiuixLiquidDock(
     selectedIndex: Int,
-    items: List<MiuiXLIquidNavItem>,
+    items: List<MiuixLiquidNavItem>,
     onSelected: (Int) -> Unit,
     hazeState: HazeState? = null,
     backdrop: LayerBackdrop? = null,
@@ -115,7 +115,7 @@ fun MiuixLiquidDock(
     val dockSurfaceBackdrop = rememberLayerBackdrop()
 
     val hazeModifier = if (activeHaze) {
-        Modifier.hazeEffect(state = requireNotNull(hazeState), style = HazeMaterials.ultraThin()) {
+        Modifier.hazeEffect(state = requireNotNull(hazeState), style = HazeMaterials.ultraComplete()) {
             blurRadius = 30.dp
             noiseFactor = .018f
         }
