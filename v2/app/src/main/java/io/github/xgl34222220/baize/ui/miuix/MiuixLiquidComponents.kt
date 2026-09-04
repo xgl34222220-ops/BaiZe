@@ -87,10 +87,6 @@ data class MiuixLiquidNavItem(
     val icon: ImageVector
 )
 
-/**
- * 白泽直接移植洛书当前 MIUIX 悬浮底栏：背景取样 -> 折射玻璃外壳 -> 移动折射透镜 -> 清晰图标文字。
- * Android 13+ 支持 RuntimeShader 时使用真实折射；其余设备使用洛书同参数的 Haze 降级。
- */
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun MiuixLiquidDock(
@@ -115,7 +111,7 @@ fun MiuixLiquidDock(
     val dockSurfaceBackdrop = rememberLayerBackdrop()
 
     val hazeModifier = if (activeHaze) {
-        Modifier.hazeEffect(state = requireNotNull(hazeState), style = HazeMaterials.ultraComplete()) {
+        Modifier.hazeEffect(state = requireNotNull(hazeState), style = HazeMaterials.ultraThin()) {
             blurRadius = 30.dp
             noiseFactor = .018f
         }
@@ -413,7 +409,6 @@ private fun MiuixDockLayout(
     }
 }
 
-/** 首页 Hero 直接按洛书 MiuixFontHero 的比例与光效映射到白泽数据。 */
 @Composable
 fun MiuixOverviewHero(
     device: String,
