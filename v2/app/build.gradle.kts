@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -17,8 +16,7 @@ val releaseSigningReady = listOf(
 
 android {
     namespace = "io.github.xgl34222220.baize"
-    // LuoShu/Miuix 0.9.3 is published against API 37. This is compile-time only;
-    // targetSdk remains 36 so BaiZe does not opt into new runtime behavior here.
+    // 与洛书一致：Miuix 0.9.3 需要 API 37 编译，但 targetSdk 继续保持 36。
     compileSdk = 37
 
     defaultConfig {
@@ -39,10 +37,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     testOptions {
