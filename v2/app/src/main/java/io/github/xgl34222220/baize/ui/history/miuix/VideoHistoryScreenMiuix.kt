@@ -2,7 +2,6 @@ package io.github.xgl34222220.baize.ui.history.miuix
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
@@ -39,12 +37,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.HistoryUiItem
 import io.github.xgl34222220.baize.ui.common.AppPackageIcon
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
@@ -59,19 +55,20 @@ import io.github.xgl34222220.baize.ui.miuix.VideoTabs
 import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-/** 记录页按参考视频改为顶部标签切换，概览、应用结果和历史记录不再全部堆在一个长页面。 */
+/** 记录页：Tabs 分区 + 中性 Card，概览、应用和历史只呈现当前任务需要的信息。 */
 @Composable
 fun VideoHistoryScreenMiuix(
     state: HistoryUiState,
     actions: HistoryUiActions
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 100.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(bottom = bottomInset + 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             VideoTopBar(
@@ -96,50 +93,33 @@ fun VideoHistoryScreenMiuix(
                 item { LifetimeHero(state) }
                 item {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = pagePadding),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        VideoMetricTile(
-                            label = "任务",
-                            value = state.lifetimeRuns.toString(),
-                            caption = "累计执行次数",
-                            modifier = Modifier.weight(1f)
-                        )
-                        VideoMetricTile(
-                            label = "处理文件",
-                            value = state.lifetimeFiles.toString(),
-                            caption = "累计文件数量",
-                            modifier = Modifier.weight(1f)
-                        )
+                        VideoMetricTile("任务", state.lifetimeRuns.toString(), "累计执行次数", Modifier.weight(1f))
+                        VideoMetricTile("处理文件", state.lifetimeFiles.toString(), "累计文件数量", Modifier.weight(1f))
                     }
                 }
                 item {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = pagePadding),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         VideoMetricTile(
-                            label = "空项目",
-                            value = (state.lifetimeEmptyFiles + state.lifetimeEmptyDirs).toString(),
-                            caption = "空文件与目录",
-                            modifier = Modifier.weight(1f)
+                            "空项目",
+                            (state.lifetimeEmptyFiles + state.lifetimeEmptyDirs).toString(),
+                            "空文件与目录",
+                            Modifier.weight(1f)
                         )
-                        VideoMetricTile(
-                            label = "累计耗时",
-                            value = formatElapsed(state.lifetimeElapsed),
-                            caption = "所有清理任务",
-                            modifier = Modifier.weight(1f)
-                        )
+                        VideoMetricTile("累计耗时", formatElapsed(state.lifetimeElapsed), "所有清理任务", Modifier.weight(1f))
                     }
                 }
-                item { VideoSectionTitle("最近结果", "最近一次任务的可读摘要") }
+                item { VideoSectionTitle("最近结果", "最近一次任务摘要") }
                 item { CurrentResultCard(state) }
                 if (state.protectedItems.isNotEmpty()) {
                     item {
                         VideoCard(
-                            modifier = Modifier
-                                .padding(horizontal = 12.dp)
-                                .fillMaxWidth()
+                            modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
                         ) {
                             VideoListRow(
                                 icon = Icons.Rounded.Security,
@@ -161,9 +141,7 @@ fun VideoHistoryScreenMiuix(
                     if (state.recentApps.isNotEmpty()) {
                         item {
                             VideoCard(
-                                modifier = Modifier
-                                    .padding(horizontal = 12.dp)
-                                    .fillMaxWidth()
+                                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
                             ) {
                                 state.recentApps.forEachIndexed { index, app ->
                                     AppResultRow(
@@ -182,9 +160,7 @@ fun VideoHistoryScreenMiuix(
                         item { VideoSectionTitle("其他垃圾", "不属于单个应用的清理结果") }
                         item {
                             VideoCard(
-                                modifier = Modifier
-                                    .padding(horizontal = 12.dp)
-                                    .fillMaxWidth()
+                                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
                             ) {
                                 state.recentJunk.forEachIndexed { index, junk ->
                                     GenericResultRow(
@@ -220,60 +196,33 @@ fun VideoHistoryScreenMiuix(
 @Composable
 private fun LifetimeHero(state: HistoryUiState) {
     val context = LocalContext.current
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth(),
         contentPadding = 16
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(BaiZeTokens.colors.success)
-                    )
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        "累计清理",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
+                Text("累计释放", color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption)
+                Spacer(Modifier.height(3.dp))
                 Text(
                     Formatter.formatFileSize(context, state.lifetimeReleased),
-                    fontSize = 30.sp,
-                    lineHeight = 35.sp,
-                    fontWeight = FontWeight.Bold
+                    style = BaiZeTokens.type.hero
                 )
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(5.dp))
                 Text(
                     if (state.lastTaskTime.isBlank()) "等待首次任务" else "最近执行 ${state.lastTaskTime}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    style = BaiZeTokens.type.caption,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .52f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.History,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(48.dp)
-                )
-            }
+            Text(
+                "${state.lifetimeRuns} 次任务",
+                color = MaterialTheme.colorScheme.primary,
+                style = BaiZeTokens.type.caption.copy(fontWeight = FontWeight.SemiBold)
+            )
         }
     }
 }
@@ -281,23 +230,14 @@ private fun LifetimeHero(state: HistoryUiState) {
 @Composable
 private fun CurrentResultCard(state: HistoryUiState) {
     val context = LocalContext.current
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth()
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
     ) {
         VideoListRow(
             icon = Icons.Rounded.CheckCircle,
-            title = if (state.hasCurrentResult) {
-                state.latestResult.ifBlank { "最近一次任务已完成" }
-            } else {
-                "暂无最近结果"
-            },
-            subtitle = if (state.hasCurrentResult) {
-                "处理 ${state.currentItemCount} 项 · ${state.lastTaskTime}"
-            } else {
-                "完成一次扫描或清理后显示结果"
-            },
+            title = if (state.hasCurrentResult) state.latestResult.ifBlank { "最近一次任务已完成" } else "暂无最近结果",
+            subtitle = if (state.hasCurrentResult) "处理 ${state.currentItemCount} 项 · ${state.lastTaskTime}" else "完成一次扫描或清理后显示结果",
             value = Formatter.formatFileSize(context, state.currentBytes)
         )
     }
@@ -313,25 +253,18 @@ private fun AppResultRow(
 ) {
     val context = LocalContext.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 15.dp, vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AppPackageIcon(
-            packageName = packageName,
-            label = label,
-            size = 40.dp,
-            corner = 13.dp
-        )
+        AppPackageIcon(packageName = packageName, label = label, size = 38.dp, corner = 10.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(Formatter.formatFileSize(context, bytes), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("$files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            Text(Formatter.formatFileSize(context, bytes), style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold))
+            Text("$files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption)
         }
     }
 }
@@ -355,27 +288,21 @@ private fun GenericResultRow(
 @Composable
 private fun HistoryRecordCard(record: HistoryUiItem) {
     val context = LocalContext.current
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     val statusColor = if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.primary
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth(),
-        contentPadding = 15
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth(),
+        contentPadding = 14
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(9.dp)
-                    .clip(CircleShape)
-                    .background(statusColor)
-            )
+            Box(Modifier.size(8.dp).background(statusColor, CircleShape))
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
-                Text(record.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(record.title, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     "${record.time} · ${record.trigger}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    style = BaiZeTokens.type.caption,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -383,24 +310,29 @@ private fun HistoryRecordCard(record: HistoryUiItem) {
             Text(
                 Formatter.formatFileSize(context, record.bytes),
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold)
             )
         }
         Spacer(Modifier.height(9.dp))
         Surface(
-            shape = RoundedCornerShape(13.dp),
-            color = BaiZeTokens.colors.surfaceOverlay
+            shape = BaiZeTokens.corners.medium,
+            color = BaiZeTokens.colors.surfaceOverlay,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(record.result.ifBlank { "任务已完成" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    record.result.ifBlank { "任务已完成" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = BaiZeTokens.type.caption,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Spacer(Modifier.width(8.dp))
-                Text("${record.files} 项", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("${record.files} 项", style = BaiZeTokens.type.caption.copy(fontWeight = FontWeight.SemiBold))
             }
         }
     }
@@ -408,22 +340,18 @@ private fun HistoryRecordCard(record: HistoryUiItem) {
 
 @Composable
 private fun EmptyCard(title: String, subtitle: String) {
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
     VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth(),
         contentPadding = 22
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+                Icon(Icons.Rounded.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.height(8.dp))
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(title, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold))
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = BaiZeTokens.type.caption)
             }
         }
     }
