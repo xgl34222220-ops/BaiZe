@@ -1,8 +1,6 @@
 package io.github.xgl34222220.baize.ui.settings.miuix
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BatterySaver
@@ -30,7 +27,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -38,12 +34,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.miuix.VideoCard
 import io.github.xgl34222220.baize.ui.miuix.VideoDivider
 import io.github.xgl34222220.baize.ui.miuix.VideoIconButton
@@ -57,7 +49,7 @@ import io.github.xgl34222220.baize.ui.settings.SettingsUiState
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlin.math.roundToInt
 
-/** 设置页采用视频中的系统设置语言：居中标题、分组卡片、紧凑行高与右侧状态值。 */
+/** shadcn-inspired 设置页：语义分组、统一 Item、统一边框和一个明确保存动作。 */
 @Composable
 fun VideoSettingsScreenMiuix(
     state: SettingsUiState,
@@ -65,16 +57,17 @@ fun VideoSettingsScreenMiuix(
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val scheduler = state.scheduler
+    val pagePadding = BaiZeTokens.spacing.pageHorizontal
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 100.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(bottom = bottomInset + 96.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
     ) {
         item {
             VideoTopBar(
                 title = "设置",
-                subtitle = "界面、自动任务与安全保护",
+                subtitle = "外观、自动任务与安全保护",
                 actions = {
                     VideoIconButton(
                         icon = Icons.Rounded.Refresh,
@@ -85,23 +78,31 @@ fun VideoSettingsScreenMiuix(
             )
         }
 
-        item { AppearanceHero(state, actions.onOpenAppearance) }
-
-        item { VideoSectionTitle("自动执行", "任务只在合适的设备状态下运行") }
         item {
             VideoCard(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
+            ) {
+                VideoListRow(
+                    icon = Icons.Rounded.DarkMode,
+                    title = "界面与主题",
+                    subtitle = state.appearanceSummary,
+                    value = "打开",
+                    onClick = actions.onOpenAppearance
+                )
+            }
+        }
+
+        item { VideoSectionTitle("自动执行", "后台任务只在满足条件时运行") }
+        item {
+            VideoCard(
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
             ) {
                 VideoSwitchRow(
                     icon = Icons.Rounded.SettingsSuggest,
                     title = "仅在息屏时执行",
                     subtitle = "使用手机时不占用存储性能",
                     checked = scheduler.screenOffOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(screenOffOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(screenOffOnly = it)) }
                 )
                 VideoDivider()
                 VideoSwitchRow(
@@ -109,9 +110,7 @@ fun VideoSettingsScreenMiuix(
                     title = "仅在充电时执行",
                     subtitle = "连接电源后再开始自动任务",
                     checked = scheduler.chargingOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(chargingOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(chargingOnly = it)) }
                 )
                 VideoDivider()
                 VideoSwitchRow(
@@ -119,28 +118,22 @@ fun VideoSettingsScreenMiuix(
                     title = "仅在系统空闲时执行",
                     subtitle = "等待 Android 进入空闲状态",
                     checked = scheduler.idleOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(idleOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(idleOnly = it)) }
                 )
             }
         }
 
-        item { VideoSectionTitle("文件归类", "文件整理使用独立运行条件") }
+        item { VideoSectionTitle("文件归类", "文件移动使用独立运行条件") }
         item {
             VideoCard(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
             ) {
                 VideoSwitchRow(
                     icon = Icons.Rounded.FolderCopy,
                     title = "归类时等待息屏",
-                    subtitle = "文件移动不会打断前台操作",
+                    subtitle = "避免文件移动打断前台操作",
                     checked = scheduler.organizeScreenOffOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(organizeScreenOffOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeScreenOffOnly = it)) }
                 )
                 VideoDivider()
                 VideoSwitchRow(
@@ -148,29 +141,23 @@ fun VideoSettingsScreenMiuix(
                     title = "归类时等待充电",
                     subtitle = "连接电源后再整理下载文件",
                     checked = scheduler.organizeChargingOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(organizeChargingOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeChargingOnly = it)) }
                 )
                 VideoDivider()
                 VideoSwitchRow(
                     icon = Icons.Rounded.SettingsSuggest,
                     title = "归类时等待系统空闲",
-                    subtitle = "降低文件移动对前台应用的影响",
+                    subtitle = "降低移动文件对前台应用的影响",
                     checked = scheduler.organizeIdleOnly,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(organizeIdleOnly = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(organizeIdleOnly = it)) }
                 )
             }
         }
 
-        item { VideoSectionTitle("清理保护", "电量、文件大小和白名单") }
+        item { VideoSectionTitle("清理保护", "电量、文件大小与白名单") }
         item {
             VideoCard(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
             ) {
                 SliderSettingRow(
                     icon = Icons.Rounded.BatterySaver,
@@ -207,27 +194,24 @@ fun VideoSettingsScreenMiuix(
                 VideoListRow(
                     icon = Icons.Rounded.PlayArrow,
                     title = "断点续清",
-                    subtitle = "消费已保存的扫描快照，中断后可继续",
+                    subtitle = "消费已保存快照，中断后可继续",
+                    value = "打开",
                     onClick = actions.onOpenResumableScan
                 )
             }
         }
 
-        item { VideoSectionTitle("通知", "任务完成后的系统提醒") }
+        item { VideoSectionTitle("通知", "控制任务完成后的系统提醒") }
         item {
             VideoCard(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
             ) {
                 VideoSwitchRow(
                     icon = Icons.Rounded.Notifications,
                     title = "任务完成通知",
                     subtitle = "自动任务结束后显示结果",
                     checked = scheduler.notifyOnComplete,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(notifyOnComplete = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(notifyOnComplete = it)) }
                 )
                 VideoDivider()
                 VideoSwitchRow(
@@ -235,21 +219,31 @@ fun VideoSettingsScreenMiuix(
                     title = "零结果也通知",
                     subtitle = "没有可清理内容时也发送通知",
                     checked = scheduler.notifyZero,
-                    onCheckedChange = {
-                        actions.onUpdateScheduler(scheduler.copy(notifyZero = it))
-                    }
+                    onCheckedChange = { actions.onUpdateScheduler(scheduler.copy(notifyZero = it)) }
                 )
             }
         }
 
-        item { VideoSectionTitle("服务与诊断", "Root 服务状态和高级入口") }
+        item { VideoSectionTitle("服务与诊断", "Root 状态、规则和异常入口") }
         item {
             VideoCard(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .fillMaxWidth()
+                modifier = Modifier.padding(horizontal = pagePadding).fillMaxWidth()
             ) {
-                ServiceStatusRow(state)
+                VideoListRow(
+                    icon = Icons.Rounded.Security,
+                    title = when {
+                        state.running -> "Root 任务执行中"
+                        state.connected && state.ready -> "Root 服务运行正常"
+                        state.connected -> "Root 服务已连接"
+                        else -> "Root 服务正在恢复"
+                    },
+                    subtitle = state.serviceText,
+                    value = when {
+                        state.running -> "执行中"
+                        state.connected && state.ready -> "正常"
+                        else -> "恢复中"
+                    }
+                )
                 VideoDivider()
                 VideoListRow(
                     icon = Icons.Rounded.Rule,
@@ -262,7 +256,7 @@ fun VideoSettingsScreenMiuix(
                 VideoListRow(
                     icon = Icons.Rounded.Refresh,
                     title = "重新连接 Root 服务",
-                    subtitle = "服务异常或授权变化时使用",
+                    subtitle = "授权变化或服务异常时使用",
                     value = "重连",
                     onClick = actions.onReconnect
                 )
@@ -280,83 +274,24 @@ fun VideoSettingsScreenMiuix(
         item {
             Surface(
                 modifier = Modifier
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = pagePadding)
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .height(46.dp)
                     .clickable(
                         enabled = !scheduler.saving,
                         onClick = { actions.onSaveScheduler(scheduler) }
                     ),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         if (scheduler.saving) "正在保存…" else "保存设置",
                         color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+                        style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun AppearanceHero(
-    state: SettingsUiState,
-    onClick: () -> Unit
-) {
-    VideoCard(
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(onClick = onClick),
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .72f),
-        contentPadding = 16
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(17.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = .54f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.DarkMode,
-                    contentDescription = null,
-                    modifier = Modifier.size(27.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(Modifier.size(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "界面与主题",
-                    fontSize = 18.sp,
-                    lineHeight = 23.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    state.appearanceSummary,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                "设置",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
         }
     }
 }
@@ -374,18 +309,17 @@ private fun SliderSettingRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 15.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top
     ) {
         VideoLeadingIcon(icon)
         Spacer(Modifier.size(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, style = BaiZeTokens.type.body.copy(fontWeight = FontWeight.SemiBold))
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
+                style = BaiZeTokens.type.caption
             )
             Slider(
                 value = value,
@@ -394,68 +328,5 @@ private fun SliderSettingRow(
                 steps = steps
             )
         }
-    }
-}
-
-@Composable
-private fun ServiceStatusRow(state: SettingsUiState) {
-    val healthy = state.connected && state.ready && !state.running
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 15.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            state.running -> BaiZeTokens.colors.warning
-                            healthy -> BaiZeTokens.colors.success
-                            else -> MaterialTheme.colorScheme.outline
-                        }
-                    )
-            )
-        }
-        Spacer(Modifier.size(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                when {
-                    state.running -> "Root 任务执行中"
-                    healthy -> "Root 服务运行正常"
-                    state.connected -> "Root 服务已连接"
-                    else -> "Root 服务正在恢复"
-                },
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                state.serviceText,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Text(
-            when {
-                state.running -> "执行中"
-                healthy -> "正常"
-                else -> "恢复中"
-            },
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }
