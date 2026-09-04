@@ -35,10 +35,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh v2/tests/*.sh; do
+          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh; do
             [ -f "$script" ] || continue
             sh -n "$script"
             busybox ash -n "$script"
+          done
+          for test_script in v2/tests/*.sh; do
+            [ -f "$test_script" ] || continue
+            bash -n "$test_script"
           done
 
       - name: Run complete regression suite
