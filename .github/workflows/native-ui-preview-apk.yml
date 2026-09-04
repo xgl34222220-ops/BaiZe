@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'v2/app/**'
+      - 'v2/gradle.properties'
       - '.github/workflows/native-ui-preview-apk.yml'
   workflow_dispatch:
 
@@ -36,7 +37,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -50,13 +51,13 @@ jobs:
           set -euo pipefail
           gradle --no-daemon :app:compileDebugKotlin :app:assembleDebug
           test -f app/build/outputs/apk/debug/app-debug.apk
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/BaiZe-v2.5.5-Native-UI-Preview.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/BaiZe-v2.6.3-LuoShu-UI-Preview.apk
 
       - name: Upload native UI preview APK
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v2.5.5-Native-UI-Preview-APK
-          path: v2/app/build/outputs/apk/debug/BaiZe-v2.5.5-Native-UI-Preview.apk
+          name: BaiZe-v2.6.3-LuoShu-UI-Preview-APK
+          path: v2/app/build/outputs/apk/debug/BaiZe-v2.6.3-LuoShu-UI-Preview.apk
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
