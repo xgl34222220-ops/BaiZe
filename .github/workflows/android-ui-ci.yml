@@ -6,6 +6,7 @@ on:
     paths:
       - 'v2/app/**'
       - 'v2/macrobenchmark/**'
+      - 'v2/build.gradle.kts'
       - 'v2/gradle.properties'
       - '.github/workflows/android-ui-ci.yml'
 
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   android-ui:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -31,13 +32,10 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: '9.5.0'
 
       - name: Compile and lint UI
         working-directory: v2
@@ -46,7 +44,7 @@ jobs:
           set +e
           gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
           code=$?
-          tail -n 200 /tmp/baize-android-ui.log
+          tail -n 240 /tmp/baize-android-ui.log
           exit "$code"
 
       - name: Upload Android diagnostics
