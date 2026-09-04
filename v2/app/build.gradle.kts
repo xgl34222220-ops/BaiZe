@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -16,8 +17,7 @@ val releaseSigningReady = listOf(
 
 android {
     namespace = "io.github.xgl34222220.baize"
-    // 与洛书一致：Miuix 0.9.3 需要 API 37 编译，但 targetSdk 继续保持 36。
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "io.github.xgl34222220.baize"
@@ -39,13 +39,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
     testOptions {
         unitTests {
+            // 让未 mock 的 android.* 调用返回默认值而不是抛
+            // "not mocked" 异常，纯逻辑测试无需引入 Robolectric。
             isReturnDefaultValues = true
         }
     }
 
     lint {
+        // 先建立基线，新增问题才会让 CI 变红；存量问题逐步清理。
         baseline = file("lint-baseline.xml")
         warningsAsErrors = false
         abortOnError = true
@@ -124,12 +131,12 @@ dependencies {
     implementation("com.materialkolor:material-kolor:2.0.0")
     implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
-    implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.3")
-    implementation("top.yukonga.miuix.kmp:miuix-squircle-android:0.9.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
     implementation("com.github.topjohnwu.libsu:service:6.0.0")
 
+    // 单元测试。此前 42817 行 Kotlin 没有任何 JVM 测试，
+    // 所有"测试"都是 shell 里 grep 源码字符串的 contract 脚本。
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")

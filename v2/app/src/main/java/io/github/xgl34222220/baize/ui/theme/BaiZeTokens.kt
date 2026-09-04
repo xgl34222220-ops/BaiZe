@@ -13,11 +13,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 白泽 MIUIX 设计 token。
+ * 白泽统一原生 UI 设计 token。
  *
- * 与洛书当前 MIUIX 主线保持同一视觉尺度：F5F3FC 页面底色、16dp 页面留白、
- * 7/11/16/22/26dp 圆角阶梯、Black 标题字阶和动态 Monet 容器层级。
+ * 基准：MIUIX / HyperOS 气质 + Material 3 动态色 + Monet + 轻量玻璃。
+ * 两套皮肤共享语义色、圆角、间距和字阶，页面不再自行定义随机值。
  */
+
 @Immutable
 data class BaiZeColors(
     val success: Color,
@@ -29,19 +30,21 @@ data class BaiZeColors(
     val surfaceOverlay: Color
 )
 
+/** 浅色：浅紫灰底、低对比分组卡片。 */
 val LightBaiZeColors = BaiZeColors(
-    success = Color(0xFF27BE83),
-    warning = Color(0xFFF0A532),
+    success = Color(0xFF0AA45B),
+    warning = Color(0xFFB87300),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFF5F3FC),
-    surfaceRaised = Color.White,
-    surfaceOverlay = Color(0xFFF3F1F9)
+    surfaceBase = Color(0xFFECEBFA),
+    surfaceRaised = Color(0xFFF8F7FD),
+    surfaceOverlay = Color(0xFFF2F0FA)
 )
 
+/** 普通深色：避免纯黑压迫感，维持柔和层级。 */
 val DarkBaiZeColors = BaiZeColors(
-    success = Color(0xFF27BE83),
-    warning = Color(0xFFF0A532),
+    success = Color(0xFF46CF8D),
+    warning = Color(0xFFE8B45D),
     danger = Color(0xFFFF8585),
     info = Color(0xFF8EAFFF),
     surfaceBase = Color(0xFF11131A),
@@ -49,26 +52,32 @@ val DarkBaiZeColors = BaiZeColors(
     surfaceOverlay = Color(0xFF252937)
 )
 
+/** AMOLED：页面纯黑，主体与次级容器保留极轻阶差。 */
 val AmoledBaiZeColors = DarkBaiZeColors.copy(
-    surfaceBase = Color.Black,
-    surfaceRaised = Color(0xFF080808),
-    surfaceOverlay = Color(0xFF111111)
+    surfaceBase = Color(0xFF000000),
+    surfaceRaised = Color(0xFF0C0C0D),
+    surfaceOverlay = Color(0xFF171719)
 )
 
 @Immutable
 data class BaiZeCorners(
+    /** Chip、小按钮、图标托底。 */
     val small: Shape,
+    /** 输入框、设置分组卡片。 */
     val medium: Shape,
+    /** 数据卡、仪表盘主卡片。 */
     val large: Shape,
+    /** 悬浮底栏、底部弹层与高层级浮层。 */
     val extraLarge: Shape,
+    /** 胶囊和圆形状态。 */
     val full: Shape
 )
 
 val DefaultBaiZeCorners = BaiZeCorners(
-    small = RoundedCornerShape(11.dp),
-    medium = RoundedCornerShape(16.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
     large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(32.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -81,7 +90,8 @@ data class BaiZeSpacing(
     val xl: Dp = 20.dp,
     val xxl: Dp = 24.dp,
     val huge: Dp = 32.dp,
-    val pageHorizontal: Dp = 16.dp
+    /** 360dp 手机基准的统一页面左右边距。 */
+    val pageHorizontal: Dp = 12.dp
 )
 
 val DefaultBaiZeSpacing = BaiZeSpacing()
@@ -99,15 +109,15 @@ data class BaiZeTypeScale(
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
     caption = TextStyle(fontSize = 11.sp, lineHeight = 16.sp),
-    body = TextStyle(fontSize = 13.sp, lineHeight = 18.sp),
+    body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Bold),
-    headline = TextStyle(fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Black),
-    display = TextStyle(fontSize = 30.sp, lineHeight = 35.sp, fontWeight = FontWeight.Black),
+    title = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    headline = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
+    display = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
     hero = TextStyle(
-        fontSize = 36.sp,
-        lineHeight = 42.sp,
-        fontWeight = FontWeight.Black,
+        fontSize = 40.sp,
+        lineHeight = 46.sp,
+        fontWeight = FontWeight.Bold,
         fontFeatureSettings = "tnum"
     )
 )
