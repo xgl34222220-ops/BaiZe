@@ -19,7 +19,9 @@ RUNNING_FILE="$STATE_DIR/running.env"
 STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 DEEP_RULES=${BAIZE_DEEP_RULES:-$MODDIR/config/deep.rules}
-RISK_OVERRIDES=${BAIZE_RISK_OVERRIDES:-$STATE_DIR/risk-overrides.conf}
+# 风险覆盖拆为两层：模块内置保护每次升级自动更新；状态目录仅保存用户自定义。
+BUILTIN_RISK_OVERRIDES=${BAIZE_BUILTIN_RISK_OVERRIDES:-$MODDIR/config/risk-overrides.conf}
+USER_RISK_OVERRIDES=${BAIZE_RISK_OVERRIDES:-$STATE_DIR/risk-overrides.conf}
 # ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
 if [ -f "$MODDIR/abi-resolve.sh" ]; then
   . "$MODDIR/abi-resolve.sh"
@@ -54,8 +56,15 @@ fi
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
 [ -f "$WHITELIST" ] || cp -f "$MODDIR/config/whitelist.conf" "$WHITELIST"
-[ -f "$RISK_OVERRIDES" ] && [ -f "$MODDIR/config/risk-overrides.conf" ] || \
-  { [ -f "$MODDIR/config/risk-overrides.conf" ] && cp -f "$MODDIR/config/risk-overrides.conf" "$RISK_OVERRIDES"; }
+# 不再把模块内置保护复制到状态目录。升级用户保留旧自定义，新安装创建纯用户层模板。
+if [ ! -f "$USER_RISK_OVERRIDES" ]; then
+  cat >"$USER_RISK_OVERRIDES" <<'EOF'
+# 白泽 · 用户风险覆盖
+# 格式：绝对路径|low|medium|high|critical
+# 该文件升级时不会被覆盖；同一路径重复时最后一条生效。
+# 用户精确路径优先于模块内置保护；更具体的子路径也可覆盖父路径。
+EOF
+fi
 [ -f "$PACKAGE_WHITELIST" ] || : >"$PACKAGE_WHITELIST"
 
 # 解析允许自动删除的最高风险等级。
@@ -138,6 +147,39 @@ fi
 TMP_DIR="$LOCK_DIR/tmp"
 mkdir -p "$TMP_DIR"
 
+# 每次深度扫描动态生成有效风险表：模块内置保护永远取当前版本，用户层精确路径优先。
+# 这样旧版升级后无需覆盖 /data/adb/baize-v2/risk-overrides.conf，也能立即获得新保护。
+EFFECTIVE_RISK_OVERRIDES="$TMP_DIR/risk-overrides.effective.conf"
+build_effective_risk_overrides() {
+  _builtin=$1
+  _user=$2
+  _out=$3
+  _user_paths="$TMP_DIR/risk-user-paths.$$"
+  {
+    echo "__BAIZE_SENTINEL__"
+    awk -F '|' '
+      /^\// && ($2=="low" || $2=="medium" || $2=="high" || $2=="critical") { print $1 }
+    ' "$_user" 2>/dev/null
+  } >"$_user_paths"
+
+  awk -F '|' '
+    FNR==NR { if ($0 != "__BAIZE_SENTINEL__") user[$0]=1; next }
+    /^\// && ($2=="low" || $2=="medium" || $2=="high" || $2=="critical") {
+      if (!($1 in user)) print $1 "|" $2
+    }
+  ' "$_user_paths" "$_builtin" 2>/dev/null >"$_out"
+
+  # 用户文件同一路径如果重复，最后一条生效；输出只保留一条，避免 C 层“只升不降”语义干扰用户覆盖。
+  awk -F '|' '
+    /^\// && ($2=="low" || $2=="medium" || $2=="high" || $2=="critical") {
+      line[$1]=$1 "|" $2
+      if (!seen[$1]++) order[++n]=$1
+    }
+    END { for (i=1; i<=n; i++) print line[order[i]] }
+  ' "$_user" 2>/dev/null >>"$_out"
+  rm -f "$_user_paths"
+}
+
 START_EPOCH=$(date +%s)
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-$MODE.tsv"
@@ -216,13 +258,15 @@ case "$MODE" in
   deep-scan)
     rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets"
     [ -f "$DEEP_RULES" ] || { echo "完整深度规则库缺失" >&2; exit 8; }
+    [ -f "$BUILTIN_RISK_OVERRIDES" ] || { echo "内置风险保护表缺失" >&2; exit 8; }
+    build_effective_risk_overrides "$BUILTIN_RISK_OVERRIDES" "$USER_RISK_OVERRIDES" "$EFFECTIVE_RISK_OVERRIDES"
     allow_high=$(sed -n 's/^deep_high_risk_enabled=//p' "$CONFIG" 2>/dev/null | tail -n 1)
     [ "$allow_high" = "1" ] || allow_high=0
     max_auto_risk=$(deep_max_auto_risk "$TRIGGER" "$allow_high")
     set_phase "启动 C 原生深度规则扫描" 0 0 ""
     "$NATIVE_ENGINE" scan-deep --rules "$DEEP_RULES" --whitelist "$WHITELIST" \
       --max-file-bytes "$MAX_FILE_BYTES" --allow-high-risk "$allow_high" \
-      --max-auto-risk "$max_auto_risk" --risk-overrides "$RISK_OVERRIDES" \
+      --max-auto-risk "$max_auto_risk" --risk-overrides "$EFFECTIVE_RISK_OVERRIDES" \
       --dir-budget-ms "$DEEP_DIR_BUDGET_MS" --global-budget-ms "$DEEP_GLOBAL_BUDGET_MS" --report "$REPORT_FILE" \
       --targets "$TARGETS_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
@@ -325,8 +369,7 @@ else
         echo "deep_parse_ms=$DEEP_PARSE_MS"
         echo "deep_stage_ms=$DEEP_STAGE_MS"
         echo "deep_slowest_ms=$DEEP_SLOWEST_MS"
-        printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
-' '  '
+        printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '\n' '  '
         echo "engine=native-c-arm64-path-index"
       } >"$STATE_DIR/corpse_scan.env"
       chmod 0600 "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets" 2>/dev/null
@@ -343,6 +386,9 @@ else
         echo "targets_sha=$targets_sha"
         echo "whitelist_sha=$(file_sha "$WHITELIST")"
         echo "rules_sha=$(file_sha "$DEEP_RULES")"
+        echo "builtin_risk_sha=$(file_sha "$BUILTIN_RISK_OVERRIDES")"
+        echo "user_risk_sha=$(file_sha "$USER_RISK_OVERRIDES")"
+        echo "effective_risk_sha=$(file_sha "$EFFECTIVE_RISK_OVERRIDES")"
         echo "allow_high_risk=$allow_high"
         echo "max_file_bytes=$MAX_FILE_BYTES"
         echo "bytes=$BYTES"
@@ -459,8 +505,7 @@ fi
   echo "deep_rule_parse_seconds=$((DEEP_PARSE_MS / 1000))"
   echo "deep_stage_seconds=$((DEEP_STAGE_MS / 1000))"
   echo "deep_slowest_seconds=$((DEEP_SLOWEST_MS / 1000))"
-  printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
-' '  '
+  printf 'deep_slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '\n' '  '
   echo "elapsed=$ELAPSED"
   echo "engine=native-c-arm64-path-index"
   echo "result=$RESULT"
