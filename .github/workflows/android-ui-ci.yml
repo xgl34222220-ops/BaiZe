@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :app:testDebugUnitTest :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
+          gradle --no-daemon --continue :app:testDebugUnitTest :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
           code=$?
           tail -n 200 /tmp/baize-android-ui.log
           exit "$code"
@@ -58,4 +58,5 @@ jobs:
             /tmp/baize-android-ui.log
             v2/app/build/reports/lint-results-debug.html
             v2/app/build/reports/lint-results-debug.txt
+            v2/app/build/test-results/testDebugUnitTest/*.xml
           if-no-files-found: warn
