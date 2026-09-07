@@ -305,7 +305,7 @@ private fun MiuixServiceGroup(state: SettingsUiState) {
                 color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
             ) {
                 Text(
-                    if (state.running) "执行中" else if (state.ready) "正常" else "恢复中",
+                    state.connectionLabel,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     color = MaterialTheme.colorScheme.primary,
                     fontSize = 11.sp,

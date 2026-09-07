@@ -304,7 +304,7 @@ private fun MaterialServiceStatus(state: SettingsUiState) {
                 color = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Text(
-                    if (state.running) "执行中" else if (state.ready) "正常" else "恢复中",
+                    state.connectionLabel,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     style = MaterialTheme.typography.labelMedium

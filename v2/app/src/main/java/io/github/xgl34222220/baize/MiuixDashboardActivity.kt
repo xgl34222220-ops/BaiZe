@@ -423,7 +423,10 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun connectPrimaryService() {
         if (releasingConnections || isDestroyed) return
         if (connectionRecovery.exhausted) {
-            dashboardState.value = dashboardState.value.copy(serviceText = "Root 连接恢复失败，请手动重连")
+            dashboardState.value = dashboardState.value.copy(
+                connecting = false, connectionFailed = true,
+                serviceText = "Root 连接恢复失败，请手动重连"
+            )
             return
         }
         if (serviceRecoveryJob?.isActive == true || rootService != null || profileBound) return
@@ -539,6 +542,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         val scanReady = dashboardState.value.scanCompleted && hasUsableScanSnapshots()
         dashboardState.value = dashboardState.value.copy(
             connected = primaryConnected,
+            connectionFailed = connectionRecovery.exhausted,
             connecting = !connectionRecovery.exhausted &&
                 ((profileBound && rootService == null) || (cacheBound && cacheService == null)),
             ready = if (primaryConnected) dashboardState.value.ready else false,
@@ -598,7 +602,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         connectionRecovery.disconnected(SystemClock.elapsedRealtime())
         if (serviceRecoveryJob?.isActive == true) return
         val retryDelay = connectionRecovery.nextDelay() ?: run {
-            dashboardState.value = dashboardState.value.copy(serviceText = "Root 连接恢复失败，请手动重连")
+            dashboardState.value = dashboardState.value.copy(
+                connecting = false, connectionFailed = true,
+                serviceText = "Root 连接恢复失败，请手动重连"
+            )
             return
         }
         serviceRecoveryJob = lifecycleScope.launch {
