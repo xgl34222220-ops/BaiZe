@@ -169,7 +169,7 @@ jobs:
           test ! -e "$DEST"
           mkdir -p "$DEST"
           cp v2/dist/* "$DEST/"
-          git -C "$RUNNER_TEMP/baize-downloads" add "releases/$BAIZE_VERSION"
+          git -C "$RUNNER_TEMP/baize-downloads" add -f "releases/$BAIZE_VERSION"
           git -C "$RUNNER_TEMP/baize-downloads" commit -m "release: verified $BAIZE_VERSION downloads"
           git -C "$RUNNER_TEMP/baize-downloads" push origin HEAD:downloads
           gh release create "$BAIZE_VERSION" v2/dist/* \

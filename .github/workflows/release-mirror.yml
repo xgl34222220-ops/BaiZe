@@ -1,0 +1,38 @@
+name: BaiZe Release Mirror
+on:
+  push:
+    branches: [main]
+    paths: ['.github/mirror-release.publish']
+permissions:
+  contents: write
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mirror verified release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(tr -d '[:space:]' < .github/mirror-release.publish)
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          ASSETS="$RUNNER_TEMP/release-assets"
+          gh release download "$VERSION" --dir "$ASSETS"
+          (cd "$ASSETS" && sha256sum -c "BaiZe-$VERSION-Module.zip.sha256" && sha256sum -c "BaiZe-$VERSION.apk.sha256")
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin downloads
+          git worktree add "$RUNNER_TEMP/baize-downloads" origin/downloads
+          DEST="$RUNNER_TEMP/baize-downloads/releases/$VERSION"
+          mkdir -p "$DEST"
+          cp "$ASSETS"/* "$DEST/"
+          git -C "$RUNNER_TEMP/baize-downloads" add -f "releases/$VERSION"
+          if ! git -C "$RUNNER_TEMP/baize-downloads" diff --cached --quiet; then
+            git -C "$RUNNER_TEMP/baize-downloads" commit -m "release: complete $VERSION download mirror"
+            git -C "$RUNNER_TEMP/baize-downloads" push origin HEAD:downloads
+          fi
+          for name in "BaiZe-$VERSION-Module.zip" "BaiZe-$VERSION-Module.zip.sha256" "BaiZe-$VERSION.apk" "BaiZe-$VERSION.apk.sha256" "BaiZe-$VERSION-signing-certificate.txt"; do
+            git -C "$RUNNER_TEMP/baize-downloads" ls-files --error-unmatch "releases/$VERSION/$name"
+          done
