@@ -57,18 +57,32 @@ if [ "$installed" = 1 ] && [ "$saved_hash" = "$bundle_hash" ]; then
   write_result current current
   exit 0
 fi
-if pm install -r -d --user 0 "$APK" >/dev/null 2>&1 || pm install -r -d "$APK" >/dev/null 2>&1; then
+# Keep PackageManager's downgrade and signature checks; preserve its actual failure reason.
+install_output=$(pm install -r --user 0 "$APK" 2>&1)
+install_code=$?
+case "$install_output" in
+  *"Unknown option"*|*"unknown option"*)
+    install_output=$(pm install -r "$APK" 2>&1)
+    install_code=$?
+    ;;
+esac
+if [ "$install_code" = 0 ]; then
   printf '%s\n' "$bundle_hash" >"$INSTALLED_HASH"
   chmod 0600 "$INSTALLED_HASH" 2>/dev/null || true
   write_result updated installed_or_updated
   exit 0
 fi
-# Never uninstall automatically: a signature mismatch must stay visible and recoverable.
-if [ "$installed" = 1 ]; then
-  write_result signature_mismatch preserved_existing_app
-  echo "App 签名不兼容，已保留现有 App；请手动确认后处理" >&2
-  exit 11
-fi
-write_result failed install_failed
-echo "App 安装失败" >&2
+# Never uninstall automatically. A full disk or downgrade is not a signature mismatch.
+case "$install_output" in
+  *INSTALL_FAILED_UPDATE_INCOMPATIBLE*|*INSTALL_PARSE_FAILED_INCONSISTENT_CERTIFICATES*)
+    write_result signature_mismatch preserved_existing_app
+    echo "App 签名不兼容，已保留现有 App；请手动确认后处理" >&2
+    exit 11
+    ;;
+  *INSTALL_FAILED_VERSION_DOWNGRADE*) reason=version_downgrade_blocked ;;
+  *INSTALL_FAILED_INSUFFICIENT_STORAGE*) reason=insufficient_storage ;;
+  *) reason=install_failed ;;
+esac
+write_result failed "$reason"
+printf 'App 安装失败（%s），现有 App 保持不变\n' "$reason" >&2
 exit 12
