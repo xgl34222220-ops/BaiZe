@@ -17,7 +17,9 @@ import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -46,7 +48,8 @@ data class FileOrganizerScheduleSettings(
  */
 class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val session = runCatching { bindRootServiceWithRetry() }.getOrElse {
+        val session = runCatching { withTimeout(ROOT_BIND_TIMEOUT_MS) { bindRootService() } }.getOrElse {
+            currentCoroutineContext().ensureActive()
             writeResult(applicationContext, "Root 调度器连接失败：${it.message ?: it.javaClass.simpleName}")
             return Result.retry()
         }
@@ -63,6 +66,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
                 return Result.success()
             }
             val response = runCatching { JSONObject(session.service.runModuleTask("scheduler-wake")) }.getOrElse {
+                currentCoroutineContext().ensureActive()
                 writeResult(applicationContext, "Root 调度器唤醒失败：${it.message ?: it.javaClass.simpleName}")
                 return Result.retry()
             }
@@ -82,17 +86,6 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         } finally {
             session.close()
         }
-    }
-
-    private suspend fun bindRootServiceWithRetry(): RootSession {
-        var lastError: Throwable? = null
-        repeat(ROOT_BIND_ATTEMPTS) { attempt ->
-            val result = runCatching { withTimeout(ROOT_BIND_TIMEOUT_MS) { bindRootService() } }
-            result.getOrNull()?.let { return it }
-            lastError = result.exceptionOrNull()
-            if (attempt + 1 < ROOT_BIND_ATTEMPTS) delay(ROOT_BIND_RETRY_DELAY_MS * (attempt + 1L))
-        }
-        throw lastError ?: IllegalStateException("Root 服务连接失败")
     }
 
     private suspend fun bindRootService(): RootSession = withContext(Dispatchers.Main.immediate) {
@@ -128,12 +121,15 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
                         .addCategory(RootService.CATEGORY_DAEMON_MODE),
                     connection
                 )
-            }.onFailure { if (continuation.isActive) continuation.resumeWithException(it) }
+            }.onFailure {
+                unbindOnMainThread()
+                if (continuation.isActive) continuation.resumeWithException(it)
+            }
         }
     }
 
     private data class RootSession(val service: IProfileRootService, val connection: ServiceConnection) {
-        suspend fun close() = withContext(Dispatchers.Main.immediate) { runCatching { RootService.unbind(connection) } }
+        suspend fun close() = withContext(NonCancellable + Dispatchers.Main.immediate) { runCatching { RootService.unbind(connection) } }
     }
 
     companion object {
@@ -150,8 +146,6 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
         private const val KEY_LAST_RESULT = "last_result"
         private const val UNIQUE_WORK = "baize_root_scheduler_watchdog"
         private const val ROOT_BIND_TIMEOUT_MS = 20_000L
-        private const val ROOT_BIND_ATTEMPTS = 3
-        private const val ROOT_BIND_RETRY_DELAY_MS = 800L
         private const val WATCHDOG_INTERVAL_MINUTES = 15L
         private const val WATCHDOG_FLEX_MINUTES = 5L
         val ALLOWED_INTERVALS = listOf(30, 60, 360, 720, 1_440, 4_320, 10_080)

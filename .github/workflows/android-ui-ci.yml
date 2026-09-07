@@ -43,7 +43,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          gradle --no-daemon :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
+          gradle --no-daemon :app:testDebugUnitTest :app:compileDebugKotlin :app:lintDebug :macrobenchmark:assemble > /tmp/baize-android-ui.log 2>&1
           code=$?
           tail -n 200 /tmp/baize-android-ui.log
           exit "$code"

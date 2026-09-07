@@ -129,6 +129,7 @@ internal class TaskCoordinator(
         publish(force)
     }
 
+    @Synchronized
     private fun publish(force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastCallbackAt < 220L) return
