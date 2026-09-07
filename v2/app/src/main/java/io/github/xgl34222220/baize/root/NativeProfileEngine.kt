@@ -26,7 +26,8 @@ import kotlin.math.min
 internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
-    private val quarantineRepository: QuarantineRepository = QuarantineRepository()
+    private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
+    private val ruleDirectory: File = File("/data/adb/modules/baize_v2/config")
 ) {
     data class Progress(
         val phase: String,
@@ -1015,7 +1016,7 @@ internal class NativeProfileEngine(
     ).filter { it.isDirectory && !isSymlink(it) }
 
     private fun rulesDirectory(): File? =
-        File("/data/adb/modules/baize_v2/config").takeIf { it.isDirectory }
+        ruleDirectory.takeIf { it.isDirectory }
 
     private fun deepRules(): File? = rulesDirectory()?.resolve("deep.rules")?.takeIf { it.isFile }
 
