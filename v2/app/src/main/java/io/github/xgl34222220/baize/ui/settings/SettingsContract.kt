@@ -14,7 +14,8 @@ data class SettingsUiState(
     val ready: Boolean,
     val running: Boolean,
     val serviceText: String,
-    val schedulerText: String
+    val schedulerText: String,
+    val connectionLabel: String = if (running) "执行中" else if (ready) "已就绪" else if (connected) "未就绪" else "未连接"
 ) {
     val appearanceSummary: String
         get() = buildList {
@@ -56,5 +57,6 @@ fun DashboardUiState.toSettingsUiState(
     ready = ready,
     running = running,
     serviceText = serviceText,
-    schedulerText = schedulerText
+    schedulerText = schedulerText,
+    connectionLabel = connectionLabel
 )
