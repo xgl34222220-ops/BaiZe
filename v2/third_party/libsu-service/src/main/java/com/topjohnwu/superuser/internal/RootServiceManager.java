@@ -68,6 +68,8 @@ import java.util.concurrent.Executor;
  * Starts the root process and manages connections with the remote process.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY)
+// Vendored service and pinned upstream core form one libsu implementation.
+@SuppressLint("RestrictedApi")
 public class RootServiceManager implements Handler.Callback {
 
     private static RootServiceManager mInstance;
@@ -194,14 +196,10 @@ public class RootServiceManager implements Handler.Callback {
             // Guard the receiver behind permission BROADCAST_PACKAGE_REMOVED. This permission
             // is not obtainable by normal apps, making the receiver effectively non-exported.
             // On Android 13+, we can also rely on the flag RECEIVER_NOT_EXPORTED.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.registerReceiver(new ServiceReceiver(), filter,
-                        Manifest.permission.BROADCAST_PACKAGE_REMOVED, null,
-                        Context.RECEIVER_NOT_EXPORTED);
-            } else {
-                context.registerReceiver(new ServiceReceiver(), filter,
-                        Manifest.permission.BROADCAST_PACKAGE_REMOVED, null);
-            }
+            // BaiZe minSdk is 26; the legacy no-flags overload is unreachable.
+            context.registerReceiver(new ServiceReceiver(), filter,
+                    Manifest.permission.BROADCAST_PACKAGE_REMOVED, null,
+                    Context.RECEIVER_NOT_EXPORTED);
             flags |= RECEIVER_REGISTERED;
         }
 

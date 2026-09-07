@@ -57,6 +57,8 @@ import java.util.concurrent.Callable;
  * Manages the lifecycle of RootServices and the root process.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY)
+// Same libsu implementation as the pinned core artifact.
+@SuppressLint("RestrictedApi")
 public class RootServiceServer extends IRootServiceManager.Stub implements Runnable {
 
     private static RootServiceServer mInstance;

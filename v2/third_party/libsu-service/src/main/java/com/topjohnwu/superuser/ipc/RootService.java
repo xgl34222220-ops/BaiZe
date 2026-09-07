@@ -16,6 +16,8 @@
 
 package com.topjohnwu.superuser.ipc;
 
+import android.annotation.SuppressLint;
+
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
@@ -80,6 +82,8 @@ import java.util.concurrent.Executor;
  * @see <a href="https://developer.android.com/guide/components/bound-services">Bound services</a>
  * @see <a href="https://developer.android.com/guide/components/aidl">Android Interface Definition Language (AIDL)</a>
  */
+// Same libsu implementation as the pinned core artifact.
+@SuppressLint("RestrictedApi")
 public abstract class RootService extends ContextWrapper {
 
     /**

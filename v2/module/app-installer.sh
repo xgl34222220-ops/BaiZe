@@ -34,7 +34,7 @@ bundle_hash=$(apk_hash "$APK")
 # 下面的 saved_hash 比较是"和上次安装的是否一致"，不是完整性校验。
 if [ -f "$HASH_FILE" ]; then
   expected_hash=$(tr -d ' \t\r\n' <"$HASH_FILE")
-  if [ -n "$expected_hash" ] && [ "$expected_hash" != "$bundle_hash" ]; then
+  if [ "$expected_hash" != "$bundle_hash" ]; then
     write_result failed apk_integrity_mismatch
     echo "内置 App 校验失败，模块包可能已损坏或被篡改" >&2
     exit 13

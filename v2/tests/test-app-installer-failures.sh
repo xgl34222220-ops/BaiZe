@@ -37,7 +37,7 @@ check() {
  set -e
  test "$code" = "$2"
  grep -Fxq "reason=$3" "$work/state/app-install.env"
- test "$(wc -l < "$PM_CALLS")" = 1
+ test "$(wc -l < "$PM_CALLS")" = "${4:-1}"
 }
 check INSTALL_FAILED_UPDATE_INCOMPATIBLE 11 preserved_existing_app
 check INSTALL_FAILED_INSUFFICIENT_STORAGE 12 insufficient_storage
@@ -45,4 +45,8 @@ check INSTALL_FAILED_VERSION_DOWNGRADE 12 version_downgrade_blocked
 check INSTALL_FAILED_INTERNAL_ERROR 12 install_failed
 check success 0 installed_or_updated
 cmp "$work/app.sha256" "$work/state/installed-app.sha256"
-echo 'app installer failure classification passed'
+for hash in '' corrupt; do
+ printf '%s\n' "$hash" > "$work/app.sha256"
+ check success 13 apk_integrity_mismatch 0
+done
+echo 'app installer failure classification and integrity checks passed' 

@@ -616,8 +616,16 @@ class MiuixDashboardActivity : ComponentActivity() {
         lifecycleScope.launch {
             val json = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(service.ping()) }.getOrNull()
-            } ?: return@launch
+            }
             if (rootService !== service) return@launch
+            if (json == null) {
+                ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务状态读取失败")
+                dashboardState.value = dashboardState.value.copy(
+                    ready = false,
+                    serviceText = "Root 已连接，但读取服务状态失败；可在诊断页查看连接记录"
+                )
+                return@launch
+            }
             val root = json.optBoolean("root")
             val module = json.optBoolean("module")
             val cleaner = json.optBoolean("cleaner")
@@ -632,10 +640,11 @@ class MiuixDashboardActivity : ComponentActivity() {
                 !rules -> "自动清理可用 · 深度规则库缺失"
                 else -> "Root、完整清理引擎、定时任务与规则库均已就绪"
             }
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "模块校验：$status")
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
                 ready = ready,
-                serviceText = status,
+                serviceText = if (dashboardState.value.connectionFailed) dashboardState.value.serviceText else status,
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
             )

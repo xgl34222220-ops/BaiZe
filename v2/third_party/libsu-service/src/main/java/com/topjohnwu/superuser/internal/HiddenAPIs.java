@@ -32,7 +32,7 @@ import java.lang.reflect.Method;
  * These methods should only be accessed in the root process, since under normal circumstances
  * accessing these internal APIs through reflection will be blocked.
  */
-@SuppressLint("PrivateApi,DiscouragedPrivateApi,SoonBlockedPrivateApi")
+@SuppressLint({"PrivateApi", "DiscouragedPrivateApi", "SoonBlockedPrivateApi", "RestrictedApi"})
 class HiddenAPIs {
 
     private static Method addService;
