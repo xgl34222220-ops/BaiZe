@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - 'v2/app/**'
+      - 'v2/third_party/libsu-service/**'
       - '.github/workflows/native-ui-preview-apk.yml'
   workflow_dispatch:
 

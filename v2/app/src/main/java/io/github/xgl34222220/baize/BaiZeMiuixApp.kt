@@ -144,6 +144,8 @@ data class ScanPerformanceUiState(
 
 @Immutable
 data class DashboardUiState(
+    val connecting: Boolean = false,
+    val connectionFailed: Boolean = false,
     val connected: Boolean = false,
     val ready: Boolean = false,
     val running: Boolean = false,
@@ -188,7 +190,17 @@ data class DashboardUiState(
     val protectedItems: List<ProtectedUiItem> = emptyList(),
     val history: List<HistoryUiItem> = emptyList(),
     val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
-)
+) {
+    val connectionLabel: String
+        get() = when {
+            running -> "执行中"
+            connectionFailed -> "连接失败"
+            ready -> "已就绪"
+            connecting -> "连接中"
+            connected -> "未就绪"
+            else -> "未连接"
+        }
+}
 
 @Immutable
 data class AppJunkUiItem(

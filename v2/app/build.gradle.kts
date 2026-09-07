@@ -23,8 +23,14 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27001
-        versionName = "2.7.1"
+        versionCode = 28000
+        versionName = "2.8.0"
+    }
+
+    sourceSets.getByName("main") {
+        java.srcDir("../third_party/libsu-service/src/main/java")
+        aidl.srcDir("../third_party/libsu-service/src/main/aidl")
+        assets.srcDir("../third_party/libsu-service/src/main/assets")
     }
 
     buildFeatures {
@@ -45,6 +51,7 @@ android {
 
     testOptions {
         unitTests {
+            isIncludeAndroidResources = true
             // 让未 mock 的 android.* 调用返回默认值而不是抛
             // "not mocked" 异常，纯逻辑测试无需引入 Robolectric。
             isReturnDefaultValues = true
@@ -133,11 +140,13 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze-materials:1.6.10")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.github.topjohnwu.libsu:core:6.0.0")
-    implementation("com.github.topjohnwu.libsu:service:6.0.0")
+    // libsu 6.0.0 service sources with bounded startup and pending-bind cleanup.
+    // core remains the upstream artifact; see third_party/libsu-service/README.md.
 
     // 单元测试。此前 42817 行 Kotlin 没有任何 JVM 测试，
     // 所有"测试"都是 shell 里 grep 源码字符串的 contract 脚本。
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }

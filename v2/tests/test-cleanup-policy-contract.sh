@@ -45,7 +45,7 @@ grep -Fq '.put("highRiskMode", options.highRiskMode)' "$ENGINE"
 
 # The workbench reads policy before scanning and only uses it for defaults and quarantine UI.
 grep -Fq 'cleanupPolicy = CleanupPolicy.fromId' "$WORKBENCH"
-grep -Fq 'cleanupPolicy.defaultSelected(it.risk)' "$WORKBENCH"
+grep -Fq 'ReviewRiskPolicy.defaultSelected(it.risk, "", cleanupPolicy.autoRisk == "medium")' "$WORKBENCH"
 grep -Fq '.put("maxAutoRisk", policy.autoRisk)' "$WORKBENCH"
 grep -Fq '.put("highRiskMode", policy.highRiskMode)' "$WORKBENCH"
 grep -Fq '!cleanupPolicy.canQuarantineHighRisk' "$WORKBENCH"

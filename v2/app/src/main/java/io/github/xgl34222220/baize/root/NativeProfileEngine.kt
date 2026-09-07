@@ -3,6 +3,7 @@ package io.github.xgl34222220.baize.root
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import io.github.xgl34222220.baize.ReviewRiskPolicy
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -25,7 +26,8 @@ import kotlin.math.min
 internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
-    private val quarantineRepository: QuarantineRepository = QuarantineRepository()
+    private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
+    private val ruleDirectory: File = File("/data/adb/modules/baize_v2/config")
 ) {
     data class Progress(
         val phase: String,
@@ -44,7 +46,8 @@ internal class NativeProfileEngine(
         val fragmentDays: Int,
         val allowHighRisk: Boolean,
         val maxAutoRisk: String,
-        val highRiskMode: String
+        val highRiskMode: String,
+        val includeReviewRules: Boolean = false
     )
 
     private data class Candidate(
@@ -62,7 +65,8 @@ internal class NativeProfileEngine(
         var directories: Long = -1L,
         var measured: Boolean = false,
         var complete: Boolean = false,
-        val note: String = ""
+        val note: String = "",
+        val blockedReason: String = ""
     ) {
         fun json(): JSONObject = JSONObject()
             .put("id", id)
@@ -80,6 +84,7 @@ internal class NativeProfileEngine(
             .put("measured", measured)
             .put("complete", complete)
             .put("note", note)
+            .put("blockedReason", blockedReason)
     }
 
     private data class Snapshot(
@@ -88,7 +93,8 @@ internal class NativeProfileEngine(
         val createdAt: Long,
         val ruleSha: String,
         val options: Options,
-        val candidates: MutableList<Candidate>
+        val candidates: MutableList<Candidate>,
+        var measureBudgetMs: Long = PAGE_BUDGET_MS
     )
 
     private data class Stats(
@@ -153,6 +159,7 @@ internal class NativeProfileEngine(
             .put("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
             .put("ruleSha", ruleSha)
             .put("totalCandidates", list.size)
+            .put("partial", list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
             .put("low", list.count { it.risk == "low" })
             .put("medium", list.count { it.risk == "medium" })
             .put("high", list.count { it.risk == "high" })
@@ -182,11 +189,12 @@ internal class NativeProfileEngine(
         progress: (Progress) -> Unit,
         started: Long
     ) {
-        val rules = ordinaryRules()
+        val rules = ordinaryRules(options.includeReviewRules)
+        val listings = HashMap<String, Array<File>>()
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.first))
-            for (target in expand(rule.first)) {
+            for (target in expand(rule.first, listings)) {
                 if (target.exists() && !isSymlink(target)) {
                     add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options, true)
                 }
@@ -270,12 +278,13 @@ internal class NativeProfileEngine(
                 .put("total", snapshot.candidates.size).put("items", JSONArray()).toString()
         }
         val end = min(snapshot.candidates.size, start + count)
-        val pageDeadline = SystemClock.elapsedRealtime() + PAGE_BUDGET_MS
+        val pageStarted = SystemClock.elapsedRealtime()
+        val pageDeadline = pageStarted + snapshot.measureBudgetMs
         val array = JSONArray()
         for (index in start until end) {
             if (cancelled.get()) break
             val item = snapshot.candidates[index]
-            if (!item.measured && SystemClock.elapsedRealtime() < pageDeadline) {
+            if (!item.measured && item.blockedReason.isBlank() && SystemClock.elapsedRealtime() < pageDeadline) {
                 val stat = measure(File(item.path), min(pageDeadline, SystemClock.elapsedRealtime() + ITEM_MEASURE_MS))
                 item.bytes = stat.bytes
                 item.files = stat.files
@@ -285,6 +294,7 @@ internal class NativeProfileEngine(
             }
             array.put(item.json())
         }
+        snapshot.measureBudgetMs = (snapshot.measureBudgetMs - (SystemClock.elapsedRealtime() - pageStarted)).coerceAtLeast(0L)
         return JSONObject()
             .put("success", true)
             .put("snapshotId", snapshotId)
@@ -501,7 +511,7 @@ internal class NativeProfileEngine(
         }
     }
 
-    private fun ordinaryRules(): List<Pair<String, String>> {
+    private fun ordinaryRules(includeReviewRules: Boolean = false): List<Pair<String, String>> {
         val rules = ArrayList<Pair<String, String>>()
         rules.add("/data/anr" to "系统 ANR")
         rules.add("/data/tombstones" to "Tombstone")
@@ -523,7 +533,14 @@ internal class NativeProfileEngine(
                 }
             }
         }
-        return rules
+        if (includeReviewRules) rules += reviewRules()
+        return rules.distinct()
+    }
+
+    private fun reviewRules(): List<Pair<String, String>> {
+        val source = rulesDirectory()?.resolve("review.rules")?.takeIf { it.isFile } ?: return emptyList()
+        return source.useLines { lines -> lines.map { it.trim() }.filter { it.startsWith("/") }
+            .map { it.substringBefore('|') to it.substringAfter('|', "应用诊断日志") }.toList() }
     }
 
     private fun fragmentPatterns(): List<Pattern> = listOf(
@@ -538,12 +555,13 @@ internal class NativeProfileEngine(
         progress: (Progress) -> Unit,
         started: Long
     ) {
-        val rules = ordinaryRules()
+        val rules = ordinaryRules(options.includeReviewRules)
+        val listings = HashMap<String, Array<File>>()
 
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             if (index % 32 == 0) progress(Progress("解析规则垃圾", index, rules.size, rule.first))
-            for (target in expand(rule.first)) {
+            for (target in expand(rule.first, listings)) {
                 if (target.exists() && !isSymlink(target)) {
                     add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options)
                 }
@@ -602,12 +620,22 @@ internal class NativeProfileEngine(
                 .take(MAX_RULE_LINES)
                 .toList()
         }
+        val listings = HashMap<String, Array<File>>()
         for ((index, raw) in rules.withIndex()) {
             if (stop(started, DEEP_SCAN_TOTAL_MS)) return
             if (index % 16 == 0) progress(Progress("解析深度规则", index, rules.size, raw))
-            for (target in expand(raw)) {
+            for (target in expand(raw, listings)) {
                 if (target.exists() && !isSymlink(target)) {
                     add(out, candidate("deep", "deep_rule", "深度规则", risk(target.path), target, deleteRoot = target.isFile, note = raw), options, true)
+                }
+            }
+        }
+        for ((pattern, title) in reviewRules()) {
+            if (stop(started, DEEP_SCAN_TOTAL_MS)) return
+            for (target in expand(pattern, listings)) {
+                if (target.exists() && !isSymlink(target)) {
+                    add(out, candidate("deep", "app_diagnostics", title, "medium", target,
+                        deleteRoot = target.isFile, note = pattern), options, true)
                 }
             }
         }
@@ -657,9 +685,23 @@ internal class NativeProfileEngine(
     ) {
         if (out.size >= MAX_CANDIDATES) return
         val path = canonical(File(candidate.path))
-        if (!path.startsWith("/") || hardProtected(path) || whitelisted(candidate.copy(path = path), options)) return
+        if (!path.startsWith("/") || hardProtected(path)) return
         if (!includeHighInScan && (candidate.risk == "high" || candidate.risk == "critical")) return
-        out.putIfAbsent(path, candidate.copy(id = "${candidate.profile}:$path", path = path))
+        val owner = candidate.packageName.ifBlank { ReviewRiskPolicy.appPackage(path) }
+        val blocked = when {
+            whitelisted(candidate.copy(path = path, packageName = owner), options) -> "白名单保护；移出白名单后重新扫描才可选择"
+            candidate.risk == "critical" -> "系统或应用关键数据，不参与清理"
+            else -> ""
+        }
+        val item = candidate.copy(id = "${candidate.profile}:$path", path = path, packageName = owner, blockedReason = blocked)
+        if (!item.measured && File(path).isFile) {
+            item.bytes = File(path).length()
+            item.files = 1L
+            item.directories = 0L
+            item.measured = true
+            item.complete = true
+        }
+        out.putIfAbsent(path, item)
     }
 
     private fun validate(candidate: Candidate, options: Options, mounts: Set<String>): String? {
@@ -838,7 +880,7 @@ internal class NativeProfileEngine(
         }
     }
 
-    private fun expand(rawRule: String): List<File> {
+    private fun expand(rawRule: String, listings: MutableMap<String, Array<File>> = HashMap()): List<File> {
         val raw = rawRule.substringBefore('|').substringBefore('#').trim()
         if (!safeRuleSyntax(raw)) return emptyList()
         if (!raw.contains('*') && !raw.contains('?') && !raw.contains('[')) return listOf(File(raw))
@@ -847,16 +889,16 @@ internal class NativeProfileEngine(
         for (segment in segments) {
             val next = ArrayList<File>()
             val wildcard = segment.contains('*') || segment.contains('?') || segment.contains('[')
+            val regex = if (wildcard) glob(segment) else null
             for (base in current) {
-                if (next.size >= MAX_EXPANSIONS) break
+                if (cancelled.get()) return emptyList()
                 if (!wildcard) {
                     next.add(File(base, segment))
                 } else if (base.isDirectory && !isSymlink(base)) {
-                    val regex = glob(segment)
-                    val children = base.listFiles() ?: emptyArray()
+                    val children = listings.getOrPut(base.path) { base.listFiles() ?: emptyArray() }
                     for (child in children) {
-                        if (next.size >= MAX_EXPANSIONS) break
-                        if (regex.matches(child.name)) next.add(child)
+                        if (cancelled.get()) return emptyList()
+                        if (requireNotNull(regex).matches(child.name)) next.add(child)
                     }
                 }
             }
@@ -903,7 +945,8 @@ internal class NativeProfileEngine(
             json.optString("maxAutoRisk", "medium").lowercase().let { if (it == "low") "low" else "medium" },
             json.optString("highRiskMode", "manual_quarantine").lowercase().let {
                 if (it in setOf("audit", "manual_quarantine", "recommended_quarantine")) it else "manual_quarantine"
-            }
+            },
+            json.optBoolean("includeReviewRules", false)
         )
     }
 
@@ -973,7 +1016,7 @@ internal class NativeProfileEngine(
     ).filter { it.isDirectory && !isSymlink(it) }
 
     private fun rulesDirectory(): File? =
-        File("/data/adb/modules/baize_v2/config").takeIf { it.isDirectory }
+        ruleDirectory.takeIf { it.isDirectory }
 
     private fun deepRules(): File? = rulesDirectory()?.resolve("deep.rules")?.takeIf { it.isFile }
 
@@ -986,7 +1029,12 @@ internal class NativeProfileEngine(
 
     private fun risk(path: String): String {
         val value = path.lowercase()
+        val name = File(value).name
+        val explicitTrash = name in setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", "logs", "mipushlog", "xlog", "app_bugly", ".crashlytics.v3") ||
+            name.startsWith(".com.google.firebase.crashlytics.files.") ||
+            name.endsWith(".tmp") || name.endsWith(".temp") || name.endsWith(".part") || name.endsWith(".crdownload")
         return when {
+            explicitTrash && !value.contains("/databases/") && !value.contains("/shared_prefs/") -> "medium"
             CRITICAL.any { value.contains(it) } -> "critical"
             HIGH.any { value.contains(it) } -> "high"
             MEDIUM.any { value.contains(it) } -> "medium"
@@ -1007,7 +1055,8 @@ internal class NativeProfileEngine(
         path.startsWith("/data/tombstones/") || path.startsWith("/data/system/dropbox/") ||
         path.startsWith("/data/system/heapdump/") || path.startsWith("/data/misc/logd/") ||
         path.startsWith("/data/vendor/log/") || path.startsWith("/data/log/") ||
-        path.startsWith("/storage/emulated/") || path.startsWith("/sdcard/")
+        path.startsWith("/storage/emulated/") || path.startsWith("/sdcard/") ||
+        Regex("^/data/media/[0-9]+/.+").matches(path)
 
     private fun whitelisted(candidate: Candidate, options: Options): Boolean {
         if (candidate.packageName.isNotBlank() && options.whitelistPackages.contains(candidate.packageName)) return true
@@ -1106,15 +1155,14 @@ internal class NativeProfileEngine(
         private const val SNAPSHOT_TTL_MS = 30L * 60_000L
         private const val SCAN_TOTAL_MS = 90_000L
         private const val DEEP_SCAN_TOTAL_MS = 5L * 60_000L
-        private const val PAGE_BUDGET_MS = 8_000L
-        private const val ITEM_MEASURE_MS = 1_500L
+        private const val PAGE_BUDGET_MS = 2_000L
+        private const val ITEM_MEASURE_MS = 150L
         private const val ITEM_CLEAN_MS = 20_000L
         private const val CLEAN_TOTAL_MS = 5L * 60_000L
         private const val DEFAULT_MAX_FILE_BYTES = 512L * 1024 * 1024
         private const val MAX_PAGE_SIZE = 60
         private const val MAX_CANDIDATES = 20_000
         private const val MAX_RULE_LINES = 12_000
-        private const val MAX_EXPANSIONS = 256
 
         private val HIDDEN_TRASH_NAMES = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
 

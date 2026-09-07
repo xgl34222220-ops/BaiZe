@@ -1,9 +1,9 @@
 package io.github.xgl34222220.baize.root
 
-import android.os.Process
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
+import java.io.IOException
 
 internal object RootPaths {
     const val MODULE_DIR = "/data/adb/modules/baize_v2"
@@ -48,17 +48,20 @@ internal object RootFileStore {
 
     fun writeAtomic(file: File, text: String, worldReadable: Boolean = false) {
         file.parentFile?.mkdirs()
-        val temporary = File(file.parentFile, "${file.name}.tmp.${Process.myPid()}")
-        temporary.writeText(text)
-        replaceFile(temporary, file, worldReadable)
+        val temporary = File.createTempFile("${file.name}.tmp.", null, file.absoluteFile.parentFile)
+        try {
+            temporary.writeText(text)
+            replaceFile(temporary, file, worldReadable)
+        } finally {
+            temporary.delete()
+        }
     }
 
     fun replaceFile(temporary: File, target: File, worldReadable: Boolean = false) {
         temporary.setReadable(true, !worldReadable)
         temporary.setWritable(true, true)
         if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
+            throw IOException("无法原子替换 ${target.name}")
         }
         target.setReadable(true, !worldReadable)
         target.setWritable(true, true)

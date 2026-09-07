@@ -27,6 +27,8 @@ internal class RootRecoveryPolicy {
         return delay
     }
 
+    fun stop() { exhausted = true }
+
     fun reset() {
         attempts = 0
         connectedSince = null
