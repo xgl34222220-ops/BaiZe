@@ -183,9 +183,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                     refresh = { refreshAll() },
                     clean = { runSmartClean() },
                     organize = { runOneTapOrganize() },
-                    scan = { runNativeScan(cleanAfterScan = false) },
+                    scan = { openScanReview() },
                     apkScan = { runApkScan() },
-                    cleanScan = { cleanNativeSnapshots() },
+                    cleanScan = { openScanReview() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
                     deep = { confirmDeepClean() },
@@ -229,6 +229,12 @@ class MiuixDashboardActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         updateStorage()
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) { LastCleanupStore.read(this@MiuixDashboardActivity) }
+            if (saved.first.isNotEmpty() || saved.second.isNotEmpty()) {
+                dashboardState.value = dashboardState.value.copy(recentApps = saved.first, recentJunk = saved.second)
+            }
+        }
         if (rootService != null || cacheService != null) {
             recoverRemoteTaskOrRefresh()
         } else {
@@ -954,6 +960,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             val taskTime = markTaskTime()
+            LastCleanupStore.save(this@MiuixDashboardActivity, appDetails, otherDetails)
             val protected = protectedFromModule(appDetails, otherDetails)
             saveProtectedItems(protected)
             dashboardState.value = dashboardState.value.copy(
@@ -1614,6 +1621,9 @@ class MiuixDashboardActivity : ComponentActivity() {
             val performance = json.optJSONObject("scanPerformance") ?: JSONObject()
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
+            if (appDetails.isNotEmpty() || otherDetails.isNotEmpty()) {
+                LastCleanupStore.save(this@MiuixDashboardActivity, appDetails, otherDetails)
+            }
             val latestMode = latest.optString("mode")
             val latestReleased = if (latestMode.endsWith("scan") || latestMode == "scan") {
                 preferences.getLong("last_clean_bytes", dashboardState.value.lastReleased)
@@ -1745,14 +1755,11 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
-    private fun confirmDeepClean() {
-        AlertDialog.Builder(this)
-            .setTitle("进入深度清理？")
-            .setMessage("会扫描 OEM 日志、自定义规则和高风险候选项；进入后仍会先展示候选，不会直接删除。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("继续") { _, _ -> openProfile("deep") }
-            .show()
+    private fun openScanReview(profile: String = "safe") {
+        startActivity(Intent(this, ScanWorkbenchActivity::class.java).putExtra(ScanWorkbenchActivity.EXTRA_PROFILE, profile))
     }
+
+    private fun confirmDeepClean() = openScanReview("deep")
 
     private fun openProfile(profile: String) {
         startActivity(Intent(this, ProfileActivity::class.java).putExtra(ProfileActivity.EXTRA_PROFILE, profile))
@@ -1770,7 +1777,10 @@ class MiuixDashboardActivity : ComponentActivity() {
                         runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
                     }
                     toast(if (success) "最近记录已清空" else "清空失败")
-                    if (success) dashboardState.value = dashboardState.value.copy(history = emptyList(), recentApps = emptyList())
+                    if (success) {
+                        LastCleanupStore.save(this@MiuixDashboardActivity, emptyList(), emptyList())
+                        dashboardState.value = dashboardState.value.copy(history = emptyList(), recentApps = emptyList(), recentJunk = emptyList())
+                    }
                     refreshHistory()
                 }
             }.show()
