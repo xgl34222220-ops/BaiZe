@@ -204,7 +204,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                 appearance = appearance
             )
         }
-        connectPrimaryService()
+        // Both engines may own a task from the previous App process.
+        connectServices()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -336,9 +337,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private suspend fun probeRemoteTask(): RemoteTaskProbe = withContext(Dispatchers.IO) {
-        val expectProfile = true
         val expectCache = cacheRequested
-        var profileResponded = !expectProfile
+        var profileResponded = false
         var cacheResponded = !expectCache
         var runningState: JSONObject? = null
 
@@ -358,7 +358,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
 
         RemoteTaskProbe(
-            complete = (expectProfile || expectCache) && profileResponded && cacheResponded,
+            complete = profileResponded && cacheResponded,
             runningState = runningState
         )
     }
