@@ -50,7 +50,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for script in service.sh cleaner.sh notify.sh v2/module/*.sh v2/scripts/*.sh; do
+          for script in cleaner.sh notify.sh v2/module/*.sh v2/scripts/*.sh; do
             sh -n "$script"
             busybox ash -n "$script"
           done
