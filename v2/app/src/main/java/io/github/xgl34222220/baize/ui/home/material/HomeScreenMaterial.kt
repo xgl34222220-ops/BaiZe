@@ -138,7 +138,7 @@ private fun MaterialHomeHeader(
                         !automaticEnabled -> "自动任务已关闭"
                         state.running -> "正在自动执行"
                         state.ready -> "自动清理与归类已就绪"
-                        else -> "正在连接 Root 服务"
+                        else -> state.serviceText
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -467,7 +467,7 @@ private fun MaterialServiceStatus(state: DashboardUiState) {
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                if (state.running) "执行中" else if (state.ready) "运行正常" else "连接中",
+                state.connectionLabel,
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelMedium
             )

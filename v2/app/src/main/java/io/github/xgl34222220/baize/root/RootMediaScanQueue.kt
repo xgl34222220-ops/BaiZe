@@ -8,6 +8,7 @@ import android.os.SystemClock
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -32,6 +33,7 @@ internal object RootMediaScanQueue {
     private const val CALLBACK_TIMEOUT_MS = 120_000L
     private const val RETRY_BACKOFF_MS = 30_000L
 
+    private val startupExecutor = Executors.newSingleThreadExecutor()
     private val monitor = Any()
     private val handler by lazy { Handler(Looper.getMainLooper()) }
     private var activeToken = 0L
@@ -67,9 +69,9 @@ internal object RootMediaScanQueue {
     }
 
     fun onServiceStart(context: Context) {
-        flush(context)
+        startupExecutor.execute { flush(context.applicationContext) }
         // A shell writer may have held the short queue lock exactly while the service started.
-        handler.postDelayed({ flush(context.applicationContext) }, 1_000L)
+        handler.postDelayed({ startupExecutor.execute { flush(context.applicationContext) } }, 1_000L)
     }
 
     private data class Claim(val inflight: File, val paths: List<String>, val token: Long)

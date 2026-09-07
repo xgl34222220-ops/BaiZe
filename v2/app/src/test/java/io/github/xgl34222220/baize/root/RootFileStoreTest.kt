@@ -148,4 +148,36 @@ class RootFileStoreTest {
         assertTrue(tail.length <= 8)
         assertFalse("不应出现替换字符", tail.startsWith("�"))
     }
+    @Test
+    fun `并发写入只留下一个完整版本且没有临时文件冲突`() {
+        val target = File(folder.root, "concurrent.env")
+        val values = (1..8).map { "writer=$it\n" + "x".repeat(4096) + "\n" }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+        val start = java.util.concurrent.CountDownLatch(1)
+        try {
+            val jobs = values.map { value -> pool.submit {
+                start.await()
+                repeat(20) { RootFileStore.writeAtomic(target, value) }
+            } }
+            start.countDown()
+            jobs.forEach { it.get(10, java.util.concurrent.TimeUnit.SECONDS) }
+            assertTrue(target.readText() in values)
+            assertTrue(folder.root.listFiles()!!.none { it.name.contains(".tmp.") })
+        } finally { pool.shutdownNow() }
+    }
+
+    @Test
+    fun `替换失败不会复制半个文件到目标`() {
+        val target = File(folder.root, "target").apply { mkdir() }
+        val keep = File(target, "keep").apply { writeText("original") }
+        val temporary = envFile("new")
+        try {
+            RootFileStore.replaceFile(temporary, target)
+            org.junit.Assert.fail("替换目录必须失败")
+        } catch (_: java.io.IOException) {
+            assertEquals("original", keep.readText())
+            assertEquals("new", temporary.readText())
+        }
+    }
+
 }

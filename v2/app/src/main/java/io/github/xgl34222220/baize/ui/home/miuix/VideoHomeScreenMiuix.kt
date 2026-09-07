@@ -314,7 +314,7 @@ private fun HomeStatusHero(
                             state.running -> "运行中"
                             state.scanCompleted -> "扫描完成"
                             state.ready -> "已就绪"
-                            else -> "连接中"
+                            else -> state.connectionLabel
                         },
                         color = MaterialTheme.colorScheme.primary,
                         fontSize = 12.sp,
@@ -323,10 +323,10 @@ private fun HomeStatusHero(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = if (state.running) state.taskPhase else "最近一次释放",
+                    text = if (state.running) state.taskPhase else if (!state.ready) state.serviceText else "最近一次释放",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp,
-                    maxLines = 1,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(2.dp))

@@ -119,7 +119,7 @@ private fun MiuixHomeHeader(
                     !automaticEnabled -> "自动清理已关闭"
                     state.running -> "正在执行自动任务"
                     state.ready -> "自动清理与文件归类"
-                    else -> "正在连接 Root 服务"
+                    else -> state.serviceText
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
@@ -429,7 +429,7 @@ private fun MiuixServiceRow(state: DashboardUiState) {
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            if (state.running) "执行中" else if (state.ready) "运行正常" else "连接中",
+            state.connectionLabel,
             color = MaterialTheme.colorScheme.primary,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
