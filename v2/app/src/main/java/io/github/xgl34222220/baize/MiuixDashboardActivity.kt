@@ -1619,8 +1619,10 @@ class MiuixDashboardActivity : ComponentActivity() {
             val supervisor = json.optJSONObject("supervisor") ?: JSONObject()
             val appInstall = json.optJSONObject("appInstall") ?: JSONObject()
             val performance = json.optJSONObject("scanPerformance") ?: JSONObject()
-            val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
-            val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
+            val appDetails = if (latest.optString("mode") == "workbench-clean") emptyList()
+                else parseAppDetails(json.optJSONArray("appDetails"))
+            val otherDetails = if (latest.optString("mode") == "workbench-clean") emptyList()
+                else parseGeneralJunk(json.optJSONArray("otherDetails"))
             if (appDetails.isNotEmpty() || otherDetails.isNotEmpty()) {
                 LastCleanupStore.save(this@MiuixDashboardActivity, appDetails, otherDetails)
             }

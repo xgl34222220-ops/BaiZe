@@ -118,7 +118,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private var autoScanStarted = false
     private var restoredReview = false
     private val scanProfile get() = if (intent.getStringExtra(EXTRA_PROFILE) == "deep") "deep" else "safe"
-    private val labels = HashMap<String, String>()
+    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var cacheSnapshotId = ""
     private var profileSnapshotId = ""
     private var snapshotExpiresAtRealtime = 0L
@@ -178,6 +178,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        screenState = screenState.copy(cacheRequired = scanProfile != "deep")
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -248,7 +249,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 )
             }.onFailure { profileBound = false; screenState = screenState.copy(phase = "详情引擎启动失败：${it.message.orEmpty()}") }
         }
-        if (!cacheBound) {
+        if (scanProfile != "deep" && !cacheBound) {
             cacheBound = true
             runCatching {
                 RootService.bind(
@@ -261,7 +262,12 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun maybeStartScan() {
-        if (profileService == null || cacheService == null || autoScanStarted || restoredReview) return
+        if (profileService == null || (scanProfile != "deep" && cacheService == null)) return
+        if (restoredReview) {
+            screenState = screenState.copy(phase = if (screenState.scanReady) "已恢复上次扫描，可继续选择" else "已恢复上次结果，重新扫描后可清理")
+            return
+        }
+        if (autoScanStarted) return
         autoScanStarted = true
         lifecycleScope.launch {
             delay(180L)
@@ -273,7 +279,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         if (screenState.running) return
         val profile = profileService
         val cache = cacheService
-        if (profile == null || cache == null) {
+        if (profile == null || (scanProfile != "deep" && cache == null)) {
             connectServices()
             return
         }
@@ -304,7 +310,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     coroutineScope {
                         val cacheJob = async {
                             if (scanProfile == "deep") JSONObject().put("snapshotId", "")
-                            else JSONObject(cache.scanCandidates(packageWhitelist))
+                            else JSONObject(requireNotNull(cache).scanCandidates(packageWhitelist))
                         }
                         val profileJob = async { JSONObject(profile.scanProfile(scanProfile, options)) }
                         cacheJob.await() to profileJob.await()
@@ -347,7 +353,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
             val pages = runCatching {
                 withContext(Dispatchers.IO) {
                     coroutineScope {
-                        val cacheItems = async { if (cacheSnapshotId.isBlank()) emptyList() else loadCacheItems(cache, cacheSnapshotId) }
+                        val cacheItems = async { if (cacheSnapshotId.isBlank()) emptyList() else loadCacheItems(requireNotNull(cache), cacheSnapshotId) }
                         val profileItems = async { if (profileSnapshotId.isBlank()) emptyList() else loadProfileItems(profile, profileSnapshotId) }
                         cacheItems.await() + profileItems.await()
                     }
@@ -373,7 +379,11 @@ class ScanWorkbenchActivity : ComponentActivity() {
             screenState = screenState.copy(
                 running = false,
                 scanReady = items.isNotEmpty(),
-                phase = if (items.isEmpty()) "扫描完成，没有发现垃圾项目" else "扫描完成，展开应用或分类后选择要清理的项目",
+                phase = when {
+                    profileJson.optBoolean("partial") -> "本轮扫描未覆盖全部范围，先展示已发现的 ${items.size} 项"
+                    items.isEmpty() -> "扫描完成，没有发现垃圾项目"
+                    else -> "扫描完成，展开应用或分类后选择要清理的项目"
+                },
                 items = items,
                 selectedIds = selected,
                 expiresAtRealtime = snapshotExpiresAtRealtime,
@@ -487,7 +497,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
             return
         }
         val profile = profileService ?: return
-        val cache = cacheService ?: return
+        val cache = cacheService
         val selected = screenState.items.filter { it.selectable && it.id in screenState.selectedIds }
         if (selected.isEmpty()) {
             screenState = screenState.copy(phase = "请至少勾选一个安全项目")
@@ -514,12 +524,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     var files = 0L
                     var failures = 0
                     var cleanedCandidates = 0
+                    var cancelled = false
                     val messages = ArrayList<String>()
                     val outcomes = HashMap<String, String>()
                     val actualApps = ArrayList<AppJunkUiItem>()
                     val actualJunk = ArrayList<GeneralJunkUiItem>()
 
                     if (cacheItems.isNotEmpty()) {
+                        val cache = requireNotNull(cache)
                         val selection = JSONObject()
                         cacheItems.forEach { selection.put(it.path, true) }
                         val prepared = JSONObject(profile.prepareCacheSelection(cacheSnapshotId, selection.toString()))
@@ -538,11 +550,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         files += cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         failures += cacheResult.optInt("failures", if (cacheResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
                         cleanedCandidates += cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        cancelled = cacheResult.optBoolean("cancelled")
                         messages += cacheResult.optString("message", "应用缓存处理完成")
                         val status = if (cacheResult.optBoolean("success") && !cacheResult.optBoolean("cancelled") && cacheResult.optInt("failures") == 0)
                             "已按所选缓存执行清理" else "未全部完成，请查看任务结果"
                         cacheItems.forEach { outcomes[it.id] = status }
-                        val report = JSONObject(profile.getModuleState()).optJSONArray("appDetails") ?: JSONArray()
+                        val report = if (cacheResult.optBoolean("success"))
+                            runCatching { JSONObject(profile.getModuleState()).optJSONArray("appDetails") }.getOrNull() ?: JSONArray()
+                        else JSONArray()
                         for (index in 0 until report.length()) {
                             val app = report.optJSONObject(index) ?: continue
                             val pkg = app.optString("packageName")
@@ -552,7 +567,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         }
                     }
 
-                    if (profileItems.isNotEmpty()) {
+                    if (!cancelled && profileItems.isNotEmpty()) {
                         val selection = JSONObject()
                         profileItems.forEach { selection.put(it.id.removePrefix("profile:"), true) }
                         val profileResult = JSONObject(
@@ -562,6 +577,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         files += profileResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         failures += profileResult.optInt("failures", if (profileResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
                         cleanedCandidates += profileResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        cancelled = cancelled || profileResult.optBoolean("cancelled")
                         messages += profileResult.optString("message", "安全项目处理完成")
                         val details = profileResult.optJSONArray("details") ?: JSONArray()
                         for (index in 0 until details.length()) {
@@ -592,7 +608,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         profile.recordNativeTask(
                             JSONObject()
                                 .put("mode", "workbench-clean")
-                                .put("success", failures == 0)
+                                .put("success", failures == 0 && !cancelled)
+                                .put("cancelled", cancelled)
                                 .put("bytes", bytes)
                                 .put("files", files)
                                 .put("errors", failures)
@@ -607,7 +624,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                             })
                     }
                     LastCleanupStore.save(this@ScanWorkbenchActivity, groupedApps, actualJunk)
-                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes)
+                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes, cancelled)
                 }
             }
             pollJob?.cancel()
@@ -623,7 +640,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         selectable = false
                     ) },
                     selectedIds = emptySet(),
-                    phase = if (result.failures == 0) "已完成所选项目清理" else "清理完成，但有 ${result.failures} 个异常",
+                    phase = if (result.cancelled) "清理已停止，已处理结果保留" else if (result.failures == 0) "已完成所选项目清理" else "清理完成，但有 ${result.failures} 个异常",
                     resultText = "释放 ${formatBytes(result.bytes)} · 文件 ${result.files} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}"
                 )
             }.onFailure {
@@ -739,7 +756,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
 
     private fun toggleGroup(groupKey: String) {
         if (screenState.running) return
-        val group = screenState.items.filter { it.groupKey == groupKey && it.selectable }
+        val group = screenState.items.filter { it.groupKey == groupKey && it.selectable && it.risk in setOf("low", "medium") }
         if (group.isEmpty()) return
         val selected = screenState.selectedIds.toMutableSet()
         val shouldSelect = group.any { it.id !in selected }
@@ -888,7 +905,8 @@ private data class CleanAggregate(
     val failures: Int,
     val candidates: Int,
     val messages: List<String>,
-    val outcomes: Map<String, String>
+    val outcomes: Map<String, String>,
+    val cancelled: Boolean
 )
 
 private data class WorkbenchItem(
@@ -914,6 +932,7 @@ private data class WorkbenchItem(
 private data class WorkbenchUiState(
     val profileConnected: Boolean = false,
     val cacheConnected: Boolean = false,
+    val cacheRequired: Boolean = true,
     val running: Boolean = false,
     val scanReady: Boolean = false,
     val phase: String = "等待 Root 服务",
@@ -928,7 +947,7 @@ private data class WorkbenchUiState(
     val policyKey: String = CleanupPolicy.BALANCED.key,
     val highRiskMode: String = CleanupPolicy.BALANCED.highRiskMode
 ) {
-    val connected: Boolean get() = profileConnected && cacheConnected
+    val connected: Boolean get() = profileConnected && (!cacheRequired || cacheConnected)
     val selectedItems: List<WorkbenchItem> get() = items.filter { it.id in selectedIds }
     val selectedBytes: Long get() = selectedItems.sumOf { it.bytes.coerceAtLeast(0L) }
 }
@@ -983,7 +1002,7 @@ private fun ScanWorkbenchScreen(
     val filteredItems = remember(state.items, state.selectedIds, filter) {
         state.items.filter { item ->
             when (filter) {
-                "unselected" -> item.id !in state.selectedIds
+                "unselected" -> item.id !in state.selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
                 "blocked" -> !item.selectable
                 "deep" -> item.profile == "deep"
                 "cache" -> item.source == "cache"
@@ -1003,7 +1022,7 @@ private fun ScanWorkbenchScreen(
                     items = items,
                     bytes = items.sumOf { it.bytes.coerceAtLeast(0L) },
                     selectedCount = items.count { it.id in state.selectedIds },
-                    selectableCount = items.count { it.selectable }
+                    selectableCount = items.count { it.selectable && it.risk in setOf("low", "medium") }
                 )
             }
             .sortedByDescending { it.bytes }
@@ -1356,7 +1375,8 @@ private fun WorkbenchGroupRow(
             Column(Modifier.weight(1f)) {
                 Text(group.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${group.items.size} 项 · 已选 ${group.selectedCount} · ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, group.bytes)}",
+                    "${group.items.size} 项 · 已选 ${group.selectedCount} · ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, group.bytes)}" +
+                        if (group.items.any { it.risk == "high" }) " · 含高风险，需逐项选择" else "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 10.sp
                 )

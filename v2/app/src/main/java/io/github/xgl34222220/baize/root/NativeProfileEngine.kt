@@ -158,6 +158,7 @@ internal class NativeProfileEngine(
             .put("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
             .put("ruleSha", ruleSha)
             .put("totalCandidates", list.size)
+            .put("partial", list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
             .put("low", list.count { it.risk == "low" })
             .put("medium", list.count { it.risk == "medium" })
             .put("high", list.count { it.risk == "high" })
@@ -889,13 +890,13 @@ internal class NativeProfileEngine(
             val wildcard = segment.contains('*') || segment.contains('?') || segment.contains('[')
             val regex = if (wildcard) glob(segment) else null
             for (base in current) {
-                if (next.size >= MAX_EXPANSIONS) break
+                if (cancelled.get()) return emptyList()
                 if (!wildcard) {
                     next.add(File(base, segment))
                 } else if (base.isDirectory && !isSymlink(base)) {
                     val children = listings.getOrPut(base.path) { base.listFiles() ?: emptyArray() }
                     for (child in children) {
-                        if (next.size >= MAX_EXPANSIONS) break
+                        if (cancelled.get()) return emptyList()
                         if (requireNotNull(regex).matches(child.name)) next.add(child)
                     }
                 }
@@ -1161,7 +1162,6 @@ internal class NativeProfileEngine(
         private const val MAX_PAGE_SIZE = 60
         private const val MAX_CANDIDATES = 20_000
         private const val MAX_RULE_LINES = 12_000
-        private const val MAX_EXPANSIONS = 256
 
         private val HIDDEN_TRASH_NAMES = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
 

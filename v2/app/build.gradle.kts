@@ -23,8 +23,8 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27001
-        versionName = "2.7.1"
+        versionCode = 28000
+        versionName = "2.8.0"
     }
 
     sourceSets.getByName("main") {
