@@ -411,8 +411,12 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun connectPrimaryService() {
-        if (releasingConnections || isDestroyed || connectionRecovery.exhausted || serviceRecoveryJob?.isActive == true) return
-        if (rootService != null || profileBound) return
+        if (releasingConnections || isDestroyed) return
+        if (connectionRecovery.exhausted) {
+            dashboardState.value = dashboardState.value.copy(serviceText = "Root 连接恢复失败，请手动重连")
+            return
+        }
+        if (serviceRecoveryJob?.isActive == true || rootService != null || profileBound) return
         dashboardState.value = dashboardState.value.copy(
             connected = false,
             ready = false,
