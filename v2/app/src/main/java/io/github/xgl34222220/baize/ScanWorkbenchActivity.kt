@@ -373,7 +373,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     .thenBy { it.title }
             )
             val selected = items.asSequence()
-                .filter { it.selectable && cleanupPolicy.defaultSelected(it.risk) }
+                .filter { it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", cleanupPolicy.autoRisk == "medium") }
                 .mapTo(linkedSetOf()) { it.id }
             snapshotExpiresAtRealtime = SystemClock.elapsedRealtime() + SNAPSHOT_TTL_MS
             screenState = screenState.copy(
