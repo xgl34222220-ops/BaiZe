@@ -19,15 +19,16 @@ code_only "$KT" | grep -q '"/system/bin/am"' && say "Kotlin 又恢复了 Process
 code_only "$KT" | grep -q 'MEDIA_SCANNER_SCAN_FILE' && say "Kotlin 又使用废弃广播"
 grep -q 'RootMediaScanQueue.enqueue' "$KT" || say "FileOrganizerEngine 未持久化到 root 队列"
 
-grep -q 'MediaScannerConnection.scanFile' "$QUEUE" || say "Root 队列未使用 MediaScannerConnection"
+grep -q 'MediaScannerConnection' "$QUEUE" && say "Root 队列不得调用 App 媒体扫描接口"
+grep -q 'RootMediaScanCommand::scan' "$QUEUE" || say "Root 队列未使用隔离媒体命令"
 grep -q 'PENDING_NAME = "organizer-media-scan.nul"' "$QUEUE" || say "pending 文件名不一致"
 grep -q 'INFLIGHT_NAME = "organizer-media-scan.inflight.nul"' "$QUEUE" || say "缺少 inflight 事务文件"
 grep -q 'pending.renameTo(inflight)' "$QUEUE" || say "未原子 claim pending -> inflight"
 grep -q 'recoverInflightLocked' "$QUEUE" || say "进程失败后不能恢复 inflight"
 grep -q 'recoverSpoolsLocked' "$QUEUE" || say "不能恢复 shell/Kotlin spool"
-grep -q 'CALLBACK_TIMEOUT_MS' "$QUEUE" || say "缺少 callback 超时保护"
+grep -q 'COMMAND_TIMEOUT_SECONDS' "${QUEUE%/*}/RootMediaScanCommand.kt" || say "缺少外部命令超时"
 # 删除 inflight 只能发生在 finish/空文件路径，不能在 scanFile 之前先删 pending。
-scan_line=$(grep -n 'MediaScannerConnection.scanFile' "$QUEUE" | head -n1 | cut -d: -f1)
+scan_line=$(grep -n 'paths.all' "$QUEUE" | head -n1 | cut -d: -f1)
 delete_line=$(grep -n 'acknowledged = !inflight.exists() || inflight.delete()' "$QUEUE" | head -n1 | cut -d: -f1)
 case "$scan_line" in ''|*[!0-9]*) say "无法定位 scanFile" ;; esac
 case "$delete_line" in ''|*[!0-9]*) say "无法定位 inflight ack" ;; esac

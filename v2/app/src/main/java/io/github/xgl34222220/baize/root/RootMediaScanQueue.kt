@@ -1,7 +1,6 @@
 package io.github.xgl34222220.baize.root
 
 import android.content.Context
-import android.media.MediaScannerConnection
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -9,15 +8,13 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Root-side durable media-scan queue used by both organizer implementations.
  *
  * The queue lives under /data/adb, so only the RootService touches it.  Shell organizer tasks
  * append to the same pending file (or a spool file when the tiny filesystem lock is busy).
- * A flush atomically claims pending -> inflight, submits MediaScannerConnection batches and only
+ * A flush atomically claims pending -> inflight, submits isolated content commands and only
  * deletes inflight after all callbacks arrive.  A crash/failure therefore causes a retry rather
  * than a lost media refresh.  Duplicate scans are acceptable; lost queue entries are not.
  */
@@ -27,10 +24,8 @@ internal object RootMediaScanQueue {
     const val LOCK_NAME = "organizer-media-scan.lock"
     const val SPOOL_PREFIX = "organizer-media-scan.spool."
 
-    private const val BATCH_SIZE = 1000
     private const val STALE_LOCK_MS = 30_000L
     private const val STALE_TASK_QUEUE_MS = 60_000L
-    private const val CALLBACK_TIMEOUT_MS = 120_000L
     private const val RETRY_BACKOFF_MS = 30_000L
 
     private val startupExecutor = Executors.newSingleThreadExecutor()
@@ -76,9 +71,11 @@ internal object RootMediaScanQueue {
 
     private data class Claim(val inflight: File, val paths: List<String>, val token: Long)
 
-    fun flush(context: Context, stateDir: File = File(RootPaths.STATE_DIR)): Int {
-        // Root package contexts have no Application; the supplied service context remains valid.
-        val appContext = context.applicationContext ?: context
+    fun flush(
+        context: Context,
+        stateDir: File = File(RootPaths.STATE_DIR),
+        scanPath: (String, File) -> Boolean = RootMediaScanCommand::scan
+    ): Int {
         val claim = synchronized(monitor) {
             if (activeToken != 0L) return@synchronized null
             if (SystemClock.elapsedRealtime() < retryAfterRealtime) return@synchronized null
@@ -106,49 +103,24 @@ internal object RootMediaScanQueue {
             Claim(inflight, paths, token)
         } ?: return 0
 
-        submit(appContext, stateDir, claim.inflight, claim.paths, claim.token)
+        submit(context, stateDir, claim.inflight, claim.paths, claim.token, scanPath)
         return claim.paths.size
     }
 
-    private fun submit(context: Context, stateDir: File, inflight: File, paths: List<String>, token: Long) {
-        val submitted = AtomicInteger(0)
-        val completed = AtomicInteger(0)
-        val submissionDone = AtomicBoolean(false)
-        val submissionFailed = AtomicBoolean(false)
-
-        fun maybeFinish() {
-            if (!submissionDone.get()) return
-            if (completed.get() < submitted.get()) return
-            finishSubmission(context, stateDir, inflight, token, !submissionFailed.get())
-        }
-
-        for (batch in paths.chunked(BATCH_SIZE)) {
-            submitted.addAndGet(batch.size)
-            try {
-                MediaScannerConnection.scanFile(
-                    context,
-                    batch.toTypedArray(),
-                    null
-                ) { _, _ ->
-                    completed.incrementAndGet()
-                    maybeFinish()
-                }
-            } catch (_: Throwable) {
-                submitted.addAndGet(-batch.size)
-                submissionFailed.set(true)
-                break
+    private fun submit(
+        context: Context, stateDir: File, inflight: File, paths: List<String>, token: Long,
+        scanPath: (String, File) -> Boolean
+    ) {
+        // Do not acquire a ContentProvider from the unregistered Root app_process.
+        // Android's scanFile() posts to android.bg, outside a caller's try/catch.
+        startupExecutor.execute {
+            val success = try {
+                paths.all { scanPath(it, stateDir) }
+            } catch (error: Exception) {
+                android.util.Log.w("BaiZeMedia", "Media refresh retained for retry", error)
+                false
             }
-        }
-
-        submissionDone.set(true)
-        if (submitted.get() == 0) {
-            finishSubmission(context, stateDir, inflight, token, false)
-        } else {
-            maybeFinish()
-            handler.postDelayed(
-                { finishSubmission(context, stateDir, inflight, token, false) },
-                CALLBACK_TIMEOUT_MS
-            )
+            finishSubmission(context, stateDir, inflight, token, success)
         }
     }
 
@@ -179,7 +151,7 @@ internal object RootMediaScanQueue {
 
         if (success && acknowledged) {
             // New shell/app entries may have arrived in pending while this batch was in flight.
-            handler.post { flush(context, stateDir) }
+            startupExecutor.execute { flush(context, stateDir) }
         }
     }
 
