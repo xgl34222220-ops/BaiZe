@@ -33,6 +33,7 @@ class BaiZeProfileRootService : RootService() {
 
     override fun onCreate() {
         super.onCreate()
+        RootCrashRecorder.install(this)
         RootMediaScanQueue.onServiceStart(this)
     }
 

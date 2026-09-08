@@ -1119,6 +1119,7 @@ private fun DashboardUiState.forLogsPage(): DashboardUiState = DashboardUiState(
 )
 
 private fun DashboardUiState.forSettingsPage(): DashboardUiState = DashboardUiState(
+    connecting = connecting, connectionFailed = connectionFailed,
     connected = connected, ready = ready, running = running, serviceText = serviceText,
     taskPhase = taskPhase, whitelistCount = whitelistCount, scanPerformance = scanPerformance
 )

@@ -263,13 +263,15 @@ fun VideoHomeScreenMiuix(
                         state.running -> "Root 任务执行中"
                         healthy -> "Root 服务运行正常"
                         state.connected -> "Root 服务已连接"
-                        else -> "正在恢复 Root 服务"
+                        state.connectionFailed -> "Root 连接失败"
+                        state.connecting -> "正在连接 Root 服务"
+                        else -> "Root 服务未连接"
                     },
                     subtitle = state.serviceText,
                     value = when {
                         state.running -> "执行中"
                         healthy -> "正常"
-                        else -> "恢复中"
+                        else -> state.connectionLabel
                     }
                 )
             }

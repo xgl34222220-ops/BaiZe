@@ -451,7 +451,7 @@ private fun ServiceStatusRow(state: SettingsUiState) {
             when {
                 state.running -> "执行中"
                 healthy -> "正常"
-                else -> "恢复中"
+                else -> state.connectionLabel
             },
             color = MaterialTheme.colorScheme.primary,
             fontSize = 11.sp,

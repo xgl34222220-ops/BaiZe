@@ -26,7 +26,7 @@ object CrashRecorder {
                 error.printStackTrace(PrintWriter(writer))
                 val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
                 val report = buildString {
-                    append("白泽 v2 App 崩溃记录\n")
+                    append("白泽 ").append(BuildConfig.VERSION_NAME).append(" App 崩溃记录\n")
                     append("时间：").append(timestamp).append('\n')
                     append("线程：").append(thread.name).append('\n')
                     append("Android：").append(android.os.Build.VERSION.RELEASE)

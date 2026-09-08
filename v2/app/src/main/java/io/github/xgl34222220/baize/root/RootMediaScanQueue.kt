@@ -69,15 +69,16 @@ internal object RootMediaScanQueue {
     }
 
     fun onServiceStart(context: Context) {
-        startupExecutor.execute { flush(context.applicationContext) }
+        startupExecutor.execute { flush(context) }
         // A shell writer may have held the short queue lock exactly while the service started.
-        handler.postDelayed({ startupExecutor.execute { flush(context.applicationContext) } }, 1_000L)
+        handler.postDelayed({ startupExecutor.execute { flush(context) } }, 1_000L)
     }
 
     private data class Claim(val inflight: File, val paths: List<String>, val token: Long)
 
     fun flush(context: Context, stateDir: File = File(RootPaths.STATE_DIR)): Int {
-        val appContext = context.applicationContext
+        // Root package contexts have no Application; the supplied service context remains valid.
+        val appContext = context.applicationContext ?: context
         val claim = synchronized(monitor) {
             if (activeToken != 0L) return@synchronized null
             if (SystemClock.elapsedRealtime() < retryAfterRealtime) return@synchronized null
