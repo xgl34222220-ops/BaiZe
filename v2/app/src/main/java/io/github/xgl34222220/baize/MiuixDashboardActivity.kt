@@ -1796,7 +1796,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun diagnosticText(): String =
-        ConnectionDiagnostics.read(this) + "\n\n" + (CrashRecorder.read(this) ?: "暂无 App 崩溃记录")
+        ConnectionDiagnostics.read(this) + "\n\n" +
+            (io.github.xgl34222220.baize.root.RootCrashRecorder.read(this) ?: "暂无 Root 崩溃记录") + "\n\n" +
+            (CrashRecorder.read(this) ?: "暂无 App 崩溃记录")
 
     private fun showCrashDialog() {
         AlertDialog.Builder(this)
@@ -1808,7 +1810,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 toast("诊断记录已复制")
             }
             .setNegativeButton("关闭", null)
-            .setPositiveButton("清除记录") { _, _ -> CrashRecorder.clear(this); ConnectionDiagnostics.clear(this) }
+            .setPositiveButton("清除记录") { _, _ -> CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) }
             .show()
     }
 
