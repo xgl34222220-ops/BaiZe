@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
  * The queue lives under /data/adb, so only the RootService touches it.  Shell organizer tasks
  * append to the same pending file (or a spool file when the tiny filesystem lock is busy).
  * A flush atomically claims pending -> inflight, submits isolated content commands and only
- * deletes inflight after all callbacks arrive.  A crash/failure therefore causes a retry rather
+ * deletes inflight after every command succeeds.  A crash/failure therefore causes a retry rather
  * than a lost media refresh.  Duplicate scans are acceptable; lost queue entries are not.
  */
 internal object RootMediaScanQueue {

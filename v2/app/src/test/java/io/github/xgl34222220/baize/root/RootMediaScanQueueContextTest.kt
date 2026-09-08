@@ -62,7 +62,10 @@ class RootMediaScanQueueContextTest {
 
     private fun awaitCondition(condition: () -> Boolean) {
         val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
-        while (!condition() && System.nanoTime() < end) Thread.sleep(10)
-        assertTrue(condition())
+        while (System.nanoTime() < end) {
+            if (condition()) return
+            Thread.sleep(10)
+        }
+        fail("Condition did not complete within 3 seconds")
     }
 }
