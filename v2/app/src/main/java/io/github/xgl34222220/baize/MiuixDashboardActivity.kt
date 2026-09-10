@@ -3,7 +3,6 @@ package io.github.xgl34222220.baize
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -70,6 +69,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var serviceRecoveryJob: Job? = null
     private var cacheRequested = false
     private var releasingConnections = false
+    private var lastBindingFailure: String? = null
+    private var observedVersions: RuntimeVersions? = null
+    private var versionObservationCurrent = false
     private var taskCallbackRegistered = false
     private val taskProgressCallback = object : ITaskProgressCallback.Stub() {
         override fun onTaskProgress(stateJson: String?) {
@@ -86,9 +88,13 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
     private var schedulerState = androidx.compose.runtime.mutableStateOf(SchedulerUiState())
 
-    private val profileConnection = object : ServiceConnection {
+    private val profileConnection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (isDestroyed || releasingConnections) return
+            if (binder == null) {
+                onNullBinding(name)
+                return
+            }
             rootService = IProfileRootService.Stub.asInterface(binder)
             profileBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务已连接")
@@ -104,17 +110,24 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
 
         override fun onNullBinding(name: ComponentName?) {
-            failBinding(primary = true)
+            onBindingFailed(name, RootService.BindingFailure.NULL_BINDING)
+        }
+
+        override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) {
+            failBinding(primary = true, reason = reason)
         }
 
         override fun onBindingDied(name: ComponentName?) {
+            if (releasingConnections || isDestroyed) return
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "Binder 绑定已失效（onBindingDied），需要重新绑定")
             runCatching { RootService.unbind(this) }
             onServiceDisconnected(name)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             if (releasingConnections || isDestroyed) return
-            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务断开")
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务${RootConnectionMessages.DISCONNECTED}")
+            markVersionsStale()
             rootService = null
             profileBound = false
             taskCallbackRegistered = false
@@ -126,9 +139,13 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
-    private val cacheConnection = object : ServiceConnection {
+    private val cacheConnection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (isDestroyed || releasingConnections) return
+            if (binder == null) {
+                onNullBinding(name)
+                return
+            }
             cacheService = IBaiZeRootService.Stub.asInterface(binder)
             cacheBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务已连接")
@@ -142,17 +159,23 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
 
         override fun onNullBinding(name: ComponentName?) {
-            failBinding(primary = false)
+            onBindingFailed(name, RootService.BindingFailure.NULL_BINDING)
+        }
+
+        override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) {
+            failBinding(primary = false, reason = reason)
         }
 
         override fun onBindingDied(name: ComponentName?) {
+            if (releasingConnections || isDestroyed) return
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "Binder 绑定已失效（onBindingDied），需要重新绑定")
             runCatching { RootService.unbind(this) }
             onServiceDisconnected(name)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             if (releasingConnections || isDestroyed) return
-            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务断开")
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务${RootConnectionMessages.DISCONNECTED}")
             cacheService = null
             cacheBound = false
             pollJob?.cancel()
@@ -165,6 +188,8 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        observedVersions = ConnectionDiagnostics.lastVersions(this)
+        markVersionsStale()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
         updateStorage()
@@ -322,7 +347,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     dashboardState.value = dashboardState.value.copy(
                         connected = rootService != null,
                         ready = rootService != null && dashboardState.value.ready,
-                        serviceText = if (connectionRecovery.exhausted) "Root 连接恢复失败，请手动重连"
+                        serviceText = if (connectionRecovery.exhausted) recoveryFailureText()
                             else if (dashboardState.value.ready) dashboardState.value.serviceText
                             else "暂时无法读取后台任务状态，稍后重试",
                         taskPhase = if (dashboardState.value.running) {
@@ -392,7 +417,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     dashboardState.value = dashboardState.value.copy(
                         connected = rootService != null,
                         ready = rootService != null && dashboardState.value.ready,
-                        serviceText = if (connectionRecovery.exhausted) "Root 连接恢复失败，请手动重连"
+                        serviceText = if (connectionRecovery.exhausted) recoveryFailureText()
                             else "暂时无法读取后台任务进度…",
                         taskPhase = "后台任务仍由 Root 执行，正在重新连接进度…"
                     )
@@ -425,7 +450,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (connectionRecovery.exhausted) {
             dashboardState.value = dashboardState.value.copy(
                 connecting = false, connectionFailed = true,
-                serviceText = "Root 连接恢复失败，请手动重连"
+                serviceText = recoveryFailureText()
             )
             return
         }
@@ -438,6 +463,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             serviceText = "正在连接 Root 清理服务…"
         )
         profileBound = true
+        ConnectionDiagnostics.startSession(this)
         ConnectionDiagnostics.record(this, "请求主服务绑定")
         runCatching {
             RootService.bind(
@@ -446,13 +472,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                 profileConnection
             )
         }.onFailure {
-            profileBound = false
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                serviceText = "Root 清理服务启动失败：${it.message.orEmpty()}"
-            )
-            failBinding(primary = true, detail = it.message.orEmpty())
+            failBinding(primary = true, reason = RootService.BindingFailure.STARTUP_FAILED,
+                detail = it.javaClass.simpleName)
         }
     }
 
@@ -475,18 +496,32 @@ class MiuixDashboardActivity : ComponentActivity() {
                 cacheConnection
             )
         }.onFailure {
-            cacheBound = false
-            dashboardState.value = dashboardState.value.copy(serviceText = "缓存引擎启动失败：${it.message.orEmpty()}")
-            failBinding(primary = false, detail = it.message.orEmpty())
+            failBinding(primary = false, reason = RootService.BindingFailure.STARTUP_FAILED,
+                detail = it.javaClass.simpleName)
         }
     }
 
-    private fun failBinding(primary: Boolean, detail: String = "启动未完成或未取得 Root 授权") {
+    private fun recoveryFailureText(): String = lastBindingFailure ?: RootConnectionMessages.RECOVERY_EXHAUSTED
+
+    private fun versionWarning(): String {
+        val versions = observedVersions ?: return ""
+        val warning = versions.warning(ComponentVersion.parse(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE))
+        return if (versionObservationCurrent) warning else "版本尚未在本次连接验证（已有信息仅为历史缓存）。\n$warning"
+    }
+
+    private fun markVersionsStale() {
+        versionObservationCurrent = false
+        dashboardState.value = dashboardState.value.copy(versionWarning = versionWarning())
+    }
+
+    private fun failBinding(primary: Boolean, reason: RootService.BindingFailure, detail: String = "") {
+        if (releasingConnections || isDestroyed) return
         serviceRecoveryJob?.cancel()
         serviceRecoveryJob = null
         connectionRecovery.stop()
         releasingConnections = true
         if (primary) {
+            markVersionsStale()
             runCatching { RootService.unbind(profileConnection) }
             rootService = null
             profileBound = false
@@ -498,18 +533,20 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
         releasingConnections = false
         val engine = if (primary) "主服务" else "缓存服务"
-        ConnectionDiagnostics.record(this, "$engine 绑定失败：$detail")
+        lastBindingFailure = "$engine 未连接：${RootConnectionMessages.bindingFailure(reason)}"
+        ConnectionDiagnostics.record(this, "$engine 绑定失败 [$reason]${if (detail.isBlank()) "" else " ($detail)"}：${RootConnectionMessages.bindingFailure(reason)}")
         dashboardState.value = dashboardState.value.copy(
             connected = rootService != null,
             connecting = false,
             connectionFailed = true,
             ready = rootService != null && dashboardState.value.ready,
-            serviceText = "$engine 未连接。请检查 Root 授权后手动重连；刚修改授权时请重启 App。诊断页可复制连接记录。"
+            serviceText = recoveryFailureText()
         )
     }
 
     private fun releaseConnections() {
         releasingConnections = true
+        markVersionsStale()
         serviceRecoveryJob?.cancel()
         serviceRecoveryJob = null
         recoveryProbeJob?.cancel()
@@ -528,6 +565,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun reconnectService() {
         releaseConnections()
         connectionRecovery.reset()
+        lastBindingFailure = null
         dashboardState.value = dashboardState.value.copy(
             connected = false,
             ready = false,
@@ -547,9 +585,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                 ((profileBound && rootService == null) || (cacheBound && cacheService == null)),
             ready = if (primaryConnected) dashboardState.value.ready else false,
             serviceText = when {
+                connectionRecovery.exhausted -> recoveryFailureText()
                 primaryConnected && dashboardState.value.ready -> dashboardState.value.serviceText
                 primaryConnected -> "Root 清理服务已连接，正在校验模块组件…"
-                connectionRecovery.exhausted -> "Root 连接恢复失败，请手动重连"
                 scanReady -> "扫描快照已就绪，清理时会自动恢复 Root 服务"
                 profileBound -> "正在连接 Root 清理服务…"
                 else -> "Root 清理服务已断开，正在自动恢复…"
@@ -602,12 +640,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         connectionRecovery.disconnected(SystemClock.elapsedRealtime())
         if (serviceRecoveryJob?.isActive == true) return
         val retryDelay = connectionRecovery.nextDelay() ?: run {
+            ConnectionDiagnostics.record(this, recoveryFailureText())
             dashboardState.value = dashboardState.value.copy(
                 connecting = false, connectionFailed = true,
-                serviceText = "Root 连接恢复失败，请手动重连"
+                serviceText = recoveryFailureText()
             )
             return
         }
+        ConnectionDiagnostics.record(this, "将在 ${retryDelay / 1_000} 秒后尝试恢复连接")
         serviceRecoveryJob = lifecycleScope.launch {
             delay(retryDelay)
             serviceRecoveryJob = null
@@ -632,6 +672,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
             if (rootService !== service) return@launch
             if (json == null) {
+                markVersionsStale()
                 ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务状态读取失败")
                 dashboardState.value = dashboardState.value.copy(
                     ready = false,
@@ -639,6 +680,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                 )
                 return@launch
             }
+            observedVersions = RuntimeVersions.fromPing(json)
+            versionObservationCurrent = true
+            ConnectionDiagnostics.observeVersions(this@MiuixDashboardActivity, requireNotNull(observedVersions))
             val root = json.optBoolean("root")
             val module = json.optBoolean("module")
             val cleaner = json.optBoolean("cleaner")
@@ -657,7 +701,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
                 ready = ready,
-                serviceText = if (dashboardState.value.connectionFailed) dashboardState.value.serviceText else status,
+                serviceText = if (dashboardState.value.connectionFailed) recoveryFailureText() else status,
+                versionWarning = versionWarning(),
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
             )
@@ -1796,9 +1841,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun diagnosticText(): String =
-        ConnectionDiagnostics.read(this) + "\n\n" +
-            (io.github.xgl34222220.baize.root.RootCrashRecorder.read(this) ?: "暂无 Root 崩溃记录") + "\n\n" +
-            (CrashRecorder.read(this) ?: "暂无 App 崩溃记录")
+        ConnectionDiagnostics.read(this, currentVersions = versionObservationCurrent && rootService != null) + "\n\n" +
+            DiagnosticLabels.crashRecord("Root", io.github.xgl34222220.baize.root.RootCrashRecorder.read(this)) + "\n\n" +
+            DiagnosticLabels.crashRecord("App", CrashRecorder.read(this))
 
     private fun showCrashDialog() {
         AlertDialog.Builder(this)

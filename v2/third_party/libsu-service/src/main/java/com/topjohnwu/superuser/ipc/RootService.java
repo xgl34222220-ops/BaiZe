@@ -99,6 +99,18 @@ public abstract class RootService extends ContextWrapper {
      */
     public static final String CATEGORY_DAEMON_MODE = "com.topjohnwu.superuser.DAEMON_MODE";
 
+    public enum BindingFailure {
+        ROOT_UNAVAILABLE, STARTUP_FAILED, STARTUP_TIMEOUT, BIND_FAILED, NULL_BINDING
+    }
+
+    /** Optional failure details; ordinary ServiceConnection callbacks remain supported. */
+    public interface Connection extends ServiceConnection {
+        default void onBindingFailed(@Nullable ComponentName name, @NonNull BindingFailure reason) {
+            if (android.os.Build.VERSION.SDK_INT >= 28) onNullBinding(name);
+            else onServiceDisconnected(name);
+        }
+    }
+
     /**
      * Bind to a root service, launching a new root process if needed.
      * @param intent identifies the service to connect to.
@@ -112,10 +124,8 @@ public abstract class RootService extends ContextWrapper {
             @NonNull Executor executor,
             @NonNull ServiceConnection conn) {
         if (Utils.isRootImpossible()) {
-            executor.execute(() -> {
-                if (android.os.Build.VERSION.SDK_INT >= 28) conn.onNullBinding(intent.getComponent());
-                else conn.onServiceDisconnected(intent.getComponent());
-            });
+            RootServiceManager.dispatchFailure(conn, executor, intent.getComponent(),
+                    BindingFailure.ROOT_UNAVAILABLE);
             return;
         }
         Shell.Task task = bindOrTask(intent, executor, conn);
@@ -204,6 +214,8 @@ public abstract class RootService extends ContextWrapper {
                 Shell shell = Shell.getShell();
                 if (shell.isRoot()) {
                     shell.execTask(task);
+                } else if (task instanceof RootServiceManager.StartupTask) {
+                    ((RootServiceManager.StartupTask) task).rootUnavailable();
                 } else {
                     task.shellDied();
                 }

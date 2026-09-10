@@ -12,11 +12,12 @@ internal class RootRecoveryPolicy {
     }
 
     fun disconnected(now: Long) {
-        if (connectedSince?.let { now - it >= 30_000L } == true) reset()
+        if (!exhausted && connectedSince?.let { now - it >= 30_000L } == true) reset()
         connectedSince = null
     }
 
     fun nextDelay(): Long? {
+        if (exhausted) return null
         val delay = when (attempts) {
             0 -> 1_000L
             1 -> 3_000L

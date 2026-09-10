@@ -150,6 +150,7 @@ data class DashboardUiState(
     val ready: Boolean = false,
     val running: Boolean = false,
     val serviceText: String = "正在等待 Root 服务…",
+    val versionWarning: String = "",
     val taskPhase: String = "等待下一次清理",
     val taskOperation: String = "",
     val taskProgressCurrent: Long = 0L,
@@ -498,78 +499,92 @@ fun BaiZeMiuixApp(
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
             }
 
-            when (appearance.uiStyle) {
-                UiStyle.MATERIAL -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                ) {
-                    AnimatedPageHost(
-                        page = page,
-                        style = UiStyle.MATERIAL,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                    ) { targetPage ->
-                        when (targetPage) {
-                            BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
-                            BaiZePage.Clean -> CleanRoute(
-                            style = UiStyle.MATERIAL,
-                            dashboard = state.forCleanPage(),
-                            scheduler = scheduler,
-                            dashboardActions = actions,
-                            expandedCategory = expandedCleanCategory,
-                            onExpandedCategoryChanged = { expandedCleanCategory = it }
-                        )
-                            BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
-                            BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
-                        }
-                    }
-                    MaterialFloatingDock(
-                        selected = page,
-                        onSelected = { page = it },
-                        floating = appearance.floatingDock,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+            Column(Modifier.fillMaxSize()) {
+                if (state.versionWarning.isNotBlank()) {
+                    Text(
+                        text = state.versionWarning,
+                        modifier = Modifier.fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontSize = 12.sp
                     )
                 }
-
-                UiStyle.MIUIX -> Box(modifier = Modifier.fillMaxSize()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .hazeSource(state = hazeState)
-                    ) {
-                        MiuiXBackdrop(dark, amoled)
-                        AnimatedPageHost(
-                            page = page,
-                            style = UiStyle.MIUIX,
+                Box(Modifier.weight(1f)) {
+                    when (appearance.uiStyle) {
+                        UiStyle.MATERIAL -> Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .statusBarsPadding()
-                        ) { targetPage ->
-                            when (targetPage) {
-                                BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
-                                BaiZePage.Clean -> CleanRoute(
-                                style = UiStyle.MIUIX,
-                                dashboard = state.forCleanPage(),
-                                scheduler = scheduler,
-                                dashboardActions = actions,
-                                expandedCategory = expandedCleanCategory,
-                                onExpandedCategoryChanged = { expandedCleanCategory = it }
-                            )
-                                BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
-                                BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
+                                .background(MaterialTheme.colorScheme.background)
+                        ) {
+                            AnimatedPageHost(
+                                page = page,
+                                style = UiStyle.MATERIAL,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(if (state.versionWarning.isBlank()) Modifier.statusBarsPadding() else Modifier)
+                            ) { targetPage ->
+                                when (targetPage) {
+                                    BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
+                                    BaiZePage.Clean -> CleanRoute(
+                                        style = UiStyle.MATERIAL,
+                                        dashboard = state.forCleanPage(),
+                                        scheduler = scheduler,
+                                        dashboardActions = actions,
+                                        expandedCategory = expandedCleanCategory,
+                                        onExpandedCategoryChanged = { expandedCleanCategory = it }
+                                    )
+                                    BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
+                                    BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
+                                }
                             }
+                            MaterialFloatingDock(
+                                selected = page,
+                                onSelected = { page = it },
+                                floating = appearance.floatingDock,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                            )
+                        }
+
+                        UiStyle.MIUIX -> Box(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .hazeSource(state = hazeState)
+                            ) {
+                                MiuiXBackdrop(dark, amoled)
+                                AnimatedPageHost(
+                                    page = page,
+                                    style = UiStyle.MIUIX,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (state.versionWarning.isBlank()) Modifier.statusBarsPadding() else Modifier)
+                                ) { targetPage ->
+                                    when (targetPage) {
+                                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
+                                        BaiZePage.Clean -> CleanRoute(
+                                            style = UiStyle.MIUIX,
+                                            dashboard = state.forCleanPage(),
+                                            scheduler = scheduler,
+                                            dashboardActions = actions,
+                                            expandedCategory = expandedCleanCategory,
+                                            onExpandedCategoryChanged = { expandedCleanCategory = it }
+                                        )
+                                        BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
+                                        BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
+                                    }
+                                }
+                            }
+                            MiuixLiquidDock(
+                                selectedIndex = page.ordinal,
+                                items = miuixNavItems,
+                                onSelected = { index -> page = BaiZePage.entries[index] },
+                                hazeState = hazeState,
+                                floating = appearance.floatingDock,
+                                modifier = Modifier.align(Alignment.BottomCenter)
+                            )
                         }
                     }
-                    MiuixLiquidDock(
-                        selectedIndex = page.ordinal,
-                        items = miuixNavItems,
-                        onSelected = { index -> page = BaiZePage.entries[index] },
-                        hazeState = hazeState,
-                        floating = appearance.floatingDock,
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    )
                 }
             }
         }

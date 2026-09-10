@@ -46,6 +46,7 @@ class BaiZeProfileRootService : RootService() {
             .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
             .put("engine", "unified-root-task-coordinator-v2-audit")
+            .also { RootVersionInfo.putInto(it) }
             .toString()
 
         override fun getProfileCatalog(): String = profileEngine.catalog()
