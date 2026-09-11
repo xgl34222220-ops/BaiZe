@@ -16,6 +16,7 @@ OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"
 # arm64 是必须产物；其余 ABI 有就打进去，没有就跳过。
 [ -x "$NATIVE_DIR/arm64-v8a/baize_engine" ] || { echo "未找到 arm64 原生扫描器" >&2; exit 1; }
 [ -x "$NATIVE_DIR/arm64-v8a/baize_deep_snapshot" ] || { echo "未找到 arm64 深度不可变快照引擎" >&2; exit 1; }
+[ -x "$NATIVE_DIR/arm64-v8a/baize_compat_filter" ] || { echo "未找到 arm64 兼容清单过滤器" >&2; exit 1; }
 
 # 打包前跑全量回归，而不是手工列举五个测试。
 bash "$ROOT/tests/run-all.sh"
@@ -54,10 +55,12 @@ for abidir in "$NATIVE_DIR"/*/; do
   abi=$(basename "$abidir")
   [ -x "$abidir/baize_engine" ] || continue
   [ -x "$abidir/baize_deep_snapshot" ] || continue
+  [ -x "$abidir/baize_compat_filter" ] || { echo "$abi 缺少兼容清单过滤器，拒绝打包" >&2; exit 1; }
   mkdir -p "$STAGE/bin/$abi"
   cp -f "$abidir/baize_engine" "$STAGE/bin/$abi/baize_engine"
   cp -f "$abidir/baize_deep_snapshot" "$STAGE/bin/$abi/baize_deep_snapshot"
-  chmod 0755 "$STAGE/bin/$abi/baize_engine" "$STAGE/bin/$abi/baize_deep_snapshot"
+  cp -f "$abidir/baize_compat_filter" "$STAGE/bin/$abi/baize_compat_filter"
+  chmod 0755 "$STAGE/bin/$abi/baize_engine" "$STAGE/bin/$abi/baize_deep_snapshot" "$STAGE/bin/$abi/baize_compat_filter"
   packed_abis="$packed_abis $abi"
 done
 [ -n "$packed_abis" ] || { echo "没有可打包的原生引擎" >&2; exit 1; }
@@ -112,6 +115,8 @@ unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-scan-manifest.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-manifest-clean.sh'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
+unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_compat_filter'
+unzip -p "$OUTPUT" cleaner.sh.compat | grep -q 'baize_compat_filter'
 unzip -l "$OUTPUT" | grep -q 'abi-resolve.sh'
 unzip -l "$OUTPUT" | grep -q 'config/risk-overrides.conf'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-scan-manifest.sh'

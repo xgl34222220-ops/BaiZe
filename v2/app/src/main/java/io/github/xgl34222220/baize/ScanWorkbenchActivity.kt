@@ -72,6 +72,10 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,6 +128,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private var snapshotExpiresAtRealtime = 0L
     private var cleanupPolicy = CleanupPolicy.BALANCED
     private var pollJob: Job? = null
+    private var scanJob: Job? = null
+    private var stopJob: Job? = null
+    private val scanGeneration = ScanLoadGeneration()
     private var screenState by mutableStateOf(WorkbenchUiState())
 
     private val profileConnection = object : ServiceConnection {
@@ -141,6 +148,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            invalidateScanLoad()
+            scanJob?.cancel()
+            saveReview()
             profileService = null
             profileBound = false
             screenState = screenState.copy(
@@ -166,6 +176,9 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            invalidateScanLoad()
+            scanJob?.cancel()
+            saveReview()
             cacheService = null
             cacheBound = false
             screenState = screenState.copy(
@@ -231,6 +244,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        scanGeneration.invalidate()
+        scanJob?.cancel()
         pollJob?.cancel()
         if (profileBound) runCatching { RootService.unbind(profileConnection) }
         if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
@@ -276,7 +291,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun runScan() {
-        if (screenState.running) return
+        if (screenState.running || stopJob?.isActive == true) return
         val profile = profileService
         val cache = cacheService
         if (profile == null || (scanProfile != "deep" && cache == null)) {
@@ -284,132 +299,176 @@ class ScanWorkbenchActivity : ComponentActivity() {
             return
         }
         restoredReview = false
+        val generation = scanGeneration.start()
         cacheSnapshotId = ""
         profileSnapshotId = ""
         snapshotExpiresAtRealtime = 0L
         screenState = screenState.copy(
-            running = true,
-            scanReady = false,
+            running = true, loadingResults = false, scanReady = false,
             phase = "正在并行扫描应用缓存与安全项目…",
-            progressCurrent = 0L,
-            progressTotal = 0L,
-            currentPath = "",
-            items = emptyList(),
-            selectedIds = emptySet(),
-            resultText = ""
+            progressCurrent = 0L, progressTotal = 0L, currentPath = "",
+            items = emptyList(), selectedIds = emptySet(), resultText = "",
+            expiresAtRealtime = 0L
         )
+        // Persist the invalidation even before the first page, including across rotation.
+        saveReview()
         startPolling()
-
-        lifecycleScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val packageWhitelist = profile.getWhitelistPackages()
+        scanJob = lifecycleScope.launch {
+            try {
+                val (config, packageWhitelist, options) = withContext(Dispatchers.IO) {
                     val config = JSONObject(profile.getSchedulerConfig())
-                    cleanupPolicy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
-                    val options = optionsJson(profile, config)
+                    Triple(config, profile.getWhitelistPackages(), optionsJson(profile, config))
+                }
+                if (!scanGeneration.accepts(generation)) return@launch
+                cleanupPolicy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
+                val policy = cleanupPolicy
+                val (cacheResult, profileResult) = withContext(Dispatchers.IO) {
                     coroutineScope {
                         val cacheJob = async {
-                            if (scanProfile == "deep") JSONObject().put("snapshotId", "")
-                            else JSONObject(requireNotNull(cache).scanCandidates(packageWhitelist))
+                            val json = if (scanProfile == "deep") JSONObject().put("snapshotId", "")
+                                else JSONObject(requireNotNull(cache).scanCandidates(packageWhitelist))
+                            json to SystemClock.elapsedRealtime()
                         }
-                        val profileJob = async { JSONObject(profile.scanProfile(scanProfile, options)) }
+                        val profileJob = async {
+                            JSONObject(profile.scanProfile(scanProfile, options)) to SystemClock.elapsedRealtime()
+                        }
                         cacheJob.await() to profileJob.await()
                     }
                 }
-            }
-            pollJob?.cancel()
-            if (result.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    phase = "安全扫描失败：${result.exceptionOrNull()?.message ?: "Root 服务异常"}"
+                if (!scanGeneration.accepts(generation)) return@launch
+                pollJob?.cancel()
+                val (cacheJson, cacheCompletedAt) = cacheResult
+                val (profileJson, profileCompletedAt) = profileResult
+                val busy = listOf(cacheJson, profileJson).firstOrNull {
+                    it.optString("error") == "busy" || it.optInt("exitCode") == 3
+                }
+                if (busy != null) error(busy.optString("message", "已有扫描或清理任务正在运行"))
+                val cacheOk = scanProfile != "deep" && !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
+                    && cacheJson.optString("snapshotId").isNotBlank()
+                val profileOk = profileJson.optBoolean("success") && !profileJson.optBoolean("cancelled")
+                    && profileJson.optString("snapshotId").isNotBlank()
+                if (!cacheOk && !profileOk) error(profileJson.optString("message", cacheJson.optString("message", "未返回有效快照")))
+                cacheSnapshotId = if (cacheOk) cacheJson.optString("snapshotId") else ""
+                profileSnapshotId = if (profileOk) profileJson.optString("snapshotId") else ""
+                val cacheId = cacheSnapshotId
+                val profileId = profileSnapshotId
+                snapshotExpiresAtRealtime = minOf(
+                    // Cache epochs have second precision and may predate the scan response.
+                    if (cacheOk) cacheCompletedAt - cacheJson.optLong("elapsedMs", 0L).coerceAtLeast(0L) - 1_000L +
+                        cacheJson.optLong("snapshotExpiresInMs", SNAPSHOT_TTL_MS).coerceIn(0L, SNAPSHOT_TTL_MS)
+                    else Long.MAX_VALUE,
+                    if (profileOk) profileCompletedAt + profileJson.optLong("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
+                        .coerceIn(0L, SNAPSHOT_TTL_MS) else Long.MAX_VALUE
                 )
-                return@launch
-            }
-
-            val (cacheJson, profileJson) = result.getOrThrow()
-            val busy = listOf(cacheJson, profileJson).firstOrNull {
-                it.optString("error") == "busy" || it.optInt("exitCode") == 3
-            }
-            if (busy != null) {
+                val partial = profileJson.optBoolean("partial") || !profileOk || (scanProfile != "deep" && !cacheOk)
+                val warning = if (partial) "本轮扫描未覆盖全部范围；仅展示有效快照中的项目。" else ""
                 screenState = screenState.copy(
-                    running = false,
-                    phase = busy.optString("message", "已有扫描或清理任务正在运行")
+                    loadingResults = true, phase = "扫描结束，正在读取结果…",
+                    progressCurrent = 0L, progressTotal = 0L, currentPath = "",
+                    policyTitle = policy.title, policyKey = policy.key, highRiskMode = policy.highRiskMode,
+                    expiresAtRealtime = snapshotExpiresAtRealtime,
+                    resultText = warning + "读取期间仅供预览，全部读取完成后才可选择和清理。"
                 )
-                return@launch
-            }
-
-            val cacheOk = !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
-            val profileOk = profileJson.optBoolean("success") && !profileJson.optBoolean("cancelled")
-            if (!cacheOk && !profileOk) {
-                screenState = screenState.copy(
-                    running = false,
-                    phase = profileJson.optString("message", cacheJson.optString("message", "两个扫描引擎均未返回有效快照"))
-                )
-                return@launch
-            }
-
-            cacheSnapshotId = if (cacheOk) cacheJson.optString("snapshotId") else ""
-            profileSnapshotId = if (profileOk) profileJson.optString("snapshotId") else ""
-            val pages = runCatching {
-                withContext(Dispatchers.IO) {
-                    coroutineScope {
-                        val cacheItems = async { if (cacheSnapshotId.isBlank()) emptyList() else loadCacheItems(requireNotNull(cache), cacheSnapshotId) }
-                        val profileItems = async { if (profileSnapshotId.isBlank()) emptyList() else loadProfileItems(profile, profileSnapshotId) }
-                        cacheItems.await() + profileItems.await()
+                val results = ProgressiveScanResults<WorkbenchItem>({ it.id }) {
+                    it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium")
+                }
+                val counts = mutableMapOf<String, Pair<Int, Int>>()
+                suspend fun publish(source: String, batch: List<WorkbenchItem>, cursor: ScanPageCursor) {
+                    currentCoroutineContext().ensureActive()
+                    val review = results.append(batch)
+                    withContext(Dispatchers.Main) {
+                        if (!scanGeneration.accepts(generation)) return@withContext
+                        counts[source] = cursor.offset to requireNotNull(cursor.total)
+                        val loaded = counts.values.sumOf { it.first.toLong() }
+                        val expectedSources = (if (cacheOk) 1 else 0) + (if (profileOk) 1 else 0)
+                        val total = if (counts.size == expectedSources) counts.values.sumOf { it.second.toLong() } else 0L
+                        val newer = review != null && review.items.size > screenState.items.size
+                        screenState = screenState.copy(
+                            phase = "正在读取结果 · 已读取 $loaded 项" + if (total > 0) " / $total" else "",
+                            progressCurrent = loaded, progressTotal = total,
+                            items = if (newer) requireNotNull(review).items else screenState.items,
+                            selectedIds = if (newer) requireNotNull(review).selectedIds else screenState.selectedIds
+                        )
                     }
                 }
-            }
-            if (pages.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    phase = "扫描完成，但读取结果失败：${pages.exceptionOrNull()?.message.orEmpty()}"
-                )
-                return@launch
-            }
-
-            val items = pages.getOrThrow().sortedWith(
-                compareByDescending<WorkbenchItem> { it.bytes.coerceAtLeast(0L) }
-                    .thenBy { it.groupTitle }
-                    .thenBy { it.title }
-            )
-            val selected = items.asSequence()
-                .filter { it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", cleanupPolicy.autoRisk == "medium") }
-                .mapTo(linkedSetOf()) { it.id }
-            snapshotExpiresAtRealtime = SystemClock.elapsedRealtime() + SNAPSHOT_TTL_MS
-            screenState = screenState.copy(
-                running = false,
-                scanReady = items.isNotEmpty(),
-                phase = when {
-                    profileJson.optBoolean("partial") -> "本轮扫描未覆盖全部范围，先展示已发现的 ${items.size} 项"
-                    items.isEmpty() -> "扫描完成，没有发现垃圾项目"
-                    else -> "扫描完成，展开应用或分类后选择要清理的项目"
-                },
-                items = items,
-                selectedIds = selected,
-                expiresAtRealtime = snapshotExpiresAtRealtime,
-                policyTitle = cleanupPolicy.title,
-                policyKey = cleanupPolicy.key,
-                highRiskMode = cleanupPolicy.highRiskMode,
-                resultText = if (items.isEmpty()) "当前设备很干净" else if (cleanupPolicy == CleanupPolicy.CONSERVATIVE) {
-                    "保守档默认只勾选低风险项目；中风险仍可手动选择"
-                } else {
-                    "默认勾选低、中风险项目；高风险默认不选，可逐项选择。大小未统计的项目也会列出。"
+                withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        val cachePages = async {
+                            if (cacheOk) loadCacheItems(requireNotNull(cache), cacheId) { batch, cursor -> publish("cache", batch, cursor) }
+                        }
+                        val profilePages = async {
+                            if (profileOk) loadProfileItems(profile, profileId) { batch, cursor -> publish("profile", batch, cursor) }
+                        }
+                        cachePages.await()
+                        profilePages.await()
+                    }
                 }
-            )
-            saveReview()
+                if (!scanGeneration.accepts(generation)) return@launch
+                screenState = screenState.copy(phase = "结果读取完成，正在整理显示…")
+                val review = withContext(Dispatchers.Default) {
+                    results.finish(compareByDescending<WorkbenchItem> { it.bytes.coerceAtLeast(0L) }
+                        .thenBy { it.groupTitle }.thenBy { it.title })
+                }
+                if (!scanGeneration.accepts(generation)) return@launch
+                val expired = SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime
+                screenState = screenState.copy(
+                    running = false, loadingResults = false,
+                    scanReady = review.items.isNotEmpty() && !expired,
+                    phase = when {
+                        expired -> "扫描快照已过期，结果仅供查看，请重新扫描"
+                        partial -> "本轮扫描未覆盖全部范围，已读取 ${review.items.size} 项"
+                        review.items.isEmpty() -> "扫描完成，没有发现垃圾项目"
+                        else -> "扫描完成，展开应用或分类后选择要清理的项目"
+                    },
+                    items = review.items, selectedIds = review.selectedIds,
+                    resultText = warning + if (review.items.isEmpty()) {
+                        if (partial) "未发现可展示项目，请重新扫描。" else "当前设备很干净"
+                    } else if (policy == CleanupPolicy.CONSERVATIVE) {
+                        "保守档默认只勾选低风险项目；中风险仍可手动选择"
+                    } else {
+                        "默认勾选低、中风险项目；高风险默认不选，可逐项选择。大小未统计的项目也会列出。"
+                    }
+                )
+                scanGeneration.invalidate()
+                saveReview()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!scanGeneration.accepts(generation)) return@launch
+                val wasLoading = screenState.loadingResults
+                invalidateScanLoad()
+                screenState = screenState.copy(running = false,
+                    phase = if (wasLoading) "读取结果失败，已加载项目仅供查看：${error.message.orEmpty()}"
+                        else "安全扫描失败：${error.message.orEmpty()}")
+                saveReview()
+            }
         }
     }
 
-    private suspend fun loadCacheItems(service: IBaiZeRootService, snapshotId: String): List<WorkbenchItem> {
-        val result = ArrayList<WorkbenchItem>()
-        var offset = 0
-        var total = Int.MAX_VALUE
-        while (offset < total) {
-            val page = JSONObject(service.getResultPage(snapshotId, offset, PAGE_SIZE))
+    private fun invalidateScanLoad() {
+        scanGeneration.invalidate()
+        pollJob?.cancel()
+        cacheSnapshotId = ""
+        profileSnapshotId = ""
+        snapshotExpiresAtRealtime = 0L
+        screenState = screenState.copy(scanReady = false, loadingResults = false, expiresAtRealtime = 0L)
+    }
+
+    private suspend fun loadCacheItems(
+        service: IBaiZeRootService, snapshotId: String,
+        onPage: suspend (List<WorkbenchItem>, ScanPageCursor) -> Unit
+    ) {
+        val cursor = ScanPageCursor(snapshotId)
+        while (!cursor.complete) {
+            currentCoroutineContext().ensureActive()
+            val page = JSONObject(service.getResultPage(snapshotId, cursor.offset, CACHE_PAGE_SIZE))
+            currentCoroutineContext().ensureActive()
+            val result = ArrayList<WorkbenchItem>()
             if (page.has("error")) error(page.optString("message", page.optString("error")))
-            total = page.optInt("total", 0).coerceAtLeast(0)
-            val array = page.optJSONArray("items") ?: JSONArray()
-            if (array.length() == 0) break
+            val array = page.optJSONArray("items") ?: error("扫描结果缺少项目列表")
+            cursor.accept(page.optString("snapshotId"),
+                page.optInt("offset", if (array.length() == 0 && page.optInt("total", -1) == 0) 0 else -1),
+                page.optInt("total", -1), array.length())
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 val packageName = item.optString("packageName").trim()
@@ -436,21 +495,25 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     selectable = true
                 )
             }
-            offset += array.length()
+            onPage(result, cursor)
         }
-        return result
     }
 
-    private suspend fun loadProfileItems(service: IProfileRootService, snapshotId: String): List<WorkbenchItem> {
-        val result = ArrayList<WorkbenchItem>()
-        var offset = 0
-        var total = Int.MAX_VALUE
-        while (offset < total) {
-            val page = JSONObject(service.getProfilePage(snapshotId, offset, PAGE_SIZE))
+    private suspend fun loadProfileItems(
+        service: IProfileRootService, snapshotId: String,
+        onPage: suspend (List<WorkbenchItem>, ScanPageCursor) -> Unit
+    ) {
+        val cursor = ScanPageCursor(snapshotId)
+        while (!cursor.complete) {
+            currentCoroutineContext().ensureActive()
+            val page = JSONObject(service.getProfilePage(snapshotId, cursor.offset, PROFILE_PAGE_SIZE))
+            currentCoroutineContext().ensureActive()
+            val result = ArrayList<WorkbenchItem>()
             if (page.has("error")) error(page.optString("message", page.optString("error")))
-            total = page.optInt("total", 0).coerceAtLeast(0)
-            val array = page.optJSONArray("items") ?: JSONArray()
-            if (array.length() == 0) break
+            val array = page.optJSONArray("items") ?: error("扫描结果缺少项目列表")
+            cursor.accept(page.optString("snapshotId"),
+                page.optInt("offset", if (array.length() == 0 && page.optInt("total", -1) == 0) 0 else -1),
+                page.optInt("total", -1), array.length())
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
                 val path = item.optString("path").trim()
@@ -485,13 +548,12 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     selectable = ReviewRiskPolicy.selectable(risk, item.optString("blockedReason"))
                 )
             }
-            offset += array.length()
+            onPage(result, cursor)
         }
-        return result
     }
 
     private fun cleanSelection() {
-        if (screenState.running) return
+        if (screenState.running || screenState.loadingResults || stopJob?.isActive == true) return
         if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
             screenState = screenState.copy(scanReady = false, phase = "扫描快照已过期，请重新扫描")
             return
@@ -657,7 +719,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun quarantineItem(item: WorkbenchItem) {
-    if (screenState.running || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
+    if (screenState.running || screenState.loadingResults || stopJob?.isActive == true || item !in screenState.items || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
     if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
         screenState = screenState.copy(scanReady = false, phase = "扫描快照已过期，请重新扫描")
         return
@@ -706,7 +768,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
 }
 
     private fun protectItem(item: WorkbenchItem) {
-        if (screenState.running) return
+        if (screenState.running || item !in screenState.items) return
         val service = profileService ?: return
         screenState = screenState.copy(phase = "正在把 ${item.groupTitle} 加入保护白名单…")
         lifecycleScope.launch {
@@ -776,9 +838,28 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun stopTask() {
-        profileService?.cancelCurrentTask()
-        cacheService?.cancelCurrentTask()
+        if (stopJob?.isActive == true) return
+        val profile = profileService
+        val cache = cacheService
+        val stoppingScan = scanJob?.isActive == true
+        if (stoppingScan) {
+            invalidateScanLoad()
+            scanJob?.cancel()
+        }
+        val stoppingGeneration = if (stoppingScan) scanGeneration.start() else null
         screenState = screenState.copy(phase = "正在安全停止当前任务…")
+        stopJob = lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { profile?.cancelCurrentTask() }
+                runCatching { cache?.cancelCurrentTask() }
+            }
+            if (stoppingGeneration != null && scanGeneration.accepts(stoppingGeneration)) {
+                scanGeneration.invalidate()
+                screenState = screenState.copy(running = false, scanReady = false,
+                    phase = "扫描 / 结果读取已停止；已加载项目仅供查看，请重新扫描")
+                saveReview()
+            }
+        }
     }
 
     private fun startPolling() {
@@ -837,14 +918,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
 
     private fun saveReview() {
         val state = screenState
-        if (state.items.isEmpty()) return
         val cacheId = cacheSnapshotId
         val profileId = profileSnapshotId
         val policyId = cleanupPolicy.id
         val expires = System.currentTimeMillis() + (snapshotExpiresAtRealtime - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
         ScanReviewStore.save(this, scanProfile) {
             JSONObject().put("cacheSnapshotId", cacheId).put("profileSnapshotId", profileId)
-                .put("expiresAt", expires).put("scanReady", state.scanReady && !state.running)
+                .put("expiresAt", expires).put("scanReady", state.scanReady && !state.running && !state.loadingResults)
+                .put("loadingResults", state.loadingResults)
                 .put("phase", state.phase).put("resultText", state.resultText)
                 .put("policyId", policyId).put("selected", JSONArray(state.selectedIds.toList()))
                 .put("items", JSONArray().apply { state.items.forEach { item -> put(JSONObject()
@@ -858,16 +939,18 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun restoreReview(saved: JSONObject) {
+    private suspend fun restoreReview(saved: JSONObject) {
         val array = saved.optJSONArray("items") ?: return
-        val items = (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let { item ->
-            WorkbenchItem(item.optString("id"), item.optString("source"), item.optString("profile"),
-                item.optString("packageName"), item.optString("appName"), item.optString("category"),
-                item.optString("groupKey"), item.optString("groupTitle"), item.optString("title"),
-                item.optString("risk"), item.optString("path"), item.optLong("bytes", -1),
-                item.optLong("files", -1), item.optLong("directories", -1), item.optString("reason"),
-                item.optBoolean("selectable"), item.optString("outcome"))
-        } }
+        val items = withContext(Dispatchers.Default) {
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index)?.let { item ->
+                WorkbenchItem(item.optString("id"), item.optString("source"), item.optString("profile"),
+                    item.optString("packageName"), item.optString("appName"), item.optString("category"),
+                    item.optString("groupKey"), item.optString("groupTitle"), item.optString("title"),
+                    item.optString("risk"), item.optString("path"), item.optLong("bytes", -1),
+                    item.optLong("files", -1), item.optLong("directories", -1), item.optString("reason"),
+                    item.optBoolean("selectable"), item.optString("outcome"))
+            } }
+        }
         if (items.isEmpty()) return
         restoredReview = true
         cacheSnapshotId = saved.optString("cacheSnapshotId")
@@ -876,11 +959,16 @@ class ScanWorkbenchActivity : ComponentActivity() {
         snapshotExpiresAtRealtime = SystemClock.elapsedRealtime() + remaining
         cleanupPolicy = CleanupPolicy.fromId(saved.optInt("policyId", CleanupPolicy.BALANCED.id))
         val selected = saved.optJSONArray("selected") ?: JSONArray()
+        val selectedIds = withContext(Dispatchers.Default) {
+            (0 until selected.length()).map { selected.optString(it) }.toSet()
+        }
+        val incomplete = saved.optBoolean("loadingResults")
         screenState = screenState.copy(items = items,
-            selectedIds = (0 until selected.length()).map { selected.optString(it) }.toSet(),
-            scanReady = saved.optBoolean("scanReady") && remaining > 0L,
+            selectedIds = selectedIds,
+            scanReady = saved.optBoolean("scanReady") && !incomplete && remaining > 0L,
             expiresAtRealtime = snapshotExpiresAtRealtime,
-            phase = if (remaining > 0L) saved.optString("phase") else "上次结果已保留；重新扫描后可继续清理",
+            phase = if (incomplete) "上次结果读取未完成；已加载项目仅供查看，请重新扫描"
+                else if (remaining > 0L) saved.optString("phase") else "上次结果已保留；重新扫描后可继续清理",
             resultText = saved.optString("resultText"), policyTitle = cleanupPolicy.title,
             policyKey = cleanupPolicy.key, highRiskMode = cleanupPolicy.highRiskMode)
     }
@@ -893,7 +981,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private fun formatBytes(bytes: Long): String = Formatter.formatFileSize(this, bytes.coerceAtLeast(0L))
 
     companion object {
-        private const val PAGE_SIZE = 100
+        private const val CACHE_PAGE_SIZE = 100
+        private const val PROFILE_PAGE_SIZE = 60
         const val EXTRA_PROFILE = "review_profile"
         private const val SNAPSHOT_TTL_MS = 30L * 60L * 1_000L
     }
@@ -934,6 +1023,7 @@ private data class WorkbenchUiState(
     val cacheConnected: Boolean = false,
     val cacheRequired: Boolean = true,
     val running: Boolean = false,
+    val loadingResults: Boolean = false,
     val scanReady: Boolean = false,
     val phase: String = "等待 Root 服务",
     val progressCurrent: Long = 0L,
@@ -948,8 +1038,6 @@ private data class WorkbenchUiState(
     val highRiskMode: String = CleanupPolicy.BALANCED.highRiskMode
 ) {
     val connected: Boolean get() = profileConnected && (!cacheRequired || cacheConnected)
-    val selectedItems: List<WorkbenchItem> get() = items.filter { it.id in selectedIds }
-    val selectedBytes: Long get() = selectedItems.sumOf { it.bytes.coerceAtLeast(0L) }
 }
 
 private data class WorkbenchActions(
@@ -986,6 +1074,51 @@ private sealed interface WorkbenchRow {
     }
 }
 
+private data class WorkbenchPresentation(
+    val groups: List<WorkbenchGroup> = emptyList(),
+    val rows: List<WorkbenchRow> = emptyList(),
+    val selectedBytes: Long = 0L,
+    val selectableCount: Int = 0,
+    val appCount: Int = 0,
+    val profileCount: Int = 0,
+    val protectedCount: Int = 0
+)
+
+private fun workbenchPresentation(
+    items: List<WorkbenchItem>, selectedIds: Set<String>, filter: String,
+    expandedGroups: Set<String>, loading: Boolean
+): WorkbenchPresentation {
+    val filtered = items.filter { item ->
+        when (filter) {
+            "unselected" -> item.id !in selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
+            "blocked" -> !item.selectable
+            "deep" -> item.profile == "deep"
+            "cache" -> item.source == "cache"
+            "empty" -> item.profile == "empty" || item.category.startsWith("empty")
+            "rules" -> item.profile == "rules" || item.category.contains("rule") || item.category.contains("trash")
+            "fragments" -> item.profile == "fragments" || item.category.contains("fragment")
+            else -> true
+        }
+    }
+    val groups = filtered.groupBy { it.groupKey }.map { (key, entries) ->
+        WorkbenchGroup(key, entries.first().groupTitle, entries,
+            entries.sumOf { it.bytes.coerceAtLeast(0L) },
+            entries.count { it.id in selectedIds },
+            entries.count { it.selectable && (it.risk == "low" || it.risk == "medium") })
+    }.let { if (loading) it else it.sortedByDescending { group -> group.bytes } }
+    val rows = buildList<WorkbenchRow> {
+        groups.forEach { group ->
+            add(WorkbenchRow.Group(group))
+            if (group.key in expandedGroups) group.items.forEach { add(WorkbenchRow.Candidate(it)) }
+        }
+    }
+    return WorkbenchPresentation(groups, rows,
+        items.sumOf { if (it.id in selectedIds) it.bytes.coerceAtLeast(0L) else 0L },
+        items.count { it.selectable },
+        items.asSequence().map { it.packageName }.filter { it.isNotBlank() }.distinct().count(),
+        items.count { it.source == "profile" }, items.count { !it.selectable })
+}
+
 @Composable
 private fun ScanWorkbenchScreen(
     appearance: AppearanceSettings,
@@ -999,45 +1132,19 @@ private fun ScanWorkbenchScreen(
     var filter by remember { mutableStateOf("all") }
     var expandedGroups by remember { mutableStateOf(emptySet<String>()) }
 
-    val filteredItems = remember(state.items, state.selectedIds, filter) {
-        state.items.filter { item ->
-            when (filter) {
-                "unselected" -> item.id !in state.selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
-                "blocked" -> !item.selectable
-                "deep" -> item.profile == "deep"
-                "cache" -> item.source == "cache"
-                "empty" -> item.profile == "empty" || item.category.startsWith("empty")
-                "rules" -> item.profile == "rules" || item.category.contains("rule") || item.category.contains("trash")
-                "fragments" -> item.profile == "fragments" || item.category.contains("fragment")
-                else -> true
-            }
+    val presentation by produceState(
+        initialValue = WorkbenchPresentation(),
+        state.items, state.selectedIds, filter, expandedGroups, state.loadingResults
+    ) {
+        value = withContext(Dispatchers.Default) {
+            workbenchPresentation(state.items, state.selectedIds, filter, expandedGroups, state.loadingResults)
         }
     }
-    val groups = remember(filteredItems, state.selectedIds) {
-        filteredItems.groupBy { it.groupKey }
-            .map { (key, items) ->
-                WorkbenchGroup(
-                    key = key,
-                    title = items.first().groupTitle,
-                    items = items,
-                    bytes = items.sumOf { it.bytes.coerceAtLeast(0L) },
-                    selectedCount = items.count { it.id in state.selectedIds },
-                    selectableCount = items.count { it.selectable && it.risk in setOf("low", "medium") }
-                )
-            }
-            .sortedByDescending { it.bytes }
-    }
-    LaunchedEffect(groups.map { it.key }) {
+    val groups = presentation.groups
+    val rows = presentation.rows
+    LaunchedEffect(groups) {
         if (expandedGroups.isEmpty() && groups.isNotEmpty()) {
             expandedGroups = groups.take(if (groups.size <= 4) groups.size else 2).mapTo(linkedSetOf()) { it.key }
-        }
-    }
-    val rows = remember(groups, expandedGroups) {
-        buildList<WorkbenchRow> {
-            groups.forEach { group ->
-                add(WorkbenchRow.Group(group))
-                if (group.key in expandedGroups) group.items.forEach { add(WorkbenchRow.Candidate(it)) }
-            }
         }
     }
 
@@ -1076,7 +1183,8 @@ private fun ScanWorkbenchScreen(
                         state = state,
                         shape = shape,
                         horizontal = horizontal,
-                        selectedBytes = Formatter.formatFileSize(context, state.selectedBytes)
+                        presentation = presentation,
+                        selectedBytes = Formatter.formatFileSize(context, presentation.selectedBytes)
                     )
                 }
                 item {
@@ -1110,12 +1218,12 @@ private fun ScanWorkbenchScreen(
                         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        OutlinedButton(onClick = actions.onSelectAll, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = actions.onSelectAll, enabled = !state.running, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Rounded.SelectAll, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
                             Text("全选安全项")
                         }
-                        OutlinedButton(onClick = actions.onClear, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = actions.onClear, enabled = !state.running, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Rounded.Deselect, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
                             Text("取消全选")
@@ -1127,6 +1235,7 @@ private fun ScanWorkbenchScreen(
                         is WorkbenchRow.Group -> WorkbenchGroupRow(
                             group = row.group,
                             expanded = row.group.key in expandedGroups,
+                            enabled = !state.running,
                             shape = shape,
                             horizontal = horizontal,
                             onToggleExpanded = {
@@ -1141,6 +1250,7 @@ private fun ScanWorkbenchScreen(
                             selected = row.item.id in state.selectedIds,
                             horizontal = horizontal,
                             highRiskMode = state.highRiskMode,
+                            enabled = !state.running,
                             onToggle = { actions.onToggleItem(row.item.id) },
                             onProtect = { actions.onProtect(row.item) },
                             onQuarantine = { actions.onQuarantine(row.item) }
@@ -1253,7 +1363,17 @@ private fun WorkbenchStatusCard(
             }
             if (state.running) {
                 Spacer(Modifier.height(12.dp))
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (state.loadingResults && state.progressTotal > 0L) {
+                    LinearProgressIndicator(
+                        progress = { (state.progressCurrent.toFloat() / state.progressTotal).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                if (state.loadingResults) {
+                    Text("已展示 ${state.items.size} 项；分批更新预览，完成后统一排序", fontSize = 11.sp)
+                }
                 if (state.progressTotal > 0L) {
                     Spacer(Modifier.height(5.dp))
                     Text(
@@ -1303,7 +1423,8 @@ private fun WorkbenchSummaryCard(
     state: WorkbenchUiState,
     shape: Shape,
     horizontal: androidx.compose.ui.unit.Dp,
-    selectedBytes: String
+    selectedBytes: String,
+    presentation: WorkbenchPresentation
 ) {
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
@@ -1311,14 +1432,14 @@ private fun WorkbenchSummaryCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Column(Modifier.padding(19.dp)) {
-            Text("已选 ${state.selectedIds.size} / ${state.items.count { it.selectable }} 项", fontSize = 20.sp, fontWeight = FontWeight.Black)
+            Text("已选 ${state.selectedIds.size} / ${presentation.selectableCount} 项", fontSize = 20.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(4.dp))
             Text("预计至少释放 $selectedBytes", color = MaterialTheme.colorScheme.primary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SummaryPill("应用 ${state.items.map { it.packageName }.filter { it.isNotBlank() }.distinct().size}")
-                SummaryPill("其他 ${state.items.count { it.source == "profile" }}")
-                SummaryPill("受保护 ${state.items.count { !it.selectable }}")
+                SummaryPill("应用 ${presentation.appCount}")
+                SummaryPill("其他 ${presentation.profileCount}")
+                SummaryPill("受保护 ${presentation.protectedCount}")
                 SummaryPill("${state.policyTitle}档")
             }
             if (state.resultText.isNotBlank()) {
@@ -1340,6 +1461,7 @@ private fun SummaryPill(text: String) {
 private fun WorkbenchGroupRow(
     group: WorkbenchGroup,
     expanded: Boolean,
+    enabled: Boolean,
     shape: Shape,
     horizontal: androidx.compose.ui.unit.Dp,
     onToggleExpanded: () -> Unit,
@@ -1362,7 +1484,7 @@ private fun WorkbenchGroupRow(
             Checkbox(
                 checked = group.selectableCount > 0 && group.selectedCount == group.selectableCount,
                 onCheckedChange = { onToggleSelection() },
-                enabled = group.selectableCount > 0
+                enabled = enabled && group.selectableCount > 0
             )
             val owner = group.items.firstOrNull()?.packageName.orEmpty()
             if (owner.isNotBlank()) {
@@ -1392,6 +1514,7 @@ private fun WorkbenchCandidateRow(
     selected: Boolean,
     horizontal: androidx.compose.ui.unit.Dp,
     highRiskMode: String,
+    enabled: Boolean,
     onToggle: () -> Unit,
     onProtect: () -> Unit,
     onQuarantine: () -> Unit
@@ -1402,11 +1525,11 @@ private fun WorkbenchCandidateRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .clickable(enabled = item.selectable, onClick = onToggle)
+            .clickable(enabled = enabled && item.selectable, onClick = onToggle)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = item.selectable)
+        Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = enabled && item.selectable)
         Spacer(Modifier.width(4.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1434,7 +1557,7 @@ private fun WorkbenchCandidateRow(
             )
         }
         if (item.risk == "high" && highRiskMode != "audit") {
-            IconButton(onClick = onQuarantine, modifier = Modifier.size(38.dp)) {
+            IconButton(onClick = onQuarantine, enabled = enabled, modifier = Modifier.size(38.dp)) {
                 Icon(
                     Icons.Rounded.Inventory2,
                     contentDescription = if (highRiskMode == "recommended_quarantine") "建议移入隔离区" else "移入隔离区",
@@ -1443,7 +1566,7 @@ private fun WorkbenchCandidateRow(
                 )
             }
         } else if (item.risk != "high" && item.risk != "critical") {
-            IconButton(onClick = onProtect, modifier = Modifier.size(38.dp)) {
+            IconButton(onClick = onProtect, enabled = enabled, modifier = Modifier.size(38.dp)) {
                 Icon(Icons.Rounded.Shield, contentDescription = "加入白名单", modifier = Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
             }
         }

@@ -107,6 +107,38 @@ internal class NativeProfileEngine(
 
     private data class Node(val file: File, val depth: Int, val post: Boolean = false)
 
+    // Discovery-only observations. Neither snapshots nor mutation validation retain these.
+    internal class ScanEntry(val file: File, directory: Boolean? = null) {
+        private var directoryValue: Boolean? = directory
+        private var fileValue: Boolean? = null
+        private var lengthValue = -1L
+        private var canonicalPath: String? = null
+
+        val isDirectory: Boolean
+            get() = directoryValue ?: file.isDirectory.also { directoryValue = it }
+        val isFile: Boolean
+            get() = fileValue ?: (!isDirectory && file.isFile).also { fileValue = it }
+        val length: Long
+            get() {
+                if (lengthValue < 0L) lengthValue = file.length()
+                return lengthValue
+            }
+        val path: String
+            get() = canonicalPath ?: runCatching { file.canonicalFile.path }
+                .getOrDefault(file.absoluteFile.normalize().path).also { canonicalPath = it }
+        var emptyDirectory: Boolean = false
+            private set
+
+        fun listChildren(): Array<File>? = file.listFiles().also { emptyDirectory = it?.isEmpty() == true }
+    }
+
+    private data class ScanNode(val file: File, val depth: Int, val postEntry: ScanEntry? = null)
+
+    internal class RuleExpansionCache {
+        val listings = HashMap<String, Array<File>>()
+        val patterns = HashMap<String, Regex>()
+    }
+
     private val snapshots = ConcurrentHashMap<String, Snapshot>()
 
     fun catalog(): String = JSONObject()
@@ -190,7 +222,7 @@ internal class NativeProfileEngine(
         started: Long
     ) {
         val rules = ordinaryRules(options.includeReviewRules)
-        val listings = HashMap<String, Array<File>>()
+        val listings = RuleExpansionCache()
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.first))
@@ -209,22 +241,23 @@ internal class NativeProfileEngine(
         for ((index, root) in roots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("一次遍历扫描空项目、规则垃圾与碎片", index, roots.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, true) { file, post ->
+            walk(root, 9, started + SCAN_TOTAL_MS, true) { entry, post ->
+                val file = entry.file
                 if (!post) {
                     visited += 1
                     if (visited % 512 == 0) progress(Progress("单遍历扫描中 · 已检查 $visited 项", visited, 0, file.path))
                 }
                 if (post) {
-                    if (file != root && isEmptyDirectory(file) && !protectedDirectoryName(file.name)) {
-                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, deleteRoot = true), options, true)
+                    if (file != root && entry.emptyDirectory && !protectedDirectoryName(file.name)) {
+                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, scanEntry = entry, deleteRoot = true), options, true)
                     }
                     return@walk
                 }
-                if (file.isDirectory && file != root && hidden.contains(file.name.lowercase())) {
-                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, deleteRoot = false), options, true)
-                } else if (file.isFile) {
-                    if (file.length() == 0L && !placeholder(file.name)) {
-                        val item = candidate("empty", "empty_file", "空文件", "low", file, deleteRoot = true)
+                if (entry.isDirectory && file != root && hidden.contains(file.name.lowercase())) {
+                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, scanEntry = entry, deleteRoot = false), options, true)
+                } else if (entry.isFile) {
+                    if (entry.length == 0L && !placeholder(file.name)) {
+                        val item = candidate("empty", "empty_file", "空文件", "low", file, scanEntry = entry, deleteRoot = true)
                         item.bytes = 0L
                         item.files = 1L
                         item.directories = 0L
@@ -232,8 +265,8 @@ internal class NativeProfileEngine(
                         item.complete = true
                         add(out, item, options, true)
                     } else if (file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
-                        val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
-                        item.bytes = file.length()
+                        val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, scanEntry = entry, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
+                        item.bytes = entry.length
                         item.files = 1L
                         item.directories = 0L
                         item.measured = true
@@ -250,14 +283,15 @@ internal class NativeProfileEngine(
         for ((index, root) in systemLogRoots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("补充扫描系统日志碎片", index, systemLogRoots.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, false) { file, post ->
+            walk(root, 9, started + SCAN_TOTAL_MS, false) { entry, post ->
+                val file = entry.file
                 if (!post) {
                     visited += 1
                     if (visited % 512 == 0) progress(Progress("补充扫描中 · 已检查 $visited 项", visited, 0, file.path))
                 }
-                if (!post && file.isFile && file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
-                    val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
-                    item.bytes = file.length()
+                if (!post && entry.isFile && file.lastModified() <= cutoff && fragmentPatterns.any { it.matcher(file.name).matches() }) {
+                    val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, scanEntry = entry, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
+                    item.bytes = entry.length
                     item.files = 1L
                     item.directories = 0L
                     item.measured = true
@@ -493,13 +527,14 @@ internal class NativeProfileEngine(
         for ((index, root) in roots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描空文件与空目录", index, roots.size, root.path))
-            walk(root, 8, started + SCAN_TOTAL_MS, true) { file, post ->
+            walk(root, 8, started + SCAN_TOTAL_MS, true) { entry, post ->
+                val file = entry.file
                 if (post) {
-                    if (file != root && isEmptyDirectory(file) && !protectedDirectoryName(file.name)) {
-                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, deleteRoot = true), options)
+                    if (file != root && entry.emptyDirectory && !protectedDirectoryName(file.name)) {
+                        add(out, candidate("empty", "empty_dir", "空目录", "low", file, scanEntry = entry, deleteRoot = true), options)
                     }
-                } else if (file.isFile && file.length() == 0L && !placeholder(file.name)) {
-                    val item = candidate("empty", "empty_file", "空文件", "low", file, deleteRoot = true)
+                } else if (entry.isFile && entry.length == 0L && !placeholder(file.name)) {
+                    val item = candidate("empty", "empty_file", "空文件", "low", file, scanEntry = entry, deleteRoot = true)
                     item.bytes = 0L
                     item.files = 1L
                     item.directories = 0L
@@ -556,7 +591,7 @@ internal class NativeProfileEngine(
         started: Long
     ) {
         val rules = ordinaryRules(options.includeReviewRules)
-        val listings = HashMap<String, Array<File>>()
+        val listings = RuleExpansionCache()
 
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
@@ -570,9 +605,10 @@ internal class NativeProfileEngine(
 
         val hidden = HIDDEN_TRASH_NAMES
         for (root in storageRoots()) {
-            walk(root, 6, started + SCAN_TOTAL_MS, true) { file, post ->
-                if (!post && file.isDirectory && hidden.contains(file.name.lowercase())) {
-                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, deleteRoot = false), options)
+            walk(root, 6, started + SCAN_TOTAL_MS, true) { entry, post ->
+                val file = entry.file
+                if (!post && entry.isDirectory && hidden.contains(file.name.lowercase())) {
+                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, scanEntry = entry, deleteRoot = false), options)
                 }
             }
         }
@@ -593,10 +629,11 @@ internal class NativeProfileEngine(
         for ((index, root) in distinct.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描残留碎片", index, distinct.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, root.path.startsWith("/storage") || root.path.startsWith("/sdcard")) { file, post ->
-                if (!post && file.isFile && file.lastModified() <= cutoff && patterns.any { it.matcher(file.name).matches() }) {
-                    val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
-                    item.bytes = file.length()
+            walk(root, 9, started + SCAN_TOTAL_MS, root.path.startsWith("/storage") || root.path.startsWith("/sdcard")) { entry, post ->
+                val file = entry.file
+                if (!post && entry.isFile && file.lastModified() <= cutoff && patterns.any { it.matcher(file.name).matches() }) {
+                    val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, scanEntry = entry, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
+                    item.bytes = entry.length
                     item.files = 1L
                     item.directories = 0L
                     item.measured = true
@@ -620,7 +657,7 @@ internal class NativeProfileEngine(
                 .take(MAX_RULE_LINES)
                 .toList()
         }
-        val listings = HashMap<String, Array<File>>()
+        val listings = RuleExpansionCache()
         for ((index, raw) in rules.withIndex()) {
             if (stop(started, DEEP_SCAN_TOTAL_MS)) return
             if (index % 16 == 0) progress(Progress("解析深度规则", index, rules.size, raw))
@@ -684,7 +721,7 @@ internal class NativeProfileEngine(
         includeHighInScan: Boolean = false
     ) {
         if (out.size >= MAX_CANDIDATES) return
-        val path = canonical(File(candidate.path))
+        val path = candidate.path
         if (!path.startsWith("/") || hardProtected(path)) return
         if (!includeHighInScan && (candidate.risk == "high" || candidate.risk == "critical")) return
         val owner = candidate.packageName.ifBlank { ReviewRiskPolicy.appPackage(path) }
@@ -694,8 +731,9 @@ internal class NativeProfileEngine(
             else -> ""
         }
         val item = candidate.copy(id = "${candidate.profile}:$path", path = path, packageName = owner, blockedReason = blocked)
-        if (!item.measured && File(path).isFile) {
-            item.bytes = File(path).length()
+        val target = File(path)
+        if (!item.measured && target.isFile) {
+            item.bytes = target.length()
             item.files = 1L
             item.directories = 0L
             item.measured = true
@@ -812,75 +850,66 @@ internal class NativeProfileEngine(
         return Stats(bytes, files, dirs, complete)
     }
 
-    private fun walk(root: File, maxDepth: Int, deadline: Long, pruneShared: Boolean, visitor: (File, Boolean) -> Unit) {
-        if (!root.isDirectory || isSymlink(root)) return
-        val stack = ArrayDeque<Node>()
-        stack.add(Node(root, 0, false))
+    internal fun walk(root: File, maxDepth: Int, deadline: Long, pruneShared: Boolean, visitor: (ScanEntry, Boolean) -> Unit) {
+        val rootEntry = ScanEntry(root)
+        if (!rootEntry.isDirectory) return
+        val stack = ArrayDeque<ScanNode>()
+        stack.add(ScanNode(root, 0))
         while (stack.isNotEmpty()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) return
             val node = stack.removeLast()
             val file = node.file
             if (!file.exists() || isSymlink(file)) continue
-            if (node.post) {
-                visitor(file, true)
+            val entry = node.postEntry ?: if (file === root) rootEntry else ScanEntry(file)
+            if (node.postEntry != null) {
+                visitor(entry, true)
                 continue
             }
-            visitor(file, false)
-            if (!file.isDirectory || node.depth >= maxDepth) continue
-            if (file != root && pruneShared && prune(file)) {
-                // The protected subtree is never scanned for files or ordinary rules. We only
-                // inspect directory shells so genuinely empty descendants can still be offered
-                // as empty-directory candidates. The protected root itself is retained.
-                walkProtectedEmptyShells(
-                    protectedRoot = file,
-                    currentDepth = node.depth,
-                    maxDepth = maxDepth,
-                    deadline = deadline,
-                    visitor = visitor
-                )
+            visitor(entry, false)
+            if (!entry.isDirectory || node.depth >= maxDepth) continue
+            if (file != root && pruneShared && prune(entry)) {
+                // Protected roots are retained; only descendant directory shells get post visits.
+                walkProtectedEmptyShells(entry, node.depth, maxDepth, deadline, visitor)
                 continue
             }
-            stack.add(Node(file, node.depth, true))
-            val children = file.listFiles() ?: continue
-            for (child in children) stack.add(Node(child, node.depth + 1, false))
+            stack.add(ScanNode(file, node.depth, entry))
+            val children = entry.listChildren() ?: continue
+            for (child in children) stack.add(ScanNode(child, node.depth + 1))
         }
     }
 
     private fun walkProtectedEmptyShells(
-        protectedRoot: File,
+        protectedRoot: ScanEntry,
         currentDepth: Int,
         maxDepth: Int,
         deadline: Long,
-        visitor: (File, Boolean) -> Unit
+        visitor: (ScanEntry, Boolean) -> Unit
     ) {
-        val stack = ArrayDeque<Node>()
-        val children = protectedRoot.listFiles() ?: return
-        for (child in children) {
-            if (child.isDirectory && !isSymlink(child)) {
-                stack.add(Node(child, currentDepth + 1, false))
+        val stack = ArrayDeque<ScanNode>()
+        fun enqueueDirectories(children: Array<File>, depth: Int) {
+            for (child in children) {
+                if (child.isDirectory) stack.add(ScanNode(child, depth))
             }
         }
+        enqueueDirectories(protectedRoot.listChildren() ?: return, currentDepth + 1)
         while (stack.isNotEmpty()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) return
             val node = stack.removeLast()
             val file = node.file
             if (!file.exists() || !file.isDirectory || isSymlink(file)) continue
-            if (node.post) {
-                visitor(file, true)
+            val entry = node.postEntry ?: ScanEntry(file, directory = true)
+            if (node.postEntry != null) {
+                visitor(entry, true)
                 continue
             }
-            stack.add(Node(file, node.depth, true))
-            if (node.depth >= maxDepth) continue
-            val nested = file.listFiles() ?: continue
-            for (child in nested) {
-                if (child.isDirectory && !isSymlink(child)) {
-                    stack.add(Node(child, node.depth + 1, false))
-                }
-            }
+            stack.add(ScanNode(file, node.depth, entry))
+            // Boundary shells still need an emptiness check, but must never be descended into.
+            val nested = entry.listChildren() ?: continue
+            if (node.depth < maxDepth) enqueueDirectories(nested, node.depth + 1)
         }
     }
 
-    private fun expand(rawRule: String, listings: MutableMap<String, Array<File>> = HashMap()): List<File> {
+    internal fun expand(rawRule: String, cache: RuleExpansionCache = RuleExpansionCache()): List<File> {
         val raw = rawRule.substringBefore('|').substringBefore('#').trim()
         if (!safeRuleSyntax(raw)) return emptyList()
         if (!raw.contains('*') && !raw.contains('?') && !raw.contains('[')) return listOf(File(raw))
@@ -889,13 +918,15 @@ internal class NativeProfileEngine(
         for (segment in segments) {
             val next = ArrayList<File>()
             val wildcard = segment.contains('*') || segment.contains('?') || segment.contains('[')
-            val regex = if (wildcard) glob(segment) else null
+            val regex = if (wildcard) cache.patterns.getOrPut(segment) { glob(segment) } else null
             for (base in current) {
                 if (cancelled.get()) return emptyList()
                 if (!wildcard) {
                     next.add(File(base, segment))
-                } else if (base.isDirectory && !isSymlink(base)) {
-                    val children = listings.getOrPut(base.path) { base.listFiles() ?: emptyArray() }
+                } else if (!isSymlink(base)) {
+                    val children = cache.listings.getOrPut(base.path) {
+                        if (base.isDirectory) base.listFiles() ?: emptyArray() else emptyArray()
+                    }
                     for (child in children) {
                         if (cancelled.get()) return emptyList()
                         if (requireNotNull(regex).matches(child.name)) next.add(child)
@@ -980,9 +1011,10 @@ internal class NativeProfileEngine(
         packageName: String = "",
         appName: String = "",
         deleteRoot: Boolean = false,
-        note: String = ""
+        note: String = "",
+        scanEntry: ScanEntry? = null
     ): Candidate {
-        val path = canonical(file)
+        val path = scanEntry?.path ?: canonical(file)
         return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, deleteRoot, note = note)
     }
 
@@ -1067,9 +1099,9 @@ internal class NativeProfileEngine(
         }
     }
 
-    private fun prune(file: File): Boolean {
-        val name = file.name.lowercase()
-        return SHARED_PROTECTED.contains(name) || HIDDEN_PROTECTED.contains(name) || canonical(file).contains("/Android/media/")
+    private fun prune(entry: ScanEntry): Boolean {
+        val name = entry.file.name.lowercase()
+        return SHARED_PROTECTED.contains(name) || HIDDEN_PROTECTED.contains(name) || entry.path.contains("/Android/media/")
     }
 
     private fun protectedDirectoryName(name: String): Boolean = HIDDEN_PROTECTED.contains(name.lowercase())

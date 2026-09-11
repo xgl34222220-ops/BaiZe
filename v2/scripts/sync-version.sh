@@ -10,15 +10,18 @@
 #   sh v2/scripts/sync-version.sh            把其余文件同步成 module.prop 的版本
 #   sh v2/scripts/sync-version.sh --check    只校验一致性，不写文件（CI 用）
 #   sh v2/scripts/sync-version.sh --set v2.6.0   先改 module.prop 再同步
+#   sh v2/scripts/sync-version.sh --source-only --set v2.6.0   发布前同步源码，暂不推进 OTA
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 MODULE_PROP="$ROOT/module.prop"
 CHECK_ONLY=0
+SOURCE_ONLY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) CHECK_ONLY=1 ;;
+    --source-only) SOURCE_ONLY=1 ;;
     --set)
       shift
       [ $# -gt 0 ] || { echo "--set 需要一个版本号，例如 v2.6.0" >&2; exit 2; }
@@ -107,7 +110,9 @@ EXPECTED_JSON=$(cat <<EOF
 }
 EOF
 )
-if [ "$(cat "$UPDATE_JSON" 2>/dev/null)" != "$EXPECTED_JSON" ]; then
+if [ "$SOURCE_ONLY" = "1" ]; then
+  note "[保留] update.json：签名产物与下载镜像验证后再同步"
+elif [ "$(cat "$UPDATE_JSON" 2>/dev/null)" != "$EXPECTED_JSON" ]; then
   if [ "$CHECK_ONLY" = "1" ]; then
     note "[不一致] update.json"
     fail=$((fail + 1))

@@ -7,18 +7,25 @@ import android.content.ServiceConnection;
 import android.os.IBinder;
 import com.topjohnwu.superuser.Shell;
 import com.topjohnwu.superuser.ipc.RootService;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadows.ShadowLooper;
+import org.robolectric.util.ReflectionHelpers;
 import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class)
 public class RootServiceStartupTest {
+    @Before public void resetManager() {
+        ReflectionHelpers.setStaticField(RootServiceManager.class, "mInstance", null);
+        Utils.context = RuntimeEnvironment.getApplication();
+    }
+
     private static class Connection implements ServiceConnection {
         int failures;
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {}

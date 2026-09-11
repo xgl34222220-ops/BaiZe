@@ -178,6 +178,38 @@ jobs:
             --notes-file "RELEASE_NOTES_$BAIZE_VERSION.md" \
             --latest
 
+      - name: Enable OTA after published assets are verified
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERIFIED="$RUNNER_TEMP/published-release"
+          gh release download "$BAIZE_VERSION" --dir "$VERIFIED"
+          (
+            cd "$VERIFIED"
+            sha256sum -c "BaiZe-$BAIZE_VERSION-Module.zip.sha256"
+            sha256sum -c "BaiZe-$BAIZE_VERSION.apk.sha256"
+          )
+          for name in "BaiZe-$BAIZE_VERSION-Module.zip" "BaiZe-$BAIZE_VERSION.apk"; do
+            cmp "v2/dist/$name" "$VERIFIED/$name"
+            cmp "$RUNNER_TEMP/baize-downloads/releases/$BAIZE_VERSION/$name" "$VERIFIED/$name"
+          done
+          git fetch origin main downloads
+          test "$(git rev-parse origin/downloads)" = "$(git -C "$RUNNER_TEMP/baize-downloads" rev-parse HEAD)"
+          OTA="$RUNNER_TEMP/baize-ota"
+          git worktree add "$OTA" origin/main
+          cd "$OTA"
+          test "$(tr -d '[:space:]' < .github/release.publish)" = "$BAIZE_RELEASE_TARGET_SHA"
+          grep -Fxq "version=$BAIZE_VERSION" module.prop
+          sh v2/scripts/sync-version.sh --source-only --check
+          sh v2/scripts/sync-version.sh
+          sh v2/scripts/sync-version.sh --check
+          test "$(git diff --name-only)" = update.json
+          git add update.json
+          git commit -m "release: 签名产物和镜像验证后启用 $BAIZE_VERSION OTA"
+          git push origin HEAD:main
+
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

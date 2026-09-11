@@ -38,6 +38,30 @@ class RootRecoveryPolicyTest {
         assertEquals(3_000L, policy.nextDelay())
     }
 
+    @Test fun explicitStopDoesNotScheduleAnyRetryUntilManualReset() {
+        val policy = RootRecoveryPolicy()
+        policy.connected(0)
+        policy.stop()
+        assertNull(policy.nextDelay())
+        policy.disconnected(60_000)
+        assertTrue(policy.exhausted)
+        assertNull(policy.nextDelay())
+        policy.connected(70_000)
+        policy.disconnected(110_000)
+        assertNull(policy.nextDelay())
+        policy.reset()
+        assertEquals(1_000L, policy.nextDelay())
+    }
+
+    @Test fun stableLateCallbackCannotClearExhaustion() {
+        val policy = RootRecoveryPolicy()
+        repeat(4) { policy.nextDelay() }
+        policy.connected(0)
+        policy.disconnected(60_000)
+        assertTrue(policy.exhausted)
+        assertNull(policy.nextDelay())
+    }
+
     @Test fun manualRetryRestoresExhaustedBudget() {
         val policy = RootRecoveryPolicy()
         repeat(4) { policy.nextDelay() }

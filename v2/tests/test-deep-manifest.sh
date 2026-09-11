@@ -59,7 +59,7 @@ set +e
 stopped_code=$?
 set -e
 [ "$stopped_code" -eq 9 ]
-[ "$(cat "$WORK/cursor")" -eq 0 ]
+[ "$(sed -n 's/^cursor=//p' "$WORK/stopped.env")" -eq 0 ]
 [ -e "$TARGET/old-a.bin" ]
 [ -e "$TARGET/nested/old-b.bin" ]
 
@@ -86,7 +86,7 @@ mkdir -p "$TARGET/new-empty-dir"
 [ -e "$TARGET/changed.bin" ]
 [ -e "$TARGET/new.bin" ]
 [ -d "$TARGET/new-empty-dir" ]
-[ "$(cat "$WORK/cursor")" -eq "$records" ]
+[ "$(sed -n 's/^cursor=//p' "$WORK/clean.env")" -eq "$records" ]
 grep -q '^remaining=0$' "$WORK/clean.env"
 grep -q '^files=2$' "$WORK/clean.env"
 grep -q $'^changed\tlow\t' "$WORK/clean.tsv"

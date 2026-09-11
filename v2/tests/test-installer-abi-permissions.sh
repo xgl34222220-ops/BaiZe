@@ -17,16 +17,19 @@ SH
 chmod 0755 "$TMP/fakebin/getprop"
 : > "$TMP/module/bin/arm64-v8a/baize_engine"
 : > "$TMP/module/bin/arm64-v8a/baize_deep_snapshot"
-chmod 0644 "$TMP/module/bin/arm64-v8a/baize_engine" "$TMP/module/bin/arm64-v8a/baize_deep_snapshot"
+: > "$TMP/module/bin/arm64-v8a/baize_compat_filter"
+chmod 0644 "$TMP/module/bin/arm64-v8a/baize_engine" "$TMP/module/bin/arm64-v8a/baize_deep_snapshot" "$TMP/module/bin/arm64-v8a/baize_compat_filter"
 PATH="$TMP/fakebin:$PATH"
 . "$RESOLVER"
 ! baize_resolve_engine "$TMP/module" baize_engine >/dev/null 2>&1
+! baize_resolve_engine "$TMP/module" baize_compat_filter >/dev/null 2>&1
 MODPATH="$TMP/module"
-for engine in "$MODPATH"/bin/*/baize_engine "$MODPATH"/bin/*/baize_deep_snapshot; do
-  [ -f "$engine" ] && chmod 0755 "$engine"
-done
+# Exercise the installer's actual permission loop, not a copied list of engines.
+eval "$(sed -n '/^for engine in /,/^done/p' "$CUSTOMIZE")"
 test "$(baize_resolve_engine "$TMP/module" baize_engine)" = "$TMP/module/bin/arm64-v8a/baize_engine"
 test "$(baize_resolve_engine "$TMP/module" baize_deep_snapshot)" = "$TMP/module/bin/arm64-v8a/baize_deep_snapshot"
 test -x "$TMP/module/bin/arm64-v8a/baize_engine"
 test -x "$TMP/module/bin/arm64-v8a/baize_deep_snapshot"
+test "$(baize_resolve_engine "$TMP/module" baize_compat_filter)" = "$TMP/module/bin/arm64-v8a/baize_compat_filter"
+test -x "$TMP/module/bin/arm64-v8a/baize_compat_filter"
 echo 'installer ABI permission regression passed'

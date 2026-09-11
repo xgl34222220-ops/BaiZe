@@ -48,6 +48,8 @@ import androidx.annotation.RestrictTo;
 
 import com.topjohnwu.superuser.Shell;
 import com.topjohnwu.superuser.ShellUtils;
+import com.topjohnwu.superuser.ipc.RootService;
+import com.topjohnwu.superuser.ipc.RootService.BindingFailure;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -145,8 +147,25 @@ public class RootServiceManager implements Handler.Callback {
 
     private final List<PendingBind> pendingTasks = new ArrayList<>();
     private final Handler startupHandler = new Handler(Looper.getMainLooper());
-    private Object daemonStartup;
-    private Object remoteStartup;
+    private volatile Object daemonStartup;
+    private volatile Object remoteStartup;
+
+    public interface StartupTask extends Shell.Task {
+        void rootUnavailable();
+    }
+
+    public static void dispatchFailure(ServiceConnection connection, Executor executor,
+            ComponentName name, BindingFailure reason) {
+        executor.execute(() -> {
+            if (connection instanceof RootService.Connection) {
+                ((RootService.Connection) connection).onBindingFailed(name, reason);
+            } else if (Build.VERSION.SDK_INT >= 28) {
+                connection.onNullBinding(name);
+            } else {
+                connection.onServiceDisconnected(name);
+            }
+        });
+    }
 
     private class PendingBind {
         final Intent intent;
@@ -160,15 +179,12 @@ public class RootServiceManager implements Handler.Callback {
             this.daemon = daemon;
         }
         boolean run() { return bindInternal(intent, executor, connection) == null; }
-        void failed() {
-            executor.execute(() -> {
-                if (Build.VERSION.SDK_INT >= 28) connection.onNullBinding(intent.getComponent());
-                else connection.onServiceDisconnected(intent.getComponent());
-            });
+        void failed(BindingFailure reason) {
+            dispatchFailure(connection, executor, intent.getComponent(), reason);
         }
     }
 
-    private void failStartup(boolean daemon, Object ticket) {
+    private void failStartup(boolean daemon, Object ticket, BindingFailure reason) {
         // A delayed failure from an old attempt must not cancel a newer connection attempt.
         if ((daemon ? daemonStartup : remoteStartup) != ticket) return;
         if (daemon) daemonStartup = null; else remoteStartup = null;
@@ -179,7 +195,7 @@ public class RootServiceManager implements Handler.Callback {
             PendingBind pending = it.next();
             if (pending.daemon == daemon) { failed.add(pending); it.remove(); }
         }
-        for (PendingBind pending : failed) pending.failed();
+        for (PendingBind request : failed) request.failed(reason);
     }
     private final Map<ServiceKey, RemoteServiceRecord> services = new ArrayMap<>();
     private final Map<ServiceConnection, ConnectionRecord> connections = new ArrayMap<>();
@@ -298,31 +314,40 @@ public class RootServiceManager implements Handler.Callback {
         if (p == null)
             return key;
 
+        final IBinder binder;
         try {
-            IBinder binder = p.mgr.bind(intent);
-            if (binder != null) {
-                s = new RemoteServiceRecord(key, binder, p);
-                connections.put(conn, new ConnectionRecord(s, executor));
-                services.put(key, s);
-                executor.execute(() -> conn.onServiceConnected(key.getName(), binder));
-            } else if (Build.VERSION.SDK_INT >= 28) {
-                executor.execute(() -> conn.onNullBinding(key.getName()));
-            }
-        } catch (RemoteException e) {
+            binder = p.mgr.bind(intent);
+        } catch (RemoteException | RuntimeException e) {
             Utils.err(TAG, e);
             p.binderDied();
             return key;
+        }
+        if (binder != null) {
+            s = new RemoteServiceRecord(key, binder, p);
+            connections.put(conn, new ConnectionRecord(s, executor));
+            services.put(key, s);
+            executor.execute(() -> conn.onServiceConnected(key.getName(), binder));
+        } else {
+            dispatchFailure(conn, executor, key.getName(), BindingFailure.NULL_BINDING);
         }
 
         return null;
     }
 
-    public Shell.Task createBindTask(Intent intent, Executor executor, ServiceConnection conn) {
-        ServiceKey key = bindInternal(intent, executor, conn);
-        if (key == null) return null;
+    private boolean isTracked(ServiceConnection conn) {
+        if (connections.containsKey(conn)) return true;
         for (PendingBind pending : pendingTasks) {
-            if (pending.connection == conn) return null;
+            if (pending.connection == conn) return true;
         }
+        return false;
+    }
+
+    public Shell.Task createBindTask(Intent intent, Executor executor, ServiceConnection conn) {
+        enforceMainThread();
+        if (isTracked(conn)) return null;
+        ServiceKey key = bindInternal(intent, executor, conn);
+        // A disconnect callback during bindInternal may already have rebound this connection.
+        if (key == null || isTracked(conn)) return null;
         pendingTasks.add(new PendingBind(intent, executor, conn, key.isDaemon()));
         int mask = key.isDaemon() ? DAEMON_EN_ROUTE : REMOTE_EN_ROUTE;
         if ((flags & mask) != 0) return null;
@@ -334,19 +359,27 @@ public class RootServiceManager implements Handler.Callback {
             launch = startRootProcess(key.getName(),
                     key.isDaemon() ? CMDLINE_START_DAEMON : CMDLINE_START_SERVICE);
         } catch (RuntimeException e) {
-            failStartup(key.isDaemon(), ticket);
+            failStartup(key.isDaemon(), ticket, BindingFailure.STARTUP_FAILED);
             throw e;
         }
-        startupHandler.postDelayed(() -> failStartup(key.isDaemon(), ticket), 30_000L);
-        return new Shell.Task() {
+        startupHandler.postDelayed(() ->
+                failStartup(key.isDaemon(), ticket, BindingFailure.STARTUP_TIMEOUT), 30_000L);
+        return new StartupTask() {
             @Override
             public void run(OutputStream stdin, InputStream stdout, InputStream stderr) throws IOException {
+                if ((key.isDaemon() ? daemonStartup : remoteStartup) != ticket) return;
                 try { launch.run(stdin, stdout, stderr); }
                 catch (IOException | RuntimeException e) { shellDied(); throw e; }
             }
             @Override
             public void shellDied() {
-                startupHandler.post(() -> failStartup(key.isDaemon(), ticket));
+                startupHandler.post(() ->
+                        failStartup(key.isDaemon(), ticket, BindingFailure.STARTUP_FAILED));
+            }
+            @Override
+            public void rootUnavailable() {
+                startupHandler.post(() ->
+                        failStartup(key.isDaemon(), ticket, BindingFailure.ROOT_UNAVAILABLE));
             }
         };
     }
@@ -382,15 +415,20 @@ public class RootServiceManager implements Handler.Callback {
     }
 
     private void dropConnections(Predicate predicate) {
+        List<Pair<ServiceConnection, ConnectionRecord>> dropped = new ArrayList<>();
         Iterator<Map.Entry<ServiceConnection, ConnectionRecord>> it =
                 connections.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<ServiceConnection, ConnectionRecord> e = it.next();
             ConnectionRecord r = e.getValue();
             if (predicate.eval(r.getService())) {
-                r.disconnect(e.getKey());
+                dropped.add(new Pair<>(e.getKey(), r));
                 it.remove();
             }
+        }
+        // Callbacks can synchronously bind again, including with the same connection object.
+        for (Pair<ServiceConnection, ConnectionRecord> entry : dropped) {
+            entry.second.disconnect(entry.first);
         }
     }
 
@@ -507,25 +545,38 @@ public class RootServiceManager implements Handler.Callback {
             if (binder == null)
                 return;
 
+            boolean daemon = intent.getBooleanExtra(INTENT_DAEMON_KEY, false);
+            List<PendingBind> requests = new ArrayList<>();
+            for (PendingBind request : pendingTasks) {
+                if (request.daemon == daemon) requests.add(request);
+            }
+            if (requests.isEmpty()) return;
+
+            Object ticket = daemon ? daemonStartup : remoteStartup;
             IRootServiceManager mgr = IRootServiceManager.Stub.asInterface(binder);
+            final RemoteProcess process;
             try {
                 mgr.connect(m.getBinder());
-                RemoteProcess p = new RemoteProcess(mgr);
-                if (intent.getBooleanExtra(INTENT_DAEMON_KEY, false)) {
-                    mDaemon = p;
-                    daemonStartup = null;
-                    flags &= ~DAEMON_EN_ROUTE;
-                } else {
-                    mRemote = p;
-                    remoteStartup = null;
-                    flags &= ~REMOTE_EN_ROUTE;
-                }
-                // Callbacks may unbind or request another service; do not index a mutating list.
-                for (PendingBind pending : new ArrayList<>(pendingTasks)) {
-                    if (pendingTasks.contains(pending) && pending.run()) pendingTasks.remove(pending);
-                }
-            } catch (RemoteException e) {
+                process = new RemoteProcess(mgr);
+            } catch (RemoteException | RuntimeException e) {
                 Utils.err(TAG, e);
+                failStartup(daemon, ticket, BindingFailure.BIND_FAILED);
+                return;
+            }
+            if (daemon) {
+                mDaemon = process;
+                daemonStartup = null;
+                flags &= ~DAEMON_EN_ROUTE;
+            } else {
+                mRemote = process;
+                remoteStartup = null;
+                flags &= ~REMOTE_EN_ROUTE;
+            }
+            // Retire each request before invoking callbacks, which may cancel or replace it.
+            for (PendingBind request : requests) {
+                if (pendingTasks.remove(request) && !request.run()) {
+                    request.failed(BindingFailure.BIND_FAILED);
+                }
             }
         }
     }

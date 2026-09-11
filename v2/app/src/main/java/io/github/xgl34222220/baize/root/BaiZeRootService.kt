@@ -186,6 +186,7 @@ class BaiZeRootService : RootService() {
                 }
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
                 .put("taskRunning", moduleTaskAlive())
+                .also { RootVersionInfo.putInto(it) }
                 .toString()
         }
 

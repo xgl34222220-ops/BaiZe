@@ -97,14 +97,6 @@ fi
 [ "$(file_sha "$WHITELIST")" = "$expected_whitelist_sha" ] || { echo "白名单已变化，请重新扫描"; exit 7; }
 [ -f "$DEEP_RULES" ] && [ "$(file_sha "$DEEP_RULES")" = "$expected_rules_sha" ] || { echo "深度规则库已变化，请重新扫描"; exit 7; }
 
-if [ -f "$ACCUM_FILE" ] && [ "$(sed -n 's/^snapshot_id=//p' "$ACCUM_FILE" | tail -n 1)" != "$snapshot_id" ]; then
-  rm -f "$ACCUM_FILE"
-fi
-acc_files=$(uint_value "$(sed -n 's/^files=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
-acc_dirs=$(uint_value "$(sed -n 's/^dirs=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
-acc_bytes=$(uint_value "$(sed -n 's/^bytes=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
-acc_skipped=$(uint_value "$(sed -n 's/^skipped=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
-acc_errors=$(uint_value "$(sed -n 's/^errors=//p' "$ACCUM_FILE" 2>/dev/null | tail -n 1)" 0)
 
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-deep-clean.tsv"
@@ -123,50 +115,45 @@ START_EPOCH=$(date +%s)
   --max-file-bytes "$max_file_bytes"
 code=$?
 
-run_files=$(uint_value "$(summary_value "$SUMMARY_FILE" files)" 0)
-run_dirs=$(uint_value "$(summary_value "$SUMMARY_FILE" dirs)" 0)
-run_bytes=$(uint_value "$(summary_value "$SUMMARY_FILE" bytes)" 0)
-run_skipped=$(uint_value "$(summary_value "$SUMMARY_FILE" skipped)" 0)
-run_errors=$(uint_value "$(summary_value "$SUMMARY_FILE" errors)" 0)
+if [ "$(summary_value "$SUMMARY_FILE" accounting)" != "cumulative-journal-v1" ]; then
+  echo "深度清理未生成可信累计账本，快照已保留；设备重启、旧版非零游标或账本损坏后需要重新扫描（代码 $code）" >&2
+  [ "$code" -ne 0 ] && exit "$code"
+  exit 71
+fi
+
+uncertain=$(uint_value "$(summary_value "$SUMMARY_FILE" uncertain_records)" 0)
+uncertain_bytes=$(uint_value "$(summary_value "$SUMMARY_FILE" uncertain_bytes)" 0)
+recovered_unsealed=$(uint_value "$(summary_value "$SUMMARY_FILE" recovered_unsealed_records)" 0)
+recovery_audit=$(uint_value "$(summary_value "$SUMMARY_FILE" recovery_requires_audit)" 0)
 remaining=$(uint_value "$(summary_value "$SUMMARY_FILE" remaining)" 0)
 cursor=$(uint_value "$(summary_value "$SUMMARY_FILE" cursor)" 0)
 records=$(uint_value "$(summary_value "$SUMMARY_FILE" records)" 0)
 
-total_files=$((acc_files + run_files))
-total_dirs=$((acc_dirs + run_dirs))
-total_bytes=$((acc_bytes + run_bytes))
-total_skipped=$((acc_skipped + run_skipped))
-total_errors=$((acc_errors + run_errors))
+# The native journal is authoritative across shell crashes and retries. Never add
+# last invocation's accumulator to these cumulative values.
+total_files=$(uint_value "$(summary_value "$SUMMARY_FILE" files)" 0)
+total_dirs=$(uint_value "$(summary_value "$SUMMARY_FILE" dirs)" 0)
+total_bytes=$(uint_value "$(summary_value "$SUMMARY_FILE" bytes)" 0)
+total_skipped=$(uint_value "$(summary_value "$SUMMARY_FILE" skipped)" 0)
+total_errors=$(uint_value "$(summary_value "$SUMMARY_FILE" errors)" 0)
 
 if [ "$code" -eq 9 ]; then
   stopped=1
   result="深度不可变快照清理已停止，已保存到第 ${cursor}/${records} 条，累计释放 $(human_bytes "$total_bytes")"
-  accum_tmp="$ACCUM_FILE.tmp.$$"
-  {
-    echo "snapshot_id=$snapshot_id"
-    echo "files=$total_files"
-    echo "dirs=$total_dirs"
-    echo "bytes=$total_bytes"
-    echo "skipped=$total_skipped"
-    echo "errors=$total_errors"
-  } >"$accum_tmp" && mv -f "$accum_tmp" "$ACCUM_FILE"
 elif [ "$code" -eq 0 ]; then
   stopped=0
   remaining=0
   result="深度不可变快照清理完成，累计释放 $(human_bytes "$total_bytes")"
-  rm -f "$STATE_FILE" "$TARGETS_FILE" "$MANIFEST_FILE" "$CURSOR_FILE" "$STATE_DIR/deep_scan.manifest.env" "$ACCUM_FILE"
 else
   stopped=0
   result="深度不可变快照清理失败，代码 $code，进度保留在 ${cursor}/${records}"
-  accum_tmp="$ACCUM_FILE.tmp.$$"
-  {
-    echo "snapshot_id=$snapshot_id"
-    echo "files=$total_files"
-    echo "dirs=$total_dirs"
-    echo "bytes=$total_bytes"
-    echo "skipped=$total_skipped"
-    echo "errors=$total_errors"
-  } >"$accum_tmp" && mv -f "$accum_tmp" "$ACCUM_FILE"
+fi
+
+if [ "$recovery_audit" -gt 0 ]; then
+  result="$result；账本含本次启动内恢复的成功操作记录；统计为已记录删除量，不保证等于实际可用空间增量"
+fi
+if [ "$uncertain" -gt 0 ]; then
+  result="$result；中断窗口有 $uncertain 条记录去向不确定（最多 $(human_bytes "$uncertain_bytes")），未计入释放量"
 fi
 
 END_EPOCH=$(date +%s)
@@ -187,10 +174,15 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "deep_manifest_cursor=$cursor"
   echo "deep_remaining_records=$remaining"
   echo "deep_stopped=$stopped"
+  echo "deep_uncertain_records=$uncertain"
+  echo "deep_uncertain_bytes=$uncertain_bytes"
+  echo "deep_recovered_unsealed_records=$recovered_unsealed"
+  echo "deep_recovery_requires_audit=$recovery_audit"
+  echo "deep_accounting=cumulative-journal-v1"
   echo "elapsed=$elapsed"
   echo "engine=deep-manifest-v1"
   echo "result=$result"
-} >"$latest_tmp" && mv -f "$latest_tmp" "$STATE_DIR/latest.env"
+} >"$latest_tmp" && mv -f "$latest_tmp" "$STATE_DIR/latest.env" || exit 71
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv" 2>/dev/null || true
 {
   echo "----------------------------------------"
@@ -201,10 +193,22 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv" 2>/dev/null || true
   echo "保护跳过: $total_skipped | 失败: $total_errors | 本次耗时: ${elapsed}s"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
+# History is an idempotent projection of the snapshot ledger, not an invocation
+# delta. A shell killed before this write is repaired by the next resume.
+history_tmp="$HISTORY_FILE.tmp.$$"
+if [ -f "$HISTORY_FILE" ]; then
+  awk -F '\t' -v id="$snapshot_id" '!($2 == "deep-clean" && $10 == id)' "$HISTORY_FILE" >"$history_tmp" || exit 71
+else
+  : >"$history_tmp" || exit 71
+fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-  "$(date '+%Y-%m-%d %H:%M:%S')" deep-clean "$run_bytes" "$run_files" "$run_dirs" "$run_errors" \
-  "$result" "$TRIGGER" "深度不可变快照|$run_bytes|$run_files" "$snapshot_id" >>"$HISTORY_FILE"
-tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+  "$(date '+%Y-%m-%d %H:%M:%S')" deep-clean "$total_bytes" "$total_files" "$total_dirs" "$total_errors" \
+  "$result" "$TRIGGER" "深度不可变快照|$total_bytes|$total_files" "$snapshot_id" >>"$history_tmp" || exit 71
+tail -n 100 "$history_tmp" >"$history_tmp.last" && mv -f "$history_tmp.last" "$HISTORY_FILE" || exit 71
+rm -f "$history_tmp"
+if [ "$code" -eq 0 ]; then
+  rm -f "$STATE_FILE" "$TARGETS_FILE" "$MANIFEST_FILE" "$CURSOR_FILE" "$STATE_DIR/deep_scan.manifest.env" "$ACCUM_FILE"
+fi
 
 echo "$result"
 echo "进度: $cursor/$records | 剩余: $remaining | 文件: $total_files | 目录: $total_dirs | 跳过: $total_skipped | 失败: $total_errors"

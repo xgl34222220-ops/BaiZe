@@ -5,7 +5,9 @@ App 通过 libsu RootService 调用模块内的 C 扫描引擎，不依赖 WebUI
 
 项目总览与安全边界见[根目录 README](../README.md)，
 版本历史见 [CHANGELOG.md](../CHANGELOG.md)，
-架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，
+Root 连接测试与真机验收边界见 [docs/ROOT_CONNECTION_TESTING.md](docs/ROOT_CONNECTION_TESTING.md)，
+扫描、清理性能回归见 [docs/PERFORMANCE_TESTING.md](docs/PERFORMANCE_TESTING.md)。
 
 ## 目录结构
 
