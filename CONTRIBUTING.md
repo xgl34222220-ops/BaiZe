@@ -48,14 +48,21 @@ CI 会跑同一套检查，本地过了基本就不会在 CI 上炸。
 版本号以 `module.prop` 为唯一来源：
 
 ```sh
-sh v2/scripts/sync-version.sh --set v2.6.0   # 同步到所有相关文件
-git commit -am "chore: v2.6.0"
-git push
-git tag v2.6.0 && git push origin v2.6.0     # 触发 release workflow
+# 准备源码版本，保留上一版 OTA，防止用户下载尚未生成的包。
+sh v2/scripts/sync-version.sh --source-only --set v2.8.3
+sh v2/scripts/sync-version.sh --source-only --check
 ```
 
-不要手工编辑 `update.json`、`build.gradle.kts` 里的版本号，
-它们由 `sync-version.sh` 生成，CI 会校验一致性。
+补充对应的 `RELEASE_NOTES_vX.Y.Z.md`，运行提交前检查并合并到 `main`。
+当前正式发布入口是 `.github/workflows/stable-release.yml`，不是推送 tag：
+
+1. 将已验证、已合并的源码完整 SHA 写入 `.github/release.publish`，提交并推送到 `main`。
+2. 工作流校验源码版本，构建原生引擎，运行 App 测试和 lint，使用正式密钥签名并校验证书，然后跑全量模块回归。
+3. 工作流将已校验的 APK、模块 ZIP、SHA256 和签名证书发布到 `downloads` 分支和 GitHub Release；版本 tag 指向指定源码 SHA。
+4. 工作流重新下载正式 Release，对照本次产物和已推送镜像的 APK/ZIP 字节及 SHA256，确认源码版本和发布指针未改变，然后运行 `sync-version.sh` 提交 `update.json`，最后执行完整版本一致性检查。若该步骤因 `main` 并发更新而失败，人工重新验证产物和当前版本后再运行同步，不得提前推进 OTA。
+
+不要手工编辑 `update.json`、`build.gradle.kts` 里的版本号；它们由
+`sync-version.sh` 生成。签名缺失或校验失败时停止发布，不得用 Debug 签名替代。
 
 ## 提交规范
 

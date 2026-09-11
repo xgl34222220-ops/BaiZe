@@ -12,6 +12,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD="$ROOT/build/native"
 ENGINE_SOURCE="$ROOT/native/baize_engine_42_4.c"
 DEEP_SOURCE="$ROOT/native/baize_deep_snapshot.c"
+FILTER_SOURCE="$ROOT/native/baize_compat_filter.c"
 API=${ANDROID_API:-26}
 ABIS=${BAIZE_ABIS:-"arm64-v8a armeabi-v7a x86_64"}
 
@@ -46,6 +47,7 @@ STRIP="$TOOLCHAIN/llvm-strip"
 
 [ -f "$ENGINE_SOURCE" ] || { echo "未找到白泽原生扫描引擎源码：$ENGINE_SOURCE" >&2; exit 1; }
 [ -f "$DEEP_SOURCE" ] || { echo "未找到深度不可变快照源码：$DEEP_SOURCE" >&2; exit 1; }
+[ -f "$FILTER_SOURCE" ] || { echo "未找到兼容清单过滤器源码：$FILTER_SOURCE" >&2; exit 1; }
 [ -x "$STRIP" ] || { echo "未找到 llvm-strip：$STRIP" >&2; exit 1; }
 
 COMMON_FLAGS='-std=c11 -O2 -fPIE -pie -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wall -Wextra -Wformat=2 -Wshadow -Wconversion'
@@ -64,9 +66,11 @@ for abi in $ABIS; do
   "$CC" $COMMON_FLAGS "$ENGINE_SOURCE" -o "$OUT/baize_engine"
   # shellcheck disable=SC2086
   "$CC" $COMMON_FLAGS "$DEEP_SOURCE" -o "$OUT/baize_deep_snapshot"
-  "$STRIP" --strip-unneeded "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
-  chmod 0755 "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
-  file "$OUT/baize_engine" "$OUT/baize_deep_snapshot"
+  # shellcheck disable=SC2086
+  "$CC" $COMMON_FLAGS "$FILTER_SOURCE" -o "$OUT/baize_compat_filter"
+  "$STRIP" --strip-unneeded "$OUT/baize_engine" "$OUT/baize_deep_snapshot" "$OUT/baize_compat_filter"
+  chmod 0755 "$OUT/baize_engine" "$OUT/baize_deep_snapshot" "$OUT/baize_compat_filter"
+  file "$OUT/baize_engine" "$OUT/baize_deep_snapshot" "$OUT/baize_compat_filter"
   echo "已生成 $abi 引擎：$OUT"
   built=$((built + 1))
 done

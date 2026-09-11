@@ -1831,6 +1831,19 @@ static int scan_deep(const Options *o) {
     Totals t = {0};
     char covered_all[PATH_MAX] = "", covered_protected[PATH_MAX] = "";
     uint64_t stage_started_ms = monotonic_ms();
+    /* Only the immutable-manifest pipeline may defer the recursive safety walk. */
+    const char *roots_path = getenv("BAIZE_DEEP_MANIFEST_ROOTS");
+    FILE *roots = roots_path && *roots_path ? fopen(roots_path, "wb") : NULL;
+    if (roots_path && *roots_path && !roots) {
+        if (rep) fclose(rep);
+        if (targets) fclose(targets);
+        vec_free(&cand);
+        return 71;
+    }
+    if (roots) {
+        write_nul_u64(roots, o->dir_budget_ms);
+        write_nul_u64(roots, o->global_budget_ms ? stage_started_ms + o->global_budget_ms : 0U);
+    }
     for (size_t i = 0; i < cand.n; i++) {
         const char *p = cand.v[i];
         if (stop_requested(o)) { if (rep) fclose(rep); if (targets) fclose(targets); write_summary(o, &t); vec_free(&cand); return 9; }
@@ -1871,6 +1884,33 @@ static int scan_deep(const Options *o) {
             if (is_dir_nofollow(p)) snprintf(covered_protected, sizeof(covered_protected), "%s", p);
             continue;
         }
+        if (roots) {
+            struct stat root;
+            if (lstat(p, &root) != 0 || S_ISLNK(root.st_mode) ||
+                (!S_ISDIR(root.st_mode) && !S_ISREG(root.st_mode))) {
+                t.skipped++;
+                continue;
+            }
+            bool ok = write_nul_field(roots, S_ISDIR(root.st_mode) ? "dir" : "file") &&
+                write_nul_field(roots, r) && write_nul_field(roots, p) &&
+                write_nul_u64(roots, (uint64_t)root.st_dev) &&
+                write_nul_u64(roots, (uint64_t)root.st_ino) &&
+                write_nul_u64(roots, (uint64_t)root.st_size) &&
+                write_nul_u64(roots, (uint64_t)root.st_mtim.tv_sec) &&
+                write_nul_u64(roots, (uint64_t)root.st_mtim.tv_nsec) &&
+                write_nul_u64(roots, (uint64_t)root.st_ctim.tv_sec) &&
+                write_nul_u64(roots, (uint64_t)root.st_ctim.tv_nsec) && write_nul_field(roots, p);
+            if (!ok || !targets || fprintf(targets, "%s\t%s\n", p, r) < 0) {
+                fclose(roots);
+                if (rep) fclose(rep);
+                if (targets) fclose(targets);
+                vec_free(&cand);
+                return 71;
+            }
+            t.targets++;
+            t.candidates++;
+            continue;
+        }
         Stats s;
         int rc = stat_tree_budgeted(p, o, 0, &s, o->dir_budget_ms);
         if (s.elapsed_ms > g_deep_slowest_ms) {
@@ -1909,12 +1949,19 @@ static int scan_deep(const Options *o) {
     }
     uint64_t stage_finished_ms = monotonic_ms();
     g_deep_stage_ms = stage_finished_ms >= stage_started_ms ? stage_finished_ms - stage_started_ms : 0U;
+    int result = 0;
+    if (roots) {
+        /* A truncated expansion must never publish a supposedly complete manifest. */
+        if (ferror(roots)) result = 71;
+        if (fclose(roots) != 0) result = 71;
+        if (t.truncated && result == 0) result = 124;
+    }
     if (rep) fclose(rep);
-    if (targets) fclose(targets);
+    if (targets && fclose(targets) != 0 && roots) result = 71;
     write_summary(o, &t);
     vec_free(&cand);
     risk_rules_free();
-    return 0;
+    return result;
 }
 
 int main(int argc, char **argv) {

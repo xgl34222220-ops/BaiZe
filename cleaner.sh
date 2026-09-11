@@ -10,6 +10,7 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}
 CONFIG="$STATE_DIR/config.conf"
 WHITELIST="$STATE_DIR/whitelist.conf"
+PACKAGE_WHITELIST=${BAIZE_PACKAGE_WHITELIST:-$STATE_DIR/native-cache-packages.conf}
 CUSTOM_RULES="$STATE_DIR/custom.rules"
 APP_RULES="$MODDIR/config/app.rules"
 EXTERNAL_RULES="$MODDIR/config/external.rules"
@@ -177,7 +178,11 @@ printf 'package\tcategory\tfiles\tbytes\terrors\tsample_path\n' >"$APP_ITEMS"
 set_phase "准备扫描"
 
 get_value() {
-  sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -n 1
+  config_value=""
+  while IFS= read -r config_line || [ -n "$config_line" ]; do
+    case "$config_line" in "$1="*) config_value=${config_line#*=} ;; esac
+  done <"$CONFIG"
+  printf '%s\n' "$config_value"
 }
 
 get_bool() {
@@ -247,7 +252,11 @@ report_line() {
 }
 
 valid_package_name() {
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9._-]+$'
+  case "$1" in
+    ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) return 1 ;;
+    ?*.*?) return 0 ;;
+  esac
+  return 1
 }
 
 package_from_target() {
@@ -344,11 +353,40 @@ first_nul_path() {
   return 1
 }
 
+# The optional helper only de-duplicates an already policy-filtered manifest.
+# It cannot discover or delete targets; unsupported ABIs keep the shell path.
+COMPAT_FILTER_ENGINE=""
+if [ -f "$MODDIR/abi-resolve.sh" ]; then
+  . "$MODDIR/abi-resolve.sh"
+  COMPAT_FILTER_ENGINE=$(baize_resolve_engine "$MODDIR" baize_compat_filter 2>/dev/null) || COMPAT_FILTER_ENGINE=""
+fi
+
 filter_processed_list() {
   source_list=$1
+  [ -s "$source_list" ] || return 0
+  should_stop && return 9
   unique_list="$source_list.unique"
+  if [ -n "$COMPAT_FILTER_ENGINE" ]; then
+    next_seen="$source_list.seen"
+    rm -f "$unique_list" "$next_seen"
+    run_limited_command 15 "$COMPAT_FILTER_ENGINE" "$source_list" "$PROCESSED_PATHS" \
+      "$unique_list" "$next_seen" "$STATE_DIR/stop"
+    filter_code=$?
+    if [ "$filter_code" -eq 0 ]; then
+      should_stop && { rm -f "$unique_list" "$next_seen"; return 9; }
+      mv -f "$next_seen" "$PROCESSED_PATHS" && mv -f "$unique_list" "$source_list" && return 0
+      STOP_REASON="无法提交清理候选列表"
+      return 9
+    fi
+    rm -f "$unique_list" "$next_seen"
+    should_stop && return 9
+    [ "$filter_code" -eq 9 ] && return 9
+    COMPAT_FILTER_ENGINE=""
+    log_line "[兼容过滤] 原生列表过滤不可用（代码 $filter_code），继续使用兼容过滤"
+  fi
   : >"$unique_list"
   while IFS= read -r -d '' candidate; do
+    should_stop && { rm -f "$unique_list"; return 9; }
     [ -n "$candidate" ] || continue
     canonical=$(canonical_rule_path "$candidate" 2>/dev/null)
     [ -n "$canonical" ] || canonical=$candidate
@@ -599,6 +637,7 @@ run_limited_command() {
 }
 
 count_nul() {
+  [ -s "$1" ] || { printf '0\n'; return; }
   tr -cd '\000' <"$1" | wc -c | tr -d ' '
 }
 
@@ -626,10 +665,12 @@ batch_actuals() {
 
 filter_whitelist_list() {
   source_list=$1
+  [ -s "$source_list" ] || return 0
   [ "$WHITELIST_ACTIVE" = "1" ] || return 0
   filtered="$source_list.filtered"
   : >"$filtered"
   while IFS= read -r -d '' candidate; do
+    should_stop && { rm -f "$filtered"; return 9; }
     if is_whitelisted "$candidate" || deep_conflicts_whitelist "$candidate"; then
       SKIPPED=$((SKIPPED + 1))
     else
@@ -762,8 +803,8 @@ process_cache_candidates() {
   app_package=${3:-}
   app_done=${4:-0}
   app_total=${5:-0}
-  filter_whitelist_list "$list"
-  filter_processed_list "$list"
+  filter_whitelist_list "$list" || return $?
+  filter_processed_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
@@ -781,6 +822,7 @@ process_cache_candidates() {
   case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-cache.err.$LIST_SEQ"
+    should_stop && return 9
     xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
     remaining="$list.remaining"
     existing_files_to_list "$list" "$remaining"
@@ -823,8 +865,8 @@ clean_dir() {
   else
     find "$dir" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -mtime "+$days" -print0 2>/dev/null >"$list"
   fi
-  filter_whitelist_list "$list"
-  filter_processed_list "$list"
+  filter_whitelist_list "$list" || return $?
+  filter_processed_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   sample_path=$(first_nul_path "$list" 2>/dev/null)
@@ -834,6 +876,7 @@ clean_dir() {
     case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
     if [ "$MODE" = "clean" ]; then
       err_file="$TMP_DIR/rm-dir.$LIST_SEQ.err"
+      should_stop && return 9
       xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
       remaining="$list.remaining"
       existing_files_to_list "$list" "$remaining"
@@ -867,14 +910,15 @@ clean_dir() {
     else
       find "$dir" -mindepth 1 -type f -size 0c -mtime "+$EMPTY_DAYS" ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
     fi
-    filter_whitelist_list "$list"
-    filter_processed_list "$list"
+    filter_whitelist_list "$list" || return $?
+    filter_processed_list "$list" || return $?
     count=$(count_nul "$list")
     case "$count" in ''|*[!0-9]*) count=0 ;; esac
     sample_path=$(first_nul_path "$list" 2>/dev/null)
     if [ "$count" -gt 0 ]; then
       if [ "$MODE" = "clean" ]; then
         err_file="$TMP_DIR/rm-empty.$LIST_SEQ.err"
+        should_stop && return 9
         xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
         remaining="$list.remaining"
         existing_files_to_list "$list" "$remaining"
@@ -903,13 +947,14 @@ clean_dir() {
     LIST_SEQ=$((LIST_SEQ + 1))
     list="$TMP_DIR/empty-dirs.$LIST_SEQ.nul"
     find "$dir" -depth -mindepth 1 -type d -empty -print0 2>/dev/null >"$list"
-    filter_whitelist_list "$list"
-    filter_processed_list "$list"
+    filter_whitelist_list "$list" || return $?
+    filter_processed_list "$list" || return $?
     count=$(count_nul "$list")
     case "$count" in ''|*[!0-9]*) count=0 ;; esac
     sample_path=$(first_nul_path "$list" 2>/dev/null)
     if [ "$count" -gt 0 ]; then
       if [ "$MODE" = "clean" ]; then
+        should_stop && return 9
         xargs -0 -n 100 rmdir <"$list" 2>/dev/null
         remaining="$list.remaining"
         existing_paths_to_list "$list" "$remaining"
@@ -1010,7 +1055,7 @@ scan_cache_roots() {
     run_cache_find 10 "$days" "$candidates" "$@"
     code=$?
     if [ "$code" -eq 0 ]; then
-      process_cache_candidates "$candidates" "$category" "$package" "$done_count" "$total"
+      process_cache_candidates "$candidates" "$category" "$package" "$done_count" "$total" || { rm -f "$packages"; return 9; }
     else
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
@@ -1060,7 +1105,7 @@ scan_external_cache() {
     run_cache_find 10 "$days" "$candidates" "$@"
     code=$?
     if [ "$code" -eq 0 ]; then
-      process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total"
+      process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total" || { rm -f "$packages"; return 9; }
     else
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
@@ -1866,11 +1911,12 @@ scan_shared_empty_files() {
     -type f -size 0c \
     ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
     -print0 2>/dev/null >"$list"
-  filter_whitelist_list "$list"
+  filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   if [ "$count" -gt 0 ]; then
     if [ "$MODE" = "clean" ]; then
+      should_stop && return 9
       xargs -0 -n 200 rm -f -- <"$list" 2>/dev/null
       remaining="$list.remaining"
       existing_files_to_list "$list" "$remaining"
@@ -1908,7 +1954,7 @@ scan_shared_empty_dirs() {
     ! -path '/data/media/[0-9]*/MIUI' ! -path '/data/media/[0-9]*/ColorOS' \
     ! -path '/data/media/[0-9]*/HeyTap' ! -path '/data/media/[0-9]*/oplus' \
     -print0 2>/dev/null >"$list"
-  filter_whitelist_list "$list"
+  filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
@@ -1938,6 +1984,7 @@ scan_shared_empty_dirs() {
       level=$((level + 1))
     done
   done <"$list"
+  should_stop && return 9
   xargs -0 -n 200 rmdir <"$list" 2>/dev/null
   remaining="$list.remaining"
   existing_paths_to_list "$list" "$remaining"
@@ -2083,7 +2130,7 @@ run_hidden_junk() {
     name=${hidden_dir##*/}
     rule_days=$(hidden_dir_days "$name") || continue
     [ "$HIDDEN_DAYS" -gt "$rule_days" ] && rule_days=$HIDDEN_DAYS
-    clean_dir "$hidden_dir" "$rule_days" "隐藏垃圾:$name" || { HIDDEN_CONTEXT=0; return $?; }
+    clean_dir "$hidden_dir" "$rule_days" "隐藏垃圾:$name" || { HIDDEN_CONTEXT=0; return 9; }
     if [ "$MODE" = "clean" ]; then
       case "$name" in
         .cache|.thumbnails|.thumbnail|.thumb|.tmp|.temp|.xlDownload)
@@ -2125,7 +2172,7 @@ run_hidden_junk() {
   CATEGORY="隐藏垃圾文件"
   while IFS= read -r hidden_file || [ -n "$hidden_file" ]; do
     is_protected_hidden_path "$hidden_file" && { log_line "[跳过:隐藏配置] $hidden_file"; continue; }
-    handle_file "$hidden_file" regular || { HIDDEN_CONTEXT=0; return $?; }
+    handle_file "$hidden_file" regular || { HIDDEN_CONTEXT=0; return 9; }
   done <"$list"
   HIDDEN_CONTEXT=0
   return 0
@@ -2165,7 +2212,7 @@ run_fragment_cleanup() {
     fi
   done
 
-  filter_whitelist_list "$list"
+  filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
@@ -2174,6 +2221,7 @@ run_fragment_cleanup() {
   case "$estimated" in ''|*[!0-9]*) estimated=0 ;; esac
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-fragments.err"
+    should_stop && return 9
     if ! xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"; then
       reason=$(tail -n 1 "$err_file" 2>/dev/null)
       log_line "[部分未清理][残留碎片] ${reason:-系统拒绝删除部分文件}"
@@ -2250,8 +2298,8 @@ run_apk_packages() {
     done
   done
 
-  filter_whitelist_list "$list"
-  filter_processed_list "$list"
+  filter_whitelist_list "$list" || return $?
+  filter_processed_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { rm -f "$list"; return 0; }
@@ -2281,6 +2329,7 @@ run_apk_packages() {
 
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-apk-packages.err"
+    should_stop && return 9
     xargs -0 -n 100 rm -f -- <"$list" 2>"$err_file"
     remaining="$TMP_DIR/apk-packages.remaining.nul"
     existing_files_to_list "$list" "$remaining"
@@ -2309,10 +2358,10 @@ run_installer_temp() {
     \( -name '*.apk.tmp' -o -name '*.apks.tmp' -o -name '*.xapk.tmp' -o -name '*.zip.tmp' \
        -o -name '*.part' -o -name '*.download' -o -name '*.crdownload' \) \
     -size "-${MAX_FILE_BYTES}c" -print0 2>/dev/null >"$list"
-  filter_whitelist_list "$list"
+  filter_whitelist_list "$list" || return $?
   while IFS= read -r -d '' file; do
     CATEGORY="过期安装临时文件"
-    handle_file "$file" regular || { rm -f "$list"; return $?; }
+    handle_file "$file" regular || { rm -f "$list"; return 9; }
   done <"$list"
   rm -f "$list"
   return 0
@@ -2380,6 +2429,21 @@ case "$PROFILE" in
   corpse) ;;
 esac
 WHITELIST_PATHS=$(sed -n 's/[[:space:]]*$//; /^[[:space:]]*\($\|#\)/d; p' "$WHITELIST" 2>/dev/null)
+# Expand package protection once, not once per candidate. Reuse the existing
+# ancestor/descendant checks for every category, including compatibility rules.
+if [ -f "$PACKAGE_WHITELIST" ]; then
+  while IFS= read -r protected_package || [ -n "$protected_package" ]; do
+    protected_package=${protected_package#"${protected_package%%[![:space:]]*}"}
+    protected_package=${protected_package%"${protected_package##*[![:space:]]}"}
+    valid_package_name "$protected_package" || continue
+    for protected_root in /data/user/[0-9]*/"$protected_package" /data/user_de/[0-9]*/"$protected_package" \
+      /data/media/[0-9]*/Android/data/"$protected_package" /data/media/[0-9]*/Android/obb/"$protected_package"; do
+      [ -d "$protected_root" ] || continue
+      WHITELIST_PATHS="$WHITELIST_PATHS
+$protected_root"
+    done
+  done <"$PACKAGE_WHITELIST"
+fi
 if [ -n "$WHITELIST_PATHS" ]; then
   WHITELIST_ACTIVE=1
 else
