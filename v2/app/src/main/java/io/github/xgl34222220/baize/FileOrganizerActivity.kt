@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -12,10 +13,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +32,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.InstallMobile
+import androidx.compose.material.icons.rounded.FolderZip
+import androidx.compose.material.icons.rounded.MenuBook
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.Restore
@@ -55,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -76,6 +89,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 class FileOrganizerActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -337,7 +352,6 @@ internal data class FileOrganizerUiState(
     val lastBytes: Long = 0L
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FileOrganizerScreen(
     state: FileOrganizerUiState,
@@ -352,45 +366,39 @@ internal fun FileOrganizerScreen(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
-        contentPadding = PaddingValues(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(bottom = 32.dp)
     ) {
-        item { DetailPageHeader("文件归类", "把分散的下载文件整理到一起", onBack) }
+        item { DetailPageHeader("文件归类", "让下载、接收的文件各归其位", onBack) }
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.FolderCopy, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
-                        Spacer(Modifier.size(12.dp))
-                        Text(if (state.running) "正在整理文件" else "按文件类型整理", style = MaterialTheme.typography.titleLarge)
+            DetailGlassPanel {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)) {
+                        Icon(Icons.Rounded.FolderCopy, null, Modifier.padding(11.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     }
-                    if (state.lastTotal > 0) {
-                        Text("${state.lastTotal} 个文件 · ${android.text.format.Formatter.formatFileSize(LocalContext.current, state.lastBytes)}",
-                            style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(if (state.running) "正在整理文件" else if (state.lastTotal > 0) "已整理 ${state.lastTotal} 个文件" else "整理散落文件",
+                            fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text(if (state.lastTotal > 0) android.text.format.Formatter.formatFileSize(LocalContext.current, state.lastBytes) else "按类型自动放入对应文件夹",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(state.status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Button(
-                        onClick = if (state.running) onStop else onOneTap,
-                        enabled = state.connected,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
-                        shape = RoundedCornerShape(18.dp)
-                    ) { Text(if (state.running) "停止当前任务" else "一键归类", style = MaterialTheme.typography.titleMedium) }
-                    if (state.undoAvailable && !state.running) TextButton(
-                        onClick = onUndo, enabled = state.connected, modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Rounded.Restore, null)
-                        Spacer(Modifier.size(8.dp))
-                        Text("撤销上一次归类")
-                    }
+                }
+                DetailStatusText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp))
+                if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+                GlassActionButton(if (state.running) "停止当前任务" else "一键归类",
+                    if (state.running) onStop else onOneTap, enabled = state.connected,
+                    modifier = Modifier.fillMaxWidth(), secondary = state.running)
+                if (state.undoAvailable && !state.running) TextButton(
+                    onClick = onUndo, enabled = state.connected, modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Icon(Icons.Rounded.Restore, null, Modifier.size(16.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text("撤销上一次归类", fontSize = 13.sp)
                 }
             }
         }
+        item { DetailSectionHeader("归类位置", "内部存储 / BaiZe归类") }
         item { DestinationCard() }
+        item { DetailSectionHeader("自动归类") }
         item { ScheduleCard(schedule, scheduleSavedText, onScheduleChange, onSaveSchedule) }
         item { SourceCard() }
         item { Spacer(Modifier.navigationBarsPadding()) }
@@ -407,21 +415,21 @@ private fun SourceCard() {
 
 @Composable
 private fun DestinationCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("归类位置", style = MaterialTheme.typography.titleLarge)
-            Text("内部存储 / BaiZe归类", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-            Text("按类型放进对应文件夹。同名文件会按下方设置处理。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            listOf(listOf("图片", "视频", "音频", "文档"), listOf("安装包", "压缩包", "电子书", "其他")).forEach { categories ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    categories.forEach { category ->
-                        Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                            Text(category, Modifier.padding(vertical = 10.dp), style = MaterialTheme.typography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        }
+    DetailGlassPanel {
+        val categories = listOf(
+            "图片" to Icons.Rounded.Image, "视频" to Icons.Rounded.Movie,
+            "音频" to Icons.Rounded.MusicNote, "文档" to Icons.Rounded.Description,
+            "安装包" to Icons.Rounded.InstallMobile, "压缩包" to Icons.Rounded.FolderZip,
+            "电子书" to Icons.Rounded.MenuBook, "其他" to Icons.Rounded.MoreHoriz
+        )
+        categories.chunked(4).forEachIndexed { index, row ->
+            if (index > 0) Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { (label, icon) ->
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .8f))
+                        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -429,6 +437,7 @@ private fun DestinationCard() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScheduleCard(
     schedule: FileOrganizerScheduleSettings,
@@ -437,115 +446,65 @@ private fun ScheduleCard(
     onSave: () -> Unit
 ) {
     val intervals = FileOrganizerWorker.ALLOWED_INTERVALS
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = BaiZeTokens.colors.surfaceRaised
-        ),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Rounded.Schedule,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.size(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("定时归类", fontWeight = FontWeight.SemiBold, fontSize = 19.sp)
-                    Text(
-                        "自动整理新下载的文件",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp
-                    )
-                }
-                Switch(
-                    checked = schedule.enabled,
-                    onCheckedChange = { onChange(schedule.copy(enabled = it)) }
-                )
+    var advanced by rememberSaveable { mutableStateOf(false) }
+    DetailGlassPanel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("定时归类", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text("自动整理新下载的文件", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                intervals.forEach { minutes ->
-                    FilterChip(
-                        selected = schedule.intervalMinutes == minutes,
-                        onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
-                        label = { Text(FileOrganizerWorker.intervalLabel(minutes)) }
-                    )
-                }
-            }
-
-            HorizontalDivider()
-            SettingSwitch("仅充电时执行", schedule.chargingOnly) {
-                onChange(schedule.copy(chargingOnly = it))
-            }
-            SettingSwitch("仅息屏时执行", schedule.screenOffOnly) {
-                onChange(schedule.copy(screenOffOnly = it))
-            }
-            SettingSwitch("仅设备空闲时执行", schedule.idleOnly) {
-                onChange(schedule.copy(idleOnly = it))
-            }
-            Text("同名文件处理", fontWeight = FontWeight.Bold)
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                (0..2).forEach { policy ->
-                    FilterChip(
-                        selected = schedule.conflictPolicy == policy,
-                        onClick = { onChange(schedule.copy(conflictPolicy = policy)) },
-                        label = { Text(FileOrganizerWorker.conflictPolicyLabel(policy)) }
-                    )
-                }
-            }
-            SettingSwitch("开启计划后立即执行一次", schedule.runImmediatelyOnEnable) {
-                onChange(schedule.copy(runImmediatelyOnEnable = it))
-            }
-            Text(
-                "上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                schedule.lastResult,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (savedText.isNotBlank()) {
-                Text(
-                    savedText,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            Button(
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("保存定时归类", fontWeight = FontWeight.SemiBold)
+            Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) },
+                modifier = Modifier.semantics { contentDescription = "定时文件归类" })
+        }
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            intervals.forEach { minutes ->
+                FilterChip(selected = schedule.intervalMinutes == minutes,
+                    onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
+                    label = { Text(FileOrganizerWorker.intervalLabel(minutes), fontSize = 12.sp) },
+                    border = null, shape = RoundedCornerShape(12.dp))
             }
         }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
+        Text("同名文件", fontWeight = FontWeight.Medium, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            (0..2).forEach { policy ->
+                FilterChip(selected = schedule.conflictPolicy == policy,
+                    onClick = { onChange(schedule.copy(conflictPolicy = policy)) },
+                    label = { Text(FileOrganizerWorker.conflictPolicyLabel(policy), fontSize = 12.sp) },
+                    border = null, shape = RoundedCornerShape(12.dp))
+            }
+        }
+        Row(Modifier.fillMaxWidth().clickable { advanced = !advanced }.heightIn(min = 52.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("执行条件", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                val conditions = buildList {
+                    if (schedule.chargingOnly) add("充电")
+                    if (schedule.screenOffOnly) add("息屏")
+                    if (schedule.idleOnly) add("设备空闲")
+                }
+                Text(conditions.joinToString(" · ").ifBlank { "不限制执行条件" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (advanced) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight,
+                if (advanced) "收起执行条件" else "展开执行条件", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (advanced) {
+            SettingSwitch("仅充电时执行", schedule.chargingOnly) { onChange(schedule.copy(chargingOnly = it)) }
+            SettingSwitch("仅息屏时执行", schedule.screenOffOnly) { onChange(schedule.copy(screenOffOnly = it)) }
+            SettingSwitch("仅设备空闲时执行", schedule.idleOnly) { onChange(schedule.copy(idleOnly = it)) }
+            SettingSwitch("开启计划后立即执行一次", schedule.runImmediatelyOnEnable) { onChange(schedule.copy(runImmediatelyOnEnable = it)) }
+        }
+        DetailStatusText("上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}\n${schedule.lastResult}", Modifier.padding(top = 8.dp, bottom = 12.dp))
+        if (savedText.isNotBlank()) Text(savedText, Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+        GlassActionButton("保存定时归类", onSave, modifier = Modifier.fillMaxWidth(), secondary = true)
     }
 }
 
 @Composable
-private fun SettingSwitch(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f).padding(end = 10.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+        Switch(checked = checked, onCheckedChange = onCheckedChange,
+            modifier = Modifier.semantics { contentDescription = label })
     }
 }

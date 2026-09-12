@@ -84,6 +84,7 @@ class WhitelistActivity : AppCompatActivity() {
         binding.appList.layoutManager = LinearLayoutManager(this)
         binding.appList.adapter = adapter
         binding.appList.setHasFixedSize(true)
+        binding.appList.clipToOutline = true
         binding.saveButton.isEnabled = false
         binding.selectVisibleButton.isEnabled = false
         binding.clearButton.isEnabled = false

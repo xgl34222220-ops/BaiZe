@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
@@ -19,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
+import io.github.xgl34222220.baize.ui.appearance.AccentOptions
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.KolorStyle
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -28,31 +30,31 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 private val MaterialShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(26.dp)
 )
 
-/** MIUIX / HyperOS：分组卡片更圆润，悬浮层使用 28–32dp 圆角。 */
+/** MIUIX / HyperOS：18 / 22 / 26dp 区分控件、分组与浮层。 */
 private val MiuixShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(26.dp)
 )
 
 private val SharedTypography = Typography(
-    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.8).sp),
+    headlineLarge = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.5).sp),
+    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.4).sp),
+    headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
     titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 23.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    bodySmall = TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
     labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
     labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
@@ -72,32 +74,46 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         typography = SharedTypography,
         animate = true
     ) {
-        val scheme = MaterialTheme.colorScheme
+        val generatedScheme = MaterialTheme.colorScheme
+        // The default blue is deliberately crisp. Explicit Monet, alternate accents and
+        // the neutral/vibrant palette options continue to use their generated colours.
+        val defaultBlue = !settings.monetEnabled &&
+            settings.seedArgb == AccentOptions.first().argb && settings.kolorStyle == KolorStyle.SOFT
+        val scheme = if (defaultBlue) generatedScheme.copy(
+            primary = if (dark) Color(0xFFA9CAFF) else Color(0xFF2364DB),
+            onPrimary = if (dark) Color(0xFF082C63) else Color.White,
+            primaryContainer = if (dark) Color(0xFF1C3656) else Color(0xFFE5EEFF),
+            onPrimaryContainer = if (dark) Color(0xFFDCE9FF) else Color(0xFF163C77),
+            surfaceTint = if (dark) Color(0xFFA9CAFF) else Color(0xFF2364DB)
+        ) else generatedScheme
         val semantic = if (dark) DarkBaiZeColors else LightBaiZeColors
         val colors = semantic.copy(
             surfaceBase = when {
                 amoled -> Color.Black
-                dark -> scheme.surfaceContainerLowest
-                else -> lerp(Color(0xFFF4F6FA), scheme.primaryContainer, .06f)
+                dark -> lerp(DarkBaiZeColors.surfaceBase, scheme.primaryContainer, .03f)
+                else -> lerp(LightBaiZeColors.surfaceBase, scheme.primaryContainer, .035f)
             },
             surfaceRaised = when {
                 amoled -> Color(0xFF111214)
-                dark -> scheme.surfaceContainerLow
-                else -> scheme.surfaceContainerLowest
+                dark -> lerp(DarkBaiZeColors.surfaceRaised, scheme.primaryContainer, .035f)
+                else -> lerp(Color.White, scheme.primaryContainer, .015f)
             },
             surfaceOverlay = when {
                 amoled -> Color(0xFF1B1C20)
-                dark -> scheme.surfaceContainerHigh
-                else -> lerp(scheme.surfaceContainerLowest, scheme.primaryContainer, .18f)
+                dark -> lerp(DarkBaiZeColors.surfaceOverlay, scheme.primaryContainer, .05f)
+                else -> lerp(LightBaiZeColors.surfaceOverlay, scheme.primaryContainer, .065f)
             }
         )
-        CompositionLocalProvider(
-            LocalBaiZeColors provides colors,
-            LocalBaiZeCorners provides DefaultBaiZeCorners,
-            LocalBaiZeSpacing provides DefaultBaiZeSpacing,
-            LocalBaiZeTypeScale provides DefaultBaiZeTypeScale,
-            content = content
-        )
+        MaterialTheme(colorScheme = scheme) {
+            CompositionLocalProvider(
+                LocalContentColor provides scheme.onSurface,
+                LocalBaiZeColors provides colors,
+                LocalBaiZeCorners provides DefaultBaiZeCorners,
+                LocalBaiZeSpacing provides DefaultBaiZeSpacing,
+                LocalBaiZeTypeScale provides DefaultBaiZeTypeScale,
+                content = content
+            )
+        }
     }
 }
 

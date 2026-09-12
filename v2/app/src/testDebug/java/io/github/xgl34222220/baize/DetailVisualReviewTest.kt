@@ -55,6 +55,8 @@ class DetailVisualReviewTest {
         render("apk-results") { ApkScanScreen(apkResults, {}, {}, { cleanRequests++ }, {}, {}) }
         compose.onNodeWithText("清理 121 个安装包").performClick()
         assertEquals("The result action must reuse the existing scan", 1, cleanRequests)
+        compose.onNodeWithText("示例应用_4.2.apk").performClick()
+        compose.onNodeWithText("完成").assertIsDisplayed().performClick()
     }
 
     @Test

@@ -3,31 +3,32 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="12dp"
+    android:layout_marginBottom="1dp"
+    app:cardCornerRadius="0dp"
     style="@style/Widget.BaiZe.SimpleCard">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:minHeight="88dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp"
+        android:minHeight="72dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="15dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="14dp"
+        android:paddingEnd="8dp">
 
         <ImageView
             android:id="@+id/appIcon"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:contentDescription="应用图标"
             android:scaleType="fitCenter" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="14dp"
+            android:layout_marginStart="10dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
@@ -38,7 +39,7 @@
                 android:ellipsize="end"
                 android:maxLines="2"
                 android:textColor="?attr/colorOnSurface"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -49,7 +50,7 @@
                 android:ellipsize="middle"
                 android:maxLines="1"
                 android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="13sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <TextView
@@ -58,20 +59,20 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_version_pill"
-            android:paddingStart="8dp"
+            android:paddingStart="5dp"
             android:paddingTop="4dp"
-            android:paddingEnd="8dp"
+            android:paddingEnd="5dp"
             android:paddingBottom="4dp"
             android:text="用户"
             android:textColor="?attr/colorPrimary"
-            android:textSize="12sp"
+            android:textSize="10sp"
             android:textStyle="bold" />
 
         <com.google.android.material.checkbox.MaterialCheckBox
             android:id="@+id/selectedCheck"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="2dp"
             app:useMaterialThemeColors="true" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

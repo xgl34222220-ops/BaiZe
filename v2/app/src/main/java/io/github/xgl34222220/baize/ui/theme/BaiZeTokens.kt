@@ -36,9 +36,9 @@ val LightBaiZeColors = BaiZeColors(
     warning = Color(0xFF956319),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFF4F6FA),
+    surfaceBase = Color(0xFFF5F7FB),
     surfaceRaised = Color(0xFFFFFFFF),
-    surfaceOverlay = Color(0xFFF0F2F7)
+    surfaceOverlay = Color(0xFFEBF0F7)
 )
 
 /** 普通深色：避免纯黑压迫感，维持柔和层级。 */
@@ -47,9 +47,9 @@ val DarkBaiZeColors = BaiZeColors(
     warning = Color(0xFFE8B45D),
     danger = Color(0xFFFF8585),
     info = Color(0xFF8EAFFF),
-    surfaceBase = Color(0xFF11131A),
-    surfaceRaised = Color(0xFF1B1E28),
-    surfaceOverlay = Color(0xFF252937)
+    surfaceBase = Color(0xFF101318),
+    surfaceRaised = Color(0xFF1A1E25),
+    surfaceOverlay = Color(0xFF242A33)
 )
 
 /** AMOLED：页面纯黑，主体与次级容器保留极轻阶差。 */
@@ -76,8 +76,8 @@ data class BaiZeCorners(
 val DefaultBaiZeCorners = BaiZeCorners(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(26.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -108,16 +108,16 @@ data class BaiZeTypeScale(
 )
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
-    caption = TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
+    caption = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
     body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    title = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    headline = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    display = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
+    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    headline = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
+    display = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.5).sp),
     hero = TextStyle(
-        fontSize = 40.sp,
-        lineHeight = 46.sp,
-        fontWeight = FontWeight.Bold,
+        fontSize = 38.sp,
+        lineHeight = 44.sp,
+        fontWeight = FontWeight.SemiBold,
         fontFeatureSettings = "tnum"
     )
 )

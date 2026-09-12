@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -30,7 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -821,7 +822,7 @@ internal fun ProfileScreenMaterial(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             item { ProfileMaterialHeader(state, actions.onBack) }
             item { ProfileMaterialTaskCard(state, actions, onRequestClean) }
@@ -830,7 +831,9 @@ internal fun ProfileScreenMaterial(
                 if (state.items.isEmpty() && !state.running) item {
                     DetailEmptyState("没有可清理项目", "本次扫描范围内的文件已检查完毕。")
                 }
-                items(state.items, key = { it.id.ifBlank { it.path } }) { item -> ProfileMaterialCandidate(item) }
+                itemsIndexed(state.items, key = { _, item -> item.id.ifBlank { item.path } }) { index, item ->
+                    ProfileMaterialCandidate(item, first = index == 0, last = index == state.items.lastIndex)
+                }
                 item { ProfilePagination(state, actions, miuix = false) }
             }
             item { ProfileMaterialSafetyCard(state) }
@@ -851,7 +854,7 @@ private fun ProfileMaterialTaskCard(
     onRequestClean: () -> Unit
 ) {
     DetailTaskCard(
-        metric = if (state.quickCleanReady) "可以开始清理" else if (state.running) "正在处理" else "扫描${state.title}",
+        metric = if (state.quickCleanReady) "${state.total} 项待清理" else if (state.running) "正在处理" else "准备扫描",
         metricLabel = state.title,
         phase = state.summaryText,
         running = state.running,
@@ -875,16 +878,25 @@ private fun ProfileMaterialSection(state: ProfileUiState) {
 }
 
 @Composable
-private fun ProfileMaterialCandidate(item: ProfileUiItem) {
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-    ) {
-        ProfileCandidateContent(item, miuix = false)
+private fun ProfileMaterialCandidate(item: ProfileUiItem, first: Boolean, last: Boolean) {
+    val riskColor = when (item.risk) {
+        "critical", "high" -> MaterialTheme.colorScheme.error
+        "medium" -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.primary
     }
+    val measurement = if (item.measured) {
+        "${item.files.coerceAtLeast(0L)} 个文件 · ${item.directories.coerceAtLeast(0L)} 个目录" +
+            if (!item.complete) " · 统计受限" else ""
+    } else "当前页按需统计大小"
+    val size = if (item.measured) formatBytes(item.bytes.coerceAtLeast(0L)) else "待统计"
+    DetailResultRow(
+        title = item.appName.ifBlank { item.categoryLabel }, value = size,
+        summary = "${item.categoryLabel} · ${riskLabel(item.risk)}", path = item.path,
+        details = listOf(item.packageName, item.categoryLabel, riskLabel(item.risk), "$size · $measurement", item.note, item.path)
+            .filter { it.isNotBlank() }.joinToString("\n\n"),
+        icon = if (item.risk == "critical" || item.risk == "high") Icons.Rounded.Warning else Icons.Rounded.Folder,
+        first = first, last = last, accent = riskColor
+    )
 }
 
 @Composable
@@ -898,125 +910,17 @@ private fun ProfileScreenMiuix(
 }
 
 @Composable
-private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
-    val riskColor = when (item.risk) {
-        "critical", "high" -> MaterialTheme.colorScheme.error
-        "medium" -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
-    val icon: ImageVector = when (item.risk) {
-        "critical", "high" -> Icons.Rounded.Warning
-        else -> Icons.Rounded.Folder
-    }
-    Row(
-        Modifier.padding(horizontal = if (miuix) 18.dp else 17.dp, vertical = if (miuix) 17.dp else 15.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Surface(
-            modifier = Modifier.size(if (miuix) 48.dp else 44.dp),
-            shape = RoundedCornerShape(if (miuix) 18.dp else 16.dp),
-            color = riskColor.copy(alpha = .11f)
-        ) {
-            Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = riskColor, modifier = Modifier.size(24.dp)) }
-        }
-        Spacer(Modifier.width(13.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    item.appName.ifBlank { item.categoryLabel },
-                    modifier = Modifier.weight(1f),
-                    fontSize = if (miuix) 17.sp else 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(riskColor.copy(alpha = .11f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(riskLabel(item.risk), color = riskColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                buildString {
-                    append(item.categoryLabel)
-                    if (item.packageName.isNotBlank()) append(" · ${item.packageName}")
-                    if (item.note.isNotBlank()) append(" · ${item.note}")
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (item.path.isNotBlank()) {
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    item.path,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (item.measured) {
-                    buildString {
-                        append(formatBytes(item.bytes.coerceAtLeast(0L)))
-                        append(" · ${item.files.coerceAtLeast(0L)} 个文件")
-                        append(" · ${item.directories.coerceAtLeast(0L)} 个目录")
-                        if (!item.complete) append(" · 统计受限")
-                    }
-                } else "当前页按需统计大小",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
 private fun ProfilePagination(state: ProfileUiState, actions: ProfileUiActions, miuix: Boolean) {
     if (!state.showCandidates || state.pageCount <= 1) return
-    val shape = RoundedCornerShape(if (miuix) 28.dp else 24.dp)
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = if (miuix) 16.dp else 18.dp)
-            .fillMaxWidth()
-            .then(if (miuix) Modifier.shadow(1.dp, shape) else Modifier),
-        shape = shape,
-        color = BaiZeTokens.colors.surfaceRaised
-    ) {
-        Row(
-            Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilledTonalButton(
-                onClick = actions.onPrevious,
-                enabled = !state.running && !state.loadingPage && state.page > 0,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Icon(Icons.Rounded.ChevronLeft, null)
-                Text("上一页")
-            }
-            Text("${state.page + 1} / ${state.pageCount}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            FilledTonalButton(
-                onClick = actions.onNext,
-                enabled = !state.running && !state.loadingPage && state.page + 1 < state.pageCount,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Text("下一页")
-                Icon(Icons.Rounded.ChevronRight, null)
-            }
-        }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GlassActionButton("上一页", actions.onPrevious,
+            enabled = !state.running && !state.loadingPage && state.page > 0,
+            modifier = Modifier.weight(1f), secondary = true)
+        Text("${state.page + 1}/${state.pageCount}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        GlassActionButton("下一页", actions.onNext,
+            enabled = !state.running && !state.loadingPage && state.page + 1 < state.pageCount,
+            modifier = Modifier.weight(1f), secondary = true)
     }
 }
 

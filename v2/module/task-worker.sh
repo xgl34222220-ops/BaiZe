@@ -131,7 +131,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.9.1"
+  echo "worker=detached-root-worker-v2.9.2"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then
