@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -133,7 +134,7 @@ fun VideoHomeScreenMiuix(
             }
         }
 
-        item { VideoSectionTitle("设备与存储", "首屏只保留判断和行动所需的数据") }
+        item { VideoSectionTitle("设备与存储", "存储用量与最近清理结果") }
 
         item {
             VideoCard(
@@ -147,7 +148,7 @@ fun VideoHomeScreenMiuix(
                         Text(
                             text = "可用空间",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 10.sp
+                            fontSize = 12.sp
                         )
                         Spacer(Modifier.height(3.dp))
                         Text(
@@ -160,7 +161,7 @@ fun VideoHomeScreenMiuix(
                         Text(
                             text = "已用 ${Formatter.formatFileSize(context, state.storageUsed)} / ${Formatter.formatFileSize(context, state.storageTotal)}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 10.sp,
+                            fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -327,7 +328,7 @@ private fun HomeStatusHero(
                 Text(
                     text = if (state.running) state.taskPhase else if (!state.ready) state.serviceText else "最近一次释放",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -338,15 +339,15 @@ private fun HomeStatusHero(
                     } else {
                         releasedText
                     },
-                    fontSize = 29.sp,
-                    lineHeight = 34.sp,
+                    fontSize = 34.sp,
+                    lineHeight = 40.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
                     text = if (state.running) state.taskProgressPath.ifBlank { state.taskOperation } else state.device,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -359,7 +360,11 @@ private fun HomeStatusHero(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = if (state.running) Icons.Rounded.CleaningServices else Icons.Rounded.CheckCircle,
+                    imageVector = when {
+                        state.running -> Icons.Rounded.CleaningServices
+                        positive -> Icons.Rounded.CheckCircle
+                        else -> Icons.Rounded.Info
+                    },
                     contentDescription = null,
                     modifier = Modifier.size(55.dp),
                     tint = MaterialTheme.colorScheme.primary
@@ -420,7 +425,7 @@ private fun HeroAction(
         ) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(5.dp))
-            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

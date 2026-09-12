@@ -617,7 +617,7 @@ private fun ApkScanScreen(
                     if (state.items.isEmpty()) {
                         "完成扫描后在这里查看安装包路径、数量与大小"
                     } else {
-                        "发现 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}"
+                        "发现 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else ""
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

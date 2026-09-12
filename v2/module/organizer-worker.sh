@@ -56,7 +56,7 @@ lock_alive() {
   case "$la_ticks" in ''|*[!0-9]*) la_ticks=0 ;; esac
   [ "$la_ticks" -eq 0 ] || [ "$current_ticks" = "$la_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$la_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*) return 0 ;; esac
+  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;; esac
   return 1
 }
 
@@ -325,7 +325,7 @@ allowed_app_source() {
 
 is_public_user_path() {
   case "$1" in
-    Download/*|Downloads/*|Documents/*|Bluetooth/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
+    Download/*|Downloads/*|Documents/*|Bluetooth/*|UCDownloads/*|Quark/Download/*|BaiduNetdisk/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
     Telegram/Telegram\ Documents/*|Telegram/Telegram\ Images/*|Telegram/Telegram\ Video/*|Telegram/Telegram\ Audio/*|Telegram/Telegram\ Files/*) return 0 ;;
     Nagram/Nagram\ Documents/*|Nagram/Nagram\ Images/*|Nagram/Nagram\ Video/*|Nagram/Nagram\ Audio/*) return 0 ;;
     NagramX/NagramX\ Documents/*|NagramX/NagramX\ Images/*|NagramX/NagramX\ Video/*|NagramX/NagramX\ Audio/*) return 0 ;;

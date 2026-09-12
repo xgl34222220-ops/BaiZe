@@ -345,8 +345,8 @@ private fun AppearanceHero(
                 Text(
                     state.appearanceSummary,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -354,7 +354,7 @@ private fun AppearanceHero(
             Text(
                 "设置",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -384,8 +384,8 @@ private fun SliderSettingRow(
             Text(
                 subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp
+                fontSize = 12.sp,
+                lineHeight = 18.sp
             )
             Slider(
                 value = value,
@@ -441,8 +441,8 @@ private fun ServiceStatusRow(state: SettingsUiState) {
             Text(
                 state.serviceText,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -454,7 +454,7 @@ private fun ServiceStatusRow(state: SettingsUiState) {
                 else -> state.connectionLabel
             },
             color = MaterialTheme.colorScheme.primary,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
     }

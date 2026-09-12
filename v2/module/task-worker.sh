@@ -12,7 +12,7 @@ WORKER_FILE="$STATE_DIR/worker.env"
 LOCK_DIR="$STATE_DIR/run.lock"
 RESULT_FILE="$STATE_DIR/task-results/$TASK_ID.env"
 RUNNER="$MODDIR/worker-runner.sh"
-case "$MODE" in clean|scan|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
+case "$MODE" in clean|scan|apk-auto|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
@@ -25,7 +25,7 @@ lock_owner_alive() {
   case "$old_ticks" in ''|*[!0-9]*) old_ticks=0 ;; esac
   [ "$old_ticks" -eq 0 ] || [ "$current_ticks" = "$old_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$old_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*baize_deep_snapshot*) return 0 ;; esac
+  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 worker_marker_id() { sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1; }
@@ -65,7 +65,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.8.3"
+  echo "worker=detached-root-worker-v2.9.0"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then

@@ -240,7 +240,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                     Text(
                         "累计清理",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -255,7 +255,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                 Text(
                     if (state.lastTaskTime.isBlank()) "等待首次任务" else "最近执行 ${state.lastTaskTime}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -327,11 +327,11 @@ private fun AppResultRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(Formatter.formatFileSize(context, bytes), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("$files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            Text("$files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
     }
 }
@@ -375,7 +375,7 @@ private fun HistoryRecordCard(record: HistoryUiItem) {
                 Text(
                     "${record.time} · ${record.trigger}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -398,9 +398,9 @@ private fun HistoryRecordCard(record: HistoryUiItem) {
                     .padding(horizontal = 12.dp, vertical = 9.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(record.result.ifBlank { "任务已完成" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(record.result.ifBlank { "任务已完成" }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.width(8.dp))
-                Text("${record.files} 项", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("${record.files} 项", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -423,7 +423,7 @@ private fun EmptyCard(title: String, subtitle: String) {
                 Spacer(Modifier.height(8.dp))
                 Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(2.dp))
-                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
         }
     }

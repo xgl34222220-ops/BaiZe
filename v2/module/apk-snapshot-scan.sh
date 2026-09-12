@@ -49,7 +49,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -90,6 +90,8 @@ REPORT_FILE="$REPORT_DIR/$STAMP-apk-scan.tsv"
 LOG_FILE="$LOG_DIR/$STAMP-apk-scan.log"
 TARGETS_TMP="$TMP_DIR/apk-scan.targets"
 : >"$TARGETS_TMP"
+DETAILS_TMP="$TMP_DIR/apk-details.tsv"
+printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$DETAILS_TMP"
 
 set_phase() {
   phase=$1
@@ -103,7 +105,7 @@ set_phase() {
     echo "started=$START_EPOCH"
     echo "progress_current=$current"
     echo "progress_total=$total"
-    printf 'current_path=%s\n' "$path" | tr '\r\n' '  '
+    printf 'current_path=%s' "$path" | tr '\r\n' '  '; echo
     echo "engine=apk-snapshot-v2.2-shared-index"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
@@ -183,27 +185,23 @@ case "$TRIGGER" in
 esac
 MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
-INDEX_FILE="$STATE_DIR/index/storage-files.nul"
-APK_INDEX="$STATE_DIR/index/apk-files.nul"
-COVERAGE_FILE="$STATE_DIR/index/coverage.tsv"
-
-# 旧实现每次点击都强制 refresh 全部共享存储，并再次遍历全量文件索引筛 APK。
-# 现在使用增量 ensure，并直接消费 storage-index.sh 已生成的专用 APK NUL 索引。
-set_phase "正在更新安装包快速索引" 0 0 "$MEDIA_ROOT"
-if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" /system/bin/sh "$MODDIR/storage-index.sh" ensure "$TRIGGER"; then
-  echo "安装包索引更新失败" >&2
-  exit 5
-fi
-[ -f "$INDEX_FILE" ] || { echo "共享存储索引缺失" >&2; exit 5; }
-[ -f "$APK_INDEX" ] || { echo "安装包快速索引缺失" >&2; exit 5; }
-
-root_total=$(awk -F '\t' 'NR>1{n++} END{print n+0}' "$COVERAGE_FILE" 2>/dev/null)
+# The package-only scanner and cleaner share exactly the same storage roots.
+. "$MODDIR/apk-paths.sh"
+apk_load_roots
+APK_INDEX="$TMP_DIR/apk-files.nul"
+set_phase "正在查找安装包" 0 0 "$MEDIA_ROOT"
+apk_collect_candidates "$APK_INDEX"
+index_code=$?
+[ "$index_code" -eq 0 ] || { echo "安装包目录读取不完整，请重试（$index_code）" >&2; exit "$index_code"; }
+root_total=$(printf '%s\n' "$APK_ROOTS" | awk 'NF{n++} END{print n+0}')
 root_current=$root_total
-apk_total=$(tr -cd '\000' <"$APK_INDEX" 2>/dev/null | wc -c | tr -d ' ')
-case "$apk_total" in ''|*[!0-9]*) apk_total=0 ;; esac
+apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
 protected=0
 errors=0
 cutoff=$((START_EPOCH - DAYS * 86400))
+files=0
+bytes=0
+sample_path=""
 current=0
 set_phase "正在校验安装包文件" 0 "$apk_total" "$APK_INDEX"
 while IFS= read -r -d '' candidate; do
@@ -213,8 +211,6 @@ while IFS= read -r -d '' candidate; do
     set_phase "正在校验安装包文件" "$current" "$apk_total" "$candidate"
   fi
   [ -f "$candidate" ] || continue
-  ext=$(printf '%s' "${candidate##*.}" | tr '[:upper:]' '[:lower:]')
-  case "$ext" in apk|apks|xapk|apkm) ;; *) continue ;; esac
   size=$(file_size "$candidate")
   [ "$size" -le "$MAX_FILE_BYTES" ] || continue
   if [ "$DAYS" -gt 0 ]; then
@@ -222,23 +218,16 @@ while IFS= read -r -d '' candidate; do
     case "$modified" in ''|*[!0-9]*) modified=$START_EPOCH ;; esac
     [ "$modified" -lt "$cutoff" ] || continue
   fi
-  if [ -L "$candidate" ] || path_conflicts_whitelist "$candidate"; then
+  if ! apk_path_allowed "$candidate" || path_conflicts_whitelist "$candidate"; then
     protected=$((protected + 1))
     continue
   fi
   printf '%s\0' "$candidate" >>"$TARGETS_TMP"
-done <"$APK_INDEX"
-
-files=0
-bytes=0
-sample_path=""
-while IFS= read -r -d '' candidate; do
-  [ -f "$candidate" ] || continue
-  files=$((files + 1))
-  size=$(file_size "$candidate")
-  bytes=$((bytes + size))
+  display_path=$(printf '%s' "$candidate" | tr '\t\r\n' '   ')
+  printf 'candidate\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$display_path" >>"$DETAILS_TMP"
+  files=$((files + 1)); bytes=$((bytes + size))
   [ -n "$sample_path" ] || sample_path=$candidate
-done <"$TARGETS_TMP"
+done <"$APK_INDEX"
 
 scan_epoch=$(date +%s)
 targets_sha=$(file_sha "$TARGETS_TMP")
@@ -262,10 +251,16 @@ chmod 0600 "$STATE_FILE" "$TARGETS_FILE" 2>/dev/null
 result="安装包扫描完成，发现 $files 个 / $(human_bytes "$bytes")"
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
-printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
-if [ "$files" -gt 0 ]; then
-  printf 'candidate\tlow\tAPK安装包\t%s\t%s\t%s\n' "$files" "$bytes" "${sample_path:-共享存储安装包}" >>"$REPORT_FILE"
-fi
+mv -f "$DETAILS_TMP" "$REPORT_FILE"
+COVERAGE="$STATE_DIR/apk-coverage.tsv"
+printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$$"
+old_ifs=$IFS; IFS='
+'
+for root in $APK_ROOTS; do
+  printf 'scanned\t安装包存储\t-\t-\t0\t0\t%s\t\n' "$root" >>"$COVERAGE.tmp.$$"
+done
+IFS=$old_ifs
+mv -f "$COVERAGE.tmp.$$" "$COVERAGE"
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
 {
   echo "mode=apk-scan"
@@ -302,7 +297,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "扫描快照: $snapshot_id"
   echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否)"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
-  echo "扫描覆盖来源: $root_total（详情见 $COVERAGE_FILE）"
+  echo "扫描覆盖来源: $root_total（共享存储与外置存储）"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \

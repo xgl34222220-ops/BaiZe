@@ -155,12 +155,12 @@ class FloatingGlassDock @JvmOverloads constructor(
             icon.setImageDrawable(AppCompatResources.getDrawable(context, iconRes))
             addView(icon)
 
-            label.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(18)).apply {
+            label.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(3)
             }
             label.text = title
             label.gravity = Gravity.CENTER
-            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             label.includeFontPadding = false
             addView(label)
         }

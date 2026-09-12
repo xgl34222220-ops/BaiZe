@@ -51,7 +51,7 @@ mkdir -p "$INDEX_DIR" "$CACHE_DIR"
 now=$(date +%s)
 old_epoch=$(sed -n 's/^epoch=//p' "$META_FILE" 2>/dev/null | tail -n 1)
 case "$old_epoch" in ''|*[!0-9]*) old_epoch=0 ;; esac
-if [ "$MODE" = ensure ] && [ -s "$INDEX_FILE" ] && [ $((now - old_epoch)) -lt "$TTL" ]; then
+if [ "$MODE" = ensure ] && [ -f "$INDEX_FILE" ] && [ -f "$APK_INDEX" ] && [ -f "$ORGANIZER_INDEX" ] && [ $((now - old_epoch)) -ge 0 ] && [ $((now - old_epoch)) -lt "$TTL" ]; then
   echo "共享索引仍在 TTL 内"
   exit 0
 fi
@@ -73,7 +73,8 @@ while ! mkdir "$LOCK_DIR" 2>/dev/null; do
 done
 printf '%s\n' "$$" >"$LOCK_DIR/pid"
 printf '%s\n' "$(proc_start_ticks $$)" >"$LOCK_DIR/start_ticks"
-trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT INT TERM
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
+trap 'exit 9' INT TERM
 
 TMP="$LOCK_DIR/tmp"
 mkdir -p "$TMP" "$TMP/seen"
@@ -102,14 +103,16 @@ discover_app_user_roots() {
   for dau_pkg in "$dau_root"/Android/data/* "$dau_root"/Android/media/*; do
     [ -d "$dau_pkg" ] || continue
     dau_name=${dau_pkg##*/}; dau_list="$TMP/discovered.$dau_user.$(hash_text "$dau_pkg").nul"; : >"$dau_list"
-    find "$dau_pkg" -xdev -mindepth 1 -maxdepth 8 -type d \
+    case "$dau_pkg" in "$dau_root"/Android/media/*) continue ;; esac
+    find "$dau_pkg" -xdev -mindepth 1 -maxdepth 8 \
+      \( -type d \( -path "$dau_pkg/files" -o -iname cache -o -iname code_cache -o -iname databases -o -iname tmp -o -iname temp \) -prune \) -o \( -type d \
       \( -iname download -o -iname downloads -o -iname downloaded -o -iname 下载 \
          -o -iname received -o -iname receive -o -iname recv -o -iname file_recv \
          -o -iname qqfile_recv -o -iname qqmy_file_recv -o -iname qqfile_receive \
          -o -iname timfile_recv -o -iname tim_file_recv -o -iname attachment \
          -o -iname attachments -o -iname export -o -iname exports -o -iname saved \
          -o -iname shared -o -iname documents -o -iname document -o -iname transfer \
-         -o -iname transfers -o -iname offline \) -print0 2>/dev/null >"$dau_list"
+         -o -iname transfers -o -iname offline \) -print0 -prune \) 2>/dev/null >"$dau_list"
     while IFS= read -r -d '' dau_dir; do
       dau_relative=${dau_dir#"$dau_pkg"/}; dau_lower=$(printf '%s' "$dau_relative" | tr '[:upper:]' '[:lower:]')
       case "/$dau_lower/" in */cache/*|*/code_cache/*|*/databases/*|*/tmp/*|*/temp/*|*/no_backup/*) continue ;; esac
@@ -122,7 +125,7 @@ add_user_root() {
   add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"
   add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"
   add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"
-  for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
+  for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents "$au_root"/Bluetooth "$au_root"/UCDownloads "$au_root"/Quark/Download "$au_root"/BaiduNetdisk "$au_root"/Telegram "$au_root"/Nagram "$au_root"/NagramX; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
   for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done
   for au_pkg in "$au_root"/Android/data/*; do
     [ -d "$au_pkg" ] || continue; au_name=${au_pkg##*/}
@@ -147,16 +150,9 @@ else
   done
 fi
 
-# Directory mtimes/inodes at the actual scan depth detect add/remove/rename without restatting every file.
-fingerprint() {
-  fp_root=$1; fp_depth=$2
-  {
-    stat -c '%d:%i:%Y:%s:%n' "$fp_root" 2>/dev/null
-    find "$fp_root" -xdev -mindepth 1 -maxdepth "$fp_depth" -type d -print0 2>/dev/null |
-      while IFS= read -r -d '' fp_dir; do stat -c '%d:%i:%Y:%s:%n' "$fp_dir" 2>/dev/null; done
-  } | if command -v sha256sum >/dev/null 2>&1; then sha256sum; else cksum; fi | awk '{print $1}'
-}
-
+# Read each directory tree once. A directory-stat fingerprint used to launch
+# one stat process per directory before find traversed that same tree again.
+# Native index-files already revalidates file metadata in this pass.
 root_total=$(wc -l <"$ROOTS" | tr -d ' '); current=0; total_files=0; total_bytes=0
 total_reused=0; total_scanned=0; total_duplicates=0; TAB=$(printf '\t')
 : >"$TMP/apk.nul"; : >"$TMP/empty.nul"; : >"$TMP/large.nul"; : >"$TMP/organizer.nul"; : >"$TMP/duplicates.tsv"
@@ -165,17 +161,16 @@ large_bytes=$((large_mb * 1024 * 1024))
 while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
   [ -d "${root:-}" ] || continue; [ ! -f "$STOP_FILE" ] || exit 9; current=$((current + 1))
   key=$(hash_text "$root"); cache="$CACHE_DIR/$key.nul"; meta="$CACHE_DIR/$key.env"
-  fp=$(fingerprint "$root" "$depth"); oldfp=$(sed -n 's/^fingerprint=//p' "$meta" 2>/dev/null | tail -n 1)
-  list="$TMP/root.$current.nul"; : >"$list"; status=scanned; reason=
-  if [ "$MODE" != refresh ] && [ -f "$cache" ] && [ "$fp" = "$oldfp" ]; then
-    cp -f "$cache" "$list"; status=reused; reason="目录树指纹未变化"; total_reused=$((total_reused + 1))
+  list="$TMP/root.$current.nul"; status=scanned; reason=
+  find "$root" -xdev -mindepth 1 -maxdepth "$depth" \
+    \( -type d \( -iname cache -o -iname code_cache -o -iname no_backup -o -iname databases -o -iname shared_prefs -o -iname lib -o -iname tmp -o -iname temp \) -prune \) \
+    -o \( -type f -print0 \) 2>/dev/null >"$list"
+  code=$?
+  [ "$code" -eq 0 ] || { echo "共享存储读取不完整：$root，保留上次完整索引" >&2; exit 5; }
+  if [ "$MODE" != refresh ] && [ -f "$cache" ] && cmp -s "$cache" "$list"; then
+    status=reused; reason="文件清单未变化，已重新校验元数据"; total_reused=$((total_reused + 1))
   else
-    find "$root" -xdev -mindepth 1 -maxdepth "$depth" \
-      \( -type d \( -iname cache -o -iname code_cache -o -iname no_backup -o -iname databases -o -iname shared_prefs -o -iname lib -o -iname tmp -o -iname temp \) -prune \) \
-      -o \( -type f -print0 \) 2>/dev/null >"$list"
-    code=$?; [ "$code" -eq 0 ] || { status=partial; reason="部分目录无法读取"; }
     cp -f "$list" "$cache"
-    { echo "fingerprint=$fp"; echo "path=$(safe "$root")"; echo "depth=$depth"; echo "updated=$(date +%s)"; } >"$meta"
     total_scanned=$((total_scanned + 1))
   fi
   files=0; bytes=0; root_duplicates=0

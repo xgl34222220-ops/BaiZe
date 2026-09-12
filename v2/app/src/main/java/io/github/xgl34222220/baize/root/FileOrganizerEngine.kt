@@ -454,6 +454,7 @@ class FileOrganizerEngine(
         return when {
             normalized.startsWith("download/") || normalized.startsWith("downloads/") -> true
             normalized.startsWith("documents/") || normalized.startsWith("bluetooth/") -> true
+            normalized.startsWith("ucdownloads/") || normalized.startsWith("quark/download/") || normalized.startsWith("baidunetdisk/") -> true
             normalized.startsWith("tencent/qqfile_recv/") || normalized.startsWith("tencent/timfile_recv/") -> true
             normalized.startsWith("telegram/telegram documents/") ||
                 normalized.startsWith("telegram/telegram images/") ||

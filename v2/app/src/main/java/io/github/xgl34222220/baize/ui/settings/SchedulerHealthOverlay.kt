@@ -290,6 +290,7 @@ private fun blockedSummary(raw: String): String = raw
     .joinToString("\n")
 
 private fun groupLabel(group: String): String = when (group) {
+    "apk" -> "安装包"
     "cache" -> "应用缓存"
     "empty" -> "空文件与目录"
     "rules" -> "规则垃圾与日志"

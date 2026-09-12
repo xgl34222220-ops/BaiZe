@@ -127,6 +127,7 @@ filter_processed_list "$STATE_DIR/list"
         module.mkdir(); state.mkdir(); data.mkdir()
         shutil.copytree(ROOT / 'config', module / 'config')
         shutil.copy(ROOT / 'v2/module/cleaner.sh', module / 'cleaner.sh')
+        shutil.copy(ROOT / 'v2/module/apk-paths.sh', module / 'apk-paths.sh')
         compat = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), SOURCE)
         (module / 'cleaner.sh.compat').write_text(compat)
         (module / 'abi-resolve.sh').write_text('baize_resolve_engine() {\n'
