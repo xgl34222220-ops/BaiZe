@@ -50,7 +50,8 @@ class WorkbenchVisualReviewTest {
         compose.onNodeWithText("按应用查看清理内容").assertDoesNotExist()
         save("failure-preserved")
         compose.onNodeWithContentDescription("查看任务详情").performClick()
-        compose.onNodeWithText("所选项目清理失败：data parcel size 429480 bytes").assertIsDisplayed()
+        compose.onNode(hasText("所选项目清理失败：data parcel size 429480 bytes") and hasAnyAncestor(isDialog()))
+            .assertIsDisplayed()
     }
 
     @Test
