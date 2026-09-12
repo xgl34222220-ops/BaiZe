@@ -5,6 +5,7 @@ import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import com.topjohnwu.superuser.ipc.RootService
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
@@ -41,87 +42,92 @@ class BaiZeProfileRootService : RootService() {
     private val binder = object : IProfileRootService.Stub() {
 
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
-            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
-                when (operation) {
-                    "scanProfile" -> {
-                        require(arguments.length() == 2)
-                        scanProfile(arguments.getString(0), arguments.getString(1))
-                    }
-                    "getProfilePage" -> {
-                        require(arguments.length() == 3)
-                        getProfilePage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
-                    }
-                    "cleanProfileSelected" -> {
-                        require(arguments.length() == 3)
-                        cleanProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                    }
-                    "quarantineProfileSelected" -> {
-                        require(arguments.length() == 3)
-                        quarantineProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                    }
-                    "prepareCacheSelection" -> {
-                        require(arguments.length() == 2)
-                        prepareCacheSelection(arguments.getString(0), arguments.getString(1))
-                    }
-                    "getQuarantinePage" -> {
-                        require(arguments.length() == 2)
-                        getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
-                    }
-                    "getModuleState" -> {
-                        require(arguments.length() == 0)
-                        getModuleState()
-                    }
-                    "getTaskHistory" -> {
-                        require(arguments.length() == 1)
-                        getTaskHistory(arguments.getInt(0))
-                    }
-                    "getTaskHistoryPage" -> {
-                        require(arguments.length() == 2)
-                        getTaskHistoryPage(arguments.getInt(0), arguments.getInt(1))
-                    }
-                    "getAuditTimelinePage" -> {
-                        require(arguments.length() == 2)
-                        getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
-                    }
-                    "getScanCoverage" -> {
-                        require(arguments.length() == 0)
-                        getScanCoverage()
-                    }
-                    "clearPackageCaches" -> {
-                        require(arguments.length() == 1)
-                        clearPackageCaches(arguments.getString(0))
-                    }
-                    "scanFileOrganizer" -> {
-                        require(arguments.length() == 0)
-                        scanFileOrganizer()
-                    }
-                    "applyFileOrganizer" -> {
-                        require(arguments.length() == 2)
-                        applyFileOrganizer(arguments.getString(0), arguments.getString(1))
-                    }
-                    "undoFileOrganizer" -> {
-                        require(arguments.length() == 0)
-                        undoFileOrganizer()
-                    }
-                    "getInstalledPackageCatalog" -> {
-                        require(arguments.length() == 0)
-                        getInstalledPackageCatalog()
-                    }
-                    "getWhitelistPackages" -> {
-                        require(arguments.length() == 0)
-                        getWhitelistPackages()
-                    }
-                    "saveWhitelistPackages" -> {
-                        require(arguments.length() == 1)
-                        saveWhitelistPackages(arguments.getString(0))
-                    }
-                    "getWhitelistPaths" -> {
-                        require(arguments.length() == 0)
-                        getWhitelistPaths()
-                    }
-                    else -> throw IllegalArgumentException("不支持的服务请求")
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { dispatchJson(operation, it) }
+
+        override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
+            JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
+
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
+            return when (operation) {
+                "scanProfile" -> {
+                    require(arguments.length() == 2)
+                    scanProfile(arguments.getString(0), arguments.getString(1))
                 }
+                "getProfilePage" -> {
+                    require(arguments.length() == 3)
+                    getProfilePage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+                }
+                "cleanProfileSelected" -> {
+                    require(arguments.length() == 3)
+                    cleanProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                }
+                "quarantineProfileSelected" -> {
+                    require(arguments.length() == 3)
+                    quarantineProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                }
+                "prepareCacheSelection" -> {
+                    require(arguments.length() == 2)
+                    prepareCacheSelection(arguments.getString(0), arguments.getString(1))
+                }
+                "getQuarantinePage" -> {
+                    require(arguments.length() == 2)
+                    getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
+                }
+                "getModuleState" -> {
+                    require(arguments.length() == 0)
+                    getModuleState()
+                }
+                "getTaskHistory" -> {
+                    require(arguments.length() == 1)
+                    getTaskHistory(arguments.getInt(0))
+                }
+                "getTaskHistoryPage" -> {
+                    require(arguments.length() == 2)
+                    getTaskHistoryPage(arguments.getInt(0), arguments.getInt(1))
+                }
+                "getAuditTimelinePage" -> {
+                    require(arguments.length() == 2)
+                    getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
+                }
+                "getScanCoverage" -> {
+                    require(arguments.length() == 0)
+                    getScanCoverage()
+                }
+                "clearPackageCaches" -> {
+                    require(arguments.length() == 1)
+                    clearPackageCaches(arguments.getString(0))
+                }
+                "scanFileOrganizer" -> {
+                    require(arguments.length() == 0)
+                    scanFileOrganizer()
+                }
+                "applyFileOrganizer" -> {
+                    require(arguments.length() == 2)
+                    applyFileOrganizer(arguments.getString(0), arguments.getString(1))
+                }
+                "undoFileOrganizer" -> {
+                    require(arguments.length() == 0)
+                    undoFileOrganizer()
+                }
+                "getInstalledPackageCatalog" -> {
+                    require(arguments.length() == 0)
+                    getInstalledPackageCatalog()
+                }
+                "getWhitelistPackages" -> {
+                    require(arguments.length() == 0)
+                    getWhitelistPackages()
+                }
+                "saveWhitelistPackages" -> {
+                    require(arguments.length() == 1)
+                    saveWhitelistPackages(arguments.getString(0))
+                }
+                "getWhitelistPaths" -> {
+                    require(arguments.length() == 0)
+                    getWhitelistPaths()
+                }
+                else -> throw IllegalArgumentException("不支持的服务请求")
             }
+        }
 
         override fun ping(): String = JSONObject()
             .put("uid", Process.myUid())

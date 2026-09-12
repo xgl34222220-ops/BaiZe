@@ -211,10 +211,10 @@ internal fun ScanWorkbenchScreen(
             if (state.items.isEmpty()) {
                 item {
                     DetailEmptyState(
-                        when { state.running -> "正在查找可清理内容"; state.notice == WorkbenchNotice.ERROR -> "扫描未完成";
+                        when { state.running -> "正在查找可清理内容"; state.notice == WorkbenchNotice.ERROR -> "未取得完整扫描结果";
                             state.notice == WorkbenchNotice.SUCCESS -> "没有发现可清理项目"; else -> "按应用查看清理内容" },
                         when { state.running -> "找到的应用与文件会陆续显示在这里。";
-                            state.notice == WorkbenchNotice.ERROR -> "任务信息已保留，可查看详情后重试。";
+                            state.notice == WorkbenchNotice.ERROR -> "点击上方错误查看任务详情，再重新扫描。";
                             state.notice == WorkbenchNotice.SUCCESS -> "可以稍后重新扫描，或在清理页选择其他范围。";
                             else -> "扫描后可展开应用，核对文件并选择要处理的项目。" }
                     )
@@ -348,6 +348,22 @@ internal fun ScanWorkbenchScreen(
     }
 }
 
+private fun workbenchErrorSummary(state: WorkbenchUiState): String {
+    val details = "${state.phase}\n${state.resultText}"
+    // Binder failure does not establish whether the service died or its buffer was exhausted.
+    if (listOf("transaction failed", "deadobjectexception", "binder buffer", "failed binder transaction")
+            .any { details.contains(it, ignoreCase = true) }) {
+        return "清理服务通信失败，结果未确认"
+    }
+    if (details.contains("服务结果未确认")) return "清理服务结果未确认"
+    val summary = state.phase.ifBlank { state.resultText }.replace(Regex("\\s+"), " ").trim()
+    return when {
+        summary.isBlank() -> "本次任务未完成"
+        summary.length > 72 -> summary.take(72) + "…"
+        else -> summary
+    }
+}
+
 @Composable
 private fun WorkbenchStatus(state: WorkbenchUiState, onDetails: () -> Unit) {
     val color = when { state.notice == WorkbenchNotice.ERROR -> MaterialTheme.colorScheme.error;
@@ -355,7 +371,7 @@ private fun WorkbenchStatus(state: WorkbenchUiState, onDetails: () -> Unit) {
         state.notice == WorkbenchNotice.SUCCESS && !state.running -> BaiZeTokens.colors.success;
         else -> MaterialTheme.colorScheme.primary }
     val title = when { state.running -> if (state.loadingResults) "正在读取扫描结果" else "正在处理";
-        state.notice == WorkbenchNotice.ERROR -> "本次任务未完成";
+        state.notice == WorkbenchNotice.ERROR -> workbenchErrorSummary(state);
         state.notice == WorkbenchNotice.WARNING -> "有项目需要核对";
         state.scanReady -> "扫描完成，可以选择项目";
         state.notice == WorkbenchNotice.SUCCESS -> "任务已完成";
@@ -370,7 +386,10 @@ private fun WorkbenchStatus(state: WorkbenchUiState, onDetails: () -> Unit) {
                 state.notice == WorkbenchNotice.SUCCESS -> Icons.Rounded.CheckCircle; else -> Icons.Rounded.Info },
                 null, Modifier.size(21.dp), tint = color)
             Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, color = color)
+                Text(title, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, color = color,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (!state.running && state.notice == WorkbenchNotice.ERROR) Text("点击查看完整错误详情", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (state.running && state.currentPath.isNotBlank()) Text(state.currentPath, fontSize = 11.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

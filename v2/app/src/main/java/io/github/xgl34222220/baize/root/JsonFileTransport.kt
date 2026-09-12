@@ -1,9 +1,11 @@
 package io.github.xgl34222220.baize.root
 
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -12,14 +14,148 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
 /**
- * JSON travels through private, unlinked, read-only files. Binder carries only a descriptor, so
- * candidate paths and per-item results cannot exhaust its shared transaction buffer. Files are
- * fully written before dispatch: malformed or oversized requests never start a deletion task.
+ * JSON travels through private, unlinked files. Current clients create both request and response
+ * inodes; Binder carries their descriptors to Root and only an integer acknowledgement back.
+ * Candidate paths and per-item results stay outside Binder's shared transaction buffer. Requests
+ * are fully written before dispatch: malformed or oversized requests never start a deletion task.
  * There is deliberately no fallback/retry of a mutating Binder call.
  */
 internal object JsonFileTransport {
     private const val MAX_BYTES = 32L * 1024L * 1024L
+    internal const val COMPLETE = 0
+    internal const val REQUEST_REJECTED = 1
+    internal const val OUTCOME_UNKNOWN = 2
 
+    /**
+     * Both inodes belong to the App. Returning an FD created under /data/adb can be rejected
+     * by SELinux during Binder's FD translation, even when the parcel itself is tiny.
+     * Root only writes the supplied sink and returns an integer acknowledgement.
+     */
+    fun callInto(
+        directory: File,
+        arguments: JSONArray,
+        exchange: (ParcelFileDescriptor, ParcelFileDescriptor) -> Int
+    ): String {
+        val request = try {
+            write(directory, arguments.toString())
+        } catch (error: Exception) {
+            throw RootJsonTransportException("服务请求尚未提交：${error.message.orEmpty()}", false, error)
+        }
+        request.use { source ->
+            val response = try {
+                createResponse(directory)
+            } catch (error: Exception) {
+                throw RootJsonTransportException("服务请求尚未提交：${error.message.orEmpty()}", false, error)
+            }
+            response.use { target ->
+                try {
+                    when (exchange(source, target.writer)) {
+                        COMPLETE -> return read(target.reader)
+                        REQUEST_REJECTED -> throw RootJsonTransportException(
+                            "服务请求尚未执行：传输文件校验失败", false, IOException("response channel rejected"))
+                        else -> throw IOException("服务执行结果未确认，请查看任务记录后重新扫描")
+                    }
+                } catch (error: RootJsonTransportException) {
+                    throw error
+                } catch (error: Exception) {
+                    // Never replay an operation after a lost acknowledgement, including when
+                    // the response file appears complete: its commit status is still unknown.
+                    throw RootJsonTransportException("服务结果未确认：${error.message.orEmpty()}", true, error)
+                }
+            }
+        }
+    }
+
+    fun serveInto(
+        request: ParcelFileDescriptor?,
+        response: ParcelFileDescriptor?,
+        operation: (JSONArray) -> String
+    ): Int = request.use { source ->
+        response.use responseScope@ { target ->
+            // Validate the sink before the operation. statSize rejects pipes/devices. Probe a
+            // real write: truncating an already-empty file can skip the write-access check.
+            val output = try {
+                requireNotNull(target) { "结果文件缺失" }
+                require(target.statSize == 0L) { "结果文件必须是空的普通文件" }
+                ParcelFileDescriptor.AutoCloseOutputStream(target).also {
+                    it.write(0)
+                    it.channel.truncate(0L).position(0L)
+                }
+            } catch (error: Exception) {
+                Log.w("BaiZeJsonTransport", "Response channel rejected before execution", error)
+                return@responseScope REQUEST_REJECTED
+            }
+            output.use sinkScope@ { sink ->
+                var executionStarted = false
+                try {
+                    val arguments = try {
+                        JSONArray(read(requireNotNull(source) { "请求文件缺失" }))
+                    } catch (error: Exception) {
+                        writeBounded(sink, JSONObject().put("success", false)
+                            .put("error", "transport_request_rejected").put("requestRejected", true)
+                            .put("message", "请求未执行：${error.message.orEmpty()}").toString())
+                        return@sinkScope COMPLETE
+                    }
+                    executionStarted = true
+                    writeBounded(sink, operation(arguments))
+                    COMPLETE
+                } catch (error: Exception) {
+                    Log.e("BaiZeJsonTransport", "JSON exchange failed; executionStarted=$executionStarted", error)
+                    if (executionStarted) OUTCOME_UNKNOWN else REQUEST_REJECTED
+                }
+            }
+        }
+    }
+
+    internal class ResponseFile(val writer: ParcelFileDescriptor, val reader: ParcelFileDescriptor) : Closeable {
+        override fun close() {
+            try { writer.close() } finally { reader.close() }
+        }
+    }
+
+    internal fun createResponse(directory: File): ResponseFile {
+        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("无法创建服务传输目录")
+        val file = File.createTempFile("baize-ipc-", ".json", directory)
+        var writer: ParcelFileDescriptor? = null
+        var reader: ParcelFileDescriptor? = null
+        try {
+            file.setReadable(false, false)
+            file.setWritable(false, false)
+            file.setReadable(true, true)
+            file.setWritable(true, true)
+            writer = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_WRITE)
+            // Separate open descriptions: Root advancing its write cursor cannot move our read cursor.
+            reader = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+            if (!file.delete()) throw IOException("无法移除服务传输临时文件")
+            return ResponseFile(writer, reader)
+        } catch (error: Exception) {
+            writer?.close()
+            reader?.close()
+            throw error
+        } finally {
+            file.delete()
+        }
+    }
+
+    private fun writeBounded(output: OutputStream, text: String) {
+        var bytesWritten = 0L
+        val bounded = object : OutputStream() {
+            override fun write(value: Int) {
+                if (bytesWritten >= MAX_BYTES) throw IOException("服务数据超出单次读取上限")
+                output.write(value)
+                bytesWritten++
+            }
+            override fun write(buffer: ByteArray, offset: Int, length: Int) {
+                if (bytesWritten + length > MAX_BYTES) throw IOException("服务数据超出单次读取上限")
+                output.write(buffer, offset, length)
+                bytesWritten += length
+            }
+        }
+        bounded.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
+        output.flush()
+    }
+
+    /** Legacy transaction retained for old clients; current clients use [callInto]. */
     fun call(
         directory: File,
         arguments: JSONArray,
@@ -75,20 +211,7 @@ internal object JsonFileTransport {
                 descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
                 // No named file remains even if the process dies while encoding a large reply.
                 if (!file.delete()) throw IOException("无法移除服务传输临时文件")
-                var bytesWritten = 0L
-                val bounded = object : OutputStream() {
-                    override fun write(value: Int) {
-                        if (bytesWritten >= MAX_BYTES) throw IOException("服务数据超出单次读取上限")
-                        output.write(value)
-                        bytesWritten++
-                    }
-                    override fun write(buffer: ByteArray, offset: Int, length: Int) {
-                        if (bytesWritten + length > MAX_BYTES) throw IOException("服务数据超出单次读取上限")
-                        output.write(buffer, offset, length)
-                        bytesWritten += length
-                    }
-                }
-                bounded.bufferedWriter(Charsets.UTF_8).use { it.write(text) }
+                writeBounded(output, text)
             }
             return requireNotNull(descriptor)
         } catch (error: Exception) {

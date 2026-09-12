@@ -22,31 +22,36 @@ class CleanPlanResumeRootService : RootService() {
     private val binder = object : ICleanPlanResumeService.Stub() {
 
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
-            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
-                when (operation) {
-                    "begin" -> {
-                        require(arguments.length() == 5)
-                        begin(arguments.getString(0), arguments.getString(1), arguments.getString(2), arguments.getInt(3), arguments.getInt(4))
-                    }
-                    "checkpointCache" -> {
-                        require(arguments.length() == 2)
-                        checkpointCache(arguments.getString(0), arguments.getString(1))
-                    }
-                    "checkpointSafe" -> {
-                        require(arguments.length() == 2)
-                        checkpointSafe(arguments.getString(0), arguments.getString(1))
-                    }
-                    "recover" -> {
-                        require(arguments.length() == 1)
-                        recover(arguments.getString(0))
-                    }
-                    "finish" -> {
-                        require(arguments.length() == 1)
-                        finish(arguments.getString(0))
-                    }
-                    else -> throw IllegalArgumentException("不支持的服务请求")
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { dispatchJson(operation, it) }
+
+        override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
+            JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
+
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
+            return when (operation) {
+                "begin" -> {
+                    require(arguments.length() == 5)
+                    begin(arguments.getString(0), arguments.getString(1), arguments.getString(2), arguments.getInt(3), arguments.getInt(4))
                 }
+                "checkpointCache" -> {
+                    require(arguments.length() == 2)
+                    checkpointCache(arguments.getString(0), arguments.getString(1))
+                }
+                "checkpointSafe" -> {
+                    require(arguments.length() == 2)
+                    checkpointSafe(arguments.getString(0), arguments.getString(1))
+                }
+                "recover" -> {
+                    require(arguments.length() == 1)
+                    recover(arguments.getString(0))
+                }
+                "finish" -> {
+                    require(arguments.length() == 1)
+                    finish(arguments.getString(0))
+                }
+                else -> throw IllegalArgumentException("不支持的服务请求")
             }
+        }
 
         override fun ping(): String {
             pruneTransactions()
