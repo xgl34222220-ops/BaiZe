@@ -1,6 +1,6 @@
 {
-  "version": "v2.9.3",
-  "versionCode": 29003,
-  "zipUrl": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/downloads/releases/v2.9.3/BaiZe-v2.9.3-Module.zip",
-  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v2.9.3.md"
+  "version": "v3.0.0",
+  "versionCode": 30000,
+  "zipUrl": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/downloads/releases/v3.0.0/BaiZe-v3.0.0-Module.zip",
+  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/RELEASE_NOTES_v3.0.0.md"
 }
