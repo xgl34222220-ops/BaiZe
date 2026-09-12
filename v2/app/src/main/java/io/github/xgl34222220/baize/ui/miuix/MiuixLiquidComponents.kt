@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
@@ -107,6 +108,7 @@ fun MiuixLiquidDock(
     val shape = if (floating) RoundedCornerShape(31.dp)
         else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val surface = if (amoled) Color.Black else BaiZeTokens.colors.surfaceRaised
+    val gapColor = if (amoled) Color.Black else BaiZeTokens.colors.surfaceBase
     val glassTint = if (dark) Color(0xFF131B27) else Color.White
     val shellTint = glassTint.copy(alpha = if (dark) .42f else .34f)
     val glassEdge = if (dark) Color.White.copy(alpha = .13f) else Color.White.copy(alpha = .70f)
@@ -122,6 +124,14 @@ fun MiuixLiquidDock(
 
     Box(
         modifier = modifier
+            .drawWithCache {
+                val gap = (bottomInset + 12.dp).toPx()
+                onDrawBehind {
+                    // Only cover the unused gap below the floating shell. The shell keeps its
+                    // own backdrop sampling, so real blur and the moving lens remain intact.
+                    if (floating) drawRect(gapColor, Offset(0f, size.height - gap), Size(size.width, gap))
+                }
+            }
             .then(if (floating) Modifier.padding(horizontal = 20.dp).padding(bottom = bottomInset + 12.dp) else Modifier)
             .fillMaxWidth()
             .height(itemHeight + 12.dp + if (floating) 0.dp else bottomInset)

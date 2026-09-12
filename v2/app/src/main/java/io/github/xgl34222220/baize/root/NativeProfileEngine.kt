@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.root
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Environment
 import android.os.SystemClock
 import io.github.xgl34222220.baize.ReviewRiskPolicy
 import org.json.JSONArray
@@ -27,7 +28,9 @@ internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
     private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
-    private val ruleDirectory: File = File("/data/adb/modules/baize_v2/config")
+    private val ruleDirectory: File = File("/data/adb/modules/baize_v2/config"),
+    private val ruleRoots: ReviewRuleCatalog.Roots = ReviewRuleCatalog.Roots(),
+    private val sharedRootOverride: List<File>? = null
 ) {
     data class Progress(
         val phase: String,
@@ -66,7 +69,8 @@ internal class NativeProfileEngine(
         var measured: Boolean = false,
         var complete: Boolean = false,
         val note: String = "",
-        val blockedReason: String = ""
+        val blockedReason: String = "",
+        val retentionDays: Int = 0
     ) {
         fun json(): JSONObject = JSONObject()
             .put("id", id)
@@ -85,6 +89,7 @@ internal class NativeProfileEngine(
             .put("complete", complete)
             .put("note", note)
             .put("blockedReason", blockedReason)
+            .put("retentionDays", retentionDays)
     }
 
     private data class Snapshot(
@@ -140,6 +145,10 @@ internal class NativeProfileEngine(
     }
 
     private val snapshots = ConcurrentHashMap<String, Snapshot>()
+    private val pathIdentity by lazy {
+        val primary = runCatching { canonical(Environment.getExternalStorageDirectory()) }.getOrNull()
+        AndroidPathIdentity(primary)
+    }
 
     fun catalog(): String = JSONObject()
         .put("profiles", JSONArray().apply {
@@ -225,17 +234,13 @@ internal class NativeProfileEngine(
         val listings = RuleExpansionCache()
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
-            if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.first))
-            for (target in expand(rule.first, listings)) {
-                if (target.exists() && !isSymlink(target)) {
-                    add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options, true)
-                }
-            }
+            if (index % 32 == 0) progress(Progress("解析安全规则", index, rules.size, rule.pattern))
+            collectRule(rule, listings, options, out, started + SCAN_TOTAL_MS)
         }
 
         val cutoff = System.currentTimeMillis() - options.fragmentDays * 86_400_000L
         val fragmentPatterns = fragmentPatterns()
-        val hidden = HIDDEN_TRASH_NAMES
+        val hidden = hiddenRules()
         val roots = storageRoots()
         var visited = 0
         for ((index, root) in roots.withIndex()) {
@@ -253,9 +258,8 @@ internal class NativeProfileEngine(
                     }
                     return@walk
                 }
-                if (entry.isDirectory && file != root && hidden.contains(file.name.lowercase())) {
-                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, scanEntry = entry, deleteRoot = false), options, true)
-                } else if (entry.isFile) {
+                val hiddenMatch = collectHidden(entry, root, hidden, options, out)
+                if (entry.isFile && !hiddenMatch) {
                     if (entry.length == 0L && !placeholder(file.name)) {
                         val item = candidate("empty", "empty_file", "空文件", "low", file, scanEntry = entry, deleteRoot = true)
                         item.bytes = 0L
@@ -370,6 +374,7 @@ internal class NativeProfileEngine(
         val started = SystemClock.elapsedRealtime()
         val deadline = started + CLEAN_TOTAL_MS
         val mounts = mountPoints()
+        val hiddenPolicy = hiddenRules()
         val details = JSONArray()
         var deletedBytes = 0L
         var deletedFiles = 0L
@@ -389,7 +394,7 @@ internal class NativeProfileEngine(
             }
 
             val target = File(candidate.path)
-            val result = deleteCandidate(candidate, target, options.maxFileBytes, mounts, min(deadline, SystemClock.elapsedRealtime() + ITEM_CLEAN_MS))
+            val result = deleteCandidate(candidate, target, options.maxFileBytes, mounts, min(deadline, SystemClock.elapsedRealtime() + ITEM_CLEAN_MS), hiddenPolicy)
             // deleteCandidate already counts successful mutations exactly. Measuring the whole
             // directory before and after deletion made snapshot cleaning look like a second scan
             // and also lost the count for an empty root directory.
@@ -546,36 +551,71 @@ internal class NativeProfileEngine(
         }
     }
 
-    private fun ordinaryRules(includeReviewRules: Boolean = false): List<Pair<String, String>> {
-        val rules = ArrayList<Pair<String, String>>()
-        rules.add("/data/anr" to "系统 ANR")
-        rules.add("/data/tombstones" to "Tombstone")
-        rules.add("/data/system/dropbox" to "系统 Dropbox")
-        rules.add("/data/system/heapdump" to "系统 Heapdump")
-        rules.add("/data/misc/logd" to "系统日志")
-        rules.add("/data/vendor/log" to "厂商日志")
-        rules.add("/data/log" to "系统日志")
+    internal fun ordinaryRules(includeReviewRules: Boolean = false): List<ReviewRuleCatalog.Target> {
+        val rules = logRoots().map { ReviewRuleCatalog.Target(it.path, "系统诊断日志") }.toMutableList()
         val directory = rulesDirectory()
-        if (directory != null) {
-            for (name in listOf("app.rules", "external.rules", "hidden.rules", "custom.rules")) {
-                val source = File(directory, name)
-                if (!source.isFile) continue
-                source.useLines { lines ->
-                    lines.map { it.trim() }
-                        .filter { it.startsWith("/") && !it.startsWith("//") && !it.startsWith("#") }
-                        .take(MAX_RULE_LINES)
-                        .forEach { rules.add(it to "扩展规则") }
-                }
+        rules += ReviewRuleCatalog.packageRules(directory?.resolve("app.rules"), false, ruleRoots)
+        rules += ReviewRuleCatalog.packageRules(directory?.resolve("external.rules"), true, ruleRoots)
+        rules += ReviewRuleCatalog.webViewRules(ruleRoots)
+        rules += ReviewRuleCatalog.customRules(directory?.resolve("custom.rules"))
+        if (hiddenRules().any { it.directory && it.name == ".thumbnails" && it.days == 0 }) {
+            for (root in storageRoots()) for (album in listOf("DCIM", "Pictures")) {
+                rules += ReviewRuleCatalog.Target("${root.path}/$album/.thumbnails", "相册缩略图缓存", "medium")
             }
         }
         if (includeReviewRules) rules += reviewRules()
-        return rules.distinct()
+        return rules.distinctBy { it.pattern }
     }
 
-    private fun reviewRules(): List<Pair<String, String>> {
-        val source = rulesDirectory()?.resolve("review.rules")?.takeIf { it.isFile } ?: return emptyList()
-        return source.useLines { lines -> lines.map { it.trim() }.filter { it.startsWith("/") }
-            .map { it.substringBefore('|') to it.substringAfter('|', "应用诊断日志") }.toList() }
+    private fun reviewRules(): List<ReviewRuleCatalog.Target> =
+        ReviewRuleCatalog.reviewRules(rulesDirectory()?.resolve("review.rules"))
+
+    private fun collectRule(
+        rule: ReviewRuleCatalog.Target,
+        listings: RuleExpansionCache,
+        options: Options,
+        out: MutableMap<String, Candidate>,
+        deadline: Long
+    ) {
+        for (target in expand(rule.pattern, listings)) {
+            if (!target.exists() || isSymlink(target)) continue
+            if (rule.packageRelative.isNotBlank()) {
+                val base = File(target.path.removeSuffix("/${rule.packageRelative}"))
+                if (isSymlink(base) || !canonical(target).startsWith("${canonical(base)}/")) continue
+            }
+            fun addFile(file: File, entry: ScanEntry? = null) {
+                if (placeholder(file.name) || !ReviewRuleCatalog.oldEnough(file, rule.days)) return
+                add(out, candidate("rules", "rule_trash", rule.label, rule.risk ?: risk(file.path), file,
+                    scanEntry = entry, deleteRoot = file.isFile,
+                    note = if (rule.days > 0) "保留 ${rule.days} 天" else "", retentionDays = rule.days), options, true)
+            }
+            if (rule.days == 0 || target.isFile) addFile(target)
+            else walk(target, 32, deadline, false) { entry, post ->
+                if (!post && entry.isFile) addFile(entry.file, entry)
+            }
+        }
+    }
+
+    private fun hiddenRules(): List<ReviewRuleCatalog.Hidden> =
+        ReviewRuleCatalog.hiddenRules(rulesDirectory()?.resolve("hidden.rules"))
+
+    private fun collectHidden(
+        entry: ScanEntry,
+        root: File,
+        rules: List<ReviewRuleCatalog.Hidden>,
+        options: Options,
+        out: MutableMap<String, Candidate>
+    ): Boolean {
+        val file = entry.file
+        if (file == root || placeholder(file.name) || !entry.isFile) return false
+        // Every file is represented separately, including zero-day cache folders. Grouping an
+        // outer .cache would otherwise bypass the age of a nested .Trash (and vice versa).
+        val rule = ReviewRuleCatalog.hiddenMatch(file, rules, root) ?: return false
+        if (!ReviewRuleCatalog.oldEnough(file, rule.days)) return true
+        add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "medium", file,
+            scanEntry = entry, deleteRoot = true,
+            note = if (rule.days > 0) "保留 ${rule.days} 天" else "", retentionDays = rule.days), options, true)
+        return true
     }
 
     private fun fragmentPatterns(): List<Pattern> = listOf(
@@ -595,21 +635,14 @@ internal class NativeProfileEngine(
 
         for ((index, rule) in rules.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
-            if (index % 32 == 0) progress(Progress("解析规则垃圾", index, rules.size, rule.first))
-            for (target in expand(rule.first, listings)) {
-                if (target.exists() && !isSymlink(target)) {
-                    add(out, candidate("rules", "rule_trash", rule.second, risk(target.path), target, deleteRoot = target.isFile), options)
-                }
-            }
+            if (index % 32 == 0) progress(Progress("解析规则垃圾", index, rules.size, rule.pattern))
+            collectRule(rule, listings, options, out, started + SCAN_TOTAL_MS)
         }
 
-        val hidden = HIDDEN_TRASH_NAMES
+        val hidden = hiddenRules()
         for (root in storageRoots()) {
-            walk(root, 6, started + SCAN_TOTAL_MS, true) { entry, post ->
-                val file = entry.file
-                if (!post && entry.isDirectory && hidden.contains(file.name.lowercase())) {
-                    add(out, candidate("rules", "hidden_trash", "隐藏垃圾", "low", file, scanEntry = entry, deleteRoot = false), options)
-                }
+            walk(root, 9, started + SCAN_TOTAL_MS, true) { entry, post ->
+                if (!post) collectHidden(entry, root, hidden, options, out)
             }
         }
     }
@@ -739,7 +772,7 @@ internal class NativeProfileEngine(
             item.measured = true
             item.complete = true
         }
-        out.putIfAbsent(path, item)
+        out.putIfAbsent(pathIdentity.of(path), item)
     }
 
     private fun validate(candidate: Candidate, options: Options, mounts: Set<String>): String? {
@@ -757,19 +790,33 @@ internal class NativeProfileEngine(
         return null
     }
 
-    private fun stillMatches(candidate: Candidate, target: File, options: Options): Boolean = when (candidate.profile) {
-        "empty" -> if (candidate.category == "empty_file") target.isFile && target.length() == 0L && !placeholder(target.name) else target.isDirectory && isEmptyDirectory(target)
-        "fragments" -> target.isFile &&
-            target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
-            fragmentNameMatches(target.name)
-        "corpses" -> corpsePath(canonical(target)) && !installedPackages().containsKey(candidate.packageName)
-        "rules", "deep" -> mutationRoot(canonical(target))
-        else -> false
+    private fun stillMatches(candidate: Candidate, target: File, options: Options): Boolean {
+        // A file can be rewritten after discovery. Retention is part of the saved rule, not
+        // presentation text or the caller's current options, and must hold at deletion time.
+        if (!ReviewRuleCatalog.oldEnough(target, candidate.retentionDays)) return false
+        return when (candidate.profile) {
+            "empty" -> if (candidate.category == "empty_file") target.isFile && target.length() == 0L && !placeholder(target.name) else target.isDirectory && isEmptyDirectory(target)
+            "fragments" -> target.isFile &&
+                target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
+                fragmentNameMatches(target.name)
+            "corpses" -> corpsePath(canonical(target)) && !installedPackages().containsKey(candidate.packageName)
+            "rules", "deep" -> ruleMutationAllowed(canonical(target), candidate.deleteRoot, target.isDirectory)
+            else -> false
+        }
     }
 
-    private fun deleteCandidate(candidate: Candidate, target: File, maxFileBytes: Long, mounts: Set<String>, deadline: Long): Stats {
+    private fun deleteCandidate(
+        candidate: Candidate,
+        target: File,
+        maxFileBytes: Long,
+        mounts: Set<String>,
+        deadline: Long,
+        hiddenPolicy: List<ReviewRuleCatalog.Hidden>
+    ): Stats {
+        fun retained(file: File): Boolean = placeholder(file.name) || !ReviewRuleCatalog.oldEnough(
+            file, maxOf(candidate.retentionDays, ReviewRuleCatalog.hiddenMatch(file, hiddenPolicy)?.days ?: 0))
         if (target.isFile) {
-            if (target.length() > maxFileBytes) return Stats(0L, 0L, 0L, true)
+            if (retained(target) || target.length() > maxFileBytes) return Stats(0L, 0L, 0L, true)
             val size = target.length()
             val ok = runCatching { target.delete() }.getOrDefault(false)
             return Stats(if (ok) size else 0L, if (ok) 1L else 0L, 0L, true, if (ok) 0 else 1)
@@ -801,6 +848,7 @@ internal class NativeProfileEngine(
             val path = canonical(file)
             if (file != target && mounts.contains(path)) continue
             if (file.isFile) {
+                if (retained(file)) continue
                 val size = file.length()
                 if (size > maxFileBytes) continue
                 if (runCatching { file.delete() }.getOrDefault(false)) {
@@ -912,7 +960,6 @@ internal class NativeProfileEngine(
     internal fun expand(rawRule: String, cache: RuleExpansionCache = RuleExpansionCache()): List<File> {
         val raw = rawRule.substringBefore('|').substringBefore('#').trim()
         if (!safeRuleSyntax(raw)) return emptyList()
-        if (!raw.contains('*') && !raw.contains('?') && !raw.contains('[')) return listOf(File(raw))
         val segments = raw.split('/').filter { it.isNotEmpty() }
         var current: List<File> = listOf(File("/"))
         for (segment in segments) {
@@ -921,9 +968,10 @@ internal class NativeProfileEngine(
             val regex = if (wildcard) cache.patterns.getOrPut(segment) { glob(segment) } else null
             for (base in current) {
                 if (cancelled.get()) return emptyList()
+                if (isSymlink(base)) continue
                 if (!wildcard) {
                     next.add(File(base, segment))
-                } else if (!isSymlink(base)) {
+                } else {
                     val children = cache.listings.getOrPut(base.path) {
                         if (base.isDirectory) base.listFiles() ?: emptyArray() else emptyArray()
                     }
@@ -969,7 +1017,8 @@ internal class NativeProfileEngine(
         val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
         return Options(
             strings(json.optJSONArray("whitelistPackages")),
-            strings(json.optJSONArray("whitelistPaths")).filter { it.startsWith("/") }.toSet(),
+            strings(json.optJSONArray("whitelistPaths")).asSequence().filter { it.startsWith("/") }
+                .map { pathIdentity.of(canonical(File(it))) }.toSet(),
             json.optLong("maxFileBytes", DEFAULT_MAX_FILE_BYTES).coerceIn(0L, 16L * 1024 * 1024 * 1024),
             json.optInt("fragmentDays", 7).coerceIn(0, 365),
             json.optBoolean("allowHighRisk", false),
@@ -1012,10 +1061,12 @@ internal class NativeProfileEngine(
         appName: String = "",
         deleteRoot: Boolean = false,
         note: String = "",
-        scanEntry: ScanEntry? = null
+        scanEntry: ScanEntry? = null,
+        retentionDays: Int = 0
     ): Candidate {
         val path = scanEntry?.path ?: canonical(file)
-        return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, deleteRoot, note = note)
+        return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, deleteRoot,
+            note = note, retentionDays = retentionDays.coerceIn(0, 365))
     }
 
     private fun profile(id: String, title: String, subtitle: String, risk: String): JSONObject = JSONObject()
@@ -1032,6 +1083,7 @@ internal class NativeProfileEngine(
     }
 
     private fun storageRoots(): List<File> {
+        sharedRootOverride?.let { return it.distinctBy(::canonical) }
         val result = ArrayList<File>()
         val emulated = File("/storage/emulated")
         val users = emulated.listFiles()
@@ -1042,10 +1094,8 @@ internal class NativeProfileEngine(
         return result.distinctBy { canonical(it) }
     }
 
-    private fun logRoots(): List<File> = listOf(
-        File("/data/anr"), File("/data/tombstones"), File("/data/system/dropbox"),
-        File("/data/system/heapdump"), File("/data/misc/logd"), File("/data/vendor/log"), File("/data/log")
-    ).filter { it.isDirectory && !isSymlink(it) }
+    private fun logRoots(): List<File> = SYSTEM_LOG_ROOTS.map(::File)
+        .filter { it.isDirectory && !isSymlink(it) }
 
     private fun rulesDirectory(): File? =
         ruleDirectory.takeIf { it.isDirectory }
@@ -1083,6 +1133,7 @@ internal class NativeProfileEngine(
     }
 
     private fun mutationRoot(path: String): Boolean = path.startsWith("/data/user/") ||
+        path.startsWith("/data/user_de/") ||
         path.startsWith("/data/data/") || path.startsWith("/data/anr/") ||
         path.startsWith("/data/tombstones/") || path.startsWith("/data/system/dropbox/") ||
         path.startsWith("/data/system/heapdump/") || path.startsWith("/data/misc/logd/") ||
@@ -1090,12 +1141,14 @@ internal class NativeProfileEngine(
         path.startsWith("/storage/emulated/") || path.startsWith("/sdcard/") ||
         Regex("^/data/media/[0-9]+/.+").matches(path)
 
+    private fun ruleMutationAllowed(path: String, deleteRoot: Boolean, directory: Boolean): Boolean =
+        mutationRoot(path) || (!deleteRoot && directory && path in SYSTEM_LOG_ROOTS)
+
     private fun whitelisted(candidate: Candidate, options: Options): Boolean {
         if (candidate.packageName.isNotBlank() && options.whitelistPackages.contains(candidate.packageName)) return true
-        val path = candidate.path.trimEnd('/')
-        return options.whitelistPaths.any { raw ->
-            val protected = raw.trimEnd('/')
-            path == protected || path.startsWith("$protected/") || protected.startsWith("$path/")
+        val path = pathIdentity.of(candidate.path)
+        return options.whitelistPaths.any { protected ->
+            protected == "/" || path == protected || path.startsWith("$protected/") || protected.startsWith("$path/")
         }
     }
 
@@ -1184,6 +1237,10 @@ internal class NativeProfileEngine(
     private fun stop(started: Long, budget: Long): Boolean = cancelled.get() || SystemClock.elapsedRealtime() - started >= budget
 
     companion object {
+        private val SYSTEM_LOG_ROOTS = setOf(
+            "/data/anr", "/data/tombstones", "/data/system/dropbox", "/data/system/heapdump",
+            "/data/misc/logd", "/data/vendor/log", "/data/log"
+        )
         private const val SNAPSHOT_TTL_MS = 30L * 60_000L
         private const val SCAN_TOTAL_MS = 90_000L
         private const val DEEP_SCAN_TOTAL_MS = 5L * 60_000L
@@ -1195,8 +1252,6 @@ internal class NativeProfileEngine(
         private const val MAX_PAGE_SIZE = 60
         private const val MAX_CANDIDATES = 20_000
         private const val MAX_RULE_LINES = 12_000
-
-        private val HIDDEN_TRASH_NAMES = setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", ".debug")
 
         private val HARD_EXACT = setOf(
             "/", "/data", "/data/adb", "/data/system", "/data/misc", "/storage", "/storage/emulated", "/sdcard"

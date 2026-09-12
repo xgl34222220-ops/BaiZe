@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -14,36 +15,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,11 +41,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -70,6 +57,7 @@ import io.github.xgl34222220.baize.root.IPersistentCleanPlanService
 import io.github.xgl34222220.baize.root.PersistentCleanPlanRootService
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -128,7 +116,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private val cacheConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
             cacheBindingRequested = true
             updateConnectionState()
         }
@@ -142,7 +130,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private val planConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            planService = IPersistentCleanPlanService.Stub.asInterface(binder)
+            planService = RootServiceClients.persistent(binder, applicationContext.cacheDir)
             planBindingRequested = true
             updateConnectionState()
         }
@@ -156,7 +144,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private val resumeConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            resumeService = ICleanPlanResumeService.Stub.asInterface(binder)
+            resumeService = RootServiceClients.resume(binder, applicationContext.cacheDir)
             resumeBindingRequested = true
             updateConnectionState()
         }
@@ -896,7 +884,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 }
 
-private data class ResumeSmartUiState(
+internal data class ResumeSmartUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
     val operation: String = "",
@@ -926,7 +914,7 @@ private data class ResumeSmartUiState(
 )
 
 @Composable
-private fun ResumeSmartScreen(
+internal fun ResumeSmartScreen(
     state: ResumeSmartUiState,
     onBack: () -> Unit,
     onScan: () -> Unit,
@@ -938,146 +926,120 @@ private fun ResumeSmartScreen(
     val progress = if (state.progressTotal > 0) {
         (state.progressCurrent.toFloat() / state.progressTotal.toFloat()).coerceIn(0f, 1f)
     } else 0f
+    val scheme = MaterialTheme.colorScheme
+    val metric = when {
+        state.running && state.operation == "scan" -> "正在扫描"
+        state.running -> "正在清理"
+        state.cleanReady -> "${state.totalSafe} 项"
+        state.runCount > 0 -> Formatter.formatFileSize(context, state.deletedBytes)
+        state.scanCompleted -> "扫描完成"
+        !state.connected -> "等待连接"
+        else -> "准备扫描"
+    }
+    val metricLabel = when {
+        state.running -> "当前任务"
+        state.cleanReady && state.resumable -> "剩余待清理"
+        state.cleanReady -> "可清理项目"
+        state.runCount > 0 -> "本次已释放"
+        else -> "断点续清"
+    }
+    val executionDetails = buildString {
+        append("执行 ${state.runCount} 次 · 授权 ${state.totalSafe + state.processedCandidates} 项")
+        append("\n已处理 ${state.processedCandidates} 项 · 实际清理 ${state.cleanedCandidates} 项")
+        append("\n文件变化 ${state.changedCandidates} 项 · 受保护 ${state.protectedCandidates} 项")
+        append("\n部分完成 ${state.partialCandidates} 项 · 失败 ${state.failedCandidates} 项")
+        if (state.unattributedDeletedBytes > 0L) {
+            append("\n${Formatter.formatFileSize(context, state.unattributedDeletedBytes)} 已计入释放量，尚无逐项分类。")
+        }
+        if (state.failures > 0) append("\n累计失败记录 ${state.failures} 项，未完成的项目仍保留在计划中。")
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
-        contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        item {
-                DetailPageHeader("智能扫描", "中断后可以从剩余项目继续清理", onBack)
-            }
-
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-            ) {
-                Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier.size(58.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(20.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                if (state.cleanReady) Icons.Rounded.CheckCircle else Icons.Rounded.CleaningServices,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(30.dp)
-                            )
-                        }
-                        Spacer(Modifier.size(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(state.status, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.phase,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 7,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+        item(contentType = "header") {
+            DetailPageHeader("断点续清", "中断后，可从剩余项目继续", onBack)
+        }
+        item(contentType = "task") {
+            DetailGlassPanel {
+                Text(metricLabel, fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                Text(metric, Modifier.padding(top = 4.dp), fontSize = if (state.cleanReady || state.runCount > 0) 28.sp else 22.sp,
+                    lineHeight = 34.sp, fontWeight = FontWeight.Medium, color = scheme.onSurface)
+                DetailStatusText(state.phase, Modifier.padding(top = 5.dp, bottom = 14.dp))
+                if (state.running) {
+                    if (state.progressTotal > 0) {
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                        Text("${state.progressCurrent.coerceAtMost(state.progressTotal)} / ${state.progressTotal}",
+                            Modifier.padding(top = 5.dp), fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    GlassActionButton("停止并保存", onStop, Modifier.fillMaxWidth().padding(top = 12.dp),
+                        icon = Icons.Rounded.Stop, secondary = true)
+                } else if (state.cleanReady) {
+                    GlassActionButton(if (state.resumable) "继续清理" else "清理这 ${state.totalSafe} 项",
+                        onClean, Modifier.fillMaxWidth(), icon = Icons.Rounded.DeleteSweep, enabled = state.connected)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        if (!state.connected) TextButton(onClick = onReconnect) { Text("重新连接", fontSize = 13.sp) }
+                        TextButton(onClick = onScan, enabled = state.connected) { Text("重新扫描", fontSize = 13.sp) }
                     }
-
-                    if (state.running) {
-                        if (state.progressTotal > 0) {
-                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                        } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Stop, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("停止并保存断点")
-                        }
-                    } else if (state.cleanReady) {
-                        Button(onClick = onClean, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(if (state.resumable) "继续清理 ${state.totalSafe} 项" else "一键清理 ${state.totalSafe} 项")
-                        }
-                        OutlinedButton(onClick = onScan, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("放弃当前计划并重新扫描")
-                        }
-                    } else if (!state.connected) {
-                        OutlinedButton(onClick = onReconnect, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("重新连接 Root 引擎")
-                        }
-                    } else {
-                        Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("开始智能扫描")
-                        }
-                    }
+                } else if (!state.connected) {
+                    GlassActionButton("重新连接", onReconnect, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true)
+                } else {
+                    GlassActionButton("开始扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Search)
                 }
             }
         }
-
-        if (state.scanCompleted || state.runCount > 0) {
-            item {
-                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    Text("清理事务", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "执行 ${state.runCount} 次 · 授权 ${state.totalSafe + state.processedCandidates} 项 · 已处理 ${state.processedCandidates} 项 · 实际清理 ${state.cleanedCandidates} 项",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "释放 ${Formatter.formatFileSize(context, state.deletedBytes)} · 变化 ${state.changedCandidates} · 保护 ${state.protectedCandidates} · 部分 ${state.partialCandidates} · 失败 ${state.failedCandidates}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (state.unattributedDeletedBytes > 0L) {
-                        Text(
-                            "其中 ${Formatter.formatFileSize(context, state.unattributedDeletedBytes)} 来自引擎总计，缺少逐项归属但仍计入真实释放量",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp
-                        )
-                    }
-                    if (state.failures > 0) {
-                        Text("累计失败记录 ${state.failures} 项，失败项目会保留在剩余计划中", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-            item { ResumeInfoCard("应用缓存", state.cacheSummary) }
-            item { ResumeInfoCard("安全项目", state.safeSummary) }
-            item { ResumeInfoCard("按类别统计", formatMetricBuckets(state.categoryStats)) }
-            item { ResumeInfoCard("按风险统计", formatMetricBuckets(state.riskStats)) }
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-                ) {
-                    Text(
-                        "已完成或确认失效的候选会从事务快照中移除；部分删除、失败和未执行候选继续保留。应用或 Root 服务异常退出后，会先恢复快照检查点，再允许继续清理。",
-                        modifier = Modifier.padding(18.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
+        if (state.scanCompleted || state.runCount > 0 || state.running) {
+            item(contentType = "sources-title") { DetailSectionHeader("清理范围") }
+            item(contentType = "sources") {
+                DetailGlassPanel {
+                    ResumeSummaryRow("应用缓存", state.cacheSummary)
+                    HorizontalDivider(Modifier.padding(vertical = 11.dp), color = scheme.onSurface.copy(alpha = .055f))
+                    ResumeSummaryRow("安全项目", state.safeSummary)
                 }
             }
         }
+        if (state.runCount > 0) {
+            item(contentType = "progress-title") { DetailSectionHeader("本次进度") }
+            item(contentType = "progress") {
+                DetailGlassPanel {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("已清理", fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                            Text("${state.cleanedCandidates} 项", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = scheme.onSurface)
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("已释放", fontSize = 12.sp, color = scheme.onSurfaceVariant)
+                            Text(Formatter.formatFileSize(context, state.deletedBytes), fontSize = 20.sp, fontWeight = FontWeight.Medium, color = scheme.onSurface)
+                        }
+                    }
+                    if (state.failedCandidates > 0 || state.partialCandidates > 0) {
+                        Text("部分完成 ${state.partialCandidates} 项 · 失败 ${state.failedCandidates} 项",
+                            Modifier.padding(top = 10.dp), color = scheme.error, fontSize = 12.sp, lineHeight = 18.sp)
+                    }
+                }
+            }
+            item(contentType = "execution-details") { DetailExpandableText("处理明细", executionDetails) }
+            item(contentType = "category-details") { DetailExpandableText("按类别查看", formatMetricBuckets(state.categoryStats)) }
+            item(contentType = "risk-details") { DetailExpandableText("按风险查看", formatMetricBuckets(state.riskStats)) }
+        }
+        item(contentType = "status-details") {
+            DetailExpandableText("任务详情", state.status + "\n\n" + state.phase)
+        }
+        item(contentType = "help") {
+            DetailExpandableText("断点续清说明", "扫描后会保存清理计划。任务停止或意外中断时，可继续处理剩余项目，已经完成的项目不会重复清理。\n\n清理前会核对路径、白名单和文件状态。部分完成、失败和未执行的项目会保留；计划失效或设置发生变化时需要重新扫描。")
+        }
+        item(contentType = "bottom-inset") { Spacer(Modifier.navigationBarsPadding()) }
     }
 }
 
 @Composable
-private fun ResumeInfoCard(title: String, summary: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Spacer(Modifier.height(3.dp))
-            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        }
+private fun ResumeSummaryRow(title: String, summary: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+        DetailStatusText(summary)
     }
 }
-
 
 private fun formatMetricBuckets(raw: String): String {
     val root = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())

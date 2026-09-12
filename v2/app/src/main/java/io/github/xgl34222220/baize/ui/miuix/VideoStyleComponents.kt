@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -72,7 +73,7 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+            .heightIn(min = 60.dp).padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -109,8 +110,8 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
     val dark = scheme.surface.luminance() < .3f
     Box(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .72f))
+            .clip(RoundedCornerShape(16.dp))
+            .background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f))
             .selectableGroup()
     ) {
         // This layer follows the measured row, including larger accessibility text.
@@ -122,7 +123,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
                     animationSpec = tween(200), label = "segmentSelection"
                 )
                 Box(Modifier.offset(x = offset).width(segmentWidth).fillMaxHeight()
-                    .glassSurface(BaiZeTokens.colors.surfaceRaised, RoundedCornerShape(14.dp), dark))
+                    .glassSurface(BaiZeTokens.colors.surfaceRaised, RoundedCornerShape(12.dp), dark))
             }
         }
         Row(Modifier.fillMaxWidth().padding(4.dp)) {
@@ -130,7 +131,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
                 val selected = index == selectedIndex
                 Box(
                     modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .selectable(selected, role = Role.Tab) { onSelected(index) }
                         .padding(horizontal = 8.dp, vertical = 11.dp),
                     contentAlignment = Alignment.Center
@@ -165,7 +166,7 @@ fun VideoCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(22.dp)
+    val shape = BaiZeTokens.corners.large
     val color = containerColor ?: BaiZeTokens.colors.surfaceRaised
     if (LocalVideoSkin.current == VideoSkin.MATERIAL3) {
         Surface(modifier = modifier, shape = shape, color = color,
@@ -184,7 +185,7 @@ fun VideoCard(
 fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier,
     color: Color? = null) {
     val tint = color ?: if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.size(40.dp).clip(RoundedCornerShape(13.dp))
+    Box(modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
         .background(if (primary || color != null) tint.copy(alpha = .065f) else Color.Transparent),
         contentAlignment = Alignment.Center) {
         Icon(icon, null, Modifier.size(22.dp), tint = tint)
@@ -203,9 +204,9 @@ fun VideoListRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = 72.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         VideoLeadingIcon(icon, primary = enabled)
@@ -247,9 +248,9 @@ fun VideoSwitchRow(icon: ImageVector, title: String, subtitle: String, checked: 
 }
 
 @Composable
-fun VideoDivider(start: Int = 68) {
+fun VideoDivider(start: Int = 66) {
     HorizontalDivider(Modifier.padding(start = start.dp, end = 18.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .18f))
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
 }
 
 @Composable
@@ -268,7 +269,7 @@ fun VideoMetricTile(label: String, value: String, caption: String, modifier: Mod
 fun VideoActionTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit,
     modifier: Modifier = Modifier, primary: Boolean = false) {
     VideoCard(modifier = modifier,
-        containerColor = if (primary) BaiZeTokens.colors.surfaceOverlay else BaiZeTokens.colors.surfaceRaised) {
+        containerColor = if (primary) lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .035f) else BaiZeTokens.colors.surfaceRaised) {
         Column(Modifier.clickable(role = Role.Button, onClick = onClick).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -301,16 +302,19 @@ fun VideoStatusPill(text: String, positive: Boolean = true, modifier: Modifier =
 @Composable
 fun VideoEmptyState(icon: ImageVector, title: String, description: String, modifier: Modifier = Modifier,
     actionLabel: String? = null, onAction: (() -> Unit)? = null) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(64.dp).background(BaiZeTokens.colors.surfaceOverlay, RoundedCornerShape(22.dp)),
+    Row(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 24.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Box(Modifier.size(38.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .055f), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
         }
-        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-        if (!actionLabel.isNullOrBlank() && onAction != null) GlassActionButton(actionLabel, onAction)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium)
+            if (!actionLabel.isNullOrBlank() && onAction != null) GlassActionButton(actionLabel, onAction,
+                modifier = Modifier.padding(top = 6.dp))
+        }
     }
 }

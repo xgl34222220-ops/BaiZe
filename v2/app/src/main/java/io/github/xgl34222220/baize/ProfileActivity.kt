@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
@@ -122,7 +123,7 @@ class ProfileActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bindingRequested = true
             screenState = screenState.copy(connected = true)
             renderConnected()
@@ -181,7 +182,8 @@ class ProfileActivity : ComponentActivity() {
                             onStop = ::stopTask,
                             onClean = ::quickClean,
                             onPrevious = { loadPage(page - 1) },
-                            onNext = { loadPage(page + 1) }
+                            onNext = { loadPage(page + 1) },
+                            onReview = ::openItemReview
                         )
                     )
                 }
@@ -448,6 +450,14 @@ class ProfileActivity : ComponentActivity() {
         screenState = screenState.copy(summaryText = "正在安全停止当前任务…")
     }
 
+    private fun openItemReview() {
+        if (taskRunning) return
+        startActivity(
+            Intent(this, ScanWorkbenchActivity::class.java)
+                .putExtra(ScanWorkbenchActivity.EXTRA_PROFILE, profile)
+        )
+    }
+
     private fun quickClean() {
         if (taskRunning) {
             screenState = screenState.copy(summaryText = "当前任务仍在执行，请先停止或等待完成")
@@ -698,9 +708,9 @@ class ProfileActivity : ComponentActivity() {
         }
 
         private fun safetyDescription(profile: String): String = when (profile) {
-            "deep" -> "只需扫描一次，随后可一键清理安全规则；关键风险永远只审计，高风险不会混入普通自动清理。"
+            "deep" -> "一键清理遵循当前自动清理范围。需要单独处理其他项目，可进入「按项选择清理」；高风险需要确认，关键数据与白名单始终保留。"
             "corpses" -> "只需扫描一次，随后可一键清理全部确认残留；应用重新安装后会在删除前自动跳过。"
-            else -> "扫描后会自动选择全部安全项，无需逐项勾选；列表只用于查看明细，删除前仍会进行完整安全校验。"
+            else -> "一键清理使用当前自动清理范围；也可进入「按项选择清理」，按应用、类别和风险选择。删除前会再次检查白名单与文件状态。"
         }
 
         private fun quickCleanLabel(profile: String, count: Int = 0): String {
@@ -775,7 +785,8 @@ internal data class ProfileUiActions(
     val onStop: () -> Unit,
     val onClean: () -> Unit,
     val onPrevious: () -> Unit,
-    val onNext: () -> Unit
+    val onNext: () -> Unit,
+    val onReview: () -> Unit = {}
 )
 
 @Composable
@@ -865,6 +876,15 @@ private fun ProfileMaterialTaskCard(
         onReconnect = actions.onScan,
         scanLabel = state.scanButtonText, cleanLabel = state.cleanButtonText
     )
+    TextButton(
+        onClick = actions.onReview,
+        enabled = !state.running && !state.loadingPage,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+    ) {
+        Text("按项选择清理", style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.width(4.dp))
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+    }
 }
 
 @Composable

@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -13,38 +14,35 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -53,13 +51,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,6 +76,7 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.common.AppPackageIcon
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -97,16 +99,16 @@ class ProtectedReviewActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bound = true
-            state = state.copy(connected = true, status = "Root 审计引擎已连接")
+            state = state.copy(connected = true, failed = false, status = "Root 审计引擎已连接")
             scan()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             bound = false
-            state = state.copy(connected = false, running = false, status = "Root 服务已断开")
+            state = state.copy(connected = false, running = false, failed = true, status = "Root 服务已断开")
         }
     }
 
@@ -149,7 +151,7 @@ class ProtectedReviewActivity : ComponentActivity() {
             )
             bound = true
         }.onFailure {
-            state = state.copy(status = "Root 服务启动失败：${it.message.orEmpty()}")
+            state = state.copy(failed = true, status = "Root 服务启动失败：${it.message.orEmpty()}")
         }
     }
 
@@ -158,6 +160,7 @@ class ProtectedReviewActivity : ComponentActivity() {
         state = state.copy(
             running = true,
             status = "正在扫描可审计项目…",
+            failed = false,
             items = emptyList(),
             selected = emptySet()
         )
@@ -169,14 +172,15 @@ class ProtectedReviewActivity : ComponentActivity() {
             }
             state = state.copy(running = false)
             response.onSuccess { json ->
-                if (json.has("error")) {
-                    state = state.copy(status = json.optString("message", "扫描失败"))
+                if (json.has("error") || !json.optBoolean("success", true)) {
+                    state = state.copy(failed = true, status = json.optString("message", "扫描失败"))
                     return@onSuccess
                 }
                 snapshotId = json.optString("snapshotId")
                 total = json.optInt("totalCandidates")
                 page = 0
                 state = state.copy(
+                    failed = false,
                     total = total,
                     page = 0,
                     pageCount = pageCount(),
@@ -184,7 +188,7 @@ class ProtectedReviewActivity : ComponentActivity() {
                 )
                 if (total > 0) loadPage(0)
             }.onFailure {
-                state = state.copy(status = "扫描失败：${it.message ?: it.javaClass.simpleName}")
+                state = state.copy(failed = true, status = "扫描失败：${it.message ?: it.javaClass.simpleName}")
             }
         }
     }
@@ -201,8 +205,8 @@ class ProtectedReviewActivity : ComponentActivity() {
             }
             state = state.copy(running = false)
             response.onSuccess { json ->
-                if (json.has("error")) {
-                    state = state.copy(status = json.optString("message", "读取项目失败"))
+                if (json.has("error") || !json.optBoolean("success", true)) {
+                    state = state.copy(failed = true, status = json.optString("message", "读取项目失败"))
                     return@onSuccess
                 }
                 val array = json.optJSONArray("items") ?: JSONArray()
@@ -228,9 +232,9 @@ class ProtectedReviewActivity : ComponentActivity() {
                     }
                 }
                 page = target
-                state = state.copy(items = values, page = page, pageCount = pageCount())
+                state = state.copy(failed = false, items = values, page = page, pageCount = pageCount())
             }.onFailure {
-                state = state.copy(status = "读取项目失败：${it.message ?: it.javaClass.simpleName}")
+                state = state.copy(failed = true, status = "读取项目失败：${it.message ?: it.javaClass.simpleName}")
             }
         }
     }
@@ -245,7 +249,7 @@ class ProtectedReviewActivity : ComponentActivity() {
         val root = service ?: return
         if (snapshotId.isBlank() || state.selected.isEmpty() || state.running) return
         val selection = JSONObject().apply { state.selected.forEach { put(it, true) } }.toString()
-        state = state.copy(running = true, status = "正在复核并清理 ${state.selected.size} 个手动选择项目…")
+        state = state.copy(running = true, failed = false, status = "正在复核并清理 ${state.selected.size} 个手动选择项目…")
         lifecycleScope.launch {
             val response = runCatching {
                 withContext(Dispatchers.IO) {
@@ -254,8 +258,8 @@ class ProtectedReviewActivity : ComponentActivity() {
             }
             state = state.copy(running = false)
             response.onSuccess { json ->
-                if (json.has("error")) {
-                    state = state.copy(status = json.optString("message", "清理失败"))
+                if (json.has("error") || !json.optBoolean("success", true)) {
+                    state = state.copy(failed = true, status = json.optString("message", "清理失败"))
                     return@onSuccess
                 }
                 val protected = json.optJSONArray("details")?.let { details ->
@@ -269,6 +273,7 @@ class ProtectedReviewActivity : ComponentActivity() {
                     }
                 }.orEmpty()
                 state = state.copy(
+                    failed = false,
                     status = buildString {
                         append("清理完成：删除 ${json.optLong("deletedFiles")} 个文件，释放 ${formatBytes(json.optLong("deletedBytes"))}")
                         if (protected.isNotEmpty()) {
@@ -288,7 +293,7 @@ class ProtectedReviewActivity : ComponentActivity() {
                 snapshotId = ""
                 total = 0
             }.onFailure {
-                state = state.copy(status = "清理失败：${it.message ?: it.javaClass.simpleName}")
+                state = state.copy(failed = true, status = "清理失败：${it.message ?: it.javaClass.simpleName}")
             }
         }
     }
@@ -313,7 +318,7 @@ class ProtectedReviewActivity : ComponentActivity() {
     }
 }
 
-private data class ProtectedReviewItem(
+internal data class ProtectedReviewItem(
     val id: String,
     val title: String,
     val packageName: String,
@@ -325,10 +330,11 @@ private data class ProtectedReviewItem(
     val selectable: Boolean
 )
 
-private data class ProtectedReviewState(
+internal data class ProtectedReviewState(
     val connected: Boolean = false,
     val running: Boolean = false,
     val status: String = "正在连接 Root 审计引擎…",
+    val failed: Boolean = false,
     val items: List<ProtectedReviewItem> = emptyList(),
     val selected: Set<String> = emptySet(),
     val total: Int = 0,
@@ -337,7 +343,7 @@ private data class ProtectedReviewState(
 )
 
 @Composable
-private fun ProtectedReviewScreen(
+internal fun ProtectedReviewScreen(
     state: ProtectedReviewState,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
@@ -347,145 +353,164 @@ private fun ProtectedReviewScreen(
     onClean: () -> Unit
 ) {
     var confirm by remember(state.selected) { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
+    var detail by remember { mutableStateOf<ProtectedReviewItem?>(null) }
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = BaiZeTokens.colors.surfaceBase,
+        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        topBar = {
+            DetailPageHeader("受保护项目", "", onBack) {
+                IconButton(onClick = onRefresh, enabled = state.connected && !state.running) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                }
+            }
+        },
+        bottomBar = {
+            Surface(color = BaiZeTokens.colors.surfaceBase) {
+                GlassActionButton(
+                    if (state.selected.isEmpty()) "选择要清理的项目" else "清理所选 ${state.selected.size} 项",
+                    onClick = { confirm = true },
+                    enabled = state.connected && !state.running && state.selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                )
+            }
+        }
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 34.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(bottom = 20.dp)
         ) {
             item {
-                DetailPageHeader("受保护项目", "查看保留原因，逐项决定是否处理", onBack) {
-                    IconButton(onClick = onRefresh, enabled = state.connected && !state.running) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
+                Column(Modifier.padding(horizontal = 24.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${state.total} 项内容", fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold)
+                    Text("已选 ${state.selected.size} 项 · 当前页 ${state.items.size} 项",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.Top) {
+                        if (state.failed) Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                        Text(state.status, fontSize = 13.sp, lineHeight = 19.sp,
+                            color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 7.dp))
+                }
+            }
+            if (state.status.length > 85) item {
+                DetailExpandableText("完整状态", state.status)
+            }
+            if (state.items.isEmpty() && !state.running) item {
+                DetailEmptyState(
+                    title = if (state.failed) "暂时无法显示项目" else "暂无待审核内容",
+                    description = if (state.failed) "点击右上角刷新重试。" else "需要保留或手动处理的内容会显示在这里。",
+                    icon = if (state.failed) Icons.Rounded.ErrorOutline else Icons.Rounded.Shield
+                )
+            }
+            if (state.items.isNotEmpty()) item { DetailSectionHeader("项目明细", "勾选要处理的项目，点击条目查看完整信息") }
+            itemsIndexed(state.items, key = { _, item -> item.id.ifBlank { item.path } }) { index, item ->
+                ProtectedItemRow(
+                    item, item.id in state.selected, !state.running,
+                    first = index == 0, last = index == state.items.lastIndex,
+                    onToggle = { onToggle(item.id) }, onDetails = { detail = item }
+                )
+            }
+            if (state.pageCount > 1) item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onPrevious, enabled = state.page > 0 && !state.running) {
+                        Icon(Icons.Rounded.ChevronLeft, null, Modifier.size(18.dp))
+                        Text("上一页", fontSize = 13.sp)
+                    }
+                    Text("${state.page + 1} / ${state.pageCount}", Modifier.weight(1f),
+                        fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = onNext, enabled = state.page + 1 < state.pageCount && !state.running) {
+                        Text("下一页", fontSize = 13.sp)
+                        Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp))
+                    }
                 }
             }
             item {
-                Surface(
-                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = BaiZeTokens.colors.surfaceRaised
-                ) {
-                    Column(Modifier.padding(18.dp)) {
-                        Text(state.status, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
-                        if (state.running) {
-                            Spacer(Modifier.height(12.dp))
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "已选择 ${state.selected.size} 项 · 当前页 ${state.items.size} 项 · 总计 ${state.total} 项",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Button(
-                            onClick = { confirm = true },
-                            enabled = state.connected && !state.running && state.selected.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth().height(54.dp)
-                        ) {
-                            Icon(Icons.Rounded.CleaningServices, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("清理所选项目", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
+                DetailExpandableText("保留与清理说明", "勾选仅代表本次处理意愿。白名单、系统关键路径、挂载点与符号链接仍会保留；带锁项目不能选择。清理前会再次核对高风险项目。")
             }
-            items(state.items, key = { it.id.ifBlank { it.path } }) { item ->
-                Surface(
-                    modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .fillMaxWidth()
-                        .clickable(enabled = item.selectable && !state.running) { onToggle(item.id) },
-                    shape = RoundedCornerShape(24.dp),
-                    color = BaiZeTokens.colors.surfaceRaised
-                ) {
-                    Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
-                        if (item.packageName.isNotBlank()) {
-                            AppPackageIcon(item.packageName, item.title, size = 44.dp, corner = 15.dp)
-                        } else {
-                            Box(
-                                Modifier.size(44.dp).clip(RoundedCornerShape(15.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(if (item.selectable) Icons.Rounded.Shield else Icons.Rounded.Lock, null)
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(item.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                item.reason.ifBlank { "${riskLabel(item.risk)} · 可由用户决定" },
-                                color = if (item.selectable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(item.category, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                            Text(
-                                item.path,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp
-                            )
-                            if (item.bytes >= 0L) Text(formatBytes(item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
-                        }
-                        if (item.selectable) {
-                            Checkbox(
-                                checked = state.selected.contains(item.id),
-                                onCheckedChange = { onToggle(item.id) },
-                                enabled = !state.running
-                            )
-                        } else {
-                            Icon(Icons.Rounded.Lock, "硬保护", tint = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            }
-            if (state.pageCount > 1) {
-                item {
-                    Row(
-                        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        FilledTonalButton(
-                            onClick = onPrevious,
-                            enabled = state.page > 0 && !state.running,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Rounded.ChevronLeft, null)
-                            Text("上一页")
-                        }
-                        FilledTonalButton(
-                            onClick = onNext,
-                            enabled = state.page + 1 < state.pageCount && !state.running,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("下一页")
-                            Icon(Icons.Rounded.ChevronRight, null)
-                        }
-                    }
-                }
-            }
-            item { Spacer(Modifier.navigationBarsPadding()) }
         }
     }
-
+    detail?.let { item ->
+        ProtectedItemDetails(item, onDismiss = { detail = null })
+    }
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
-            title = { Text("清理 ${state.selected.size} 个手动选择项目？") },
-            text = {
-                Text("白名单、系统核心路径、挂载点、符号链接和关键风险仍然无法绕过。高风险项目会在删除前重新校验。")
-            },
+            title = { Text("清理 ${state.selected.size} 个所选项目？") },
+            text = { Text("白名单、系统核心路径、挂载点、符号链接和关键风险仍会保留。高风险项目会在删除前重新校验。") },
             confirmButton = {
-                TextButton(onClick = {
-                    confirm = false
-                    onClean()
-                }) { Text("确认清理") }
+                TextButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
             },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } }
         )
     }
+}
+
+@Composable
+private fun ProtectedItemRow(
+    item: ProtectedReviewItem,
+    selected: Boolean,
+    enabled: Boolean,
+    first: Boolean,
+    last: Boolean,
+    onToggle: () -> Unit,
+    onDetails: () -> Unit
+) {
+    val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
+        bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+        .background(BaiZeTokens.colors.surfaceRaised)) {
+        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "查看完整路径与详情", onClick = onDetails)
+            .padding(start = 13.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+            if (item.packageName.isNotBlank()) AppPackageIcon(item.packageName, item.title, size = 36.dp, corner = 11.dp)
+            else Surface(shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .075f)) {
+                Icon(if (item.selectable) Icons.Rounded.Shield else Icons.Rounded.Lock, null,
+                    Modifier.padding(8.dp).size(20.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(item.reason.ifBlank { "${riskLabel(item.risk)} · ${item.category}" },
+                    fontSize = 12.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = if (item.risk == "high") BaiZeTokens.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(item.path, Modifier.weight(1f), fontSize = 11.sp, lineHeight = 16.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Rounded.ChevronRight, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (item.bytes >= 0L) Text(formatBytes(item.bytes), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+            }
+            if (item.selectable) Checkbox(checked = selected, onCheckedChange = { onToggle() }, enabled = enabled,
+                modifier = Modifier.semantics { contentDescription = "选择${item.title}" })
+            else Icon(Icons.Rounded.Lock, "受保护，无法选择", Modifier.padding(horizontal = 12.dp, vertical = 10.dp).size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!last) HorizontalDivider(Modifier.padding(start = 66.dp, end = 14.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
+    }
+}
+
+@Composable
+private fun ProtectedItemDetails(item: ProtectedReviewItem, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(item) { mutableStateOf(false) }
+    val text = buildString {
+        appendLine(item.title)
+        appendLine("${item.category} · ${riskLabel(item.risk)}")
+        if (item.bytes >= 0L) appendLine("大小：${formatBytes(item.bytes)}")
+        appendLine(if (item.selectable) "可手动选择清理" else "受保护，无法选择")
+        if (item.reason.isNotBlank()) appendLine("保留原因：${item.reason}")
+        if (item.packageName.isNotBlank()) appendLine("应用：${item.packageName}")
+        append("完整路径：${item.path}")
+    }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("项目详情", fontSize = 18.sp) },
+        text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
 }
 
 private fun riskLabel(risk: String): String = when (risk) {

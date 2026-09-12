@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
@@ -95,7 +96,7 @@ class CacheActivity : ComponentActivity() {
 
     private val cacheConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
             cacheBindingRequested = true
             updateConnectionState()
             recoverRemoteOrSnapshot()
@@ -110,7 +111,7 @@ class CacheActivity : ComponentActivity() {
 
     private val moduleConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            moduleService = IProfileRootService.Stub.asInterface(binder)
+            moduleService = RootServiceClients.profile(binder, applicationContext.cacheDir)
             moduleBindingRequested = true
             updateConnectionState()
             recoverRemoteOrSnapshot()

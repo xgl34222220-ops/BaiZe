@@ -2,6 +2,8 @@ package io.github.xgl34222220.baize.root;
 
 import io.github.xgl34222220.baize.root.ITaskProgressCallback;
 
+import android.os.ParcelFileDescriptor;
+
 interface IProfileRootService {
     String ping();
     String getProfileCatalog();
@@ -47,4 +49,6 @@ interface IProfileRootService {
     void registerTaskProgressCallback(ITaskProgressCallback callback);
     void unregisterTaskProgressCallback(ITaskProgressCallback callback);
     void cancelCurrentTask();
+    // Appended: preserve the transaction IDs used by existing clients.
+    ParcelFileDescriptor exchangeJson(String operation, in ParcelFileDescriptor request);
 }

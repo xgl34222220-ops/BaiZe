@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -59,7 +60,7 @@ class WhitelistActivity : AppCompatActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             serviceBound = true
             binding.saveButton.isEnabled = true
             loadCatalogAndWhitelist()

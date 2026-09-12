@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -101,7 +102,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             }
             connection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                    val root = IProfileRootService.Stub.asInterface(binder)
+                    val root = RootServiceClients.profile(binder, applicationContext.cacheDir)
                     if (root == null) {
                         fail("Root Binder 为空")
                         unbindOnMainThread()

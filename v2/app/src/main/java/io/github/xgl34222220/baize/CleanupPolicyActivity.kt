@@ -1,7 +1,5 @@
 package io.github.xgl34222220.baize
 
-import io.github.xgl34222220.baize.ui.components.*
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -14,49 +12,22 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.CleaningServices
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,11 +37,14 @@ import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
-import io.github.xgl34222220.baize.ui.appearance.UiStyle
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +58,7 @@ class CleanupPolicyActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bound = true
             state = state.copy(connected = true, message = "Root 策略服务已连接")
             loadPolicy()
@@ -119,7 +93,6 @@ class CleanupPolicyActivity : ComponentActivity() {
             BaiZeTheme(appearance) {
                 CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
                     CleanupPolicyScreen(
-                        miuix = appearance.uiStyle == UiStyle.MIUIX,
                         state = state,
                         onBack = ::finish,
                         onRefresh = ::loadPolicy,
@@ -238,7 +211,7 @@ class CleanupPolicyActivity : ComponentActivity() {
     }
 }
 
-private data class CleanupPolicyUiState(
+internal data class CleanupPolicyUiState(
     val connected: Boolean = false,
     val loading: Boolean = false,
     val activePolicy: CleanupPolicy = CleanupPolicy.BALANCED,
@@ -250,7 +223,7 @@ private data class CleanupPolicyUiState(
     val message: String = "等待连接 Root 策略服务"
 )
 
-private data class PolicyAdvice(
+internal data class PolicyAdvice(
     val recommendedPolicy: CleanupPolicy,
     val summary: String,
     val confidence: String,
@@ -266,276 +239,176 @@ private data class PolicyAdvice(
 )
 
 @Composable
-private fun CleanupPolicyScreen(
-    miuix: Boolean,
+internal fun CleanupPolicyScreen(
     state: CleanupPolicyUiState,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSelect: (CleanupPolicy) -> Unit
 ) {
-    val horizontal = 20.dp
-    val cardShape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
+    var selectedId by rememberSaveable(state.activePolicy.id, state.customized) {
+        mutableIntStateOf(state.activePolicy.id)
+    }
+    val selected = CleanupPolicy.fromId(selectedId)
+    val pending = selected != state.activePolicy || state.customized
+    val enabled = state.connected && !state.loading
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
-        contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item {
-                DetailPageHeader("清理策略", "选择适合自己的清理范围，定时周期单独设置", onBack) {
-                    IconButton(onClick = onRefresh, enabled = state.connected && !state.loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
-                }
-            }
-        item {
-            Card(
-                modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
-                shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(50.dp),
-                            shape = RoundedCornerShape(17.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = .12f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        Spacer(Modifier.width(13.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("当前：${state.activePolicy.title}档", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (state.customized) "包含手动参数调整" else state.activePolicy.subtitle,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 14.sp
-                            )
-                        }
-                        if (!state.customized) {
-                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = BaiZeTokens.colors.success)
-                        }
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PolicyMetric("单文件", "${state.maxFileMb} MB", Modifier.weight(1f))
-                        PolicyMetric("碎片保留", "${state.fragmentDays} 天", Modifier.weight(1f))
-                        PolicyMetric("隔离保留", "${state.quarantineDays} 天", Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                    if (state.loading) {
-                        Spacer(Modifier.height(10.dp))
-                        CircularProgressIndicator(Modifier.size(24.dp))
-                    }
+            DetailPageHeader("清理策略", "", onBack) {
+                IconButton(onClick = onRefresh, enabled = enabled, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(22.dp))
                 }
             }
         }
+        item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(top = 4.dp, bottom = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Icon(Icons.Rounded.Tune, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text(if (state.connected) "正在使用${state.activePolicy.title}档" else "尚未读取策略",
+                        fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium)
+                    if (state.loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+                if (state.customized) Text("已包含自定义调整", Modifier.padding(top = 5.dp),
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.connected) {
+                    Row(Modifier.fillMaxWidth().padding(top = 17.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        PolicyMetric("单文件上限", "${state.maxFileMb} MB", Modifier.weight(1f))
+                        PolicyMetric("碎片保留", "${state.fragmentDays} 天", Modifier.weight(1f))
+                        PolicyMetric("隔离保留", "${state.quarantineDays} 天", Modifier.weight(1f))
+                    }
+                }
+                DetailStatusText(state.message, Modifier.padding(top = 12.dp))
+            }
+        }
+        item { DetailSectionHeader("选择清理强度", "选择后应用，自动清理时间保持不变") }
+        item {
+            DetailGlassPanel {
+                CleanupPolicy.entries.forEachIndexed { index, policy ->
+                    PolicyChoiceRow(policy, selected == policy, enabled) { selectedId = policy.id }
+                    if (index != CleanupPolicy.entries.lastIndex) HorizontalDivider(
+                        Modifier.padding(start = 4.dp, end = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f)
+                    )
+                }
+            }
+        }
+        item {
+            GlassActionButton(
+                label = when {
+                    !state.connected -> "连接后可应用策略"
+                    state.loading -> "正在读取或应用…"
+                    pending -> "应用${selected.title}档"
+                    else -> "${selected.title}档已生效"
+                },
+                onClick = { onSelect(selected) },
+                enabled = enabled && pending,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp)
+            )
+        }
+        item { DetailExpandableText("${selected.title}档的清理范围", selected.highlights.joinToString("\n\n")) }
         state.advice?.let { advice ->
+            item { DetailSectionHeader("设备建议") }
             item {
-                PolicyAdviceCard(
+                PolicyAdvicePanel(
                     advice = advice,
-                    activePolicy = state.activePolicy,
-                    customized = state.customized,
-                    enabled = state.connected && !state.loading,
-                    shape = cardShape,
-                    horizontal = horizontal,
+                    matches = advice.recommendedPolicy == state.activePolicy && !state.customized,
+                    enabled = enabled,
                     onApply = { onSelect(advice.recommendedPolicy) }
                 )
             }
         }
         item {
-            Column(Modifier.padding(horizontal = horizontal, vertical = 2.dp)) {
-                Text("选择档位", style = MaterialTheme.typography.titleLarge)
-                Text("应用档位会覆盖清理相关参数，但不会修改任何 schedule_* 周期字段", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
-            }
+            DetailExpandableText("始终保留的保护",
+                "白名单与关键路径始终受保护，清理时会重新核对文件、挂载点和软链接。\n\n高风险内容不会被普通清理直接删除；需要逐项确认后移入隔离区。关键风险仅供查看，不会处理。\n\n应用档位会替换清理范围、保留时间等自定义参数。自动清理的执行时间与周期由清理计划单独管理。")
         }
-        CleanupPolicy.entries.forEach { policy ->
-            item(key = policy.key) {
-                PolicyCard(
-                    policy = policy,
-                    active = state.activePolicy == policy && !state.customized,
-                    enabled = state.connected && !state.loading,
-                    shape = cardShape,
-                    horizontal = horizontal,
-                    onSelect = { onSelect(policy) }
-                )
-            }
-        }
-        item {
-            Card(
-                modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth().navigationBarsPadding(),
-                shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-            ) {
-                Column(Modifier.padding(18.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(9.dp))
-                        Text("所有档位都无法关闭的保护", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "白名单、服务器端快照、挂载点检查、软链接防护、关键路径保护始终生效。高风险不会被普通清理直接删除，关键风险始终只审计。",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-        }
+        item { Spacer(Modifier.navigationBarsPadding()) }
     }
 }
 
 @Composable
-private fun PolicyAdviceCard(
-    advice: PolicyAdvice,
-    activePolicy: CleanupPolicy,
-    customized: Boolean,
+private fun PolicyChoiceRow(
+    policy: CleanupPolicy,
+    selected: Boolean,
     enabled: Boolean,
-    shape: androidx.compose.ui.graphics.Shape,
-    horizontal: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(policy.title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+                if (policy == CleanupPolicy.BALANCED) Text("推荐", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            Text(policy.subtitle, fontSize = 12.sp, lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        RadioButton(selected = selected, onClick = null, enabled = enabled, modifier = Modifier.size(26.dp))
+    }
+}
+
+@Composable
+private fun PolicyAdvicePanel(
+    advice: PolicyAdvice,
+    matches: Boolean,
+    enabled: Boolean,
     onApply: () -> Unit
 ) {
-    val matches = advice.recommendedPolicy == activePolicy && !customized
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val confidence = when (advice.confidence) {
         "high" -> "高可信"
         "medium" -> "中等可信"
         else -> "数据较少"
     }
-    Card(
-        modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
-        shape = shape,
-        colors = CardDefaults.cardColors(
-            containerColor = if (matches) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer
-        )
-    ) {
-        Column(Modifier.padding(19.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(46.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = .13f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    }
+    DetailGlassPanel {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("建议使用${advice.recommendedPolicy.title}档", Modifier.weight(1f),
+                fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
+            Text(confidence, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DetailStatusText(advice.summary, Modifier.padding(top = 6.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { expanded = !expanded }
+            .heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (expanded) "收起建议依据" else "查看建议依据", Modifier.weight(1f),
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+            Icon(if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight,
+                null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("基于最近 30 天的 ${advice.sampleCount} 条有效记录；建议不会自动应用。",
+                    fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PolicyMetric("可用空间", if (advice.storageFreePercent < 0) "未知" else "${advice.storageFreePercent}%", Modifier.weight(1f))
+                    PolicyMetric("任务异常", "${advice.failureRate}%", Modifier.weight(1f))
+                    PolicyMetric("隔离恢复", "${advice.restoreRate}%", Modifier.weight(1f))
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("设备建议：${advice.recommendedPolicy.title}档", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                advice.reasons.forEach { reason ->
+                    Text(reason, fontSize = 12.sp, lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
-                    Text(confidence, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(Modifier.height(13.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PolicyMetric("可用空间", if (advice.storageFreePercent < 0) "未知" else "${advice.storageFreePercent}%", Modifier.weight(1f))
-                PolicyMetric("任务异常", "${advice.failureRate}%", Modifier.weight(1f))
-                PolicyMetric("隔离恢复", "${advice.restoreRate}%", Modifier.weight(1f))
-            }
-            if (advice.reasons.isNotEmpty()) {
-                Spacer(Modifier.height(11.dp))
-                advice.reasons.take(4).forEach { reason ->
-                    Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
-                        Box(Modifier.padding(top = 6.dp).size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                        Spacer(Modifier.width(8.dp))
-                        Text(reason, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "基于最近 30 天 ${advice.sampleCount} 条有效记录。仅建议，不会自动切换；定时任务周期保持不变。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-                lineHeight = 20.sp
-            )
-            if (!matches) {
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = onApply, enabled = enabled, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(16.dp)) {
-                    Text("采用建议的${advice.recommendedPolicy.title}档", fontWeight = FontWeight.Bold)
-                }
+                Spacer(Modifier.height(2.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun PolicyCard(
-    policy: CleanupPolicy,
-    active: Boolean,
-    enabled: Boolean,
-    shape: androidx.compose.ui.graphics.Shape,
-    horizontal: androidx.compose.ui.unit.Dp,
-    onSelect: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .padding(horizontal = horizontal)
-            .fillMaxWidth()
-            .clip(shape)
-            .clickable(enabled = enabled && !active, onClick = onSelect),
-        shape = shape,
-        colors = CardDefaults.cardColors(
-            containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(43.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (active) MaterialTheme.colorScheme.secondary.copy(alpha = .16f) else MaterialTheme.colorScheme.primary.copy(alpha = .10f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            if (policy == CleanupPolicy.CONSERVATIVE) Icons.Rounded.Security else Icons.Rounded.CleaningServices,
-                            contentDescription = null,
-                            tint = if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(policy.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(8.dp))
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .11f)) {
-                            Text(policy.badge, Modifier.padding(horizontal = 8.dp, vertical = 3.dp), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Text(policy.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                }
-                if (active) Icon(Icons.Rounded.CheckCircle, contentDescription = "当前档位", tint = BaiZeTokens.colors.success)
-            }
-            Spacer(Modifier.height(13.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
-            Spacer(Modifier.height(9.dp))
-            policy.highlights.forEach { line ->
-                Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
-                    Box(Modifier.padding(top = 6.dp).size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                    Spacer(Modifier.width(9.dp))
-                    Text(line, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp)
-                }
-            }
-            if (!active) {
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = onSelect, enabled = enabled, modifier = Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(16.dp)) {
-                    Text("应用${policy.title}档", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+        if (!matches) GlassActionButton("采用建议的${advice.recommendedPolicy.title}档", onApply,
+            enabled = enabled, secondary = true, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+        else Text("当前策略与建议一致", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
     }
 }
 
 @Composable
 private fun PolicyMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(value, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 21.sp)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
     }
 }

@@ -5,13 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +25,7 @@ import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.SettingsSuggest
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,10 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
+import io.github.xgl34222220.baize.ui.components.DetailStatusText
 import io.github.xgl34222220.baize.ui.miuix.VideoCard
-import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.miuix.VideoDivider
-import io.github.xgl34222220.baize.ui.miuix.VideoLeadingIcon
 import io.github.xgl34222220.baize.ui.miuix.VideoListRow
 import io.github.xgl34222220.baize.ui.miuix.VideoSectionTitle
 import io.github.xgl34222220.baize.ui.miuix.VideoStatusPill
@@ -75,27 +72,24 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { VideoTopBar(title = "设置") }
+        item {
+            VideoTopBar(title = "设置", actions = {
+                TextButton(onClick = { actions.onSaveScheduler(scheduler) }, enabled = !scheduler.saving) {
+                    Text(if (scheduler.saving) "保存中" else "保存", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                }
+            })
+        }
         item {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    VideoLeadingIcon(Icons.Rounded.SettingsSuggest)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("白泽", fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
-                        Text("服务与自动任务", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("清理服务", Modifier.weight(1f), fontSize = 16.sp, lineHeight = 22.sp,
+                        fontWeight = FontWeight.Medium)
                     VideoStatusPill(when { state.running -> "执行中"; state.ready -> "已就绪"; state.connected -> "准备中"; else -> "待连接" }, state.ready || state.running)
                 }
-                Spacer(Modifier.height(12.dp))
-                Text(state.serviceText, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (state.schedulerText.isNotBlank()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(state.schedulerText, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(8.dp))
+                DetailStatusText(listOf(state.serviceText, state.schedulerText).filter { it.isNotBlank() }.distinct().joinToString("\n"),
+                    Modifier.padding(top = 8.dp, bottom = 4.dp))
             }
         }
         item { VideoSectionTitle("常用设置") }
@@ -105,13 +99,13 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
                 VideoDivider()
                 VideoListRow(Icons.Rounded.Security, "应用白名单", "跳过重要应用", value = "${state.whitelistCount} 个", onClick = actions.onOpenWhitelist)
                 VideoDivider()
-                VideoListRow(Icons.Rounded.Rule, "清理规则与明细", "查看规则命中与受保护文件", onClick = actions.onOpenAudit)
+                VideoListRow(Icons.Rounded.Rule, "清理结果与保护", "查看清理明细与保留项", onClick = actions.onOpenAudit)
             }
         }
-        item { VideoSectionTitle("自动任务", "执行条件与通知") }
+        item { VideoSectionTitle("自动任务") }
         item {
             VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
-                VideoListRow(Icons.Rounded.SettingsSuggest, "自动清理执行条件",
+                VideoListRow(Icons.Rounded.SettingsSuggest, "清理执行条件",
                     conditionSummary(scheduler.screenOffOnly, scheduler.chargingOnly, scheduler.idleOnly),
                     value = if (showExecution) "收起" else "调整", onClick = { showExecution = !showExecution })
                 AnimatedVisibility(showExecution) {
@@ -123,7 +117,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
                         VideoSwitchRow(Icons.Rounded.BatterySaver, "仅充电时执行", "连接电源后再开始任务", scheduler.chargingOnly,
                             { actions.onUpdateScheduler(scheduler.copy(chargingOnly = it)) })
                         VideoDivider()
-                        VideoSwitchRow(Icons.Rounded.SettingsSuggest, "仅系统空闲时执行", "等待 Android 报告空闲状态", scheduler.idleOnly,
+                        VideoSwitchRow(Icons.Rounded.SettingsSuggest, "仅空闲时执行", "设备空闲后再清理", scheduler.idleOnly,
                             { actions.onUpdateScheduler(scheduler.copy(idleOnly = it)) })
                     }
                 }
@@ -132,7 +126,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
                 VideoDivider()
                 VideoListRow(Icons.Rounded.Security, "单文件清理上限", "大于上限的文件不会自动清理", value = "${scheduler.maxFileMb} MB", onClick = { editFileLimit = true })
                 VideoDivider()
-                VideoListRow(Icons.Rounded.FolderCopy, "文件归类执行条件",
+                VideoListRow(Icons.Rounded.FolderCopy, "归类执行条件",
                     conditionSummary(scheduler.organizeScreenOffOnly, scheduler.organizeChargingOnly, scheduler.organizeIdleOnly),
                     value = if (showOrganizer) "收起" else "调整", onClick = { showOrganizer = !showOrganizer })
                 AnimatedVisibility(showOrganizer) {
@@ -144,7 +138,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
                         VideoSwitchRow(Icons.Rounded.BatterySaver, "归类时等待充电", "接通电源后整理文件", scheduler.organizeChargingOnly,
                             { actions.onUpdateScheduler(scheduler.copy(organizeChargingOnly = it)) })
                         VideoDivider()
-                        VideoSwitchRow(Icons.Rounded.SettingsSuggest, "归类时等待系统空闲", "设备空闲后再整理文件", scheduler.organizeIdleOnly,
+                        VideoSwitchRow(Icons.Rounded.SettingsSuggest, "归类时等待空闲", "设备空闲后再整理文件", scheduler.organizeIdleOnly,
                             { actions.onUpdateScheduler(scheduler.copy(organizeIdleOnly = it)) })
                     }
                 }
@@ -166,10 +160,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
         }
         item {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassActionButton(label = if (scheduler.saving) "正在保存…" else "保存运行设置",
-                    onClick = { actions.onSaveScheduler(scheduler) }, enabled = !scheduler.saving,
-                    modifier = Modifier.fillMaxWidth())
-                Text("运行条件与通知需保存后生效；主题即时生效。", fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("执行条件与通知需保存后生效。", fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item { VideoSectionTitle("恢复与诊断") }
@@ -190,4 +181,4 @@ private fun conditionSummary(screenOff: Boolean, charging: Boolean, idle: Boolea
         if (screenOff) add("息屏")
         if (charging) add("充电")
         if (idle) add("系统空闲")
-    }.let { if (it.isEmpty()) "不限制息屏、充电与空闲状态" else "等待${it.joinToString("、")}" }
+    }.let { if (it.isEmpty()) "不限息屏、充电与空闲" else "等待${it.joinToString("、")}" }
