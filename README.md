@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v2.9.3-2364db)
+![Version](https://img.shields.io/badge/version-v3.0.0-2364db)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -16,11 +16,13 @@
 
 v2 以原生 App 为主界面，通过 libsu RootService 调用模块内的 C 扫描引擎，不再依赖 WebUI。
 
-## 2.9.3 更新
+## 3.0.0 正式版更新
 
-修复大量结果清理时报 `data parcel size`、按项扫描忽略已有规则，以及失败后选择丢失的问题；补齐中高风险手动确认，继续重排扫描结果、主页面及清理工具。详见 [2.9.3 发布说明](RELEASE_NOTES_v2.9.3.md)。
+修复扫描 Root 响应文件跨权限传输的兼容问题，四类 Root 服务统一使用由 App 创建的请求与结果文件；大批量数据不塞入 Binder 消息，结果未确认时不自动重复清理。扫描失败直接显示具体原因。完整模块内置同签名 App，刷入后重启，原配置保留。详见 [3.0.0 发布说明](RELEASE_NOTES_v3.0.0.md)。
 
-查看 [实际界面截图与检查范围](docs/ui/v2.9.3/README.md)，包含浅色、深色与窄屏大字号页面。
+传输与 Android 自动回归已通过；此前报错的两台手机尚未反馈更新后实测结果，真机兼容性仍需确认。
+
+此前的规则、按项清理及界面改进见 [2.9.3 发布说明](RELEASE_NOTES_v2.9.3.md)；[2.9.3 实际界面截图与检查范围](docs/ui/v2.9.3/README.md) 包含浅色、深色与窄屏大字号页面。
 
 要每小时清安装包，在“清理 → 自动计划”的安装包项目设置 **1 小时 + 不保留**。执行间隔与文件保留期限分别生效，升级会保留旧的保留天数。安装包工具按独立开关处理下载位置的 APK/APKS/XAPK/APKM，其他文档与照片不属于安装包清理目标。
 

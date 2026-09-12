@@ -1,0 +1,27 @@
+name: BaiZe Exact Release Cleanup
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/release-cleanup.publish']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: baize-stable-release
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.repository == 'xgl34222220-ops/BaiZe'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify v3.0.0 and remove the six explicitly listed old versions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/cleanup-releases.sh .github/release-cleanup.publish
