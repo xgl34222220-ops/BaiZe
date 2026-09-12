@@ -1,0 +1,5 @@
+{
+  "run_id": 34675937501,
+  "head_sha": "ba24be79802a0e3849d8489028823648701f1450",
+  "reason": "Correct per-storage APK coverage counts before publication"
+}

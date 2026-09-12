@@ -1,0 +1,28 @@
+name: BaiZe Release Control
+on:
+  push:
+    branches: [main]
+    paths: ['.github/release.cancel']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cancel the specified obsolete release build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=$(jq -r '.run_id' .github/release.cancel)
+          SHA=$(jq -r '.head_sha' .github/release.cancel)
+          [[ "$RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" > /tmp/target-run.json
+          test "$(jq -r '.head_sha' /tmp/target-run.json)" = "$SHA"
+          test "$(jq -r '.name' /tmp/target-run.json)" = "BaiZe Stable Release"
+          if [ "$(jq -r '.status' /tmp/target-run.json)" != completed ]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/runs/$RUN/cancel"
+          fi
