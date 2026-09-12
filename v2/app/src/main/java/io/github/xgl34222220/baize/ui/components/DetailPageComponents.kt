@@ -35,13 +35,20 @@ fun DetailPageHeader(
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+                Icon(
+                    Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
             }
             Spacer(Modifier.weight(1f))
-            actions()
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+                actions()
+            }
         }
         Spacer(Modifier.height(8.dp))
-        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface)
         if (subtitle.isNotBlank()) {
             Spacer(Modifier.height(6.dp))
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -52,7 +59,8 @@ fun DetailPageHeader(
 @Composable
 fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface)
         if (subtitle.isNotBlank()) {
             Spacer(Modifier.height(4.dp))
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -80,7 +88,10 @@ fun DetailTaskCard(
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
+        colors = CardDefaults.cardColors(
+            containerColor = BaiZeTokens.colors.surfaceRaised,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -121,7 +132,10 @@ fun DetailEmptyState(
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
+        colors = CardDefaults.cardColors(
+            containerColor = BaiZeTokens.colors.surfaceRaised,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),
@@ -144,7 +158,10 @@ fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modif
     Card(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
+        colors = CardDefaults.cardColors(
+            containerColor = BaiZeTokens.colors.surfaceRaised,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         TextButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)

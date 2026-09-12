@@ -267,7 +267,8 @@ class Rules(unittest.TestCase):
         subprocess.run([*prefix, 'mkdir', '-p', str(root)], check=True)
         if prefix:
             subprocess.run([*prefix, 'chown', f'{os.getuid()}:{os.getgid()}', str(root)], check=True)
-        self.addCleanup(shutil.rmtree, root)
+        # Removing this owned directory also requires write access to its root-owned parent.
+        self.addCleanup(subprocess.run, [*prefix, 'rm', '-rf', '--', str(root)], check=True)
         cache = root / 'first/cache'; cache.mkdir(parents=True)
         protected = cache / 'keep'; protected.mkdir()
         (protected / 'file').write_text('keep')

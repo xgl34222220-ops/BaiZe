@@ -2,17 +2,14 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -88,7 +85,7 @@ class DetailVisualReviewTest {
 
     @Test fun whitelistXml() {
         val application = ApplicationProvider.getApplicationContext<Application>()
-        val context = ContextThemeWrapper(application, ThemeManager.currentPalette(application).themeRes)
+        val context = ContextThemeWrapper(compose.activity, ThemeManager.currentPalette(application).themeRes)
         val binding = ActivityWhitelistBinding.inflate(LayoutInflater.from(context))
         binding.selectionText.text = "已保护 2 个应用"
         binding.statusText.text = "选择要保留的应用后保存"
@@ -110,11 +107,16 @@ class DetailVisualReviewTest {
                 row.typeText.text = "用户"
             }
         }
-        binding.root.measure(View.MeasureSpec.makeMeasureSpec(393, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(852, View.MeasureSpec.EXACTLY))
-        binding.root.layout(0, 0, 393, 852)
-        val bitmap = Bitmap.createBitmap(393, 852, Bitmap.Config.ARGB_8888)
-        binding.root.draw(Canvas(bitmap))
-        save("whitelist", bitmap)
+        compose.runOnIdle { compose.activity.setContentView(binding.root) }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            fun settle(view: View) {
+                view.jumpDrawablesToCurrentState()
+                if (view is ViewGroup) repeat(view.childCount) { settle(view.getChildAt(it)) }
+            }
+            settle(binding.root)
+            save("whitelist", captureActivityContent(compose.activity))
+        }
     }
 
     @Composable private fun cacheResultScreen() {
@@ -156,7 +158,7 @@ class DetailVisualReviewTest {
 
     private fun save(name: String, bitmap: Bitmap) {
         val target = File("build/reports/ui-screenshots/detail-$name.png")
-        target.parentFile.mkdirs()
+        requireNotNull(target.parentFile).mkdirs()
         target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }
