@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -42,6 +44,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,10 +84,11 @@ fun MiuixLiquidDock(
     val dark = scheme.background.luminance() < .5f
     val amoled = dark && settings.amoledBlack
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val itemHeight = 54.dp + (12 * (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)).dp
     val shape = if (floating) {
-        RoundedCornerShape(32.dp)
+        RoundedCornerShape(28.dp)
     } else {
-        RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
+        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     }
 
     val activeHazeState = hazeState.takeIf {
@@ -95,18 +100,13 @@ fun MiuixLiquidDock(
         activeHazeState != null -> BaiZeTokens.colors.surfaceRaised.copy(alpha = .84f)
         else -> BaiZeTokens.colors.surfaceRaised.copy(alpha = .98f)
     }
-    val borderColor = if (dark) {
-        Color.White.copy(alpha = .11f)
-    } else {
-        Color.White.copy(alpha = .88f)
-    }
     val hazeModifier = activeHazeState?.let { state ->
         Modifier.hazeEffect(
             state = state,
             style = HazeMaterials.ultraThin()
         ) {
-            blurRadius = 24.dp
-            noiseFactor = .025f
+            blurRadius = 20.dp
+            noiseFactor = .01f
         }
     } ?: Modifier
 
@@ -115,19 +115,18 @@ fun MiuixLiquidDock(
             .then(
                 if (floating) {
                     Modifier
-                        .padding(horizontal = 14.dp)
-                        .padding(bottom = bottomInset + 12.dp)
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = bottomInset + 10.dp)
                 } else {
                     Modifier
                 }
             )
             .fillMaxWidth()
-            .height(if (floating) 64.dp else 64.dp + bottomInset)
-            .shadow(if (floating) 8.dp else 2.dp, shape, clip = false)
+            .height(itemHeight + 12.dp + if (floating) 0.dp else bottomInset)
+            .shadow(if (floating) 4.dp else 0.dp, shape, clip = false)
             .clip(shape)
             .then(hazeModifier)
             .background(dockColor)
-            .border(1.dp, borderColor, shape)
             .padding(
                 start = 6.dp,
                 top = 6.dp,
@@ -136,7 +135,6 @@ fun MiuixLiquidDock(
             )
     ) {
         val itemWidth = maxWidth / items.size.toFloat()
-        val compact = items.size > 4
         val targetIndex = selectedIndex.coerceIn(items.indices)
         val indicatorX by animateDpAsState(
             targetValue = itemWidth * targetIndex.toFloat(),
@@ -148,12 +146,12 @@ fun MiuixLiquidDock(
             modifier = Modifier
                 .offset(x = indicatorX + 4.dp)
                 .width(itemWidth - 8.dp)
-                .height(48.dp)
+                .height(itemHeight)
                 .clip(RoundedCornerShape(24.dp))
                 .background(scheme.primaryContainer.copy(alpha = if (dark) .72f else .88f))
         )
 
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().selectableGroup()) {
             items.forEachIndexed { index, item ->
                 val active = index == targetIndex
                 val iconColor by animateColorAsState(
@@ -170,24 +168,24 @@ fun MiuixLiquidDock(
                 Column(
                     modifier = Modifier
                         .width(itemWidth)
-                        .height(48.dp)
+                        .height(itemHeight)
                         .clip(RoundedCornerShape(24.dp))
-                        .clickable { onSelected(index) },
+                        .selectable(active, role = Role.Tab) { onSelected(index) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         imageVector = item.icon,
-                        contentDescription = item.title,
-                        modifier = Modifier.size(if (compact) 20.dp else 22.dp),
+                        contentDescription = null,
+                        modifier = Modifier.size(23.dp),
                         tint = iconColor
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = item.title,
                         color = textColor,
-                        fontSize = if (compact) 9.sp else 10.sp,
-                        lineHeight = if (compact) 10.sp else 11.sp,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium
                     )
                 }

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -20,6 +22,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,9 +45,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -321,7 +328,7 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 }
 
-private data class FileOrganizerUiState(
+internal data class FileOrganizerUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
     val status: String = "等待连接",
@@ -332,7 +339,7 @@ private data class FileOrganizerUiState(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FileOrganizerScreen(
+internal fun FileOrganizerScreen(
     state: FileOrganizerUiState,
     schedule: FileOrganizerScheduleSettings,
     scheduleSavedText: String,
@@ -343,187 +350,79 @@ private fun FileOrganizerScreen(
     onScheduleChange: (FileOrganizerScheduleSettings) -> Unit,
     onSaveSchedule: () -> Unit
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("文件归类", fontWeight = FontWeight.Black, fontSize = 24.sp)
-                        Text(
-                            "全应用一键归类与定时归类",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item { DetailPageHeader("文件归类", "把分散的下载文件整理到一起", onBack) }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.FolderCopy, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.size(12.dp))
+                        Text(if (state.running) "正在整理文件" else "按文件类型整理", style = MaterialTheme.typography.titleLarge)
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
+                    if (state.lastTotal > 0) {
+                        Text("${state.lastTotal} 个文件 · ${android.text.format.Formatter.formatFileSize(LocalContext.current, state.lastBytes)}",
+                            style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 36.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    shape = RoundedCornerShape(28.dp)
-                ) {
-                    Column(
-                        Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    Text(state.status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Button(
+                        onClick = if (state.running) onStop else onOneTap,
+                        enabled = state.connected,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                        shape = RoundedCornerShape(18.dp)
+                    ) { Text(if (state.running) "停止当前任务" else "一键归类", style = MaterialTheme.typography.titleMedium) }
+                    if (state.undoAvailable && !state.running) TextButton(
+                        onClick = onUndo, enabled = state.connected, modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Rounded.FolderCopy,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(Modifier.size(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    state.status,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 18.sp
-                                )
-                                Text(
-                                    "点一次自动扫描并直接归类。Telegram、NagramX、浏览器、网盘等应用不再依赖单独写死路径。",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp,
-                                    lineHeight = 18.sp
-                                )
-                            }
-                            if (state.running) {
-                                CircularProgressIndicator(
-                                    Modifier.size(24.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = if (state.running) onStop else onOneTap,
-                            enabled = state.connected,
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Icon(
-                                if (state.running) Icons.Rounded.Stop else Icons.Rounded.AutoAwesome,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                if (state.running) "停止当前任务" else "一键归类所有应用下载",
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = onUndo,
-                            enabled = state.connected && !state.running && state.undoAvailable,
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(18.dp)
-                        ) {
-                            Icon(Icons.Rounded.Restore, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("撤销上一次归类", fontWeight = FontWeight.Bold)
-                        }
+                        Icon(Icons.Rounded.Restore, null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("撤销上一次归类")
                     }
                 }
             }
-
-            item { SourceCard() }
-            item { DestinationCard() }
-            item {
-                ScheduleCard(
-                    schedule,
-                    scheduleSavedText,
-                    onScheduleChange,
-                    onSaveSchedule
-                )
-            }
         }
+        item { DestinationCard() }
+        item { ScheduleCard(schedule, scheduleSavedText, onScheduleChange, onSaveSchedule) }
+        item { SourceCard() }
+        item { Spacer(Modifier.navigationBarsPadding()) }
     }
 }
 
 @Composable
 private fun SourceCard() {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        Column(
-            Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("扫描范围", fontWeight = FontWeight.Black, fontSize = 19.sp)
-            Text(
-                "内部存储 + 全部应用用户文件",
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "包括根目录散落文件、公共 Download/接收目录，以及每个应用的 Android/media/<包名> 和 Android/data/<包名>/files。应用缓存、数据库、缩略图、贴纸和临时文件会跳过。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 18.sp
-            )
-        }
-    }
+    DetailExpandableText(
+        "查看归类范围",
+        "查找公共下载、蓝牙接收、浏览器、网盘和聊天应用中的用户文件，以及应用的外部 files、media 目录。\n\n应用缓存、数据库、缩略图、贴纸和临时文件会跳过。归类后可以撤销上一次操作。"
+    )
 }
 
 @Composable
 private fun DestinationCard() {
-    val categories = listOf("图片", "视频", "音频", "文档", "安装包", "压缩包", "电子书", "其他")
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised),
         shape = RoundedCornerShape(24.dp)
     ) {
-        Column(
-            Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text("归类到哪里", fontWeight = FontWeight.Black, fontSize = 19.sp)
-            Text(
-                "内部存储 / BaiZe归类",
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "按类型移动到对应子目录；同名文件可选择跳过、自动重命名或内容去重。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                categories.forEach { category ->
-                    FilterChip(
-                        selected = false,
-                        onClick = {},
-                        label = { Text(category) }
-                    )
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("归类位置", style = MaterialTheme.typography.titleLarge)
+            Text("内部存储 / BaiZe归类", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text("按类型放进对应文件夹。同名文件会按下方设置处理。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            listOf(listOf("图片", "视频", "音频", "文档"), listOf("安装包", "压缩包", "电子书", "其他")).forEach { categories ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.forEach { category ->
+                        Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                            Text(category, Modifier.padding(vertical = 10.dp), style = MaterialTheme.typography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        }
+                    }
                 }
             }
         }
@@ -539,8 +438,9 @@ private fun ScheduleCard(
 ) {
     val intervals = FileOrganizerWorker.ALLOWED_INTERVALS
     Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = BaiZeTokens.colors.surfaceRaised
         ),
         shape = RoundedCornerShape(24.dp)
     ) {
@@ -556,11 +456,11 @@ private fun ScheduleCard(
                 )
                 Spacer(Modifier.size(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("定时归类", fontWeight = FontWeight.Black, fontSize = 19.sp)
+                    Text("定时归类", fontWeight = FontWeight.SemiBold, fontSize = 19.sp)
                     Text(
-                        "定时任务使用相同的全应用扫描范围",
+                        "自动整理新下载的文件",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                 }
                 Switch(
@@ -612,12 +512,12 @@ private fun ScheduleCard(
             }
             Text(
                 "上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}",
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 schedule.lastResult,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (savedText.isNotBlank()) {
@@ -632,7 +532,7 @@ private fun ScheduleCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Text("保存定时归类", fontWeight = FontWeight.Black)
+                Text("保存定时归类", fontWeight = FontWeight.SemiBold)
             }
         }
     }

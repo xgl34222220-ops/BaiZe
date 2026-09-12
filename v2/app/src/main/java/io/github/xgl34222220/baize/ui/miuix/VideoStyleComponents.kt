@@ -1,6 +1,5 @@
 package io.github.xgl34222220.baize.ui.miuix
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,9 +17,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,8 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,22 +48,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-/**
- * 两套外观共用同一信息架构和页面骨架，只替换组件皮肤。
- * MIUIX 更轻、更圆润、更接近 HyperOS 系统面板；Material 3 使用标准色彩容器与控件层级。
- */
-enum class VideoSkin {
-    MIUIX,
-    MATERIAL3
-}
-
+/** Shared information structure, with native controls and one quiet surface hierarchy. */
+enum class VideoSkin { MIUIX, MATERIAL3 }
 val LocalVideoSkin = staticCompositionLocalOf { VideoSkin.MIUIX }
 
 @Composable
-fun ProvideVideoSkin(
-    skin: VideoSkin,
-    content: @Composable () -> Unit
-) {
+fun ProvideVideoSkin(skin: VideoSkin, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalVideoSkin provides skin, content = content)
 }
 
@@ -69,153 +64,62 @@ fun VideoTopBar(
     start: @Composable RowScope.() -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = if (material) 72.dp else 68.dp)
-            .padding(horizontal = if (material) 16.dp else 12.dp, vertical = 8.dp)
+    Row(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(
-            modifier = Modifier.align(Alignment.CenterStart),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            content = start
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 76.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = title,
-                fontSize = if (material) 22.sp else 22.sp,
-                lineHeight = if (material) 27.sp else 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        start()
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface, maxLines = 2,
+                overflow = TextOverflow.Ellipsis)
             if (!subtitle.isNullOrBlank()) {
-                Spacer(Modifier.height(1.dp))
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            content = actions
-        )
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp), content = actions)
     }
 }
 
 @Composable
-fun VideoIconButton(
-    icon: ImageVector,
-    description: String,
-    onClick: () -> Unit,
-    primary: Boolean = false
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    val shape = CircleShape
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val container = when {
-        material && primary -> MaterialTheme.colorScheme.primary
-        material -> MaterialTheme.colorScheme.surfaceContainerHigh
-        primary -> MaterialTheme.colorScheme.primaryContainer
-        else -> BaiZeTokens.colors.surfaceRaised
-    }
-    val content = when {
-        material && primary -> MaterialTheme.colorScheme.onPrimary
-        material -> MaterialTheme.colorScheme.onSurfaceVariant
-        primary -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurface
-    }
+fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit, primary: Boolean = false) {
     Surface(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(shape)
-            .clickable(onClick = onClick),
-        shape = shape,
-        color = container,
-        contentColor = content,
-        border = if (material) null else BorderStroke(
-            1.dp,
-            Color.White.copy(alpha = if (dark) .10f else .62f)
-        )
+        modifier = Modifier.size(48.dp).clip(CircleShape)
+            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+        shape = CircleShape,
+        color = if (primary) MaterialTheme.colorScheme.primaryContainer else BaiZeTokens.colors.surfaceRaised,
+        contentColor = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = description,
-                modifier = Modifier.size(if (material) 21.dp else 20.dp),
-                tint = content
-            )
+            Icon(icon, description, Modifier.size(22.dp))
         }
     }
 }
 
 @Composable
-fun VideoTabs(
-    labels: List<String>,
-    selectedIndex: Int,
-    onSelected: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
+fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = if (material) 16.dp else 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(if (material) 8.dp else 7.dp)
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         labels.forEachIndexed { index, label ->
             val selected = index == selectedIndex
-            val shape = RoundedCornerShape(if (material) 18.dp else 12.dp)
-            val container = when {
-                material && selected -> MaterialTheme.colorScheme.primary
-                material -> MaterialTheme.colorScheme.surfaceContainerHigh
-                selected -> MaterialTheme.colorScheme.primaryContainer
-                else -> BaiZeTokens.colors.surfaceRaised
-            }
-            val content = when {
-                material && selected -> MaterialTheme.colorScheme.onPrimary
-                material -> MaterialTheme.colorScheme.onSurfaceVariant
-                selected -> MaterialTheme.colorScheme.primary
-                else -> MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            val shape = RoundedCornerShape(16.dp)
             Surface(
-                modifier = Modifier
-                    .height(42.dp)
-                    .clip(shape)
-                    .clickable { onSelected(index) },
+                modifier = Modifier.heightIn(min = 48.dp).clip(shape)
+                    .selectable(selected, role = Role.Tab) { onSelected(index) },
                 shape = shape,
-                color = container,
-                contentColor = content,
-                border = null,
-                shadowElevation = if (selected) 2.dp else 0.dp
+                color = if (selected) MaterialTheme.colorScheme.primary else BaiZeTokens.colors.surfaceRaised,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
             ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = if (material) 18.dp else 15.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        color = content,
-                        fontSize = 14.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-                    )
+                Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+                    Text(label, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
@@ -223,28 +127,14 @@ fun VideoTabs(
 }
 
 @Composable
-fun VideoSectionTitle(
-    title: String,
-    subtitle: String? = null,
-    modifier: Modifier = Modifier
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    Column(modifier.padding(horizontal = if (material) 20.dp else 16.dp)) {
-        Text(
-            text = title,
-            fontSize = 18.sp,
-            lineHeight = if (material) 23.sp else 21.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+fun VideoSectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
+    Column(modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface)
         if (!subtitle.isNullOrBlank()) {
-            Spacer(Modifier.height(1.dp))
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -256,59 +146,21 @@ fun VideoCard(
     contentPadding: Int = 0,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    val resolvedColor = containerColor ?: if (material) {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    } else {
-        BaiZeTokens.colors.surfaceRaised
-    }
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(if (material) 20.dp else 22.dp),
-        color = resolvedColor,
+    Surface(modifier = modifier, shape = RoundedCornerShape(24.dp),
+        color = containerColor ?: BaiZeTokens.colors.surfaceRaised,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = null,
-        shadowElevation = if (material) 1.dp else 2.dp
-    ) {
-        Column(
-            modifier = if (contentPadding > 0) Modifier.padding(contentPadding.dp) else Modifier,
-            content = content
-        )
+        shadowElevation = 1.dp) {
+        Column(Modifier.padding(contentPadding.dp), content = content)
     }
 }
 
 @Composable
-fun VideoLeadingIcon(
-    icon: ImageVector,
-    primary: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    val background = when {
-        material && primary -> MaterialTheme.colorScheme.primaryContainer
-        material -> MaterialTheme.colorScheme.surfaceContainerHighest
-        primary -> MaterialTheme.colorScheme.primary.copy(alpha = .11f)
-        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = .055f)
-    }
-    val tint = when {
-        material && primary -> MaterialTheme.colorScheme.onPrimaryContainer
-        material -> MaterialTheme.colorScheme.onSurfaceVariant
-        primary -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(if (material) 14.dp else 13.dp))
-            .background(background),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(if (material) 21.dp else 20.dp),
-            tint = tint
-        )
+fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier) {
+    Box(modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+        .background(if (primary) MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+        else BaiZeTokens.colors.surfaceOverlay), contentAlignment = Alignment.Center) {
+        Icon(icon, null, Modifier.size(23.dp),
+            tint = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -323,181 +175,115 @@ fun VideoListRow(
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick)
-                else Modifier
-            )
-            .padding(
-                horizontal = if (material) 18.dp else 15.dp,
-                vertical = if (material) 14.dp else 12.dp
-            ),
+        modifier = modifier.fillMaxWidth().heightIn(min = 80.dp)
+            .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        VideoLeadingIcon(icon = icon, primary = enabled)
-        Spacer(Modifier.width(if (material) 14.dp else 12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = title,
-                fontSize = 17.sp,
-                lineHeight = if (material) 20.sp else 19.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .45f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(1.dp))
-            Text(
-                text = subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        VideoLeadingIcon(icon, primary = enabled)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .45f),
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
+                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
         }
         if (!value.isNullOrBlank()) {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = value,
-                color = if (material) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
-                fontSize = if (material) 12.sp else 11.sp,
-                lineHeight = if (material) 16.sp else 15.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            Spacer(Modifier.width(10.dp))
+            Text(value, modifier = Modifier.widthIn(max = 88.dp),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.End, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         if (trailing != null) {
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(10.dp))
             trailing()
+        } else if (onClick != null) {
+            Spacer(Modifier.width(6.dp))
+            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f))
         }
     }
 }
 
 @Composable
-fun VideoSwitchRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    VideoListRow(
-        icon = icon,
-        title = title,
-        subtitle = subtitle,
-        modifier = modifier,
-        trailing = {
-            Switch(
-                checked = checked,
-                onCheckedChange = onCheckedChange
-            )
-        }
-    )
+fun VideoSwitchRow(icon: ImageVector, title: String, subtitle: String, checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    VideoListRow(icon, title, subtitle, modifier,
+        trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) })
 }
 
 @Composable
-fun VideoDivider(start: Int = 67) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    HorizontalDivider(
-        modifier = Modifier.padding(start = if (material) (start + 7).dp else start.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (material) .55f else .34f)
-    )
+fun VideoDivider(start: Int = 76) {
+    HorizontalDivider(Modifier.padding(start = start.dp, end = 18.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .25f))
 }
 
 @Composable
-fun VideoMetricTile(
-    label: String,
-    value: String,
-    caption: String,
-    modifier: Modifier = Modifier
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(if (material) 16.dp else 17.dp),
-        color = if (material) MaterialTheme.colorScheme.surfaceContainer else BaiZeTokens.colors.surfaceOverlay,
-        border = if (material) null else BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = .18f)
-        )
-    ) {
-        Column(Modifier.padding(horizontal = if (material) 15.dp else 13.dp, vertical = if (material) 13.dp else 11.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-            Spacer(Modifier.height(3.dp))
-            Text(
-                value,
-                fontSize = if (material) 18.sp else 17.sp,
-                lineHeight = if (material) 22.sp else 21.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                caption,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = if (material) 10.sp else 9.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+fun VideoMetricTile(label: String, value: String, caption: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(20.dp), color = BaiZeTokens.colors.surfaceRaised) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(value, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (caption.isNotBlank()) Text(caption, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-fun VideoActionTile(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    primary: Boolean = false
-) {
-    val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    val shape = RoundedCornerShape(if (material) 18.dp else 19.dp)
-    val container = when {
-        material && primary -> MaterialTheme.colorScheme.primaryContainer
-        material -> MaterialTheme.colorScheme.secondaryContainer
-        primary -> MaterialTheme.colorScheme.primaryContainer
-        else -> BaiZeTokens.colors.surfaceRaised
-    }
-    val content = when {
-        material && primary -> MaterialTheme.colorScheme.onPrimaryContainer
-        material -> MaterialTheme.colorScheme.onSecondaryContainer
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    Surface(
-        modifier = modifier
-            .clip(shape)
-            .clickable(onClick = onClick),
+fun VideoActionTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit,
+    modifier: Modifier = Modifier, primary: Boolean = false) {
+    val shape = RoundedCornerShape(24.dp)
+    Surface(modifier = modifier.clip(shape).clickable(role = Role.Button, onClick = onClick),
         shape = shape,
-        color = container,
-        contentColor = content,
-        border = if (material) null else BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = .25f)
-        )
-    ) {
-        Column(Modifier.padding(if (material) 16.dp else 14.dp)) {
-            VideoLeadingIcon(icon = icon, primary = true)
-            Spacer(Modifier.height(if (material) 12.dp else 10.dp))
-            Text(title, color = content, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                subtitle,
-                color = content.copy(alpha = .72f),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        color = if (primary) BaiZeTokens.colors.surfaceOverlay else BaiZeTokens.colors.surfaceRaised) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                VideoLeadingIcon(icon)
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
+    }
+}
+
+@Composable
+fun VideoStatusPill(text: String, positive: Boolean = true, modifier: Modifier = Modifier) {
+    val color = if (positive) BaiZeTokens.colors.success else BaiZeTokens.colors.warning
+    Surface(modifier, shape = CircleShape, color = color.copy(alpha = .09f)) {
+        Row(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.size(6.dp).background(color, CircleShape))
+            Text(text, color = color, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+fun VideoEmptyState(icon: ImageVector, title: String, description: String, modifier: Modifier = Modifier,
+    actionLabel: String? = null, onAction: (() -> Unit)? = null) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(64.dp).background(BaiZeTokens.colors.surfaceOverlay, RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center) {
+            Icon(icon, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        if (!actionLabel.isNullOrBlank() && onAction != null) Button(onClick = onAction) { Text(actionLabel) }
     }
 }

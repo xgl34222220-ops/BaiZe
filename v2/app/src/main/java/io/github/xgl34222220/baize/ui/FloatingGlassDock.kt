@@ -38,7 +38,7 @@ class FloatingGlassDock @JvmOverloads constructor(
 
     private val specs = listOf(
         Spec(R.id.nav_home, R.drawable.ic_nav_home, "首页"),
-        Spec(R.id.nav_plan, R.drawable.ic_nav_plan, "计划"),
+        Spec(R.id.nav_plan, R.drawable.ic_nav_plan, "清理"),
         Spec(R.id.nav_records, R.drawable.ic_nav_records, "记录"),
         Spec(R.id.nav_settings, R.drawable.ic_nav_settings, "设置")
     )
@@ -70,15 +70,15 @@ class FloatingGlassDock @JvmOverloads constructor(
         clipToPadding = false
         background = when {
             glassEnabled -> LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
-            floatingEnabled -> rounded(surface, 32, outline, 1)
+            floatingEnabled -> rounded(surface, 28)
             else -> rounded(surface, 0)
         }
-        elevation = dp(if (floatingEnabled) 13 else 0).toFloat()
-        translationZ = dp(if (floatingEnabled) 2 else 0).toFloat()
+        elevation = dp(if (floatingEnabled) 4 else 0).toFloat()
+        translationZ = dp(0).toFloat()
         ViewCompat.setImportantForAccessibility(this, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES)
 
         capsule.apply {
-            background = LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.ACTIVE)
+            background = rounded(ColorUtils.blendARGB(surface, primary, .13f), 24)
             alpha = 0f
             elevation = dp(1).toFloat()
         }
@@ -148,6 +148,7 @@ class FloatingGlassDock @JvmOverloads constructor(
             isClickable = true
             isFocusable = true
             contentDescription = title
+            minimumHeight = dp(54)
             background = null
 
             icon.layoutParams = LinearLayout.LayoutParams(dp(23), dp(23))
@@ -166,7 +167,8 @@ class FloatingGlassDock @JvmOverloads constructor(
         }
 
         fun setActive(active: Boolean, animated: Boolean) {
-            val color = if (active) primary else ColorUtils.setAlphaComponent(onSurface, 172)
+            isSelected = active
+            val color = if (active) primary else ColorUtils.setAlphaComponent(onSurface, 200)
             icon.imageTintList = ColorStateList.valueOf(color)
             label.setTextColor(color)
             label.setTypeface(label.typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)

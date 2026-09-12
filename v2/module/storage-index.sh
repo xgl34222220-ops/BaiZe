@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# BaiZe shared storage index v4: directory-fingerprint incremental reuse + unified side indexes.
+# BaiZe shared storage index: one traversal, native metadata, validated side indexes.
 set -u
 # $0 不含斜杠时 ${0%/*} 会原样返回脚本名，这里显式兜底
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
@@ -19,7 +19,7 @@ LARGE_INDEX="$INDEX_DIR/large-files.nul"
 ORGANIZER_INDEX="$INDEX_DIR/organizer-files.nul"
 DUPLICATE_CANDIDATES="$INDEX_DIR/duplicate-candidates.tsv"
 LOCK_DIR="$STATE_DIR/index.lock"
-STOP_FILE="$STATE_DIR/stop"
+STOP_FILE=${BAIZE_INDEX_STOP_FILE:-$STATE_DIR/stop}
 # 原生索引器。不可用时下面的逐文件循环会作为退路继续工作。
 if [ -f "$MODDIR/abi-resolve.sh" ]; then
   . "$MODDIR/abi-resolve.sh"
@@ -47,11 +47,28 @@ case "$TTL" in ''|*[!0-9]*) TTL=300 ;; esac
 [ "$TTL" -lt 30 ] && TTL=30
 [ "$TTL" -gt 86400 ] && TTL=86400
 mkdir -p "$INDEX_DIR" "$CACHE_DIR"
+SCOPE=organizer
+case "$TRIGGER" in storage-analysis|duplicates|large-files) SCOPE=storage ;; esac
+# TTL is valid only for the same configuration, classifier, roots and scope.
+# Changing the large-file threshold or category table must refresh its side index.
+INPUT_SIGNATURE=$({
+  cat "$CONFIG" "$ORGANIZER_CATEGORIES" 2>/dev/null
+  printf '\n%s\n%s\n%s\n' "$MEDIA_ROOT" "${BAIZE_EXTRA_STORAGE_ROOTS:-}" "$SCOPE"
+} | cksum | awk '{print $1 ":" $2}')
+index_is_fresh() {
+  [ "$MODE" = ensure ] || return 1
+  for fresh_file in "$INDEX_FILE" "$APK_INDEX" "$EMPTY_INDEX" "$LARGE_INDEX" "$ORGANIZER_INDEX" "$DUPLICATE_CANDIDATES" "$COVERAGE_FILE"; do
+    [ -f "$fresh_file" ] || return 1
+  done
+  fresh_signature=$(sed -n 's/^input_signature=//p' "$META_FILE" 2>/dev/null | tail -n 1)
+  [ "$fresh_signature" = "$INPUT_SIGNATURE" ] || return 1
+  fresh_epoch=$(sed -n 's/^epoch=//p' "$META_FILE" 2>/dev/null | tail -n 1)
+  case "$fresh_epoch" in ''|*[!0-9]*) return 1 ;; esac
+  fresh_age=$(( $(date +%s) - fresh_epoch ))
+  [ "$fresh_age" -ge 0 ] && [ "$fresh_age" -lt "$TTL" ]
+}
 
-now=$(date +%s)
-old_epoch=$(sed -n 's/^epoch=//p' "$META_FILE" 2>/dev/null | tail -n 1)
-case "$old_epoch" in ''|*[!0-9]*) old_epoch=0 ;; esac
-if [ "$MODE" = ensure ] && [ -f "$INDEX_FILE" ] && [ -f "$APK_INDEX" ] && [ -f "$ORGANIZER_INDEX" ] && [ $((now - old_epoch)) -ge 0 ] && [ $((now - old_epoch)) -lt "$TTL" ]; then
+if index_is_fresh; then
   echo "共享索引仍在 TTL 内"
   exit 0
 fi
@@ -75,6 +92,8 @@ printf '%s\n' "$$" >"$LOCK_DIR/pid"
 printf '%s\n' "$(proc_start_ticks $$)" >"$LOCK_DIR/start_ticks"
 trap 'rm -rf "$LOCK_DIR" 2>/dev/null' EXIT
 trap 'exit 9' INT TERM
+# Another caller may have completed the same index while this request waited.
+if index_is_fresh; then echo "复用刚完成的共享索引"; exit 0; fi
 
 TMP="$LOCK_DIR/tmp"
 mkdir -p "$TMP" "$TMP/seen"
@@ -122,10 +141,21 @@ discover_app_user_roots() {
 }
 add_user_root() {
   au_user=$1; au_root=$2; au_volume=$3
-  add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"
-  add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"
-  add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"
-  for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents "$au_root"/Bluetooth "$au_root"/UCDownloads "$au_root"/Quark/Download "$au_root"/BaiduNetdisk "$au_root"/Telegram "$au_root"/Nagram "$au_root"/NagramX; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
+  if [ "$SCOPE" = storage ]; then
+    # Diagnostics include deep photos/music/custom folders. The old depth-2
+    # root silently missed DCIM/Camera and any other nested public directory.
+    add_root "共享存储" "$au_user" "$au_volume" 1 "$au_root"
+    for au_public in "$au_root"/* "$au_root"/.[!.]* "$au_root"/..?*; do
+      [ -d "$au_public" ] && [ ! -L "$au_public" ] || continue
+      [ "${au_public##*/}" != Android ] || continue
+      add_root "用户文件:${au_public##*/}" "$au_user" "$au_volume" 32 "$au_public"
+    done
+  else
+    add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"
+    add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"
+    add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"
+    for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents "$au_root"/Bluetooth "$au_root"/UCDownloads "$au_root"/Quark/Download "$au_root"/BaiduNetdisk "$au_root"/Telegram "$au_root"/Nagram "$au_root"/NagramX; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
+  fi
   for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done
   for au_pkg in "$au_root"/Android/data/*; do
     [ -d "$au_pkg" ] || continue; au_name=${au_pkg##*/}
@@ -210,18 +240,21 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
     mkdir -p "$TMP/seen"
     while IFS= read -r -d '' file; do
       [ -f "$file" ] || continue; [ ! -L "$file" ] || continue
-      case "${file##*/}" in *.part|*.partial|*.download|*.crdownload) continue ;; esac
-      inode=$(stat -c '%d_%i' "$file" 2>/dev/null || echo "path_$(hash_text "$file")")
+      lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
+      case "$lower" in *.part|*.partial|*.download|*.crdownload) continue ;; esac
+      file_stat=$(stat -c '%d_%i %s' "$file" 2>/dev/null) || continue
+      inode=${file_stat%% *}; size=${file_stat#* }
       if [ -e "$TMP/seen/$inode" ]; then root_duplicates=$((root_duplicates + 1)); total_duplicates=$((total_duplicates + 1)); continue; fi
       : >"$TMP/seen/$inode"
-      size=$(stat -c %s "$file" 2>/dev/null || echo 0); case "$size" in ''|*[!0-9]*) size=0 ;; esac
+      case "$size" in ''|*[!0-9]*) continue ;; esac
       printf '%s\0' "$file" >>"$RECORDS"; files=$((files + 1)); bytes=$((bytes + size))
-      lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
       ext_lower=${lower##*.}; [ "$ext_lower" = "$lower" ] && ext_lower=""
       case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk) printf '%s\0' "$file" >>"$TMP/apk.nul" ;; esac
       [ "$size" -ne 0 ] || printf '%s\0' "$file" >>"$TMP/empty.nul"
       [ "$size" -lt "$large_bytes" ] || printf '%s\0' "$file" >>"$TMP/large.nul"
-      case " $ORG_EXTS " in *" $ext_lower "*) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
+      if [ -n "$ext_lower" ]; then
+        case " $ORG_EXTS " in *" $ext_lower "*) printf '%s\0' "$file" >>"$TMP/organizer.nul" ;; esac
+      fi
       [ "$size" -le 0 ] || printf '%s\t%s\n' "$size" "$(printf '%s' "$file" | base64 | tr -d '\n')" >>"$TMP/duplicates.tsv"
     done <"$list"
   fi
@@ -236,7 +269,8 @@ sort -n -k1,1 "$TMP/duplicates.tsv" >"$DUPLICATE_CANDIDATES" 2>/dev/null || mv -
 {
   echo "epoch=$(date +%s)"; echo "trigger=$TRIGGER"; echo "roots=$root_total"; echo "files=$total_files"; echo "bytes=$total_bytes"
   echo "roots_reused=$total_reused"; echo "roots_scanned=$total_scanned"; echo "overlap_duplicates=$total_duplicates"
-  echo "engine=baize-storage-index-v4-incremental-unified"
+  echo "input_signature=$INPUT_SIGNATURE"; echo "scope=$SCOPE"
+  echo "engine=baize-storage-index-v5-single-pass"
 } >"$META_FILE"
 chmod 0600 "$INDEX_FILE" "$COVERAGE_FILE" "$META_FILE" "$APK_INDEX" "$EMPTY_INDEX" "$LARGE_INDEX" "$ORGANIZER_INDEX" "$DUPLICATE_CANDIDATES" 2>/dev/null || true
-echo "共享增量索引完成：$root_total 个来源，$total_files 个唯一文件，复用 $total_reused 个来源"
+echo "共享索引完成：$root_total 个来源，$total_files 个唯一文件，复用 $total_reused 个来源"

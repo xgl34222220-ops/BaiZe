@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -263,12 +265,12 @@ private fun CleanupEffectivenessScreen(
     onRefresh: () -> Unit
 ) {
     val report = state.report
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val shape = if (miuix) RoundedCornerShape(28.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { EffectivenessHeader(state.message, state.loading, onBack, onRefresh) }
         if (!report.available) {
@@ -277,8 +279,8 @@ private fun CleanupEffectivenessScreen(
             item { EffectivenessHero(report, horizontal, shape) }
             item {
                 Column(Modifier.padding(horizontal = horizontal)) {
-                    Text("四维评分", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text("安全性优先，其次评估收益、耗时和运行稳定性", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("四维评分", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text("安全性优先，其次评估收益、耗时和运行稳定性", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
             item {
@@ -297,8 +299,8 @@ private fun CleanupEffectivenessScreen(
             if (report.observations.isNotEmpty()) {
                 item {
                     Column(Modifier.padding(horizontal = horizontal)) {
-                        Text("规则观察", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                        Text("仅提示人工检查，不会自动关闭或修改规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text("规则观察", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("仅提示人工检查，不会自动关闭或修改规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                 }
                 items(report.observations, key = { "${it.type}:${it.category}" }) { observation ->
@@ -308,8 +310,8 @@ private fun CleanupEffectivenessScreen(
             if (report.tasks.isNotEmpty()) {
                 item {
                     Column(Modifier.padding(horizontal = horizontal)) {
-                        Text("最近任务", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                        Text("每次扫描和清理都保留独立四维评分", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text("最近任务", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text("每次扫描和清理都保留独立四维评分", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                 }
                 items(report.tasks, key = { it.id.ifBlank { "${it.time}:${it.operation}" } }) { task ->
@@ -324,16 +326,7 @@ private fun CleanupEffectivenessScreen(
 
 @Composable
 private fun EffectivenessHeader(message: String, loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column(Modifier.weight(1f)) {
-            Text("清理效果", fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    DetailPageHeader("清理效果", message, onBack) {
         IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
     }
 }
@@ -343,23 +336,23 @@ private fun EffectivenessHero(report: EffectivenessReport, horizontal: androidx.
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(modifier = Modifier.size(76.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .14f)) {
                 Box(contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(report.overall.toString(), fontSize = 25.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
-                        Text(report.grade, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(report.overall.toString(), fontSize = 25.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        Text(report.grade, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("30 天综合评分", fontSize = 20.sp, fontWeight = FontWeight.Black)
-                Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 18.sp)
+                Text("30 天综合评分", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp)
                 Spacer(Modifier.height(7.dp))
-                Text("基于 ${report.sampleCount} 次有效任务", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("基于 ${report.sampleCount} 次有效任务", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -367,7 +360,7 @@ private fun EffectivenessHero(report: EffectivenessReport, horizontal: androidx.
 
 @Composable
 private fun ScoreCard(label: String, score: Int, icon: ImageVector, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))
@@ -375,7 +368,7 @@ private fun ScoreCard(label: String, score: Int, icon: ImageVector, modifier: Mo
                 Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(9.dp))
-            Text("$score 分", fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("$score 分", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -387,18 +380,18 @@ private fun TrendCard(report: EffectivenessReport, horizontal: androidx.compose.
         "declining" -> Icons.Rounded.TrendingDown
         else -> Icons.Rounded.TrendingFlat
     }
-    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(modifier = Modifier.size(45.dp), shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.secondary.copy(alpha = .14f)) {
                 Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) }
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("历史趋势", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text(report.trendMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("历史趋势", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(report.trendMessage, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             if (report.trendDirection !in setOf("insufficient", "stable")) {
-                Text(if (report.trendDelta > 0) "+${report.trendDelta}" else report.trendDelta.toString(), fontWeight = FontWeight.Black)
+                Text(if (report.trendDelta > 0) "+${report.trendDelta}" else report.trendDelta.toString(), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -407,24 +400,24 @@ private fun TrendCard(report: EffectivenessReport, horizontal: androidx.compose.
 @Composable
 private fun RuleObservationCard(observation: RuleObservation, horizontal: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape) {
     val protected = observation.type == "frequently_protected"
-    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Column(Modifier.padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(if (protected) Icons.Rounded.Security else Icons.Rounded.Rule, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(observation.category, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(if (protected) "频繁受保护" else "长期低收益", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(observation.category, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (protected) "频繁受保护" else "长期低收益", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
-                Text("${observation.observations} 次", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                Text("${observation.observations} 次", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             Spacer(Modifier.height(9.dp))
-            Text(observation.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 17.sp)
+            Text(observation.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
             Spacer(Modifier.height(8.dp))
             Text(
                 "累计 ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, observation.bytes)} · 保护率 ${observation.protectionRate}%",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -433,18 +426,18 @@ private fun RuleObservationCard(observation: RuleObservation, horizontal: androi
 @Composable
 private fun TaskScoreCard(task: EffectivenessTask, horizontal: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(modifier = Modifier.size(45.dp), shape = RoundedCornerShape(15.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .11f)) {
-                    Box(contentAlignment = Alignment.Center) { Text(task.grade, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary) }
+                    Box(contentAlignment = Alignment.Center) { Text(task.grade, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary) }
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(task.operation.ifBlank { "清理任务" }, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${task.time} · ${task.status}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    Text(task.operation.ifBlank { "清理任务" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${task.time} · ${task.status}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
-                Text("${task.overall} 分", fontWeight = FontWeight.Black)
+                Text("${task.overall} 分", fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
@@ -460,7 +453,7 @@ private fun TaskScoreCard(task: EffectivenessTask, horizontal: androidx.compose.
                 Text(
                     "释放 ${Formatter.formatFileSize(context, task.bytes)} · 用时 ${formatDuration(task.elapsedMs)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
+                    fontSize = 13.sp
                 )
             }
         }
@@ -471,25 +464,25 @@ private fun TaskScoreCard(task: EffectivenessTask, horizontal: androidx.compose.
 private fun TinyMetric(label: String, score: Int, modifier: Modifier = Modifier) {
     Surface(modifier, shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 8.sp)
-            Text(score.toString(), fontWeight = FontWeight.Black, fontSize = 13.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(score.toString(), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         }
     }
 }
 
 @Composable
 private fun ReadOnlyNotice(report: EffectivenessReport, horizontal: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape) {
-    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.padding(17.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Rounded.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("只读分析", fontWeight = FontWeight.Black)
+                Text("只读分析", fontWeight = FontWeight.SemiBold)
                 Text(
                     "评分不会自动关闭规则、删除文件、切换策略或修改定时周期。${if (report.readOnly && report.scheduleUntouched) "当前安全约束已确认。" else ""}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 17.sp
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -498,12 +491,12 @@ private fun ReadOnlyNotice(report: EffectivenessReport, horizontal: androidx.com
 
 @Composable
 private fun EmptyEffectivenessCard(horizontal: androidx.compose.ui.unit.Dp, shape: androidx.compose.ui.graphics.Shape, loading: Boolean) {
-    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    Card(modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(), shape = shape, colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Column(Modifier.padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (loading) CircularProgressIndicator(Modifier.size(34.dp)) else Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(44.dp), tint = MaterialTheme.colorScheme.outline)
             Spacer(Modifier.height(12.dp))
-            Text(if (loading) "正在生成评分" else "暂无足够记录", fontWeight = FontWeight.Black)
-            Text("完成几次扫描和清理后，这里会显示四维评分与规则趋势。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text(if (loading) "正在生成评分" else "暂无足够记录", fontWeight = FontWeight.SemiBold)
+            Text("完成几次扫描和清理后，这里会显示四维评分与规则趋势。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
     }
 }

@@ -49,7 +49,7 @@ done
 grep -Fq 'RuleReviewTrendAnalyzer()' "$AUDIT_REPO"
 grep -Fq '.put("ruleReviewTrends", ruleReviewTrends)' "$AUDIT_REPO"
 grep -Fq 'class RuleReviewTrendsActivity' "$ACTIVITY"
-for label in '审核历史与趋势' '反复重开' '主要恶化原因' '近八周审核趋势' '只读趋势分析'; do
+for label in 'DetailPageHeader("审核趋势"' '反复重开' '主要恶化原因' '近八周审核趋势' '只读趋势分析'; do
   grep -Fq "$label" "$ACTIVITY"
 done
 grep -Fq '不会自动处理审核、停用规则、删除文件、切换策略或改变任何定时周期' "$ACTIVITY"

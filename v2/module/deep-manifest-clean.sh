@@ -52,7 +52,7 @@ pid_is_task() {
   [ "$pid" -gt 1 ] 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *deep-manifest-clean.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*baize_deep_snapshot*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;; esac
+  case "$cmdline" in *deep-manifest-clean.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*baize_deep_snapshot*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 
@@ -97,6 +97,23 @@ fi
 [ "$(file_sha "$WHITELIST")" = "$expected_whitelist_sha" ] || { echo "白名单已变化，请重新扫描"; exit 7; }
 [ -f "$DEEP_RULES" ] && [ "$(file_sha "$DEEP_RULES")" = "$expected_rules_sha" ] || { echo "深度规则库已变化，请重新扫描"; exit 7; }
 
+# Rules, overrides and the chosen risk ceiling form one snapshot policy.
+# A policy edit after scanning must not leave an older, broader delete plan live.
+expected_builtin_risk_sha=$(state_value builtin_risk_sha)
+expected_user_risk_sha=$(state_value user_risk_sha)
+expected_config_sha=$(state_value config_sha)
+for policy_kind in builtin user config; do
+  case "$policy_kind" in
+    builtin) policy_expected=$expected_builtin_risk_sha; policy_file=${BAIZE_BUILTIN_RISK_OVERRIDES:-$MODDIR/config/risk-overrides.conf} ;;
+    user) policy_expected=$expected_user_risk_sha; policy_file=${BAIZE_RISK_OVERRIDES:-$STATE_DIR/risk-overrides.conf} ;;
+    config) policy_expected=$expected_config_sha; policy_file=$CONFIG ;;
+  esac
+  [ -z "$policy_expected" ] || [ "$(file_sha "$policy_file")" = "$policy_expected" ] || {
+    echo "深度风险策略已变化，请重新扫描"
+    exit 7
+  }
+done
+
 
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-deep-clean.tsv"
@@ -114,6 +131,7 @@ START_EPOCH=$(date +%s)
   --stop "$STOP_FILE" \
   --max-file-bytes "$max_file_bytes"
 code=$?
+rm -f "$STATE_DIR/index/meta.env"
 
 if [ "$(summary_value "$SUMMARY_FILE" accounting)" != "cumulative-journal-v1" ]; then
   echo "深度清理未生成可信累计账本，快照已保留；设备重启、旧版非零游标或账本损坏后需要重新扫描（代码 $code）" >&2

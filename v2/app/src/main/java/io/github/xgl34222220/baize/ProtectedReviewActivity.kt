@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -345,33 +347,22 @@ private fun ProtectedReviewScreen(
     onClean: () -> Unit
 ) {
     var confirm by remember(state.selected) { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 34.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
-                    Column(Modifier.weight(1f)) {
-                        Text("PROTECTED REVIEW", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, letterSpacing = 2.sp)
-                        Text("受保护项目复查", fontSize = 28.sp, fontWeight = FontWeight.Black)
-                        Text("具体路径、保护原因与手动选择", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                    }
-                    IconButton(onClick = onRefresh, enabled = state.connected && !state.running) {
-                        Icon(Icons.Rounded.Refresh, "重新扫描")
-                    }
+                DetailPageHeader("受保护项目", "查看保留原因，逐项决定是否处理", onBack) {
+                    IconButton(onClick = onRefresh, enabled = state.connected && !state.running) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
                 }
             }
             item {
                 Surface(
-                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = BaiZeTokens.colors.surfaceRaised
                 ) {
                     Column(Modifier.padding(18.dp)) {
                         Text(state.status, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
@@ -383,7 +374,7 @@ private fun ProtectedReviewScreen(
                         Text(
                             "已选择 ${state.selected.size} 项 · 当前页 ${state.items.size} 项 · 总计 ${state.total} 项",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
+                            fontSize = 13.sp
                         )
                         Spacer(Modifier.height(12.dp))
                         Button(
@@ -401,11 +392,11 @@ private fun ProtectedReviewScreen(
             items(state.items, key = { it.id.ifBlank { it.path } }) { item ->
                 Surface(
                     modifier = Modifier
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 20.dp)
                         .fillMaxWidth()
                         .clickable(enabled = item.selectable && !state.running) { onToggle(item.id) },
-                    shape = RoundedCornerShape(25.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                    shape = RoundedCornerShape(24.dp),
+                    color = BaiZeTokens.colors.surfaceRaised
                 ) {
                     Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
                         if (item.packageName.isNotBlank()) {
@@ -425,18 +416,18 @@ private fun ProtectedReviewScreen(
                             Text(
                                 item.reason.ifBlank { "${riskLabel(item.risk)} · 可由用户决定" },
                                 color = if (item.selectable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                fontSize = 10.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            Text(item.category, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                            Text(item.category, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             Text(
                                 item.path,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 9.sp,
-                                lineHeight = 14.sp
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp
                             )
-                            if (item.bytes >= 0L) Text(formatBytes(item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 9.sp)
+                            if (item.bytes >= 0L) Text(formatBytes(item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
                         }
                         if (item.selectable) {
                             Checkbox(
@@ -453,7 +444,7 @@ private fun ProtectedReviewScreen(
             if (state.pageCount > 1) {
                 item {
                     Row(
-                        Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         FilledTonalButton(

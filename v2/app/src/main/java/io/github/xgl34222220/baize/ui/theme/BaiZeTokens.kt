@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.sp
 /**
  * 白泽统一原生 UI 设计 token。
  *
- * 基准：MIUIX / HyperOS 气质 + Material 3 动态色 + Monet + 轻量玻璃。
+ * 基准：MIUIX / HyperOS 气质 + Material 3 动态色 + Monet。
  * 两套皮肤共享语义色、圆角、间距和字阶，页面不再自行定义随机值。
  */
 
@@ -30,15 +30,15 @@ data class BaiZeColors(
     val surfaceOverlay: Color
 )
 
-/** 浅色：浅紫灰底、低对比分组卡片。 */
+/** 浅色：浅冷灰底、低对比分组卡片。 */
 val LightBaiZeColors = BaiZeColors(
-    success = Color(0xFF0AA45B),
-    warning = Color(0xFFB87300),
+    success = Color(0xFF187B58),
+    warning = Color(0xFF956319),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFECEBFA),
-    surfaceRaised = Color(0xFFF8F7FD),
-    surfaceOverlay = Color(0xFFF2F0FA)
+    surfaceBase = Color(0xFFF4F6FA),
+    surfaceRaised = Color(0xFFFFFFFF),
+    surfaceOverlay = Color(0xFFF0F2F7)
 )
 
 /** 普通深色：避免纯黑压迫感，维持柔和层级。 */
@@ -76,7 +76,7 @@ data class BaiZeCorners(
 val DefaultBaiZeCorners = BaiZeCorners(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(32.dp),
     full = RoundedCornerShape(percent = 50)
 )
@@ -91,7 +91,7 @@ data class BaiZeSpacing(
     val xxl: Dp = 24.dp,
     val huge: Dp = 32.dp,
     /** 360dp 手机基准的统一页面左右边距。 */
-    val pageHorizontal: Dp = 12.dp
+    val pageHorizontal: Dp = 20.dp
 )
 
 val DefaultBaiZeSpacing = BaiZeSpacing()
@@ -108,12 +108,12 @@ data class BaiZeTypeScale(
 )
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
-    caption = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
+    caption = TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
     body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
     title = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
     headline = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    display = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
+    display = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
     hero = TextStyle(
         fontSize = 40.sp,
         lineHeight = 46.sp,

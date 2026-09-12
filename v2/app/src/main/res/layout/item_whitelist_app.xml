@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
+    android:layout_marginBottom="12dp"
     style="@style/Widget.BaiZe.SimpleCard">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="78dp"
+        android:layout_height="wrap_content"
+        android:minHeight="88dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="15dp"
@@ -32,7 +36,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:ellipsize="end"
-                android:maxLines="1"
+                android:maxLines="2"
                 android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -45,7 +49,7 @@
                 android:ellipsize="middle"
                 android:maxLines="1"
                 android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="11sp" />
+                android:textSize="13sp" />
         </LinearLayout>
 
         <TextView
@@ -60,7 +64,7 @@
             android:paddingBottom="4dp"
             android:text="用户"
             android:textColor="?attr/colorPrimary"
-            android:textSize="9sp"
+            android:textSize="12sp"
             android:textStyle="bold" />
 
         <com.google.android.material.checkbox.MaterialCheckBox
@@ -68,6 +72,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:buttonTint="?attr/colorPrimary" />
+            app:useMaterialThemeColors="true" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

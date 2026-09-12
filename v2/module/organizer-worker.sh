@@ -17,6 +17,7 @@ ORGANIZER_INDEX="$STATE_DIR/index/organizer-files.nul"
 # organizer-files.nul 覆盖成自己的兜底清单；两者过滤规则不同，
 # 于是 TTL 内的下一次手动归类行为会随上次定时任务而变化。
 FALLBACK_INDEX="$STATE_DIR/index/organizer-fallback.nul"
+AUTO_PENDING="$STATE_DIR/index/organizer-auto-pending.nul"
 INDEX_FILE="$ORGANIZER_INDEX"
 RUNNING_FILE="$STATE_DIR/running.env"
 RESULT_FILE="$STATE_DIR/organizer-result.env"
@@ -56,7 +57,7 @@ lock_alive() {
   case "$la_ticks" in ''|*[!0-9]*) la_ticks=0 ;; esac
   [ "$la_ticks" -eq 0 ] || [ "$current_ticks" = "$la_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$la_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;; esac
+  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*native-cleaner.sh*|*baize_engine*) return 0 ;; esac
   return 1
 }
 
@@ -138,7 +139,10 @@ cleanup() {
   if [ -f "$WORKER_FILE" ] && grep -q "^task_id=$TASK_ID$" "$WORKER_FILE" 2>/dev/null; then rm -f "$WORKER_FILE"; fi
   if [ -f "$LOCK_DIR/task_id" ] && [ "$(sed -n '1p' "$LOCK_DIR/task_id" 2>/dev/null)" = "$TASK_ID" ]; then rm -rf -- "$LOCK_DIR" 2>/dev/null || true; fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+# Stop at a transaction boundary and persist undo for moves already completed.
+# The previous signal trap removed the lock and then continued moving files.
+trap ': >"$STOP_FILE"' INT TERM
 
 append_tree_files() {
   at_root=$1
@@ -176,10 +180,13 @@ build_fallback_index() {
   for fb_user_root in "$MEDIA_ROOT"/[0-9]*; do
     [ -d "$fb_user_root" ] || continue
     find "$fb_user_root" -xdev -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null >>"$INDEX_FILE"
-    for fb_public in       "$fb_user_root/Download" "$fb_user_root/Downloads" "$fb_user_root/Documents"       "$fb_user_root/Bluetooth" "$fb_user_root/Tencent/QQfile_recv" "$fb_user_root/Tencent/TIMfile_recv"; do
+    for fb_public in       "$fb_user_root/Download" "$fb_user_root/Downloads" "$fb_user_root/Documents"       "$fb_user_root/Bluetooth" "$fb_user_root/UCDownloads" "$fb_user_root/Quark/Download" "$fb_user_root/BaiduNetdisk" "$fb_user_root/Telegram" "$fb_user_root/Nagram" "$fb_user_root/NagramX" "$fb_user_root/Tencent/QQfile_recv" "$fb_user_root/Tencent/TIMfile_recv" "$fb_user_root/Tencent/Timfile_recv"; do
       append_tree_files "$fb_public"
     done
     append_known_app_roots "$fb_user_root"
+    for fb_package in org.telegram.messenger org.telegram.messenger.web tw.nekomimi.nekogram nu.gpu.nagram nu.gpu.nagramx; do
+      append_tree_files "$fb_user_root/Android/media/$fb_package"
+    done
   done
   chmod 0600 "$INDEX_FILE" 2>/dev/null || true
 }
@@ -372,7 +379,8 @@ allowed_source() {
 }
 
 skip_file() {
-  name=$(printf '%s' "${1##*/}" | tr '[:upper:]' '[:lower:]')
+  name=${1##*/}
+  case "$name" in *[A-Z]*) organizer_lower "$name"; name=$OL_OUT ;; esac
   case "$name" in
     .nomedia|.*) return 0 ;;
     *.lock|*.lck|*.db|*.sqlite|*.sqlite3|*-wal|*-shm|*.journal|*.part|*.partial|*.crdownload|*.download|*.tmp|*.temp) return 0 ;;
@@ -409,17 +417,24 @@ DEDUPLICATED=0
 rm -f "$STOP_FILE" "$RESULT_FILE" "$MEDIA_QUEUE"
 
 if [ "$AUTO_TRIGGER" = 1 ]; then
-  write_running "正在快速检查下载与接收目录" 0 0 "" 1
-  build_fallback_index
-else
-  write_running "正在建立增量共享索引" 0 0 "" 1
-  if ! BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" "$SHELL_BIN" "$INDEXER" ensure organizer-detached >>"$LOG_FILE" 2>&1; then
-    echo "共享索引失败，切换独立 Root 安全兜底索引" >>"$LOG_FILE"
+  if [ -s "$AUTO_PENDING" ]; then
+    INDEX_FILE="$AUTO_PENDING"
+    write_running "正在继续上轮未处理的文件" 0 0 "" 1
+  else
+    write_running "正在快速检查下载与接收目录" 0 0 "" 1
+    build_fallback_index
   fi
-  [ -s "$ORGANIZER_INDEX" ] && INDEX_FILE="$ORGANIZER_INDEX" || INDEX_FILE="$ALL_INDEX"
-  if [ ! -s "$INDEX_FILE" ]; then
-    INDEX_FILE="$ALL_INDEX"
-    write_running "共享索引为空，正在执行安全兜底发现" 0 0 "$MEDIA_ROOT" 1
+else
+  write_running "正在建立共享索引" 0 0 "" 1
+  if BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" "$SHELL_BIN" "$INDEXER" refresh organizer-detached >>"$LOG_FILE" 2>&1; then
+    if [ -f "$ORGANIZER_INDEX" ]; then INDEX_FILE="$ORGANIZER_INDEX"
+    elif [ -f "$ALL_INDEX" ]; then INDEX_FILE="$ALL_INDEX"
+    else build_fallback_index
+    fi
+  else
+    # Never proceed with the stale index left behind by a failed refresh.
+    echo "共享索引失败，切换独立 Root 安全兜底发现" >>"$LOG_FILE"
+    write_running "正在重新检查下载与接收目录" 0 0 "$MEDIA_ROOT" 1
     build_fallback_index
   fi
 fi
@@ -428,7 +443,7 @@ if [ ! -s "$INDEX_FILE" ]; then
   exit 0
 fi
 
-TOTAL=$(tr '\000' '\n' <"$INDEX_FILE" 2>/dev/null | wc -l | tr -d ' ')
+TOTAL=$(tr -cd '\000' <"$INDEX_FILE" 2>/dev/null | wc -c | tr -d ' ')
 case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
 REQUESTED=0; MOVED=0; SKIPPED=0; FAILED=0; BYTES=0; CURRENT=0; AUTO_LIMIT_REACHED=0
 AUTO_DEADLINE=$((STARTED + AUTO_MAX_SECONDS))
@@ -453,7 +468,7 @@ unique_destination() {
   ud_n=1
   while [ "$ud_n" -le 999 ]; do
     ud_candidate="$ud_dir/$ud_stem ($ud_n)$ud_ext"
-    [ -e "$ud_candidate" ] || { printf '%s\n' "$ud_candidate"; return 0; }
+    [ -e "$ud_candidate" ] || [ -L "$ud_candidate" ] || { printf '%s\n' "$ud_candidate"; return 0; }
     ud_n=$((ud_n + 1))
   done
   return 1
@@ -461,7 +476,7 @@ unique_destination() {
 resolve_destination() {
   rd_source=$1; rd_planned=$2
   COLLISION_ACTION=none
-  [ -e "$rd_planned" ] || { RESOLVED_DEST=$rd_planned; return 0; }
+  [ -e "$rd_planned" ] || [ -L "$rd_planned" ] || { RESOLVED_DEST=$rd_planned; return 0; }
   case "$CONFLICT_POLICY" in
     0) COLLISION_ACTION=skipped; return 1 ;;
     2)
@@ -479,11 +494,18 @@ resolve_destination() {
 }
 queue_media_scan() { [ "$MEDIA_SCAN" = 1 ] && { printf '%s\0' "$1" >>"$MEDIA_QUEUE"; } || true; }
 
-while IFS= read -r -d '' FILE_PATH; do
+exec 3<"$INDEX_FILE"
+while IFS= read -r -d '' FILE_PATH <&3; do
   if [ "$AUTO_TRIGGER" = 1 ]; then
     auto_now=$(date +%s)
     if [ "$CURRENT" -ge "$AUTO_MAX_FILES" ] || [ "$auto_now" -ge "$AUTO_DEADLINE" ]; then
       AUTO_LIMIT_REACHED=1
+      # Persist the unconsumed queue, including this just-read entry. Files that
+      # are unsupported or conflict must not starve all later files every hour.
+      printf '%s\0' "$FILE_PATH" >"$AUTO_PENDING.tmp.$$"
+      cat <&3 >>"$AUTO_PENDING.tmp.$$"
+      chmod 0600 "$AUTO_PENDING.tmp.$$" 2>/dev/null || true
+      mv -f "$AUTO_PENDING.tmp.$$" "$AUTO_PENDING"
       break
     fi
   fi
@@ -493,7 +515,7 @@ while IFS= read -r -d '' FILE_PATH; do
     write_running "正在检查可归类文件" "$CURRENT" "$TOTAL" "$FILE_PATH"
   fi
   [ -f "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
-  [ ! -L "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
+  [ ! -L "$FILE_PATH" ] && [ "$(readlink -f "$FILE_PATH" 2>/dev/null)" = "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   skip_file "$FILE_PATH" && { SKIPPED=$((SKIPPED + 1)); continue; }
   category_for "$FILE_PATH"
   [ -n "$CATEGORY" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
@@ -506,7 +528,9 @@ while IFS= read -r -d '' FILE_PATH; do
   NAME=${FILE_PATH##*/}; DEST_DIR="$MEDIA_ROOT/$USER_ID/BaiZe归类/$CATEGORY"; PLANNED_DEST="$DEST_DIR/$NAME"
   # 目标目录连续多个文件通常相同，只在变化时建目录并设权限
   if [ "$DEST_DIR" != "$LAST_DEST_DIR" ]; then
+    [ ! -L "$MEDIA_ROOT/$USER_ID/BaiZe归类" ] && [ ! -L "$DEST_DIR" ] || { FAILED=$((FAILED + 1)); continue; }
     mkdir -p "$DEST_DIR" 2>/dev/null || { FAILED=$((FAILED + 1)); continue; }
+    [ "$(readlink -f "$DEST_DIR" 2>/dev/null)" = "$DEST_DIR" ] || { FAILED=$((FAILED + 1)); continue; }
     if [ "$USER_ID" != "$LAST_USER_ID" ]; then
       # 目标根的属主是循环不变量，此前每个文件都重新 stat 两次
       ROOT_UID=$(stat -c %u "$MEDIA_ROOT/$USER_ID" 2>/dev/null || echo 0)
@@ -525,6 +549,8 @@ while IFS= read -r -d '' FILE_PATH; do
     2) DEDUPLICATED=$((DEDUPLICATED + 1)); SKIPPED=$((SKIPPED + 1)); continue ;;
   esac
   DEST=$RESOLVED_DEST
+  # Reject a user/output parent redirected by a symlink after source discovery.
+  [ "$(readlink -f "$DEST_DIR" 2>/dev/null)" = "$DEST_DIR" ] || { FAILED=$((FAILED + 1)); continue; }
   [ "$COLLISION_ACTION" = renamed ] && RENAMED=$((RENAMED + 1))
 
   # 四个字段一次 stat 取回，取代此前四次独立调用（每次两个进程）。
@@ -541,7 +567,9 @@ while IFS= read -r -d '' FILE_PATH; do
   case "$SRC_MODE_OCT" in ''|*[!0-7]*) SRC_MODE_OCT=644 ;; esac
   SRC_MODE=$((8#$SRC_MODE_OCT))
 
-  if mv "$FILE_PATH" "$DEST" 2>>"$LOG_FILE"; then
+  # -n also protects a destination created after conflict resolution; mv -n can
+  # report success when it skipped, so verify the source was actually removed.
+  if mv -n "$FILE_PATH" "$DEST" 2>>"$LOG_FILE" && [ ! -e "$FILE_PATH" ] && [ -f "$DEST" ]; then
     chown "$ROOT_UID:$ROOT_GID" "$DEST" 2>/dev/null || true
     chmod 0660 "$DEST" 2>/dev/null || true
     # 指纹必须在移动成功后立刻记录。若拖到全批次结束才 stat，期间文件被别的
@@ -555,7 +583,13 @@ while IFS= read -r -d '' FILE_PATH; do
   else
     FAILED=$((FAILED + 1))
   fi
-done <"$INDEX_FILE"
+done
+exec 3<&-
+if [ "$AUTO_TRIGGER" = 1 ] && [ "$AUTO_LIMIT_REACHED" = 0 ] && [ ! -f "$STOP_FILE" ]; then
+  rm -f "$AUTO_PENDING"
+fi
+# A move changes the namespace. Do not let other tools reuse stale path lists.
+[ "$MOVED" -eq 0 ] || rm -f "$STATE_DIR/index/meta.env"
 
 # 把 NUL 中间记录转成与旧版完全一致的 JSON。
 # 路径的 base64 在这里一次性完成，取代此前每个文件两次 base64|tr。

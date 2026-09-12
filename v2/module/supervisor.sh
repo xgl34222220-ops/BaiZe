@@ -10,11 +10,54 @@ STOP="$STATE_DIR/supervisor.stop"
 HEARTBEAT_SECONDS=${BAIZE_SUPERVISOR_HEARTBEAT_SECONDS:-5}
 QUEUE_WAKE_AFTER_SECONDS=${BAIZE_QUEUE_WAKE_AFTER_SECONDS:-2}
 QUEUE_RESTART_AFTER_SECONDS=${BAIZE_QUEUE_RESTART_AFTER_SECONDS:-12}
-mkdir -p "$STATE_DIR/logs"; rm -f "$STOP"
+mkdir -p "$STATE_DIR/logs"
+SUPERVISOR_LOCK="$STATE_DIR/supervisor.lock"
 restart_count=0; backoff=1; child=; RESCUE_AGE=0
 INSTANCE_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$$")
+# A persistent kernel-lock inode serializes stale-lock recovery. Never unlink this
+# guard: two contenders must not recover the same old pathname over a new owner.
+recovery_lock() {
+  exec 9>"$SUPERVISOR_LOCK.recovery"
+  # Root managers can shadow AOSP commands with applets that were compiled out.
+  # Try actual providers, not merely `command -v`; every attempt locks the SAME
+  # inherited fd/inode, so a busy lock remains busy across all fallbacks.
+  if command -v flock >/dev/null 2>&1; then flock -n 9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/flock ]; then /system/bin/flock -n 9 2>/dev/null && return 0; fi
+  if command -v toybox >/dev/null 2>&1; then toybox flock -n 9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9 2>/dev/null && return 0; fi
+  if command -v busybox >/dev/null 2>&1; then busybox flock -n 9 2>/dev/null && return 0; fi
+  for lock_busybox in /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
+    [ -x "$lock_busybox" ] && "$lock_busybox" flock -n 9 2>/dev/null && return 0
+  done
+  return 1
+}
+release_recovery_lock() { exec 9>&-; }
+
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
 SUPERVISOR_START_TICKS=$(proc_start_ticks $$)
+# App recovery, boot service and wake requests may race. Publish identity atomically
+# before touching stop/state so only one supervisor owns the scheduler lifecycle.
+printf '%s\n%s\n' "$$" "$SUPERVISOR_START_TICKS" >"$SUPERVISOR_LOCK.$$"
+if ! ln "$SUPERVISOR_LOCK.$$" "$SUPERVISOR_LOCK" 2>/dev/null; then
+  recovery_lock || { release_recovery_lock; rm -f "$SUPERVISOR_LOCK.$$"; exit 0; }
+  existing_pid=$(sed -n '1p' "$SUPERVISOR_LOCK" 2>/dev/null)
+  existing_ticks=$(sed -n '2p' "$SUPERVISOR_LOCK" 2>/dev/null)
+  case "$existing_pid" in ''|*[!0-9]*) existing_pid=0;; esac
+  if [ "$existing_pid" -gt 1 ] && kill -0 "$existing_pid" 2>/dev/null && [ "$(proc_start_ticks "$existing_pid")" = "$existing_ticks" ]; then
+    release_recovery_lock
+    rm -f "$SUPERVISOR_LOCK.$$"
+    exit 0
+  fi
+  rm -f "$SUPERVISOR_LOCK"
+  ln "$SUPERVISOR_LOCK.$$" "$SUPERVISOR_LOCK" 2>/dev/null || { release_recovery_lock; rm -f "$SUPERVISOR_LOCK.$$"; exit 0; }
+  release_recovery_lock
+fi
+rm -f "$SUPERVISOR_LOCK.$$" "$STOP"
+release_supervisor_lock() {
+  [ "$(sed -n '1p' "$SUPERVISOR_LOCK" 2>/dev/null)" = "$$" ] && rm -f "$SUPERVISOR_LOCK"
+}
+trap release_supervisor_lock EXIT
+
 signal_child() { [ -n "${child:-}" ] && kill -USR1 "$child" 2>/dev/null || true; }
 stop_all() { touch "$STOP"; [ -n "${heartbeat_pid:-}" ] && kill "$heartbeat_pid" 2>/dev/null || true; [ -n "${child:-}" ] && kill "$child" 2>/dev/null || true; exit 0; }
 trap stop_all INT TERM

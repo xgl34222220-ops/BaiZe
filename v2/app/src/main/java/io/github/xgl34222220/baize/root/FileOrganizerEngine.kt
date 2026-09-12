@@ -266,7 +266,10 @@ class FileOrganizerEngine(
             }
         }
 
-        if (moves.length() > 0) persistUndo(moves)
+        if (moves.length() > 0) {
+            persistUndo(moves)
+            File(stateDir, "index/meta.env").delete()
+        }
         snapshot = null
         deleteSnapshot(current.id)
         val pendingMediaScan = flushMediaScanQueue()
@@ -371,6 +374,7 @@ class FileOrganizerEngine(
             persistUndoRecord(record.file, remaining)
         }
         refreshLegacyUndoPointer()
+        if (restored > 0) File(stateDir, "index/meta.env").delete()
         val pendingMediaScan = flushMediaScanQueue()
         return JSONObject()
             .put("success", failed == 0)
@@ -395,7 +399,7 @@ class FileOrganizerEngine(
         if (!script.isFile) return null
         progress(Progress("正在建立全应用共享存储索引", 0, 0, displayPath(script.path)))
         val process = runCatching {
-            ProcessBuilder("/system/bin/sh", script.path, "ensure", "organizer")
+            ProcessBuilder("/system/bin/sh", script.path, "refresh", "organizer")
                 .redirectErrorStream(true)
                 .start()
         }.getOrNull() ?: return null

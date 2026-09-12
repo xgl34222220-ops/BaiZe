@@ -17,6 +17,8 @@ grep -Fq 'onApkPackageDaysChanged = { days ->' "$ROUTE"
 grep -Fq 'title = "安装包保留时间"' "$SCREEN"
 grep -Fq 'range = 0..365' "$SCREEN"
 # UI 可重构文案，但必须继续明确：手动安装包扫描不受后台保留天数限制。
-grep -Fq '手动安装包扫描' "$SCREEN"
-grep -Fq '0 天表示扫描到后即可进入自动清理范围' "$SCREEN"
+grep -Fq '手动扫描始终显示所有安装包' "$SCREEN"
+grep -Fq '0 天表示不保留' "$SCREEN"
+grep -Fq 'onConfirm = actions.onApkPackageDaysChanged' "$SCREEN"
+grep -Fq 'onEditRetention = { showApkRetentionDialog = true }' "$SCREEN"
 echo 'apk retention and manual scan contract passed'

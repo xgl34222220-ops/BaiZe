@@ -62,7 +62,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*one-pass-scan.sh*|*cache-transaction.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*one-pass-scan.sh*|*cache-transaction.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;;
   esac
   return 1
 }
@@ -395,6 +395,7 @@ write_combined_cache_summary() {
   skipped=$(sum_key skipped); errors=$(sum_key errors); protected_items=$(sum_key protected_items)
   protected_bytes=$(sum_key protected_bytes); candidates=$(sum_key candidates); targets=$(sum_key targets)
   risk_low=$(sum_key risk_low); risk_medium=$(sum_key risk_medium); risk_high=$(sum_key risk_high); risk_critical=$(sum_key risk_critical)
+  timed_out_dirs=$(sum_key timed_out_dirs)
   mount_items=$(sum_key mount_items); truncated=$(sum_key truncated); whitelisted=$(sum_key whitelisted)
   visited_files=$(sum_key visited_files); visited_dirs=$(sum_key visited_dirs)
   package_lookups=$(sum_key package_lookups)
@@ -412,6 +413,7 @@ write_combined_cache_summary() {
     echo "skipped=$skipped"; echo "errors=$errors"; echo "protected_items=$protected_items"; echo "protected_bytes=$protected_bytes"
     echo "candidates=$candidates"; echo "targets=$targets"; echo "risk_low=$risk_low"; echo "risk_medium=$risk_medium"
     echo "risk_high=$risk_high"; echo "risk_critical=$risk_critical"; echo "mount_items=$mount_items"; echo "truncated=$truncated"
+    echo "timed_out_dirs=$timed_out_dirs"
     echo "whitelisted=$whitelisted"; echo "visited_files=$visited_files"; echo "visited_dirs=$visited_dirs"
     echo "package_index_entries=$package_index_entries"; echo "package_index_files=$package_index_files"; echo "package_lookups=$package_lookups"
     echo "first_result_ms=$first_result_ms"; echo "one_pass_app_dirs=$one_pass_app_dirs"
@@ -443,9 +445,8 @@ MAX_MB=$(get_config_uint max_file_mb 256 1 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 cache_days=$(get_config_uint app_cache_days 0 0 365)
 external_days=$(get_config_uint external_cache_days 0 0 365)
-[ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
 # Manual review shows current cache; automatic tasks retain the configured age.
-case "$TRIGGER" in manual|app|ui) cache_days=0 ;; esac
+case "$TRIGGER" in manual|app|ui) cache_days=0; external_days=0 ;; esac
 choose_root_workers
 PARALLEL_WALL_MS=0
 INTERNAL_WORKER_MS=0
@@ -483,7 +484,7 @@ if [ "$ROOT_WORKERS" = "2" ]; then
     "$NATIVE_ENGINE" scan-cache \
       --data-root "$DATA_ROOT" --media-root "$TMP_DIR/empty-media" \
       --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
-      --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+      --min-age-days "$cache_days" --external-min-age-days "$external_days" --max-file-bytes "$MAX_FILE_BYTES" \
       --report "$INTERNAL_REPORT" --targets "$INTERNAL_TARGETS" --items "$INTERNAL_ITEMS" \
       --manifest "$INTERNAL_MANIFEST" --summary "$INTERNAL_SUMMARY" \
       --progress "$INTERNAL_PROGRESS" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || worker_code=$?
@@ -495,7 +496,7 @@ if [ "$ROOT_WORKERS" = "2" ]; then
     "$NATIVE_ENGINE" scan-external-one-pass \
       --data-root "$TMP_DIR/empty-data" --media-root "$MEDIA_ROOT" --installed-root "$INSTALLED_ROOT" \
       --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
-      --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+      --min-age-days "$cache_days" --external-min-age-days "$external_days" --max-file-bytes "$MAX_FILE_BYTES" \
       --report "$EXTERNAL_REPORT" --targets "$EXTERNAL_TARGETS" --items "$EXTERNAL_ITEMS" \
       --manifest "$EXTERNAL_MANIFEST" --summary "$EXTERNAL_SUMMARY" \
       --corpse-report "$EXTERNAL_CORPSE_REPORT" --corpse-targets "$EXTERNAL_CORPSE_TARGETS" \
@@ -555,7 +556,7 @@ else
   "$NATIVE_ENGINE" scan-external-one-pass \
     --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" --installed-root "$INSTALLED_ROOT" \
     --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
-    --min-age-days "$cache_days" --max-file-bytes "$MAX_FILE_BYTES" \
+    --min-age-days "$cache_days" --external-min-age-days "$external_days" --max-file-bytes "$MAX_FILE_BYTES" \
     --report "$CACHE_REPORT_WORK" --targets "$CACHE_TARGETS_TMP" --items "$CACHE_ITEMS_TMP" \
     --manifest "$CACHE_MANIFEST_TMP" --summary "$CACHE_SUMMARY" \
     --corpse-report "$CORPSE_REPORT_WORK" --corpse-targets "$CORPSE_TARGETS_TMP" \
@@ -580,6 +581,8 @@ C_DIRS=$(summary_number "$CACHE_SUMMARY" dirs)
 C_CANDIDATES=$(summary_number "$CACHE_SUMMARY" candidates)
 C_TARGETS=$(summary_number "$CACHE_SUMMARY" targets)
 C_ERRORS=$(summary_number "$CACHE_SUMMARY" errors)
+C_TRUNCATED=$(summary_number "$CACHE_SUMMARY" truncated)
+C_SLOW=$(summary_number "$CACHE_SUMMARY" timed_out_dirs)
 C_SKIPPED=$(summary_number "$CACHE_SUMMARY" skipped)
 C_PROTECTED=$(summary_number "$CACHE_SUMMARY" protected_items)
 C_PROTECTED_BYTES=$(summary_number "$CACHE_SUMMARY" protected_bytes)
@@ -637,9 +640,13 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "package_whitelist_sha=$(file_sha "$PACKAGE_WHITELIST")"
   echo "min_age_days=$cache_days"
+  echo "external_min_age_days=$external_days"
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "bytes=$C_BYTES"
   echo "files=$C_FILES"
+  echo "errors=$C_ERRORS"
+  echo "truncated=$C_TRUNCATED"
+  echo "timed_out_dirs=$C_SLOW"
   echo "items=$C_CANDIDATES"
   echo "targets=$C_TARGETS"
   echo "visited_files=$C_VISITED_FILES"
@@ -735,6 +742,7 @@ C_SPACE=$(human_bytes "$C_BYTES")
 R_SPACE=$(human_bytes "$R_BYTES")
 if [ "$MODE" = "cache-scan" ]; then
   RESULT="联合扫描完成：应用缓存 $C_SPACE，卸载残留 $R_SPACE"
+  [ "$C_TRUNCATED" -eq 0 ] || RESULT="$RESULT，部分缓存目录未完成"
   PRIMARY_BYTES=$C_BYTES; PRIMARY_FILES=$C_FILES; PRIMARY_DIRS=$C_DIRS
   PRIMARY_ERRORS=$C_ERRORS; PRIMARY_SKIPPED=$C_SKIPPED; PRIMARY_PROTECTED=$C_PROTECTED
   PRIMARY_PROTECTED_BYTES=$C_PROTECTED_BYTES; PRIMARY_CANDIDATES=$C_CANDIDATES
@@ -773,8 +781,8 @@ END_EPOCH=$(date +%s)
   echo "deep_slow_items=0"
   echo "deep_mount_items=0"
   echo "deep_truncated=0"
-  echo "cache_slow_dirs=0"
-  echo "cache_truncated=0"
+  echo "cache_slow_dirs=$C_SLOW"
+  echo "cache_truncated=$C_TRUNCATED"
   echo "deep_progress_current=$PRIMARY_CANDIDATES"
   echo "deep_progress_total=$PRIMARY_CANDIDATES"
   echo "whitelisted=0"

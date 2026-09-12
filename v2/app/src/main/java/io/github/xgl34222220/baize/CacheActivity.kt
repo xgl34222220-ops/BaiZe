@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -126,7 +128,7 @@ class CacheActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             BaiZeTheme(appearance) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     CacheScreen(
                         state = screenState,
                         onBack = ::finish,
@@ -573,7 +575,7 @@ class CacheActivity : ComponentActivity() {
     }
 }
 
-private data class CacheUiState(
+internal data class CacheUiState(
     val connected: Boolean = false,
     val scanConnected: Boolean = false,
     val cleanConnected: Boolean = false,
@@ -593,7 +595,7 @@ private data class CacheUiState(
     val items: List<CacheCandidateUi> = emptyList()
 )
 
-private data class CacheCandidateUi(
+internal data class CacheCandidateUi(
     val appName: String,
     val packageName: String,
     val category: String,
@@ -604,7 +606,7 @@ private data class CacheCandidateUi(
 )
 
 @Composable
-private fun CacheScreen(
+internal fun CacheScreen(
     state: CacheUiState,
     onBack: () -> Unit,
     onScan: () -> Unit,
@@ -616,210 +618,48 @@ private fun CacheScreen(
 ) {
     val context = LocalContext.current
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item { DetailPageHeader("应用缓存", "查看应用缓存占用，扫描后直接清理", onBack) }
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "CACHE SNAPSHOT",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-                    Text("应用缓存", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        "内部 cache、code_cache 与 Android/data 外部缓存",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            DetailTaskCard(
+                metric = if (state.snapshotId.isNotBlank()) Formatter.formatFileSize(context, state.totalBytes) else "扫描应用缓存",
+                metricLabel = if (state.snapshotId.isNotBlank()) "${state.total} 项缓存 · ${state.totalFiles} 个文件" else "内部与外部缓存",
+                phase = state.phase,
+                running = state.running,
+                ready = state.quickCleanReady,
+                scanEnabled = state.scanConnected,
+                cleanEnabled = state.cleanConnected,
+                onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
+                scanLabel = if (state.snapshotId.isBlank()) "扫描缓存" else "重新扫描",
+                cleanLabel = "清理 ${Formatter.formatFileSize(context, state.totalBytes)}"
+            )
         }
-
         item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Rounded.Storage,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(Modifier.size(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(state.status, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.phase,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 5,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    if (state.running || state.loadingPage) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
-                    if (state.quickCleanReady && !state.running) {
-                        Button(
-                            onClick = onClean,
-                            enabled = state.cleanConnected,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                "一键清理 ${state.total} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}"
-                            )
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = onScan,
-                            enabled = state.scanConnected && !state.running,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(if (state.snapshotId.isBlank()) "扫描缓存" else "重新扫描")
-                        }
-                        OutlinedButton(
-                            onClick = if (state.running) onStop else onReconnect,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                if (state.running) Icons.Rounded.Stop else Icons.Rounded.Refresh,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(if (state.running) "停止" else "重新连接")
-                        }
-                    }
-                }
-            }
+            DetailSectionHeader("缓存明细", if (state.total > 0) "${state.total} 项 · 第 ${state.page + 1}/${state.pages} 页" else "扫描结果会按应用列出")
         }
-
-        item {
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                Text(
-                    "CACHE DETAILS",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-                Text("缓存明细", fontSize = 26.sp, fontWeight = FontWeight.Black)
-                Text(
-                    when {
-                        state.total <= 0 -> "扫描后在这里查看应用、路径、文件数与大小"
-                        else -> "共 ${state.total} 项 · ${state.totalFiles} 个文件 · 第 ${state.page + 1}/${state.pages} 页"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
+        if (state.loadingPage) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) }
         if (state.items.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(26.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                ) {
-                    Text(
-                        if (state.running) "缓存任务正在执行，请稍候…" else "尚未生成缓存扫描明细",
-                        modifier = Modifier.padding(22.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                DetailEmptyState(
+                    title = when { state.running -> "正在查找缓存"; state.snapshotId.isNotBlank() -> "没有可清理缓存"; else -> "还没有扫描结果" },
+                    description = if (state.running) "可以离开页面，任务会继续执行。" else "应用名称、文件数量和实际占用会显示在这里。",
+                    icon = Icons.Rounded.Storage
+                )
             }
         } else {
-            items(state.items, key = { "${it.packageName}|${it.path}" }) { item ->
-                CacheCandidateCard(item)
-            }
-            if (state.pages > 1) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = onPrevious,
-                            enabled = !state.running && !state.loadingPage && state.page > 0,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("上一页") }
-                        OutlinedButton(
-                            onClick = onNext,
-                            enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages,
-                            modifier = Modifier.weight(1f)
-                        ) { Text("下一页") }
-                    }
+            items(state.items, key = { "${it.packageName}|${it.path}" }) { CacheCandidateCard(it) }
+            if (state.pages > 1) item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(onClick = onPrevious, enabled = !state.running && !state.loadingPage && state.page > 0, modifier = Modifier.weight(1f)) { Text("上一页") }
+                    OutlinedButton(onClick = onNext, enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages, modifier = Modifier.weight(1f)) { Text("下一页") }
                 }
             }
         }
-
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .navigationBarsPadding(),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-            ) {
-                Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
-                    Icon(
-                        Icons.Rounded.CleaningServices,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Column {
-                        Text("快照安全策略", fontWeight = FontWeight.Bold)
-                        Text(
-                            "扫描只执行一次并保存 30 分钟快照；一键清理只消费刚才的缓存目标。" +
-                                "退出页面后任务进度和结果仍可恢复。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-        }
+        item { DetailExpandableText("扫描范围与清理方式", "包括应用内部 cache、code_cache 与 Android/data 外部缓存。结果保留 30 分钟；清理时会重新核对文件，跳过已变化的内容。\n\n${state.status}") }
+        item { Spacer(Modifier.navigationBarsPadding()) }
     }
 }
 
@@ -829,9 +669,9 @@ private fun CacheCandidateCard(item: CacheCandidateUi) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(item.appName.ifBlank { item.packageName }, fontWeight = FontWeight.Bold)
@@ -839,7 +679,7 @@ private fun CacheCandidateCard(item: CacheCandidateUi) {
                 Text(
                     item.packageName,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
+                    fontSize = 13.sp
                 )
             }
             Text(
@@ -850,7 +690,7 @@ private fun CacheCandidateCard(item: CacheCandidateUi) {
                     if (item.directories >= 0) append(" · ${item.directories} 个目录")
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
+                fontSize = 14.sp
             )
             if (item.path.isNotBlank()) {
                 Spacer(Modifier.height(7.dp))
@@ -859,7 +699,7 @@ private fun CacheCandidateCard(item: CacheCandidateUi) {
                 Text(
                     item.path,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis
                 )

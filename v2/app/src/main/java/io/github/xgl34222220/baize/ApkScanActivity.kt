@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -123,7 +125,7 @@ class ApkScanActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             BaiZeTheme(appearance) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     ApkScanScreen(
                         state = screenState,
                         onBack = ::finish,
@@ -247,7 +249,7 @@ class ApkScanActivity : ComponentActivity() {
             val result = latest.optString("result").ifBlank {
                 when {
                     cancelled -> "安装包扫描已停止"
-                    success && totalFiles <= 0 -> "没有发现超过保留期的安装包"
+                    success && totalFiles <= 0 -> "没有发现可清理的安装包"
                     success -> "安装包扫描完成，可清理 ${Formatter.formatFileSize(this@ApkScanActivity, totalBytes)}"
                     else -> json.optString("message", "安装包扫描失败")
                 }
@@ -428,7 +430,7 @@ class ApkScanActivity : ComponentActivity() {
     }.sortedWith(compareByDescending<ApkScanItem> { it.bytes }.thenByDescending { it.files })
 }
 
-private data class ApkScanUiState(
+internal data class ApkScanUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
     val operation: String = "",
@@ -442,7 +444,7 @@ private data class ApkScanUiState(
     val output: String = ""
 )
 
-private data class ScanCoverageItem(
+internal data class ScanCoverageItem(
     val status: String,
     val group: String,
     val files: Long,
@@ -451,7 +453,7 @@ private data class ScanCoverageItem(
     val reason: String
 )
 
-private data class ApkScanItem(
+internal data class ApkScanItem(
     val name: String,
     val files: Long,
     val bytes: Long,
@@ -460,7 +462,7 @@ private data class ApkScanItem(
 )
 
 @Composable
-private fun ApkScanScreen(
+internal fun ApkScanScreen(
     state: ApkScanUiState,
     onBack: () -> Unit,
     onScan: () -> Unit,
@@ -470,205 +472,60 @@ private fun ApkScanScreen(
 ) {
     val context = LocalContext.current
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) }
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "APK PACKAGE SCAN",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-                    Text("安装包扫描", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        "扫描一次，确认后只清理当前快照",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            DetailTaskCard(
+                metric = if (state.totalFiles > 0) Formatter.formatFileSize(context, state.totalBytes) else "扫描安装包",
+                metricLabel = if (state.totalFiles > 0) "${state.totalFiles} 个安装文件" else "APK · APKS · XAPK · APKM",
+                phase = state.phase,
+                running = state.running,
+                ready = state.cleanReady,
+                scanEnabled = state.connected,
+                cleanEnabled = state.connected,
+                onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
+                cleanLabel = "清理 ${state.totalFiles} 个安装包"
+            )
         }
-
         item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-            ) {
-                Column(
-                    modifier = Modifier.padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(54.dp)
-                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Rounded.InstallMobile,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(Modifier.size(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(state.status, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.phase,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 4,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    if (state.running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-
-                    if (state.cleanReady && !state.running) {
-                        Button(onClick = onClean, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Rounded.DeleteSweep, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(
-                                "一键清理 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}"
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = onScan,
-                            enabled = state.connected && !state.running,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Rounded.Refresh, contentDescription = null)
-                            Spacer(Modifier.size(8.dp))
-                            Text(if (state.items.isEmpty()) "开始扫描" else "重新扫描")
-                        }
-                        OutlinedButton(
-                            onClick = if (state.running) onStop else onReconnect,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                if (state.running) Icons.Rounded.Stop else Icons.Rounded.Refresh,
-                                contentDescription = null
-                            )
-                            Spacer(Modifier.size(8.dp))
-                            Text(if (state.running) "停止" else "重新连接")
-                        }
-                    }
-                }
-            }
+            DetailSectionHeader("安装包明细", if (state.totalFiles > 0) {
+                "${state.totalFiles} 个文件" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else " · 仅删除本次扫描到的文件"
+            } else "不会影响已经安装的应用")
         }
-
-        if (state.coverage.isNotEmpty()) {
-            item {
-                Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    Text("SCAN COVERAGE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Text("扫描覆盖报告", fontSize = 26.sp, fontWeight = FontWeight.Black)
-                    Text("已扫描 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源；可直接查看未读取原因", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            items(state.coverage.take(40), key = { "${it.group}|${it.path}" }) { item ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                ) {
-                    Column(Modifier.padding(15.dp)) {
-                        Text("${if (item.status == "scanned") "✓" else "!"} ${item.group}", fontWeight = FontWeight.Bold)
-                        Text("${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                        Text(item.path, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (item.reason.isNotBlank()) Text(item.reason, color = MaterialTheme.colorScheme.error, fontSize = 10.sp)
-                    }
-                }
-            }
-        }
-
-        item {
-            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                Text(
-                    "SCAN RESULTS",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-                Text("扫描结果", fontSize = 26.sp, fontWeight = FontWeight.Black)
-                Text(
-                    if (state.items.isEmpty()) {
-                        "完成扫描后在这里查看安装包路径、数量与大小"
-                    } else {
-                        "发现 ${state.totalFiles} 项 · ${Formatter.formatFileSize(context, state.totalBytes)}" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else ""
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
         if (state.items.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(26.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                ) {
-                    Text(
-                        if (state.running) "任务正在执行，请稍候…" else "尚未生成安装包扫描结果",
-                        modifier = Modifier.padding(22.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                DetailEmptyState(
+                    title = when { state.running -> "正在查找安装包"; state.coverage.isNotEmpty() -> "没有发现安装包"; else -> "还没有扫描结果" },
+                    description = if (state.running) "正在检查手机存储与可用的外部存储。" else "完成扫描后，文件名称、位置和大小会显示在这里。",
+                    icon = Icons.Rounded.InstallMobile
+                )
             }
-        } else {
-            items(state.items, key = { "${it.name}|${it.samplePath}" }) { item ->
-                ApkResultCard(item)
-            }
-        }
-
-        if (state.output.isNotBlank()) {
-            item {
+        } else items(state.items, key = { "${it.name}|${it.samplePath}" }) { ApkResultCard(it) }
+        if (state.coverage.isNotEmpty()) {
+            item { DetailSectionHeader("扫描范围", "已读取 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源") }
+            items(state.coverage.take(40), key = { "${it.group}|${it.path}" }) { item ->
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .navigationBarsPadding(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
                 ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Text("任务输出", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            state.output,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
-                        )
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(item.group, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            Text(if (item.status == "scanned") "已读取" else "部分可用", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        }
+                        Text("${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(item.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (item.reason.isNotBlank()) Text(item.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         }
+        if (state.output.isNotBlank()) item { DetailExpandableText("查看任务详情", state.output) }
+        item { Spacer(Modifier.navigationBarsPadding()) }
     }
 }
 
@@ -678,9 +535,9 @@ private fun ApkResultCard(item: ApkScanItem) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
             Icon(
@@ -696,7 +553,7 @@ private fun ApkResultCard(item: ApkScanItem) {
                     "${item.files} 项 · ${Formatter.formatFileSize(context, item.bytes)}" +
                         if (item.errors > 0) " · 异常 ${item.errors}" else "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                    fontSize = 14.sp
                 )
                 if (item.samplePath.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
@@ -705,7 +562,7 @@ private fun ApkResultCard(item: ApkScanItem) {
                     Text(
                         item.samplePath,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis
                     )

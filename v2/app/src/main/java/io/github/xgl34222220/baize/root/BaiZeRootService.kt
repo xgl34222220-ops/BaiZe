@@ -533,31 +533,13 @@ class BaiZeRootService : RootService() {
         snapshotState.set(SnapshotState.EMPTY)
     }
 
-    private fun moduleTaskAlive(): Boolean {
-        val lockDir = File(STATE_DIR, "run.lock")
-        val pid = File(lockDir, "pid").takeIf { it.isFile }
-            ?.readText()
-            ?.trim()
-            ?.toIntOrNull()
-            ?: return false
-        if (pid <= 1) return false
-        val proc = File("/proc/$pid")
-        if (!proc.exists()) return false
-        val cmdline = runCatching {
-            File(proc, "cmdline").readBytes().toString(Charsets.UTF_8).replace('\u0000', ' ')
-        }.getOrDefault("")
-        return cmdline.contains("baize_v2") && (
-            cmdline.contains("cleaner.sh") ||
-                cmdline.contains("cleaner.native.sh") ||
-                cmdline.contains("cache-snapshot-clean.sh") ||
-                cmdline.contains("baize_engine")
-            )
-    }
+    private fun moduleTaskAlive(): Boolean = RuntimeTaskOwnership.isRunning(File(STATE_DIR))
 
     private fun repairStaleTaskFiles() {
-        val lockDir = File(STATE_DIR, "run.lock")
-        if (lockDir.exists() && !moduleTaskAlive()) runCatching { lockDir.deleteRecursively() }
+        if (moduleTaskAlive()) return
+        runCatching { File(STATE_DIR, "run.lock").deleteRecursively() }
         runCatching { File(STATE_DIR, "running.env").delete() }
+        runCatching { File(STATE_DIR, "worker.env").delete() }
     }
 
     private fun writePackageWhitelist(file: File, raw: String) {

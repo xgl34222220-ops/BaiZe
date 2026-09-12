@@ -2,12 +2,9 @@ package io.github.xgl34222220.baize.ui.logs.miuix
 
 import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,501 +15,162 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DeleteForever
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
-import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
-import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.logs.LogLevel
 import io.github.xgl34222220.baize.ui.logs.LogUiItem
 import io.github.xgl34222220.baize.ui.logs.LogsUiActions
 import io.github.xgl34222220.baize.ui.logs.LogsUiState
+import io.github.xgl34222220.baize.ui.miuix.VideoCard
+import io.github.xgl34222220.baize.ui.miuix.VideoDivider
+import io.github.xgl34222220.baize.ui.miuix.VideoEmptyState
+import io.github.xgl34222220.baize.ui.miuix.VideoIconButton
+import io.github.xgl34222220.baize.ui.miuix.VideoListRow
+import io.github.xgl34222220.baize.ui.miuix.VideoSectionTitle
+import io.github.xgl34222220.baize.ui.miuix.VideoStatusPill
+import io.github.xgl34222220.baize.ui.miuix.VideoTabs
+import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
-fun LogsScreenMiuix(
-    state: LogsUiState,
-    actions: LogsUiActions
-) {
+fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var onlyErrors by rememberSaveable { mutableStateOf(false) }
+    var rawLinesToShow by rememberSaveable { mutableIntStateOf(80) }
+    val visibleLogs = remember(state.logs, onlyErrors) { if (onlyErrors) state.logs.filter { it.level == LogLevel.ERROR || it.errors > 0 } else state.logs }
+    val rawLines = remember(state.rawLog) { state.rawLog.lines() }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 146.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item { MiuixLogsHeader(state.logs.isNotEmpty(), actions) }
-        item { MiuixRuntimeOverview(state) }
-        item { MiuixSectionTitle("RAW OUTPUT", "模块原始输出", "直接读取 cleaner.sh 最近一次真实输出") }
-        item { MiuixRawLogCard(state, actions) }
-        item { MiuixSectionTitle("DIAGNOSTICS", "诊断工具", "服务恢复、清理明细与崩溃记录") }
-        item { MiuixDiagnostics(actions) }
-        item { MiuixSectionTitle("RUNTIME LOGS", "最近运行日志", "由真实任务记录和当前服务状态生成") }
-
-        if (state.logs.isEmpty()) {
-            item { MiuixEmptyLogs() }
-        } else {
-            items(state.logs, key = { it.key }) { item ->
-                MiuixLogCard(item)
-            }
+        item {
+            VideoTopBar("运行日志", "定位问题，了解任务执行情况", actions = {
+                VideoIconButton(Icons.Rounded.Refresh, "刷新日志", actions.onRefresh)
+                if (selectedTab == 0 && state.logs.isNotEmpty()) VideoIconButton(Icons.Rounded.DeleteOutline, "清空任务日志", actions.onClearTaskLogs)
+                if (selectedTab == 1 && state.hasRawLog) VideoIconButton(Icons.Rounded.DeleteOutline, "清空原始输出", actions.onClearRawLog)
+            })
         }
-    }
-}
-
-@Composable
-private fun MiuixLogsHeader(
-    canClear: Boolean,
-    actions: LogsUiActions
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "SYSTEM LOGS",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.4.sp
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "运行日志",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 36.sp,
-                lineHeight = 40.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "服务状态与诊断信息",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        MiuixHeaderButton(
-            icon = Icons.Rounded.Refresh,
-            description = "刷新日志",
-            enabled = true,
-            onClick = actions.onRefresh
-        )
-        Spacer(Modifier.width(8.dp))
-        MiuixHeaderButton(
-            icon = Icons.Rounded.DeleteForever,
-            description = "清空任务日志",
-            enabled = canClear,
-            onClick = actions.onClearTaskLogs
-        )
-    }
-}
-
-@Composable
-private fun MiuixHeaderButton(
-    icon: ImageVector,
-    description: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(20.dp)
-    Box(
-        Modifier
-            .size(54.dp)
-            .shadow(6.dp, shape, clip = false)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = .06f), shape)
-    ) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxSize()) {
-            Icon(icon, contentDescription = description)
-        }
-    }
-}
-
-@Composable
-private fun MiuixRuntimeOverview(state: LogsUiState) {
-    val settings = LocalAppearanceSettings.current
-    val scheme = MaterialTheme.colorScheme
-    val dark = scheme.background.luminance() < .5f
-    val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(36.dp)
-    val background = when {
-        amoled -> BaiZeTokens.colors.surfaceRaised
-        dark -> scheme.surfaceContainerHigh
-        else -> scheme.surface
-    }
-    val statusTitle = when {
-        state.running -> "任务执行中"
-        state.healthy -> "系统运行正常"
-        state.connected -> "服务正在准备"
-        else -> "服务需要恢复"
-    }
-    val statusColor = when {
-        state.healthy -> BaiZeTokens.colors.success
-        state.connected -> BaiZeTokens.colors.warning
-        else -> scheme.error
-    }
-
-    Box(
-        Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth()
-            .shadow(12.dp, shape, clip = false)
-            .clip(shape)
-            .background(background)
-            .border(1.dp, scheme.onSurface.copy(alpha = if (dark) .08f else .05f), shape)
-            .padding(23.dp)
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(11.dp).clip(CircleShape).background(statusColor))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "${state.device} · ${state.android}",
-                    color = scheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(Modifier.height(23.dp))
-            Text("当前状态", color = scheme.onSurfaceVariant, fontSize = 12.sp)
-            Text(
-                statusTitle,
-                color = scheme.onSurface,
-                fontSize = 34.sp,
-                lineHeight = 39.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(18.dp))
-            MiuixStatusRow("服务", state.serviceText)
-            HorizontalDivider(Modifier.padding(vertical = 10.dp), color = scheme.onSurface.copy(alpha = .07f))
-            MiuixStatusRow("任务", state.taskPhase)
-            HorizontalDivider(Modifier.padding(vertical = 10.dp), color = scheme.onSurface.copy(alpha = .07f))
-            MiuixStatusRow("调度", state.schedulerText)
-
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                MiuixStatePill("连接", state.connected)
-                MiuixStatePill("就绪", state.ready)
-                MiuixStatePill("执行", state.running)
-                MiuixStatePill("异常 ${state.errorCount}", state.errorCount == 0)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MiuixStatusRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Text(
-            label,
-            modifier = Modifier.width(45.dp),
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            value,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp,
-            lineHeight = 16.sp
-        )
-    }
-}
-
-@Composable
-private fun MiuixStatePill(label: String, positive: Boolean) {
-    val background = if (positive) {
-        MaterialTheme.colorScheme.primary.copy(alpha = .12f)
-    } else {
-        MaterialTheme.colorScheme.error.copy(alpha = .12f)
-    }
-    Text(
-        label,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(background)
-            .padding(horizontal = 9.dp, vertical = 6.dp),
-        color = if (positive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold
-    )
-}
-
-@Composable
-private fun MiuixRawLogCard(state: LogsUiState, actions: LogsUiActions) {
-    val visible = state.rawLog.lineSequence().toList().takeLast(36).joinToString("\n")
-    MiuixGroupSurface {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (state.hasRawLog) state.rawLogName.ifBlank { "最近模块任务.log" } else "暂无模块原始日志",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        if (state.hasRawLog) "显示最后 36 行，不使用任务摘要代替" else "执行模块扫描或清理后自动读取",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
-                    )
+        item { RuntimeCard(state) }
+        item { VideoTabs(listOf("任务日志", "原始输出"), selectedTab, { selectedTab = it }) }
+        if (selectedTab == 0) {
+            item {
+                Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !onlyErrors, onClick = { onlyErrors = false }, label = { Text("全部 ${state.logs.size}") })
+                    FilterChip(selected = onlyErrors, onClick = { onlyErrors = true }, label = { Text("异常 ${state.logs.count { it.level == LogLevel.ERROR || it.errors > 0 }}") })
                 }
-                MiuixHeaderButton(
-                    icon = Icons.Rounded.DeleteForever,
-                    description = "清空原始日志",
-                    enabled = state.hasRawLog,
-                    onClick = actions.onClearRawLog
-                )
             }
-            if (visible.isNotBlank()) {
-                Spacer(Modifier.height(13.dp))
-                Text(
-                    visible,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
-                        .padding(13.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp
-                )
+            if (visibleLogs.isEmpty()) item {
+                VideoEmptyState(Icons.Rounded.Description, if (onlyErrors) "没有异常任务" else "还没有任务日志",
+                    if (onlyErrors) "当前记录中未发现报告错误的任务。" else "执行扫描或清理后，这里会显示结果与运行信息。", Modifier.padding(horizontal = 20.dp))
+            } else items(visibleLogs, key = { it.key }) { LogCard(it) }
+        } else {
+            if (!state.hasRawLog) item {
+                VideoEmptyState(Icons.Rounded.Description, "还没有原始输出", "执行一次模块任务后，这里会显示实际运行日志。", Modifier.padding(horizontal = 20.dp))
+            } else {
+                item { VideoSectionTitle(state.rawLogName.ifBlank { "最近任务输出" }, "长按可选择与复制 · 最近 ${minOf(rawLinesToShow, rawLines.size)} / ${rawLines.size} 行") }
+                if (rawLines.size > rawLinesToShow) item {
+                    TextButton(onClick = { rawLinesToShow = (rawLinesToShow + 120).coerceAtMost(rawLines.size) }, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                        Text("加载更早的 120 行")
+                    }
+                }
+                items(rawLines.takeLast(rawLinesToShow).chunked(20)) { lines ->
+                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
+                        SelectionContainer {
+                            Text(lines.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+        item { VideoSectionTitle("诊断与恢复") }
+        item {
+            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+                VideoListRow(Icons.Rounded.RestartAlt, "重新连接 Root 服务", "恢复连接并重新读取模块状态", onClick = actions.onReconnect)
+                VideoDivider()
+                VideoListRow(Icons.Rounded.Description, "清理明细", "查看最近任务的分类结果与保护项", onClick = actions.onOpenAudit)
+                VideoDivider()
+                VideoListRow(Icons.Rounded.BugReport, "崩溃诊断", "查看与清除 App 崩溃记录", onClick = actions.onOpenCrashDiagnostics)
             }
         }
     }
 }
 
 @Composable
-private fun MiuixDiagnostics(actions: LogsUiActions) {
-    MiuixGroupSurface {
-        MiuixToolRow(
-            icon = Icons.Rounded.RestartAlt,
-            title = "重新连接 Root 服务",
-            subtitle = "重新建立服务连接并刷新模块状态",
-            onClick = actions.onReconnect
-        )
-        HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .07f))
-        MiuixToolRow(
-            icon = Icons.Rounded.Description,
-            title = "清理明细",
-            subtitle = "查看最近扫描和清理的分类结果",
-            onClick = actions.onOpenAudit
-        )
-        HorizontalDivider(Modifier.padding(start = 64.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .07f))
-        MiuixToolRow(
-            icon = Icons.Rounded.BugReport,
-            title = "崩溃诊断",
-            subtitle = "查看并清除最近 App 崩溃记录",
-            onClick = actions.onOpenCrashDiagnostics
-        )
+private fun RuntimeCard(state: LogsUiState) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 24) {
+        VideoStatusPill(when { state.running -> "任务执行中"; state.ready && state.connected -> "服务已就绪"; state.connected -> "服务准备中"; else -> "服务待恢复" }, state.ready && state.connected)
+        Spacer(Modifier.height(16.dp))
+        Text("${state.device} · ${state.android}", fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(14.dp))
+        RuntimeRow("服务", state.serviceText)
+        Spacer(Modifier.height(10.dp))
+        RuntimeRow("任务", state.taskPhase)
+        Spacer(Modifier.height(10.dp))
+        RuntimeRow("调度", state.schedulerText)
     }
 }
 
 @Composable
-private fun MiuixToolRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(
-                subtitle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-        }
+private fun RuntimeRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(label, fontSize = 13.sp, lineHeight = 21.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(44.dp))
+        Text(value, fontSize = 13.sp, lineHeight = 21.sp, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun MiuixLogCard(item: LogUiItem) {
+private fun LogCard(item: LogUiItem) {
     val context = LocalContext.current
-    val (icon, tint) = when (item.level) {
-        LogLevel.SUCCESS -> Icons.Rounded.CheckCircle to BaiZeTokens.colors.success
-        LogLevel.WARNING -> Icons.Rounded.Search to BaiZeTokens.colors.warning
-        LogLevel.ERROR -> Icons.Rounded.ErrorOutline to MaterialTheme.colorScheme.error
-        LogLevel.INFO -> Icons.Rounded.Description to MaterialTheme.colorScheme.primary
+    var expanded by rememberSaveable(item.key) { mutableStateOf(false) }
+    val tint = when (item.level) {
+        LogLevel.SUCCESS -> BaiZeTokens.colors.success
+        LogLevel.WARNING -> BaiZeTokens.colors.warning
+        LogLevel.ERROR -> MaterialTheme.colorScheme.error
+        LogLevel.INFO -> MaterialTheme.colorScheme.primary
     }
-
-    MiuixGroupSurface {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(tint.copy(alpha = .12f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = tint)
-            }
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).clickable { expanded = !expanded }, contentPadding = 20) {
+        Text("${item.time} · ${item.trigger}", fontSize = 13.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(10.dp))
+        Text(item.title, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text(item.message, fontSize = 14.sp, lineHeight = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = .07f)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(if (item.errors > 0) "${item.errors} 个错误 · ${item.files} 项" else "${item.files} 项", modifier = Modifier.weight(1f), color = tint, fontSize = 13.sp)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "${item.time} · ${item.trigger}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-                Text(
-                    item.message,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    Formatter.formatFileSize(context, item.bytes),
-                    color = tint,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (item.errors > 0) "异常 ${item.errors}" else "${item.files} 项",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MiuixGroupSurface(
-    content: @Composable ColumnScope.() -> Unit
-) {
-    val settings = LocalAppearanceSettings.current
-    val scheme = MaterialTheme.colorScheme
-    val dark = scheme.background.luminance() < .5f
-    val amoled = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(28.dp)
-    val background = when {
-        amoled -> BaiZeTokens.colors.surfaceRaised
-        dark -> scheme.surfaceContainerHigh
-        else -> scheme.surface
-    }
-
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 20.dp)
-            .fillMaxWidth()
-            .shadow(6.dp, shape, clip = false)
-            .clip(shape)
-            .background(background)
-            .border(1.dp, scheme.onSurface.copy(alpha = if (dark) .08f else .05f), shape),
-        content = content
-    )
-}
-
-@Composable
-private fun MiuixSectionTitle(
-    eyebrow: String,
-    title: String,
-    subtitle: String
-) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 5.dp)) {
-        Text(
-            eyebrow,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.2.sp
-        )
-        Text(title, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
-        Text(
-            subtitle,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp
-        )
-    }
-}
-
-@Composable
-private fun MiuixEmptyLogs() {
-    MiuixGroupSurface {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(27.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                Icons.Rounded.Description,
-                contentDescription = null,
-                modifier = Modifier.size(42.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("还没有任务日志", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "完成一次扫描或清理后，这里会显示任务结果、大小和异常数量。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
+            Text(Formatter.formatFileSize(context, item.bytes), color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

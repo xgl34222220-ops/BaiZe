@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -74,7 +76,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -310,8 +311,8 @@ private fun RuleReviewTrendsScreen(
     onRefresh: () -> Unit
 ) {
     var filter by remember { mutableStateOf("all") }
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val shape = if (miuix) RoundedCornerShape(27.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.items.filter { item ->
         when (filter) {
             "repeated" -> item.repeated
@@ -322,9 +323,9 @@ private fun RuleReviewTrendsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { RuleReviewTrendHeader(state.message, state.loading, onBack, onRefresh) }
         item { RuleReviewTrendSummary(state.report, horizontal, shape, state.loading) }
@@ -360,16 +361,7 @@ private fun RuleReviewTrendsScreen(
 
 @Composable
 private fun RuleReviewTrendHeader(message: String, loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column(Modifier.weight(1f)) {
-            Text("审核历史与趋势", fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    DetailPageHeader("审核趋势", message, onBack) {
         IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
     }
 }
@@ -384,7 +376,7 @@ private fun RuleReviewTrendSummary(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -393,8 +385,8 @@ private fun RuleReviewTrendSummary(
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${report.reopenCount} 次重新打开", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("${report.reopenCount} 次重新打开", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
                 if (loading) CircularProgressIndicator(Modifier.size(24.dp))
             }
@@ -408,7 +400,7 @@ private fun RuleReviewTrendSummary(
             Text(
                 "最近 ${report.lookbackDays} 天 ${report.eventSampleCount} 条审核事件 · 人工处理 ${report.manualReviewCount} 次",
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -419,7 +411,7 @@ private fun RuleReviewTrendSafetyCard(horizontal: androidx.compose.ui.unit.Dp, s
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Rounded.Security, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
@@ -429,8 +421,8 @@ private fun RuleReviewTrendSafetyCard(horizontal: androidx.compose.ui.unit.Dp, s
                 Text(
                     "仅统计脱敏审核事件和当前审核状态，不会自动处理审核、停用规则、删除文件、切换策略或改变任何定时周期。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 17.sp
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -442,13 +434,13 @@ private fun RuleReviewTrendComparison(report: RuleReviewTrendReport, horizontal:
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Replay, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                 Spacer(Modifier.width(9.dp))
-                Text("处理效率", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                Text("处理效率", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -460,7 +452,7 @@ private fun RuleReviewTrendComparison(report: RuleReviewTrendReport, horizontal:
             Text(
                 "平均处理 ${formatDuration(report.averageResolutionMs)} · 中位处理 ${formatDuration(report.medianResolutionMs)} · 已完成 ${report.resolvedReopenCount} 项",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -471,15 +463,15 @@ private fun RuleReviewReasonCard(reasons: List<RuleReviewReason>, horizontal: an
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Text("主要恶化原因", fontWeight = FontWeight.Black, fontSize = 16.sp)
+            Text("主要恶化原因", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             reasons.forEach { reason ->
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth()) {
-                        Text(reason.label, modifier = Modifier.weight(1f), fontSize = 11.sp)
-                        Text("${reason.count} 次 · ${reason.percent}%", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                        Text(reason.label, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                        Text("${reason.count} 次 · ${reason.percent}%", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                     LinearProgressIndicator(
                         progress = { reason.percent / 100f },
@@ -498,20 +490,20 @@ private fun RuleReviewWeeklyCard(weeks: List<RuleReviewWeek>, horizontal: androi
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Text("近八周审核趋势", fontWeight = FontWeight.Black, fontSize = 16.sp)
+            Text("近八周审核趋势", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             weeks.forEach { week ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(week.label, modifier = Modifier.width(42.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                    Text(week.label, modifier = Modifier.width(42.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         LinearProgressIndicator(
                             progress = { week.reopens.toFloat() / max },
                             modifier = Modifier.fillMaxWidth().height(5.dp),
                             trackColor = MaterialTheme.colorScheme.surfaceContainerHigh
                         )
-                        Text("重开 ${week.reopens} · 审核 ${week.reviews} · 完成 ${week.resolved}", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("重开 ${week.reopens} · 审核 ${week.reviews} · 完成 ${week.resolved}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -524,7 +516,7 @@ private fun RuleReviewTrendItemCard(item: RuleReviewTrendItem, horizontal: andro
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -543,11 +535,11 @@ private fun RuleReviewTrendItemCard(item: RuleReviewTrendItem, horizontal: andro
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(item.category, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(item.category, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         if (item.activeReopened) "重新打开，等待人工审核" else "当前状态：${reviewStateLabel(item.lastState)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp
+                        fontSize = 13.sp
                     )
                 }
                 if (item.repeated || item.activeReopened) {
@@ -558,7 +550,7 @@ private fun RuleReviewTrendItemCard(item: RuleReviewTrendItem, horizontal: andro
                         Text(
                             if (item.activeReopened) "待处理" else "反复重开",
                             Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            fontSize = 9.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -574,7 +566,7 @@ private fun RuleReviewTrendItemCard(item: RuleReviewTrendItem, horizontal: andro
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
                 Spacer(Modifier.height(9.dp))
-                Text("最近原因：${item.lastReason}", fontSize = 11.sp, lineHeight = 17.sp)
+                Text("最近原因：${item.lastReason}", fontSize = 13.sp, lineHeight = 20.sp)
             }
             Spacer(Modifier.height(7.dp))
             val time = maxOf(item.lastReopenAt, item.lastActionAt)
@@ -587,7 +579,7 @@ private fun RuleReviewTrendItemCard(item: RuleReviewTrendItem, horizontal: andro
                     }
                 }.ifBlank { "暂无可计算的处理周期" },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -598,7 +590,7 @@ private fun RuleReviewTrendEmpty(available: Boolean, filter: String, horizontal:
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(42.dp), tint = BaiZeTokens.colors.success)
@@ -607,7 +599,7 @@ private fun RuleReviewTrendEmpty(available: Boolean, filter: String, horizontal:
             Text(
                 if (!available) "在规则质量中心完成人工审核后，这里会形成处理周期和重开趋势。" else "筛选 ${filterLabel(filter)} 下没有规则分类。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -617,8 +609,8 @@ private fun RuleReviewTrendEmpty(available: Boolean, filter: String, horizontal:
 private fun TrendMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier = modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .58f)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-            Text(value, fontWeight = FontWeight.Black, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

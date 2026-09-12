@@ -12,6 +12,7 @@ CONFIG="$STATE_DIR/config.conf"
 WHITELIST="$STATE_DIR/whitelist.conf"
 STATE_FILE="$STATE_DIR/apk_scan.env"
 TARGETS_FILE="$STATE_DIR/apk_scan.targets"
+IDENTITIES_FILE="$STATE_DIR/apk_scan.identities"
 REPORT_DIR="$STATE_DIR/reports"
 LOG_DIR="$STATE_DIR/logs"
 LOCK_DIR="$STATE_DIR/run.lock"
@@ -49,7 +50,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -76,13 +77,13 @@ cleanup_lock() {
 handle_signal() {
   trap - EXIT INT TERM
   : >"$STOP_FILE" 2>/dev/null
-  rm -f "$STATE_FILE" "$TARGETS_FILE"
+  rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
   cleanup_lock
   exit 9
 }
 trap cleanup_lock EXIT
 trap handle_signal INT TERM
-rm -f "$STOP_FILE" "$STATE_FILE" "$TARGETS_FILE"
+rm -f "$STOP_FILE" "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
 
 START_EPOCH=$(date +%s)
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
@@ -90,6 +91,8 @@ REPORT_FILE="$REPORT_DIR/$STAMP-apk-scan.tsv"
 LOG_FILE="$LOG_DIR/$STAMP-apk-scan.log"
 TARGETS_TMP="$TMP_DIR/apk-scan.targets"
 : >"$TARGETS_TMP"
+IDENTITIES_TMP="$TMP_DIR/apk-scan.identities"
+: >"$IDENTITIES_TMP"
 DETAILS_TMP="$TMP_DIR/apk-details.tsv"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$DETAILS_TMP"
 
@@ -167,12 +170,7 @@ fi
 baize_whitelist_load "$WHITELIST"
 
 
-file_size() {
-  value=$(stat -c %s "$1" 2>/dev/null)
-  case "$value" in ''|*[!0-9]*) value=$(wc -c <"$1" 2>/dev/null | tr -d ' ') ;; esac
-  case "$value" in ''|*[!0-9]*) value=0 ;; esac
-  echo "$value"
-}
+
 
 human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
 should_stop() { [ -f "$STOP_FILE" ]; }
@@ -211,7 +209,11 @@ while IFS= read -r -d '' candidate; do
     set_phase "正在校验安装包文件" "$current" "$apk_total" "$candidate"
   fi
   [ -f "$candidate" ] || continue
-  size=$(file_size "$candidate")
+  # One metadata read captures the object shown to the user. ctime and inode
+  # prevent a same-name replacement (even with restored mtime) being deleted.
+  identity=$(stat -c '%d:%i:%s:%y:%z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
+  metadata=${identity#*:*:}; size=${metadata%%:*}
+  case "$size" in ''|*[!0-9]*) errors=$((errors + 1)); continue ;; esac
   [ "$size" -le "$MAX_FILE_BYTES" ] || continue
   if [ "$DAYS" -gt 0 ]; then
     modified=$(stat -c %Y "$candidate" 2>/dev/null)
@@ -223,6 +225,7 @@ while IFS= read -r -d '' candidate; do
     continue
   fi
   printf '%s\0' "$candidate" >>"$TARGETS_TMP"
+  printf '%s\0' "$identity" >>"$IDENTITIES_TMP"
   display_path=$(printf '%s' "$candidate" | tr '\t\r\n' '   ')
   printf 'candidate\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$display_path" >>"$DETAILS_TMP"
   files=$((files + 1)); bytes=$((bytes + size))
@@ -233,11 +236,13 @@ scan_epoch=$(date +%s)
 targets_sha=$(file_sha "$TARGETS_TMP")
 snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
 mv -f "$TARGETS_TMP" "$TARGETS_FILE"
+mv -f "$IDENTITIES_TMP" "$IDENTITIES_FILE"
 targets_sha=$(file_sha "$TARGETS_FILE")
 {
   echo "epoch=$scan_epoch"
   echo "snapshot_id=$snapshot_id"
   echo "targets_sha=$targets_sha"
+  echo "identities_sha=$(file_sha "$IDENTITIES_FILE")"
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "package_days=$DAYS"
@@ -245,8 +250,9 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "bytes=$bytes"
   echo "files=$files"
   echo "engine=apk-snapshot-v2.2-shared-index"
-} >"$STATE_FILE"
-chmod 0600 "$STATE_FILE" "$TARGETS_FILE" 2>/dev/null
+} >"$STATE_FILE.tmp.$$"
+mv -f "$STATE_FILE.tmp.$$" "$STATE_FILE"
+chmod 0600 "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE" 2>/dev/null
 
 result="安装包扫描完成，发现 $files 个 / $(human_bytes "$bytes")"
 end=$(date +%s)

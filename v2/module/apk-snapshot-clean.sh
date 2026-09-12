@@ -11,6 +11,7 @@ MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 WHITELIST="$STATE_DIR/whitelist.conf"
 STATE_FILE="$STATE_DIR/apk_scan.env"
 TARGETS_FILE="$STATE_DIR/apk_scan.targets"
+IDENTITIES_FILE="$STATE_DIR/apk_scan.identities"
 REPORT_DIR="$STATE_DIR/reports"
 LOG_DIR="$STATE_DIR/logs"
 LOCK_DIR="$STATE_DIR/run.lock"
@@ -38,7 +39,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -79,12 +80,7 @@ LOG_FILE="$LOG_DIR/$STAMP-apk-clean.log"
 
 state_value() { sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | tail -n 1; }
 human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
-file_size() {
-  value=$(stat -c %s "$1" 2>/dev/null)
-  case "$value" in ''|*[!0-9]*) value=$(wc -c <"$1" 2>/dev/null | tr -d ' ') ;; esac
-  case "$value" in ''|*[!0-9]*) value=0 ;; esac
-  echo "$value"
-}
+
 count_nul() { tr -cd '\000' <"$1" | wc -c | tr -d ' '; }
 should_stop() { [ -f "$STOP_FILE" ]; }
 
@@ -202,6 +198,7 @@ write_latest() {
 epoch=$(state_value epoch)
 snapshot_id=$(state_value snapshot_id)
 expected_targets_sha=$(state_value targets_sha)
+expected_identities_sha=$(state_value identities_sha)
 expected_whitelist_sha=$(state_value whitelist_sha)
 max_file_bytes=$(state_value max_file_bytes)
 authorized_files=$(state_value files)
@@ -218,11 +215,14 @@ if [ "$epoch" -le 0 ] || [ "$age" -lt 0 ] || [ "$age" -gt 1800 ] || [ -z "$snaps
   exit 6
 fi
 [ "$(file_sha "$TARGETS_FILE")" = "$expected_targets_sha" ] || { echo "安装包目标快照校验失败，不会自动重新扫描"; exit 7; }
+[ -s "$IDENTITIES_FILE" ] && [ "$(file_sha "$IDENTITIES_FILE")" = "$expected_identities_sha" ] || { echo "安装包身份快照缺失或已变化，请重新扫描"; exit 7; }
 [ "$(file_sha "$WHITELIST")" = "$expected_whitelist_sha" ] || { echo "白名单已变化，请重新扫描"; exit 7; }
 
 total=$(count_nul "$TARGETS_FILE")
 case "$total" in ''|*[!0-9]*) total=0 ;; esac
 [ "$total" -gt 0 ] || { echo "安装包扫描快照为空，请重新扫描"; exit 6; }
+
+[ "$(count_nul "$IDENTITIES_FILE")" = "$total" ] || { echo "安装包身份快照不完整，请重新扫描"; exit 7; }
 
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
 set_phase "正在校验安装包扫描快照" 0 "$total" ""
@@ -233,7 +233,7 @@ errors=0
 skipped=0
 code=0
 
-while IFS= read -r -d '' target; do
+while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
   current=$((current + 1))
   if should_stop; then code=9; break; fi
   if [ "$current" -eq 1 ] || [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$total" ]; then
@@ -255,12 +255,13 @@ while IFS= read -r -d '' target; do
     printf 'protected\tlow\t目标已变化\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
     continue
   fi
-  if [ "$target" -nt "$STATE_FILE" ]; then
+  current_identity=$(stat -c '%d:%i:%s:%y:%z' "$target" 2>/dev/null) || current_identity=
+  if [ -z "$current_identity" ] || [ "$current_identity" != "$expected_identity" ]; then
     skipped=$((skipped + 1))
     printf 'protected\tlow\t扫描后已修改\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
     continue
   fi
-  size=$(file_size "$target")
+  metadata=${current_identity#*:*:}; size=${metadata%%:*}
   if [ "$size" -gt "$max_file_bytes" ]; then
     skipped=$((skipped + 1))
     printf 'protected\tlow\t大文件保护\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
@@ -276,7 +277,9 @@ while IFS= read -r -d '' target; do
     errors=$((errors + 1))
     printf 'failed\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
   fi
-done <"$TARGETS_FILE"
+done <"$TARGETS_FILE" 3<"$IDENTITIES_FILE"
+
+[ "$deleted_files" -eq 0 ] || rm -f "$STATE_DIR/index/meta.env"
 
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
@@ -284,7 +287,7 @@ if [ "$code" -eq 9 ]; then
   result="安装包快照清理已停止，已释放 $(human_bytes "$deleted_bytes")"
 else
   result="安装包清理完成：删除 $deleted_files 个，跳过 $skipped 个，失败 $errors 个，释放 $(human_bytes "$deleted_bytes")"
-  rm -f "$STATE_FILE" "$TARGETS_FILE"
+  rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
 fi
 
 write_latest "$deleted_files" "$deleted_bytes" "$errors" "$skipped" "$elapsed" "$result"

@@ -3,6 +3,7 @@
 *.sha256.txt
 /dist/
 /build/
+**/.kotlin/
 *.log
 .DS_Store
 Thumbs.db

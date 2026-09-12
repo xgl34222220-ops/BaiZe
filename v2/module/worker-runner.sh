@@ -17,6 +17,29 @@ HISTORY_FILE="$STATE_DIR/history.tsv"
 mkdir -p "$RESULT_DIR" "$STATE_DIR/logs"
 started=$(date +%s)
 code=127
+# The launcher owns worker.env; this acknowledgement closes the startup handshake
+# without an unconditional sleep and exists before any cleaner writes shared progress.
+printf '%s\n' "$$" >"$RESULT_DIR/$TASK_ID.started"
+ACTIVE_CHILD=
+run_engine() {
+  "$@" >>"$LOG_FILE" 2>&1 & ACTIVE_CHILD=$!
+  wait "$ACTIVE_CHILD" 2>/dev/null
+  engine_code=$?
+  if [ -f "$STATE_DIR/stop" ]; then
+    # A trapped wait can return before the cleaner has released its destructive lock.
+    wait "$ACTIVE_CHILD" 2>/dev/null || true
+    engine_code=9
+  fi
+  ACTIVE_CHILD=
+  return "$engine_code"
+}
+handle_signal() {
+  : >"$STATE_DIR/stop"
+  [ -n "$ACTIVE_CHILD" ] && kill -TERM "$ACTIVE_CHILD" 2>/dev/null || true
+  # The normal result path persists cancellation and clears only our own markers.
+  code=9
+}
+trap handle_signal INT TERM
 record_empty_deep_result() {
   now_text=$(date '+%Y-%m-%d %H:%M:%S')
   result="深度清理完成，没有可清理项"
@@ -45,11 +68,11 @@ record_empty_deep_result() {
 }
 if [ "$MODE" = deep-auto ]; then
   if [ -x "$CLEANER" ]; then
-    BAIZE_SUPPRESS_SCAN_HISTORY=1 "$CLEANER" deep-scan "$TRIGGER" >>"$LOG_FILE" 2>&1
+    BAIZE_SUPPRESS_SCAN_HISTORY=1 run_engine "$CLEANER" deep-scan "$TRIGGER"
     code=$?
     if [ "$code" -eq 0 ]; then
       if [ -s "$STATE_DIR/deep_scan.targets" ]; then
-        "$CLEANER" deep-clean "$TRIGGER" >>"$LOG_FILE" 2>&1
+        run_engine "$CLEANER" deep-clean "$TRIGGER"
         code=$?
       else
         record_empty_deep_result
@@ -60,19 +83,23 @@ if [ "$MODE" = deep-auto ]; then
     echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
   fi
 elif [ "$MODE" = organize ]; then
+  rm -f "$ORGANIZER_RESULT"
   if [ -x "$ORGANIZER" ]; then
-    "$ORGANIZER" "$MODE" "$TRIGGER" "$TASK_ID" >>"$LOG_FILE" 2>&1
+    run_engine "$ORGANIZER" "$MODE" "$TRIGGER" "$TASK_ID"
     code=$?
   else
     echo "文件归类引擎不存在：$ORGANIZER" >>"$LOG_FILE"
   fi
 elif [ -x "$CLEANER" ]; then
-  "$CLEANER" "$MODE" "$TRIGGER" >>"$LOG_FILE" 2>&1
+  run_engine "$CLEANER" "$MODE" "$TRIGGER"
   code=$?
 else
   echo "清理引擎不存在：$CLEANER" >>"$LOG_FILE"
 fi
+[ ! -f "$STATE_DIR/stop" ] || code=9
 ended=$(date +%s)
+# Partial deletion also changes the storage tree; never serve the old TTL index.
+case "$MODE" in clean|*-clean|*-auto) rm -f "$STATE_DIR/index/meta.env" "${BAIZE_ROOT_STATE_DIR:-$STATE_DIR}/index/meta.env";; esac
 if [ "$MODE" = organize ] && [ -f "$ORGANIZER_RESULT" ]; then
   moved=$(sed -n 's/^moved=//p' "$ORGANIZER_RESULT" | tail -n 1)
   bytes=$(sed -n 's/^bytes=//p' "$ORGANIZER_RESULT" | tail -n 1)
@@ -104,6 +131,31 @@ tmp="$RESULT_FILE.tmp.$$"
   fi
 } >"$tmp" && mv -f "$tmp" "$RESULT_FILE"
 chmod 0600 "$RESULT_FILE" 2>/dev/null || true
+# A supervisor/scheduler restart must not lose a completed interval task and rerun it.
+# Cache-lane work publishes to the shared state after its isolated result is complete.
+case "$TRIGGER" in
+  scheduler:*)
+    case "$MODE" in
+      cache-auto|cache-clean) completed_group=cache;; apk-auto) completed_group=apk;;
+      empty-clean) completed_group=empty;; rules-clean) completed_group=rules;;
+      fragment-clean) completed_group=fragment;; deep-auto|deep-clean) completed_group=deep;;
+      organize) completed_group=organize;; *) completed_group=;;
+    esac
+    if [ -n "$completed_group" ]; then
+      completion_root=${BAIZE_ROOT_STATE_DIR:-$STATE_DIR}
+      completion_state="$completion_root/scheduler-result-$completed_group.env"
+      { echo "task_id=$TASK_ID"; echo "mode=$MODE"; echo "trigger=$TRIGGER"; echo "exit_code=$code"; echo "started=$started"; echo "ended=$ended"; } >"$completion_state.tmp.$$" && mv -f "$completion_state.tmp.$$" "$completion_state"
+      if [ "$code" -eq 0 ]; then
+        printf '%s\n' "$ended" >"$completion_root/last_${completed_group}_run.epoch.tmp.$$" && mv -f "$completion_root/last_${completed_group}_run.epoch.tmp.$$" "$completion_root/last_${completed_group}_run.epoch"
+        rm -f "$completion_root/scheduler-deferred-$completed_group.until" "$completion_root/scheduler-retry-$completed_group.count" "$completion_root/scheduler-retry-$completed_group.until"
+        if [ "$TRIGGER" = scheduler:daily ] && [ -n "${BAIZE_SCHEDULE_CYCLE:-}" ]; then
+          printf '%s\n' "$BAIZE_SCHEDULE_CYCLE" >"$completion_root/last_${completed_group}_daily.date"
+        fi
+      fi
+    fi
+    ;;
+esac
+
 current_id=$(sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1)
 if [ "$current_id" = "$TASK_ID" ]; then
   rm -f "$WORKER_FILE" "$RUNNING_FILE"

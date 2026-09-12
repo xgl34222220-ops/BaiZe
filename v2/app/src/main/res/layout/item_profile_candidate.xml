@@ -10,7 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -35,7 +35,7 @@
                 android:background="@drawable/bg_risk_badge"
                 android:paddingHorizontal="9dp"
                 android:paddingVertical="5dp"
-                android:textSize="11sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -45,7 +45,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:textColor="@color/baize_text_secondary"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/pathText"
@@ -57,7 +57,7 @@
             android:maxLines="2"
             android:textColor="@color/baize_text_primary"
             android:textIsSelectable="true"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
 
         <TextView
             android:id="@+id/detailText"
@@ -65,6 +65,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="9dp"
             android:textColor="@color/baize_text_secondary"
-            android:textSize="12sp" />
+            android:textSize="13sp" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

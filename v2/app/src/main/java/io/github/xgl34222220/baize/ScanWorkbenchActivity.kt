@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -99,7 +101,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -1127,7 +1128,7 @@ private fun ScanWorkbenchScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val miuix = appearance.uiStyle == UiStyle.MIUIX
-    val horizontal = if (miuix) 18.dp else 20.dp
+    val horizontal = 20.dp
     val shape: Shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.large
     var filter by remember { mutableStateOf("all") }
     var expandedGroups by remember { mutableStateOf(emptySet<String>()) }
@@ -1151,12 +1152,12 @@ private fun ScanWorkbenchScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(BaiZeTokens.colors.surfaceBase)
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 34.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item { WorkbenchHeader(miuix, actions.onBack) }
             item {
@@ -1290,29 +1291,7 @@ private fun ScanWorkbenchScreen(
 
 @Composable
 private fun WorkbenchHeader(miuix: Boolean, onBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column {
-            Text(
-                "扫描结果工作台",
-                fontSize = if (miuix) 28.sp else 25.sp,
-                lineHeight = 34.sp,
-                fontWeight = FontWeight.Black
-            )
-            Text(
-                "按应用和垃圾类别选择，不重新扫描直接清理",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-        }
-    }
+    DetailPageHeader("扫描结果", "按应用和类别选择要清理的内容", onBack)
 }
 
 @Composable
@@ -1351,7 +1330,7 @@ private fun WorkbenchStatusCard(
                         Text(
                             state.currentPath,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 10.sp,
+                            fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1372,14 +1351,14 @@ private fun WorkbenchStatusCard(
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 if (state.loadingResults) {
-                    Text("已展示 ${state.items.size} 项；分批更新预览，完成后统一排序", fontSize = 11.sp)
+                    Text("已展示 ${state.items.size} 项；分批更新预览，完成后统一排序", fontSize = 13.sp)
                 }
                 if (state.progressTotal > 0L) {
                     Spacer(Modifier.height(5.dp))
                     Text(
                         "${state.progressCurrent.coerceAtMost(state.progressTotal)} / ${state.progressTotal}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                 }
             }
@@ -1397,7 +1376,7 @@ private fun WorkbenchEmptyCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.CleaningServices, contentDescription = null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
@@ -1407,8 +1386,8 @@ private fun WorkbenchEmptyCard(
             Text(
                 "扫描后可按应用和垃圾项目勾选。结果会保留；超过 30 分钟需重新扫描后再清理。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
+                fontSize = 14.sp,
+                lineHeight = 20.sp
             )
             Spacer(Modifier.height(16.dp))
             Button(onClick = onScan, enabled = !state.running, modifier = Modifier.fillMaxWidth()) {
@@ -1429,10 +1408,10 @@ private fun WorkbenchSummaryCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Column(Modifier.padding(19.dp)) {
-            Text("已选 ${state.selectedIds.size} / ${presentation.selectableCount} 项", fontSize = 20.sp, fontWeight = FontWeight.Black)
+            Text("已选 ${state.selectedIds.size} / ${presentation.selectableCount} 项", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text("预计至少释放 $selectedBytes", color = MaterialTheme.colorScheme.primary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
@@ -1444,7 +1423,7 @@ private fun WorkbenchSummaryCard(
             }
             if (state.resultText.isNotBlank()) {
                 Spacer(Modifier.height(9.dp))
-                Text(state.resultText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text(state.resultText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
         }
     }
@@ -1453,7 +1432,7 @@ private fun WorkbenchSummaryCard(
 @Composable
 private fun SummaryPill(text: String) {
     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface.copy(alpha = .58f)) {
-        Text(text, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1472,7 +1451,7 @@ private fun WorkbenchGroupRow(
             .padding(horizontal = horizontal)
             .fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Row(
             modifier = Modifier
@@ -1500,7 +1479,7 @@ private fun WorkbenchGroupRow(
                     "${group.items.size} 项 · 已选 ${group.selectedCount} · ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, group.bytes)}" +
                         if (group.items.any { it.risk == "high" }) " · 含高风险，需逐项选择" else "",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
+                    fontSize = 13.sp
                 )
             }
             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, contentDescription = null)
@@ -1539,8 +1518,8 @@ private fun WorkbenchCandidateRow(
             Text(
                 item.outcome.ifBlank { item.reason },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1551,7 +1530,7 @@ private fun WorkbenchCandidateRow(
                     append(" · ").append(item.path)
                 },
                 color = MaterialTheme.colorScheme.outline,
-                fontSize = 9.sp,
+                fontSize = 13.sp,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1582,7 +1561,7 @@ private fun RiskBadge(risk: String) {
         else -> "关键" to MaterialTheme.colorScheme.error
     }
     Surface(shape = CircleShape, color = color.copy(alpha = .13f)) {
-        Text(label, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(label, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 

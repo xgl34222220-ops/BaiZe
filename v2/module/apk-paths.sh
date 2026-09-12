@@ -2,9 +2,10 @@
 # One discovery/deletion boundary for interactive and scheduled package cleanup.
 # Installed applications (/data/app, /system) are never storage roots.
 apk_add_root() {
+  [ ! -L "$1" ] || return 0
   _apk_root=$(readlink -f "$1" 2>/dev/null) || return 0
   [ -d "$_apk_root" ] || return 0
-  case "$_apk_root" in /|/data|/data/app|/system|/vendor|/product) return 0 ;; esac
+  case "$_apk_root" in /|/data|/data/app|/data/app/*|/system|/system/*|/vendor|/vendor/*|/product|/product/*) return 0 ;; esac
   case "
 $APK_ROOTS
 " in *"

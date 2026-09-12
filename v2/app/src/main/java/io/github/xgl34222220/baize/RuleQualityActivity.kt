@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -80,7 +82,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -339,8 +340,8 @@ private fun RuleQualityScreen(
 ) {
     var stateFilter by remember { mutableStateOf("pending") }
     var typeFilter by remember { mutableStateOf("all") }
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val shape = if (miuix) RoundedCornerShape(27.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.reviewQueue.filter { item ->
         val stateMatches = when (stateFilter) {
             "all" -> true
@@ -359,9 +360,9 @@ private fun RuleQualityScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { RuleQualityHeader(state.message, state.loading, onBack, onRefresh) }
         item { RuleQualitySummary(state.report, horizontal, shape, state.loading) }
@@ -438,25 +439,8 @@ private fun RuleQualityHeader(
     onBack: () -> Unit,
     onRefresh: () -> Unit
 ) {
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column(Modifier.weight(1f)) {
-            Text("规则质量中心", fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        IconButton(onClick = onRefresh, enabled = !loading) {
-            Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
-        }
+    DetailPageHeader("规则质量", message, onBack) {
+        IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
     }
 }
 
@@ -470,7 +454,7 @@ private fun RuleQualitySummary(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -485,8 +469,8 @@ private fun RuleQualitySummary(
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${report.pendingCount} 项待审核", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("${report.pendingCount} 项待审核", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
                 if (loading) CircularProgressIndicator(Modifier.size(24.dp))
             }
@@ -500,7 +484,7 @@ private fun RuleQualitySummary(
             Text(
                 "最近 ${report.lookbackDays} 天 ${report.eventSampleCount} 条审计事件 · ${report.healthyCount} 项正常 · ${report.insufficientCount} 项样本不足",
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -511,7 +495,7 @@ private fun ReadOnlyRuleCard(horizontal: androidx.compose.ui.unit.Dp, shape: and
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Rounded.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
@@ -521,8 +505,8 @@ private fun ReadOnlyRuleCard(horizontal: androidx.compose.ui.unit.Dp, shape: and
                 Text(
                     "仅保存审核状态和备注；证据明显恶化时只自动重新打开审核状态，不会停用规则、删除文件、修改清理策略或改变任何定时周期。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 17.sp
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -547,7 +531,7 @@ private fun RuleQualityCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -562,26 +546,26 @@ private fun RuleQualityCard(
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(item.category, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(typeLabel(item.type), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    Text(item.category, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(typeLabel(item.type), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
                 Surface(shape = CircleShape, color = stateTint.copy(alpha = .13f)) {
                     Text(
                         if (item.reopened) "重新审核" else reviewStateLabel(item.reviewState),
                         Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         color = stateTint,
-                        fontSize = 9.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(item.message, fontSize = 12.sp, lineHeight = 18.sp)
+            Text(item.message, fontSize = 14.sp, lineHeight = 20.sp)
             Text(
                 "系统建议：${recommendationLabel(item.recommendation)}",
                 color = visual.tint,
                 fontWeight = FontWeight.Bold,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
             Spacer(Modifier.height(11.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
@@ -596,10 +580,10 @@ private fun RuleQualityCard(
                 "处理 ${item.processed} · 保护 ${item.protected} · 累计 ${Formatter.formatFileSize(context, item.bytes)}" +
                     if (item.averageBytes > 0L) " · 平均 ${Formatter.formatFileSize(context, item.averageBytes)}" else "",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
             if (item.risk.isNotBlank()) {
-                Text("风险级别：${riskLabel(item.risk)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text("风险级别：${riskLabel(item.risk)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             if (item.reopened) {
                 Spacer(Modifier.height(9.dp))
@@ -609,15 +593,15 @@ private fun RuleQualityCard(
                     color = MaterialTheme.colorScheme.errorContainer
                 ) {
                     Column(Modifier.padding(11.dp)) {
-                        Text("审核已自动重新打开", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        Text(item.reopenReason, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 10.sp)
+                        Text("审核已自动重新打开", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(item.reopenReason, color = MaterialTheme.colorScheme.onErrorContainer, fontSize = 13.sp)
                         Text(
                             "原状态：${reviewStateLabel(item.previousReviewState)} · 审核后新增 ${item.newEventsSinceReview} 次任务 / ${item.newObservationsSinceReview} 条记录",
                             color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = .75f),
-                            fontSize = 9.sp
+                            fontSize = 13.sp
                         )
                         if (item.reopenedAt > 0L) {
-                            Text("重新打开时间：${formatReviewTime(item.reopenedAt)}", color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = .75f), fontSize = 9.sp)
+                            Text("重新打开时间：${formatReviewTime(item.reopenedAt)}", color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = .75f), fontSize = 13.sp)
                         }
                     }
                 }
@@ -631,13 +615,13 @@ private fun RuleQualityCard(
                 ) {
                     Column(Modifier.padding(11.dp)) {
                         if (item.reviewNote.isNotBlank()) {
-                            Text("审核备注：${item.reviewNote}", fontSize = 10.sp)
+                            Text("审核备注：${item.reviewNote}", fontSize = 13.sp)
                         }
                         if (item.reviewedAt > 0L) {
                             Text(
                                 "审核时间：${formatReviewTime(item.reviewedAt)}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 9.sp
+                                fontSize = 13.sp
                             )
                         }
                     }
@@ -673,7 +657,7 @@ private fun RuleQualityCard(
                             label = { Text("审核备注（可选）") },
                             maxLines = 4
                         )
-                        Text("${note.length}/200", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                        Text("${note.length}/200", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     } else {
                         Text("重置后该项目会重新回到待审核列表，原备注会一并清除。")
                     }
@@ -701,7 +685,7 @@ private fun RuleQualityEmpty(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(42.dp), tint = BaiZeTokens.colors.success)
@@ -714,7 +698,7 @@ private fun RuleQualityEmpty(
                     "状态 ${reviewStateLabel(stateFilter)}、类型 ${typeFilterLabel(typeFilter)} 下没有规则。"
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -724,8 +708,8 @@ private fun RuleQualityEmpty(
 private fun QualityMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier = modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .58f)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-            Text(value, fontWeight = FontWeight.Black, fontSize = 15.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
         }
     }
 }

@@ -51,7 +51,7 @@ done
 grep -Fq 'ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())' "$AUDIT_REPO"
 grep -Fq '.put("ruleQuality", ruleQuality)' "$AUDIT_REPO"
 grep -Fq 'class RuleQualityActivity' "$ACTIVITY"
-for label in '规则质量中心' '高失败' '频繁保护' '零命中' '低收益' '只读人工审核'; do
+for label in 'DetailPageHeader("规则质量"' '高失败' '频繁保护' '零命中' '低收益' '只读人工审核'; do
   grep -Fq "$label" "$ACTIVITY"
 done
 grep -Fq '只自动重新打开审核状态' "$ACTIVITY"

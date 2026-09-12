@@ -6,7 +6,7 @@ dir|.thumbnail|0
 dir|.thumb|0
 dir|.tmp|0
 dir|.temp|0
-dir|.xlDownload|0
+# .xlDownload 是下载暂存区，交由有保留期的中断下载规则处理。
 dir|.logs|7
 dir|.log|7
 dir|.debug|7

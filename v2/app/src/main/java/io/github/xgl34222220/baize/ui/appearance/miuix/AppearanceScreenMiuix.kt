@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -27,13 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,13 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.appearance.AccentOption
@@ -55,435 +57,143 @@ import io.github.xgl34222220.baize.ui.appearance.AccentOptions
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.AppearanceUiActions
 import io.github.xgl34222220.baize.ui.appearance.KolorStyle
-import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.RefreshRateMode
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
+import io.github.xgl34222220.baize.ui.miuix.VideoCard
+import io.github.xgl34222220.baize.ui.miuix.VideoDivider
+import io.github.xgl34222220.baize.ui.miuix.VideoIconButton
+import io.github.xgl34222220.baize.ui.miuix.VideoLeadingIcon
+import io.github.xgl34222220.baize.ui.miuix.VideoListRow
+import io.github.xgl34222220.baize.ui.miuix.VideoSectionTitle
+import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
 
+/** Both skins share this responsive structure and immediately reflect every appearance change. */
 @Composable
-fun AppearanceScreenMiuix(
-    settings: AppearanceSettings,
-    actions: AppearanceUiActions
-) {
+fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiActions) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val monetSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
+    val usesMonet = monetSupported && settings.monetEnabled
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 34.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 40.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item { MiuixHeader(actions.onBack) }
-        item { MiuixPreviewHero(settings) }
-        item { MiuixSectionTitle("INTERFACE", "界面风格", "两套皮肤共享同一清理状态与设置") }
+        item { VideoTopBar("界面与主题", "你的配色，实时呈现", start = { VideoIconButton(Icons.Rounded.ArrowBack, "返回", actions.onBack) }) }
+        item { AppearancePreview(settings, usesMonet) }
+        item { VideoSectionTitle("界面风格") }
+        item { ChoiceCard(UiStyle.entries, settings.uiStyle, { it.label }, actions.onUiStyle) }
+        item { VideoSectionTitle("明暗模式") }
+        item { ChoiceCard(ThemeMode.entries, settings.themeMode, { it.label }, actions.onThemeMode) }
+        item { VideoSectionTitle("主题配色", "壁纸取色或选一种喜欢的颜色") }
         item {
-            MiuixGroup {
-                MiuixSegmentRow(
-                    values = UiStyle.entries,
-                    selected = settings.uiStyle,
-                    label = { it.label },
-                    onSelected = actions.onUiStyle
-                )
-            }
-        }
-        item { MiuixSectionTitle("THEME", "明暗模式", "切换后当前页面立即重绘") }
-        item {
-            MiuixGroup {
-                MiuixSegmentRow(
-                    values = ThemeMode.entries,
-                    selected = settings.themeMode,
-                    label = { it.label },
-                    onSelected = actions.onThemeMode
-                )
-            }
-        }
-        item { MiuixSectionTitle("COLOR", "动态配色", "壁纸取色、强调色与配色风格") }
-        item {
-            MiuixGroup {
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.AutoAwesome,
-                    title = "Monet 壁纸取色",
-                    description = if (monetSupported) {
-                        "读取系统壁纸强调色并生成完整主题"
-                    } else {
-                        "需要 Android 12 或更高版本"
-                    },
-                    checked = monetSupported && settings.monetEnabled,
-                    enabled = monetSupported,
-                    onCheckedChange = actions.onMonetEnabled
-                )
-                MiuixDivider()
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .alpha(if (settings.monetEnabled) .38f else 1f)
-                        .padding(vertical = 14.dp)
-                ) {
-                    Text("手动强调色", fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        if (settings.monetEnabled) "Monet 开启时暂不使用手动颜色" else settings.accent.label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    AccentGrid(
-                        selectedArgb = settings.seedArgb,
-                        enabled = !settings.monetEnabled,
-                        onSelected = { actions.onSeedArgb(it.argb) }
-                    )
-                }
-                MiuixDivider()
-                Column(Modifier.padding(vertical = 14.dp)) {
-                    Text("配色风格", fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(10.dp))
-                    MiuixSegmentRow(
-                        values = KolorStyle.entries,
-                        selected = settings.kolorStyle,
-                        label = { it.label },
-                        onSelected = actions.onKolorStyle
-                    )
+            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+                AppearanceSwitch(Icons.Rounded.AutoAwesome, "跟随壁纸配色",
+                    if (monetSupported) "使用系统壁纸的强调色" else "需要 Android 12 或更高版本",
+                    usesMonet, monetSupported, actions.onMonetEnabled)
+                VideoDivider()
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("强调色", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    if (usesMonet) Text("关闭壁纸配色后可选择", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AccentGrid(settings.seedArgb, !usesMonet) { actions.onSeedArgb(it.argb) }
                 }
             }
         }
-        item { MiuixSectionTitle("PERFORMANCE", "刷新率与流畅度", "高刷优先，并在掉帧、发热和省电时自动降级") }
+        item { VideoSectionTitle("色彩风格") }
+        item { ChoiceCard(KolorStyle.entries, settings.kolorStyle, { it.label }, actions.onKolorStyle) }
+        item { VideoSectionTitle("显示效果") }
         item {
-            MiuixGroup {
-                Column(Modifier.padding(vertical = 14.dp)) {
-                    Text("刷新率策略", fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    Text("当前：${settings.refreshRateMode.label}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-                    Spacer(Modifier.height(10.dp))
-                    MiuixSegmentRow(
-                        values = RefreshRateMode.entries,
-                        selected = settings.refreshRateMode,
-                        label = { it.label },
-                        onSelected = actions.onRefreshRateMode
-                    )
-                }
-                MiuixDivider()
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.PhoneAndroid,
-                    title = "自适应流畅模式",
-                    description = "滚动掉帧、设备发热或省电时暂停 Haze 与重动画",
-                    checked = settings.adaptiveSmoothMode,
-                    onCheckedChange = actions.onAdaptiveSmoothMode
-                )
+            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+                AppearanceSwitch(Icons.Rounded.DarkMode, "纯黑背景", "深色模式使用黑色背景，适合 OLED 屏幕", settings.amoledBlack, onCheckedChange = actions.onAmoledBlack)
+                VideoDivider()
+                AppearanceSwitch(Icons.Rounded.Layers, "半透明材质", "让导航栏呈现柔和的层次", settings.glassEnabled, onCheckedChange = actions.onGlassEnabled)
+                VideoDivider()
+                AppearanceSwitch(Icons.Rounded.BlurOn, "背景模糊", "模糊导航栏后方内容，需开启半透明材质", settings.blurEnabled, settings.glassEnabled, actions.onBlurEnabled)
+                VideoDivider()
+                AppearanceSwitch(Icons.Rounded.PhoneAndroid, "悬浮导航栏", "关闭后导航栏贴合屏幕底部", settings.floatingDock, onCheckedChange = actions.onFloatingDock)
             }
         }
-        item { MiuixSectionTitle("EFFECTS", "显示效果", "玻璃、Haze 模糊与底栏形态") }
+        item { VideoSectionTitle("流畅与省电") }
+        item { ChoiceCard(RefreshRateMode.entries, settings.refreshRateMode, { it.label }, actions.onRefreshRateMode) }
         item {
-            MiuixGroup {
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.DarkMode,
-                    title = "AMOLED 纯黑",
-                    description = "深色模式使用真正的黑色背景",
-                    checked = settings.amoledBlack,
-                    onCheckedChange = actions.onAmoledBlack
-                )
-                MiuixDivider()
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.Layers,
-                    title = "玻璃材质",
-                    description = "启用半透明、高光和材质层次",
-                    checked = settings.glassEnabled,
-                    onCheckedChange = actions.onGlassEnabled
-                )
-                MiuixDivider()
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.BlurOn,
-                    title = "Haze 背景模糊",
-                    description = "模糊悬浮底栏后方的真实页面内容",
-                    checked = settings.blurEnabled,
-                    enabled = settings.glassEnabled,
-                    onCheckedChange = actions.onBlurEnabled
-                )
-                MiuixDivider()
-                MiuixSwitchRow(
-                    icon = Icons.Rounded.PhoneAndroid,
-                    title = "悬浮底栏",
-                    description = "关闭后切换为贴合屏幕底部的导航栏",
-                    checked = settings.floatingDock,
-                    onCheckedChange = actions.onFloatingDock
-                )
+            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+                AppearanceSwitch(Icons.Rounded.PhoneAndroid, "自适应流畅模式", "掉帧、发热或省电时减少模糊与动画", settings.adaptiveSmoothMode, onCheckedChange = actions.onAdaptiveSmoothMode)
             }
         }
     }
 }
 
 @Composable
-private fun MiuixHeader(onBack: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
+private fun AppearancePreview(settings: AppearanceSettings, usesMonet: Boolean) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), containerColor = MaterialTheme.colorScheme.primaryContainer, contentPadding = 24) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            VideoLeadingIcon(Icons.Rounded.Palette)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("主题预览", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(if (usesMonet) "壁纸配色 · ${settings.kolorStyle.label}" else "${settings.accent.label} · ${settings.kolorStyle.label}",
+                    fontSize = 14.sp, lineHeight = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Spacer(Modifier.width(5.dp))
-        Column {
-            Text(
-                "APPEARANCE",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.4.sp
-            )
-            Text(
-                "界面与主题",
-                fontSize = 35.sp,
-                lineHeight = 39.sp,
-                fontWeight = FontWeight.Black
-            )
-        }
-    }
-}
-
-@Composable
-private fun MiuixPreviewHero(settings: AppearanceSettings) {
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val pureBlack = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(38.dp)
-    val background = when {
-        pureBlack -> Color(0xFF080808)
-        dark -> MaterialTheme.colorScheme.surfaceContainerHigh
-        else -> MaterialTheme.colorScheme.surface
-    }
-
-    Box(
-        Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth()
-            .shadow(14.dp, shape, clip = false)
-            .clip(shape)
-            .background(background)
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) .09f else .05f), shape)
-            .padding(23.dp)
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary,
-                                    MaterialTheme.colorScheme.tertiary
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Palette, contentDescription = null, tint = Color.White)
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("实时主题预览", fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        "${settings.uiStyle.label} · ${settings.themeMode.label} · ${settings.kolorStyle.label}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+        Spacer(Modifier.height(22.dp))
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surface).padding(18.dp)) {
+            Text("清爽，从每一天开始", fontSize = 19.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(6.dp))
+            Text("更清晰的内容，更自在的空间", fontSize = 13.sp, lineHeight = 21.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary).forEach { color ->
+                    Box(Modifier.weight(1f).height(28.dp).clip(RoundedCornerShape(9.dp)).background(color))
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            Text(
-                if (settings.monetEnabled) "Monet 壁纸动态取色" else settings.accent.label,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 28.sp,
-                lineHeight = 32.sp,
-                fontWeight = FontWeight.Black
-            )
-            Text(
-                "${if (settings.glassEnabled) "玻璃开启" else "实心材质"} · ${if (settings.blurEnabled && settings.glassEnabled) "Haze 模糊" else "无模糊"} · ${settings.refreshRateMode.label} · ${if (settings.adaptiveSmoothMode) "自适应流畅" else "固定特效"}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
         }
     }
 }
 
 @Composable
-private fun MiuixSectionTitle(eyebrow: String, title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 22.dp, vertical = 2.dp)) {
-        Text(
-            eyebrow,
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.2.sp
-        )
-        Text(title, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Black)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-    }
-}
-
-@Composable
-private fun MiuixGroup(content: @Composable () -> Unit) {
-    val settings = LocalAppearanceSettings.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val pureBlack = dark && settings.amoledBlack
-    val shape = RoundedCornerShape(31.dp)
-    val fill = when {
-        pureBlack -> Color(0xFF090909)
-        dark -> MaterialTheme.colorScheme.surfaceContainerHigh
-        else -> MaterialTheme.colorScheme.surface
-    }
-    Box(
-        Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth()
-            .shadow(7.dp, shape, clip = false)
-            .clip(shape)
-            .background(fill)
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) .08f else .05f), shape)
-            .padding(horizontal = 17.dp, vertical = 8.dp)
-    ) {
-        Column(content = { content() })
-    }
-}
-
-@Composable
-private fun <T> MiuixSegmentRow(
-    values: List<T>,
-    selected: T,
-    label: (T) -> String,
-    onSelected: (T) -> Unit
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(7.dp)
-    ) {
-        values.forEach { value ->
-            val active = value == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = .16f)
-                        else MaterialTheme.colorScheme.onSurface.copy(alpha = .045f)
-                    )
-                    .border(
-                        1.dp,
-                        if (active) MaterialTheme.colorScheme.primary.copy(alpha = .32f)
-                        else Color.Transparent,
-                        RoundedCornerShape(18.dp)
-                    )
-                    .clickable { onSelected(value) }
-                    .padding(horizontal = 7.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    label(value),
-                    color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    fontWeight = if (active) FontWeight.Black else FontWeight.Bold,
-                    maxLines = 1
-                )
+private fun <T> ChoiceCard(values: List<T>, selected: T, label: (T) -> String, onSelected: (T) -> Unit) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+        values.forEachIndexed { index, value ->
+            Row(Modifier.fillMaxWidth().heightIn(min = 58.dp).clickable(role = Role.RadioButton) { onSelected(value) }.padding(horizontal = 18.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(label(value), Modifier.weight(1f), fontSize = 16.sp, lineHeight = 24.sp,
+                    color = if (value == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (value == selected) FontWeight.SemiBold else FontWeight.Normal)
+                RadioButton(value == selected, { onSelected(value) })
             }
+            if (index != values.lastIndex) VideoDivider(start = 18)
         }
     }
 }
 
 @Composable
-private fun AccentGrid(
-    selectedArgb: Int,
-    enabled: Boolean,
-    onSelected: (AccentOption) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        AccentOptions.chunked(4).forEach { row ->
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+private fun AccentGrid(selectedArgb: Int, enabled: Boolean, onSelected: (AccentOption) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.alpha(if (enabled) 1f else .45f)) {
+        AccentOptions.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { option ->
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(enabled = enabled) { onSelected(option) },
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            Modifier
-                                .size(46.dp)
-                                .clip(CircleShape)
-                                .background(Color(option.argb))
-                                .border(
-                                    width = if (option.argb == selectedArgb) 3.dp else 1.dp,
-                                    color = if (option.argb == selectedArgb) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        Color.White.copy(alpha = .42f)
-                                    },
-                                    shape = CircleShape
-                                )
-                        )
-                        Spacer(Modifier.height(5.dp))
-                        Text(option.label, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    val selected = option.argb == selectedArgb
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(14.dp))
+                        .clickable(enabled = enabled, role = Role.RadioButton) { onSelected(option) }
+                        .semantics { contentDescription = "${option.label}${if (selected) "，已选择" else ""}" }
+                        .padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.size(48.dp).clip(CircleShape).background(Color(option.argb))
+                            .border(if (selected) 2.dp else 0.dp, if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape),
+                            contentAlignment = Alignment.Center) {
+                            if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = if (Color(option.argb).luminance() > .4f) Color.Black else Color.White)
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        Text(option.label, fontSize = 13.sp, lineHeight = 19.sp, textAlign = TextAlign.Center,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                     }
                 }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
 @Composable
-private fun MiuixSwitchRow(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else .42f)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Black)
-            Text(
-                description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp,
-                lineHeight = 13.sp
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = onCheckedChange
-        )
-    }
-}
-
-@Composable
-private fun MiuixDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .075f))
-    )
+private fun AppearanceSwitch(icon: ImageVector, title: String, description: String, checked: Boolean,
+    enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
+    VideoListRow(icon, title, description, enabled = enabled, trailing = { Switch(checked, onCheckedChange, enabled = enabled) })
 }

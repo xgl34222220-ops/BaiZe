@@ -18,8 +18,7 @@ internal class ModuleTaskController(
             return JSONObject().put("error", "worker_missing")
                 .put("message", "独立 Root Worker 缺失，请重新刷入完整模块").toString()
         }
-        val existing = RootFileStore.readEnv(File(RootPaths.STATE_DIR, "running.env"))
-        if (existing.length() > 0 && existing.optString("mode").isNotBlank()) return coordinator.busy("module-$mode")
+        if (RuntimeTaskOwnership.isRunning(File(RootPaths.STATE_DIR))) return coordinator.busy("module-$mode")
         val stateDir = File(RootPaths.STATE_DIR).apply { mkdirs() }
         val taskId = "${System.currentTimeMillis()}-${Process.myPid()}"
         val launcherLog = File(stateDir, "logs/launcher-$taskId.log").apply { parentFile?.mkdirs() }
@@ -85,20 +84,25 @@ internal class ModuleTaskController(
         }
 
         val code = process.exitValue()
+        if (mode == "clean" || mode.endsWith("-clean") || mode.endsWith("-auto")) {
+            File(stateDir, "index/meta.env").delete()
+        }
         val elapsed = SystemClock.elapsedRealtime() - started
         val totals = RootFileStore.readEnv(File(stateDir, "totals.env"))
         val latestFile = File(stateDir, "latest.env")
         // A failed launch/scan must not present a previous successful cleanup as this result.
-        val latest = if (code == 3 || (code != 0 && latestFile.lastModified() < taskStartedAt)) {
+        val latest = if (code == 3 || latestFile.lastModified() < taskStartedAt) {
             JSONObject()
         } else {
             RootFileStore.readEnv(latestFile)
         }
         val latestReport = File(stateDir, "reports/latest.tsv")
-        val appDetails = appDetailsJson(
+        val appDetails = if (latest.length() == 0 || mode.startsWith("apk-")) JSONArray() else appDetailsJson(
             File(stateDir, "reports/apps-latest.tsv"),
-            File(stateDir, "reports/app-items-latest.tsv")
+            File(stateDir, "reports/app-items-latest.tsv"),
+            taskStartedAt
         )
+        val reportIsCurrent = latest.length() > 0 && latestReport.isFile && latestReport.lastModified() >= taskStartedAt
         val output = RootFileStore.tailText(log, 12_000)
         return JSONObject()
             .put("success", code == 0)
@@ -110,11 +114,11 @@ internal class ModuleTaskController(
             .put("totals", totals)
             .put("latest", latest)
             .put("scanPerformance", scanPerformanceJson())
-            .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
+            .put("latestReport", if (reportIsCurrent) latestReport.absolutePath else "")
             .put("logName", log.name)
             .put("appDetails", appDetails)
-            .put("otherDetails", if (latest.length() == 0) JSONArray() else if (mode.startsWith("apk-")) apkDetailsJson(latestReport) else otherDetailsJson(latestReport))
-            .put("coverage", diagnostics.scanCoverage(mode.startsWith("apk-")))
+            .put("otherDetails", if (!reportIsCurrent) JSONArray() else if (mode.startsWith("apk-")) apkDetailsJson(latestReport) else otherDetailsJson(latestReport))
+            .put("coverage", if (latest.length() == 0) JSONObject() else diagnostics.scanCoverage(mode.startsWith("apk-")))
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
                 3 -> "已有其他任务正在运行"
@@ -124,7 +128,7 @@ internal class ModuleTaskController(
             .toString()
     }
 
-    private fun appDetailsJson(summaryFile: File, itemFile: File): JSONArray {
+    private fun appDetailsJson(summaryFile: File, itemFile: File, freshAfter: Long = 0L): JSONArray {
         val filesByPackage = linkedMapOf<String, Long>()
         val bytesByPackage = linkedMapOf<String, Long>()
         val errorsByPackage = linkedMapOf<String, Long>()
@@ -154,7 +158,7 @@ internal class ModuleTaskController(
         }
 
         runCatching {
-            if (!itemFile.isFile) return@runCatching
+            if (!itemFile.isFile || itemFile.lastModified() < freshAfter) return@runCatching
             itemFile.forEachLine { raw ->
                 val columns = raw.split('\t', limit = 6)
                 if (columns.size < 6 || columns[0] == "package") return@forEachLine
@@ -172,7 +176,7 @@ internal class ModuleTaskController(
 
         if (itemRows == 0) {
             runCatching {
-                if (!summaryFile.isFile) return@runCatching
+                if (!summaryFile.isFile || summaryFile.lastModified() < freshAfter) return@runCatching
                 summaryFile.forEachLine { raw ->
                     val columns = raw.split('\t', limit = 4)
                     if (columns.size < 4 || columns[0] == "package") return@forEachLine
@@ -315,7 +319,7 @@ internal class ModuleTaskController(
             .put("scanPerformance", scanPerformanceJson())
             .put(
                 "appDetails",
-                appDetailsJson(
+                if (latest.optString("mode").startsWith("apk-")) JSONArray() else appDetailsJson(
                     File(stateDir, "reports/apps-latest.tsv"),
                     File(stateDir, "reports/app-items-latest.tsv")
                 )

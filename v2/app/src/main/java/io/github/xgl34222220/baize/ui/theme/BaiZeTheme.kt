@@ -3,12 +3,14 @@ package io.github.xgl34222220.baize.ui.theme
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -36,84 +38,67 @@ private val MiuixShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
+    large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(32.dp)
 )
 
-private val MaterialTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
+private val SharedTypography = Typography(
+    displaySmall = TextStyle(fontSize = 38.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Bold),
+    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
+    bodySmall = TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
+    labelLarge = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium),
+    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
 )
 
-private val MiuixTypography = Typography(
-    displaySmall = TextStyle(fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium)
-)
-
+/** Both appearances resolve surfaces from the selected palette, including Monet and AMOLED. */
 @Composable
 fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
     val dark = resolveDark(settings.themeMode)
     val amoled = dark && settings.amoledBlack
-    val baiZeColors = when {
-        amoled -> AmoledBaiZeColors
-        dark -> DarkBaiZeColors
-        else -> LightBaiZeColors
-    }
-    CompositionLocalProvider(
-        LocalBaiZeColors provides baiZeColors,
-        LocalBaiZeCorners provides DefaultBaiZeCorners,
-        LocalBaiZeSpacing provides DefaultBaiZeSpacing,
-        LocalBaiZeTypeScale provides DefaultBaiZeTypeScale
+    DynamicMaterialTheme(
+        seedColor = resolveSeedColor(settings),
+        useDarkTheme = dark,
+        withAmoled = amoled,
+        style = settings.kolorStyle.toPaletteStyle(),
+        shapes = if (settings.uiStyle == UiStyle.MATERIAL) MaterialShapes else MiuixShapes,
+        typography = SharedTypography,
+        animate = true
     ) {
-        when (settings.uiStyle) {
-            UiStyle.MATERIAL -> BaiZeMaterialTheme(settings, dark, content)
-            UiStyle.MIUIX -> BaiZeMiuixTheme(settings, dark, content)
-        }
+        val scheme = MaterialTheme.colorScheme
+        val semantic = if (dark) DarkBaiZeColors else LightBaiZeColors
+        val colors = semantic.copy(
+            surfaceBase = when {
+                amoled -> Color.Black
+                dark -> scheme.surfaceContainerLowest
+                else -> lerp(Color(0xFFF4F6FA), scheme.primaryContainer, .06f)
+            },
+            surfaceRaised = when {
+                amoled -> Color(0xFF111214)
+                dark -> scheme.surfaceContainerLow
+                else -> scheme.surfaceContainerLowest
+            },
+            surfaceOverlay = when {
+                amoled -> Color(0xFF1B1C20)
+                dark -> scheme.surfaceContainerHigh
+                else -> lerp(scheme.surfaceContainerLowest, scheme.primaryContainer, .18f)
+            }
+        )
+        CompositionLocalProvider(
+            LocalBaiZeColors provides colors,
+            LocalBaiZeCorners provides DefaultBaiZeCorners,
+            LocalBaiZeSpacing provides DefaultBaiZeSpacing,
+            LocalBaiZeTypeScale provides DefaultBaiZeTypeScale,
+            content = content
+        )
     }
-}
-
-@Composable
-private fun BaiZeMaterialTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
-    DynamicMaterialTheme(
-        seedColor = resolveSeedColor(settings),
-        useDarkTheme = dark,
-        withAmoled = dark && settings.amoledBlack,
-        style = settings.kolorStyle.toPaletteStyle(),
-        shapes = MaterialShapes,
-        typography = MaterialTypography,
-        animate = true,
-        content = content
-    )
-}
-
-@Composable
-private fun BaiZeMiuixTheme(settings: AppearanceSettings, dark: Boolean, content: @Composable () -> Unit) {
-    DynamicMaterialTheme(
-        seedColor = resolveSeedColor(settings),
-        useDarkTheme = dark,
-        withAmoled = dark && settings.amoledBlack,
-        style = settings.kolorStyle.toPaletteStyle(),
-        shapes = MiuixShapes,
-        typography = MiuixTypography,
-        animate = true,
-        content = content
-    )
 }
 
 @Composable
