@@ -45,12 +45,13 @@ class WorkbenchVisualReviewTest {
     @Test fun reportedFailureRetainsReviewWithoutShowingASecondEmptyState() {
         render(ready().copy(notice = WorkbenchNotice.ERROR,
             phase = "所选项目清理失败：data parcel size 429480 bytes"))
-        compose.onNodeWithText("本次任务未完成").assertIsDisplayed()
+        compose.onNodeWithText("所选项目清理失败：data parcel size 429480 bytes").assertIsDisplayed()
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed()
         compose.onNodeWithText("按应用查看清理内容").assertDoesNotExist()
         save("failure-preserved")
         compose.onNodeWithContentDescription("查看任务详情").performClick()
-        compose.onNodeWithText("所选项目清理失败：data parcel size 429480 bytes").assertIsDisplayed()
+        compose.onNode(hasText("所选项目清理失败：data parcel size 429480 bytes") and hasAnyAncestor(isDialog()))
+            .assertIsDisplayed()
     }
 
     @Test

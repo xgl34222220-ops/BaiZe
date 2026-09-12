@@ -34,23 +34,28 @@ class PersistentCleanPlanRootService : RootService() {
     private val binder = object : IPersistentCleanPlanService.Stub() {
 
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
-            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
-                when (operation) {
-                    "scanSafe" -> {
-                        require(arguments.length() == 1)
-                        scanSafe(arguments.getString(0))
-                    }
-                    "getPage" -> {
-                        require(arguments.length() == 3)
-                        getPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
-                    }
-                    "cleanSafe" -> {
-                        require(arguments.length() == 3)
-                        cleanSafe(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                    }
-                    else -> throw IllegalArgumentException("不支持的服务请求")
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { dispatchJson(operation, it) }
+
+        override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
+            JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
+
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
+            return when (operation) {
+                "scanSafe" -> {
+                    require(arguments.length() == 1)
+                    scanSafe(arguments.getString(0))
                 }
+                "getPage" -> {
+                    require(arguments.length() == 3)
+                    getPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+                }
+                "cleanSafe" -> {
+                    require(arguments.length() == 3)
+                    cleanSafe(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                }
+                else -> throw IllegalArgumentException("不支持的服务请求")
             }
+        }
 
         override fun ping(): String = JSONObject()
             .put("uid", Process.myUid())

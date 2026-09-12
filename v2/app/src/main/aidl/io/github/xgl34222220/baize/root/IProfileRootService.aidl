@@ -51,4 +51,6 @@ interface IProfileRootService {
     void cancelCurrentTask();
     // Appended: preserve the transaction IDs used by existing clients.
     ParcelFileDescriptor exchangeJson(String operation, in ParcelFileDescriptor request);
+    // App-created response FD: never return a Root-created inode to the App.
+    int exchangeJsonInto(String operation, in ParcelFileDescriptor request, in ParcelFileDescriptor response);
 }

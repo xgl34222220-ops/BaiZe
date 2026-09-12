@@ -170,23 +170,28 @@ class BaiZeRootService : RootService() {
     private val binder = object : IBaiZeRootService.Stub() {
 
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
-            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
-                when (operation) {
-                    "scanCandidates" -> {
-                        require(arguments.length() == 1)
-                        scanCandidates(arguments.getString(0))
-                    }
-                    "getResultPage" -> {
-                        require(arguments.length() == 3)
-                        getResultPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
-                    }
-                    "cleanSelected" -> {
-                        require(arguments.length() == 3)
-                        cleanSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                    }
-                    else -> throw IllegalArgumentException("不支持的服务请求")
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { dispatchJson(operation, it) }
+
+        override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
+            JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
+
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
+            return when (operation) {
+                "scanCandidates" -> {
+                    require(arguments.length() == 1)
+                    scanCandidates(arguments.getString(0))
                 }
+                "getResultPage" -> {
+                    require(arguments.length() == 3)
+                    getResultPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+                }
+                "cleanSelected" -> {
+                    require(arguments.length() == 3)
+                    cleanSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                }
+                else -> throw IllegalArgumentException("不支持的服务请求")
             }
+        }
 
         override fun ping(): String {
             val ready = restoreSnapshotFromDisk()

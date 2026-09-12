@@ -10,80 +10,80 @@ internal object RootServiceClients {
         val remote = requireNotNull(IProfileRootService.Stub.asInterface(binder))
         return object : IProfileRootService by remote {
             override fun scanProfile(profile: String?, optionsJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(profile.orEmpty()).put(optionsJson.orEmpty())) { request ->
-                    remote.exchangeJson("scanProfile", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(profile.orEmpty()).put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("scanProfile", request, response)
                 }
             override fun getProfilePage(snapshotId: String?, offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getProfilePage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getProfilePage", request, response)
                 }
             override fun cleanProfileSelected(snapshotId: String?, selectionJson: String?, optionsJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request ->
-                    remote.exchangeJson("cleanProfileSelected", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("cleanProfileSelected", request, response)
                 }
             override fun quarantineProfileSelected(snapshotId: String?, selectionJson: String?, optionsJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request ->
-                    remote.exchangeJson("quarantineProfileSelected", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("quarantineProfileSelected", request, response)
                 }
             override fun prepareCacheSelection(snapshotId: String?, selectionJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty())) { request ->
-                    remote.exchangeJson("prepareCacheSelection", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("prepareCacheSelection", request, response)
                 }
             override fun getQuarantinePage(offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getQuarantinePage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getQuarantinePage", request, response)
                 }
             override fun getModuleState(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("getModuleState", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("getModuleState", request, response)
                 }
             override fun getTaskHistory(limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(limit)) { request ->
-                    remote.exchangeJson("getTaskHistory", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getTaskHistory", request, response)
                 }
             override fun getTaskHistoryPage(offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getTaskHistoryPage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getTaskHistoryPage", request, response)
                 }
             override fun getAuditTimelinePage(offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getAuditTimelinePage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getAuditTimelinePage", request, response)
                 }
             override fun getScanCoverage(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("getScanCoverage", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("getScanCoverage", request, response)
                 }
             override fun clearPackageCaches(requestJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(requestJson.orEmpty())) { request ->
-                    remote.exchangeJson("clearPackageCaches", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(requestJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("clearPackageCaches", request, response)
                 }
             override fun scanFileOrganizer(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("scanFileOrganizer", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("scanFileOrganizer", request, response)
                 }
             override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty())) { request ->
-                    remote.exchangeJson("applyFileOrganizer", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("applyFileOrganizer", request, response)
                 }
             override fun undoFileOrganizer(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("undoFileOrganizer", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("undoFileOrganizer", request, response)
                 }
             override fun getInstalledPackageCatalog(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("getInstalledPackageCatalog", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("getInstalledPackageCatalog", request, response)
                 }
             override fun getWhitelistPackages(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("getWhitelistPackages", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("getWhitelistPackages", request, response)
                 }
             override fun saveWhitelistPackages(packagesJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(packagesJson.orEmpty())) { request ->
-                    remote.exchangeJson("saveWhitelistPackages", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(packagesJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("saveWhitelistPackages", request, response)
                 }
             override fun getWhitelistPaths(): String =
-                JsonFileTransport.call(directory, JSONArray()) { request ->
-                    remote.exchangeJson("getWhitelistPaths", request)
+                JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
+                    remote.exchangeJsonInto("getWhitelistPaths", request, response)
                 }
         }
     }
@@ -91,16 +91,16 @@ internal object RootServiceClients {
         val remote = requireNotNull(IBaiZeRootService.Stub.asInterface(binder))
         return object : IBaiZeRootService by remote {
             override fun scanCandidates(whitelistJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(whitelistJson.orEmpty())) { request ->
-                    remote.exchangeJson("scanCandidates", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(whitelistJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("scanCandidates", request, response)
                 }
             override fun getResultPage(snapshotId: String?, offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getResultPage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getResultPage", request, response)
                 }
             override fun cleanSelected(snapshotId: String?, selectionJson: String?, whitelistJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(whitelistJson.orEmpty())) { request ->
-                    remote.exchangeJson("cleanSelected", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(whitelistJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("cleanSelected", request, response)
                 }
         }
     }
@@ -108,16 +108,16 @@ internal object RootServiceClients {
         val remote = requireNotNull(IPersistentCleanPlanService.Stub.asInterface(binder))
         return object : IPersistentCleanPlanService by remote {
             override fun scanSafe(optionsJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(optionsJson.orEmpty())) { request ->
-                    remote.exchangeJson("scanSafe", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("scanSafe", request, response)
                 }
             override fun getPage(snapshotId: String?, offset: Int, limit: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request ->
-                    remote.exchangeJson("getPage", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(offset).put(limit)) { request, response ->
+                    remote.exchangeJsonInto("getPage", request, response)
                 }
             override fun cleanSafe(snapshotId: String?, selectionJson: String?, optionsJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request ->
-                    remote.exchangeJson("cleanSafe", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(snapshotId.orEmpty()).put(selectionJson.orEmpty()).put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("cleanSafe", request, response)
                 }
         }
     }
@@ -125,24 +125,24 @@ internal object RootServiceClients {
         val remote = requireNotNull(ICleanPlanResumeService.Stub.asInterface(binder))
         return object : ICleanPlanResumeService by remote {
             override fun begin(planId: String?, cacheSnapshotId: String?, safeSnapshotId: String?, cacheCount: Int, safeCount: Int): String =
-                JsonFileTransport.call(directory, JSONArray().put(planId.orEmpty()).put(cacheSnapshotId.orEmpty()).put(safeSnapshotId.orEmpty()).put(cacheCount).put(safeCount)) { request ->
-                    remote.exchangeJson("begin", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(planId.orEmpty()).put(cacheSnapshotId.orEmpty()).put(safeSnapshotId.orEmpty()).put(cacheCount).put(safeCount)) { request, response ->
+                    remote.exchangeJsonInto("begin", request, response)
                 }
             override fun checkpointCache(planId: String?, resultJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(planId.orEmpty()).put(resultJson.orEmpty())) { request ->
-                    remote.exchangeJson("checkpointCache", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(planId.orEmpty()).put(resultJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("checkpointCache", request, response)
                 }
             override fun checkpointSafe(planId: String?, resultJson: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(planId.orEmpty()).put(resultJson.orEmpty())) { request ->
-                    remote.exchangeJson("checkpointSafe", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(planId.orEmpty()).put(resultJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("checkpointSafe", request, response)
                 }
             override fun recover(planId: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(planId.orEmpty())) { request ->
-                    remote.exchangeJson("recover", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(planId.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("recover", request, response)
                 }
             override fun finish(planId: String?): String =
-                JsonFileTransport.call(directory, JSONArray().put(planId.orEmpty())) { request ->
-                    remote.exchangeJson("finish", request)
+                JsonFileTransport.callInto(directory, JSONArray().put(planId.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("finish", request, response)
                 }
         }
     }
