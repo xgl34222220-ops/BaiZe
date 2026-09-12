@@ -1,9 +1,9 @@
 {
-  "version": "v2.9.2",
+  "version": "v2.9.3",
   "branches": [
     {
-      "name": "feat/baize-glass-redesign",
-      "sha": "c8325b911c1301e51402f15918a40173c0ba8eee"
+      "name": "fix/baize-review-workbench",
+      "sha": "1abad4b82a5a151911a0a7ef72d04dd1ffecd1db"
     }
   ]
 }
