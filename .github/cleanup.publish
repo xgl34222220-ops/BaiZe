@@ -1,29 +1,9 @@
 {
+  "version": "v2.9.1",
   "branches": [
     {
-      "name": "feat/baize-2.9.0",
-      "sha": "e03439fe72ce12751786d16a086f401c8cf4fa2f"
-    },
-    {
-      "name": "fix/root-connection-recovery",
-      "sha": "d83fede0ed354839f88723ccd9be91cebb70072f"
-    },
-    {
-      "name": "fix/root-external-media-scan",
-      "sha": "9e6b471f432a6606db22cdba295fb981f39499e7"
-    },
-    {
-      "name": "fix/root-media-context",
-      "sha": "9d61a66cb58e73ada9c1487f310d1d75e6d2ce6a"
-    },
-    {
-      "name": "fix/root-recovery-diagnostics",
-      "sha": "970fbdee55a163c09ac24f9c8422125e775e035b"
-    },
-    {
-      "name": "fix/startup-timeout-audit",
-      "sha": "4dde75f8543c7d057f3239e90fd567d2b9cbef28"
+      "name": "feat/baize-complete-overhaul",
+      "sha": "4f62923924159e990cba04eb17c14ed9f12384a3"
     }
-  ],
-  "version": "v2.9.0"
+  ]
 }
