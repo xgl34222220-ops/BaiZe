@@ -308,6 +308,7 @@ data class SchedulerUiState(
     val maxFileMb: Int = 256,
     val apkPackagesEnabled: Boolean = true,
     val apkPackageDays: Int = 30,
+    val apkMinutes: Int = 1_440,
     val scanRootWorkers: Int = 0,
     val runtimeState: String = "waiting",
     val runtimeReason: String = "等待调度器首次轮询",
@@ -318,6 +319,7 @@ data class SchedulerUiState(
     val nextCheckEpoch: Long = 0L,
     val runtimeGroup: String = "",
     val cacheNextEpoch: Long = 0L,
+    val apkNextEpoch: Long = 0L,
     val emptyNextEpoch: Long = 0L,
     val rulesNextEpoch: Long = 0L,
     val fragmentNextEpoch: Long = 0L,
@@ -369,6 +371,8 @@ data class SchedulerUiState(
         .put("max_file_mb", maxFileMb.coerceIn(16, 2048))
         .put("clean_apk_packages", apkPackagesEnabled.flag())
         .put("apk_package_days", apkPackageDays.coerceIn(0, 365))
+        .put("schedule_apk_minutes", apkMinutes.coerceIn(5, 43_200))
+        .put("schedule_apk_hours", ((apkMinutes + 59) / 60).coerceIn(1, 720))
         .put("scan_root_workers", 0)
 
     companion object {
@@ -416,6 +420,7 @@ data class SchedulerUiState(
                 maxFileMb = json.optInt("max_file_mb", 256).coerceIn(16, 2048),
                 apkPackagesEnabled = json.optInt("clean_apk_packages", 1) == 1,
                 apkPackageDays = json.optInt("apk_package_days", 30).coerceIn(0, 365),
+                apkMinutes = json.optInt("schedule_apk_minutes", json.optInt("schedule_rules_minutes", 1_440)).coerceIn(5, 43_200),
                 runtimeState = runtime.optString("state", "waiting"),
                 runtimeReason = runtime.optString("reason", "等待调度器首次轮询"),
                 queueCount = runtime.optInt("queueCount", 0).coerceAtLeast(0),
@@ -425,6 +430,7 @@ data class SchedulerUiState(
                 nextCheckEpoch = runtime.optLong("nextCheckEpoch", 0L).coerceAtLeast(0L),
                 runtimeGroup = runtime.optString("group"),
                 cacheNextEpoch = nextRuns.optLong("cache", 0L).coerceAtLeast(0L),
+                apkNextEpoch = nextRuns.optLong("apk", 0L).coerceAtLeast(0L),
                 emptyNextEpoch = nextRuns.optLong("empty", 0L).coerceAtLeast(0L),
                 rulesNextEpoch = nextRuns.optLong("rules", 0L).coerceAtLeast(0L),
                 fragmentNextEpoch = nextRuns.optLong("fragment", 0L).coerceAtLeast(0L),

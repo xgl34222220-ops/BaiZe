@@ -325,7 +325,7 @@ allowed_app_source() {
 
 is_public_user_path() {
   case "$1" in
-    Download/*|Downloads/*|Documents/*|Bluetooth/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
+    Download/*|Downloads/*|Documents/*|Bluetooth/*|UCDownloads/*|Quark/Download/*|BaiduNetdisk/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
     Telegram/Telegram\ Documents/*|Telegram/Telegram\ Images/*|Telegram/Telegram\ Video/*|Telegram/Telegram\ Audio/*|Telegram/Telegram\ Files/*) return 0 ;;
     Nagram/Nagram\ Documents/*|Nagram/Nagram\ Images/*|Nagram/Nagram\ Video/*|Nagram/Nagram\ Audio/*) return 0 ;;
     NagramX/NagramX\ Documents/*|NagramX/NagramX\ Images/*|NagramX/NagramX\ Video/*|NagramX/NagramX\ Audio/*) return 0 ;;

@@ -16,6 +16,9 @@ run_script() {
 }
 
 case "$MODE" in
+  apk-auto)
+    run_script "$MODDIR/cleaner.sh.compat" apk-clean "$TRIGGER"
+    ;;
   cache-auto)
     run_script "$MODDIR/cache-transaction.sh" "$MODE" "$TRIGGER"
     ;;

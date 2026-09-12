@@ -38,7 +38,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-cleaner.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -100,7 +100,7 @@ set_phase() {
     echo "started=$START_EPOCH"
     echo "progress_current=$current"
     echo "progress_total=$total"
-    printf 'current_path=%s\n' "$path" | tr '\r\n' '  '
+    printf 'current_path=%s' "$path" | tr '\r\n' '  '; echo
     echo "engine=apk-snapshot-v42.8"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
@@ -162,23 +162,8 @@ fi
 baize_whitelist_load "$WHITELIST"
 
 
-apk_path_allowed() {
-  path=$1
-  case "$path" in
-    "$MEDIA_ROOT"/[0-9]*/Download/*|\
-    "$MEDIA_ROOT"/[0-9]*/Documents/*|\
-    "$MEDIA_ROOT"/[0-9]*/Tencent/QQfile_recv/*|\
-    "$MEDIA_ROOT"/[0-9]*/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv/*|\
-    "$MEDIA_ROOT"/[0-9]*/Android/data/com.tencent.mm/MicroMsg/Download/*|\
-    "$MEDIA_ROOT"/[0-9]*/UCDownloads/*|\
-    "$MEDIA_ROOT"/[0-9]*/Quark/Download/*|\
-    "$MEDIA_ROOT"/[0-9]*/BaiduNetdisk/*) ;;
-    *) return 1 ;;
-  esac
-  lower=$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')
-  case "$lower" in *.apk|*.apks|*.xapk|*.apkm) return 0 ;; esac
-  return 1
-}
+. "$MODDIR/apk-paths.sh"
+apk_load_roots
 
 write_latest() {
   files=$1 bytes=$2 errors=$3 skipped=$4 elapsed=$5 result=$6
@@ -251,7 +236,9 @@ code=0
 while IFS= read -r -d '' target; do
   current=$((current + 1))
   if should_stop; then code=9; break; fi
-  set_phase "正在清理刚才扫描到的安装包" "$current" "$total" "$target"
+  if [ "$current" -eq 1 ] || [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$total" ]; then
+    set_phase "正在清理刚才扫描到的安装包" "$current" "$total" "$target"
+  fi
 
   if ! apk_path_allowed "$target"; then
     skipped=$((skipped + 1))
@@ -296,7 +283,7 @@ elapsed=$((end - START_EPOCH))
 if [ "$code" -eq 9 ]; then
   result="安装包快照清理已停止，已释放 $(human_bytes "$deleted_bytes")"
 else
-  result="安装包快照清理完成，已释放 $(human_bytes "$deleted_bytes")"
+  result="安装包清理完成：删除 $deleted_files 个，跳过 $skipped 个，失败 $errors 个，释放 $(human_bytes "$deleted_bytes")"
   rm -f "$STATE_FILE" "$TARGETS_FILE"
 fi
 

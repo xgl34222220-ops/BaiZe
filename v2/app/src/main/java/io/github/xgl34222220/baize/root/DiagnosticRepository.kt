@@ -37,9 +37,9 @@ internal class DiagnosticRepository(
 
     fun scanCoverageJson(): String = scanCoverage().toString()
 
-    fun scanCoverage(): JSONArray {
+    fun scanCoverage(packages: Boolean = false): JSONArray {
         val result = JSONArray()
-        val file = File(stateDir, "index/coverage.tsv")
+        val file = File(stateDir, if (packages) "apk-coverage.tsv" else "index/coverage.tsv")
         if (!file.isFile) return result
         file.useLines { lines ->
             lines.drop(1).take(300).forEach { raw ->

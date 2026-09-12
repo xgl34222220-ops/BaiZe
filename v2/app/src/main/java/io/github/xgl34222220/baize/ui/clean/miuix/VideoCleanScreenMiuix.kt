@@ -156,7 +156,7 @@ fun VideoCleanScreenMiuix(
                         onEditGrace = { showDailyGraceDialog = true }
                     )
                 }
-                item { VideoSectionTitle("附加清理", "独立于普通缓存类别") }
+                item { VideoSectionTitle("安装包计划", "执行间隔与保留期限分别设置") }
                 item {
                     VideoCard(
                         modifier = Modifier
@@ -165,17 +165,30 @@ fun VideoCleanScreenMiuix(
                     ) {
                         VideoSwitchRow(
                             icon = Icons.Rounded.InstallMobile,
-                            title = "过期安装包",
-                            subtitle = "自动处理超过保留时间的 APK、APKS、XAPK 与 APKM",
+                            title = "自动清理安装包",
+                            subtitle = "独立执行，不再依赖规则垃圾任务",
                             checked = state.apkPackagesEnabled,
                             onCheckedChange = actions.onApkPackagesChanged
                         )
                         VideoDivider()
                         VideoListRow(
                             icon = Icons.Rounded.CalendarMonth,
+                            title = "执行间隔",
+                            subtitle = "点按切换常用周期，也可在类别页自定义",
+                            value = formatMinutes(state.categories.first { it.id == CleanCategoryId.APK }.intervalMinutes),
+                            enabled = state.apkPackagesEnabled,
+                            onClick = {
+                                val current = state.categories.first { it.id == CleanCategoryId.APK }.intervalMinutes
+                                val options = listOf(60, 360, 1_440)
+                                actions.onCategoryIntervalChanged(CleanCategoryId.APK, options[(options.indexOf(current) + 1) % options.size])
+                            }
+                        )
+                        VideoDivider()
+                        VideoListRow(
+                            icon = Icons.Rounded.CalendarMonth,
                             title = "安装包保留时间",
                             subtitle = if (state.apkPackagesEnabled) {
-                                "超过该时间才进入后台自动清理；手动扫描不受影响"
+                                "当前保留 ${state.apkPackageDays} 天；每小时执行也不会删除期限内的包"
                             } else {
                                 "开启过期安装包后可修改"
                             },
@@ -184,6 +197,13 @@ fun VideoCleanScreenMiuix(
                             onClick = { showApkRetentionDialog = true }
                         )
                     }
+                }
+                item {
+                    VideoTabs(
+                        labels = listOf("不保留", "1 天", "7 天", "30 天"),
+                        selectedIndex = listOf(0, 1, 7, 30).indexOf(state.apkPackageDays),
+                        onSelected = { actions.onApkPackageDaysChanged(listOf(0, 1, 7, 30)[it]) }
+                    )
                 }
                 item { ApplyButton(state.saving, actions.onSave) }
             }
@@ -209,7 +229,7 @@ fun VideoCleanScreenMiuix(
             }
 
             else -> {
-                item { VideoSectionTitle("专项工具", "低频功能集中放在单独页面") }
+                item { VideoSectionTitle("专项工具", "按需扫描，查看明细后清理") }
                 item {
                     ToolGrid(actions)
                 }
@@ -258,7 +278,7 @@ private fun AutomaticHero(state: CleanUiState, actions: CleanUiActions) {
                     Text(
                         if (state.automaticCleaningEnabled) "自动清理已开启" else "自动清理已暂停",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -272,7 +292,7 @@ private fun AutomaticHero(state: CleanUiState, actions: CleanUiActions) {
                 Text(
                     if (state.engineReady) state.serviceText else "正在连接 Root 清理服务",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -326,7 +346,7 @@ private fun ScheduleCard(
                         Text(
                             mode.title,
                             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
+                            fontSize = 13.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                         )
                     }
@@ -337,8 +357,8 @@ private fun ScheduleCard(
         Text(
             state.scheduleMode.description,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            lineHeight = 14.sp
+            fontSize = 12.sp,
+            lineHeight = 18.sp
         )
 
         if (state.scheduleMode == CleanScheduleMode.FIXED_DAILY) {
@@ -395,8 +415,8 @@ private fun CategoryCard(
                 Text(
                     item.description,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    lineHeight = 14.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -405,7 +425,7 @@ private fun CategoryCard(
                     Text(
                         if (dailyMode) "跟随每日固定时间" else "每 ${formatMinutes(item.intervalMinutes)}执行",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -448,7 +468,7 @@ private fun CategoryCard(
                             Text(
                                 formatMinutes(minutes),
                                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                             )
                         }
@@ -551,6 +571,7 @@ private fun apkRetentionText(days: Int): String =
     if (days <= 0) "不保留" else "$days 天"
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
+    CleanCategoryId.APK -> Icons.Rounded.InstallMobile
     CleanCategoryId.CACHE -> Icons.Rounded.CleaningServices
     CleanCategoryId.EMPTY -> Icons.Rounded.FolderDelete
     CleanCategoryId.RULES -> Icons.Rounded.Rule

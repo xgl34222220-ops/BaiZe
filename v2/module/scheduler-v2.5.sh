@@ -161,7 +161,7 @@ scheduler_task_alive() {
   actual=$(proc_start_ticks "$pid"); case "$ticks" in ''|*[!0-9]*) ticks=0 ;; esac
   [ "$ticks" -eq 0 ] || [ "$actual" = "$ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*baize_engine*) return 0;; esac
+  case "$cmdline" in *task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0;; esac
   return 1
 }
 clear_stale_task_markers() {
@@ -199,6 +199,7 @@ conditions_allow_task() {
 
 group_spec() {
   case "$1" in
+    apk) SPEC_ENABLED=clean_apk_packages; SPEC_MINUTES=schedule_apk_minutes; SPEC_HOURS=schedule_apk_hours; SPEC_FALLBACK=24; SPEC_MODE=apk-auto;;
     cache) SPEC_ENABLED=schedule_cache_enabled; SPEC_MINUTES=schedule_cache_minutes; SPEC_HOURS=schedule_cache_hours; SPEC_FALLBACK=24; SPEC_MODE=cache-auto;;
     empty) SPEC_ENABLED=schedule_empty_enabled; SPEC_MINUTES=schedule_empty_minutes; SPEC_HOURS=schedule_empty_hours; SPEC_FALLBACK=24; SPEC_MODE=empty-clean;;
     rules) SPEC_ENABLED=schedule_rules_enabled; SPEC_MINUTES=schedule_rules_minutes; SPEC_HOURS=schedule_rules_hours; SPEC_FALLBACK=24; SPEC_MODE=rules-clean;;
@@ -249,7 +250,7 @@ collect_scheduled_candidates() {
   [ "$(bool_value enabled)" = 1 ] || return 0
   now=$(date +%s); daily=0
   [ "$(daily_mode_enabled)" = 1 ] && daily_cycle_info && daily=1
-  for group in cache empty rules fragment deep organize; do
+  for group in cache apk empty rules fragment deep organize; do
     group_spec "$group" || continue
     [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
     if [ "$group" != organize ] && [ "$daily" = 1 ]; then
@@ -377,7 +378,7 @@ compute_next_sleep() {
   [ "$TASK_EXECUTED" = 1 ] && { echo "$MIN_SLEEP_SECONDS"; return; }
   [ "$QUEUE_COUNT" -gt 0 ] && { [ -n "$BLOCKED_GROUPS" ] && echo "$CONDITION_RETRY_SECONDS" || echo "$QUEUE_RETRY_SECONDS"; return; }
   now=$(date +%s); minimum=0
-  for group in cache empty rules fragment deep organize; do
+  for group in cache apk empty rules fragment deep organize; do
     group_spec "$group" || continue; [ "$(bool_value "$SPEC_ENABLED")" = 1 ] || continue
     if [ "$group" != organize ] && [ "$(daily_mode_enabled)" = 1 ]; then continue; fi
     interval=$(valid_interval_seconds "$SPEC_MINUTES" "$SPEC_HOURS" "$SPEC_FALLBACK")

@@ -91,8 +91,8 @@ fun VideoTopBar(
         ) {
             Text(
                 text = title,
-                fontSize = if (material) 22.sp else 20.sp,
-                lineHeight = if (material) 27.sp else 24.sp,
+                fontSize = if (material) 22.sp else 22.sp,
+                lineHeight = if (material) 27.sp else 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
@@ -103,8 +103,8 @@ fun VideoTopBar(
                 Text(
                     text = subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = if (material) 11.sp else 10.sp,
-                    lineHeight = if (material) 14.sp else 13.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -127,7 +127,7 @@ fun VideoIconButton(
     primary: Boolean = false
 ) {
     val material = LocalVideoSkin.current == VideoSkin.MATERIAL3
-    val shape = if (material) CircleShape else RoundedCornerShape(14.dp)
+    val shape = CircleShape
     val dark = MaterialTheme.colorScheme.background.luminance() < .5f
     val container = when {
         material && primary -> MaterialTheme.colorScheme.primary
@@ -143,7 +143,7 @@ fun VideoIconButton(
     }
     Surface(
         modifier = Modifier
-            .size(if (material) 42.dp else 40.dp)
+            .size(44.dp)
             .clip(shape)
             .clickable(onClick = onClick),
         shape = shape,
@@ -197,17 +197,14 @@ fun VideoTabs(
             }
             Surface(
                 modifier = Modifier
-                    .height(if (material) 38.dp else 34.dp)
+                    .height(42.dp)
                     .clip(shape)
                     .clickable { onSelected(index) },
                 shape = shape,
                 color = container,
                 contentColor = content,
-                border = if (material) null else BorderStroke(
-                    1.dp,
-                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .28f)
-                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f)
-                )
+                border = null,
+                shadowElevation = if (selected) 2.dp else 0.dp
             ) {
                 Box(
                     modifier = Modifier.padding(horizontal = if (material) 18.dp else 15.dp),
@@ -216,7 +213,7 @@ fun VideoTabs(
                     Text(
                         text = label,
                         color = content,
-                        fontSize = if (material) 13.sp else 12.sp,
+                        fontSize = 14.sp,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                     )
                 }
@@ -235,7 +232,7 @@ fun VideoSectionTitle(
     Column(modifier.padding(horizontal = if (material) 20.dp else 16.dp)) {
         Text(
             text = title,
-            fontSize = if (material) 18.sp else 16.sp,
+            fontSize = 18.sp,
             lineHeight = if (material) 23.sp else 21.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
@@ -245,8 +242,8 @@ fun VideoSectionTitle(
             Text(
                 text = subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = if (material) 11.sp else 10.sp,
-                lineHeight = if (material) 15.sp else 14.sp
+                fontSize = 12.sp,
+                lineHeight = 17.sp
             )
         }
     }
@@ -270,11 +267,8 @@ fun VideoCard(
         shape = RoundedCornerShape(if (material) 20.dp else 22.dp),
         color = resolvedColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = if (material) null else BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = .24f)
-        ),
-        shadowElevation = if (material) 1.dp else 0.dp
+        border = null,
+        shadowElevation = if (material) 1.dp else 2.dp
     ) {
         Column(
             modifier = if (contentPadding > 0) Modifier.padding(contentPadding.dp) else Modifier,
@@ -304,7 +298,7 @@ fun VideoLeadingIcon(
     }
     Box(
         modifier = modifier
-            .size(if (material) 42.dp else 40.dp)
+            .size(44.dp)
             .clip(RoundedCornerShape(if (material) 14.dp else 13.dp))
             .background(background),
         contentAlignment = Alignment.Center
@@ -348,7 +342,7 @@ fun VideoListRow(
         Column(Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = if (material) 15.sp else 14.sp,
+                fontSize = 17.sp,
                 lineHeight = if (material) 20.sp else 19.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = .45f),
@@ -359,8 +353,8 @@ fun VideoListRow(
             Text(
                 text = subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
-                fontSize = if (material) 11.sp else 10.sp,
-                lineHeight = if (material) 15.sp else 14.sp,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -435,7 +429,7 @@ fun VideoMetricTile(
         )
     ) {
         Column(Modifier.padding(horizontal = if (material) 15.dp else 13.dp, vertical = if (material) 13.dp else 11.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (material) 11.sp else 10.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Spacer(Modifier.height(3.dp))
             Text(
                 value,
@@ -494,13 +488,13 @@ fun VideoActionTile(
         Column(Modifier.padding(if (material) 16.dp else 14.dp)) {
             VideoLeadingIcon(icon = icon, primary = true)
             Spacer(Modifier.height(if (material) 12.dp else 10.dp))
-            Text(title, color = content, fontSize = if (material) 15.sp else 14.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = content, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
                 color = content.copy(alpha = .72f),
-                fontSize = if (material) 11.sp else 10.sp,
-                lineHeight = if (material) 15.sp else 14.sp,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )

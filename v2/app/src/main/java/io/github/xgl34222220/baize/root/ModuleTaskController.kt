@@ -106,8 +106,8 @@ internal class ModuleTaskController(
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("logName", log.name)
             .put("appDetails", appDetails)
-            .put("otherDetails", otherDetailsJson(latestReport))
-            .put("coverage", diagnostics.scanCoverage())
+            .put("otherDetails", if (mode.startsWith("apk-")) apkDetailsJson(latestReport) else otherDetailsJson(latestReport))
+            .put("coverage", diagnostics.scanCoverage(mode.startsWith("apk-")))
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"
                 3 -> "已有其他任务正在运行"
@@ -216,6 +216,27 @@ internal class ModuleTaskController(
         return result
     }
 
+    /** Bounded IPC response, with an individual row for each installation package. */
+    private fun apkDetailsJson(file: File): JSONArray {
+        val result = JSONArray()
+        if (!file.isFile) return result
+        file.useLines { lines ->
+            lines.drop(1).filter { it.startsWith("candidate\t") || it.startsWith("cleaned\t") || it.startsWith("failed\t") }
+                .take(500).forEach { raw ->
+                    val fields = raw.split('\t', limit = 6)
+                    if (fields.size != 6) return@forEach
+                    val path = fields[5].take(512)
+                    result.put(JSONObject()
+                        .put("name", File(path).name)
+                        .put("files", fields[3].toLongOrNull() ?: 0L)
+                        .put("bytes", fields[4].toLongOrNull() ?: 0L)
+                        .put("errors", if (fields[0] == "failed") 1 else 0)
+                        .put("samplePath", path))
+                }
+        }
+        return result
+    }
+
     private fun otherDetailsJson(file: File): JSONArray {
         data class Aggregate(
             var files: Long = 0,
@@ -292,8 +313,8 @@ internal class ModuleTaskController(
                     File(stateDir, "reports/app-items-latest.tsv")
                 )
             )
-            .put("otherDetails", otherDetailsJson(File(stateDir, "reports/latest.tsv")))
-            .put("coverage", diagnostics.scanCoverage())
+            .put("otherDetails", if (latest.optString("mode").startsWith("apk-")) apkDetailsJson(File(stateDir, "reports/latest.tsv")) else otherDetailsJson(File(stateDir, "reports/latest.tsv")))
+            .put("coverage", diagnostics.scanCoverage(latest.optString("mode").startsWith("apk-")))
             .put("running", running)
             .put("config", JSONObject(schedulerRepository.configJson()))
             .toString()

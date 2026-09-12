@@ -108,7 +108,7 @@ data class BaiZeTypeScale(
 )
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
-    caption = TextStyle(fontSize = 11.sp, lineHeight = 16.sp),
+    caption = TextStyle(fontSize = 12.sp, lineHeight = 17.sp),
     body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
     bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
     title = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),

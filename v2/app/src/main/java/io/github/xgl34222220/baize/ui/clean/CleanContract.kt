@@ -6,6 +6,7 @@ import io.github.xgl34222220.baize.SchedulerUiState
 /** Shared category identifiers used by both Material and Miuix skins. */
 enum class CleanCategoryId {
     CACHE,
+    APK,
     EMPTY,
     RULES,
     FRAGMENTS,
@@ -112,6 +113,13 @@ fun SchedulerUiState.toCleanUiState(
     automaticCleaningEnabled = enabled,
     categories = listOf(
         CleanCategoryUiItem(
+            id = CleanCategoryId.APK,
+            title = "安装包",
+            description = "独立定时 · 保留 ${apkPackageDays} 天 · APK / APKS / XAPK / APKM",
+            enabled = apkPackagesEnabled,
+            intervalMinutes = apkMinutes
+        ),
+        CleanCategoryUiItem(
             id = CleanCategoryId.CACHE,
             title = "应用缓存",
             description = "应用内部缓存、外部缓存与临时文件",
@@ -171,6 +179,7 @@ fun SchedulerUiState.withCategoryEnabled(
     id: CleanCategoryId,
     enabled: Boolean
 ): SchedulerUiState = when (id) {
+    CleanCategoryId.APK -> copy(apkPackagesEnabled = enabled)
     CleanCategoryId.CACHE -> copy(cacheEnabled = enabled)
     CleanCategoryId.EMPTY -> copy(emptyEnabled = enabled)
     CleanCategoryId.RULES -> copy(rulesEnabled = enabled)
@@ -185,6 +194,7 @@ fun SchedulerUiState.withCategoryInterval(
 ): SchedulerUiState {
     val safeMinutes = minutes.coerceIn(5, 43_200)
     return when (id) {
+        CleanCategoryId.APK -> copy(apkMinutes = safeMinutes)
         CleanCategoryId.CACHE -> copy(cacheMinutes = safeMinutes)
         CleanCategoryId.EMPTY -> copy(emptyMinutes = safeMinutes)
         CleanCategoryId.RULES -> copy(rulesMinutes = safeMinutes)

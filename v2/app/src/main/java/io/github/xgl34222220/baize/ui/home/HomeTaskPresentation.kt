@@ -17,6 +17,7 @@ internal data class HomeTaskPresentation(
 )
 
 internal fun SchedulerUiState.homeTaskItems(): List<HomeTaskPresentation> = listOf(
+    HomeTaskPresentation("apk", "安装包", apkPackagesEnabled && enabled, apkNextEpoch),
     HomeTaskPresentation("cache", "应用缓存", cacheEnabled && enabled, cacheNextEpoch),
     HomeTaskPresentation("empty", "空文件与空目录", emptyEnabled && enabled, emptyNextEpoch),
     HomeTaskPresentation("rules", "规则垃圾与日志", rulesEnabled && enabled, rulesNextEpoch),

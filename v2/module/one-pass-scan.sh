@@ -444,6 +444,8 @@ MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 cache_days=$(get_config_uint app_cache_days 0 0 365)
 external_days=$(get_config_uint external_cache_days 0 0 365)
 [ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
+# Manual review shows current cache; automatic tasks retain the configured age.
+case "$TRIGGER" in manual|app|ui) cache_days=0 ;; esac
 choose_root_workers
 PARALLEL_WALL_MS=0
 INTERNAL_WORKER_MS=0

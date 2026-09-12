@@ -2267,36 +2267,26 @@ snapshot_sha256() {
 }
 
 run_apk_packages() {
-  [ -d /data/media ] || return 0
-  if [ "$REQUEST_MODE" = "apk-scan" ] && [ "$MODE" = "scan" ]; then
-    rm -f "$APK_SCAN_STATE" "$APK_SCAN_TARGETS"
-  fi
+  MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
+  apk_helper=${BAIZE_APK_PATHS:-$MODDIR/apk-paths.sh}
+  [ -f "$apk_helper" ] || apk_helper="$MODDIR/v2/module/apk-paths.sh"
+  [ -f "$apk_helper" ] || { echo "安装包组件缺失" >&2; return 5; }
+  . "$apk_helper"
+  apk_load_roots
   list="$TMP_DIR/apk-packages.nul"
+  raw="$TMP_DIR/apk-discovered.nul"
+  apk_collect_candidates "$raw" || return $?
   : >"$list"
-  for userdir in /data/media/[0-9]*; do
-    [ -d "$userdir" ] || continue
-    for root in \
-      "$userdir/Download" \
-      "$userdir/Documents" \
-      "$userdir/Tencent/QQfile_recv" \
-      "$userdir/Android/data/com.tencent.mobileqq/Tencent/QQfile_recv" \
-      "$userdir/Android/data/com.tencent.mm/MicroMsg/Download" \
-      "$userdir/UCDownloads" \
-      "$userdir/Quark/Download" \
-      "$userdir/BaiduNetdisk"; do
-      [ -d "$root" ] || continue
-      if [ "$APK_PACKAGE_DAYS" -eq 0 ]; then
-        find "$root" -mindepth 1 -maxdepth 5 -type f -size "-${APK_PACKAGE_MAX_BYTES}c" \
-          \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
-          -print0 2>/dev/null >>"$list"
-      else
-        find "$root" -mindepth 1 -maxdepth 5 -type f -mtime "+$APK_PACKAGE_DAYS" \
-          -size "-${APK_PACKAGE_MAX_BYTES}c" \
-          \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' \) \
-          -print0 2>/dev/null >>"$list"
-      fi
-    done
-  done
+  cutoff=$(( $(date +%s) - APK_PACKAGE_DAYS * 86400 ))
+  while IFS= read -r -d '' package; do
+    should_stop && return 9
+    apk_path_allowed "$package" || continue
+    metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || continue
+    size=${metadata%% *}; modified=${metadata##* }
+    [ "$size" -le "$APK_PACKAGE_MAX_BYTES" ] || continue
+    [ "$APK_PACKAGE_DAYS" -eq 0 ] || [ "$modified" -lt "$cutoff" ] || continue
+    printf '%s\0' "$package" >>"$list"
+  done <"$raw"
 
   filter_whitelist_list "$list" || return $?
   filter_processed_list "$list" || return $?
@@ -2423,7 +2413,7 @@ case "$PROFILE" in
   all) RUN_EMPTY=1; RUN_CACHE=1; RUN_RULES=1; RUN_FRAGMENT=1; RUN_APK=1 ;;
   empty) RUN_EMPTY=1 ;;
   cache) RUN_CACHE=1 ;;
-  rules) RUN_RULES=1; RUN_APK=1 ;;
+  rules) RUN_RULES=1 ;;
   fragment) RUN_FRAGMENT=1 ;;
   apk) RUN_APK=1 ;;
   corpse) ;;

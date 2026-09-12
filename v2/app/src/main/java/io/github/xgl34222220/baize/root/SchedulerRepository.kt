@@ -548,7 +548,7 @@ internal class SchedulerRepository(
             else -> config.optInt("daily_schedule_enabled", 0) == 1
         }
         for (group in GROUPS) {
-            val enabled = config.optInt("schedule_${group}_enabled", 0) == 1
+            val enabled = config.optInt(if (group == "apk") "clean_apk_packages" else "schedule_${group}_enabled", 0) == 1
             if (!enabled || config.optInt("enabled", 1) != 1) {
                 result.put(group, 0L)
                 continue
@@ -678,7 +678,7 @@ internal class SchedulerRepository(
     companion object {
         private const val HEARTBEAT_STALE_SECONDS = 20L * 60L
         private const val MAX_QUEUE_ITEMS = 50
-        private val GROUPS = listOf("cache", "empty", "rules", "fragment", "deep", "organize")
+        private val GROUPS = listOf("cache", "apk", "empty", "rules", "fragment", "deep", "organize")
         val ALLOWED_CONFIG: Map<String, IntRange> = mapOf(
             "enabled" to 0..1,
             "schedule_mode" to 0..2,
@@ -748,6 +748,8 @@ internal class SchedulerRepository(
             "fragment_days" to 0..365,
             "installer_temp_days" to 1..30,
             "apk_package_days" to 0..365,
+            "schedule_apk_minutes" to 5..43_200,
+            "schedule_apk_hours" to 1..720,
             "apk_package_max_mb" to 16..16_384,
             "root_shell_days" to 1..90,
             "max_file_mb" to 16..16_384,

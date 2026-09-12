@@ -485,6 +485,7 @@ private fun MiuixDivider() {
 }
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
+    CleanCategoryId.APK -> Icons.Rounded.InstallMobile
     CleanCategoryId.CACHE -> Icons.Rounded.CleaningServices
     CleanCategoryId.EMPTY -> Icons.Rounded.FolderDelete
     CleanCategoryId.RULES -> Icons.Rounded.Rule

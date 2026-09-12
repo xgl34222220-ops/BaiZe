@@ -95,6 +95,12 @@ rm -f "$STATE_DIR"/scheduler-retry-*.count "$STATE_DIR"/scheduler-retry-*.until 
   "$STATE_DIR"/scheduler-fail-*.count "$STATE_DIR"/scheduler-pause-*.until 2>/dev/null || true
 rm -rf "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
 mkdir -p "$STATE_DIR/scheduler-requests" "$STATE_DIR/scheduler-skips"
+# 2.9: APKs used to run with rules. Separate the cadence without resetting it.
+if [ -f "$STATE_DIR/config.conf" ] && ! grep -q '^schedule_apk_minutes=' "$STATE_DIR/config.conf"; then
+  apk_minutes=$(sed -n 's/^schedule_rules_minutes=//p' "$STATE_DIR/config.conf" | tail -n 1)
+  case "$apk_minutes" in ''|*[!0-9]*) apk_minutes=1440 ;; esac
+  printf '\nschedule_apk_minutes=%s\nschedule_apk_hours=%s\n' "$apk_minutes" "$(( (apk_minutes + 59) / 60 ))" >>"$STATE_DIR/config.conf"
+fi
 echo 'deep-manifest-v1' >"$STATE_DIR/runtime-schema"
 
 if [ -f "$OLD_MOD/module.prop" ] || [ -d "$OLD_UPDATE" ] || [ -d "$OLD_STATE" ]; then
