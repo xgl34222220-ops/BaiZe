@@ -19,7 +19,7 @@ LARGE_INDEX="$INDEX_DIR/large-files.nul"
 ORGANIZER_INDEX="$INDEX_DIR/organizer-files.nul"
 DUPLICATE_CANDIDATES="$INDEX_DIR/duplicate-candidates.tsv"
 LOCK_DIR="$STATE_DIR/index.lock"
-STOP_FILE="$STATE_DIR/stop"
+STOP_FILE=${BAIZE_INDEX_STOP_FILE:-$STATE_DIR/stop}
 # 原生索引器。不可用时下面的逐文件循环会作为退路继续工作。
 if [ -f "$MODDIR/abi-resolve.sh" ]; then
   . "$MODDIR/abi-resolve.sh"

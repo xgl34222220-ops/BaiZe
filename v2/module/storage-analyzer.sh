@@ -5,12 +5,15 @@ case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 OUT="$STATE_DIR/reports/storage-analysis.tsv"
-mkdir -p "${OUT%/*}"
-"$SHELL_BIN" "$MODDIR/storage-index.sh" refresh storage-analysis >&2
+mkdir -p "${OUT%/*}" "$STATE_DIR/index"
 TMP="$STATE_DIR/index/storage-analysis.$$"
 mkdir "$TMP"
 trap 'rm -rf -- "$TMP"' EXIT
-trap 'exit 9' INT TERM
+STOP_FILE=${BAIZE_DIAGNOSTIC_STOP_FILE:-$TMP/stop}
+# Read-only tools own their cancellation request. A prior cleaning cancellation
+# must neither block these tools nor be cleared while another task handles it.
+trap ': >"$STOP_FILE"; exit 9' INT TERM
+BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$MODDIR/storage-index.sh" refresh storage-analysis >&2
 # Decode the index's Base64 path in awk instead of spawning stat/base64 once for
 # every file. Size is from the same complete index generation. No Python needed.
 LC_ALL=C awk -F '\t' '
@@ -39,7 +42,7 @@ empty_count=$(tr -cd '\000' <"$STATE_DIR/index/empty-files.nul" | wc -c | tr -d 
 [ "$empty_count" -eq 0 ] || printf '(空文件)\t%s\t0\n' "$empty_count" >>"$TMP/rows.tsv"
 printf 'group\tfiles\tbytes\n' >"$TMP/report.tsv"
 sort -t "$(printf '\t')" -k3,3nr "$TMP/rows.tsv" >>"$TMP/report.tsv"
-[ ! -f "$STATE_DIR/stop" ] || exit 9
+[ ! -f "$STOP_FILE" ] || exit 9
 chmod 0600 "$TMP/report.tsv"
 mv -f "$TMP/report.tsv" "$OUT"
 echo "$OUT"

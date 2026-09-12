@@ -18,6 +18,18 @@ case "$TASK_ID" in ''|*[!a-zA-Z0-9_.-]*|.*) echo "任务编号无效" >&2; exit 
 case "$MODE" in clean|scan|apk-auto|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
+# A persistent kernel-lock inode serializes stale-lock recovery. Never unlink this
+# guard: two contenders must not recover the same old pathname over a new owner.
+recovery_lock() {
+  exec 9>"$LAUNCH_LOCK.recovery"
+  if command -v flock >/dev/null 2>&1; then flock -n 9
+  elif command -v toybox >/dev/null 2>&1; then toybox flock -n 9
+  elif [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9
+  else return 1
+  fi
+}
+release_recovery_lock() { exec 9>&-; }
+
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
 lock_owner_alive() {
   old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
@@ -53,15 +65,19 @@ acquire_launch_lock() {
   # link publishes both PID and identity at once: another launcher never sees an empty lock.
   printf '%s\n%s\n' "$$" "$(proc_start_ticks $$)" >"$LAUNCH_LOCK.$$"
   if ! ln "$LAUNCH_LOCK.$$" "$LAUNCH_LOCK" 2>/dev/null; then
+    recovery_lock || { release_recovery_lock; rm -f "$LAUNCH_LOCK.$$"; return 1; }
+    # Re-read only after acquiring the recovery guard: the original owner may
+    # already have been replaced by a contender waiting at the same stale lock.
     launch_pid=$(sed -n '1p' "$LAUNCH_LOCK" 2>/dev/null)
     launch_ticks=$(sed -n '2p' "$LAUNCH_LOCK" 2>/dev/null)
     case "$launch_pid" in ''|*[!0-9]*) launch_pid=0;; esac
     if [ "$launch_pid" -gt 1 ] && kill -0 "$launch_pid" 2>/dev/null &&
        [ "$(proc_start_ticks "$launch_pid")" = "$launch_ticks" ]; then
-      rm -f "$LAUNCH_LOCK.$$"; return 1
+      release_recovery_lock; rm -f "$LAUNCH_LOCK.$$"; return 1
     fi
     rm -f "$LAUNCH_LOCK"
-    ln "$LAUNCH_LOCK.$$" "$LAUNCH_LOCK" 2>/dev/null || { rm -f "$LAUNCH_LOCK.$$"; return 1; }
+    ln "$LAUNCH_LOCK.$$" "$LAUNCH_LOCK" 2>/dev/null || { release_recovery_lock; rm -f "$LAUNCH_LOCK.$$"; return 1; }
+    release_recovery_lock
   fi
   LAUNCH_OWNED=1
   return 0

@@ -90,7 +90,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
-import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -777,7 +776,7 @@ private fun AuditEventCard(
             }
             if (expanded) {
                 Spacer(Modifier.height(13.dp))
-                Surface(shape = RoundedCornerShape(16.dp), color = BaiZeTokens.colors.surfaceRaisedest) {
+                Surface(shape = RoundedCornerShape(16.dp), color = BaiZeTokens.colors.surfaceOverlay) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (event.profile.isNotBlank()) AuditKeyValue("配置", event.profile)
                         if (event.snapshotId.isNotBlank()) AuditKeyValue("快照", event.snapshotId.take(12))

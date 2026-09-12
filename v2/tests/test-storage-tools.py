@@ -109,6 +109,26 @@ class StorageTools(unittest.TestCase):
         self.assertEqual(self.run_tool('duplicate-scanner.sh', success=False).returncode, 5)
         self.assertEqual(report.read_bytes(), before)
 
+    def test_diagnostic_runs_after_cancel_without_clearing_another_task_stop(self):
+        self.make('Download/a.pdf', b'content')
+        self.make('Download/b.pdf', b'content')
+        # Covers both a stale stop and one still being consumed by an active
+        # worker: the diagnostic must never unlink or overwrite this request.
+        stop = self.state / 'stop'
+        stop.write_bytes(b'cancel-active-cleaner')
+        before = stop.stat()
+        for script in ('duplicate-scanner.sh', 'large-file-scanner.sh', 'storage-analyzer.sh'):
+            with self.subTest(script=script):
+                self.run_tool(script)
+                self.assertEqual(stop.read_bytes(), b'cancel-active-cleaner')
+                self.assertEqual(stop.stat().st_ino, before.st_ino)
+                self.assertEqual(stop.stat().st_mtime_ns, before.st_mtime_ns)
+        private_stop = self.work / 'private-diagnostic-stop'
+        private_stop.touch()
+        self.env['BAIZE_DIAGNOSTIC_STOP_FILE'] = str(private_stop)
+        self.assertEqual(self.run_tool('duplicate-scanner.sh', success=False).returncode, 9)
+        self.assertEqual(stop.read_bytes(), b'cancel-active-cleaner')
+
     def test_ttl_invalidates_when_threshold_or_side_index_changes(self):
         self.make('Download/big.pdf', b'x' * (1024 * 1024))
         self.run_tool('storage-index.sh', 'refresh', 'manual')

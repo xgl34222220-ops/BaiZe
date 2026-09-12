@@ -14,21 +14,36 @@ mkdir -p "$STATE_DIR/logs"
 SUPERVISOR_LOCK="$STATE_DIR/supervisor.lock"
 restart_count=0; backoff=1; child=; RESCUE_AGE=0
 INSTANCE_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$$")
+# A persistent kernel-lock inode serializes stale-lock recovery. Never unlink this
+# guard: two contenders must not recover the same old pathname over a new owner.
+recovery_lock() {
+  exec 9>"$SUPERVISOR_LOCK.recovery"
+  if command -v flock >/dev/null 2>&1; then flock -n 9
+  elif command -v toybox >/dev/null 2>&1; then toybox flock -n 9
+  elif [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9
+  else return 1
+  fi
+}
+release_recovery_lock() { exec 9>&-; }
+
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
 SUPERVISOR_START_TICKS=$(proc_start_ticks $$)
 # App recovery, boot service and wake requests may race. Publish identity atomically
 # before touching stop/state so only one supervisor owns the scheduler lifecycle.
 printf '%s\n%s\n' "$$" "$SUPERVISOR_START_TICKS" >"$SUPERVISOR_LOCK.$$"
 if ! ln "$SUPERVISOR_LOCK.$$" "$SUPERVISOR_LOCK" 2>/dev/null; then
+  recovery_lock || { release_recovery_lock; rm -f "$SUPERVISOR_LOCK.$$"; exit 0; }
   existing_pid=$(sed -n '1p' "$SUPERVISOR_LOCK" 2>/dev/null)
   existing_ticks=$(sed -n '2p' "$SUPERVISOR_LOCK" 2>/dev/null)
   case "$existing_pid" in ''|*[!0-9]*) existing_pid=0;; esac
   if [ "$existing_pid" -gt 1 ] && kill -0 "$existing_pid" 2>/dev/null && [ "$(proc_start_ticks "$existing_pid")" = "$existing_ticks" ]; then
+    release_recovery_lock
     rm -f "$SUPERVISOR_LOCK.$$"
     exit 0
   fi
   rm -f "$SUPERVISOR_LOCK"
-  ln "$SUPERVISOR_LOCK.$$" "$SUPERVISOR_LOCK" 2>/dev/null || { rm -f "$SUPERVISOR_LOCK.$$"; exit 0; }
+  ln "$SUPERVISOR_LOCK.$$" "$SUPERVISOR_LOCK" 2>/dev/null || { release_recovery_lock; rm -f "$SUPERVISOR_LOCK.$$"; exit 0; }
+  release_recovery_lock
 fi
 rm -f "$SUPERVISOR_LOCK.$$" "$STOP"
 release_supervisor_lock() {

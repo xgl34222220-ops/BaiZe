@@ -160,6 +160,50 @@ class Rules(unittest.TestCase):
             rules.write_text(f'com.example.app|{relative}|0\n')
             self.run_engine('rule-targets', '--rules', rules, '--targets', targets, expected=7)
 
+    def test_partial_empty_directory_discovery_never_deletes(self):
+        source = (ROOT / 'cleaner.sh').read_text()
+        real_find = shutil.which('find')
+        self.assertIsNotNone(real_find)
+        for exit_code in (124, 1, 9):
+            with self.subTest(exit_code=exit_code):
+                case = self.tmp / str(exit_code); case.mkdir()
+                data, state, module, fake = (case / name for name in ('data', 'state', 'module', 'fake'))
+                for path in (data, state, module, fake): path.mkdir()
+                shutil.copytree(ROOT / 'config', module / 'config')
+                mapped = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), source)
+                (module / 'cleaner.sh').write_text(mapped)
+                (module / 'config/app.rules').write_text('com.example.app|files/logs|0\n')
+                (module / 'config/external.rules').write_text('')
+                disabled = ('clean_app_cache', 'clean_external_cache', 'clean_system_logs',
+                            'clean_oem_logs', 'clean_fragments', 'clean_apk_packages',
+                            'clean_installer_temp', 'clean_custom_rules', 'clean_root_shells', 'clean_hidden_junk')
+                config = (ROOT / 'config/default.conf').read_text() + '\n'
+                config += ''.join(f'{key}=0\n' for key in disabled)
+                config += ('enabled=1\nclean_app_rules=1\nclean_empty_files=0\n'
+                           'clean_empty_dirs=1\nnotify_on_complete=0\n')
+                (state / 'config.conf').write_text(config)
+                (state / 'whitelist.conf').write_text('')
+                target = data / 'user/0/com.example.app/files/logs'
+                first, second = target / 'empty-a', target / 'empty-b'
+                first.mkdir(parents=True); second.mkdir()
+                find = fake / 'find'
+                find.write_text('#!/bin/bash\ncase " $* " in *" -empty "*) printf "%s\\0" ' +
+                    shlex.quote(str(first)) + f'; exit {exit_code} ;; esac\nexec ' +
+                    shlex.quote(real_find) + ' "$@"\n')
+                find.chmod(0o755)
+                env = os.environ.copy()
+                env.update(BAIZE_STATE_DIR=str(state), PATH=str(fake) + ':' + env['PATH'])
+                result = subprocess.run(['bash', str(module / 'cleaner.sh'), 'rules-clean', 'manual'],
+                                        env=env, text=True, capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 9 if exit_code == 9 else 0, result.stdout + result.stderr)
+                self.assertTrue(first.is_dir()); self.assertTrue(second.is_dir())
+                latest = (state / 'latest.env').read_text()
+                self.assertIn('empty_dirs=0\n', latest)
+                if exit_code != 9:
+                    self.assertIn('errors=1\n', latest)
+                    self.assertIn('cache_truncated=1\n', latest)
+                    self.assertIn('protected\tincomplete\t空目录:', (state / 'reports/latest.tsv').read_text())
+
     def test_real_rules_clean_native_and_fallback_preserve_content(self):
         source = (ROOT / 'cleaner.sh').read_text()
         for native in (False, True):

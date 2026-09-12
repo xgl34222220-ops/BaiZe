@@ -8,7 +8,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -16,6 +18,7 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import java.io.File
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -38,6 +41,15 @@ class UiVisualReviewTest {
     @Test fun materialHome() = render("material-home", 0, style = UiStyle.MATERIAL)
     @Test fun disconnectedHome() = render("home-disconnected", 0, connected = false)
 
+    @Test fun homePrimaryScansBeforeAnyCleanup() {
+        var scans = 0
+        var cleans = 0
+        render("home-primary-action", 0, actions = previewActions.copy(scan = { scans++ }, clean = { cleans++ }, cleanScan = { cleans++ }))
+        compose.onNodeWithText("开始扫描").performClick()
+        assertEquals(1, scans)
+        assertEquals(0, cleans)
+    }
+
     @Test
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun narrowLargeFontHome() = render("home-narrow-large-font", 0, fontScale = 1.3f)
@@ -53,6 +65,7 @@ class UiVisualReviewTest {
         style: UiStyle = UiStyle.MIUIX,
         connected: Boolean = true,
         fontScale: Float = 1f,
+        actions: DashboardActions = previewActions,
     ) {
         val state = DashboardUiState(
             ready = connected,
@@ -77,7 +90,7 @@ class UiVisualReviewTest {
                 BaiZeMiuixApp(
                     state = state,
                     scheduler = SchedulerUiState(enabled = true, apkPackagesEnabled = true, apkMinutes = 60, apkPackageDays = 0),
-                    actions = previewActions,
+                    actions = actions,
                     appearance = AppearanceSettings(
                         uiStyle = style,
                         themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT,
@@ -94,7 +107,7 @@ class UiVisualReviewTest {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         require(bitmap.width >= 320 && bitmap.height >= 640) { "Unexpected rendering bounds" }
         val target = File("build/reports/ui-screenshots/$name.png")
-        target.parentFile.mkdirs()
+        requireNotNull(target.parentFile).mkdirs()
         target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 

@@ -986,6 +986,19 @@ clean_dir() {
     LIST_SEQ=$((LIST_SEQ + 1))
     list="$TMP_DIR/empty-dirs.$LIST_SEQ.nul"
     run_limited_command 18 find "$dir" -xdev -depth -mindepth 1 -type d -empty -print0 2>/dev/null >"$list"
+    rule_collect_code=$?
+    case "$rule_collect_code" in
+      0) ;;
+      9) rm -f "$list"; return 9 ;;
+      *)
+        ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+        CACHE_TRUNCATED=1
+        log_line "[空目录扫描未完成] $dir（代码 $rule_collect_code，部分清单已丢弃）"
+        report_line protected incomplete "空目录:$CATEGORY" 1 0 "$dir"
+        rm -f "$list"
+        return 0
+        ;;
+    esac
     filter_whitelist_list "$list" || return $?
     filter_processed_list "$list" || return $?
     count=$(count_nul "$list")
