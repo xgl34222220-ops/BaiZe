@@ -15,13 +15,14 @@ fun HomeRoute(
     state: DashboardUiState,
     scheduler: SchedulerUiState,
     actions: DashboardActions,
-    onOpenClean: () -> Unit
+    onOpenClean: () -> Unit,
+    onOpenPlan: () -> Unit = onOpenClean
 ) {
     val skin = when (style) {
         UiStyle.MATERIAL -> VideoSkin.MATERIAL3
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        VideoHomeScreenMiuix(state, scheduler, actions, onOpenClean)
+        VideoHomeScreenMiuix(state, scheduler, actions, onOpenClean, onOpenPlan)
     }
 }

@@ -96,6 +96,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -497,12 +498,10 @@ fun BaiZeMiuixApp(
             val dark = MaterialTheme.colorScheme.background.luminance() < .5f
             val amoled = dark && appearance.amoledBlack
             val runtimeDegraded = io.github.xgl34222220.baize.performance.PerformanceRuntime.degraded.value
-            val hazeState = rememberHazeState(
-                blurEnabled = appearance.uiStyle == UiStyle.MIUIX &&
-                    appearance.blurEnabled &&
-                    appearance.glassEnabled &&
-                    !amoled && !(appearance.adaptiveSmoothMode && runtimeDegraded)
-            )
+            val blurActive = appearance.uiStyle == UiStyle.MIUIX &&
+                appearance.blurEnabled && appearance.glassEnabled &&
+                !amoled && !(appearance.adaptiveSmoothMode && runtimeDegraded)
+            val hazeState = rememberHazeState(blurEnabled = blurActive)
             var page by rememberSaveable { mutableStateOf(BaiZePage.entries[initialPage.coerceIn(0, BaiZePage.entries.lastIndex)]) }
             var expandedCleanCategory by rememberSaveable { mutableStateOf("") }
             val miuixNavItems = remember {
@@ -534,7 +533,12 @@ fun BaiZeMiuixApp(
                                     .fillMaxSize()
                             ) { targetPage ->
                                 when (targetPage) {
-                                    BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
+                                    BaiZePage.Home -> HomeRoute(
+                                            style = UiStyle.MATERIAL, state = state.forHomePage(), scheduler = scheduler,
+                                            actions = actions,
+                                            onOpenClean = { expandedCleanCategory = ""; page = BaiZePage.Clean },
+                                            onOpenPlan = { expandedCleanCategory = "__open_plan__"; page = BaiZePage.Clean }
+                                        )
                                     BaiZePage.Clean -> CleanRoute(
                                         style = UiStyle.MATERIAL,
                                         dashboard = state.forCleanPage(),
@@ -559,7 +563,7 @@ fun BaiZeMiuixApp(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .hazeSource(state = hazeState)
+                                    .then(if (blurActive) Modifier.hazeSource(state = hazeState) else Modifier)
                             ) {
                                 MiuiXBackdrop(dark, amoled)
                                 AnimatedPageHost(
@@ -569,7 +573,12 @@ fun BaiZeMiuixApp(
                                         .fillMaxSize()
                                 ) { targetPage ->
                                     when (targetPage) {
-                                        BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
+                                        BaiZePage.Home -> HomeRoute(
+                                            style = UiStyle.MIUIX, state = state.forHomePage(), scheduler = scheduler,
+                                            actions = actions,
+                                            onOpenClean = { expandedCleanCategory = ""; page = BaiZePage.Clean },
+                                            onOpenPlan = { expandedCleanCategory = "__open_plan__"; page = BaiZePage.Clean }
+                                        )
                                         BaiZePage.Clean -> CleanRoute(
                                             style = UiStyle.MIUIX,
                                             dashboard = state.forCleanPage(),
@@ -634,7 +643,31 @@ private fun AnimatedPageHost(
 
 @Composable
 private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
-    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase))
+    val colors = BaiZeTokens.colors
+    val accent = MaterialTheme.colorScheme.primary
+    // Static, broad color reflections give the glass a backdrop without an animation loop.
+    Box(
+        Modifier.fillMaxSize()
+            .background(if (amoled) Color.Black else colors.surfaceBase)
+            .drawWithCache {
+                val topReflection = Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = if (dark) .10f else .075f), Color.Transparent),
+                    center = Offset(size.width * .98f, size.height * .015f),
+                    radius = size.width * .94f
+                )
+                val lowerReflection = Brush.radialGradient(
+                    colors = listOf(Color(0xFF54BCBD).copy(alpha = if (dark) .055f else .045f), Color.Transparent),
+                    center = Offset(-size.width * .14f, size.height * .76f),
+                    radius = size.width * 1.08f
+                )
+                onDrawBehind {
+                    if (!amoled) {
+                        drawRect(topReflection)
+                        drawRect(lowerReflection)
+                    }
+                }
+            }
+    )
 }
 
 @Composable
@@ -644,78 +677,16 @@ private fun MaterialFloatingDock(
     floating: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val shape = if (floating) {
-        RoundedCornerShape(28.dp)
-    } else {
-        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    }
-    val outerModifier = if (floating) {
-        modifier
-            .padding(horizontal = 20.dp)
-            .padding(bottom = bottom + 8.dp)
-            .fillMaxWidth()
-    } else {
-        modifier.fillMaxWidth()
-    }
-
-    Surface(
-        modifier = outerModifier,
-        shape = shape,
-        color = BaiZeTokens.colors.surfaceRaised,
-        tonalElevation = 0.dp,
-        shadowElevation = if (floating) 3.dp else 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth().selectableGroup()
-                .padding(
-                    start = 8.dp,
-                    top = 4.dp,
-                    end = 8.dp,
-                    bottom = if (floating) 4.dp else bottom + 6.dp
-                )
-        ) {
-            BaiZePage.entries.forEach { item ->
-                val active = item == selected
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(16.dp))
-                        .selectable(active, role = Role.Tab) { onSelected(item) }
-                        .padding(vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(width = 56.dp, height = 32.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (active) MaterialTheme.colorScheme.secondaryContainer
-                                else Color.Transparent
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = item.icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(23.dp),
-                            tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        text = item.title,
-                        color = if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
-                    )
-                }
-            }
-        }
-    }
+    val items = remember { BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) } }
+    // The shared geometry keeps tap targets, insets and font scaling consistent. In Material
+    // mode MiuixLiquidDock uses an opaque surface and a standard tonal selection indicator.
+    MiuixLiquidDock(
+        selectedIndex = selected.ordinal,
+        items = items,
+        onSelected = { onSelected(BaiZePage.entries[it]) },
+        floating = floating,
+        modifier = modifier
+    )
 }
 
 private fun DashboardUiState.forHomePage(): DashboardUiState = copy(

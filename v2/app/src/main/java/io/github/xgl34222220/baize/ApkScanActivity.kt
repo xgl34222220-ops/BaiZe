@@ -26,7 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -474,7 +474,7 @@ internal fun ApkScanScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) }
         item {
@@ -503,25 +503,20 @@ internal fun ApkScanScreen(
                     icon = Icons.Rounded.InstallMobile
                 )
             }
-        } else items(state.items, key = { "${it.name}|${it.samplePath}" }) { ApkResultCard(it) }
+        } else itemsIndexed(state.items, key = { _, item -> "${item.name}|${item.samplePath}" }) { index, item ->
+            ApkResultCard(item, first = index == 0, last = index == state.items.lastIndex)
+        }
         if (state.coverage.isNotEmpty()) {
             item { DetailSectionHeader("扫描范围", "已读取 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源") }
-            items(state.coverage.take(40), key = { "${it.group}|${it.path}" }) { item ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-                ) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(item.group, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                            Text(if (item.status == "scanned") "已读取" else "部分可用", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                        }
-                        Text("${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(item.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (item.reason.isNotBlank()) Text(item.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    }
-                }
+            itemsIndexed(state.coverage.take(40), key = { _, item -> "${item.group}|${item.path}" }) { index, item ->
+                val status = if (item.status == "scanned") "已读取" else "部分可用"
+                val summary = "${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}"
+                DetailResultRow(
+                    title = item.group, value = status, summary = item.reason.ifBlank { summary }, path = item.path,
+                    details = listOf(status, summary, item.path, item.reason).filter { it.isNotBlank() }.joinToString("\n\n"),
+                    icon = Icons.Rounded.Folder, first = index == 0, last = index == minOf(state.coverage.size, 40) - 1,
+                    accent = if (item.status == "scanned") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
             }
         }
         if (state.output.isNotBlank()) item { DetailExpandableText("查看任务详情", state.output) }
@@ -530,44 +525,13 @@ internal fun ApkScanScreen(
 }
 
 @Composable
-private fun ApkResultCard(item: ApkScanItem) {
+private fun ApkResultCard(item: ApkScanItem, first: Boolean, last: Boolean) {
     val context = LocalContext.current
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-    ) {
-        Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.Top) {
-            Icon(
-                Icons.Rounded.Folder,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(26.dp)
-            )
-            Spacer(Modifier.size(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "${item.files} 项 · ${Formatter.formatFileSize(context, item.bytes)}" +
-                        if (item.errors > 0) " · 异常 ${item.errors}" else "",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 14.sp
-                )
-                if (item.samplePath.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        item.samplePath,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+    val size = Formatter.formatFileSize(context, item.bytes)
+    val summary = "${item.files} 项" + if (item.errors > 0) " · 异常 ${item.errors}" else " · 安装文件"
+    DetailResultRow(
+        title = item.name, value = size, summary = summary, path = item.samplePath,
+        details = listOf("$summary · $size", item.samplePath).filter { it.isNotBlank() }.joinToString("\n\n"),
+        icon = Icons.Rounded.InstallMobile, first = first, last = last
+    )
 }

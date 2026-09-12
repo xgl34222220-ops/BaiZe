@@ -79,8 +79,8 @@ data class AppearanceSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val seedArgb: Int = AccentOptions.first().argb,
     val kolorStyle: KolorStyle = KolorStyle.SOFT,
-    /** Android 12+ 默认启用 Monet；旧系统自动使用白泽蓝。 */
-    val monetEnabled: Boolean = true,
+    /** 与未配置时的仓库默认值一致，用户可另行启用壁纸取色。 */
+    val monetEnabled: Boolean = false,
     val amoledBlack: Boolean = false,
     val blurEnabled: Boolean = true,
     val glassEnabled: Boolean = true,

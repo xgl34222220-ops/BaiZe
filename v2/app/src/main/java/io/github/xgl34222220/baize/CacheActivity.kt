@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -26,7 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -620,7 +621,7 @@ internal fun CacheScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item { DetailPageHeader("应用缓存", "查看应用缓存占用，扫描后直接清理", onBack) }
         item {
@@ -650,11 +651,13 @@ internal fun CacheScreen(
                 )
             }
         } else {
-            items(state.items, key = { "${it.packageName}|${it.path}" }) { CacheCandidateCard(it) }
+            itemsIndexed(state.items, key = { _, item -> "${item.packageName}|${item.path}" }) { index, item ->
+                CacheCandidateCard(item, first = index == 0, last = index == state.items.lastIndex)
+            }
             if (state.pages > 1) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = onPrevious, enabled = !state.running && !state.loadingPage && state.page > 0, modifier = Modifier.weight(1f)) { Text("上一页") }
-                    OutlinedButton(onClick = onNext, enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages, modifier = Modifier.weight(1f)) { Text("下一页") }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GlassActionButton("上一页", onPrevious, enabled = !state.running && !state.loadingPage && state.page > 0, modifier = Modifier.weight(1f), secondary = true)
+                    GlassActionButton("下一页", onNext, enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages, modifier = Modifier.weight(1f), secondary = true)
                 }
             }
         }
@@ -664,46 +667,18 @@ internal fun CacheScreen(
 }
 
 @Composable
-private fun CacheCandidateCard(item: CacheCandidateUi) {
+private fun CacheCandidateCard(item: CacheCandidateUi, first: Boolean, last: Boolean) {
     val context = LocalContext.current
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
-    ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Text(item.appName.ifBlank { item.packageName }, fontWeight = FontWeight.Bold)
-            if (item.appName.isNotBlank() && item.appName != item.packageName) {
-                Text(
-                    item.packageName,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
-            }
-            Text(
-                buildString {
-                    append(item.category)
-                    if (item.bytes >= 0) append(" · ${Formatter.formatFileSize(context, item.bytes)}")
-                    if (item.files >= 0) append(" · ${item.files} 个文件")
-                    if (item.directories >= 0) append(" · ${item.directories} 个目录")
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp
-            )
-            if (item.path.isNotBlank()) {
-                Spacer(Modifier.height(7.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
-                Spacer(Modifier.height(7.dp))
-                Text(
-                    item.path,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
+    val measurement = buildString {
+        append(item.category)
+        if (item.files >= 0) append(" · ${item.files} 个文件")
+        if (item.directories >= 0) append(" · ${item.directories} 个目录")
     }
+    val size = if (item.bytes >= 0) Formatter.formatFileSize(context, item.bytes) else "待统计"
+    DetailResultRow(
+        title = item.appName.ifBlank { item.packageName }, value = size,
+        summary = measurement, path = item.path,
+        details = listOf(item.packageName, "$measurement · $size", item.path).filter { it.isNotBlank() }.joinToString("\n\n"),
+        icon = Icons.Rounded.Storage, first = first, last = last
+    )
 }

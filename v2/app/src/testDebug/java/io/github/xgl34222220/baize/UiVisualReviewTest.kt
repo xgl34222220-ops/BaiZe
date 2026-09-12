@@ -3,15 +3,14 @@ package io.github.xgl34222220.baize
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -34,6 +33,7 @@ class UiVisualReviewTest {
 
     @Test fun homeLight() = render("home-light", 0)
     @Test fun homeDark() = render("home-dark", 0, dark = true)
+    @Test fun glassHome() = render("home-glass", 0, blur = true)
     @Test fun cleanLight() = render("clean-light", 1)
     @Test fun cleanDark() = render("clean-dark", 1, dark = true)
     @Test fun recordsLight() = render("records-light", 2)
@@ -59,6 +59,23 @@ class UiVisualReviewTest {
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun narrowLargeFontClean() = render("clean-narrow-large-font", 1, fontScale = 1.3f)
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun narrowLargeFontSettings() = render("settings-narrow-large-font", 3, fontScale = 1.3f)
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun narrowLargeFontRecords() = render("records-narrow-large-font", 2, fontScale = 1.3f)
+
+    @Test fun homePlanOpensAutomaticPlan() {
+        render("home-plan-entry", 0)
+        compose.onNodeWithText("自动清理").performScrollTo().performClick()
+        compose.waitForIdle()
+        save("clean-plan")
+        compose.onNodeWithText("安装包保留时间").performScrollTo().assertIsDisplayed()
+        save("clean-plan-apk-retention")
+    }
+
     private fun render(
         name: String,
         page: Int,
@@ -66,6 +83,7 @@ class UiVisualReviewTest {
         style: UiStyle = UiStyle.MIUIX,
         connected: Boolean = true,
         fontScale: Float = 1f,
+        blur: Boolean = false,
         actions: DashboardActions = previewActions,
     ) {
         val state = DashboardUiState(
@@ -96,8 +114,8 @@ class UiVisualReviewTest {
                         uiStyle = style,
                         themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT,
                         monetEnabled = false,
-                        glassEnabled = false,
-                        blurEnabled = false,
+                        glassEnabled = true,
+                        blurEnabled = blur,
                     ),
                     initialPage = page,
                 )
@@ -105,6 +123,10 @@ class UiVisualReviewTest {
         }
         compose.waitForIdle()
         compose.onRoot().assertIsDisplayed()
+        save(name)
+    }
+
+    private fun save(name: String) {
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
         require(bitmap.width >= 320 && bitmap.height >= 640) { "Unexpected rendering bounds" }
         val target = File("build/reports/ui-screenshots/$name.png")

@@ -1,7 +1,7 @@
 package io.github.xgl34222220.baize.ui.logs.miuix
 
 import android.text.format.Formatter
-import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
@@ -26,7 +26,6 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,11 +38,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.logs.LogLevel
@@ -72,10 +75,10 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            VideoTopBar("运行日志", "定位问题，了解任务执行情况", actions = {
+            VideoTopBar("运行日志", actions = {
                 VideoIconButton(Icons.Rounded.Refresh, "刷新日志", actions.onRefresh)
                 if (selectedTab == 0 && state.logs.isNotEmpty()) VideoIconButton(Icons.Rounded.DeleteOutline, "清空任务日志", actions.onClearTaskLogs)
                 if (selectedTab == 1 && state.hasRawLog) VideoIconButton(Icons.Rounded.DeleteOutline, "清空原始输出", actions.onClearRawLog)
@@ -86,17 +89,17 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
         if (selectedTab == 0) {
             item {
                 Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !onlyErrors, onClick = { onlyErrors = false }, label = { Text("全部 ${state.logs.size}") })
-                    FilterChip(selected = onlyErrors, onClick = { onlyErrors = true }, label = { Text("异常 ${state.logs.count { it.level == LogLevel.ERROR || it.errors > 0 }}") })
+                    LogFilter("全部 ${state.logs.size}", !onlyErrors) { onlyErrors = false }
+                    LogFilter("异常 ${state.logs.count { it.level == LogLevel.ERROR || it.errors > 0 }}", onlyErrors) { onlyErrors = true }
                 }
             }
             if (visibleLogs.isEmpty()) item {
-                VideoEmptyState(Icons.Rounded.Description, if (onlyErrors) "没有异常任务" else "还没有任务日志",
-                    if (onlyErrors) "当前记录中未发现报告错误的任务。" else "执行扫描或清理后，这里会显示结果与运行信息。", Modifier.padding(horizontal = 20.dp))
-            } else items(visibleLogs, key = { it.key }) { LogCard(it) }
+                VideoEmptyState(Icons.Rounded.Description, if (onlyErrors) "没有异常任务" else "暂无任务日志",
+                    if (onlyErrors) "当前记录中没有报告错误的任务。" else "执行任务后可在这里查看。", Modifier.padding(horizontal = 20.dp))
+            } else itemsIndexed(visibleLogs, key = { _, item -> item.key }) { _, item -> LogCard(item) }
         } else {
             if (!state.hasRawLog) item {
-                VideoEmptyState(Icons.Rounded.Description, "还没有原始输出", "执行一次模块任务后，这里会显示实际运行日志。", Modifier.padding(horizontal = 20.dp))
+                VideoEmptyState(Icons.Rounded.Description, "暂无原始输出", "执行模块任务后可在这里查看。", Modifier.padding(horizontal = 20.dp))
             } else {
                 item { VideoSectionTitle(state.rawLogName.ifBlank { "最近任务输出" }, "长按可选择与复制 · 最近 ${minOf(rawLinesToShow, rawLines.size)} / ${rawLines.size} 行") }
                 if (rawLines.size > rawLinesToShow) item {
@@ -105,10 +108,8 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
                     }
                 }
                 items(rawLines.takeLast(rawLinesToShow).chunked(20)) { lines ->
-                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
-                        SelectionContainer {
-                            Text(lines.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    SelectionContainer(Modifier.padding(horizontal = 24.dp).fillMaxWidth()) {
+                        Text(lines.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -128,24 +129,37 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
 
 @Composable
 private fun RuntimeCard(state: LogsUiState) {
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 24) {
-        VideoStatusPill(when { state.running -> "任务执行中"; state.ready && state.connected -> "服务已就绪"; state.connected -> "服务准备中"; else -> "服务待恢复" }, state.ready && state.connected)
-        Spacer(Modifier.height(16.dp))
-        Text("${state.device} · ${state.android}", fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(14.dp))
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
+        Text("${state.device} · ${state.android}", fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            VideoStatusPill(when { state.running -> "执行中"; state.ready && state.connected -> "已就绪"; state.connected -> "准备中"; else -> "待恢复" }, state.ready && state.connected)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起状态" else "详细状态", fontSize = 12.sp) }
+        }
+        Spacer(Modifier.height(4.dp))
         RuntimeRow("服务", state.serviceText)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         RuntimeRow("任务", state.taskPhase)
-        Spacer(Modifier.height(10.dp))
-        RuntimeRow("调度", state.schedulerText)
+        AnimatedVisibility(expanded) {
+            Column(Modifier.padding(top = 6.dp)) { RuntimeRow("调度", state.schedulerText) }
+        }
+    }
+}
+
+@Composable
+private fun LogFilter(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.semantics { this.selected = selected }) {
+        Text(label, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun RuntimeRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Text(label, fontSize = 13.sp, lineHeight = 21.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(44.dp))
-        Text(value, fontSize = 13.sp, lineHeight = 21.sp, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(36.dp))
+        Text(value, fontSize = 12.sp, lineHeight = 19.sp, modifier = Modifier.weight(1f))
     }
 }
 
@@ -159,18 +173,22 @@ private fun LogCard(item: LogUiItem) {
         LogLevel.ERROR -> MaterialTheme.colorScheme.error
         LogLevel.INFO -> MaterialTheme.colorScheme.primary
     }
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).clickable { expanded = !expanded }, contentPadding = 20) {
-        Text("${item.time} · ${item.trigger}", fontSize = 13.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(10.dp))
-        Text(item.title, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text(item.message, fontSize = 14.sp, lineHeight = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column(Modifier.padding(horizontal = 24.dp).fillMaxWidth().drawBehind {
+        drawCircle(tint, 3.dp.toPx(), Offset(3.dp.toPx(), 9.dp.toPx()))
+        drawLine(tint.copy(alpha = .16f), Offset(3.dp.toPx(), 19.dp.toPx()), Offset(3.dp.toPx(), size.height - 4.dp.toPx()), 1.dp.toPx())
+    }.clickable(role = Role.Button, onClickLabel = if (expanded) "收起日志" else "展开日志") { expanded = !expanded }
+        .padding(start = 22.dp, bottom = 12.dp)) {
+        Text("${item.time} · ${item.trigger}", fontSize = 11.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(5.dp))
+        Text(item.title, fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(5.dp))
+        Text(item.message, fontSize = 13.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = .07f)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (item.errors > 0) "${item.errors} 个错误 · ${item.files} 项" else "${item.files} 项", modifier = Modifier.weight(1f), color = tint, fontSize = 13.sp)
-            Spacer(Modifier.width(12.dp))
-            Text(Formatter.formatFileSize(context, item.bytes), color = tint, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        }
+        Spacer(Modifier.height(8.dp))
+        Text(buildString {
+            append(Formatter.formatFileSize(context, item.bytes))
+            append(" · ${item.files} 项")
+            if (item.errors > 0) append(" · ${item.errors} 个错误")
+        }, color = tint, fontSize = 12.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
     }
 }

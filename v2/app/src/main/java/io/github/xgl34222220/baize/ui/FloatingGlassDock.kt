@@ -10,6 +10,7 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.PathInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -48,8 +49,10 @@ class FloatingGlassDock @JvmOverloads constructor(
     private val primary = MaterialColors.getColor(this, com.google.android.material.R.attr.colorPrimary)
     private val onSurface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurface)
     private val surface = MaterialColors.getColor(this, com.google.android.material.R.attr.colorSurface)
-    private val outline = MaterialColors.getColor(this, com.google.android.material.R.attr.colorOutlineVariant)
-    private val glassEnabled = ThemeManager.isGlassEnabled(context) && ThemeManager.isBlurEnabled(context)
+    private val amoled = ThemeManager.isAmoledActive(context)
+    private val dark = ColorUtils.calculateLuminance(surface) < .5
+    private val glassEnabled = ThemeManager.isGlassEnabled(context) && !amoled
+    private val dockItemHeight = dp(60) + (dp(16) * (resources.configuration.fontScale - 1f).coerceIn(0f, 1f)).toInt()
     private val floatingEnabled = ThemeManager.isFloatingDockEnabled(context)
     private val easing = PathInterpolator(0.2f, 0f, 0f, 1f)
     private var listener: ((Item) -> Boolean)? = null
@@ -68,21 +71,24 @@ class FloatingGlassDock @JvmOverloads constructor(
         setPadding(dp(6), dp(6), dp(6), dp(6))
         clipChildren = false
         clipToPadding = false
+        minimumHeight = dockItemHeight + dp(12)
         background = when {
-            glassEnabled -> LiquidGlassDrawable(context, LiquidGlassDrawable.Variant.DOCK)
-            floatingEnabled -> rounded(surface, 28)
+            amoled -> rounded(android.graphics.Color.BLACK, if (floatingEnabled) 31 else 0)
+            glassEnabled -> glassSurface(selected = false)
+            floatingEnabled -> rounded(surface, 31)
             else -> rounded(surface, 0)
         }
-        elevation = dp(if (floatingEnabled) 4 else 0).toFloat()
+        elevation = dp(if (floatingEnabled) 18 else 3).toFloat()
         translationZ = dp(0).toFloat()
         ViewCompat.setImportantForAccessibility(this, ViewCompat.IMPORTANT_FOR_ACCESSIBILITY_YES)
 
         capsule.apply {
-            background = rounded(ColorUtils.blendARGB(surface, primary, .13f), 24)
+            background = if (glassEnabled) glassSurface(selected = true)
+                else rounded(ColorUtils.blendARGB(surface, primary, if (dark) .22f else .10f), 25)
             alpha = 0f
-            elevation = dp(1).toFloat()
+            elevation = dp(if (glassEnabled) 3 else 0).toFloat()
         }
-        addView(capsule, LayoutParams(0, dp(60), Gravity.CENTER_VERTICAL))
+        addView(capsule, LayoutParams(0, dockItemHeight, Gravity.CENTER_VERTICAL))
 
         row.orientation = LinearLayout.HORIZONTAL
         row.gravity = Gravity.CENTER
@@ -119,17 +125,18 @@ class FloatingGlassDock @JvmOverloads constructor(
         val contentWidth = (width - paddingLeft - paddingRight).coerceAtLeast(0)
         if (contentWidth == 0) return
         val itemWidth = contentWidth / specs.size
-        val capsuleWidth = (itemWidth - dp(4)).coerceAtLeast(dp(56))
+        val capsuleWidth = (itemWidth - dp(8)).coerceAtLeast(dp(48))
         capsule.layoutParams = (capsule.layoutParams as LayoutParams).apply {
             width = capsuleWidth
-            height = dp(60)
+            height = dockItemHeight
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            leftMargin = paddingLeft + dp(2)
+            leftMargin = paddingLeft + dp(4)
         }
         val target = (index * itemWidth).toFloat()
         capsule.animate().cancel()
         if (animated && capsule.alpha > 0f) {
-            capsule.animate().translationX(target).setDuration(260L).setInterpolator(easing).start()
+            capsule.animate().translationX(target).setDuration(340L)
+                .setInterpolator(OvershootInterpolator(.65f)).start()
         } else {
             capsule.translationX = target
             capsule.alpha = 1f
@@ -148,7 +155,7 @@ class FloatingGlassDock @JvmOverloads constructor(
             isClickable = true
             isFocusable = true
             contentDescription = title
-            minimumHeight = dp(54)
+            minimumHeight = dockItemHeight
             background = null
 
             icon.layoutParams = LinearLayout.LayoutParams(dp(23), dp(23))
@@ -187,6 +194,22 @@ class FloatingGlassDock @JvmOverloads constructor(
                 alpha = if (active) 1f else 0.78f
             }
         }
+    }
+
+    // This legacy View has no Compose backdrop source. Keep its glossy fallback legible;
+    // the live Compose shell supplies actual background sampling when blur is enabled.
+    private fun glassSurface(selected: Boolean) = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        orientation = GradientDrawable.Orientation.TL_BR
+        val base = ColorUtils.blendARGB(surface, primary, if (selected) .13f else .015f)
+        colors = intArrayOf(
+            ColorUtils.blendARGB(base, android.graphics.Color.WHITE, if (dark) .045f else .20f),
+            ColorUtils.setAlphaComponent(base, if (selected) 242 else 246),
+            ColorUtils.blendARGB(base, primary, if (selected) .035f else .018f)
+        )
+        cornerRadius = dp(if (selected) 25 else if (floatingEnabled) 31 else 28).toFloat()
+        setStroke(maxOf(1, dp(1)), ColorUtils.setAlphaComponent(android.graphics.Color.WHITE,
+            if (dark) 32 else if (selected) 140 else 174))
     }
 
     private fun rounded(color: Int, radiusDp: Int, strokeColor: Int? = null, strokeDp: Int = 0) =
