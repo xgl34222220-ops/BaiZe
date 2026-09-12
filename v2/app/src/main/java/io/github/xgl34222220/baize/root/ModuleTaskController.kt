@@ -50,6 +50,7 @@ internal class ModuleTaskController(
     }
 
     fun executeModuleTask(mode: String, started: Long): String {
+        val taskStartedAt = System.currentTimeMillis()
         val cleaner = File(RootPaths.MODULE_DIR, "cleaner.sh")
         if (!cleaner.isFile) {
             return JSONObject()
@@ -86,7 +87,13 @@ internal class ModuleTaskController(
         val code = process.exitValue()
         val elapsed = SystemClock.elapsedRealtime() - started
         val totals = RootFileStore.readEnv(File(stateDir, "totals.env"))
-        val latest = RootFileStore.readEnv(File(stateDir, "latest.env"))
+        val latestFile = File(stateDir, "latest.env")
+        // A failed launch/scan must not present a previous successful cleanup as this result.
+        val latest = if (code == 3 || (code != 0 && latestFile.lastModified() < taskStartedAt)) {
+            JSONObject()
+        } else {
+            RootFileStore.readEnv(latestFile)
+        }
         val latestReport = File(stateDir, "reports/latest.tsv")
         val appDetails = appDetailsJson(
             File(stateDir, "reports/apps-latest.tsv"),
@@ -106,7 +113,7 @@ internal class ModuleTaskController(
             .put("latestReport", if (latestReport.isFile) latestReport.absolutePath else "")
             .put("logName", log.name)
             .put("appDetails", appDetails)
-            .put("otherDetails", if (mode.startsWith("apk-")) apkDetailsJson(latestReport) else otherDetailsJson(latestReport))
+            .put("otherDetails", if (latest.length() == 0) JSONArray() else if (mode.startsWith("apk-")) apkDetailsJson(latestReport) else otherDetailsJson(latestReport))
             .put("coverage", diagnostics.scanCoverage(mode.startsWith("apk-")))
             .put("message", when (code) {
                 0 -> if (mode == "scan") "扫描完成" else "自动清理完成"

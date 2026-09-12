@@ -6,7 +6,7 @@
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v2.6.2-1677ff)
+![Version](https://img.shields.io/badge/version-v2.9.0-1677ff)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -16,12 +16,11 @@
 
 v2 以原生 App 为主界面，通过 libsu RootService 调用模块内的 C 扫描引擎，不再依赖 WebUI。
 
-## 界面预览
+## 2.9.0 更新
 
-<p align="center">
-  <img src="docs/images/home.png" width="46%" alt="白泽首页">
-  <img src="docs/images/rules.png" width="46%" alt="白泽规则页">
-</p>
+安装包独立定时、扩大扫描覆盖、共享索引提速、归类来源补齐与原生界面可读性优化。详见 [2.9.0 发布说明](RELEASE_NOTES_v2.9.0.md)。
+
+要每小时清安装包，在清理页的“安装包计划”设置 **1 小时 + 不保留**。执行间隔与文件保留期限分别生效，升级会保留旧的保留天数。安装包工具按独立开关处理下载位置的 APK/APKS/XAPK/APKM，其他文档与照片不属于安装包清理目标。
 
 ## 核心功能
 
