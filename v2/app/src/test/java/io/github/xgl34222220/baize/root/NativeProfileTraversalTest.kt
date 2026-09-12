@@ -221,7 +221,7 @@ class NativeProfileTraversalTest {
         fun method(name: String) = NativeProfileEngine::class.java.declaredMethods.single { it.name == name }
             .apply { isAccessible = true }
         val candidate = method("candidate").invoke(engine, "empty", "empty_dir", "empty", "low", target,
-            "", "", true, "", entry)
+            "", "", true, "", entry, 0)
         val options = method("parseOptions").invoke(engine, "{}")
         val validate = method("validate")
         assertNull(validate.invoke(engine, candidate, options, emptySet<String>()))

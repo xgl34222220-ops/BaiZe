@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -42,14 +43,14 @@ internal fun Modifier.glassSurface(
     dark: Boolean
 ): Modifier = this
     .shadow(
-        elevation = 10.dp,
+        elevation = 8.dp,
         shape = shape,
         clip = false,
         ambientColor = Color(0xFF244064).copy(alpha = if (dark) .10f else .045f),
         spotColor = Color(0xFF244064).copy(alpha = if (dark) .14f else .065f)
     )
     .shadow(
-        elevation = 2.dp,
+        elevation = 1.dp,
         shape = shape,
         clip = false,
         ambientColor = Color.Black.copy(alpha = .025f),
@@ -58,11 +59,25 @@ internal fun Modifier.glassSurface(
     .clip(shape)
     .background(
         Brush.verticalGradient(
-            0f to lerp(color, Color.White, if (dark) .045f else .62f),
-            .07f to lerp(color, Color.White, if (dark) .018f else .22f),
-            1f to color.copy(alpha = .97f)
+            0f to lerp(color, Color.White, if (dark) .035f else .45f),
+            .10f to lerp(color, Color.White, if (dark) .012f else .12f),
+            1f to color
         )
     )
+    .insetTopLight(if (dark) .055f else .32f)
+
+/** A six-dp internal reflection, clipped by the parent shape rather than drawn as a border. */
+private fun Modifier.insetTopLight(alpha: Float): Modifier = drawWithCache {
+    val reflection = Brush.verticalGradient(
+        colors = listOf(Color.White.copy(alpha = alpha), Color.Transparent),
+        startY = 0f,
+        endY = 6.dp.toPx()
+    )
+    onDrawWithContent {
+        drawContent()
+        drawRect(reflection)
+    }
+}
 
 /** Shared 48dp action. Motion only follows the user's press and honours disabled state. */
 @Composable
@@ -76,11 +91,11 @@ fun GlassActionButton(
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(16.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) .978f else 1f,
+        targetValue = if (pressed && enabled) .986f else 1f,
         animationSpec = tween(durationMillis = 140),
         label = "glassActionPress"
     )
@@ -97,22 +112,32 @@ fun GlassActionButton(
     val upper = if (secondary || !enabled) {
         lerp(base, Color.White, if (dark) .05f else .7f)
     } else {
-        lerp(base, Color.White, if (dark) .06f else .075f)
+        lerp(base, Color.White, if (dark) .05f else .09f)
     }
+
+    val lower = if (enabled && !secondary) lerp(base, Color.Black, if (dark) .015f else .04f) else base
 
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .heightIn(min = 48.dp)
             .shadow(
-                elevation = if (enabled) 7.dp else 0.dp,
+                elevation = if (enabled) 6.dp else 0.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = scheme.primary.copy(alpha = if (secondary) .03f else .09f),
                 spotColor = scheme.primary.copy(alpha = if (secondary) .05f else .14f)
             )
+            .shadow(
+                elevation = if (enabled) 1.dp else 0.dp,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = .025f),
+                spotColor = Color.Black.copy(alpha = if (dark) .08f else .045f)
+            )
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(upper, base)))
+            .background(Brush.verticalGradient(listOf(upper, base, lower)))
+            .insetTopLight(if (!enabled) .08f else if (dark) .10f else if (secondary) .45f else .18f)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

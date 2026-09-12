@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -15,11 +16,11 @@ import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,35 +34,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.PauseCircleOutline
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,7 +70,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
+import io.github.xgl34222220.baize.ui.miuix.VideoTabs
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -110,7 +110,7 @@ class InstantCacheActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             serviceBound = true
             uiState = uiState.copy(connected = true, status = "正在读取已安装应用…")
             loadCatalog()
@@ -285,19 +285,19 @@ class InstantCacheActivity : ComponentActivity() {
     }
 }
 
-private data class InstantCacheApp(
+internal data class InstantCacheApp(
     val packageName: String,
     val label: String,
     val system: Boolean
 )
 
-private data class InstantCacheResult(
+internal data class InstantCacheResult(
     val succeeded: Int,
     val failed: Int,
     val cancelled: Boolean
 )
 
-private data class InstantCacheUiState(
+internal data class InstantCacheUiState(
     val connected: Boolean = false,
     val loading: Boolean = true,
     val running: Boolean = false,
@@ -315,9 +315,8 @@ private enum class InstantCacheFilter(val title: String) {
     ALL("全部")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InstantCacheScreen(
+internal fun InstantCacheScreen(
     state: InstantCacheUiState,
     onBack: () -> Unit,
     onToggle: (String) -> Unit,
@@ -329,6 +328,7 @@ private fun InstantCacheScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(InstantCacheFilter.USER) }
     var showConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
     val visible = remember(state.apps, query, filter) {
         val needle = query.trim().lowercase()
         state.apps.filter { app ->
@@ -344,159 +344,174 @@ private fun InstantCacheScreen(
                 )
         }
     }
+    val allVisibleSelected = visible.isNotEmpty() && visible.all { it.packageName in state.selected }
 
     if (showConfirmation) {
         AlertDialog(
             onDismissRequest = { if (!state.running) showConfirmation = false },
-            icon = { Icon(Icons.Rounded.Bolt, null) },
-            title = { Text("直接清除当前缓存？") },
-            text = {
-                Text(
-                    "将立即调用 Android 系统清除所选 ${state.selected.size} 个应用的当前缓存。" +
-                        "不会清除账号、设置或应用数据，但应用下次启动可能重新生成缓存。"
-                )
-            },
+            title = { Text("清除 ${state.selected.size} 个应用的缓存？", fontSize = 18.sp) },
+            text = { Text("保留账号、设置和应用数据。应用下次启动时可能重新生成缓存。") },
             confirmButton = {
                 TextButton(onClick = {
                     showConfirmation = false
                     onRun(state.selected)
-                }) { Text("确认执行") }
+                }) { Text("清除缓存") }
             },
             dismissButton = { TextButton(onClick = { showConfirmation = false }) { Text("取消") } }
         )
     }
+    if (showHelp) {
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("即时清缓存", fontSize = 18.sp) },
+            text = {
+                Text("通过系统清除所选应用的当前缓存，保留账号、设置和应用数据。单次最多选择 $MAX_VISIBLE_SELECTION 个应用。\n\n部分系统应用可能不允许清除缓存，失败时可以查看任务结果。")
+            },
+            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("知道了") } }
+        )
+    }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        modifier = Modifier.fillMaxSize(),
+        containerColor = BaiZeTokens.colors.surfaceBase,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            DetailPageHeader("即时清缓存", "通过系统清除所选应用的当前缓存", onBack)
+            DetailPageHeader("即时清缓存", "", onBack, actions = {
+                IconButton(onClick = { showHelp = true }) { Icon(Icons.Rounded.Info, "清理说明", Modifier.size(21.dp)) }
+            })
         },
         bottomBar = {
-            Surface(
-                tonalElevation = 1.dp,
-                shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Surface(color = BaiZeTokens.colors.surfaceBase, modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                    Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-                    Text(
-                        "已选择 ${state.selected.size}/$MAX_VISIBLE_SELECTION 个应用",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp
-                    )
-                    Button(
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("已选 ${state.selected.size} 个应用", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(Modifier.weight(1f))
+                        Text("单次最多 $MAX_VISIBLE_SELECTION 个", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    GlassActionButton(
+                        label = if (state.running) "停止清理" else "清除所选缓存",
                         onClick = { if (state.running) onStop() else showConfirmation = true },
                         enabled = state.running || (state.connected && state.selected.isNotEmpty()),
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        colors = if (state.running) {
-                            ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        } else ButtonDefaults.buttonColors()
-                    ) {
-                        if (state.running) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(10.dp))
-                            Text("停止即时清缓存")
-                        } else {
-                            Icon(Icons.Rounded.Bolt, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("清除所选应用当前缓存")
-                        }
-                    }
+                        secondary = state.running,
+                        icon = if (state.running) Icons.Rounded.Stop else Icons.Rounded.Bolt,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            item(contentType = "notice") {
-                NoticeCard(
-                    icon = Icons.Rounded.Info,
-                    title = "系统 cache-only 接口",
-                    text = "仅处理本次明确选择的应用；应用图标按可见范围异步加载，不会阻塞列表滚动。",
-                    warning = true
-                )
+            item(contentType = "status") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 14.dp)) {
+                    Text(
+                        if (state.running) "正在清除所选缓存" else "选择应用，清除当前缓存",
+                        fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    DetailStatusText(state.status, Modifier.padding(top = 4.dp))
+                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))
+                }
             }
             state.lastResult?.let { result ->
                 item(contentType = "result") {
-                    NoticeCard(
-                        icon = Icons.Rounded.CheckCircle,
-                        title = if (result.cancelled) "任务已停止" else "上次执行结果",
-                        text = "成功 ${result.succeeded} 个 · 失败 ${result.failed} 个",
-                        warning = result.failed > 0 || result.cancelled
-                    )
-                }
-            }
-            item(contentType = "status") {
-                Text(state.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
-            }
-            item(contentType = "search") {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("搜索应用或包名") },
-                    singleLine = true,
-                    enabled = !state.running,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp)
-                )
-            }
-            item(contentType = "filters") {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    InstantCacheFilter.entries.forEach { item ->
-                        FilterChip(
-                            selected = filter == item,
-                            onClick = { filter = item },
-                            label = { Text(item.title) },
-                            enabled = !state.running
-                        )
+                    val failed = result.failed > 0 || (!result.cancelled && result.succeeded == 0)
+                    val title = when {
+                        result.cancelled -> "清理已停止"
+                        failed && result.succeeded > 0 -> "部分应用未能清理"
+                        failed -> "清理未完成"
+                        else -> "缓存已清理"
+                    }
+                    val icon = when {
+                        result.cancelled -> Icons.Rounded.PauseCircleOutline
+                        failed -> Icons.Rounded.ErrorOutline
+                        else -> Icons.Rounded.CheckCircle
+                    }
+                    val tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp)
+                            .clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = .055f)).padding(13.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(icon, null, Modifier.size(22.dp), tint = tint)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("成功 ${result.succeeded} 个 · 失败 ${result.failed} 个", fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
+            item(contentType = "search") {
+                TextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("搜索应用或包名", fontSize = 14.sp) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(21.dp)) },
+                    singleLine = true,
+                    enabled = !state.running,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = BaiZeTokens.colors.surfaceRaised,
+                        unfocusedContainerColor = BaiZeTokens.colors.surfaceRaised,
+                        disabledContainerColor = BaiZeTokens.colors.surfaceRaised,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                    )
+                )
+            }
+            item(contentType = "filters") {
+                VideoTabs(
+                    labels = listOf("用户", "系统", "全部"),
+                    selectedIndex = InstantCacheFilter.entries.indexOf(filter),
+                    onSelected = { if (!state.running) filter = InstantCacheFilter.entries[it] },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                )
+            }
             item(contentType = "selection") {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("当前显示 ${visible.size} 个", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${visible.size} 个应用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f))
                     TextButton(
                         onClick = { onSelectVisible(visible.map { it.packageName }) },
-                        enabled = visible.isNotEmpty() && !state.running
-                    ) { Text("选择当前") }
+                        enabled = visible.isNotEmpty() && !state.running,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text(if (allVisibleSelected) "取消当前" else "选择当前", fontSize = 12.sp) }
                     TextButton(
                         onClick = onClearSelection,
-                        enabled = state.selected.isNotEmpty() && !state.running
-                    ) { Text("清空") }
+                        enabled = state.selected.isNotEmpty() && !state.running,
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) { Text("清空", fontSize = 12.sp) }
                 }
             }
             if (state.loading) {
                 item(contentType = "loading") {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    Row(Modifier.fillMaxWidth().padding(24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text("正在读取应用…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else if (visible.isEmpty()) {
                 item(contentType = "empty") {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Text("没有匹配的应用", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    DetailEmptyState("没有匹配的应用", "试试其他分类，或调整搜索内容。")
                 }
             } else {
-                items(
-                    items = visible,
-                    key = { it.packageName },
-                    contentType = { "app" }
-                ) { app ->
+                itemsIndexed(items = visible, key = { _, app -> app.packageName }, contentType = { _, _ -> "app" }) { index, app ->
                     InstantCacheAppRow(
                         app = app,
                         selected = app.packageName in state.selected,
                         enabled = !state.running,
+                        first = index == 0,
+                        last = index == visible.lastIndex,
                         onClick = { onToggle(app.packageName) }
                     )
                 }
@@ -508,74 +523,34 @@ private fun InstantCacheScreen(
 private const val MAX_VISIBLE_SELECTION = 30
 
 @Composable
-private fun NoticeCard(icon: ImageVector, title: String, text: String, warning: Boolean) {
-    Surface(
-        color = if (warning) MaterialTheme.colorScheme.tertiaryContainer
-        else MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
-            Icon(icon, null, Modifier.size(21.dp))
-            Spacer(Modifier.width(11.dp))
-            Column {
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(3.dp))
-                Text(text, fontSize = 14.sp, lineHeight = 20.sp)
-            }
-        }
-    }
-}
-
-@Composable
 private fun InstantCacheAppRow(
     app: InstantCacheApp,
     selected: Boolean,
     enabled: Boolean,
+    first: Boolean,
+    last: Boolean,
     onClick: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) scheme.primaryContainer.copy(alpha = .55f) else scheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, scheme.onSurface.copy(alpha = if (selected) .10f else .045f)),
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
+        bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+        .background(if (selected) scheme.primary.copy(alpha = .045f) else BaiZeTokens.colors.surfaceRaised)
+        .toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(start = 13.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             PackageIcon(packageName = app.packageName, label = app.label)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        app.label,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    if (app.system) {
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = scheme.secondaryContainer
-                        ) {
-                            Text("系统", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 13.sp)
-                        }
-                    }
-                }
-                Text(
-                    app.packageName,
-                    color = scheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(app.label, fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, color = scheme.onSurface)
+                Text(app.packageName, color = scheme.onSurfaceVariant, fontSize = 11.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (app.system) Text("系统应用", color = scheme.onSurfaceVariant, fontSize = 11.sp)
             }
-            Checkbox(checked = selected, onCheckedChange = { onClick() }, enabled = enabled)
+            Checkbox(checked = selected, onCheckedChange = null, enabled = enabled, modifier = Modifier.padding(12.dp))
         }
+        if (!last) HorizontalDivider(Modifier.padding(start = 64.dp, end = 14.dp), color = scheme.onSurface.copy(alpha = .05f))
     }
 }
 
@@ -592,8 +567,8 @@ private fun PackageIcon(packageName: String, label: String) {
     }
     Box(
         Modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
         contentAlignment = Alignment.Center
     ) {

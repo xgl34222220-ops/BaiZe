@@ -42,14 +42,14 @@ fun DetailPageHeader(
 ) {
     Column(modifier.fillMaxWidth()
         .then(if (statusBarInset) Modifier.statusBarsPadding() else Modifier)
-        .padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+        .padding(horizontal = 16.dp).padding(bottom = 10.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", Modifier.size(23.dp),
                     tint = MaterialTheme.colorScheme.onSurface)
             }
             Text(title, Modifier.weight(1f).padding(horizontal = 8.dp),
-                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface)
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) { actions() }
         }
@@ -61,7 +61,7 @@ fun DetailPageHeader(
 @Composable
 fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp, bottom = 9.dp)) {
-        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface)
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(top = 3.dp),
             fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -70,7 +70,7 @@ fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier
 
 @Composable
 fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = BaiZeTokens.corners.large
     val surface = BaiZeTokens.colors.surfaceRaised
     val dark = surface.luminance() < .3f
     Column(modifier.fillMaxWidth().padding(horizontal = 20.dp)
@@ -97,8 +97,8 @@ fun DetailTaskCard(
 ) {
     DetailGlassPanel(modifier) {
         Text(metricLabel, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(metric, Modifier.padding(top = 3.dp), fontSize = if (metric.any { it.isDigit() }) 28.sp else 22.sp,
-            lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        Text(metric, Modifier.padding(top = 3.dp), fontSize = if (metric.any { it.isDigit() }) 26.sp else 22.sp,
+            lineHeight = 32.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
         DetailStatusText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp))
         if (running) {
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
@@ -139,7 +139,7 @@ fun DetailEmptyState(title: String, description: String, modifier: Modifier = Mo
     Row(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) {
         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .075f)) {
-            Icon(icon, null, Modifier.padding(12.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, null, Modifier.padding(8.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -152,7 +152,7 @@ fun DetailEmptyState(title: String, description: String, modifier: Modifier = Mo
 fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp)
-        .clip(RoundedCornerShape(18.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .72f))) {
+        .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .78f))) {
         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 52.dp).padding(horizontal = 15.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -191,8 +191,8 @@ fun DetailResultRow(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(title, Modifier.weight(1f), fontSize = 14.sp, lineHeight = 19.sp,
-                        fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface,
+                    Text(title, Modifier.weight(1f), fontSize = 14.5.sp, lineHeight = 20.sp,
+                        fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (value.isNotBlank()) Text(value, Modifier.widthIn(max = 94.dp), fontSize = 12.sp, lineHeight = 18.sp,
                         fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -200,8 +200,8 @@ fun DetailResultRow(
                 if (summary.isNotBlank()) Text(summary, fontSize = 12.sp, lineHeight = 17.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (path.isNotBlank()) Text(path, Modifier.weight(1f), fontSize = 11.sp, lineHeight = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (path.isNotBlank()) Text(path, Modifier.weight(1f), fontSize = 12.sp, lineHeight = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     else Spacer(Modifier.weight(1f))
                     Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
@@ -212,7 +212,7 @@ fun DetailResultRow(
     }
     if (showDetails) AlertDialog(
         onDismissRequest = { showDetails = false },
-        title = { Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
+        title = { Text(title, fontSize = 18.sp, fontWeight = FontWeight.Medium) },
         text = {
             SelectionContainer {
                 Text(details, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp)

@@ -193,6 +193,39 @@ def validate_risk_overrides() -> Audit:
     return audit
 
 
+def validate_review_rules() -> Audit:
+    """The manual review catalog has its own path|label format, not deep-rule syntax."""
+    path = CONFIG / "review.rules"
+    audit = Audit()
+    seen: set[str] = set()
+    for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = [field.strip() for field in line.split("|")]
+        reason = None
+        if len(fields) != 2 or not all(fields):
+            reason = "格式不是 路径|显示分类"
+        elif not fields[0].startswith(("/data/user/", "/data/user_de/", "/storage/emulated/")):
+            reason = "诊断规则必须明确归属于应用存储"
+        elif any(part in {"", ".", ".."} for part in fields[0].split("/")[1:]):
+            reason = "路径包含穿越或空段"
+        elif any(char in line for char in "\x00\r\n\t\\"):
+            reason = "包含控制字符或转义路径"
+        elif set(fields[0].lower().split("/")) & {"download", "downloads", "documents", "dcim", "pictures", "movies", "music", "databases", "shared_prefs", "backups"}:
+            reason = "诊断规则不可匹配用户媒体、文档或持久数据"
+        if reason is not None:
+            audit.rejected += 1
+            reject(path, line_no, reason)
+            continue
+        if fields[0] in seen:
+            audit.duplicates += 1
+            continue
+        seen.add(fields[0])
+        audit.accepted += 1
+    return audit
+
+
 def sync_meta(deep_audit: Audit, *, check_only: bool) -> int:
     """把实际的规则数量与 SHA 写回 rules.meta.env，或只校验一致性。"""
     path = CONFIG / "deep.rules"
@@ -245,6 +278,7 @@ def main() -> None:
         "隐藏": validate_hidden_rules(),
         "深度": validate_deep_rules(),
         "风险覆盖": validate_risk_overrides(),
+        "手动诊断": validate_review_rules(),
     }
     print("规则审计完成：")
     for name, audit in audits.items():

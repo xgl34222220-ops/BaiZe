@@ -36,9 +36,9 @@ val LightBaiZeColors = BaiZeColors(
     warning = Color(0xFF956319),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFF5F7FB),
+    surfaceBase = Color(0xFFF5F6F8),
     surfaceRaised = Color(0xFFFFFFFF),
-    surfaceOverlay = Color(0xFFEBF0F7)
+    surfaceOverlay = Color(0xFFEDEFF3)
 )
 
 /** 普通深色：避免纯黑压迫感，维持柔和层级。 */
@@ -47,9 +47,9 @@ val DarkBaiZeColors = BaiZeColors(
     warning = Color(0xFFE8B45D),
     danger = Color(0xFFFF8585),
     info = Color(0xFF8EAFFF),
-    surfaceBase = Color(0xFF101318),
-    surfaceRaised = Color(0xFF1A1E25),
-    surfaceOverlay = Color(0xFF242A33)
+    surfaceBase = Color(0xFF111316),
+    surfaceRaised = Color(0xFF1B1E23),
+    surfaceOverlay = Color(0xFF262A30)
 )
 
 /** AMOLED：页面纯黑，主体与次级容器保留极轻阶差。 */
@@ -75,9 +75,9 @@ data class BaiZeCorners(
 
 val DefaultBaiZeCorners = BaiZeCorners(
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(26.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -108,16 +108,16 @@ data class BaiZeTypeScale(
 )
 
 val DefaultBaiZeTypeScale = BaiZeTypeScale(
-    caption = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
-    body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 21.sp),
-    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    headline = TextStyle(fontSize = 22.sp, lineHeight = 30.sp, fontWeight = FontWeight.SemiBold),
-    display = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.5).sp),
+    caption = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
+    body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal, letterSpacing = .15.sp),
+    bodyLarge = TextStyle(fontSize = 14.5.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal, letterSpacing = .15.sp),
+    title = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    headline = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-.4).sp),
+    display = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, letterSpacing = (-.5).sp),
     hero = TextStyle(
-        fontSize = 38.sp,
-        lineHeight = 44.sp,
-        fontWeight = FontWeight.SemiBold,
+        fontSize = 34.sp,
+        lineHeight = 40.sp,
+        fontWeight = FontWeight.Medium,
         fontFeatureSettings = "tnum"
     )
 )

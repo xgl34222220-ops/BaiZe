@@ -1,7 +1,9 @@
 package io.github.xgl34222220.baize
 
 import android.app.Application
+import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -27,6 +29,7 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -85,11 +88,20 @@ class DetailVisualReviewTest {
         )
     }
 
-    @Test fun whitelistXml() {
+    @Test fun whitelistXml() = renderWhitelist("whitelist")
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun whitelistNarrowLargeFont() = renderWhitelist("whitelist-narrow-large-font", fontScale = 1.3f)
+
+    private fun renderWhitelist(name: String, fontScale: Float = 1f) {
         val application = ApplicationProvider.getApplicationContext<Application>()
         val context = ContextThemeWrapper(compose.activity, ThemeManager.currentPalette(application).themeRes)
+        context.applyOverrideConfiguration(Configuration(compose.activity.resources.configuration).apply {
+            this.fontScale = fontScale
+        })
         val binding = ActivityWhitelistBinding.inflate(LayoutInflater.from(context))
-        binding.selectionText.text = "已保护 2 个应用"
+        binding.selectionText.text = "已保护 2 个"
         binding.statusText.text = "选择要保留的应用后保存"
         binding.loadingIndicator.visibility = View.GONE
         binding.filterAll.isChecked = true
@@ -117,7 +129,21 @@ class DetailVisualReviewTest {
                 if (view is ViewGroup) repeat(view.childCount) { settle(view.getChildAt(it)) }
             }
             settle(binding.root)
-            save("whitelist", captureActivityContent(compose.activity))
+            save(name, captureActivityContent(compose.activity))
+            if (fontScale > 1f) {
+                assertEquals("Use actual XML resource font scaling", fontScale, binding.root.resources.configuration.fontScale, .001f)
+                val chips = listOf(binding.filterAll, binding.filterUser, binding.filterSystem, binding.filterProtected)
+                assertTrue("Filters must wrap instead of hiding off screen", chips.last().top > chips.first().top)
+                chips.forEach { chip ->
+                    val visible = Rect()
+                    assertTrue("${chip.text} must remain visible", chip.getLocalVisibleRect(visible))
+                    assertEquals("${chip.text} must not clip horizontally", chip.width, visible.width())
+                    assertEquals("${chip.text} must not clip vertically", chip.height, visible.height())
+                    assertTrue("${chip.text} must stay inside its group", chip.left >= 0 && chip.right <= binding.filterGroup.width)
+                }
+                binding.filterProtected.performClick()
+                assertEquals("Wrapped filters retain single selection", listOf(R.id.filterProtected), binding.filterGroup.checkedChipIds)
+            }
         }
     }
 

@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.DashboardActions
@@ -97,7 +98,7 @@ fun VideoHomeScreenMiuix(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomInset + 118.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "header") {
             VideoTopBar("白泽", actions = {
@@ -120,7 +121,7 @@ fun VideoHomeScreenMiuix(
                         positive = state.ready && !state.running && !state.connectionFailed
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(4.dp))
                 StorageDial(state)
                 Spacer(Modifier.height(6.dp))
                 val description = when {
@@ -135,7 +136,7 @@ fun VideoHomeScreenMiuix(
                 }
                 Text(description, style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(14.dp))
                 val label = when {
                     state.running -> "停止当前任务"
                     state.scanCompleted && state.scanFiles > 0 -> "清理扫描结果"
@@ -152,7 +153,7 @@ fun VideoHomeScreenMiuix(
                     else -> actions.scan
                 }
                 GlassActionButton(
-                    label, action, Modifier.fillMaxWidth(.88f),
+                    label, action, Modifier.fillMaxWidth(),
                     icon = when {
                         state.running -> Icons.Rounded.Stop
                         state.scanCompleted && state.scanFiles > 0 -> Icons.Rounded.CleaningServices
@@ -163,10 +164,12 @@ fun VideoHomeScreenMiuix(
                 )
                 if (!state.running && (state.ready || state.scanCompleted)) {
                     Row(horizontalArrangement = Arrangement.Center) {
-                        TextButton(onClick = if (state.scanCompleted) actions.scan else actions.clean,
-                            modifier = Modifier.heightIn(min = 44.dp)) {
-                            Text(if (state.scanCompleted) "重新扫描" else "按现有规则清理",
-                                style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                        if (!state.scanCompleted || state.scanFiles > 0) {
+                            TextButton(onClick = if (state.scanCompleted) actions.scan else actions.clean,
+                                modifier = Modifier.heightIn(min = 44.dp)) {
+                                Text(if (state.scanCompleted) "重新扫描" else "按现有规则清理",
+                                    style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                            }
                         }
                         if (state.scanCompleted) TextButton(onClick = actions.dismissScan,
                             modifier = Modifier.heightIn(min = 44.dp)) {
@@ -177,7 +180,7 @@ fun VideoHomeScreenMiuix(
             }
         }
         item(key = "shortcuts") {
-            VideoCard(horizontal, contentPadding = 12) {
+            Column(horizontal.padding(vertical = 2.dp)) {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val compact = maxWidth < 300.dp && LocalDensity.current.fontScale > 1.1f
                     val tools = listOf(
@@ -199,26 +202,29 @@ fun VideoHomeScreenMiuix(
             }
         }
         item(key = "metrics") {
-            Row(horizontal.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontal.padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 HomeMetric("累计释放", Formatter.formatFileSize(context, state.lifetimeReleased), Modifier.weight(1f))
                 Box(Modifier.width(1.dp).height(30.dp).background(scheme.onSurface.copy(alpha = .08f)))
-                HomeMetric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f).padding(start = 24.dp))
+                HomeMetric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f).padding(start = 18.dp))
             }
         }
         item(key = "plan") {
             VideoCard(horizontal) {
                 Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpenPlan)
-                    .padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    .padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.CalendarMonth, null, Modifier.size(22.dp), tint = scheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("自动清理", style = MaterialTheme.typography.titleSmall)
-                        Text(if (scheduler.enabled) taskCountdownLabel(nextTask, nowEpoch, scheduler) else "设置适合你的清理节奏",
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("自动清理", Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
+                            Text(if (scheduler.enabled) "已开启" else "未开启", style = MaterialTheme.typography.labelSmall,
+                                color = if (scheduler.enabled) BaiZeTokens.colors.success else scheme.onSurfaceVariant)
+                        }
+                        Text(if (scheduler.enabled) taskCountdownLabel(nextTask, nowEpoch, scheduler) else "设置清理时间与保留规则",
                             style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(if (scheduler.enabled) "已开启" else "未开启", style = MaterialTheme.typography.labelSmall,
-                        color = if (scheduler.enabled) BaiZeTokens.colors.success else scheme.onSurfaceVariant)
                     Spacer(Modifier.width(6.dp))
                     Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant.copy(alpha = .55f))
                 }
@@ -270,17 +276,17 @@ private fun StorageDial(state: DashboardUiState) {
         state.scanCompleted -> "暂无待清理文件"
         else -> "可用空间"
     }
-    val diameter = 204.dp + (24 * (LocalDensity.current.fontScale - 1f).coerceIn(0f, .5f)).dp
+    val diameter = 184.dp + (16 * (LocalDensity.current.fontScale - 1f).coerceIn(0f, .5f)).dp
     val discTop = if (dark) Color(0xFF263546) else Color.White
     val discBottom = if (dark) Color(0xFF131D2C) else Color(0xFFE4EEF7)
     Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize(.79f)
-            .shadow(if (dark) 12.dp else 18.dp, CircleShape, clip = false,
+            .shadow(if (dark) 8.dp else 12.dp, CircleShape, clip = false,
                 ambientColor = Color(0xFF5C87B0).copy(alpha = .16f),
                 spotColor = Color(0xFF5C87B0).copy(alpha = .18f))
             .background(Brush.linearGradient(listOf(discTop, discBottom)), CircleShape))
         Canvas(Modifier.fillMaxSize()) {
-            val stroke = 5.dp.toPx()
+            val stroke = 4.dp.toPx()
             val inset = 9.dp.toPx()
             val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
             drawArc(accent.copy(alpha = if (dark) .14f else .10f), 135f, 270f, false,
@@ -306,9 +312,10 @@ private fun StorageDial(state: DashboardUiState) {
                 Icon(Icons.Rounded.Check, null, Modifier.size(24.dp), tint = BaiZeTokens.colors.success)
             }
             Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-            Text(value, color = scheme.onSurface, fontSize = if (value.length > 9) 26.sp else 32.sp,
-                lineHeight = 40.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, Modifier.fillMaxWidth(.80f), color = scheme.onSurface,
+                fontSize = if (value.length > 8) 22.sp else 28.sp,
+                lineHeight = 34.sp, fontWeight = FontWeight.Medium, letterSpacing = (-.6).sp,
+                textAlign = TextAlign.Center, maxLines = 2)
             if (!state.running && !state.scanCompleted && state.storageTotal > 0) {
                 Text("${(state.storagePercent.coerceIn(0f, 1f) * 100).roundToInt()}% 已使用",
                     style = MaterialTheme.typography.labelSmall, color = accent)
@@ -325,18 +332,18 @@ private fun HomeShortcut(icon: ImageVector, title: String, color: Color, onClick
     val tint = if (dark) lerp(color, Color.White, .25f) else color
     if (compact) {
         Row(modifier.clip(RoundedCornerShape(14.dp)).clickable(role = Role.Button, onClick = onClick)
-            .heightIn(min = 64.dp).padding(horizontal = 2.dp, vertical = 8.dp),
+            .heightIn(min = 56.dp).padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(32.dp).background(tint.copy(alpha = .08f), RoundedCornerShape(11.dp)),
                 contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(20.dp), tint = tint) }
-            Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface, maxLines = 2)
         }
     } else Column(modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClick = onClick)
         .padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        Box(Modifier.size(40.dp).background(Brush.verticalGradient(listOf(tint.copy(alpha = .13f), tint.copy(alpha = .04f))),
-            RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+        verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Box(Modifier.size(38.dp).background(Brush.verticalGradient(listOf(tint.copy(alpha = .11f), tint.copy(alpha = .035f))),
+            RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(22.dp), tint = tint)
         }
         Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface,
@@ -350,7 +357,7 @@ private data class HomeTool(val icon: ImageVector, val title: String, val color:
 private fun HomeMetric(label: String, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium,
+            maxLines = 2)
     }
 }

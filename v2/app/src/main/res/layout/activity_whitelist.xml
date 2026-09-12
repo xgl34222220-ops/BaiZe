@@ -81,25 +81,21 @@
             android:textSize="14sp" />
     </com.google.android.material.textfield.TextInputLayout>
 
-    <HorizontalScrollView
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/filterGroup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:scrollbars="none">
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/filterGroup"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:chipSpacingHorizontal="6dp"
-            app:selectionRequired="true"
-            app:singleLine="true"
-            app:singleSelection="true">
-            <com.google.android.material.chip.Chip android:id="@+id/filterAll" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="全部" />
-            <com.google.android.material.chip.Chip android:id="@+id/filterUser" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="用户应用" />
-            <com.google.android.material.chip.Chip android:id="@+id/filterSystem" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="系统应用" />
-            <com.google.android.material.chip.Chip android:id="@+id/filterProtected" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="已保护" />
-        </com.google.android.material.chip.ChipGroup>
-    </HorizontalScrollView>
+        app:chipSpacingHorizontal="6dp"
+        app:chipSpacingVertical="0dp"
+        app:selectionRequired="true"
+        app:singleLine="false"
+        app:singleSelection="true">
+        <com.google.android.material.chip.Chip android:id="@+id/filterAll" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="全部" />
+        <com.google.android.material.chip.Chip android:id="@+id/filterUser" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="用户应用" />
+        <com.google.android.material.chip.Chip android:id="@+id/filterSystem" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="系统应用" />
+        <com.google.android.material.chip.Chip android:id="@+id/filterProtected" style="@style/Widget.BaiZe.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="已保护" />
+    </com.google.android.material.chip.ChipGroup>
 
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
         <TextView android:id="@+id/selectionText" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="正在准备列表…" android:textColor="?attr/colorOnSurfaceVariant" android:textSize="13sp" />

@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -110,7 +111,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
 
     private val cacheConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
             cacheBindingRequested = true
             updateConnectionState()
         }
@@ -124,7 +125,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
 
     private val planConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            planService = IPersistentCleanPlanService.Stub.asInterface(binder)
+            planService = RootServiceClients.persistent(binder, applicationContext.cacheDir)
             planBindingRequested = true
             updateConnectionState()
         }

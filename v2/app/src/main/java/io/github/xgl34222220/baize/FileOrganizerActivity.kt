@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
@@ -102,7 +103,7 @@ class FileOrganizerActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bound = true
             state = state.copy(connected = true, status = "文件归类服务已就绪")
             loadRootSchedule()

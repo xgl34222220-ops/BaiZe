@@ -16,16 +16,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,10 +46,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.HistoryUiItem
 import io.github.xgl34222220.baize.ui.common.AppPackageIcon
+import io.github.xgl34222220.baize.ui.components.DetailStatusText
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.miuix.VideoCard
@@ -70,18 +77,11 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
             })
         }
         item { LifetimeSummary(state) }
-        if (state.hasCurrentResult || state.latestResult.isNotBlank()) {
-            item { CurrentResultCard(state) }
-        }
-        if (state.protectedItems.isNotEmpty()) {
-            item {
-                VideoCard(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth()) {
-                    VideoListRow(Icons.Rounded.Security, "已保留的内容", "白名单与保护规则", value = "${state.protectedItems.size} 项", onClick = actions.onReviewProtected)
-                }
-            }
+        if (state.hasCurrentResult || state.latestResult.isNotBlank() || state.protectedItems.isNotEmpty()) {
+            item { CurrentResultCard(state, actions.onReviewProtected) }
         }
         item {
-            VideoTabs(listOf("任务时间线", "应用与文件"), selectedTab, { selectedTab = it }, Modifier.padding(top = 18.dp, bottom = 20.dp))
+            VideoTabs(listOf("任务时间线", "应用与文件"), selectedTab, { selectedTab = it }, Modifier.padding(top = 14.dp, bottom = 18.dp))
         }
         if (selectedTab == 0) {
             if (state.records.isEmpty()) item {
@@ -126,53 +126,63 @@ private fun LifetimeSummary(state: HistoryUiState) {
                 Modifier.heightIn(min = 40.dp).clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 10.dp),
                 fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
         }
-        Text(Formatter.formatFileSize(context, state.lifetimeReleased), fontSize = 36.sp, lineHeight = 43.sp,
-            fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
-        Spacer(Modifier.height(14.dp))
+        Text(Formatter.formatFileSize(context, state.lifetimeReleased), fontSize = 30.sp, lineHeight = 38.sp,
+            fontWeight = FontWeight.Medium, letterSpacing = (-.6).sp)
+        Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             SmallMetric("完成任务", state.lifetimeRuns.toString(), Modifier.weight(1f))
             SmallMetric("处理文件", state.lifetimeFiles.toString(), Modifier.weight(1f))
-            SmallMetric("运行时长", formatElapsed(state.lifetimeElapsed), Modifier.weight(1f))
         }
         AnimatedVisibility(expanded) {
             Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 VideoDivider(start = 0)
+                StatisticRow("累计运行时长", formatElapsed(state.lifetimeElapsed))
                 StatisticRow("空文件", state.lifetimeEmptyFiles.toString())
                 StatisticRow("空目录", state.lifetimeEmptyDirs.toString())
                 StatisticRow("残留碎片", state.lifetimeFragments.toString())
             }
         }
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
 private fun SmallMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(value, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun StatisticRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, Modifier.weight(1f), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(1f), fontSize = 13.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End)
     }
 }
 
 @Composable
-private fun CurrentResultCard(state: HistoryUiState) {
+private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Unit) {
     val context = LocalContext.current
-    VideoCard(Modifier.padding(horizontal = 20.dp, vertical = 6.dp).fillMaxWidth(), contentPadding = 16) {
-        Text("最近一次 · ${state.lastTaskTime}", fontSize = 11.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
-        Text(state.latestResult.ifBlank { "最近一次任务已完成" }, fontSize = 14.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-        if (state.hasCurrentResult) {
-            Spacer(Modifier.height(8.dp))
-            Text("${Formatter.formatFileSize(context, state.currentBytes)} · ${state.currentItemCount} 项内容",
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+    val hasResult = state.hasCurrentResult || state.latestResult.isNotBlank()
+    VideoCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth()) {
+        if (hasResult) {
+            Column(Modifier.padding(16.dp)) {
+                Text(listOf("最近一次", state.lastTaskTime).filter { it.isNotBlank() }.joinToString(" · "),
+                    fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                DetailStatusText(state.latestResult.ifBlank { "最近一次任务已完成" }, Modifier.padding(top = 6.dp))
+                if (state.hasCurrentResult) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("${Formatter.formatFileSize(context, state.currentBytes)} · ${state.currentItemCount} 项内容",
+                        fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        if (state.protectedItems.isNotEmpty()) {
+            if (hasResult) VideoDivider(start = 16)
+            VideoListRow(Icons.Rounded.Security, "已保留的内容", "白名单与保护规则",
+                value = "${state.protectedItems.size} 项", onClick = onReviewProtected)
         }
     }
 }
@@ -181,13 +191,19 @@ private fun CurrentResultCard(state: HistoryUiState) {
 private fun AppResultRow(packageName: String, label: String, subtitle: String, bytes: Long, files: Long) {
     val context = LocalContext.current
     Column(Modifier.padding(horizontal = 24.dp)) {
-        Row(Modifier.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             AppPackageIcon(packageName = packageName, label = label, size = 38.dp, corner = 12.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(label, fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(label, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp,
+                        fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(Formatter.formatFileSize(context, bytes), Modifier.widthIn(max = 88.dp),
+                        fontSize = 12.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.End, color = MaterialTheme.colorScheme.primary)
+                }
                 Text("$subtitle · $files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 18.sp)
-                Text(Formatter.formatFileSize(context, bytes), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             }
         }
         VideoDivider(start = 50)
@@ -206,10 +222,15 @@ private fun HistoryTimelineRow(record: HistoryUiItem, first: Boolean, last: Bool
         drawCircle(accent.copy(alpha = .12f), 7.dp.toPx(), Offset(x, y))
         drawCircle(accent, 3.dp.toPx(), Offset(x, y))
     }.clickable(role = Role.Button, onClickLabel = if (expanded) "收起任务详情" else "展开任务详情") { expanded = !expanded }
-        .padding(start = 48.dp, end = 24.dp, bottom = 24.dp)) {
-        Text("${record.time} · ${record.trigger}", fontSize = 11.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        .padding(start = 48.dp, end = 24.dp, bottom = 20.dp)) {
+        Text("${record.time} · ${record.trigger}", fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(5.dp))
-        Text(record.title, fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(record.title, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+            Icon(if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight, null,
+                Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
+        }
         Spacer(Modifier.height(5.dp))
         Text(record.result.ifBlank { "任务已完成" }, fontSize = 13.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)

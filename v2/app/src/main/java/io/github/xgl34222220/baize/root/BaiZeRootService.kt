@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.root
 
 import android.content.Intent
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
 import com.topjohnwu.superuser.ipc.RootService
@@ -167,6 +168,26 @@ class BaiZeRootService : RootService() {
     @Volatile private var taskStateJson = idleState()
 
     private val binder = object : IBaiZeRootService.Stub() {
+
+        override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
+                when (operation) {
+                    "scanCandidates" -> {
+                        require(arguments.length() == 1)
+                        scanCandidates(arguments.getString(0))
+                    }
+                    "getResultPage" -> {
+                        require(arguments.length() == 3)
+                        getResultPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+                    }
+                    "cleanSelected" -> {
+                        require(arguments.length() == 3)
+                        cleanSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                    }
+                    else -> throw IllegalArgumentException("不支持的服务请求")
+                }
+            }
+
         override fun ping(): String {
             val ready = restoreSnapshotFromDisk()
             return JSONObject()

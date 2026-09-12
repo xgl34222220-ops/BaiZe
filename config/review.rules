@@ -1,12 +1,38 @@
 # 手动扫描补充规则：只识别明确的诊断目录，按应用显示后由用户选择。
 # 格式：路径|显示分类。来源与取舍见 docs/CLEANING-RULES.md。
+# Android 路径区分大小写；内部与设备保护存储分别覆盖，不含用户媒体、下载、草稿。
 /data/user/*/*/files/.com.google.firebase.crashlytics.files.v1|应用崩溃报告
 /data/user/*/*/files/.com.google.firebase.crashlytics.files.v2*|应用崩溃报告
 /data/user/*/*/files/.crashlytics.v3|应用崩溃报告
 /data/user/*/*/app_bugly|Bugly 崩溃日志
+/data/user/*/*/app_crashrecord|应用崩溃日志
+/data/user/*/*/files/log|应用运行日志
 /data/user/*/*/files/logs|应用运行日志
+/data/user/*/*/files/.log|应用运行日志
+/data/user/*/*/files/.logs|应用运行日志
+/data/user/*/*/files/logfiles|应用运行日志
 /data/user/*/*/files/mipushlog|推送诊断日志
+/data/user/*/*/files/MiPushLog|推送诊断日志
 /data/user/*/*/files/xlog|应用诊断日志
-/storage/emulated/*/Android/data/*/files/logs|外部应用日志
+/data/user_de/*/*/files/.com.google.firebase.crashlytics.files.v1|应用崩溃报告
+/data/user_de/*/*/files/.com.google.firebase.crashlytics.files.v2*|应用崩溃报告
+/data/user_de/*/*/files/.crashlytics.v3|应用崩溃报告
+/data/user_de/*/*/app_bugly|Bugly 崩溃日志
+/data/user_de/*/*/app_crashrecord|应用崩溃日志
+/data/user_de/*/*/files/log|应用运行日志
+/data/user_de/*/*/files/logs|应用运行日志
+/data/user_de/*/*/files/.log|应用运行日志
+/data/user_de/*/*/files/.logs|应用运行日志
+/data/user_de/*/*/files/logfiles|应用运行日志
+/data/user_de/*/*/files/mipushlog|推送诊断日志
+/data/user_de/*/*/files/MiPushLog|推送诊断日志
+/data/user_de/*/*/files/xlog|应用诊断日志
+/storage/emulated/*/Android/data/*/files/log|应用运行日志
+/storage/emulated/*/Android/data/*/files/logs|应用运行日志
+/storage/emulated/*/Android/data/*/files/.log|应用运行日志
+/storage/emulated/*/Android/data/*/files/.logs|应用运行日志
+/storage/emulated/*/Android/data/*/files/logfiles|应用运行日志
 /storage/emulated/*/Android/data/*/files/mipushlog|推送诊断日志
+/storage/emulated/*/Android/data/*/files/MiPushLog|推送诊断日志
+/storage/emulated/*/Android/data/*/files/xlog|应用诊断日志
 /storage/emulated/*/Android/data/com.tencent.mobileqq/files/tencent/msflogs|QQ 诊断日志

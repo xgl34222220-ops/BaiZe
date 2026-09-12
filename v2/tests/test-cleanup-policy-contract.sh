@@ -7,12 +7,13 @@ ACTIVITY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/CleanupPolicyAc
 SCHEDULER="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt"
 ENGINE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt"
 WORKBENCH="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ScanWorkbenchActivity.kt"
+WORKBENCH_UI="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ScanWorkbenchScreen.kt"
 QUARANTINE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/QuarantineRepository.kt"
 CENTER="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
 DEFAULTS="$ROOT/config/default.conf"
 
-for file in "$POLICY" "$ACTIVITY" "$SCHEDULER" "$ENGINE" "$WORKBENCH" "$QUARANTINE" "$CENTER" "$MANIFEST" "$DEFAULTS"; do
+for file in "$POLICY" "$ACTIVITY" "$SCHEDULER" "$ENGINE" "$WORKBENCH" "$WORKBENCH_UI" "$QUARANTINE" "$CENTER" "$MANIFEST" "$DEFAULTS"; do
   test -f "$file" || { echo "missing cleanup policy contract file: $file" >&2; exit 1; }
 done
 
@@ -50,7 +51,7 @@ grep -Fq 'ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medi
 grep -Fq '.put("maxAutoRisk", policy.autoRisk)' "$WORKBENCH"
 grep -Fq '.put("highRiskMode", policy.highRiskMode)' "$WORKBENCH"
 grep -Fq '!cleanupPolicy.canQuarantineHighRisk' "$WORKBENCH"
-grep -Fq 'highRiskMode != "audit"' "$WORKBENCH"
+grep -Fq 'highRiskMode != "audit"' "$WORKBENCH_UI"
 
 # Applying a preset sends only its id; Root expands cleanup fields transactionally.
 grep -Fq 'JSONObject().put("cleanup_policy", policy.id)' "$ACTIVITY"

@@ -49,9 +49,12 @@ PY
 grep -Fq 'policyAdvisor.evaluate(combined)' "$AUDIT_REPO"
 grep -Fq '.put("advisor", advisor)' "$AUDIT_REPO"
 grep -Fq 'root.getAuditTimelinePage(0, 100)' "$POLICY_UI"
-grep -Fq 'PolicyAdviceCard' "$POLICY_UI"
-grep -Fq '仅建议，不会自动切换' "$POLICY_UI"
+# The compact advice panel keeps the same explicit apply path; presentation names may change.
+grep -Fq 'state.advice?.let { advice ->' "$POLICY_UI"
+grep -Fq '建议不会自动应用' "$POLICY_UI"
 grep -Fq 'onApply = { onSelect(advice.recommendedPolicy) }' "$POLICY_UI"
+grep -Fq 'if (!matches) GlassActionButton("采用建议的${advice.recommendedPolicy.title}档", onApply,' "$POLICY_UI"
+grep -Fq 'onSelect = ::applyPolicy' "$POLICY_UI"
 grep -Fq 'AuditPolicyAdviceCard' "$AUDIT_UI"
 grep -Fq 'CleanupPolicyActivity::class.java' "$AUDIT_UI"
 

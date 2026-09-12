@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
@@ -95,7 +96,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 onNullBinding(name)
                 return
             }
-            rootService = IProfileRootService.Stub.asInterface(binder)
+            rootService = RootServiceClients.profile(binder, applicationContext.cacheDir)
             profileBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务已连接")
             readServiceStatus()
@@ -146,7 +147,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 onNullBinding(name)
                 return
             }
-            cacheService = IBaiZeRootService.Stub.asInterface(binder)
+            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
             cacheBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务已连接")
             if (rootService != null && (!cacheRequested || cacheService != null)) {

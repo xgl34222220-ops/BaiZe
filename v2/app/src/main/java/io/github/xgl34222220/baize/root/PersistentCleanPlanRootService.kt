@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.root
 
 import android.content.Intent
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
 import com.topjohnwu.superuser.ipc.RootService
@@ -31,6 +32,26 @@ class PersistentCleanPlanRootService : RootService() {
     private var stateJson: String = idleState()
 
     private val binder = object : IPersistentCleanPlanService.Stub() {
+
+        override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
+            JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { arguments ->
+                when (operation) {
+                    "scanSafe" -> {
+                        require(arguments.length() == 1)
+                        scanSafe(arguments.getString(0))
+                    }
+                    "getPage" -> {
+                        require(arguments.length() == 3)
+                        getPage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+                    }
+                    "cleanSafe" -> {
+                        require(arguments.length() == 3)
+                        cleanSafe(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+                    }
+                    else -> throw IllegalArgumentException("不支持的服务请求")
+                }
+            }
+
         override fun ping(): String = JSONObject()
             .put("uid", Process.myUid())
             .put("root", Process.myUid() == 0)
@@ -86,31 +107,30 @@ class PersistentCleanPlanRootService : RootService() {
         ) { started ->
             val id = snapshotId.orEmpty()
             val normalizedOptions = normalizeOptions(optionsJson.orEmpty())
-            val native = runCatching {
-                JSONObject(
-                    engine.clean(id, selectionJson.orEmpty(), normalizedOptions) { progress ->
-                        publish(
-                            operation = "safe-clean",
-                            phase = progress.phase,
-                            current = progress.current,
-                            total = progress.total,
-                            path = progress.path,
-                            started = started,
-                            bytes = progress.bytes,
-                            files = progress.files,
-                            failures = progress.failures
-                        )
+            PersistentCleanFallback.execute(
+                native = {
+                    val result = JSONObject(
+                        engine.clean(id, selectionJson.orEmpty(), normalizedOptions) { progress ->
+                            publish(
+                                operation = "safe-clean",
+                                phase = progress.phase,
+                                current = progress.current,
+                                total = progress.total,
+                                path = progress.path,
+                                started = started,
+                                bytes = progress.bytes,
+                                files = progress.files,
+                                failures = progress.failures
+                            )
+                        }
+                    )
+                    if (!result.has("error") && !result.optBoolean("cancelled") && !result.optBoolean("timedOut")) {
+                        deleteSnapshot(id)
                     }
-                )
-            }.getOrNull()
-
-            if (native != null && native.optString("error") != "snapshot_expired") {
-                if (!native.has("error") && !native.optBoolean("cancelled") && !native.optBoolean("timedOut")) {
-                    deleteSnapshot(id)
-                }
-                return@runExclusive native.toString()
-            }
-            cleanPersistedSnapshot(id, selectionJson.orEmpty(), normalizedOptions, started)
+                    result
+                },
+                persisted = { cleanPersistedSnapshot(id, selectionJson.orEmpty(), normalizedOptions, started) }
+            )
         }
 
         override fun getTaskState(): String = runCatching {

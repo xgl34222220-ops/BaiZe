@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -91,7 +92,7 @@ class RuleReviewTrendsActivity : ComponentActivity() {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = IProfileRootService.Stub.asInterface(binder)
+            service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bound = true
             state = state.copy(connected = true, message = "Root 审核趋势服务已连接")
             load()
