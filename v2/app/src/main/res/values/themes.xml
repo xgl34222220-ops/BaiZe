@@ -19,8 +19,8 @@
         <item name="colorOnSurfaceVariant">#657184</item>
         <item name="colorOutline">#D7DEE8</item>
         <item name="colorOutlineVariant">#E6EAF0</item>
-        <item name="android:colorBackground">#F2F5FA</item>
-        <item name="android:windowBackground">@drawable/bg_app_gradient</item>
+        <item name="android:colorBackground">#F4F6FA</item>
+        <item name="android:windowBackground">?android:attr/colorBackground</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
@@ -116,20 +116,20 @@
     <style name="Theme.BaiZe.Monet" parent="Theme.BaiZe.Blue" />
 
     <style name="Widget.BaiZe.SimpleCard" parent="Widget.Material3.CardView.Filled">
-        <item name="cardBackgroundColor">@color/baize_glass_soft</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
         <item name="cardCornerRadius">24dp</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeColor">@color/baize_glass_stroke</item>
-        <item name="strokeWidth">1dp</item>
+        <item name="strokeWidth">0dp</item>
     </style>
 
     <style name="Widget.BaiZe.GroupCard" parent="Widget.BaiZe.SimpleCard">
-        <item name="cardCornerRadius">28dp</item>
+        <item name="cardCornerRadius">24dp</item>
     </style>
 
     <style name="Widget.BaiZe.HeroCard" parent="Widget.BaiZe.SimpleCard">
-        <item name="cardBackgroundColor">@color/baize_glass</item>
-        <item name="cardCornerRadius">28dp</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+        <item name="cardCornerRadius">24dp</item>
     </style>
 
     <style name="Widget.BaiZe.GlassCard" parent="Widget.BaiZe.SimpleCard" />
@@ -167,7 +167,7 @@
         <item name="chipBackgroundColor">@color/baize_chip_background</item>
         <item name="android:textColor">@color/baize_chip_text</item>
         <item name="chipStrokeWidth">0dp</item>
-        <item name="android:minHeight">40dp</item>
+        <item name="android:minHeight">48dp</item>
         <item name="chipCornerRadius">18dp</item>
     </style>
 
@@ -176,24 +176,24 @@
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">32sp</item>
-        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:letterSpacing">0</item>
     </style>
 
     <style name="TextAppearance.BaiZe.SectionTitle" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textSize">18sp</item>
+        <item name="android:textSize">22sp</item>
     </style>
 
     <style name="TextAppearance.BaiZe.Nav.Active" parent="TextAppearance.Material3.LabelMedium">
-        <item name="android:textSize">11sp</item>
+        <item name="android:textSize">13sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
     <style name="TextAppearance.BaiZe.Nav.Inactive" parent="TextAppearance.Material3.LabelMedium">
-        <item name="android:textSize">11sp</item>
+        <item name="android:textSize">13sp</item>
         <item name="android:textStyle">normal</item>
         <item name="android:fontFamily">sans-serif</item>
     </style>

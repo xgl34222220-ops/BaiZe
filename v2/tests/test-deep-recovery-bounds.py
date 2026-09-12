@@ -45,6 +45,8 @@ int unlinkat(int fd, const char *path, int flags) {
 
 
 def run(args, code=0, **env):
+    if args and args[0] == "sudo" and os.geteuid() == 0:
+        args = args[1:]
     result = subprocess.run([str(a) for a in args], env={**os.environ, **env},
                             capture_output=True, text=True, timeout=60)
     if result.returncode != code:
@@ -59,7 +61,8 @@ class DeepRecoveryBounds(unittest.TestCase):
         cls.work = Path(cls.workspace.name)
         cls.data = Path('/data/media') / cls.work.name
         run(['sudo', 'mkdir', '-p', cls.data])
-        run(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', cls.data])
+        if os.geteuid() != 0:
+            run(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', cls.data])
         cls.deep, cls.engine, cls.shim = [cls.work / p for p in ('deep', 'engine', 'faults.so')]
         run(['gcc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', ROOT / 'native/baize_deep_snapshot.c', '-o', cls.deep])
         run(['gcc', '-std=c11', '-O2', ROOT / 'native/baize_engine_42_4.c', '-o', cls.engine])

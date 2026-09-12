@@ -48,23 +48,30 @@ run_controller() {
 value() { sed -n "s/^$2=//p" "$1" | tail -n 1; }
 
 printf '2026-07-25 00:00:00\tcache-auto\t1048576\t1\t0\t0\tlow\tscheduler\t\t\n' >>"$HISTORY"
+printf '1000\n' >"$STATE/last_cache_run.epoch"
 run_controller 1000
 printf '2026-07-25 01:00:00\tcache-auto\t1048576\t1\t0\t0\tlow\tscheduler\t\t\n' >>"$HISTORY"
+printf '2000\n' >"$STATE/last_cache_run.epoch"
 run_controller 2000
 printf '2026-07-25 02:00:00\tcache-auto\t1048576\t1\t0\t0\tlow\tscheduler\t\t\n' >>"$HISTORY"
+printf '3000\n' >"$STATE/last_cache_run.epoch"
 run_controller 3000
 [ "$(value "$STATE/autopilot-cache.env" factor)" = 2 ]
-[ "$(sed -n '1p' "$STATE/last_cache_run.epoch")" = 6600 ]
+[ "$(sed -n '1p' "$STATE/last_cache_run.epoch")" = 3000 ]
+[ "$(value "$STATE/autopilot-cache.env" desired_due)" = 10200 ]
+[ "$(value "$STATE/autopilot-cache.env" schema)" = actual-run-v2 ]
 
 # Storage pressure cancels the adaptive multiplier and brings the next run forward.
 run_controller 4000 95 0 350
 [ "$(sed -n '1p' "$STATE/last_cache_run.epoch")" = 3000 ]
 [ "$(value "$STATE/autopilot-cache.env" storage_pressure)" = 1 ]
+[ "$(value "$STATE/autopilot-cache.env" desired_due)" = 6600 ]
 
 # Active screen defers an otherwise-due scheduled task without affecting manual Root tasks.
 printf '500\n' >"$STATE/last_empty_run.epoch"
 run_controller 5000 50 1 350
-[ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 1700 ]
+[ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 500 ]
+[ "$(value "$STATE/autopilot-empty.env" desired_due)" = 5300 ]
 [ "$(value "$STATE/autopilot-empty.env" screen_hold)" = 1 ]
 
 # Battery temperature remains diagnostic telemetry and no longer delays any schedule mode.
@@ -72,5 +79,20 @@ run_controller 5000 50 0 430
 [ "$(value "$STATE/autopilot-empty.env" temperature_hold)" = 0 ]
 [ "$(sed -n '1p' "$STATE/last_empty_run.epoch")" = 500 ]
 [ "$(value "$STATE/autopilot.env" reason)" = normal ]
+
+# Failed or cancelled work must never count as zero-yield evidence and extend intervals.
+for i in 1 2 3 4 5 6; do
+  printf 'failure-%s\tcache-auto\t0\t0\t0\t1\t清理失败\tscheduler\t\t\n' "$i" >>"$HISTORY"
+  run_controller $((6000+i))
+done
+[ "$(value "$STATE/autopilot-cache.env" zero_streak)" = 0 ]
+[ "$(value "$STATE/autopilot-cache.env" suspend_until)" = 0 ]
+# Switching to strict mode restores a synthetic anchor from pre-migration versions.
+printf 'schedule_mode=1\n' >>"$CONFIG"
+printf 'schema=legacy\nlast_actual_epoch=3000\n' >"$STATE/autopilot-cache.env"
+printf '90000\n' >"$STATE/last_cache_run.epoch"
+run_controller 7000
+[ "$(sed -n '1p' "$STATE/last_cache_run.epoch")" = 3000 ]
+[ "$(value "$STATE/autopilot.env" reason)" = strict_interval ]
 
 echo "autopilot controller contract ok"

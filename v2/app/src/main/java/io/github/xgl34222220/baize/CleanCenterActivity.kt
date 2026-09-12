@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -218,12 +220,12 @@ private fun CleanCenterMaterial(
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(BaiZeTokens.colors.surfaceBase)
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item { CleanCenterMaterialHeader(actions.onBack) }
             item { CleanCenterMaterialHero(actions) }
@@ -231,49 +233,24 @@ private fun CleanCenterMaterial(
             item { CleanCenterMaterialGroup(daily, openItem) }
             item { CleanCenterMaterialSection("MANUAL TOOLS", "高级清理", "执行前进行二次确认") }
             item { CleanCenterMaterialGroup(advanced, openItem) }
+            item { Spacer(Modifier.navigationBarsPadding()) }
         }
     }
 }
 
 @Composable
 private fun CleanCenterMaterialHeader(onBack: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
-        }
-        Spacer(Modifier.width(8.dp))
-        Column {
-            Text(
-                "CLEAN CENTER",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.2.sp
-            )
-            Text("清理明细", style = MaterialTheme.typography.headlineLarge)
-            Text(
-                "自动处理安全项，危险项目单独确认",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
+    DetailPageHeader("清理工具", "选择清理范围，查看明细后再处理", onBack)
 }
 
 @Composable
 private fun CleanCenterMaterialHero(actions: CleanCenterActions) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -293,7 +270,7 @@ private fun CleanCenterMaterialHero(actions: CleanCenterActions) {
                 }
                 Spacer(Modifier.width(15.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("智能安全清理", fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("智能安全清理", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "缓存、空项目、规则垃圾和碎片自动归类；白名单、软链接与挂载点保护始终生效。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -315,7 +292,7 @@ private fun CleanCenterMaterialHero(actions: CleanCenterActions) {
             ) {
                 Icon(Icons.Rounded.CleaningServices, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.Black)
+                Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -323,34 +300,17 @@ private fun CleanCenterMaterialHero(actions: CleanCenterActions) {
 
 @Composable
 private fun CleanCenterMaterialSection(eyebrow: String, title: String, subtitle: String) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 21.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.Bottom
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                eyebrow,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 2.sp
-            )
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-        }
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-    }
+    DetailSectionHeader(title, subtitle)
 }
 
 @Composable
 private fun CleanCenterMaterialGroup(items: List<CleanCenterItem>, openItem: (CleanCenterItem) -> Unit) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(horizontal = 15.dp, vertical = 4.dp)) {
             items.forEachIndexed { index, item ->
@@ -391,7 +351,7 @@ private fun CleanCenterMaterialRow(item: CleanCenterItem, onClick: () -> Unit) {
             Text(
                 item.description,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -399,7 +359,7 @@ private fun CleanCenterMaterialRow(item: CleanCenterItem, onClick: () -> Unit) {
         Text(
             item.badge,
             color = if (item.dangerous) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-            fontSize = 11.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
         Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -412,196 +372,7 @@ private fun CleanCenterMiuix(
     openItem: (CleanCenterItem) -> Unit,
     appearance: AppearanceSettings
 ) {
-    val dark = MaterialTheme.colorScheme.background.red + MaterialTheme.colorScheme.background.green + MaterialTheme.colorScheme.background.blue < 1.5f
-    val amoled = dark && appearance.amoledBlack
-    val daily = listOf(
-        CleanCenterItem(Icons.Rounded.Storage, "应用缓存", "内部缓存与外部缓存", "低风险", directAction = actions.onOpenCache),
-        CleanCenterItem(Icons.Rounded.FolderOff, "空文件与空目录", "保护公共媒体目录", "低风险", profile = "empty"),
-        CleanCenterItem(Icons.Rounded.Rule, "规则垃圾", "隐藏垃圾与系统日志", "分级", profile = "rules"),
-        CleanCenterItem(Icons.Rounded.Apps, "残留碎片", "临时文件与中断下载", "保留期", profile = "fragments")
-    )
-    val advanced = listOf(
-        CleanCenterItem(Icons.Rounded.Tune, "清理策略", "切换保守、均衡或积极档，不影响定时周期", "三档", directAction = actions.onOpenPolicy),
-        CleanCenterItem(Icons.Rounded.Inventory2, "隔离区", "恢复或永久删除高风险内容", "可撤销", directAction = actions.onOpenQuarantine),
-        CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对无主应用目录", "确认", profile = "corpses", dangerous = true),
-        CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "4,714 条规则风险分级", "确认", profile = "deep", dangerous = true)
-    )
-
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    if (amoled) {
-                        listOf(androidx.compose.ui.graphics.Color.Black, androidx.compose.ui.graphics.Color.Black)
-                    } else {
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = if (dark) .13f else .09f),
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.background
-                        )
-                    }
-                )
-            )
-    ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item { CleanCenterMiuixHeader(actions.onBack) }
-            item { CleanCenterMiuixHero(actions) }
-            item { CleanCenterMiuixSection("DAILY CLEAN", "日常清理", "安全项目自动归类") }
-            item { CleanCenterMiuixGroup(daily, openItem) }
-            item { CleanCenterMiuixSection("MANUAL TOOLS", "高级清理", "执行前二次确认") }
-            item { CleanCenterMiuixGroup(advanced, openItem) }
-            item { Spacer(Modifier.navigationBarsPadding()) }
-        }
-    }
-}
-
-@Composable
-private fun CleanCenterMiuixHeader(onBack: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 10.dp)
-    ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
-            Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
-        }
-        Spacer(Modifier.height(3.dp))
-        Text(
-            "CLEAN CENTER",
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 2.5.sp
-        )
-        Text("清理明细", fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Black)
-        Text(
-            "安全项目自动处理，危险项目单独确认",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-@Composable
-private fun CleanCenterMiuixHero(actions: CleanCenterActions) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .shadow(14.dp, RoundedCornerShape(38.dp)),
-        shape = RoundedCornerShape(38.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)
-    ) {
-        Column(Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(68.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = .13f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Security, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                    }
-                }
-                Spacer(Modifier.width(15.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("智能安全清理", fontSize = 23.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        "白名单、软链接和挂载点保护始终生效",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                CleanCenterPill("白名单", Modifier.weight(1f))
-                CleanCenterPill("软链接", Modifier.weight(1f))
-                CleanCenterPill("挂载点", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(17.dp))
-            Button(
-                onClick = actions.onQuickClean,
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                shape = RoundedCornerShape(22.dp)
-            ) {
-                Icon(Icons.Rounded.CleaningServices, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("立即清理", fontSize = 16.sp, fontWeight = FontWeight.Black)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CleanCenterMiuixSection(eyebrow: String, title: String, subtitle: String) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.Bottom
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(eyebrow, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Text(title, fontSize = 25.sp, fontWeight = FontWeight.Black)
-        }
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-    }
-}
-
-@Composable
-private fun CleanCenterMiuixGroup(items: List<CleanCenterItem>, openItem: (CleanCenterItem) -> Unit) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(34.dp)),
-        shape = RoundedCornerShape(34.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)
-    ) {
-        Column(Modifier.padding(horizontal = 15.dp, vertical = 5.dp)) {
-            items.forEachIndexed { index, item ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(22.dp))
-                        .clickable { openItem(item) }
-                        .padding(vertical = 14.dp, horizontal = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = RoundedCornerShape(17.dp),
-                        color = if (item.dangerous) MaterialTheme.colorScheme.error.copy(alpha = .12f) else MaterialTheme.colorScheme.primary.copy(alpha = .11f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                item.icon,
-                                null,
-                                tint = if (item.dangerous) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(25.dp)
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(13.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(item.title, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                        Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    Text(item.badge, color = if (item.dangerous) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (index != items.lastIndex) HorizontalDivider(Modifier.padding(start = 61.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
-            }
-        }
-    }
+    CleanCenterMaterial(actions, openItem)
 }
 
 @Composable
@@ -613,6 +384,6 @@ private fun CleanCenterPill(text: String, modifier: Modifier = Modifier) {
             .padding(horizontal = 8.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(text, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }

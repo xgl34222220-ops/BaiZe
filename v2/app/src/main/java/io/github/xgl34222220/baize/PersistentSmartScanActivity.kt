@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -141,7 +143,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             BaiZeTheme(appearance) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     PersistentSmartScreen(
                         state = screenState,
                         onBack = ::finish,
@@ -696,35 +698,19 @@ private fun PersistentSmartScreen(
     } else 0f
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "CLEAN PLAN",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 2.sp
-                    )
-                    Text("智能扫描", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    Text("扫描一次，验证后直接清理同一批候选", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                DetailPageHeader("智能扫描", "检查存储占用，选择要清理的内容", onBack)
             }
-        }
 
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -797,17 +783,17 @@ private fun PersistentSmartScreen(
         item { PlanSummaryCard("安全项目", state.safeSummary) }
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Text(
                     "清理计划有效期为 30 分钟。退出页面、App 被系统回收或 Root 服务重启后，" +
                         "仍会恢复并验证同一次扫描结果；计划失效时只会提示重新扫描，不会自动扫描。",
                     modifier = Modifier.padding(18.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -817,9 +803,9 @@ private fun PersistentSmartScreen(
 @Composable
 private fun PlanSummaryCard(title: String, summary: String) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -827,7 +813,7 @@ private fun PlanSummaryCard(title: String, summary: String) {
             Text(
                 summary,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
+                fontSize = 14.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )

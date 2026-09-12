@@ -106,7 +106,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-scan.sh*|*cache-transaction.sh*|*profile-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-scan.sh*|*cache-transaction.sh*|*profile-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;;
   esac
   return 1
 }
@@ -274,10 +274,9 @@ case "$MODE" in
     rm -f "$CACHE_SCAN_STATE" "$CACHE_SCAN_TARGETS" "$CACHE_SCAN_ITEMS" "$CACHE_SCAN_MANIFEST"
     cache_days=$(get_config_uint app_cache_days 0 0 365)
     external_days=$(get_config_uint external_cache_days 0 0 365)
-    [ "$external_days" -lt "$cache_days" ] && cache_days=$external_days
     set_phase "启动 C 原生应用缓存扫描" 0 0 ""
     "$NATIVE_ENGINE" scan-cache --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" \
-      --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" --min-age-days "$cache_days" \
+      --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" --min-age-days "$cache_days" --external-min-age-days "$external_days" \
       --max-file-bytes "$MAX_FILE_BYTES" --report "$REPORT_FILE" --targets "$TARGETS_TMP" \
       --items "$ITEMS_TMP" --manifest "$MANIFEST_TMP" --summary "$SUMMARY_FILE" --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
     ;;
@@ -390,6 +389,7 @@ else
         echo "user_risk_sha=$(file_sha "$USER_RISK_OVERRIDES")"
         echo "effective_risk_sha=$(file_sha "$EFFECTIVE_RISK_OVERRIDES")"
         echo "allow_high_risk=$allow_high"
+        echo "config_sha=$(file_sha "$CONFIG")"
         echo "max_file_bytes=$MAX_FILE_BYTES"
         echo "bytes=$BYTES"
         echo "files=$TOTAL_ITEMS"
@@ -432,6 +432,7 @@ else
         echo "whitelist_sha=$(file_sha "$WHITELIST")"
         echo "package_whitelist_sha=$(file_sha "$PACKAGE_WHITELIST")"
         echo "min_age_days=$cache_days"
+  echo "external_min_age_days=$external_days"
         echo "max_file_bytes=$MAX_FILE_BYTES"
         echo "bytes=$BYTES"
         echo "files=$FILES"
@@ -484,8 +485,8 @@ fi
   echo "deep_slow_items=$TIMED_OUT_DIRS"
   echo "deep_mount_items=$MOUNT_ITEMS"
   echo "deep_truncated=$TRUNCATED"
-  echo "cache_slow_dirs=0"
-  echo "cache_truncated=0"
+  if [ "$MODE" = "cache-scan" ]; then echo "cache_slow_dirs=$TIMED_OUT_DIRS"; else echo "cache_slow_dirs=0"; fi
+  if [ "$MODE" = "cache-scan" ]; then echo "cache_truncated=$TRUNCATED"; else echo "cache_truncated=0"; fi
   echo "deep_progress_current=$TARGET_COUNT"
   echo "deep_progress_total=$TARGET_COUNT"
   echo "whitelisted=$WHITELISTED"

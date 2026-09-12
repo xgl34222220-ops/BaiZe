@@ -28,7 +28,7 @@ class MiuixBackdropView @JvmOverloads constructor(
     private val background = MaterialColors.getColor(
         this,
         android.R.attr.colorBackground,
-        Color.rgb(242, 245, 250)
+        Color.rgb(244, 246, 250)
     )
     private val primary = MaterialColors.getColor(
         this,
@@ -53,8 +53,8 @@ class MiuixBackdropView @JvmOverloads constructor(
             -height * 0.02f,
             topRadius,
             intArrayOf(
-                ColorUtils.setAlphaComponent(primary, if (effectsEnabled) 48 else 18),
-                ColorUtils.setAlphaComponent(primary, if (effectsEnabled) 14 else 5),
+                ColorUtils.setAlphaComponent(primary, if (effectsEnabled) 12 else 0),
+                ColorUtils.setAlphaComponent(primary, if (effectsEnabled) 4 else 0),
                 Color.TRANSPARENT
             ),
             floatArrayOf(0f, 0.46f, 1f),
@@ -65,8 +65,8 @@ class MiuixBackdropView @JvmOverloads constructor(
             height * 0.57f,
             width * 0.92f,
             intArrayOf(
-                ColorUtils.setAlphaComponent(tertiary, if (effectsEnabled) 30 else 10),
-                ColorUtils.setAlphaComponent(tertiary, if (effectsEnabled) 8 else 3),
+                ColorUtils.setAlphaComponent(tertiary, if (effectsEnabled) 6 else 0),
+                ColorUtils.setAlphaComponent(tertiary, if (effectsEnabled) 2 else 0),
                 Color.TRANSPARENT
             ),
             floatArrayOf(0f, 0.52f, 1f),

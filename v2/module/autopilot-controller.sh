@@ -58,6 +58,18 @@ printf '%s\n' "$NOW" >"$LAST_CHECK_FILE"
 chmod 0600 "$LAST_CHECK_FILE" 2>/dev/null || true
 
 SCHEDULE_MODE=$(schedule_mode_value)
+# Recover synthetic anchors left by older controllers before any disabled-mode exit.
+for migrate_group in cache empty rules fragment deep; do
+  migrate_state="$STATE_DIR/autopilot-$migrate_group.env"
+  [ -f "$migrate_state" ] || continue
+  [ "$(read_state_value "$migrate_state" schema)" = actual-run-v2 ] && continue
+  migrate_actual=$(read_state_value "$migrate_state" last_actual_epoch)
+  case "$migrate_actual" in ''|*[!0-9]*) continue;; esac
+  [ "$migrate_actual" -gt 0 ] || continue
+  printf '%s\n' "$migrate_actual" >"$STATE_DIR/last_${migrate_group}_run.epoch.tmp.$$" && mv -f "$STATE_DIR/last_${migrate_group}_run.epoch.tmp.$$" "$STATE_DIR/last_${migrate_group}_run.epoch"
+  { cat "$migrate_state"; echo schema=actual-run-v2; } >"$migrate_state.tmp.$$" && mv -f "$migrate_state.tmp.$$" "$migrate_state"
+done
+
 if [ "$SCHEDULE_MODE" != 0 ] || [ "$(bool_value_default autopilot_enabled 1)" != 1 ]; then
   DISABLED_REASON=autopilot_disabled
   case "$SCHEDULE_MODE" in
@@ -193,9 +205,17 @@ for group in cache empty rules fragment deep; do
     bytes=$(printf '%s\n' "$latest" | awk -F '\t' '{print $3}')
     case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
     if [ "$signature" != "$old_signature" ]; then
-      last_actual_epoch=$NOW
+      # A zero-byte error/cancellation is not evidence that the directory stays empty.
+      errors=$(printf '%s\n' "$latest" | awk -F '\t' '{print $6}')
+      case "$errors" in ''|*[!0-9]*) errors=0;; esac
+      result_text=$(printf '%s\n' "$latest" | awk -F '\t' '{print $7}')
+      yield_valid=1
+      [ "$errors" -eq 0 ] || yield_valid=0
+      case "$result_text" in *停止*|*取消*|*失败*|*中断*) yield_valid=0;; esac
       last_bytes=$bytes
-      if [ "$bytes" -eq 0 ]; then
+      if [ "$yield_valid" != 1 ]; then
+        : # Keep the existing successful-yield streak; retry scheduling owns failures.
+      elif [ "$bytes" -eq 0 ]; then
         zero_streak=$((zero_streak + 1))
         low_streak=$((low_streak + 1))
       elif [ "$bytes" -lt "$LOW_BYTES" ]; then
@@ -213,7 +233,9 @@ for group in cache empty rules fragment deep; do
         [ "$factor" -lt 1 ] && factor=1
         suspend_until=0
       fi
-      if [ "$zero_streak" -ge "$ZERO_STREAK_LIMIT" ]; then
+      if [ "$yield_valid" != 1 ]; then
+        :
+      elif [ "$zero_streak" -ge "$ZERO_STREAK_LIMIT" ]; then
         factor=$MAX_FACTOR
         suspend_until=$((NOW + ZERO_SLEEP_SECONDS))
       elif [ "$low_streak" -ge "$LOW_STREAK_LIMIT" ]; then
@@ -230,7 +252,9 @@ for group in cache empty rules fragment deep; do
   stamp="$STATE_DIR/last_${group}_run.epoch"
   stamp_value=$(sed -n '1p' "$stamp" 2>/dev/null)
   case "$stamp_value" in ''|*[!0-9]*) stamp_value=0 ;; esac
-  [ "$last_actual_epoch" -gt 0 ] || last_actual_epoch=$stamp_value
+  # Completion stamps belong exclusively to the scheduler. Reading old history must
+  # never manufacture a run at startup or turn a skip into a successful cleanup.
+  last_actual_epoch=$stamp_value
 
   effective_factor=$factor
   effective_suspend=$suspend_until
@@ -249,16 +273,10 @@ for group in cache empty rules fragment deep; do
     [ "$screen_due" -gt "$desired_due" ] && desired_due=$screen_due
   fi
 
-  # Fixed daily schedules remain explicit user intent. Autopilot still records yield but does not rewrite their daily cycle.
-  if [ "$DAILY" != 1 ] && [ "$desired_due" -gt 0 ]; then
-    anchor=$((desired_due - base))
-    [ "$anchor" -lt 0 ] && anchor=0
-    printf '%s\n' "$anchor" >"$stamp"
-    chmod 0600 "$stamp" 2>/dev/null || true
-  fi
-
   write_atomic "$state" <<EOF_STATE
+schema=actual-run-v2
 signature=$signature
+base_interval_seconds=$base
 factor=$factor
 low_streak=$low_streak
 zero_streak=$zero_streak

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -729,7 +731,7 @@ class ProfileActivity : ComponentActivity() {
     }
 }
 
-private data class ProfileUiItem(
+internal data class ProfileUiItem(
     val id: String,
     val appName: String,
     val packageName: String,
@@ -744,7 +746,7 @@ private data class ProfileUiItem(
     val note: String
 )
 
-private data class ProfileUiState(
+internal data class ProfileUiState(
     val profile: String = "",
     val title: String = "清理项目",
     val subtitle: String = "",
@@ -766,7 +768,7 @@ private data class ProfileUiState(
     val showCandidates: Boolean = false
 )
 
-private data class ProfileUiActions(
+internal data class ProfileUiActions(
     val onBack: () -> Unit,
     val onScan: () -> Unit,
     val onStop: () -> Unit,
@@ -806,7 +808,7 @@ private fun ProfileRoute(
 }
 
 @Composable
-private fun ProfileScreenMaterial(
+internal fun ProfileScreenMaterial(
     state: ProfileUiState,
     actions: ProfileUiActions,
     onRequestClean: () -> Unit
@@ -814,21 +816,24 @@ private fun ProfileScreenMaterial(
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(BaiZeTokens.colors.surfaceBase)
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item { ProfileMaterialHeader(state, actions.onBack) }
             item { ProfileMaterialTaskCard(state, actions, onRequestClean) }
-            item { ProfileMaterialSafetyCard(state) }
             if (state.showCandidates || state.items.isNotEmpty()) {
                 item { ProfileMaterialSection(state) }
+                if (state.items.isEmpty() && !state.running) item {
+                    DetailEmptyState("没有可清理项目", "本次扫描范围内的文件已检查完毕。")
+                }
                 items(state.items, key = { it.id.ifBlank { it.path } }) { item -> ProfileMaterialCandidate(item) }
                 item { ProfilePagination(state, actions, miuix = false) }
             }
+            item { ProfileMaterialSafetyCard(state) }
             item { Spacer(Modifier.navigationBarsPadding()) }
         }
     }
@@ -836,21 +841,7 @@ private fun ProfileScreenMaterial(
 
 @Composable
 private fun ProfileMaterialHeader(state: ProfileUiState, onBack: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text("SAFE PROFILE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.2.sp)
-            Text(state.title, style = MaterialTheme.typography.headlineLarge)
-            Text(state.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
+    DetailPageHeader(state.title, state.subtitle, onBack)
 }
 
 @Composable
@@ -859,130 +850,38 @@ private fun ProfileMaterialTaskCard(
     actions: ProfileUiActions,
     onRequestClean: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(if (state.connected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error)
-                )
-                Spacer(Modifier.width(9.dp))
-                Text(state.serviceText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            }
-            Spacer(Modifier.height(15.dp))
-            Text(state.summaryText, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
-            if (state.running || state.loadingPage) {
-                Spacer(Modifier.height(15.dp))
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Button(
-                    onClick = actions.onScan,
-                    enabled = state.connected && !state.running,
-                    modifier = Modifier
-                        .weight(1.35f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(19.dp)
-                ) {
-                    Icon(Icons.Rounded.Search, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.scanButtonText, fontWeight = FontWeight.Bold)
-                }
-                if (state.running) {
-                    OutlinedButton(
-                        onClick = actions.onStop,
-                        modifier = Modifier
-                            .weight(.72f)
-                            .height(56.dp),
-                        shape = RoundedCornerShape(19.dp)
-                    ) {
-                        Icon(Icons.Rounded.Stop, contentDescription = null)
-                        Spacer(Modifier.width(5.dp))
-                        Text("停止")
-                    }
-                } else {
-                    FilledTonalButton(
-                        onClick = onRequestClean,
-                        enabled = state.connected && state.quickCleanReady,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(56.dp),
-                        shape = RoundedCornerShape(19.dp)
-                    ) {
-                        Icon(Icons.Rounded.CleaningServices, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (state.quickCleanReady) "立即清理" else "等待扫描", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            if (state.quickCleanReady) {
-                Spacer(Modifier.height(9.dp))
-                Button(
-                    onClick = onRequestClean,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Icon(Icons.Rounded.CheckCircle, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.cleanButtonText, fontWeight = FontWeight.Black)
-                }
-            }
-        }
-    }
+    DetailTaskCard(
+        metric = if (state.quickCleanReady) "可以开始清理" else if (state.running) "正在处理" else "扫描${state.title}",
+        metricLabel = state.title,
+        phase = state.summaryText,
+        running = state.running,
+        ready = state.quickCleanReady,
+        scanEnabled = state.connected,
+        cleanEnabled = state.connected,
+        onScan = actions.onScan, onClean = onRequestClean, onStop = actions.onStop,
+        onReconnect = actions.onScan,
+        scanLabel = state.scanButtonText, cleanLabel = state.cleanButtonText
+    )
 }
 
 @Composable
 private fun ProfileMaterialSafetyCard(state: ProfileUiState) {
-    Card(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .55f))
-    ) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(46.dp), RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondary.copy(alpha = .12f)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Security, null, tint = MaterialTheme.colorScheme.secondary)
-                }
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text("安全策略", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text(state.safetyText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
-            }
-        }
-    }
+    DetailExpandableText("清理范围与保护设置", state.safetyText + "\n\n" + state.serviceText)
 }
 
 @Composable
 private fun ProfileMaterialSection(state: ProfileUiState) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
-        Text("SCAN RESULT", color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-        Text("${state.title}明细", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-        Text(state.selectionText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-    }
+    DetailSectionHeader("扫描明细", state.selectionText)
 }
 
 @Composable
 private fun ProfileMaterialCandidate(item: ProfileUiItem) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 20.dp)
             .fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         ProfileCandidateContent(item, miuix = false)
     }
@@ -995,165 +894,7 @@ private fun ProfileScreenMiuix(
     actions: ProfileUiActions,
     onRequestClean: () -> Unit
 ) {
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val amoled = dark && appearance.amoledBlack
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    if (amoled) {
-                        listOf(androidx.compose.ui.graphics.Color.Black, androidx.compose.ui.graphics.Color.Black)
-                    } else {
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = if (dark) .14f else .09f),
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.background
-                        )
-                    }
-                )
-            )
-    ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 30.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item { ProfileMiuixHeader(state, actions.onBack) }
-            item { ProfileMiuixTaskCard(state, actions, onRequestClean) }
-            item { ProfileMiuixSafetyCard(state) }
-            if (state.showCandidates || state.items.isNotEmpty()) {
-                item { ProfileMiuixSection(state) }
-                items(state.items, key = { it.id.ifBlank { it.path } }) { item -> ProfileMiuixCandidate(item) }
-                item { ProfilePagination(state, actions, miuix = true) }
-            }
-            item { Spacer(Modifier.navigationBarsPadding()) }
-        }
-    }
-}
-
-@Composable
-private fun ProfileMiuixHeader(state: ProfileUiState, onBack: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 9.dp)
-    ) {
-        IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.height(3.dp))
-        Text("SAFE PROFILE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.5.sp)
-        Text(state.title, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Black)
-        Text(state.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun ProfileMiuixTaskCard(
-    state: ProfileUiState,
-    actions: ProfileUiActions,
-    onRequestClean: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .shadow(14.dp, RoundedCornerShape(38.dp)),
-        shape = RoundedCornerShape(38.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)
-    ) {
-        Column(Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier
-                        .size(11.dp)
-                        .clip(CircleShape)
-                        .background(if (state.connected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error)
-                )
-                Spacer(Modifier.width(9.dp))
-                Text(state.serviceText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(15.dp))
-            Text(state.summaryText, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-            if (state.running || state.loadingPage) {
-                Spacer(Modifier.height(15.dp))
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            Spacer(Modifier.height(18.dp))
-            Button(
-                onClick = if (state.running) actions.onStop else actions.onScan,
-                enabled = state.connected,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(62.dp),
-                shape = RoundedCornerShape(23.dp)
-            ) {
-                Icon(if (state.running) Icons.Rounded.Stop else Icons.Rounded.Search, null)
-                Spacer(Modifier.width(9.dp))
-                Text(if (state.running) "安全停止任务" else state.scanButtonText, fontSize = 17.sp, fontWeight = FontWeight.Black)
-            }
-            if (state.quickCleanReady && !state.running) {
-                Spacer(Modifier.height(10.dp))
-                FilledTonalButton(
-                    onClick = onRequestClean,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(60.dp),
-                    shape = RoundedCornerShape(22.dp)
-                ) {
-                    Icon(Icons.Rounded.CleaningServices, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(state.cleanButtonText, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileMiuixSafetyCard(state: ProfileUiState) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .shadow(9.dp, RoundedCornerShape(32.dp)),
-        shape = RoundedCornerShape(32.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)
-    ) {
-        Row(Modifier.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(49.dp), RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.secondary.copy(alpha = .12f)) {
-                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Security, null, tint = MaterialTheme.colorScheme.secondary) }
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text("安全策略", fontSize = 17.sp, fontWeight = FontWeight.Black)
-                Text(state.safetyText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileMiuixSection(state: ProfileUiState) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
-        Text("SCAN RESULT", color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-        Text("${state.title}明细", fontSize = 25.sp, fontWeight = FontWeight.Black)
-        Text(state.selectionText, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-    }
-}
-
-@Composable
-private fun ProfileMiuixCandidate(item: ProfileUiItem) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(30.dp)),
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)
-    ) {
-        ProfileCandidateContent(item, miuix = true)
-    }
+    ProfileScreenMaterial(state, actions, onRequestClean)
 }
 
 @Composable
@@ -1185,7 +926,7 @@ private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
                     item.appName.ifBlank { item.categoryLabel },
                     modifier = Modifier.weight(1f),
                     fontSize = if (miuix) 17.sp else 16.sp,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1195,7 +936,7 @@ private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
                         .background(riskColor.copy(alpha = .11f))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    Text(riskLabel(item.risk), color = riskColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(riskLabel(item.risk), color = riskColor, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1206,7 +947,7 @@ private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
                     if (item.note.isNotBlank()) append(" · ${item.note}")
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1216,7 +957,7 @@ private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
                     item.path,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
+                    fontSize = 13.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1232,7 +973,7 @@ private fun ProfileCandidateContent(item: ProfileUiItem, miuix: Boolean) {
                     }
                 } else "当前页按需统计大小",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -1247,9 +988,9 @@ private fun ProfilePagination(state: ProfileUiState, actions: ProfileUiActions, 
         modifier = Modifier
             .padding(horizontal = if (miuix) 16.dp else 18.dp)
             .fillMaxWidth()
-            .then(if (miuix) Modifier.shadow(8.dp, shape) else Modifier),
+            .then(if (miuix) Modifier.shadow(1.dp, shape) else Modifier),
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = BaiZeTokens.colors.surfaceRaised
     ) {
         Row(
             Modifier.padding(10.dp),
@@ -1265,7 +1006,7 @@ private fun ProfilePagination(state: ProfileUiState, actions: ProfileUiActions, 
                 Icon(Icons.Rounded.ChevronLeft, null)
                 Text("上一页")
             }
-            Text("${state.page + 1} / ${state.pageCount}", fontWeight = FontWeight.Black, fontSize = 13.sp)
+            Text("${state.page + 1} / ${state.pageCount}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             FilledTonalButton(
                 onClick = actions.onNext,
                 enabled = !state.running && !state.loadingPage && state.page + 1 < state.pageCount,

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -252,33 +254,22 @@ private fun QuarantineScreen(
     onPurgeExpired: () -> Unit
 ) {
     var pending by remember { mutableStateOf<Pair<String, QuarantineItem>?>(null) }
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-                    Spacer(Modifier.width(6.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("隔离区", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                        Text("高风险内容可恢复，过期后自动永久删除", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    }
-                    IconButton(onClick = onRefresh, enabled = state.connected && !state.loading) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
-                    }
+                DetailPageHeader("隔离区", "暂存的文件可以恢复，过期后会永久删除", onBack) {
+                    IconButton(onClick = onRefresh, enabled = state.connected && !state.loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
                 }
             }
             item {
                 Card(
-                    modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
                 ) {
                     Column(Modifier.padding(20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -287,12 +278,12 @@ private fun QuarantineScreen(
                             }
                             Spacer(Modifier.width(13.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("${state.items.size} 个隔离项", fontSize = 21.sp, fontWeight = FontWeight.Black)
+                                Text("${state.items.size} 个隔离项", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                                 Text("占用 ${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, state.totalBytes)} · 保留 ${state.retentionDays} 天", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                         if (state.loading) {
                             Spacer(Modifier.height(10.dp))
                             CircularProgressIndicator(Modifier.size(24.dp))
@@ -309,24 +300,24 @@ private fun QuarantineScreen(
             if (state.items.isEmpty() && !state.loading) {
                 item {
                     Card(
-                        modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
                     ) {
                         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.outline)
                             Spacer(Modifier.height(10.dp))
                             Text("暂无隔离内容", fontWeight = FontWeight.Bold)
-                            Text("扫描结果中的高风险项目可选择“隔离”，不会直接永久删除。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            Text("扫描结果中的高风险项目可选择“隔离”，不会直接永久删除。", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                         }
                     }
                 }
             }
             items(state.items, key = { it.id }) { item ->
                 Card(
-                    modifier = Modifier.padding(horizontal = 18.dp).fillMaxWidth(),
+                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -335,15 +326,15 @@ private fun QuarantineScreen(
                                 Text(
                                     "${Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, item.bytes)} · ${item.files} 文件 · ${item.directories} 目录",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp
+                                    fontSize = 13.sp
                                 )
                             }
                             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error.copy(alpha = .12f)) {
-                                Text("高风险", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text("高风险", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.error, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        Text(item.originalPath, color = MaterialTheme.colorScheme.outline, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(item.originalPath, color = MaterialTheme.colorScheme.outline, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                             FilledTonalButton(onClick = { pending = "restore" to item }, modifier = Modifier.weight(1f), enabled = !state.loading) {

@@ -356,9 +356,11 @@ first_nul_path() {
 # The optional helper only de-duplicates an already policy-filtered manifest.
 # It cannot discover or delete targets; unsupported ABIs keep the shell path.
 COMPAT_FILTER_ENGINE=""
+RULE_SCAN_ENGINE=""
 if [ -f "$MODDIR/abi-resolve.sh" ]; then
   . "$MODDIR/abi-resolve.sh"
   COMPAT_FILTER_ENGINE=$(baize_resolve_engine "$MODDIR" baize_compat_filter 2>/dev/null) || COMPAT_FILTER_ENGINE=""
+  RULE_SCAN_ENGINE=$(baize_resolve_engine "$MODDIR" baize_engine 2>/dev/null) || RULE_SCAN_ENGINE=""
 fi
 
 filter_processed_list() {
@@ -860,10 +862,38 @@ clean_dir() {
 
   LIST_SEQ=$((LIST_SEQ + 1))
   list="$TMP_DIR/files.$LIST_SEQ.nul"
-  if [ "$days" -eq 0 ]; then
-    find "$dir" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -print0 2>/dev/null >"$list"
+  rule_empty_list="$TMP_DIR/rule-empty.$LIST_SEQ.nul"
+  rule_collected_native=0
+  if [ -n "$RULE_SCAN_ENGINE" ]; then
+    set -- collect-rule-files --collection-root "$dir" --targets "$list" --whitelist "$WHITELIST" \
+      --min-age-days "$days" --empty-age-days "$EMPTY_DAYS" --max-file-bytes "$MAX_FILE_BYTES" \
+      --dir-budget-ms 15000 --stop "$STATE_DIR/stop"
+    [ "$CLEAN_EMPTY_FILES" = "1" ] && set -- "$@" --empty "$rule_empty_list"
+    run_limited_command 18 "$RULE_SCAN_ENGINE" "$@"
+    rule_collect_code=$?
+    case "$rule_collect_code" in
+      0) rule_collected_native=1 ;;
+      9) rm -f "$list" "$rule_empty_list"; return 9 ;;
+      *)
+        # Never consume a partial traversal or silently report it as zero junk.
+        ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+        log_line "[规则目录未完成] $dir（代码 $rule_collect_code，已保留该目录）"
+        report_line protected incomplete "$CATEGORY" 1 0 "$dir"
+        rm -f "$list" "$rule_empty_list"
+        return 0
+        ;;
+    esac
+  elif [ "$days" -eq 0 ]; then
+    run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size +0c ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -size "-$((MAX_FILE_BYTES + 1))c" -print0 2>/dev/null >"$list"
   else
-    find "$dir" -mindepth 1 -type f -size +0c -size "-${MAX_FILE_BYTES}c" -mtime "+$days" -print0 2>/dev/null >"$list"
+    run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size +0c ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -size "-$((MAX_FILE_BYTES + 1))c" -mtime "+$((days - 1))" -print0 2>/dev/null >"$list"
+  fi
+  rule_collect_code=$?
+  if [ "$rule_collect_code" -ne 0 ]; then
+    ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+    report_line protected incomplete "$CATEGORY" 1 0 "$dir"
+    rm -f "$list" "$rule_empty_list"
+    return 0
   fi
   filter_whitelist_list "$list" || return $?
   filter_processed_list "$list" || return $?
@@ -905,10 +935,19 @@ clean_dir() {
   if [ "$CLEAN_EMPTY_FILES" = "1" ]; then
     LIST_SEQ=$((LIST_SEQ + 1))
     list="$TMP_DIR/empty-files.$LIST_SEQ.nul"
-    if [ "$EMPTY_DAYS" -eq 0 ]; then
-      find "$dir" -mindepth 1 -type f -size 0c ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
+    if [ "$rule_collected_native" = "1" ]; then
+      mv -f "$rule_empty_list" "$list"
+    elif [ "$EMPTY_DAYS" -eq 0 ]; then
+      run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size 0c ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
     else
-      find "$dir" -mindepth 1 -type f -size 0c -mtime "+$EMPTY_DAYS" ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
+      run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size 0c -mtime "+$((EMPTY_DAYS - 1))" ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
+    fi
+    rule_collect_code=$?
+    if [ "$rule_collect_code" -ne 0 ]; then
+      ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+      report_line protected incomplete "空文件:$CATEGORY" 1 0 "$dir"
+      rm -f "$list" "$rule_empty_list"
+      return 0
     fi
     filter_whitelist_list "$list" || return $?
     filter_processed_list "$list" || return $?
@@ -946,7 +985,7 @@ clean_dir() {
   if [ "$CLEAN_EMPTY_DIRS" = "1" ]; then
     LIST_SEQ=$((LIST_SEQ + 1))
     list="$TMP_DIR/empty-dirs.$LIST_SEQ.nul"
-    find "$dir" -depth -mindepth 1 -type d -empty -print0 2>/dev/null >"$list"
+    run_limited_command 18 find "$dir" -xdev -depth -mindepth 1 -type d -empty -print0 2>/dev/null >"$list"
     filter_whitelist_list "$list" || return $?
     filter_processed_list "$list" || return $?
     count=$(count_nul "$list")
@@ -1123,8 +1162,63 @@ scan_external_cache() {
   return 0
 }
 
+# One native discovery pass groups rules by package and only visits installed
+# storage directories. Fallback remains available when the packaged ABI is absent.
+run_native_relative_rules() {
+  native_rule_source=$1
+  native_rule_category=$2
+  native_rule_external=${3:-0}
+  [ -f "$MODDIR/abi-resolve.sh" ] || return 1
+  [ -n "$RULE_SCAN_ENGINE" ] || return 1
+  native_rule_engine=$RULE_SCAN_ENGINE
+  native_rule_targets="$TMP_DIR/relative-rule-targets.nul"
+  set -- rule-targets --rules "$native_rule_source" --targets "$native_rule_targets" --stop "$STATE_DIR/stop"
+  [ "$native_rule_external" = "1" ] && set -- "$@" --rule-external
+  run_limited_command 30 "$native_rule_engine" "$@"
+  native_rule_code=$?
+  case "$native_rule_code" in
+    0) ;;
+    9) rm -f "$native_rule_targets"; return 9 ;;
+    *)
+      log_line "[规则发现回退] 原生目录读取未完成（代码 $native_rule_code），使用逐规则发现"
+      rm -f "$native_rule_targets"
+      return 1
+      ;;
+  esac
+  while IFS= read -r -d '' native_rule_days &&
+        IFS= read -r -d '' native_rule_package &&
+        IFS= read -r -d '' native_rule_target; do
+    should_stop && { rm -f "$native_rule_targets"; return 9; }
+    rule_target_once "$native_rule_target" || continue
+    if [ -d "$native_rule_target" ]; then
+      clean_dir "$native_rule_target" "$native_rule_days" "$native_rule_category:$native_rule_package" || return $?
+    elif [ -f "$native_rule_target" ]; then
+      rule_file_old_enough "$native_rule_target" "$native_rule_days" || continue
+      CATEGORY="$native_rule_category:$native_rule_package"
+      native_rule_size=$(stat -c %s "$native_rule_target" 2>/dev/null)
+      if [ "${native_rule_size:-0}" = "0" ]; then
+        [ "$CLEAN_EMPTY_FILES" != "1" ] || handle_file "$native_rule_target" empty || return $?
+      else
+        handle_file "$native_rule_target" regular || return $?
+      fi
+    fi
+  done <"$native_rule_targets"
+  rm -f "$native_rule_targets"
+  return 0
+}
+
+rule_file_old_enough() {
+  [ "$2" -eq 0 ] && return 0
+  rule_file_mtime=$(stat -c %Y "$1" 2>/dev/null) || return 1
+  case "$rule_file_mtime" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$rule_file_mtime" -le "$((START_EPOCH - $2 * 86400))" ]
+}
+
 run_app_rules() {
   [ -f "$APP_RULES" ] || return 0
+  run_native_relative_rules "$APP_RULES" "应用扩展规则" 0
+  rule_discovery_code=$?
+  case "$rule_discovery_code" in 0) return 0 ;; 9) return 9 ;; esac
   while IFS='|' read -r package relative days extra || [ -n "$package$relative$days$extra" ]; do
     case "$package" in ''|'#'*) continue ;; esac
     [ -z "$extra" ] || { log_line "[拒绝:应用规则格式] $package"; continue; }
@@ -1142,7 +1236,7 @@ run_app_rules() {
       rule_target_once "$target" || continue
       if [ -d "$target" ]; then
         clean_dir "$target" "$days" "应用扩展规则:$package" || return $?
-      elif [ -f "$target" ] && { [ "$days" -eq 0 ] || find "$target" -type f -mtime "+$days" -print 2>/dev/null | grep -q .; }; then
+      elif [ -f "$target" ] && rule_file_old_enough "$target" "$days"; then
         CATEGORY="应用扩展规则:$package"
         size=$(stat -c %s "$target" 2>/dev/null)
         if [ "${size:-0}" = "0" ]; then
@@ -1158,6 +1252,9 @@ run_app_rules() {
 
 run_external_rules() {
   [ -f "$EXTERNAL_RULES" ] || return 0
+  run_native_relative_rules "$EXTERNAL_RULES" "外部应用扩展规则" 1
+  rule_discovery_code=$?
+  case "$rule_discovery_code" in 0) return 0 ;; 9) return 9 ;; esac
   while IFS='|' read -r package relative days extra || [ -n "$package$relative$days$extra" ]; do
     case "$package" in ''|'#'*) continue ;; esac
     [ -z "$extra" ] || { log_line "[拒绝:外部规则格式] $package"; continue; }
@@ -1177,7 +1274,7 @@ run_external_rules() {
       rule_target_once "$target" || continue
       if [ -d "$target" ]; then
         clean_dir "$target" "$days" "外部应用扩展规则:$package" || return $?
-      elif [ -f "$target" ] && { [ "$days" -eq 0 ] || find "$target" -type f -mtime "+$days" -print 2>/dev/null | grep -q .; }; then
+      elif [ -f "$target" ] && rule_file_old_enough "$target" "$days"; then
         CATEGORY="外部应用扩展规则:$package"
         size=$(stat -c %s "$target" 2>/dev/null)
         if [ "${size:-0}" = "0" ]; then
@@ -1194,27 +1291,19 @@ run_external_rules() {
 # WebView 只清理明确可重新生成的 HTTP、GPU、代码与已完成崩溃缓存。
 # 不碰 Cookies、IndexedDB、Local Storage、Web Data 或下载内容。
 run_webview_cache_rules() {
-  for dir in \
-    /data/user/[0-9]*/*/app_webview/Default/Cache \
-    /data/user/[0-9]*/*/app_webview/Default/GPUCache \
-    /data/user/[0-9]*/*/app_webview/Default/'GPU Cache' \
-    /data/user/[0-9]*/*/app_webview/Default/'Code Cache' \
-    /data/user/[0-9]*/*/app_webview/Crashpad/completed \
-    /data/user/[0-9]*/*/app_hws_webview/Default/Cache \
-    /data/user/[0-9]*/*/app_hws_webview/Default/GPUCache \
-    /data/user/[0-9]*/*/app_hws_webview/Default/'Code Cache' \
-    /data/user_de/[0-9]*/*/app_webview/Default/Cache \
-    /data/user_de/[0-9]*/*/app_webview/Default/GPUCache \
-    /data/user_de/[0-9]*/*/app_webview/Default/'GPU Cache' \
-    /data/user_de/[0-9]*/*/app_webview/Default/'Code Cache' \
-    /data/user_de/[0-9]*/*/app_webview/Crashpad/completed; do
-    [ -d "$dir" ] || continue
-    package=$(package_from_target "$dir" 2>/dev/null)
-    if valid_package_name "$package"; then
-      clean_dir "$dir" 0 "WebView缓存:$package" || return $?
-    else
-      clean_dir "$dir" 0 "WebView缓存" || return $?
-    fi
+  for webview_app in /data/user/[0-9]*/* /data/user_de/[0-9]*/*; do
+    [ -d "$webview_app" ] && [ ! -L "$webview_app" ] || continue
+    webview_package=${webview_app##*/}
+    valid_package_name "$webview_package" || continue
+    for webview_root in "$webview_app"/app_webview* "$webview_app"/app_hws_webview* "$webview_app"/app_x5webview*; do
+      [ -d "$webview_root" ] && [ ! -L "$webview_root" ] || continue
+      for webview_leaf in Cache GPUCache 'GPU Cache' 'Code Cache' Default/Cache Default/GPUCache 'Default/GPU Cache' 'Default/Code Cache' Crashpad/completed; do
+        webview_target=$(resolve_rule_target "$webview_app" "$webview_root/$webview_leaf") || continue
+        [ -d "$webview_target" ] || continue
+        rule_target_once "$webview_target" || continue
+        clean_dir "$webview_target" 0 "WebView缓存:$webview_package" || return $?
+      done
+    done
   done
   return 0
 }
@@ -2131,13 +2220,6 @@ run_hidden_junk() {
     rule_days=$(hidden_dir_days "$name") || continue
     [ "$HIDDEN_DAYS" -gt "$rule_days" ] && rule_days=$HIDDEN_DAYS
     clean_dir "$hidden_dir" "$rule_days" "隐藏垃圾:$name" || { HIDDEN_CONTEXT=0; return 9; }
-    if [ "$MODE" = "clean" ]; then
-      case "$name" in
-        .cache|.thumbnails|.thumbnail|.thumb|.tmp|.temp|.xlDownload)
-          rm -f "$hidden_dir/.nomedia" 2>/dev/null
-          ;;
-      esac
-    fi
     if [ -d "$hidden_dir" ] && [ ! -L "$hidden_dir" ] && [ -z "$(ls -A "$hidden_dir" 2>/dev/null)" ]; then
       if is_whitelisted "$hidden_dir"; then
         log_line "[跳过:白名单][隐藏空目录] $hidden_dir"
@@ -2549,6 +2631,9 @@ if [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ] && [ "$DEEP_MODE" = "1" 
   fi
 fi
 
+# Direct CLI runs must invalidate the shared index after any deletion attempt,
+# including partial failures; otherwise its TTL can resurrect removed entries.
+[ "$MODE" != "clean" ] || rm -f "$STATE_DIR/index/meta.env"
 set_phase "整理结果"
 
 END_EPOCH=$(date +%s)

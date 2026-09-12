@@ -27,7 +27,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.9.0"
+ui_print "- 正在安装白泽 v2.9.1"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
@@ -84,7 +84,7 @@ rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/cache-lane.lock" "$STATE_DIR/cache-lane
 rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" "$STATE_DIR/cache_scan.manifest0"
 rm -f "$STATE_DIR/cache_auto.env" "$STATE_DIR/cache_auto.targets" "$STATE_DIR/cache_auto.items.tsv" "$STATE_DIR/cache_auto.manifest0"
-rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets"
+rm -f "$STATE_DIR/apk_scan.env" "$STATE_DIR/apk_scan.targets" "$STATE_DIR/apk_scan.identities"
 rm -f "$STATE_DIR/deep_scan.env" "$STATE_DIR/deep_scan.targets" "$STATE_DIR/deep_scan.manifest0" \
   "$STATE_DIR/deep_scan.cursor" "$STATE_DIR/deep_scan.manifest.env" "$STATE_DIR/deep_clean.accum.env"
 rm -f "$STATE_DIR/corpse_scan.env" "$STATE_DIR/corpse_scan.targets"

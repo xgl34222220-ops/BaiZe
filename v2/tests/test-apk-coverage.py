@@ -81,6 +81,30 @@ class PackageCoverage(unittest.TestCase):
         self.run_task('scan')
         self.assertEqual(self.targets(), {os.fsencode(recent)})
 
+    def test_same_path_replacement_and_restored_mtime_are_protected(self):
+        replaced = self.make('0/Download/replaced.apk', 3)
+        modified = self.make('0/Download/modified.apk', 3)
+        expected = {p: p.stat() for p in (replaced, modified)}
+        self.run_task('scan')
+        replacement = replaced.with_suffix('.new')
+        replacement.write_bytes(b'package payload')
+        os.replace(replacement, replaced)
+        modified.write_bytes(b'changed payload')
+        for path, before in expected.items():
+            os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.run_task('clean')
+        self.assertTrue(replaced.exists() and modified.exists())
+        self.assertIn('skipped=2\n', (self.state / 'latest.env').read_text())
+
+    def test_tampered_or_missing_identity_snapshot_refuses_deletion(self):
+        package = self.make('0/Download/keep.apk')
+        self.run_task('scan')
+        (self.state / 'apk_scan.identities').write_bytes(b'changed\0')
+        result = subprocess.run(['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean'],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertTrue(package.exists())
+
     def test_replaced_directory_and_new_file_after_scan_are_not_deleted(self):
         package = self.make('0/Downloads/nested/original.apk')
         self.run_task('scan')

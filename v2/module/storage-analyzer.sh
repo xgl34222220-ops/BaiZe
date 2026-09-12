@@ -1,26 +1,45 @@
 #!/system/bin/sh
+# Aggregate the metadata already collected by the native shared index in one pass.
 set -eu
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
-INDEX="$STATE_DIR/index/storage-files.nul"
+SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 OUT="$STATE_DIR/reports/storage-analysis.tsv"
 mkdir -p "${OUT%/*}"
-[ -s "$INDEX" ] || { echo "共享索引不存在" >&2; exit 6; }
-printf 'group\tfiles\tbytes\n' >"$OUT"
-python3_bin=$(command -v python3 || true)
-if [ -n "$python3_bin" ]; then
-  "$python3_bin" - "$INDEX" >>"$OUT" <<'PY'
-import os,sys,collections
-p=sys.argv[1]; groups=collections.defaultdict(lambda:[0,0])
-for raw in open(p,'rb').read().split(b'\0'):
-    if not raw: continue
-    path=raw.decode('utf-8','replace')
-    ext=os.path.splitext(path)[1].lower().lstrip('.') or '(无扩展名)'
-    try:size=os.path.getsize(path)
-    except OSError:continue
-    groups[ext][0]+=1; groups[ext][1]+=size
-for k,(n,b) in sorted(groups.items(), key=lambda x:x[1][1], reverse=True): print(f'{k}\t{n}\t{b}')
-PY
-else
-  while IFS= read -r -d '' file; do ext=${file##*.}; [ "$ext" = "$file" ] && ext='(无扩展名)'; size=$(stat -c %s "$file" 2>/dev/null || echo 0); printf '%s\t1\t%s\n' "$ext" "$size"; done <"$INDEX" | awk -F '\t' 'BEGIN{OFS="\t"}{n[$1]+=$2;b[$1]+=$3}END{for(k in n)print k,n[k],b[k]}' | sort -t "$(printf '\t')" -k3,3nr >>"$OUT"
-fi
+"$SHELL_BIN" "$MODDIR/storage-index.sh" refresh storage-analysis >&2
+TMP="$STATE_DIR/index/storage-analysis.$$"
+mkdir "$TMP"
+trap 'rm -rf -- "$TMP"' EXIT
+trap 'exit 9' INT TERM
+# Decode the index's Base64 path in awk instead of spawning stat/base64 once for
+# every file. Size is from the same complete index generation. No Python needed.
+LC_ALL=C awk -F '\t' '
+function decode(s,    alphabet,out,i,a,b,c,d,v) {
+  alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; out=""
+  for(i=1;i<=length(s);i+=4) {
+    a=index(alphabet,substr(s,i,1))-1; b=index(alphabet,substr(s,i+1,1))-1
+    c=index(alphabet,substr(s,i+2,1))-1; d=index(alphabet,substr(s,i+3,1))-1
+    if(a<0 || b<0) break
+    v=a*262144+b*4096+(c<0?0:c)*64+(d<0?0:d)
+    out=out sprintf("%c",int(v/65536))
+    if(c>=0) out=out sprintf("%c",int(v/256)%256)
+    if(d>=0) out=out sprintf("%c",v%256)
+  }
+  return out
+}
+{
+  name=decode($2); sub(/^.*\//,"",name)
+  if(name !~ /\./ || name ~ /^\.[^.]*$/) ext="(无扩展名)"
+  else {sub(/^.*\./,"",name); ext=tolower(name)}
+  gsub(/[\t\r\n]/," ",ext); count[ext]++; bytes[ext]+=$1
+}
+END {for(ext in count) printf "%s\t%d\t%.0f\n",ext,count[ext],bytes[ext]}
+' "$STATE_DIR/index/duplicate-candidates.tsv" >"$TMP/rows.tsv"
+empty_count=$(tr -cd '\000' <"$STATE_DIR/index/empty-files.nul" | wc -c | tr -d ' ')
+[ "$empty_count" -eq 0 ] || printf '(空文件)\t%s\t0\n' "$empty_count" >>"$TMP/rows.tsv"
+printf 'group\tfiles\tbytes\n' >"$TMP/report.tsv"
+sort -t "$(printf '\t')" -k3,3nr "$TMP/rows.tsv" >>"$TMP/report.tsv"
+[ ! -f "$STATE_DIR/stop" ] || exit 9
+chmod 0600 "$TMP/report.tsv"
+mv -f "$TMP/report.tsv" "$OUT"
 echo "$OUT"

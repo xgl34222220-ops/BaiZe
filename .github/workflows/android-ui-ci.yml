@@ -49,6 +49,14 @@ jobs:
           tail -n 200 /tmp/baize-android-ui.log
           exit "$code"
 
+      - name: Upload actual UI renderings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baize-ui-visual-review
+          path: v2/app/build/reports/ui-screenshots/*.png
+          if-no-files-found: warn
+
       - name: Upload Android diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

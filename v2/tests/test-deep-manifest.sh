@@ -6,15 +6,19 @@ BIN=${TMPDIR:-/tmp}/baize-deep-snapshot-test
 HOST_ROOT="/data/media/baize-deep-manifest-test-$$"
 WORK=${TMPDIR:-/tmp}/baize-deep-manifest-state-$$
 
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi
+}
+
 cleanup() {
   rm -rf "$WORK" "$BIN"
-  sudo rm -rf "$HOST_ROOT" 2>/dev/null || true
+  as_root rm -rf "$HOST_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 mkdir -p "$WORK"
-sudo mkdir -p "$HOST_ROOT"
-sudo chown -R "$(id -u):$(id -g)" "$HOST_ROOT"
+as_root mkdir -p "$HOST_ROOT"
+if [ "$(id -u)" -ne 0 ]; then as_root chown -R "$(id -u):$(id -g)" "$HOST_ROOT"; fi
 
 gcc -std=c11 -O2 -Wall -Wextra -Werror "$ROOT/native/baize_deep_snapshot.c" -o "$BIN"
 

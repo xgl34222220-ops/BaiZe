@@ -40,6 +40,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -104,6 +106,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -486,7 +489,8 @@ fun BaiZeMiuixApp(
     state: DashboardUiState,
     scheduler: SchedulerUiState,
     actions: DashboardActions,
-    appearance: AppearanceSettings
+    appearance: AppearanceSettings,
+    initialPage: Int = 0
 ) {
     BaiZeTheme(appearance) {
         CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
@@ -499,7 +503,7 @@ fun BaiZeMiuixApp(
                     appearance.glassEnabled &&
                     !amoled && !(appearance.adaptiveSmoothMode && runtimeDegraded)
             )
-            var page by rememberSaveable { mutableStateOf(BaiZePage.Home) }
+            var page by rememberSaveable { mutableStateOf(BaiZePage.entries[initialPage.coerceIn(0, BaiZePage.entries.lastIndex)]) }
             var expandedCleanCategory by rememberSaveable { mutableStateOf("") }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
@@ -521,14 +525,13 @@ fun BaiZeMiuixApp(
                         UiStyle.MATERIAL -> Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background)
+                                .background(BaiZeTokens.colors.surfaceBase)
                         ) {
                             AnimatedPageHost(
                                 page = page,
                                 style = UiStyle.MATERIAL,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .then(if (state.versionWarning.isBlank()) Modifier.statusBarsPadding() else Modifier)
                             ) { targetPage ->
                                 when (targetPage) {
                                     BaiZePage.Home -> HomeRoute(UiStyle.MATERIAL, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
@@ -564,7 +567,6 @@ fun BaiZeMiuixApp(
                                     style = UiStyle.MIUIX,
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .then(if (state.versionWarning.isBlank()) Modifier.statusBarsPadding() else Modifier)
                                 ) { targetPage ->
                                     when (targetPage) {
                                         BaiZePage.Home -> HomeRoute(UiStyle.MIUIX, state.forHomePage(), scheduler, actions) { page = BaiZePage.Clean }
@@ -632,386 +634,7 @@ private fun AnimatedPageHost(
 
 @Composable
 private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
-    val scheme = MaterialTheme.colorScheme
-    // 纯色中性底 + 一抹极淡单色氛围，不做蓝紫渐变与多层光斑。
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(BaiZeTokens.colors.surfaceBase)
-            .drawBehind {
-                if (amoled) return@drawBehind
-                drawRect(
-                    Brush.radialGradient(
-                        listOf(scheme.primary.copy(alpha = if (dark) .05f else .06f), Color.Transparent),
-                        center = Offset(size.width * .85f, 0f),
-                        radius = size.width * .9f
-                    )
-                )
-            }
-    )
-}
-
-@Composable
-private fun GlassSurface(
-    modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(28.dp),
-    shadow: Int = 10,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-    content: @Composable () -> Unit
-) {
-    val settings = LocalAppearanceSettings.current
-    val dark = MaterialTheme.colorScheme.background.luminance() < .5f
-    val amoled = dark && settings.amoledBlack
-    val glass = settings.glassEnabled
-    val fill = when {
-        amoled || glass -> BaiZeTokens.colors.surfaceRaised
-        else -> MaterialTheme.colorScheme.surface
-    }
-    val border = if (dark) Color.White.copy(alpha = .08f) else MaterialTheme.colorScheme.primary.copy(alpha = .08f)
-    Box(
-        modifier
-            .shadow(shadow.dp, shape, clip = false)
-            .clip(shape)
-            .background(fill)
-            .border(1.dp, border, shape)
-            .padding(contentPadding)
-    ) { content() }
-}
-
-@Composable
-private fun ResultSurface(
-    modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(28.dp),
-    contentPadding: PaddingValues = PaddingValues(0.dp),
-    content: @Composable () -> Unit
-) {
-    Surface(
-        modifier = modifier,
-        shape = shape,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        shadowElevation = 3.dp,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.onSurface.copy(alpha = .06f)
-        )
-    ) {
-        Box(Modifier.padding(contentPadding)) { content() }
-    }
-}
-
-@Composable
-private fun PageHeader(eyebrow: String, title: String, subtitle: String, refresh: (() -> Unit)? = null) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(eyebrow.uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Spacer(Modifier.height(5.dp))
-            Text(title, color = MaterialTheme.colorScheme.onSurface, style = BaiZeTokens.type.display)
-            Spacer(Modifier.height(4.dp))
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        }
-        if (refresh != null) {
-            GlassSurface(shape = BaiZeTokens.corners.medium, shadow = 6) {
-                IconButton(onClick = refresh, modifier = Modifier.size(58.dp)) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新", modifier = Modifier.size(27.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun HomeScreenMiuix(
-    state: DashboardUiState,
-    actions: DashboardActions,
-    onOpenClean: () -> Unit
-) {
-    val context = LocalContext.current
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val positive = state.ready || state.scanCompleted
-    val statusTitle = when {
-        state.running -> "清理任务执行中"
-        state.scanCompleted -> "扫描结果已就绪"
-        state.ready -> "清理引擎已就绪"
-        state.connected -> "清理引擎已连接"
-        else -> "正在恢复清理引擎"
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 154.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            PageHeader(
-                "SMART CLEAN",
-                "白泽",
-                "智能清理概览 · v${BuildConfig.VERSION_NAME}",
-                actions.refresh
-            )
-        }
-        item {
-            MiuixOverviewHero(
-                device = state.device,
-                android = state.android,
-                statusTitle = statusTitle,
-                taskPhase = state.taskPhase,
-                releasedText = Formatter.formatFileSize(context, state.lastReleased),
-                positive = positive,
-                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal)
-            )
-        }
-        item {
-            GlassSurface(
-                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                shadow = 6,
-                contentPadding = PaddingValues(BaiZeTokens.spacing.xl)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    StorageRing(state.storagePercent)
-                    Spacer(Modifier.width(18.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "可用空间",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            Formatter.formatFileSize(context, state.storageFree),
-                            fontSize = 28.sp,
-                            lineHeight = 34.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-        }
-        item {
-            MiuixLiquidPrimaryButton(
-                running = state.running,
-                scanReady = state.scanCompleted,
-                enabled = state.running || state.ready || state.scanCompleted,
-                onClick = when {
-                    state.running -> actions.stop
-                    state.scanCompleted -> actions.cleanScan
-                    else -> actions.clean
-                },
-                modifier = Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal)
-            )
-        }
-        item {
-            StatusPill(
-                ready = state.ready,
-                scanReady = state.scanCompleted,
-                text = if (state.scanCompleted && !state.ready) {
-                    "扫描快照已就绪；清理时会自动恢复 Root 服务"
-                } else {
-                    state.serviceText
-                }
-            )
-        }
-        if (state.scanCompleted) {
-            item { ScanResultCard(state, actions) }
-        }
-        item {
-            Column(Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 5.dp)) {
-                Text(
-                    "QUICK ACTIONS",
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
-                Text("快捷操作", style = BaiZeTokens.type.headline)
-                Text(
-                    "完整清理类别、开关与周期统一放在“清理”页",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp
-                )
-            }
-        }
-        item {
-            GlassSurface(
-                Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                shadow = 6,
-                contentPadding = PaddingValues(10.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    MiuixHomeQuickAction(
-                        icon = Icons.Rounded.InstallMobile,
-                        title = "安装包",
-                        modifier = Modifier.weight(1f),
-                        onClick = actions.apkScan
-                    )
-                    MiuixHomeQuickAction(
-                        icon = Icons.Rounded.CleaningServices,
-                        title = "全部选项",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenClean
-                    )
-                }
-            }
-        }
-    }
-}
-@Composable
-private fun MiuixHomeQuickAction(
-    icon: ImageVector,
-    title: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = modifier
-            .clip(BaiZeTokens.corners.medium)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 5.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp)
-    ) {
-        Box(
-            Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        }
-        Text(
-            title,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun StorageRing(progress: Float) {
-    val primary = MaterialTheme.colorScheme.primary
-    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .10f)
-    Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawArc(trackColor, -90f, 360f, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(primary, -90f, 360f * progress, false, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round))
-        }
-        Text("${(progress * 100).roundToInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-    }
-}
-
-@Composable
-private fun StatusPill(ready: Boolean, text: String, scanReady: Boolean = false) {
-    GlassSurface(
-        Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
-        shape = RoundedCornerShape(percent = 50),
-        shadow = 5,
-        contentPadding = PaddingValues(horizontal = BaiZeTokens.spacing.pageHorizontal, vertical = 14.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val positive = ready || scanReady
-            Box(Modifier.size(10.dp).clip(CircleShape).background(if (positive) BaiZeTokens.colors.success else BaiZeTokens.colors.warning))
-            Spacer(Modifier.width(10.dp))
-            Text(text, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                when {
-                    ready -> "运行正常"
-                    scanReady -> "快照就绪"
-                    else -> "未就绪"
-                },
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-
-@Composable
-private fun ScanResultCard(state: DashboardUiState, actions: DashboardActions) {
-    val context = LocalContext.current
-    GlassSurface(
-        Modifier.padding(horizontal = BaiZeTokens.spacing.pageHorizontal).fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        shadow = 8,
-        contentPadding = PaddingValues(20.dp)
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(.14f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Search, null, tint = MaterialTheme.colorScheme.primary)
-                }
-                Spacer(Modifier.width(13.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("清理准备完成", style = BaiZeTokens.type.title, fontWeight = FontWeight.Bold)
-                    Text(
-                        when {
-                            state.scanFiles <= 0 -> "没有发现可安全清理的内容"
-                            state.scanBytes > 0 -> "发现 ${state.scanFiles} 项；已知至少 ${Formatter.formatFileSize(context, state.scanBytes)}"
-                            else -> "发现 ${state.scanFiles} 项；大小按实际删除统计"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            Spacer(Modifier.height(15.dp))
-            Text(
-                "候选 ${state.scanFiles} 项 · 空文件 ${state.scanEmptyFiles} · 空目录 ${state.scanEmptyDirs} · 碎片 ${state.scanFragments} · 异常 ${state.scanErrors} · ${formatElapsedUi(state.scanElapsed)}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = actions.dismissScan,
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.onSurface.copy(.07f),
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) { Text("关闭", fontWeight = FontWeight.Bold) }
-                Button(
-                    onClick = actions.cleanScan,
-                    enabled = state.scanFiles > 0 && !state.running,
-                    modifier = Modifier.weight(1.45f).height(52.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Rounded.AutoAwesome, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (state.scanFiles > 0) "按扫描结果清理" else "无需清理", fontWeight = FontWeight.Bold)
-                }
-            }
-            Text(
-                "点击后直接消费本次快照，不会重新扫描；删除前只复核路径、白名单、挂载点和文件状态。快照 30 分钟后自动失效。",
-                modifier = Modifier.padding(top = 12.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
-            )
-        }
-    }
+    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase))
 }
 
 @Composable
@@ -1023,9 +646,9 @@ private fun MaterialFloatingDock(
 ) {
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val shape = if (floating) {
-        RoundedCornerShape(20.dp)
+        RoundedCornerShape(28.dp)
     } else {
-        RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     }
     val outerModifier = if (floating) {
         modifier
@@ -1039,13 +662,13 @@ private fun MaterialFloatingDock(
     Surface(
         modifier = outerModifier,
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 2.dp,
+        color = BaiZeTokens.colors.surfaceRaised,
+        tonalElevation = 0.dp,
         shadowElevation = if (floating) 3.dp else 0.dp
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth().selectableGroup()
                 .padding(
                     start = 8.dp,
                     top = 4.dp,
@@ -1059,14 +682,14 @@ private fun MaterialFloatingDock(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(16.dp))
-                        .clickable { onSelected(item) }
+                        .selectable(active, role = Role.Tab) { onSelected(item) }
                         .padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(width = 38.dp, height = 24.dp)
+                            .size(width = 56.dp, height = 32.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(
                                 if (active) MaterialTheme.colorScheme.secondaryContainer
@@ -1076,8 +699,8 @@ private fun MaterialFloatingDock(
                     ) {
                         Icon(
                             imageVector = item.icon,
-                            contentDescription = item.title,
-                            modifier = Modifier.size(19.dp),
+                            contentDescription = null,
+                            modifier = Modifier.size(23.dp),
                             tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1086,7 +709,7 @@ private fun MaterialFloatingDock(
                         text = item.title,
                         color = if (active) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium
                     )
                 }
@@ -1094,13 +717,6 @@ private fun MaterialFloatingDock(
         }
     }
 }
-
-private fun formatElapsedUi(seconds: Long): String = when {
-    seconds >= 3600 -> "${seconds / 3600}时${seconds % 3600 / 60}分"
-    seconds >= 60 -> "${seconds / 60}分${seconds % 60}秒"
-    else -> "${seconds}秒"
-}
-
 
 private fun DashboardUiState.forHomePage(): DashboardUiState = copy(
     rawLogName = "", rawLog = "", history = emptyList()

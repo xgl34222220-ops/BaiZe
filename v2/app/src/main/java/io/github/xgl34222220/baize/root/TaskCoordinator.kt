@@ -44,7 +44,7 @@ internal class TaskCoordinator(
         }
     }
 
-    fun isBusy(): Boolean = taskRunning.get() || RootFileStore.readEnv(File(stateDir, "running.env")).length() > 0
+    fun isBusy(): Boolean = taskRunning.get() || RuntimeTaskOwnership.isRunning(stateDir)
 
     fun publishExternal(state: JSONObject, force: Boolean = false) {
         setState(state.toString(), force)
@@ -88,7 +88,7 @@ internal class TaskCoordinator(
 
     fun currentState(): String {
         val running = RootFileStore.readEnv(File(stateDir, "running.env"))
-        if (running.length() > 0) {
+        if (running.length() > 0 && (taskRunning.get() || RuntimeTaskOwnership.isRunning(stateDir))) {
             running.put("running", true)
             running.put("operation", running.optString("operation", running.optString("mode", "module-task")))
             running.put("cancelRequested", cancelled.get())

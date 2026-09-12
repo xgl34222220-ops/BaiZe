@@ -12,16 +12,16 @@
         <item name="colorTertiary">#C9C0E8</item>
         <item name="colorError">#FFB4AB</item>
         <item name="colorOnError">#690005</item>
-        <item name="colorSurface">#1A1D27</item>
-        <item name="colorSurfaceVariant">#242833</item>
+        <item name="colorSurface">#1B1D22</item>
+        <item name="colorSurfaceVariant">#24262C</item>
         <item name="colorOnSurface">#F0F1F7</item>
         <item name="colorOnSurfaceVariant">#BEC2CF</item>
         <item name="colorOutline">#3B4151</item>
         <item name="colorOutlineVariant">#303542</item>
-        <item name="android:colorBackground">#121520</item>
-        <item name="android:windowBackground">#121520</item>
-        <item name="android:statusBarColor">#121520</item>
-        <item name="android:navigationBarColor">#121520</item>
+        <item name="android:colorBackground">#0F1115</item>
+        <item name="android:windowBackground">#0F1115</item>
+        <item name="android:statusBarColor">#0F1115</item>
+        <item name="android:navigationBarColor">#0F1115</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
         <item name="materialCardViewStyle">@style/Widget.BaiZe.SimpleCard</item>

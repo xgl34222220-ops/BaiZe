@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -24,6 +25,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.topjohnwu.superuser.ipc.RootService
@@ -50,7 +52,7 @@ class WhitelistActivity : AppCompatActivity() {
     private val adapter = AppAdapter(
         iconLoader = ::loadIcon,
         onToggle = { entry, checked ->
-            entry.selected = checked
+            allApps.firstOrNull { it.packageName == entry.packageName }?.selected = checked
             applyFilter()
         }
     )
@@ -129,8 +131,13 @@ class WhitelistActivity : AppCompatActivity() {
         val rootBottom = binding.whitelistRoot.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(binding.whitelistRoot) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            val searching = insets.isVisible(WindowInsetsCompat.Type.ime())
             binding.headerContainer.updatePadding(top = headerTop + bars.top)
-            binding.whitelistRoot.updatePadding(bottom = rootBottom + bars.bottom)
+            binding.whitelistRoot.updatePadding(bottom = rootBottom + maxOf(bars.bottom, ime.bottom))
+            binding.pageTitle.visibility = if (searching) View.GONE else View.VISIBLE
+            binding.pageSubtitle.visibility = if (searching) View.GONE else View.VISIBLE
+            binding.bottomActionCard.visibility = if (searching) View.GONE else View.VISIBLE
             insets
         }
         WindowInsetsControllerCompat(window, binding.root).apply {
@@ -313,15 +320,18 @@ class WhitelistActivity : AppCompatActivity() {
         val selected = allApps.count { it.selected }
         val userCount = allApps.count { !it.system }
         val systemCount = allApps.size - userCount
-        binding.selectionText.text = "已保护 $selected 个 · 用户应用 $userCount 个 · 系统应用 $systemCount 个"
+        binding.selectionText.text = "已保护 $selected 个"
+        binding.filterUser.text = "用户应用 $userCount"
+        binding.filterSystem.text = "系统应用 $systemCount"
         binding.emptyText.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
         binding.appList.visibility = if (visible.isEmpty()) View.GONE else View.VISIBLE
         binding.selectVisibleButton.isEnabled = visible.isNotEmpty()
         binding.selectVisibleButton.text = if (visible.isNotEmpty() && visible.all { it.selected }) {
-            "取消当前 ${visible.size} 个"
+            "取消当前"
         } else {
-            "全选当前 ${visible.size} 个"
+            "全选当前"
         }
+        binding.selectVisibleButton.contentDescription = "${binding.selectVisibleButton.text} ${visible.size} 个应用"
         binding.clearButton.isEnabled = selected > 0
     }
 
@@ -390,8 +400,19 @@ class WhitelistActivity : AppCompatActivity() {
         private var items: List<AppEntry> = emptyList()
 
         fun submit(next: List<AppEntry>) {
-            items = next
-            notifyDataSetChanged()
+            val previous = items
+            // Immutable row snapshots let a checkbox update only the changed row.
+            val snapshot = next.map { it.copy() }
+            val changes = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = previous.size
+                override fun getNewListSize() = snapshot.size
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    previous[oldItemPosition].packageName == snapshot[newItemPosition].packageName
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    previous[oldItemPosition] == snapshot[newItemPosition]
+            })
+            items = snapshot
+            changes.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -416,17 +437,14 @@ class WhitelistActivity : AppCompatActivity() {
 
                 val primaryContainer = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorPrimaryContainer)
                 val surface = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorSurface)
-                val outline = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorOutlineVariant)
-                binding.root.setCardBackgroundColor(if (item.selected) primaryContainer else surface)
-                binding.root.strokeColor = outline
-                binding.root.strokeWidth = if (item.selected) dp(binding.root, 1) else 0
+                binding.root.setCardBackgroundColor(if (item.selected) ColorUtils.blendARGB(surface, primaryContainer, .35f) else surface)
+                binding.root.strokeWidth = 0
+                binding.selectedCheck.contentDescription = "保护${item.label}"
 
                 binding.selectedCheck.setOnCheckedChangeListener { _, checked -> onToggle(item, checked) }
                 binding.root.setOnClickListener { onToggle(item, !item.selected) }
             }
 
-            private fun dp(view: View, value: Int): Int =
-                (value * view.resources.displayMetrics.density + 0.5f).toInt()
         }
     }
 

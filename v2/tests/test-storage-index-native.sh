@@ -29,6 +29,8 @@ mk "Docs/empty.dat" 0               # 空文件桶
 mk "Docs/big.bin" 2000000           # 大文件桶（配合下面 max_file_mb=1）
 mk "Docs/half.part" 50              # 下载中间态，应被跳过
 mk "Docs/x.crdownload" 50           # 同上
+mk "Docs/no_extension" 41
+mk "Docs/unfinished.PART" 51
 mk "Docs/plain.dat" 42              # 不进任何扩展名桶
 mkdir -p "$T/media/0/带空格 目录"
 printf 'x' > "$T/media/0/带空格 目录/中文文件.apk"

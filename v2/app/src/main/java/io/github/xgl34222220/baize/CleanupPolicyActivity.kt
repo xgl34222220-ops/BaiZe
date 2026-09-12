@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -272,34 +274,23 @@ private fun CleanupPolicyScreen(
     onRefresh: () -> Unit,
     onSelect: (CleanupPolicy) -> Unit
 ) {
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val cardShape = if (miuix) RoundedCornerShape(28.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val cardShape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-                Spacer(Modifier.width(6.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("清理策略", fontSize = if (miuix) 30.sp else 27.sp, fontWeight = FontWeight.Black)
-                    Text("三档预设只改变清理范围，不改变定时周期", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-                IconButton(onClick = onRefresh, enabled = state.connected && !state.loading) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新")
+                DetailPageHeader("清理策略", "选择适合自己的清理范围，定时周期单独设置", onBack) {
+                    IconButton(onClick = onRefresh, enabled = state.connected && !state.loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
                 }
             }
-        }
         item {
             Card(
                 modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
                 shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
             ) {
                 Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -314,11 +305,11 @@ private fun CleanupPolicyScreen(
                         }
                         Spacer(Modifier.width(13.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("当前：${state.activePolicy.title}档", fontSize = 21.sp, fontWeight = FontWeight.Black)
+                            Text("当前：${state.activePolicy.title}档", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                             Text(
                                 if (state.customized) "包含手动参数调整" else state.activePolicy.subtitle,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
+                                fontSize = 14.sp
                             )
                         }
                         if (!state.customized) {
@@ -332,7 +323,7 @@ private fun CleanupPolicyScreen(
                         PolicyMetric("隔离保留", "${state.quarantineDays} 天", Modifier.weight(1f))
                     }
                     Spacer(Modifier.height(12.dp))
-                    Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text(state.message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     if (state.loading) {
                         Spacer(Modifier.height(10.dp))
                         CircularProgressIndicator(Modifier.size(24.dp))
@@ -356,7 +347,7 @@ private fun CleanupPolicyScreen(
         item {
             Column(Modifier.padding(horizontal = horizontal, vertical = 2.dp)) {
                 Text("选择档位", style = MaterialTheme.typography.titleLarge)
-                Text("应用档位会覆盖清理相关参数，但不会修改任何 schedule_* 周期字段", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text("应用档位会覆盖清理相关参数，但不会修改任何 schedule_* 周期字段", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             }
         }
         CleanupPolicy.entries.forEach { policy ->
@@ -375,7 +366,7 @@ private fun CleanupPolicyScreen(
             Card(
                 modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth().navigationBarsPadding(),
                 shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -387,8 +378,8 @@ private fun CleanupPolicyScreen(
                     Text(
                         "白名单、服务器端快照、挂载点检查、软链接防护、关键路径保护始终生效。高风险不会被普通清理直接删除，关键风险始终只审计。",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
                     )
                 }
             }
@@ -432,11 +423,11 @@ private fun PolicyAdviceCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("设备建议：${advice.recommendedPolicy.title}档", fontSize = 18.sp, fontWeight = FontWeight.Black)
-                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("设备建议：${advice.recommendedPolicy.title}档", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
-                    Text(confidence, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(confidence, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Spacer(Modifier.height(13.dp))
@@ -451,7 +442,7 @@ private fun PolicyAdviceCard(
                     Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
                         Box(Modifier.padding(top = 6.dp).size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
                         Spacer(Modifier.width(8.dp))
-                        Text(reason, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
+                        Text(reason, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
                     }
                 }
             }
@@ -459,8 +450,8 @@ private fun PolicyAdviceCard(
             Text(
                 "基于最近 30 天 ${advice.sampleCount} 条有效记录。仅建议，不会自动切换；定时任务周期保持不变。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp,
-                lineHeight = 15.sp
+                fontSize = 13.sp,
+                lineHeight = 20.sp
             )
             if (!matches) {
                 Spacer(Modifier.height(12.dp))
@@ -510,13 +501,13 @@ private fun PolicyCard(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(policy.title, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        Text(policy.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.width(8.dp))
                         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .11f)) {
-                            Text(policy.badge, Modifier.padding(horizontal = 8.dp, vertical = 3.dp), color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                            Text(policy.badge, Modifier.padding(horizontal = 8.dp, vertical = 3.dp), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    Text(policy.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text(policy.subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
                 if (active) Icon(Icons.Rounded.CheckCircle, contentDescription = "当前档位", tint = BaiZeTokens.colors.success)
             }
@@ -527,7 +518,7 @@ private fun PolicyCard(
                 Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
                     Box(Modifier.padding(top = 6.dp).size(5.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
                     Spacer(Modifier.width(9.dp))
-                    Text(line, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                    Text(line, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp)
                 }
             }
             if (!active) {
@@ -544,8 +535,8 @@ private fun PolicyCard(
 private fun PolicyMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier = modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-            Text(value, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
     }
 }

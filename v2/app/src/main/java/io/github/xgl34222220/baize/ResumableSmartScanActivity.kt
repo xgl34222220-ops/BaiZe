@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -173,7 +175,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             BaiZeTheme(appearance) {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     ResumeSmartScreen(
                         state = screenState,
                         onBack = ::finish,
@@ -938,29 +940,19 @@ private fun ResumeSmartScreen(
     } else 0f
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("RESUME CLEAN", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Text("智能扫描", fontSize = 30.sp, fontWeight = FontWeight.Black)
-                    Text("扫描一次 · 清理中断后从剩余项目继续", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                DetailPageHeader("智能扫描", "中断后可以从剩余项目继续清理", onBack)
             }
-        }
 
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1027,8 +1019,7 @@ private fun ResumeSmartScreen(
         if (state.scanCompleted || state.runCount > 0) {
             item {
                 Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    Text("TRANSACTION", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Text("清理事务", fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Text("清理事务", fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "执行 ${state.runCount} 次 · 授权 ${state.totalSafe + state.processedCandidates} 项 · 已处理 ${state.processedCandidates} 项 · 实际清理 ${state.cleanedCandidates} 项",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1041,7 +1032,7 @@ private fun ResumeSmartScreen(
                         Text(
                             "其中 ${Formatter.formatFileSize(context, state.unattributedDeletedBytes)} 来自引擎总计，缺少逐项归属但仍计入真实释放量",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
+                            fontSize = 14.sp
                         )
                     }
                     if (state.failures > 0) {
@@ -1055,16 +1046,16 @@ private fun ResumeSmartScreen(
             item { ResumeInfoCard("按风险统计", formatMetricBuckets(state.riskStats)) }
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
                     shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                    colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
                 ) {
                     Text(
                         "已完成或确认失效的候选会从事务快照中移除；部分删除、失败和未执行候选继续保留。应用或 Root 服务异常退出后，会先恢复快照检查点，再允许继续清理。",
                         modifier = Modifier.padding(18.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp
                     )
                 }
             }
@@ -1075,14 +1066,14 @@ private fun ResumeSmartScreen(
 @Composable
 private fun ResumeInfoCard(title: String, summary: String) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(3.dp))
-            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
     }
 }

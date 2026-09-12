@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -365,24 +367,10 @@ private fun InstantCacheScreen(
     }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
-                title = {
-                    Column {
-                        Text("系统即时清缓存", fontWeight = FontWeight.Black)
-                        Text("PackageManager · 当前用户 ${currentUserId()}", fontSize = 10.sp)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "返回") }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
+            DetailPageHeader("即时清缓存", "通过系统清除所选应用的当前缓存", onBack)
         },
         bottomBar = {
             Surface(
@@ -397,7 +385,7 @@ private fun InstantCacheScreen(
                     Text(
                         "已选择 ${state.selected.size}/$MAX_VISIBLE_SELECTION 个应用",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
+                        fontSize = 13.sp
                     )
                     Button(
                         onClick = { if (state.running) onStop() else showConfirmation = true },
@@ -445,7 +433,7 @@ private fun InstantCacheScreen(
                 }
             }
             item(contentType = "status") {
-                Text(state.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(state.status, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             }
             item(contentType = "search") {
                 OutlinedTextField(
@@ -475,7 +463,7 @@ private fun InstantCacheScreen(
             }
             item(contentType = "selection") {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("当前显示 ${visible.size} 个", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("当前显示 ${visible.size} 个", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
                     TextButton(
                         onClick = { onSelectVisible(visible.map { it.packageName }) },
@@ -531,9 +519,9 @@ private fun NoticeCard(icon: ImageVector, title: String, text: String, warning: 
             Icon(icon, null, Modifier.size(21.dp))
             Spacer(Modifier.width(11.dp))
             Column {
-                Text(title, fontWeight = FontWeight.Black)
+                Text(title, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(3.dp))
-                Text(text, fontSize = 12.sp, lineHeight = 17.sp)
+                Text(text, fontSize = 14.sp, lineHeight = 20.sp)
             }
         }
     }
@@ -574,14 +562,14 @@ private fun InstantCacheAppRow(
                             shape = RoundedCornerShape(8.dp),
                             color = scheme.secondaryContainer
                         ) {
-                            Text("系统", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 9.sp)
+                            Text("系统", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 13.sp)
                         }
                     }
                 }
                 Text(
                     app.packageName,
                     color = scheme.onSurfaceVariant,
-                    fontSize = 10.sp,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -617,7 +605,7 @@ private fun PackageIcon(packageName: String, label: String) {
                 contentScale = ContentScale.Fit
             )
         } else {
-            Text(label.trim().firstOrNull()?.uppercase() ?: "?", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+            Text(label.trim().firstOrNull()?.uppercase() ?: "?", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         }
     }
 }

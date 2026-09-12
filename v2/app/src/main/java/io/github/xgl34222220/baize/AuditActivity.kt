@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -354,8 +356,8 @@ private fun AuditScreen(
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
     val miuix = style == UiStyle.MIUIX
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val cardShape = if (miuix) RoundedCornerShape(26.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val cardShape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     val filtered = remember(state.events, filter) {
         state.events.filter { event ->
             when (filter) {
@@ -368,11 +370,11 @@ private fun AuditScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 AuditHeader(
@@ -445,25 +447,7 @@ private fun AuditHeader(
     onRefresh: () -> Unit,
     onClear: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column(Modifier.weight(1f)) {
-            Text("清理审计", fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+    DetailPageHeader("清理记录", message, onBack) {
         IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
         IconButton(onClick = onClear, enabled = !loading) { Icon(Icons.Rounded.DeleteOutline, contentDescription = "清空审计") }
     }
@@ -475,7 +459,7 @@ private fun AuditSummary(state: AuditUiState, horizontal: androidx.compose.ui.un
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -490,7 +474,7 @@ private fun AuditSummary(state: AuditUiState, horizontal: androidx.compose.ui.un
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${state.total} 条可追溯事件", fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Text("${state.total} 条可追溯事件", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "实际释放 ${Formatter.formatFileSize(context, state.releasedBytes)}",
                         color = MaterialTheme.colorScheme.primary,
@@ -509,7 +493,7 @@ private fun AuditSummary(state: AuditUiState, horizontal: androidx.compose.ui.un
                 Text(
                     "隔离 ${Formatter.formatFileSize(context, state.quarantinedBytes)} · 已停止 ${state.cancelledCount} 次",
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
-                    fontSize = 11.sp
+                    fontSize = 13.sp
                 )
             }
         }
@@ -520,8 +504,8 @@ private fun AuditSummary(state: AuditUiState, horizontal: androidx.compose.ui.un
 private fun AuditMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
         Column(Modifier.padding(horizontal = 11.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-            Text(value, fontWeight = FontWeight.Black, fontSize = 17.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
     }
 }
@@ -535,7 +519,7 @@ private fun EffectivenessEntryCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
@@ -549,8 +533,8 @@ private fun EffectivenessEntryCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("清理效果评分", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text("查看安全性、收益、耗时、稳定性和规则趋势", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("清理效果评分", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("查看安全性、收益、耗时、稳定性和规则趋势", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("查看") }
         }
@@ -580,8 +564,8 @@ private fun RuleQualityEntryCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("规则质量中心", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text("集中审核高失败、频繁保护、零命中与低收益规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("规则质量中心", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("集中审核高失败、频繁保护、零命中与低收益规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("审核") }
         }
@@ -611,8 +595,8 @@ private fun RuleReviewTrendsEntryCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("审核历史与趋势", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text("查看反复重开、恶化原因与人工处理周期", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("审核历史与趋势", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("查看反复重开、恶化原因与人工处理周期", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("趋势") }
         }
@@ -629,7 +613,7 @@ private fun RuleImprovementDraftsEntryCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
@@ -643,8 +627,8 @@ private fun RuleImprovementDraftsEntryCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("规则改进建议草案", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                Text("查看缩小范围、增强保护、观察或停用评估草案", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text("规则改进建议草案", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text("查看缩小范围、增强保护、观察或停用评估草案", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             OutlinedButton(onClick = onOpen) { Text("草案") }
         }
@@ -676,19 +660,19 @@ private fun AuditPolicyAdviceCard(
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("设备建议：${advice.recommendedPolicy.title}档", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("设备建议：${advice.recommendedPolicy.title}档", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(advice.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
             Spacer(Modifier.height(10.dp))
             Text(
                 "可用空间 ${if (advice.storageFreePercent < 0) "未知" else "${advice.storageFreePercent}%"} · 异常率 ${advice.failureRate}% · 恢复率 ${advice.restoreRate}% · 样本 ${advice.sampleCount}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
             advice.reasons.firstOrNull()?.let { reason ->
                 Spacer(Modifier.height(7.dp))
-                Text(reason, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Text(reason, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
             }
             Spacer(Modifier.height(11.dp))
             OutlinedButton(onClick = onOpenPolicy, modifier = Modifier.fillMaxWidth()) {
@@ -700,7 +684,7 @@ private fun AuditPolicyAdviceCard(
                 "建议不会自动生效，也不会修改定时任务周期。",
                 modifier = Modifier.padding(top = 7.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 9.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -715,7 +699,7 @@ private fun AuditEmptyCard(
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.History, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.outline)
@@ -724,7 +708,7 @@ private fun AuditEmptyCard(
             Text(
                 "后续扫描、清理、隔离和恢复会自动写入 Root 审计时间线。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
+                fontSize = 14.sp
             )
         }
     }
@@ -747,7 +731,7 @@ private fun AuditEventCard(
             .animateContentSize()
             .clickable(enabled = hasMore) { expanded = !expanded },
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -766,7 +750,7 @@ private fun AuditEventCard(
                     Text(
                         "${event.time} · ${sourceLabel(event.source)}${if (event.legacy) " · 旧记录" else ""}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
+                        fontSize = 13.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -778,7 +762,7 @@ private fun AuditEventCard(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(event.message.ifBlank { "任务未提供结果说明" }, fontSize = 12.sp, lineHeight = 17.sp)
+            Text(event.message.ifBlank { "任务未提供结果说明" }, fontSize = 14.sp, lineHeight = 20.sp)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 if (event.bytes > 0L) AuditPill(Formatter.formatFileSize(context, event.bytes))
@@ -789,11 +773,11 @@ private fun AuditEventCard(
             }
             if (event.elapsedMs > 0L) {
                 Spacer(Modifier.height(7.dp))
-                Text("耗时 ${formatAuditElapsed(event.elapsedMs)}", color = MaterialTheme.colorScheme.outline, fontSize = 9.sp)
+                Text("耗时 ${formatAuditElapsed(event.elapsedMs)}", color = MaterialTheme.colorScheme.outline, fontSize = 13.sp)
             }
             if (expanded) {
                 Spacer(Modifier.height(13.dp))
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+                Surface(shape = RoundedCornerShape(16.dp), color = BaiZeTokens.colors.surfaceRaisedest) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (event.profile.isNotBlank()) AuditKeyValue("配置", event.profile)
                         if (event.snapshotId.isNotBlank()) AuditKeyValue("快照", event.snapshotId.take(12))
@@ -804,7 +788,7 @@ private fun AuditEventCard(
                                 Text(
                                     detail.category.ifBlank { detail.action.ifBlank { "候选明细" } },
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 13.sp
                                 )
                                 val line = buildString {
                                     if (detail.reason.isNotBlank()) append(detail.reason)
@@ -813,7 +797,7 @@ private fun AuditEventCard(
                                         append(detail.pathTail)
                                     }
                                 }
-                                if (line.isNotBlank()) Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, lineHeight = 13.sp)
+                                if (line.isNotBlank()) Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
                             }
                         }
                     }
@@ -834,22 +818,22 @@ private fun StatusBadge(status: String) {
         else -> "失败" to MaterialTheme.colorScheme.error
     }
     Surface(shape = CircleShape, color = color.copy(alpha = .13f)) {
-        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(label, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun AuditPill(text: String) {
     Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .09f)) {
-        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.primary, fontSize = 9.sp)
+        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
     }
 }
 
 @Composable
 private fun AuditKeyValue(label: String, value: String) {
     Row(verticalAlignment = Alignment.Top) {
-        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
-        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.weight(1f))
+        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp, modifier = Modifier.weight(1f))
     }
 }
 

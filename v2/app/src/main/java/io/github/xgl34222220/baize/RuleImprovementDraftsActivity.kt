@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -321,8 +323,8 @@ private fun RuleImprovementDraftsScreen(
     onOpenRuleQuality: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
-    val horizontal = if (miuix) 18.dp else 20.dp
-    val shape = if (miuix) RoundedCornerShape(26.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 20.dp
+    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
     val filtered = remember(state.report.drafts, filter) {
         state.report.drafts.filter { draft ->
             when (filter) {
@@ -337,11 +339,11 @@ private fun RuleImprovementDraftsScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item { DraftHeader(state.message, state.loading, onBack, onRefresh) }
             item { DraftSummary(state.report, horizontal, shape) }
@@ -378,21 +380,8 @@ private fun RuleImprovementDraftsScreen(
 
 @Composable
 private fun DraftHeader(message: String, loading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "返回") }
-        Spacer(Modifier.width(5.dp))
-        Column(Modifier.weight(1f)) {
-            Text("规则改进草案", fontSize = 29.sp, fontWeight = FontWeight.Black)
-            Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        if (loading) {
-            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-        } else {
-            IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
-        }
+    DetailPageHeader("规则改进建议", message, onBack) {
+        IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
     }
 }
 
@@ -401,7 +390,7 @@ private fun DraftSummary(report: RuleImprovementDraftReport, horizontal: android
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceOverlay)
     ) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -410,8 +399,8 @@ private fun DraftSummary(report: RuleImprovementDraftReport, horizontal: android
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${report.draftCount} 份人工草案", fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("${report.draftCount} 份人工草案", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -424,7 +413,7 @@ private fun DraftSummary(report: RuleImprovementDraftReport, horizontal: android
             Text(
                 "停用评估 ${report.considerDisableCount} · 缩小范围 ${report.narrowScopeCount} · 增强保护 ${report.strengthenProtectionCount} · 观察 ${report.observeCount}",
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .72f),
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
         }
     }
@@ -434,8 +423,8 @@ private fun DraftSummary(report: RuleImprovementDraftReport, horizontal: android
 private fun DraftMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Surface(modifier, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .55f)) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 9.dp)) {
-            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
-            Text(value, fontWeight = FontWeight.Black, fontSize = 17.sp)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Text(value, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         }
     }
 }
@@ -454,16 +443,16 @@ private fun DraftSafetyCard(horizontal: androidx.compose.ui.unit.Dp, shape: andr
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("只读概念草案", fontWeight = FontWeight.Black, fontSize = 16.sp)
-                    Text("不读取真实规则文本，不生成可执行补丁", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    Text("只读概念草案", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("不读取真实规则文本，不生成可执行补丁", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
             Spacer(Modifier.height(10.dp))
             Text(
                 "所有内容仅供人工判断。系统不会停用规则、写入规则文件、删除文件、启动清理、修改策略、快照或任何定时周期。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                lineHeight = 17.sp
+                fontSize = 13.sp,
+                lineHeight = 20.sp
             )
             Spacer(Modifier.height(11.dp))
             OutlinedButton(onClick = onOpenRuleQuality, modifier = Modifier.fillMaxWidth()) { Text("返回规则质量中心人工审核") }
@@ -485,7 +474,7 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
             .animateContentSize()
             .clickable(enabled = canExpand) { expanded = !expanded },
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -494,15 +483,15 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(draft.category, fontWeight = FontWeight.Black, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(draft.title, color = visual.tint, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Text(draft.category, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(draft.title, color = visual.tint, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 Surface(shape = CircleShape, color = priorityColor(draft.priority).copy(alpha = .13f)) {
                     Text(
                         priorityLabel(draft.priority),
                         Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         color = priorityColor(draft.priority),
-                        fontSize = 9.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -512,7 +501,7 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(draft.rationale, fontSize = 12.sp, lineHeight = 18.sp)
+            Text(draft.rationale, fontSize = 14.sp, lineHeight = 20.sp)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DraftMetric("异常率", "${draft.failureRate}%", Modifier.weight(1f))
@@ -523,7 +512,7 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
             Text(
                 "任务 ${draft.events} · 明细 ${draft.observations} · 处理 ${draft.processed} · 平均 ${Formatter.formatFileSize(context, draft.averageBytes)}",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 13.sp
             )
             if (draft.activeReopened || draft.repeated) {
                 Spacer(Modifier.height(7.dp))
@@ -534,7 +523,7 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
                         else -> ""
                     },
                     color = MaterialTheme.colorScheme.error,
-                    fontSize = 10.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -543,24 +532,24 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
                 Spacer(Modifier.height(12.dp))
                 if (draft.evidence.isNotEmpty()) {
-                    Text("生成依据", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                    draft.evidence.forEach { Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 17.sp) }
+                    Text("生成依据", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    draft.evidence.forEach { Text("• $it", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp) }
                     Spacer(Modifier.height(12.dp))
                 }
-                Text("安全差异预览（概念）", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                Text("安全差异预览（概念）", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Spacer(Modifier.height(7.dp))
                 draft.preview.forEach { line -> DraftPreviewRow(line) }
                 Spacer(Modifier.height(10.dp))
-                Text("预期影响", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                Text(draft.impact, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 17.sp)
+                Text("预期影响", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(draft.impact, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
                 Spacer(Modifier.height(7.dp))
-                Text("注意事项", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                Text(draft.caution, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 17.sp)
+                Text("注意事项", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(draft.caution, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, lineHeight = 20.sp)
                 if (draft.checklist.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    Text("人工应用检查清单", fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    Text("人工应用检查清单", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     draft.checklist.forEachIndexed { index, step ->
-                        Text("${index + 1}. $step", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 17.sp)
+                        Text("${index + 1}. $step", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -569,8 +558,8 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
                         "此页面没有应用、停用或写入按钮。请先回到规则质量中心核对证据，再人工修改并复测。",
                         Modifier.padding(11.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
-                        lineHeight = 16.sp
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp
                     )
                 }
             }
@@ -582,9 +571,9 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
 private fun DraftPreviewRow(line: RuleDraftPreview) {
     Surface(Modifier.fillMaxWidth().padding(bottom = 7.dp), RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.padding(11.dp)) {
-            Text(line.dimension, fontWeight = FontWeight.Black, fontSize = 11.sp)
-            Text("当前：${line.before}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, lineHeight = 16.sp)
-            Text("草案：${line.after}", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+            Text(line.dimension, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text("当前：${line.before}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 20.sp)
+            Text("草案：${line.after}", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, lineHeight = 20.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -594,7 +583,7 @@ private fun DraftEmpty(horizontal: androidx.compose.ui.unit.Dp, shape: androidx.
     Card(
         modifier = Modifier.padding(horizontal = horizontal).fillMaxWidth(),
         shape = shape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(Modifier.padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(42.dp), tint = BaiZeTokens.colors.success)
@@ -603,8 +592,8 @@ private fun DraftEmpty(horizontal: androidx.compose.ui.unit.Dp, shape: androidx.
             Text(
                 "继续正常扫描、清理和人工审核后，系统会基于脱敏统计生成概念草案。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                lineHeight = 17.sp
+                fontSize = 13.sp,
+                lineHeight = 20.sp
             )
         }
     }

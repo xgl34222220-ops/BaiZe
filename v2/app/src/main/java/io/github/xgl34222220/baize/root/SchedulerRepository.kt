@@ -260,30 +260,11 @@ internal class SchedulerRepository(
     }
 
     private fun clearStaleTaskMarkers() {
-        val lockDir = File(stateDir, "run.lock")
-        if (!lockDir.isDirectory) return
-        val pid = readEpoch(File(lockDir, "pid"))
-        val ticks = readEpoch(File(lockDir, "start_ticks"))
-        val alive = processMatches(
-            pid,
-            ticks,
-            listOf(
-                "task-worker.sh",
-                "worker-runner.sh",
-                "organizer-worker.sh",
-                "cleaner.sh",
-                "native-cleaner.sh",
-                "profile-cleaner.sh",
-                "baize_engine",
-                "baize_deep_snapshot"
-            )
-        )
-        if (!alive) {
-            lockDir.deleteRecursively()
-            if (!File(stateDir, "cache-lane.lock").isDirectory) {
-                File(stateDir, "running.env").delete()
-            }
-        }
+        if (RuntimeTaskOwnership.isRunning(stateDir)) return
+        File(stateDir, "run.lock").deleteRecursively()
+        File(stateDir, "cache-lane.lock").deleteRecursively()
+        File(stateDir, "running.env").delete()
+        File(stateDir, "worker.env").delete()
     }
 
     private fun requestNow(groups: List<String>, reason: String): JSONObject {
@@ -547,6 +528,8 @@ internal class SchedulerRepository(
             config.has("schedule_mode") -> config.optInt("schedule_mode", 0).coerceIn(0, 2) == 2
             else -> config.optInt("daily_schedule_enabled", 0) == 1
         }
+        val adaptiveEnabled = config.optInt("schedule_mode", if (dailyEnabled) 2 else 0) == 0 &&
+            config.optInt("autopilot_enabled", 1) == 1
         for (group in GROUPS) {
             val enabled = config.optInt(if (group == "apk") "clean_apk_packages" else "schedule_${group}_enabled", 0) == 1
             if (!enabled || config.optInt("enabled", 1) != 1) {
@@ -558,8 +541,9 @@ internal class SchedulerRepository(
                 result.put(group, retryUntil)
                 continue
             }
+            val deferredUntil = readEpoch(File(stateDir, "scheduler-deferred-$group.until"))
             if (group != "organize" && dailyEnabled) {
-                result.put(group, nextDailyEpoch(group, config, now))
+                result.put(group, maxOf(nextDailyEpoch(group, config, now), deferredUntil))
                 continue
             }
             val fallbackMinutes = when (group) {
@@ -573,9 +557,21 @@ internal class SchedulerRepository(
                 "schedule_${group}_minutes",
                 config.optInt("schedule_${group}_hours", (fallbackMinutes + 59) / 60) * 60
             ).coerceIn(if (group == "organize") 15 else 5, 43_200)
-            val last = readEpoch(File(stateDir, "last_${group}_run.epoch"))
-            val due = if (last <= 0L) now else last + minutes * 60L
-            result.put(group, due.coerceAtLeast(now))
+            val advice = RootFileStore.readEnv(File(stateDir, "autopilot-$group.env"))
+            val recordedLast = readEpoch(File(stateDir, "last_${group}_run.epoch"))
+            val legacyActual = advice.optLong("last_actual_epoch", 0L)
+            val last = if (advice.optString("schema") != "actual-run-v2" && legacyActual > 0L) legacyActual else recordedLast
+            result.put(group, SchedulerTiming.intervalDue(
+                now = now,
+                completedAt = last,
+                intervalSeconds = minutes * 60L,
+                adaptiveEnabled = adaptiveEnabled,
+                adaptiveDue = advice.optLong("desired_due", 0L),
+                adaptiveBase = advice.optLong("base_interval_seconds", 0L),
+                adaptiveActual = advice.optLong("last_actual_epoch", 0L),
+                adaptiveUpdated = advice.optLong("updated", 0L),
+                deferredUntil = deferredUntil
+            ))
         }
         return result
     }
@@ -595,8 +591,13 @@ internal class SchedulerRepository(
             calendar.add(Calendar.DAY_OF_YEAR, 1)
             return calendar.timeInMillis / 1000L
         }
-        if (now < targetToday) return targetToday
         val graceSeconds = config.optInt("daily_grace_minutes", 240).coerceIn(15, 720) * 60L
+        if (now < targetToday) {
+            val previous = (calendar.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+            val previousCycle = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(previous.time)
+            if (lastCycle != previousCycle && now <= previous.timeInMillis / 1000L + graceSeconds) return now
+            return targetToday
+        }
         if (now <= targetToday + graceSeconds) return now
         calendar.add(Calendar.DAY_OF_YEAR, 1)
         return calendar.timeInMillis / 1000L

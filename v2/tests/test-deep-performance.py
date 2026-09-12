@@ -78,6 +78,8 @@ __attribute__((destructor)) static void finish(void) {
 
 
 def run(args, code=0, **env):
+    if args and args[0] == "sudo" and os.geteuid() == 0:
+        args = args[1:]
     result = subprocess.run([str(a) for a in args], env={**os.environ, **env}, capture_output=True, text=True)
     assert result.returncode == code, (args, result.returncode, result.stdout, result.stderr)
     return result
@@ -109,7 +111,8 @@ def clean(state, code=0, batch=128, **env):
 
 try:
     run(["sudo", "mkdir", "-p", DATA])
-    run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", DATA])
+    if os.geteuid() != 0:
+        run(["sudo", "chown", f"{os.getuid()}:{os.getgid()}", DATA])
     BIN = WORK / "deep"
     ENGINE = WORK / "engine"
     SHARED = WORK / "faults.so"

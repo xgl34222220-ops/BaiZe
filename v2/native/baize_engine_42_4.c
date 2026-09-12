@@ -27,6 +27,7 @@
 typedef struct { char **v; size_t n, cap; } StrVec;
 typedef struct {
     uint64_t files, bytes, dirs, empty_dirs;
+    uint64_t protected_files, protected_bytes;
     uint64_t visited_files, visited_dirs;
     uint64_t elapsed_ms;
     bool oversized, mount_conflict, incomplete, timed_out;
@@ -46,8 +47,10 @@ typedef struct {
     uint64_t max_file_bytes;
     uint64_t dir_budget_ms;
     uint64_t global_budget_ms;
-    int min_age_days;
+    int min_age_days, empty_age_days, external_min_age_days;
+    const char *collection_root;
     bool allow_high_risk;
+    bool rule_external;
     /* 允许自动执行的最高风险等级；-1 表示回退到 allow_high_risk 的旧语义。 */
     int max_auto_risk;
 } Options;
@@ -500,6 +503,7 @@ static void parse_options(int argc, char **argv, Options *o) {
     o->dir_budget_ms = 8000U;
     o->global_budget_ms = 180000U;
     o->max_auto_risk = -1;
+    o->external_min_age_days = -1;
     for (int i = 2; i < argc; i++) {
         const char *a = argv[i];
         if (strcmp(a, "--media-root") == 0) o->media_root = arg_value(argc, argv, &i);
@@ -507,6 +511,9 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--installed-root") == 0) o->installed_root = arg_value(argc, argv, &i);
         else if (strcmp(a, "--whitelist") == 0) o->whitelist_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--package-whitelist") == 0) o->package_whitelist_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--collection-root") == 0) o->collection_root = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--empty-age-days") == 0) o->empty_age_days = atoi(arg_value(argc, argv, &i));
+        else if (strcmp(a, "--rule-external") == 0) o->rule_external = true;
         else if (strcmp(a, "--rules") == 0) o->rules_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--report") == 0) o->report_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--targets") == 0) o->targets_path = arg_value(argc, argv, &i);
@@ -521,6 +528,7 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--max-file-bytes") == 0) o->max_file_bytes = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--dir-budget-ms") == 0) o->dir_budget_ms = strtoull(arg_value(argc, argv, &i), NULL, 10);
         else if (strcmp(a, "--global-budget-ms") == 0) o->global_budget_ms = strtoull(arg_value(argc, argv, &i), NULL, 10);
+        else if (strcmp(a, "--external-min-age-days") == 0) o->external_min_age_days = atoi(arg_value(argc, argv, &i));
         else if (strcmp(a, "--min-age-days") == 0) o->min_age_days = atoi(arg_value(argc, argv, &i));
         else if (strcmp(a, "--allow-high-risk") == 0) o->allow_high_risk = atoi(arg_value(argc, argv, &i)) != 0;
         else if (strcmp(a, "--risk-overrides") == 0) o->risk_overrides_path = arg_value(argc, argv, &i);
@@ -665,7 +673,8 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
                               FILE *manifest, const char *pkg, const char *category,
                               Stats *stats, bool may_contain_whitelist, unsigned depth) {
     if (depth > 512U) { stats->incomplete = true; return -1; }
-    if (stop_requested(o)) return 9;
+    int abort_code = walk_should_abort(o, o->global_budget_ms ? g_started_ms + o->global_budget_ms : 0U);
+    if (abort_code != 0) { stats->incomplete = true; stats->timed_out = abort_code == 124; return abort_code; }
     if (depth > 0U && may_contain_whitelist) {
         unsigned relation = whitelist_relation(path);
         if ((relation & WHITELIST_ANCESTOR) != 0U) {
@@ -680,10 +689,15 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
     if (S_ISREG(st.st_mode)) {
         stats->visited_files++;
         if (!eligible_mtime(&st, days)) return 0;
-        stats->files++;
         uint64_t size = st.st_size > 0 ? (uint64_t)st.st_size : 0U;
+        /* One large cache file must not hide every smaller file in its app. */
+        if (size > o->max_file_bytes) {
+            stats->protected_files++;
+            stats->protected_bytes += size;
+            return 0;
+        }
+        stats->files++;
         stats->bytes += size;
-        if (size > o->max_file_bytes) stats->oversized = true;
         if (!write_nul_field(manifest, pkg) || !write_nul_field(manifest, category) ||
             !write_nul_u64(manifest, (uint64_t)st.st_dev) ||
             !write_nul_u64(manifest, (uint64_t)st.st_ino) ||
@@ -712,7 +726,7 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
         if (written < 0 || (size_t)written >= sizeof(child)) { stats->incomplete = true; continue; }
         int code = snapshot_cache_rec(child, root_dev, o, days, manifest, pkg, category,
                                       stats, may_contain_whitelist, depth + 1U);
-        if (code == 9) { closedir(dir); return 9; }
+        if (code == 9 || code == 124) { closedir(dir); return code; }
     }
     closedir(dir);
     stats->dirs++;
@@ -756,11 +770,19 @@ static void cache_candidate(const Options *o, FILE *rep, FILE *targets, FILE *it
         report_row(rep, "skipped", "protected", category, 0, 0, path);
         return;
     }
+    Options scope_options = *o;
+    if (o->external_min_age_days >= 0 && path_relation(o->media_root, path))
+        scope_options.min_age_days = o->external_min_age_days;
     Stats stats;
-    int code = snapshot_cache_tree(path, o, pkg, category, manifest, &stats,
+    int code = snapshot_cache_tree(path, &scope_options, pkg, category, manifest, &stats,
                                    (relation & WHITELIST_DESCENDANT) != 0U);
     if (code == 9) return;
+    if (code == 124 || stats.timed_out) { totals->timed_out_dirs++; totals->truncated = 1; }
     if (code < 0 || stats.incomplete) totals->errors++;
+    totals->protected_items += stats.protected_files;
+    totals->protected_bytes += stats.protected_bytes;
+    if (stats.protected_files > 0U)
+        report_row(rep, "protected", "large", category, stats.protected_files, stats.protected_bytes, path);
     totals->visited_files += stats.visited_files;
     totals->visited_dirs += stats.visited_dirs;
     if (stats.files == 0U) return;
@@ -1073,25 +1095,27 @@ static bool numeric_segment(const char *value) {
     return true;
 }
 static bool safe_relative_tail(const char *tail) {
-    if (!tail || !*tail || tail[0] == '/') return false;
-    if (strcmp(tail, ".") == 0 || strcmp(tail, "..") == 0) return false;
-    if (strstr(tail, "/../") || strstr(tail, "/./")) return false;
-    size_t length = strlen(tail);
-    if (length >= 3U && strcmp(tail + length - 3U, "/..") == 0) return false;
-    if (length >= 2U && strcmp(tail + length - 2U, "/.") == 0) return false;
+    if (!tail || !*tail || tail[0] == '/' || tail[strlen(tail) - 1U] == '/') return false;
+    const char *cursor = tail;
+    char segment[PATH_MAX];
+    while (*cursor) {
+        if (!next_segment(&cursor, segment, sizeof(segment)) ||
+            strcmp(segment, ".") == 0 || strcmp(segment, "..") == 0) return false;
+    }
     return true;
 }
+
 static bool cache_path_matches_package(const Options *o, const char *path, const char *pkg) {
     if (!path || !pkg || !safe_package(pkg)) return false;
     const char *cursor = NULL;
     size_t data_length = strlen(o->data_root);
     size_t media_length = strlen(o->media_root);
     bool external = false;
-    if (strncmp(path, o->data_root, data_length) == 0 && path[data_length] == '/') {
-        cursor = path + data_length + 1U;
-    } else if (strncmp(path, o->media_root, media_length) == 0 && path[media_length] == '/') {
+    if (strncmp(path, o->media_root, media_length) == 0 && path[media_length] == '/') {
         cursor = path + media_length + 1U;
         external = true;
+    } else if (strncmp(path, o->data_root, data_length) == 0 && path[data_length] == '/') {
+        cursor = path + data_length + 1U;
     } else {
         return false;
     }
@@ -1232,6 +1256,203 @@ static int clean_cache_snapshot(const Options *o) {
     return result;
 }
 
+/* Package-aware rule target discovery. Rules are parsed once and grouped by
+ * package; only apps present on this device are visited. No file is deleted. */
+typedef struct { char *pkg, *relative; unsigned days; } AppRule;
+typedef struct { AppRule *v; size_t n, cap; } AppRules;
+static int app_rule_compare(const void *left, const void *right) {
+    const AppRule *a = left, *b = right;
+    int c = strcmp(a->pkg, b->pkg);
+    return c ? c : strcmp(a->relative, b->relative);
+}
+static bool rule_relative_safe(const char *p) {
+    return safe_relative_tail(p) && !strstr(p, "//") && !has_glob(p) &&
+           !strpbrk(p, "\t\r\n|\\");
+}
+static char *trim_rule_field(char *p) {
+    while (isspace((unsigned char)*p)) p++;
+    char *end = p + strlen(p);
+    while (end > p && isspace((unsigned char)end[-1])) *--end = '\0';
+    return p;
+}
+static void app_rules_free(AppRules *a) {
+    for (size_t i = 0; i < a->n; i++) { free(a->v[i].pkg); free(a->v[i].relative); }
+    free(a->v);
+}
+static int app_rules_load(const char *path, AppRules *rules) {
+    FILE *f = fopen(path, "r");
+    if (!f) return 5;
+    char *line = NULL;
+    size_t cap = 0;
+    int code = 0;
+    while (getline(&line, &cap, f) >= 0) {
+        char *pkg = trim_rule_field(line);
+        if (!*pkg || *pkg == '#') continue;
+        char *relative = strchr(pkg, '|');
+        if (!relative) { code = 7; break; }
+        *relative++ = '\0';
+        char *days = strchr(relative, '|');
+        if (!days) { code = 7; break; }
+        *days++ = '\0';
+        pkg = trim_rule_field(pkg); relative = trim_rule_field(relative); days = trim_rule_field(days);
+        uint64_t parsed = 0;
+        if (!safe_package(pkg) || !rule_relative_safe(relative) || !numeric_segment(days) ||
+            !parse_u64_value(days, &parsed) || parsed > 365U) { code = 7; break; }
+        if (rules->n == rules->cap) {
+            rules->cap = rules->cap ? rules->cap * 2U : 128U;
+            AppRule *grown = realloc(rules->v, rules->cap * sizeof(*grown));
+            if (!grown) die("out of memory loading application rules");
+            rules->v = grown;
+        }
+        rules->v[rules->n++] = (AppRule){xstrdup(pkg), xstrdup(relative), (unsigned)parsed};
+    }
+    if (ferror(f)) code = 5;
+    free(line); fclose(f);
+    if (code == 0 && rules->n > 1U) qsort(rules->v, rules->n, sizeof(*rules->v), app_rule_compare);
+    return code;
+}
+static int rule_target_emit(FILE *out, const char *base, const char *relative,
+                            const char *pkg, unsigned days) {
+    char target[PATH_MAX], base_real[PATH_MAX], resolved[PATH_MAX];
+    int n = snprintf(target, sizeof(target), "%s/%s", base, relative);
+    if (n < 0 || (size_t)n >= sizeof(target)) return 0;
+    struct stat st;
+    if (lstat(target, &st) != 0) return errno == ENOENT || errno == ENOTDIR ? 0 : 5;
+    if (S_ISLNK(st.st_mode) || (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode))) return 0;
+    if (!realpath(base, base_real) || !realpath(target, resolved)) return 5;
+    if (!path_relation(base_real, resolved) || strcmp(base_real, resolved) == 0) return 0;
+    return write_nul_u64(out, days) && write_nul_field(out, pkg) && write_nul_field(out, resolved) ? 0 : 5;
+}
+static int rule_targets_apps(const Options *o, FILE *out, const AppRules *rules, const char *apps_root) {
+    DIR *apps = opendir(apps_root);
+    if (!apps) return errno == ENOENT || errno == ENOTDIR ? 0 : 5;
+    int rc = 0;
+    struct dirent *entry;
+    while ((entry = readdir(apps)) != NULL) {
+        if (!safe_package(entry->d_name) || entry->d_name[0] == '.') continue;
+        if (stop_requested(o)) { rc = 9; break; }
+        size_t low = 0, high = rules->n;
+        while (low < high) {
+            size_t mid = low + (high - low) / 2U;
+            if (strcmp(rules->v[mid].pkg, entry->d_name) < 0) low = mid + 1U; else high = mid;
+        }
+        if (low == rules->n || strcmp(rules->v[low].pkg, entry->d_name) != 0) continue;
+        char base[PATH_MAX];
+        if (!path_join(base, sizeof(base), apps_root, entry->d_name) || !is_dir_nofollow(base)) continue;
+        for (size_t i = low; i < rules->n && strcmp(rules->v[i].pkg, entry->d_name) == 0; i++) {
+            int code = rule_target_emit(out, base, rules->v[i].relative, entry->d_name, rules->v[i].days);
+            if (code != 0) { rc = code; break; }
+        }
+        if (rc) break;
+    }
+    closedir(apps);
+    return rc;
+}
+static int rule_targets_users(const Options *o, FILE *out, const AppRules *rules,
+                              const char *root, bool external) {
+    DIR *users = opendir(root);
+    if (!users) return errno == ENOENT || errno == ENOTDIR ? 0 : 5;
+    int rc = 0;
+    struct dirent *entry;
+    while ((entry = readdir(users)) != NULL) {
+        if (!numeric_segment(entry->d_name)) continue;
+        char user[PATH_MAX], apps[PATH_MAX];
+        if (!path_join(user, sizeof(user), root, entry->d_name)) continue;
+        int n = snprintf(apps, sizeof(apps), "%s%s", user, external ? "/Android/data" : "");
+        if (n < 0 || (size_t)n >= sizeof(apps)) continue;
+        rc = rule_targets_apps(o, out, rules, apps);
+        if (rc) break;
+    }
+    closedir(users);
+    return rc;
+}
+static int rule_targets(const Options *o) {
+    if (!o->rules_path || !o->targets_path) die("rule source and targets required");
+    AppRules rules = {0};
+    int rc = app_rules_load(o->rules_path, &rules);
+    FILE *out = rc == 0 ? fopen(o->targets_path, "wb") : NULL;
+    if (!out && rc == 0) rc = 5;
+    if (out) {
+        if (o->rule_external) rc = rule_targets_users(o, out, &rules, o->media_root, true);
+        else {
+            char root[PATH_MAX];
+            const char *stores[] = {"user", "user_de"};
+            for (size_t i = 0; i < 2U && rc == 0; i++) {
+                if (path_join(root, sizeof(root), o->data_root, stores[i]))
+                    rc = rule_targets_users(o, out, &rules, root, false);
+            }
+        }
+        if (fclose(out) != 0 && rc == 0) rc = 5;
+    }
+    app_rules_free(&rules);
+    return rc;
+}
+
+static bool empty_marker(const char *name) {
+    size_t n = strlen(name);
+    return strcmp(name, ".nomedia") == 0 || strcmp(name, ".keep") == 0 ||
+           strcmp(name, ".gitkeep") == 0 || strcmp(name, ".placeholder") == 0 ||
+           (n >= 5U && strcmp(name + n - 5U, ".lock") == 0);
+}
+static int collect_rule_files_rec(int parent, const char *name, const char *path, dev_t device,
+                                   const Options *o, FILE *files, FILE *empty, unsigned depth,
+                                   uint64_t deadline) {
+    if (depth > 512U) return 5;
+    int abort = walk_abort_now(o, deadline);
+    if (abort) return abort;
+    int fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) return 5;
+    struct stat root;
+    if (fstat(fd, &root) != 0) { close(fd); return 5; }
+    if (root.st_dev != device) { close(fd); return 0; }
+    DIR *dir = fdopendir(fd);
+    if (!dir) { close(fd); return 5; }
+    int code = 0;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || entry->d_type == DT_LNK) continue;
+        if ((code = walk_should_abort(o, deadline)) != 0) break;
+        char child[PATH_MAX];
+        if (!path_join(child, sizeof(child), path, entry->d_name)) { code = 5; break; }
+        if ((whitelist_relation(child) & WHITELIST_ANCESTOR) != 0U) continue;
+        struct stat st;
+        if (fstatat(fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
+            if (errno == ENOENT) continue;
+            code = 5; break;
+        }
+        if (S_ISDIR(st.st_mode)) {
+            code = collect_rule_files_rec(fd, entry->d_name, child, device, o, files, empty, depth + 1U, deadline);
+            if (code) break;
+        } else if (S_ISREG(st.st_mode) && st.st_size >= 0 && (uint64_t)st.st_size <= o->max_file_bytes) {
+            if (empty_marker(entry->d_name)) continue;
+            FILE *target = NULL;
+            if (st.st_size > 0 && eligible_mtime(&st, o->min_age_days)) target = files;
+            else if (st.st_size == 0 && empty && !empty_marker(entry->d_name) && eligible_mtime(&st, o->empty_age_days)) target = empty;
+            if (target && !write_nul_field(target, child)) { code = 5; break; }
+        }
+    }
+    closedir(dir);
+    return code;
+}
+static int collect_rule_files(const Options *o) {
+    if (!o->collection_root || !o->targets_path) die("collection root and targets required");
+    FILE *files = fopen(o->targets_path, "wb");
+    FILE *empty = o->index_empty_path ? fopen(o->index_empty_path, "wb") : NULL;
+    int code = 0;
+    struct stat st;
+    if (!files || (o->index_empty_path && !empty)) code = 5;
+    else if (lstat(o->collection_root, &st) != 0 || !S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode)) code = 5;
+    else {
+        load_lines(o->whitelist_path, &g_whitelist, true);
+        if ((whitelist_relation(o->collection_root) & WHITELIST_ANCESTOR) == 0U)
+            code = collect_rule_files_rec(AT_FDCWD, o->collection_root, o->collection_root, st.st_dev, o,
+                                          files, empty, 0U, o->dir_budget_ms ? monotonic_ms() + o->dir_budget_ms : 0U);
+    }
+    if (files && fclose(files) != 0 && code == 0) code = 5;
+    if (empty && fclose(empty) != 0 && code == 0) code = 5;
+    return code;
+}
+
 static char *normalize_rule(const char *raw) {
     char *s = xstrdup(raw);
     char *p = s;
@@ -1239,14 +1460,18 @@ static char *normalize_rule(const char *raw) {
     memmove(s, p, strlen(p) + 1);
     char *e = s + strlen(s);
     while (e > s && isspace((unsigned char)e[-1])) *--e = '\0';
-    if (!*s || *s == '#' || *s != '/') { free(s); return NULL; }
+    if (!*s || *s == '#' || *s != '/' || strlen(s) >= PATH_MAX ||
+        strstr(s, "//") || strstr(s, "/../") || strstr(s, "/./") ||
+        (strlen(s) >= 3U && strcmp(s + strlen(s) - 3U, "/..") == 0) ||
+        (strlen(s) >= 2U && strcmp(s + strlen(s) - 2U, "/.") == 0) ||
+        strpbrk(s, "\t\r\n")) { free(s); return NULL; }
     const char *em = "/storage/emulated/0";
-    if (strncmp(s, em, strlen(em)) == 0) {
+    if (path_relation(em, s)) {
         char *n = xmalloc(strlen(s) + 16);
         sprintf(n, "/data/media/0%s", s + strlen(em));
         free(s);
         s = n;
-    } else if (strncmp(s, "/sdcard", 7) == 0) {
+    } else if (path_relation("/sdcard", s)) {
         char *n = xmalloc(strlen(s) + 16);
         sprintf(n, "/data/media/0%s", s + 7);
         free(s);
@@ -1276,7 +1501,10 @@ static void expand_rec(const char *base, const StrVec *comps, size_t idx, StrVec
         char p[PATH_MAX];
         if (strcmp(base, "/") == 0) snprintf(p, sizeof(p), "/%s", comp);
         else snprintf(p, sizeof(p), "%s/%s", base, comp);
-        if (file_exists(p)) expand_rec(p, comps, idx + 1, out);
+        struct stat st;
+        if (lstat(p, &st) == 0 && !S_ISLNK(st.st_mode) &&
+            (idx + 1U == comps->n || S_ISDIR(st.st_mode)))
+            expand_rec(p, comps, idx + 1, out);
         return;
     }
     DIR *d = opendir(base);
@@ -1408,7 +1636,12 @@ static void load_risk_overrides(const char *path) {
         if (!valid_risk_name(risk)) continue;
         char *norm = normalize_rule(p);
         if (!norm) continue;
-        risk_rules_add(norm, risk, true);
+        if (has_glob(norm)) {
+            StrVec expanded = {0};
+            expand_rule(norm, &expanded);
+            for (size_t i = 0; i < expanded.n; i++) risk_rules_add(expanded.v[i], risk, true);
+            vec_free(&expanded);
+        } else risk_rules_add(norm, risk, true);
         free(norm);
     }
     free(line);
@@ -1814,7 +2047,15 @@ static int scan_deep(const Options *o) {
                 snprintf(risk, sizeof(risk), "%s", r);
                 *bar = '\0';
                 char *norm = normalize_rule(line);
-                if (norm) { risk_rules_add(norm, risk, false); free(norm); }
+                if (norm) {
+                    if (has_glob(norm)) {
+                        StrVec expanded = {0};
+                        expand_rule(norm, &expanded);
+                        for (size_t i = 0; i < expanded.n; i++) risk_rules_add(expanded.v[i], risk, false);
+                        vec_free(&expanded);
+                    } else risk_rules_add(norm, risk, false);
+                    free(norm);
+                }
             }
         }
         expand_rule(line, &cand);
@@ -1878,6 +2119,16 @@ static int scan_deep(const Options *o) {
                           ? o->max_auto_risk
                           : (o->allow_high_risk ? RISK_CRITICAL : RISK_MEDIUM);
         bool eligible = risk_rank(r) <= ceiling;
+        /* A broad low-risk rule cannot swallow a protected child annotation. */
+        if (eligible) {
+            for (size_t j = 0; j < g_risk_rules.n; j++) {
+                const char *child = g_risk_rules.v[j].path;
+                if (child_of(p, child) && explicit_risk_rank(child) > ceiling) {
+                    eligible = false;
+                    break;
+                }
+            }
+        }
         if (!eligible) {
             t.protected_items++;
             report_row(rep, "protected", r, "深度规则", 1, 0, p);
@@ -1975,6 +2226,8 @@ int main(int argc, char **argv) {
     else if (strcmp(argv[1], "scan-cache") == 0) rc = scan_cache(&o);
     else if (strcmp(argv[1], "scan-external-one-pass") == 0) rc = scan_external_one_pass(&o);
     else if (strcmp(argv[1], "clean-cache-snapshot") == 0) rc = clean_cache_snapshot(&o);
+    else if (strcmp(argv[1], "collect-rule-files") == 0) rc = collect_rule_files(&o);
+    else if (strcmp(argv[1], "rule-targets") == 0) rc = rule_targets(&o);
     else if (strcmp(argv[1], "scan-deep") == 0) rc = scan_deep(&o);
     else if (strcmp(argv[1], "index-files") == 0) rc = index_files(&o);
     else die("unsupported command");
