@@ -257,7 +257,9 @@ printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.t
 old_ifs=$IFS; IFS='
 '
 for root in $APK_ROOTS; do
-  printf 'scanned\t安装包存储\t-\t-\t0\t0\t%s\t\n' "$root" >>"$COVERAGE.tmp.$$"
+  coverage_stats=$(awk -F '\t' -v prefix="$root/" 'NR>1 && index($6,prefix)==1 {n+=$4;b+=$5} END {printf "%.0f %.0f",n,b}' "$REPORT_FILE")
+  coverage_files=${coverage_stats%% *}; coverage_bytes=${coverage_stats##* }
+  printf 'scanned\t安装包存储\t-\t-\t%s\t%s\t%s\t\n' "$coverage_files" "$coverage_bytes" "$root" >>"$COVERAGE.tmp.$$"
 done
 IFS=$old_ifs
 mv -f "$COVERAGE.tmp.$$" "$COVERAGE"

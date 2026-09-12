@@ -163,7 +163,9 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin downloads
+          git fetch origin main downloads
+          # A newer release request supersedes this build before any asset is published.
+          test "$(git show origin/main:.github/release.publish | tr -d '[:space:]')" = "$BAIZE_RELEASE_TARGET_SHA"
           git worktree add "$RUNNER_TEMP/baize-downloads" origin/downloads
           DEST="$RUNNER_TEMP/baize-downloads/releases/$BAIZE_VERSION"
           test ! -e "$DEST"

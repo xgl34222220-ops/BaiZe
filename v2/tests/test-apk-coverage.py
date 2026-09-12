@@ -57,6 +57,9 @@ class PackageCoverage(unittest.TestCase):
         keep = self.make('0/Download/downloading.apk.part')
         self.run_task('scan')
         self.assertEqual(self.targets(), {os.fsencode(p) for p in packages})
+        coverage = [line.split('\t') for line in (self.state / 'apk-coverage.tsv').read_text().splitlines()[1:]]
+        self.assertEqual(sum(int(row[4]) for row in coverage), len(packages))
+        self.assertEqual(sum(int(row[5]) for row in coverage), sum(p.stat().st_size for p in packages))
         self.run_task('clean')
         self.assertTrue(all(not p.exists() for p in packages))
         self.assertTrue(keep.exists())
