@@ -7,7 +7,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -29,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiVisualReviewTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun homeLight() = render("home-light", 0)
     @Test fun homeDark() = render("home-dark", 0, dark = true)
@@ -104,7 +105,7 @@ class UiVisualReviewTest {
         }
         compose.waitForIdle()
         compose.onRoot().assertIsDisplayed()
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
         require(bitmap.width >= 320 && bitmap.height >= 640) { "Unexpected rendering bounds" }
         val target = File("build/reports/ui-screenshots/$name.png")
         requireNotNull(target.parentFile).mkdirs()

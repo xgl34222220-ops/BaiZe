@@ -18,11 +18,18 @@ INSTANCE_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-
 # guard: two contenders must not recover the same old pathname over a new owner.
 recovery_lock() {
   exec 9>"$SUPERVISOR_LOCK.recovery"
-  if command -v flock >/dev/null 2>&1; then flock -n 9
-  elif command -v toybox >/dev/null 2>&1; then toybox flock -n 9
-  elif [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9
-  else return 1
-  fi
+  # Root managers can shadow AOSP commands with applets that were compiled out.
+  # Try actual providers, not merely `command -v`; every attempt locks the SAME
+  # inherited fd/inode, so a busy lock remains busy across all fallbacks.
+  if command -v flock >/dev/null 2>&1; then flock -n 9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/flock ]; then /system/bin/flock -n 9 2>/dev/null && return 0; fi
+  if command -v toybox >/dev/null 2>&1; then toybox flock -n 9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9 2>/dev/null && return 0; fi
+  if command -v busybox >/dev/null 2>&1; then busybox flock -n 9 2>/dev/null && return 0; fi
+  for lock_busybox in /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
+    [ -x "$lock_busybox" ] && "$lock_busybox" flock -n 9 2>/dev/null && return 0
+  done
+  return 1
 }
 release_recovery_lock() { exec 9>&-; }
 

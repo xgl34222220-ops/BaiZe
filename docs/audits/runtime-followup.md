@@ -27,3 +27,12 @@
 ## 边界
 
 本地 Linux 回归验证调度与任务状态行为，不代表安卓真机后台存活率或扫描耗时。进程命名空间与 `/proc` 在当前容器不完全一致，既有真实 `/proc` 锁验证需在正常命名空间的 CI/手机复核。未修改用户的全局自动开关、息屏/充电条件或配置间隔，也未移除安装包保留策略。
+
+## flock 的 Android 兼容性核验
+
+直接核对 AOSP 对应版本源码，没有用 Ubuntu Toybox 代替设备能力判断：
+
+- Android 8.0 / API 26 的 [Toybox .config](https://android.googlesource.com/platform/external/toybox/+/android-8.0.0_r1/.config) 启用 `CONFIG_FLOCK=y`；[Android.mk](https://android.googlesource.com/platform/external/toybox/+/android-8.0.0_r1/Android.mk) 编入 `toys/other/flock.c` 并列出安装的 `flock` 命令。
+- Android [12](https://android.googlesource.com/platform/external/toybox/+/android-12.0.0_r1/android/device/generated/config.h)、[13](https://android.googlesource.com/platform/external/toybox/+/android-13.0.0_r1/android/device/generated/config.h)、[15](https://android.googlesource.com/platform/external/toybox/+/android-15.0.0_r1/android/device/generated/config.h) 的设备配置均为 `CFG_FLOCK 1`。Android 13 的 `android/linux` 配置为 0，但它不是设备配置，不能据此断言手机缺少 flock。
+- 兼容修复：不能仅凭 PATH 存在 `flock` 或 `toybox` 就停止探测，因为 Root 环境可能优先提供未编入 flock 的 applet。现在按实际调用结果继续尝试系统 flock、系统 Toybox、PATH BusyBox 及常见 Root 框架 BusyBox 路径。所有尝试都锁同一继承 fd 和同一持久 guard inode，忙碌时不会通过切换工具绕过互斥；全部不可用时仍不执行未经互斥保护的删除。
+- `test-stale-launch-race.py` 新增已通过的兼容回归：PATH 中 flock/Toybox 存在但返回 applet 不可用，BusyBox 提供可用 flock，两个并发旧锁恢复者仍只有一个实际启动，且不拆除另一活启动器的新锁。`test-runtime-recovery.sh` 与 shell 语法检查通过。

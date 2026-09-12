@@ -13,7 +13,8 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -41,7 +42,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class DetailVisualReviewTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun cacheEmpty() = render("cache-empty") {
         CacheScreen(CacheUiState(connected = true, scanConnected = true, cleanConnected = true), {}, {}, {}, {}, {}, {}, {})
@@ -150,7 +151,7 @@ class DetailVisualReviewTest {
         }
         compose.waitForIdle()
         compose.onRoot().assertIsDisplayed()
-        save(name, compose.onRoot().captureToImage().asAndroidBitmap())
+        save(name, compose.runOnIdle { captureActivityContent(compose.activity) })
     }
 
     private fun save(name: String, bitmap: Bitmap) {

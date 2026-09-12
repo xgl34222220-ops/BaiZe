@@ -262,10 +262,11 @@ class Rules(unittest.TestCase):
 
     def test_deep_wildcard_annotations_preserve_nested_risk_and_recovery_targets(self):
         # Keep Android's real path allowlist in the test; no prefix is bypassed.
-        try:
-            root = Path(tempfile.mkdtemp(prefix='.baize-rules-', dir='/data/media/0'))
-        except PermissionError:
-            self.skipTest('Cannot create Android-prefix deep engine fixture')
+        root = Path('/data/media') / f'baize-rule-fixture-{os.getpid()}-{time.time_ns()}'
+        prefix = [] if os.geteuid() == 0 else ['sudo']
+        subprocess.run([*prefix, 'mkdir', '-p', str(root)], check=True)
+        if prefix:
+            subprocess.run([*prefix, 'chown', f'{os.getuid()}:{os.getgid()}', str(root)], check=True)
         self.addCleanup(shutil.rmtree, root)
         cache = root / 'first/cache'; cache.mkdir(parents=True)
         protected = cache / 'keep'; protected.mkdir()

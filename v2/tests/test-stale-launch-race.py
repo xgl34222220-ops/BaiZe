@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class StaleLaunchRace(unittest.TestCase):
     def test_only_one_launcher_can_replace_a_stale_owner(self):
+        self.run_stale_race()
+
+    def test_missing_shadowed_applets_fall_through_to_working_busybox(self):
+        self.run_stale_race(use_busybox_fallback=True)
+
+    def run_stale_race(self, use_busybox_fallback=False):
         with tempfile.TemporaryDirectory(prefix='baize-stale-launch-') as tmp:
             root = Path(tmp)
             module, state, fake = [root / name for name in ('module', 'state', 'bin')]
@@ -48,6 +54,19 @@ case "$*" in
 esac
 exec '{real_rm}' "$@"
 ''')
+            if use_busybox_fallback:
+                # Model a root PATH whose flock/toybox entries exist but do not
+                # implement flock. Capability failure must not end recovery.
+                for name in ('flock', 'toybox'):
+                    (fake / name).write_text('#!/bin/sh\nexit 127\n')
+                real_flock = shutil.which('flock')
+                self.assertIsNotNone(real_flock)
+                (fake / 'busybox').write_text(f'''#!/bin/sh
+[ "$1" = flock ] || exit 127
+shift
+: >"$BAIZE_STATE_DIR/busybox-flock-used"
+exec '{real_flock}' "$@"
+''')
             for executable in fake.iterdir():
                 executable.chmod(0o755)
             env = dict(os.environ, BAIZE_STATE_DIR=str(state), BAIZE_SHELL_BIN='/bin/sh',
@@ -61,6 +80,8 @@ exec '{real_rm}' "$@"
             self.assertFalse((state / 'removed-live-owner').exists(), 'a stale contender removed another live launcher')
             self.assertFalse((state / 'task-launch.lock').exists())
             self.assertTrue((state / 'task-launch.lock.recovery').exists())
+            if use_busybox_fallback:
+                self.assertTrue((state / 'busybox-flock-used').exists())
 
 
 if __name__ == '__main__':
