@@ -63,7 +63,7 @@ pid_is_safesweep() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*) return 0 ;;
+    *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
   esac
   return 1
 }
@@ -1298,7 +1298,7 @@ recent_scan_ok() {
 
 deep_high_risk_allowed() {
   [ "$MODE" = "clean" ] || return 1
-  case "$TRIGGER" in scheduled:*|daily:*) return 1 ;; esac
+  case "$TRIGGER" in scheduler:*|scheduled:*|daily:*) return 1 ;; esac
   [ "$(get_bool deep_high_risk_enabled)" = "1" ] || return 1
   recent_scan_ok "$DEEP_SCAN_STATE" 1800 || return 1
   deep_scan_matches_rules
@@ -1643,7 +1643,7 @@ run_deep_rules() {
   : >"$candidates"
 
   case "$REQUEST_MODE:$TRIGGER" in
-    deep-clean:scheduled:*|deep-clean:daily:*) use_snapshot=0 ;;
+    deep-clean:scheduler:*|deep-clean:scheduled:*|deep-clean:daily:*) use_snapshot=0 ;;
     deep-clean:*)
       if ! recent_scan_ok "$DEEP_SCAN_STATE" 1800 || ! deep_scan_matches_rules || [ ! -f "$DEEP_SCAN_TARGETS" ]; then
         log_line "[深度拒绝] 请先完成深度扫描，并在 30 分钟内按扫描候选清理"
@@ -2277,6 +2277,7 @@ run_apk_packages() {
   raw="$TMP_DIR/apk-discovered.nul"
   apk_collect_candidates "$raw" || return $?
   : >"$list"
+  APK_RETAINED=0
   cutoff=$(( $(date +%s) - APK_PACKAGE_DAYS * 86400 ))
   while IFS= read -r -d '' package; do
     should_stop && return 9
@@ -2284,7 +2285,10 @@ run_apk_packages() {
     metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || continue
     size=${metadata%% *}; modified=${metadata##* }
     [ "$size" -le "$APK_PACKAGE_MAX_BYTES" ] || continue
-    [ "$APK_PACKAGE_DAYS" -eq 0 ] || [ "$modified" -lt "$cutoff" ] || continue
+    if [ "$APK_PACKAGE_DAYS" -gt 0 ] && [ "$modified" -ge "$cutoff" ]; then
+      APK_RETAINED=$((APK_RETAINED + 1))
+      continue
+    fi
     printf '%s\0' "$package" >>"$list"
   done <"$raw"
 
@@ -2601,6 +2605,7 @@ else
       [ "$DEEP_TRUNCATED" = "1" ] && RESULT="$RESULT，已达到深度阶段时限"
       ;;
     corpse) RESULT="卸载残留清理完成，释放 $SPACE" ;;
+    apk) RESULT="安装包清理完成，删除 $FILES 个，期限内保留 ${APK_RETAINED:-0} 个，释放 $SPACE" ;;
     *) RESULT="清理完成，释放 $SPACE" ;;
   esac
   [ "${FATAL_CODE:-0}" -eq 0 ] && date +%s >"$STATE_DIR/last_run.epoch"
@@ -2674,7 +2679,7 @@ if [ "$REQUEST_MODE" = "corpse-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_COD
   { echo "epoch=$(date +%s)"; echo "bytes=$BYTES"; echo "items=$((FILES + EMPTY_DIRS))"; } >"$CORPSE_SCAN_STATE"
 fi
 if [ "$REQUEST_MODE" = "deep-clean" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
-  case "$TRIGGER" in scheduled:*|daily:*) ;; *) rm -f "$DEEP_SCAN_STATE" "$DEEP_SCAN_TARGETS" ;; esac
+  case "$TRIGGER" in scheduler:*|scheduled:*|daily:*) ;; *) rm -f "$DEEP_SCAN_STATE" "$DEEP_SCAN_TARGETS" ;; esac
 fi
 if [ "$REQUEST_MODE" = "corpse-clean" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
   rm -f "$CORPSE_SCAN_STATE" "$CORPSE_SCAN_TARGETS"

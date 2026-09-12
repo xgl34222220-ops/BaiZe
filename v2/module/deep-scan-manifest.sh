@@ -41,7 +41,7 @@ pid_is_task() {
   [ "$pid" -gt 1 ] 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *deep-scan-manifest.sh*|*native-scan.sh*|*native-cleaner.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*) return 0 ;; esac
+  case "$cmdline" in *deep-scan-manifest.sh*|*native-scan.sh*|*native-cleaner.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;; esac
   return 1
 }
 

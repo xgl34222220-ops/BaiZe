@@ -98,7 +98,7 @@ internal class SchedulerRepository(
             normalized == "scheduler-export-diagnostics" -> exportDiagnostics()
             normalized == "scheduler-run-now:all" -> {
                 val config = configJsonObject()
-                val groups = GROUPS.filter { config.optInt("schedule_${it}_enabled", 0) == 1 }
+                val groups = GROUPS.filter { config.optInt(if (it == "apk") "clean_apk_packages" else "schedule_${it}_enabled", 0) == 1 }
                 requestNow(groups, "manual-all").toString()
             }
             normalized.startsWith("scheduler-run-now:") -> {
