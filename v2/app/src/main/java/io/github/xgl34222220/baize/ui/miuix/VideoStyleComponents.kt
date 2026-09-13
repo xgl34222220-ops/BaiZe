@@ -64,7 +64,7 @@ fun ProvideVideoSkin(skin: VideoSkin, content: @Composable () -> Unit) {
 }
 
 @Composable
-@Suppress("UNUSED_PARAMETER") // Existing call sites may still supply their old descriptive tagline.
+@Suppress("UNUSED_PARAMETER")
 fun VideoTopBar(
     title: String,
     subtitle: String? = null,
@@ -73,7 +73,7 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 72.dp).padding(horizontal = 20.dp, vertical = 12.dp),
+            .heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -96,10 +96,10 @@ fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit,
             .padding(2.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f),
         shape = CircleShape,
         color = Color.Transparent,
-        contentColor = if (primary) scheme.primary else scheme.onSurface
+        contentColor = if (LocalVideoSkin.current == VideoSkin.MIUIX || primary) scheme.primary else scheme.onSurface
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, description, Modifier.size(22.dp))
+            Icon(icon, description, Modifier.size(21.dp))
         }
     }
 }
@@ -116,7 +116,6 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
             .background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f))
             .selectableGroup()
     ) {
-        // This layer follows the measured row, including larger accessibility text.
         Box(Modifier.matchParentSize().padding(4.dp)) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val segmentWidth = maxWidth / labels.size
@@ -177,8 +176,10 @@ fun VideoCard(
         }
     } else {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
-            Column(modifier.glassSurface(color, shape, scheme.surface.luminance() < .3f)
-                .padding(contentPadding.dp), content = content)
+            Surface(modifier = modifier, shape = shape, color = color,
+                contentColor = scheme.onSurface, shadowElevation = 1.dp, tonalElevation = 0.dp) {
+                Column(Modifier.padding(contentPadding.dp), content = content)
+            }
         }
     }
 }

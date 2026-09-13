@@ -14,6 +14,7 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
+import io.github.xgl34222220.baize.ui.settings.miuix.LuoShuSettingsHub
 
 @Composable
 fun SettingsRoute(
@@ -76,7 +77,8 @@ fun SettingsRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        VideoSettingsScreenMiuix(state, actions)
+        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions)
+        else VideoSettingsScreenMiuix(state, actions)
     }
 }
 

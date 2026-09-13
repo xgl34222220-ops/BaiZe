@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
@@ -92,6 +93,7 @@ class UiVisualReviewTest {
             apkScan = { calls += "apk" }, organize = { calls += "organize" },
             deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
         listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText(title))
             compose.onNodeWithText(title).performScrollTo().performClick()
         }
         assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
@@ -107,6 +109,42 @@ class UiVisualReviewTest {
         assertEquals(1, reconnects)
         assertEquals(0, scans)
         assertEquals(0, cleans)
+    }
+
+    @Test fun settingsHubOpensTaskDetailsAndReturns() {
+        render("settings-hub", 3)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
+        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("清理执行条件").assertIsDisplayed()
+        save("settings-task-details")
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("你的白泽").assertIsDisplayed()
+    }
+
+    @Test fun settingsAppearanceAndWhitelistKeepTheirActions() {
+        var appearance = 0
+        var whitelist = 0
+        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, whitelist = { whitelist++ }))
+        compose.onNodeWithText("外观与主题").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("应用白名单"))
+        compose.onNodeWithText("应用白名单").performScrollTo().performClick()
+        assertEquals(1, appearance)
+        assertEquals(1, whitelist)
+    }
+
+    @Test fun taskSettingsSaveTheEditedDraft() {
+        var updated: SchedulerUiState? = null
+        var saved: SchedulerUiState? = null
+        render("settings-draft", 3, actions = previewActions.copy(
+            updateScheduler = { updated = it }, saveScheduler = { saved = it }))
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
+        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("仅息屏时执行").performClick()
+        compose.onNodeWithText("保存").performClick()
+        assertEquals(!SchedulerUiState().screenOffOnly, updated?.screenOffOnly)
+        assertEquals(updated?.screenOffOnly, saved?.screenOffOnly)
     }
 
     private fun render(
