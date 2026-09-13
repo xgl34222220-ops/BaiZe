@@ -2,6 +2,9 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.view.View
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
@@ -33,8 +36,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /** Renders the actual Compose routes with deterministic, explicitly simulated device state. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi",
-    shadows = [SoftwareCanvasViewShadow::class])
+@Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -197,7 +199,19 @@ class UiVisualReviewTest {
         )
         compose.setContent {
             val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+            val hostView = LocalView.current
+            // Bitmap captures cannot execute GPU shaders. Override only the view exposed
+            // to the effects consumer, not Robolectric's global View/ShadowViewGroup graph.
+            // The Compose owner, activity, layout, semantics and touch delivery stay real.
+            val captureView = remember(hostView) {
+                object : View(hostView.context) {
+                    override fun isHardwareAccelerated(): Boolean = false
+                }
+            }
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale),
+                LocalView provides if (blur) captureView else hostView,
+            ) {
                 BaiZeMiuixApp(
                     state = state,
                     scheduler = SchedulerUiState(enabled = true, apkPackagesEnabled = true, apkMinutes = 60, apkPackageDays = 0),
