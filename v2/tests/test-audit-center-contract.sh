@@ -55,7 +55,7 @@ for pattern in \
   'fragmentMinutes.coerceIn(5, 43_200)' \
   'deepMinutes.coerceIn(5, 43_200)' \
   'organizeMinutes.coerceIn(15, 43_200)'; do
-  grep -Fq "$pattern" "$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt"
+  grep -Fq "$pattern" "$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/DashboardUiModels.kt"
 done
 
 echo "audit center contract passed"

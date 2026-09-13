@@ -35,8 +35,7 @@ jobs:
           java-version: '17'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+      # Match LuoShu: let the current AGP resolve its required compile platform.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

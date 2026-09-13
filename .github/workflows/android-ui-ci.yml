@@ -9,6 +9,7 @@ on:
       - 'v2/macrobenchmark/**'
       - 'v2/build.gradle.kts'
       - 'v2/gradle.properties'
+      - 'v2/tests/**'
       - '.github/workflows/android-ui-ci.yml'
 
 permissions:
@@ -46,12 +47,15 @@ jobs:
           java-version: '17'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-37' 'build-tools;36.0.0'
+      # AGP resolves the compile SDK, as in LuoShu's proven Android UI smoke workflow.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.0'
+      - name: Verify scheduler and audit contracts
+        run: |
+          bash v2/tests/test-audit-center-contract.sh
+          bash v2/tests/test-schedule-modes-contract.sh
       - name: Compile and lint UI
         working-directory: v2
         shell: bash
