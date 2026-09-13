@@ -30,7 +30,6 @@ jobs:
           CODE=$(sed -n 's/^versionCode=//p' module.prop)
           test "$CODE" -gt 30002
           test -s "docs/releases/refactor-$VERSION.md"
-          # Only generate the normal version metadata. Do not apply patches or change App logic.
           sh v2/scripts/sync-version.sh --source-only
           python3 - <<'PY'
           import subprocess
@@ -83,10 +82,12 @@ jobs:
           set -o pipefail
           gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble 2>&1 | tee "$RUNNER_TEMP/baize-refactor-build.log"
       - name: Prepare legacy upgrade baseline and KVM
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh api 'repos/xgl34222220-ops/BaiZe/contents/releases/v3.0.0/BaiZe-v3.0.0.apk?ref=downloads' -H 'Accept: application/vnd.github.raw+json' > "$RUNNER_TEMP/baize-baseline.apk"
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 \
+            -o "$RUNNER_TEMP/baize-baseline.apk" \
+            'https://github.com/xgl34222220-ops/BaiZe/releases/download/v3.0.0/BaiZe-v3.0.0.apk'
+          echo '600ac2de5f33fdf282f222a2c1099ec63f9ed7766482fe56f238e487836a4fc4  '"$RUNNER_TEMP/baize-baseline.apk" | sha256sum -c -
           echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-baseline.apk" >> "$GITHUB_ENV"
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
