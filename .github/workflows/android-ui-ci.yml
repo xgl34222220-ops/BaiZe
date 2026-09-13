@@ -40,11 +40,14 @@ jobs:
             v2/settings.gradle.kts
             v2/gradle.properties
           if-no-files-found: error
-      - name: Set up JDK 17
+      # The miuix 0.9.3 AAR contains Java 21 classes. D8 packages them for Android,
+      # but host-side Robolectric must load those classes on Java 21 as well.
+      # App Java/Kotlin target remains 17; this changes only the CI host runtime.
+      - name: Set up JDK 21 for UI host tests
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
       # AGP resolves the compile SDK, as in LuoShu's proven Android UI smoke workflow.
