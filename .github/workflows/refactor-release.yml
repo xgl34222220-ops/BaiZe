@@ -81,13 +81,13 @@ jobs:
         run: |
           set -o pipefail
           gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble 2>&1 | tee "$RUNNER_TEMP/baize-refactor-build.log"
-      - name: Prepare legacy upgrade baseline and KVM
+      - name: Prepare first refactor upgrade baseline and KVM
         run: |
           set -euo pipefail
           curl -fL --retry 3 --retry-delay 2 \
             -o "$RUNNER_TEMP/baize-baseline.apk" \
-            'https://github.com/xgl34222220-ops/BaiZe/releases/download/v3.0.0/BaiZe-v3.0.0.apk'
-          echo '600ac2de5f33fdf282f222a2c1099ec63f9ed7766482fe56f238e487836a4fc4  '"$RUNNER_TEMP/baize-baseline.apk" | sha256sum -c -
+            'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v1.0.0/BaiZe-v1.0.0.apk'
+          echo 'a1c1d8d345c57892e8666970be1a4d738d37872b4b90f0ebcde9995588a3bc1a  '"$RUNNER_TEMP/baize-baseline.apk" | sha256sum -c -
           echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-baseline.apk" >> "$GITHUB_ENV"
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
