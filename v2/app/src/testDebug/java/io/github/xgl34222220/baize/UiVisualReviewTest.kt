@@ -76,8 +76,37 @@ class UiVisualReviewTest {
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
         save("clean-plan")
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("安装包保留时间"))
         compose.onNodeWithText("安装包保留时间").performScrollTo().assertIsDisplayed()
         save("clean-plan-apk-retention")
+    }
+
+    @Test fun homePlanIsVisibleOnTheFirstScreen() {
+        render("home-plan-visible", 0)
+        compose.onNodeWithText("自动清理").assertIsDisplayed()
+    }
+
+    @Test fun groupedHomeToolsKeepTheirOwnActions() {
+        val calls = mutableListOf<String>()
+        render("home-tools", 0, actions = previewActions.copy(
+            apkScan = { calls += "apk" }, organize = { calls += "organize" },
+            deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
+        listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
+            compose.onNodeWithText(title).performScrollTo().performClick()
+        }
+        assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
+    }
+
+    @Test fun disconnectedHomeOnlyReconnects() {
+        var reconnects = 0
+        var scans = 0
+        var cleans = 0
+        render("home-reconnect-action", 0, connected = false, actions = previewActions.copy(
+            reconnect = { reconnects++ }, scan = { scans++ }, clean = { cleans++ }, cleanScan = { cleans++ }))
+        compose.onNodeWithText("连接 Root 服务").performClick()
+        assertEquals(1, reconnects)
+        assertEquals(0, scans)
+        assertEquals(0, cleans)
     }
 
     private fun render(

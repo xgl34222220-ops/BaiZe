@@ -73,7 +73,7 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 72.dp).padding(horizontal = 24.dp, vertical = 12.dp),
+            .heightIn(min = 72.dp).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -91,8 +91,9 @@ fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit,
     val scheme = MaterialTheme.colorScheme
     val color = if (primary) scheme.primaryContainer else BaiZeTokens.colors.surfaceRaised
     Surface(
-        modifier = Modifier.size(44.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+        modifier = Modifier.size(48.dp)
+            .clip(CircleShape).clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
+            .padding(2.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f),
         shape = CircleShape,
         color = Color.Transparent,
         contentColor = if (primary) scheme.primary else scheme.onSurface
@@ -108,6 +109,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
     if (labels.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
+    val currentIndex = selectedIndex.coerceIn(labels.indices)
     Box(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp)
             .clip(RoundedCornerShape(16.dp))
@@ -119,7 +121,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val segmentWidth = maxWidth / labels.size
                 val offset by animateDpAsState(
-                    targetValue = segmentWidth * selectedIndex.coerceIn(labels.indices),
+                    targetValue = segmentWidth * currentIndex,
                     animationSpec = tween(200), label = "segmentSelection"
                 )
                 Box(Modifier.offset(x = offset).width(segmentWidth).fillMaxHeight()
@@ -128,9 +130,9 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
         }
         Row(Modifier.fillMaxWidth().padding(4.dp)) {
             labels.forEachIndexed { index, label ->
-                val selected = index == selectedIndex
+                val selected = index == currentIndex
                 Box(
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .selectable(selected, role = Role.Tab) { onSelected(index) }
                         .padding(horizontal = 8.dp, vertical = 11.dp),
@@ -147,7 +149,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
 
 @Composable
 fun VideoSectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+    Column(modifier.padding(horizontal = 20.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface)
@@ -217,7 +219,7 @@ fun VideoListRow(
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
