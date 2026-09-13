@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DEFAULTS="$ROOT/config/default.conf"
-APP_STATE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/BaiZeMiuixApp.kt"
+APP_STATE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/DashboardUiModels.kt"
 CONTRACT="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt"
 MATERIAL="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt"
 MIUIX="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt"

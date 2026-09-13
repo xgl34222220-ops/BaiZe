@@ -14,6 +14,7 @@ import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
+import io.github.xgl34222220.baize.ui.settings.miuix.LuoShuSettingsHub
 
 @Composable
 fun SettingsRoute(
@@ -22,6 +23,7 @@ fun SettingsRoute(
     scheduler: SchedulerUiState,
     appearance: AppearanceSettings,
     dashboardActions: DashboardActions,
+    onDetailChanged: (Boolean) -> Unit = {},
     onOpenDetails: () -> Unit
 ) {
     var draft by remember { mutableStateOf(scheduler.copy(saving = false)) }
@@ -76,7 +78,8 @@ fun SettingsRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        VideoSettingsScreenMiuix(state, actions)
+        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
+        else VideoSettingsScreenMiuix(state, actions)
     }
 }
 

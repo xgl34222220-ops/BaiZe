@@ -64,7 +64,7 @@ fun ProvideVideoSkin(skin: VideoSkin, content: @Composable () -> Unit) {
 }
 
 @Composable
-@Suppress("UNUSED_PARAMETER") // Existing call sites may still supply their old descriptive tagline.
+@Suppress("UNUSED_PARAMETER")
 fun VideoTopBar(
     title: String,
     subtitle: String? = null,
@@ -73,7 +73,7 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 60.dp).padding(horizontal = 20.dp, vertical = 6.dp),
+            .heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -91,14 +91,15 @@ fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit,
     val scheme = MaterialTheme.colorScheme
     val color = if (primary) scheme.primaryContainer else BaiZeTokens.colors.surfaceRaised
     Surface(
-        modifier = Modifier.size(44.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f)
-            .clickable(role = Role.Button, onClickLabel = description, onClick = onClick),
+        modifier = Modifier.size(48.dp)
+            .clip(CircleShape).clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
+            .padding(2.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f),
         shape = CircleShape,
         color = Color.Transparent,
-        contentColor = if (primary) scheme.primary else scheme.onSurface
+        contentColor = if (LocalVideoSkin.current == VideoSkin.MIUIX || primary) scheme.primary else scheme.onSurface
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, description, Modifier.size(22.dp))
+            Icon(icon, description, Modifier.size(21.dp))
         }
     }
 }
@@ -108,18 +109,18 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
     if (labels.isEmpty()) return
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
+    val currentIndex = selectedIndex.coerceIn(labels.indices)
     Box(
         modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f))
             .selectableGroup()
     ) {
-        // This layer follows the measured row, including larger accessibility text.
         Box(Modifier.matchParentSize().padding(4.dp)) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val segmentWidth = maxWidth / labels.size
                 val offset by animateDpAsState(
-                    targetValue = segmentWidth * selectedIndex.coerceIn(labels.indices),
+                    targetValue = segmentWidth * currentIndex,
                     animationSpec = tween(200), label = "segmentSelection"
                 )
                 Box(Modifier.offset(x = offset).width(segmentWidth).fillMaxHeight()
@@ -128,9 +129,9 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
         }
         Row(Modifier.fillMaxWidth().padding(4.dp)) {
             labels.forEachIndexed { index, label ->
-                val selected = index == selectedIndex
+                val selected = index == currentIndex
                 Box(
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .selectable(selected, role = Role.Tab) { onSelected(index) }
                         .padding(horizontal = 8.dp, vertical = 11.dp),
@@ -147,9 +148,9 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
 
 @Composable
 fun VideoSectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+    Column(modifier.padding(horizontal = 20.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium,
+        Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface)
         if (!subtitle.isNullOrBlank()) {
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -175,8 +176,10 @@ fun VideoCard(
         }
     } else {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
-            Column(modifier.glassSurface(color, shape, scheme.surface.luminance() < .3f)
-                .padding(contentPadding.dp), content = content)
+            Surface(modifier = modifier, shape = shape, color = color,
+                contentColor = scheme.onSurface, shadowElevation = 1.dp, tonalElevation = 0.dp) {
+                Column(Modifier.padding(contentPadding.dp), content = content)
+            }
         }
     }
 }
@@ -185,8 +188,8 @@ fun VideoCard(
 fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier,
     color: Color? = null) {
     val tint = color ?: if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
-        .background(if (primary || color != null) tint.copy(alpha = .065f) else Color.Transparent),
+    Box(modifier.size(40.dp).clip(RoundedCornerShape(14.dp))
+        .background(if (primary || color != null) tint.copy(alpha = .08f) else Color.Transparent),
         contentAlignment = Alignment.Center) {
         Icon(icon, null, Modifier.size(22.dp), tint = tint)
     }
@@ -204,9 +207,9 @@ fun VideoListRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = 72.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         VideoLeadingIcon(icon, primary = enabled)
@@ -217,7 +220,7 @@ fun VideoListRow(
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -250,7 +253,7 @@ fun VideoSwitchRow(icon: ImageVector, title: String, subtitle: String, checked: 
 @Composable
 fun VideoDivider(start: Int = 66) {
     HorizontalDivider(Modifier.padding(start = start.dp, end = 18.dp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
 }
 
 @Composable

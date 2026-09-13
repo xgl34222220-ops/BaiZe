@@ -1,8 +1,8 @@
 plugins {
-    id("com.android.application") version "8.12.2" apply false
-    id("com.android.test") version "8.12.2" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.21" apply false
-    id("org.jetbrains.kotlin.plugin.compose") version "2.1.21" apply false
+    id("com.android.application") version "9.3.2" apply false
+    id("com.android.test") version "9.3.2" apply false
+    id("org.jetbrains.kotlin.android") version "2.4.10" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.10" apply false
     // 静态检查。此前 42k 行 Kotlin 完全没有 lint 之外的把关。
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
     id("org.jlleitschuh.gradle.ktlint") version "12.3.0"

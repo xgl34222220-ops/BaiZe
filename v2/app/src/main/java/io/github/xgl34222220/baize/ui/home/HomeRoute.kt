@@ -6,6 +6,7 @@ import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.home.miuix.VideoHomeScreenMiuix
+import io.github.xgl34222220.baize.ui.home.miuix.LuoShuHomeScreen
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 
@@ -23,6 +24,7 @@ fun HomeRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        VideoHomeScreenMiuix(state, scheduler, actions, onOpenClean, onOpenPlan)
+        if (style == UiStyle.MIUIX) LuoShuHomeScreen(state, scheduler, actions, onOpenClean, onOpenPlan)
+        else VideoHomeScreenMiuix(state, scheduler, actions, onOpenClean, onOpenPlan)
     }
 }

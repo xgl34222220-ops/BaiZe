@@ -68,13 +68,16 @@ class WorkbenchVisualReviewTest {
         val medium = item(0).copy(id = "medium", title = "诊断日志", groupKey = "manual", groupTitle = "示例应用", risk = "medium")
         val high = item(1).copy(id = "high", title = "离线资源", groupKey = "manual", groupTitle = "示例应用", risk = "high")
         render(ready().copy(items = listOf(medium, high), selectedIds = emptySet(), policyTitle = "保守"))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("示例应用").fetchSemanticsNodes().isNotEmpty() }
+        // Wait for asynchronous grouping, then scroll the LazyColumn to the target.
+        // Offscreen rows are not required to be present in the semantics tree.
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用"))
         compose.onNodeWithText("示例应用").performClick()
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithContentDescription("选择诊断日志").fetchSemanticsNodes().size == 1 &&
-                compose.onAllNodesWithContentDescription("选择离线资源").fetchSemanticsNodes().size == 1
+            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
         }
         compose.onNodeWithContentDescription("选择诊断日志").assertIsEnabled().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择离线资源"))
         compose.onNodeWithContentDescription("选择离线资源").assertIsEnabled().performClick()
         compose.onNodeWithText("清理已选 2 项").assertIsDisplayed().performClick()
         assertEquals(0, cleanRequests)
@@ -97,6 +100,21 @@ class WorkbenchVisualReviewTest {
         render(WorkbenchUiState(profileConnected = true, cacheConnected = true))
         compose.onNodeWithText("开始扫描").assertIsDisplayed()
         save("empty")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun emptyFailedScanKeepsDetailsAndRetryReachable() {
+        render(WorkbenchUiState(profileConnected = true, cacheConnected = true,
+            notice = WorkbenchNotice.ERROR,
+            phase = "安全扫描失败：服务结果未确认：Transaction failed on small parcel; remote process probably died"),
+            fontScale = 1.3f)
+        compose.onNodeWithText("清理服务通信失败，结果未确认").assertIsDisplayed()
+        compose.onNodeWithContentDescription("查看任务详情").assertIsDisplayed()
+        compose.onNodeWithText("重新扫描").assertIsDisplayed().performClick()
+        assertEquals(1, scanRequests)
+        assertEquals(0, cleanRequests)
+        save("empty-failure-narrow-large-font")
     }
 
     private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f) {

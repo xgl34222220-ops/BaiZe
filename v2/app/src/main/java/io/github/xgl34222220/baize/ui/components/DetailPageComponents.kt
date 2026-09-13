@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
+import io.github.xgl34222220.baize.ui.miuix.VideoIconButton
 import io.github.xgl34222220.baize.ui.miuix.glassSurface
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
@@ -42,19 +43,16 @@ fun DetailPageHeader(
 ) {
     Column(modifier.fillMaxWidth()
         .then(if (statusBarInset) Modifier.statusBarsPadding() else Modifier)
-        .padding(horizontal = 16.dp).padding(bottom = 10.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", Modifier.size(23.dp),
-                    tint = MaterialTheme.colorScheme.onSurface)
-            }
-            Text(title, Modifier.weight(1f).padding(horizontal = 8.dp),
-                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium,
+        .padding(horizontal = 20.dp).padding(bottom = 12.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalAlignment = Alignment.CenterVertically) {
+            VideoIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "返回", onBack)
+            Text(title, Modifier.weight(1f).padding(horizontal = 12.dp),
+                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface)
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) { actions() }
         }
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(horizontal = 4.dp),
-            fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -75,7 +73,7 @@ fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnS
     val dark = surface.luminance() < .3f
     Column(modifier.fillMaxWidth().padding(horizontal = 20.dp)
         .glassSurface(color = surface, shape = shape, dark = dark)
-        .padding(16.dp), content = content)
+        .padding(20.dp), content = content)
 }
 
 @Composable
@@ -180,8 +178,8 @@ fun DetailResultRow(
     accent: Color = MaterialTheme.colorScheme.primary
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
-        bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
+    val shape = RoundedCornerShape(topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
+        bottomStart = if (last) 24.dp else 0.dp, bottomEnd = if (last) 24.dp else 0.dp)
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .92f))
         .clickable(onClickLabel = "查看完整路径与详情") { showDetails = true }) {

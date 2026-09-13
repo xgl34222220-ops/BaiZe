@@ -7,6 +7,9 @@ on:
       - 'v2/app/**'
       - 'v2/third_party/libsu-service/**'
       - 'v2/macrobenchmark/**'
+      - 'v2/build.gradle.kts'
+      - 'v2/gradle.properties'
+      - 'v2/tests/**'
       - '.github/workflows/android-ui-ci.yml'
 
 permissions:
@@ -21,24 +24,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
+      - name: Attach matching UI review sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: baize-ui-review-sources
+          retention-days: 3
+          path: |
+            v2/app/src/main/java/
+            v2/app/src/testDebug/
+            v2/app/src/test/
+            v2/app/src/main/res/values/
+            v2/app/src/main/AndroidManifest.xml
+            v2/app/build.gradle.kts
+            v2/build.gradle.kts
+            v2/settings.gradle.kts
+            v2/gradle.properties
+          if-no-files-found: error
+      # The miuix 0.9.3 AAR contains Java 21 classes. D8 packages them for Android,
+      # but host-side Robolectric must load those classes on Java 21 as well.
+      # App Java/Kotlin target remains 17; this changes only the CI host runtime.
+      - name: Set up JDK 21 for UI host tests
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-
+          java-version: '21'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android platform
-        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-
+      # AGP resolves the compile SDK, as in LuoShu's proven Android UI smoke workflow.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
-
+          gradle-version: '9.5.0'
+      - name: Verify scheduler and audit contracts
+        run: |
+          bash v2/tests/test-audit-center-contract.sh
+          bash v2/tests/test-schedule-modes-contract.sh
       - name: Compile and lint UI
         working-directory: v2
         shell: bash
@@ -48,7 +68,6 @@ jobs:
           code=$?
           tail -n 200 /tmp/baize-android-ui.log
           exit "$code"
-
       - name: Upload actual UI renderings
         if: always()
         uses: actions/upload-artifact@v4
@@ -56,7 +75,6 @@ jobs:
           name: baize-ui-visual-review
           path: v2/app/build/reports/ui-screenshots/*.png
           if-no-files-found: warn
-
       - name: Upload Android diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

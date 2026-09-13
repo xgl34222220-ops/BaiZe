@@ -7,10 +7,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -69,11 +73,78 @@ class UiVisualReviewTest {
 
     @Test fun homePlanOpensAutomaticPlan() {
         render("home-plan-entry", 0)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理"))
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
         save("clean-plan")
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("安装包保留时间"))
         compose.onNodeWithText("安装包保留时间").performScrollTo().assertIsDisplayed()
         save("clean-plan-apk-retention")
+    }
+
+    @Test fun homePlanIsVisibleOnTheFirstScreen() {
+        render("home-plan-visible", 0)
+        compose.onNodeWithText("自动清理").assertIsDisplayed()
+    }
+
+    @Test fun groupedHomeToolsKeepTheirOwnActions() {
+        val calls = mutableListOf<String>()
+        render("home-tools", 0, actions = previewActions.copy(
+            apkScan = { calls += "apk" }, organize = { calls += "organize" },
+            deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
+        listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText(title))
+            compose.onNodeWithText(title).performScrollTo().performClick()
+        }
+        assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
+    }
+
+    @Test fun disconnectedHomeOnlyReconnects() {
+        var reconnects = 0
+        var scans = 0
+        var cleans = 0
+        render("home-reconnect-action", 0, connected = false, actions = previewActions.copy(
+            reconnect = { reconnects++ }, scan = { scans++ }, clean = { cleans++ }, cleanScan = { cleans++ }))
+        compose.onNodeWithText("连接 Root 服务").performClick()
+        assertEquals(1, reconnects)
+        assertEquals(0, scans)
+        assertEquals(0, cleans)
+    }
+
+    @Test fun settingsHubOpensTaskDetailsAndReturns() {
+        render("settings-hub", 3)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
+        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("清理执行条件").assertIsDisplayed()
+        save("settings-task-details")
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("你的白泽").assertIsDisplayed()
+    }
+
+    @Test fun settingsAppearanceAndWhitelistKeepTheirActions() {
+        var appearance = 0
+        var whitelist = 0
+        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, whitelist = { whitelist++ }))
+        compose.onNodeWithText("外观与主题").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("应用白名单"))
+        compose.onNodeWithText("应用白名单").performScrollTo().performClick()
+        assertEquals(1, appearance)
+        assertEquals(1, whitelist)
+    }
+
+    @Test fun taskSettingsSaveTheEditedDraft() {
+        var updated: SchedulerUiState? = null
+        var saved: SchedulerUiState? = null
+        render("settings-draft", 3, actions = previewActions.copy(
+            updateScheduler = { updated = it }, saveScheduler = { saved = it }))
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
+        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("仅息屏时执行").performClick()
+        compose.onNodeWithText("保存").performClick()
+        assertEquals(!SchedulerUiState().screenOffOnly, updated?.screenOffOnly)
+        assertEquals(updated?.screenOffOnly, saved?.screenOffOnly)
     }
 
     private fun render(

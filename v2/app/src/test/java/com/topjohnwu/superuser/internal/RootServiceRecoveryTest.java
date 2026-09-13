@@ -77,9 +77,11 @@ public class RootServiceRecoveryTest {
     @Before public void resetManager() {
         ReflectionHelpers.setStaticField(RootServiceManager.class, "mInstance", null);
         Utils.context = RuntimeEnvironment.getApplication();
+        // Resolve only the application shadow, not Shadows' removed framework overloads.
+        org.robolectric.shadows.ShadowApplication appShadow =
+                org.robolectric.shadow.api.Shadow.extract(RuntimeEnvironment.getApplication());
         // The production broadcaster is root; the shadow sender needs its guarded permission.
-        org.robolectric.Shadows.shadowOf((Application) RuntimeEnvironment.getApplication())
-                .grantPermissions(android.Manifest.permission.BROADCAST_PACKAGE_REMOVED);
+        appShadow.grantPermissions(android.Manifest.permission.BROADCAST_PACKAGE_REMOVED);
     }
 
     private Intent intent(String service, boolean daemon) {

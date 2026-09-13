@@ -105,13 +105,12 @@ fun MiuixLiquidDock(
     val activeHaze = hazeState.takeIf { hardwareBlur && glassActive && settings.blurEnabled && it?.blurEnabled == true }
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val itemHeight = 60.dp + (16 * (LocalDensity.current.fontScale - 1f).coerceIn(0f, 1f)).dp
-    val shape = if (floating) RoundedCornerShape(31.dp)
+    val shape = if (floating) RoundedCornerShape(32.dp)
         else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     val surface = if (amoled) Color.Black else BaiZeTokens.colors.surfaceRaised
     val gapColor = if (amoled) Color.Black else BaiZeTokens.colors.surfaceBase
     val glassTint = if (dark) Color(0xFF131B27) else Color.White
-    val shellTint = glassTint.copy(alpha = if (dark) .42f else .34f)
-    val glassEdge = if (dark) Color.White.copy(alpha = .13f) else Color.White.copy(alpha = .70f)
+    val shellTint = glassTint.copy(alpha = if (dark) .48f else .42f)
     val shellEffect = activeHaze?.let { state ->
         Modifier.hazeEffect(state = state, style = HazeMaterials.ultraThin()) {
             backgroundColor = surface
@@ -120,7 +119,7 @@ fun MiuixLiquidDock(
             blurRadius = 26.dp
             noiseFactor = .012f
         }
-    } ?: Modifier.background(surface)
+    } ?: Modifier.background(surface.copy(alpha = if (glassActive) .88f else 1f))
 
     Box(
         modifier = modifier
@@ -140,9 +139,9 @@ fun MiuixLiquidDock(
         Box(
             Modifier.fillMaxSize()
                 .shadow(
-                    if (floating) 18.dp else 3.dp, shape, clip = false,
-                    ambientColor = Color.Black.copy(alpha = if (dark) .28f else .08f),
-                    spotColor = Color(0xFF173B6B).copy(alpha = if (dark) .24f else .16f)
+                    if (floating) 24.dp else 3.dp, shape, clip = false,
+                    ambientColor = Color.Black.copy(alpha = if (dark) .28f else .10f),
+                    spotColor = Color(0xFF173B6B).copy(alpha = if (dark) .24f else .20f)
                 )
                 .clip(shape)
                 .then(shellEffect)
@@ -161,7 +160,6 @@ fun MiuixLiquidDock(
                         }
                     }
                 }
-                .then(if (glassActive) Modifier.border(.7.dp, glassEdge, shape) else Modifier)
         )
 
         BoxWithConstraints(
@@ -189,8 +187,8 @@ fun MiuixLiquidDock(
                 label = "miuixDockIndicator"
             )
             val lensExtra = if (glassActive) 8.dp * stretch.value else 0.dp
-            val lensShape = RoundedCornerShape(25.dp)
-            val lensTint = scheme.primary.copy(alpha = if (dark) .19f else .09f)
+            val lensShape = RoundedCornerShape(26.dp)
+            val lensTint = scheme.primary.copy(alpha = if (dark) .16f else .07f)
             val lensEffect = activeHaze?.let { state ->
                 Modifier.hazeEffect(state = state, style = HazeMaterials.ultraThin()) {
                     backgroundColor = surface
@@ -202,17 +200,17 @@ fun MiuixLiquidDock(
                     blurRadius = 12.dp
                     noiseFactor = .005f
                 }
-            } ?: Modifier.background(
-                if (amoled) scheme.primary.copy(alpha = .24f)
-                else scheme.primary.copy(alpha = if (dark) .19f else .105f)
-            )
+            } ?: if (glassActive) Modifier.background(Brush.verticalGradient(listOf(
+                if (dark) Color.White.copy(alpha = .075f) else Color.White.copy(alpha = .88f),
+                scheme.primary.copy(alpha = if (dark) .16f else .12f)
+            ))) else Modifier.background(scheme.primary.copy(alpha = if (dark) .24f else .105f))
             Box(
                 modifier = Modifier
                     .offset(x = indicatorX + 4.dp - if (direction < 0) lensExtra else 0.dp)
                     .width(itemWidth - 8.dp + lensExtra)
                     .height(itemHeight)
                     .graphicsLayer { scaleY = 1f - .035f * stretch.value }
-                    .shadow(if (glassActive) 3.dp else 0.dp, lensShape, clip = false,
+                    .shadow(if (glassActive) 5.dp else 0.dp, lensShape, clip = false,
                         ambientColor = Color.Black.copy(alpha = .06f), spotColor = scheme.primary.copy(alpha = .12f))
                     .clip(lensShape)
                     .then(lensEffect)
@@ -225,8 +223,6 @@ fun MiuixLiquidDock(
                             )
                         )
                     )
-                    .then(if (glassActive) Modifier.border(.7.dp,
-                        Color.White.copy(alpha = if (dark) .16f else .55f), lensShape) else Modifier)
             )
 
             Row(Modifier.fillMaxWidth().selectableGroup()) {
@@ -235,7 +231,7 @@ fun MiuixLiquidDock(
                     val interactions = remember(item.title) { MutableInteractionSource() }
                     val pressed by interactions.collectIsPressedAsState()
                     val contentColor by animateColorAsState(
-                        targetValue = if (active) scheme.primary else scheme.onSurfaceVariant.copy(alpha = .86f),
+                        targetValue = if (active) scheme.primary else scheme.onSurfaceVariant,
                         animationSpec = tween(180), label = "miuixDockContentColor"
                     )
                     val pressScale by animateFloatAsState(
@@ -256,7 +252,7 @@ fun MiuixLiquidDock(
                     ) {
                         Icon(
                             imageVector = item.icon, contentDescription = null,
-                            modifier = Modifier.size(if (index == 0 || index == items.lastIndex) 23.dp else 24.dp),
+                            modifier = Modifier.size(22.dp),
                             tint = contentColor
                         )
                         Spacer(Modifier.height(3.dp))

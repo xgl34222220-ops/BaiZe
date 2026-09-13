@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +76,7 @@ import io.github.xgl34222220.baize.ui.miuix.VideoLeadingIcon
 import io.github.xgl34222220.baize.ui.miuix.VideoListRow
 import io.github.xgl34222220.baize.ui.miuix.VideoSectionTitle
 import io.github.xgl34222220.baize.ui.miuix.VideoTabs
+import io.github.xgl34222220.baize.ui.miuix.VideoStatusPill
 import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import androidx.compose.ui.semantics.semantics
@@ -135,7 +137,7 @@ fun VideoCleanScreenMiuix(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { VideoTopBar(title = "清理") }
         item {
@@ -145,37 +147,33 @@ fun VideoCleanScreenMiuix(
             item { ScanSummary(state, actions) }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    VideoSectionTitle("专项清理")
+                    VideoSectionTitle("常用清理")
                     Row(
                         Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(IntrinsicSize.Min),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        ToolTile(Icons.Rounded.CleaningServices, "应用缓存", "缓存与临时文件",
+                        ToolTile(Icons.Rounded.CleaningServices, "应用缓存", "释放日常缓存",
                             MaterialTheme.colorScheme.primary, actions.onInstantCache,
                             Modifier.weight(1f).fillMaxHeight())
-                        ToolTile(Icons.Rounded.InstallMobile, "安装包", "多种安装包格式",
+                        ToolTile(Icons.Rounded.InstallMobile, "安装包", "查找已下载安装包",
                             MaterialTheme.colorScheme.secondary, actions.onApkScan,
-                            Modifier.weight(1f).fillMaxHeight())
-                    }
-                    Row(
-                        Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(IntrinsicSize.Min),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ToolTile(Icons.Rounded.FolderDelete, "卸载残留", "找出无用目录",
-                            BaiZeTokens.colors.warning, actions.onCorpses,
-                            Modifier.weight(1f).fillMaxHeight())
-                        ToolTile(Icons.Rounded.AutoAwesome, "深度清理", "日志与下载碎片",
-                            MaterialTheme.colorScheme.primary, actions.onDeepClean,
                             Modifier.weight(1f).fillMaxHeight())
                     }
                 }
             }
             item {
                 VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
-                    VideoListRow(Icons.Rounded.FolderCopy, "文件归类", "按类型整理下载文件", onClick = actions.onFileOrganizer)
+                    VideoListRow(Icons.Rounded.AutoAwesome, "深度清理", "日志、碎片与更多残留", onClick = actions.onDeepClean)
                     VideoDivider()
-                    VideoListRow(Icons.Rounded.Security, "清理规则与保护", "查看规则、明细和保留内容", onClick = actions.onAudit)
+                    VideoListRow(Icons.Rounded.FolderDelete, "卸载残留", "找出应用卸载后的目录", onClick = actions.onCorpses)
                     VideoDivider()
+                    VideoListRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载目录", onClick = actions.onFileOrganizer)
+                    VideoDivider()
+                    VideoListRow(Icons.Rounded.Security, "清理规则与保护", "规则、清理明细与保留项", onClick = actions.onAudit)
+                }
+            }
+            item {
+                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                     VideoListRow(Icons.Rounded.CalendarMonth, "自动清理计划",
                         if (state.automaticCleaningEnabled) "${state.enabledCategoryCount} 个类别 · ${state.scheduleMode.title}" else "设置周期与保留时间",
                         value = if (state.automaticCleaningEnabled) "已开启" else "已暂停",
@@ -224,25 +222,47 @@ fun VideoCleanScreenMiuix(
 
 @Composable
 private fun ScanSummary(state: CleanUiState, actions: CleanUiActions) {
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 18) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            VideoLeadingIcon(Icons.Rounded.Search)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    val primary = MaterialTheme.colorScheme.primary
+    VideoCard(
+        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        containerColor = lerp(BaiZeTokens.colors.surfaceRaised, primary, .04f),
+        contentPadding = 20
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("空间扫描", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            VideoStatusPill(when {
+                state.running -> "进行中"
+                state.scanSnapshotReady -> "结果已就绪"
+                state.engineReady -> "服务已就绪"
+                else -> "待连接"
+            }, positive = state.engineReady || state.running || state.scanSnapshotReady)
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(when {
-                    state.running -> "清理任务进行中"
-                    state.scanSnapshotReady -> "扫描结果已就绪"
-                    state.engineReady -> "空间扫描"
-                    else -> "等待清理服务连接"
-                }, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+                    state.running -> "任务进行中"
+                    state.scanSnapshotReady -> "扫描已完成"
+                    state.engineReady -> "检查可清理空间"
+                    else -> "连接后开始扫描"
+                }, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-.5).sp)
                 Text(when {
-                    state.running -> "查看进度或停止任务"
-                    state.scanSnapshotReady -> "先查看明细，再选择清理"
-                    state.engineReady -> "缓存、规则垃圾与临时文件"
-                    else -> state.serviceText.ifBlank { "连接后即可开始扫描" }
-                }, fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    state.running -> "点按下方查看任务进度"
+                    state.scanSnapshotReady -> "查看明细，选择需要清理的内容"
+                    state.engineReady -> "一次检查缓存、垃圾与临时文件"
+                    else -> state.serviceText.ifBlank { "等待清理服务连接" }
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Box(Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(primary.copy(alpha = .07f)),
+                contentAlignment = Alignment.Center) {
+                Icon(if (state.scanSnapshotReady) Icons.Rounded.CheckCircle else Icons.Rounded.Search,
+                    null, Modifier.size(32.dp), tint = primary)
             }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(20.dp))
         if (state.running) {
             LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(2.dp)))
             Spacer(Modifier.height(12.dp))
@@ -270,12 +290,17 @@ private fun ToolTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    VideoCard(modifier.clip(RoundedCornerShape(20.dp)).clickable(role = Role.Button, onClick = onClick), contentPadding = 16) {
-        Box(Modifier.size(38.dp).clip(RoundedCornerShape(13.dp)).background(tint.copy(alpha = .09f)),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(21.dp), tint = tint)
+    VideoCard(modifier.clip(RoundedCornerShape(24.dp)).clickable(role = Role.Button, onClick = onClick), contentPadding = 18) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = .08f)),
+                contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(22.dp), tint = tint)
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f))
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(16.dp))
         Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(3.dp))
         Text(caption, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -284,11 +309,12 @@ private fun ToolTile(
 
 @Composable
 private fun AutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 18) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        containerColor = lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .04f), contentPadding = 20) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             VideoLeadingIcon(Icons.Rounded.CalendarMonth)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("自动清理", fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
+                Text("自动清理", fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
                 Text(when {
                     state.saving -> "正在保存计划…"
                     state.automaticCleaningEnabled -> "${state.enabledCategoryCount} 个类别已开启 · 自动保存"
@@ -297,6 +323,20 @@ private fun AutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
             }
             Switch(checked = state.automaticCleaningEnabled, onCheckedChange = actions.onAutomaticCleaningChanged,
                 modifier = Modifier.semantics { contentDescription = "自动清理" })
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .045f)).padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("执行方式", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(state.scheduleMode.title, style = MaterialTheme.typography.titleMedium)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("已启用类别", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${state.enabledCategoryCount} / ${state.categories.size}", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
@@ -380,7 +420,7 @@ private fun CategoryRow(
         if (item.id == CleanCategoryId.APK) {
             PlanValueRow("安装包保留时间", if (retentionDays == 0) "不保留" else "$retentionDays 天", onEditRetention,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-                    .clip(RoundedCornerShape(12.dp)).background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f)))
+                    .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f)))
         }
     }
 }
