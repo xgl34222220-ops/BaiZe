@@ -12,6 +12,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -30,14 +33,20 @@ import org.robolectric.annotation.GraphicsMode
 
 /** Renders the actual Compose routes with deterministic, explicitly simulated device state. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi")
+@Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi",
+    shadows = [SoftwareCanvasViewShadow::class])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun homeLight() = render("home-light", 0)
     @Test fun homeDark() = render("home-dark", 0, dark = true)
-    @Test fun glassHome() = render("home-glass", 0, blur = true)
+    @Test fun glassHome() {
+        // This harness draws to a Bitmap Canvas, not a GPU surface. Keep the effects
+        // preference ON, but require the real renderer's software-capability fallback.
+        render("home-glass-software-fallback", 0, blur = true)
+        compose.onNodeWithTag("dock-shell-opaque").assertIsDisplayed()
+    }
     @Test fun cleanLight() = render("clean-light", 1)
     @Test fun cleanDark() = render("clean-dark", 1, dark = true)
     @Test fun recordsLight() = render("records-light", 2)
@@ -93,8 +102,20 @@ class UiVisualReviewTest {
             apkScan = { calls += "apk" }, organize = { calls += "organize" },
             deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
         listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
-            compose.onNode(hasScrollAction()).performScrollToNode(hasText(title))
-            compose.onNodeWithText(title).performScrollTo().performClick()
+            val list = compose.onNode(hasScrollAction())
+            list.performScrollToNode(hasText(title))
+            val node = compose.onNodeWithText(title).performScrollTo()
+            // A floating dock overlays the viewport. Bring the physical tap point
+            // above it rather than clicking a row still behind the dock.
+            val dockTop = compose.onNodeWithTag("luoshu-dock").fetchSemanticsNode().boundsInRoot.top
+            val overlap = node.fetchSemanticsNode().boundsInRoot.center.y - dockTop + 28f
+            if (overlap > 0f) {
+                list.performSemanticsAction(SemanticsActions.ScrollBy) { scroll -> scroll(0f, overlap) }
+                compose.waitForIdle()
+            }
+            org.junit.Assert.assertTrue("Tool tap point must clear the dock",
+                node.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
+            node.assertIsDisplayed().performClick()
         }
         assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
     }

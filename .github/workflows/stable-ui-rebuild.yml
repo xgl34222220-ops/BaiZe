@@ -55,12 +55,13 @@ jobs:
       - name: Build native engines
         working-directory: v2
         run: sh scripts/build-native.sh
-      - name: Verify UI, release tests, lint and signed App
+      - name: Verify all JVM tests, lint and signed App
         working-directory: v2
         shell: bash
         run: |
           set +e
-          gradle --no-daemon --continue :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble > "$RUNNER_TEMP/baize-formal-rebuild.log" 2>&1
+          # AGP exposes only enabled host-test variants; the aggregate runs all of them.
+          gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble > "$RUNNER_TEMP/baize-formal-rebuild.log" 2>&1
           status=$?
           tail -n 160 "$RUNNER_TEMP/baize-formal-rebuild.log"
           exit "$status"
