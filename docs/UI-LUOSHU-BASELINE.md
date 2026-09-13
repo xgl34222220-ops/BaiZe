@@ -8,14 +8,15 @@
 
 实际设置调用链：`AppearanceSettingsRoute -> SettingsHubRoute -> SettingsHome`，定义在 `ui/settings/SettingsHubScreen.kt`。
 
-本轮参考及适配的源文件：
+参考及适配的源文件：
 - `ui/home/HomeScreenCompact.kt`：状态胶囊、主卡渐变、单一主操作、双列工具卡。
 - `ui/settings/SettingsHubScreen.kt`：状态概览、导航分组、独立详情页；不是整屏展开表单。
 - `ui/theme/LuoShuCompactLayout.kt`：26/34sp 主标题、22/30sp 详情标题，64dp 最小头栏。
 - `ui/theme/LuoShuIconSystem.kt`：48dp 触控槽、44dp 圆形表面、21dp 头栏图标。
 - `ui/theme/LuoShuTheme.kt`：生成色板和页面/卡片层级；保留 Monet、主题色及 AMOLED。
+- `LuoShuAppShell.kt` 与 `ui/glass/LiquidGlassLens.kt`：真实背景取样、折射外壳、移动透镜及独立清晰标签层。
 
-同一所有者项目的组件适配，保留白泽仓库原许可证；未复制任何字体文件、字体引擎、挂载或 Root 操作。
+同一所有者项目的组件适配，保留白泽仓库原许可证；Apache-2.0 上游折射实现的声明与完整许可证位于 App assets/licenses/miuix-liquid-glass.txt。未复制字体文件、字体引擎、挂载或 Root 操作。
 
 ## 白泽接入
 
@@ -25,8 +26,12 @@
 
 清理执行条件、归类条件、通知及两个数值编辑器移入独立任务设置页。原有保存草稿、轮询状态合并和回调继续由 SettingsRoute 管理；开关不会隐式保存。
 
+## 底栏
+
+`BaiZeMiuixApp` 的 MIUIX 分支已接入 `LuoShuLiquidDock`，页面使用真实背景取样，标签置于折射层之外；设置详情通过 onDetailChanged 隐藏底栏，返回恢复。完整参数、门控和测试边界见 [UI-LUOSHU-DOCK.md](UI-LUOSHU-DOCK.md)。无真实模糊时使用不透明回退，不将背景透字当作玻璃效果。
+
 ## 不得混同的验证
 
-自动编译和交互测试不代表审美验收；Robolectric 图片使用模拟状态，不是用户手机容量或清理数据。须检查实际入口渲染，并回归窄屏大字、深浅色、断线重连、工具回调、设置返回和草稿保存。
+自动编译和交互测试不代表审美验收；Robolectric 图片使用模拟状态，不是用户手机容量或清理数据，也不证明 GPU 折射已经真机验收。须检查实际入口渲染，并回归窄屏大字、深浅色、断线重连、工具回调、设置返回和草稿保存。
 
-本轮不声称完整移植洛书底栏的 RuntimeShader 折射链。白泽现有底栏仍使用 Haze，硬件折射、降级透明度和设置详情页底栏隐藏需单独核验。不得将其标为已完成，也不因 UI 重构修改清理引擎、Root 通信修复、正式版本或发布签名。
+UI 重构不修改清理引擎、Root 通信修复、正式版本或发布签名。发布工作流仅按目标源码选择匹配 Gradle 版本，不改发布请求文件、不自动发布。

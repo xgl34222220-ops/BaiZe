@@ -42,6 +42,12 @@ jobs:
           echo "BAIZE_RELEASE_TARGET_SHA=$TARGET" >> "$GITHUB_ENV"
           echo "BAIZE_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "BAIZE_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          # Select the toolchain from the checked-out target, retaining historical releases.
+          if grep -Eq 'version "9\.3\.' v2/build.gradle.kts; then
+            echo 'BAIZE_GRADLE_VERSION=9.5.0' >> "$GITHUB_ENV"
+          else
+            echo 'BAIZE_GRADLE_VERSION=8.13' >> "$GITHUB_ENV"
+          fi
 
       - name: Install compatibility tools
         run: sudo apt-get update && sudo apt-get install -y busybox-static toybox
@@ -67,11 +73,12 @@ jobs:
         shell: bash
         run: |
           set +o pipefail
+          # AGP resolves any newer compile platform from the source configuration.
           yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.13'
+          gradle-version: ${{ env.BAIZE_GRADLE_VERSION }}
 
       - name: Prepare formal signing certificate
         shell: bash
