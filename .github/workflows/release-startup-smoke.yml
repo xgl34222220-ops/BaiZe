@@ -1,0 +1,69 @@
+name: BaiZe Published APK Startup
+on:
+  push:
+    branches: [codex/baize-startup-hotfix-30002]
+    paths: ['.github/workflows/release-startup-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: baize-published-startup
+  cancel-in-progress: false
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact published APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p startup-evidence
+          gh release download v3.0.0 --repo "$GITHUB_REPOSITORY" --pattern 'BaiZe-v3.0.0.apk' --dir startup-evidence
+          echo '570ece2a97e348d392ed45fd89b7ab452937af3cb58f923744f6260ef9021f76  startup-evidence/BaiZe-v3.0.0.apk' | sha256sum -c -
+          tar -czf startup-evidence/source-context.tar.gz v2/app/src v2/app/proguard-rules.pro v2/app/build.gradle.kts v2/build.gradle.kts .github/workflows/stable-ui-rebuild.yml .github/release.ui-rebuild 2>/dev/null || tar -czf startup-evidence/source-context.tar.gz v2/app/src v2/app/proguard-rules.pro v2/app/build.gradle.kts v2/build.gradle.kts .github/workflows/stable-ui-rebuild.yml
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Launch signed APK without disabling hardware effects
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: |
+            adb install -r startup-evidence/BaiZe-v3.0.0.apk
+            adb shell input keyevent 82
+            adb shell pm grant io.github.xgl34222220.baize android.permission.POST_NOTIFICATIONS || true
+            adb logcat -c
+            timeout 35 adb shell am start -W -n io.github.xgl34222220.baize/.MiuixDashboardActivity > startup-evidence/launch.txt 2>&1 || true
+            sleep 12
+            adb shell pidof io.github.xgl34222220.baize > startup-evidence/pid.txt || true
+            adb shell dumpsys activity activities > startup-evidence/activities.txt
+            adb logcat -d -v threadtime > startup-evidence/logcat.txt
+            adb logcat -d -b crash -v threadtime > startup-evidence/crash.txt
+            adb exec-out screencap -p > startup-evidence/launch.png
+            adb root || true
+            adb wait-for-device
+            adb pull /data/user/0/io.github.xgl34222220.baize/files/last-app-crash.txt startup-evidence/last-app-crash.txt || true
+      - name: Upload original crash and launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baize-30001-startup-evidence
+          path: startup-evidence/
+          retention-days: 7
+      - name: Assert app stayed alive
+        run: |
+          test -s startup-evidence/pid.txt
+          ! grep -q 'Process: io.github.xgl34222220.baize' startup-evidence/crash.txt
