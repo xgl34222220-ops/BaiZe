@@ -27,7 +27,7 @@ jobs:
           git merge-base --is-ancestor "$TARGET" HEAD
           git checkout --detach "$TARGET"
           grep -Fxq 'version=v3.0.0' module.prop
-          grep -Fxq 'versionCode=30001' module.prop
+          grep -Fxq 'versionCode=30002' module.prop
           sh v2/scripts/sync-version.sh --source-only --check
           echo "BAIZE_RELEASE_TARGET_SHA=$TARGET" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
@@ -60,11 +60,39 @@ jobs:
         shell: bash
         run: |
           set +e
-          # AGP exposes only enabled host-test variants; the aggregate runs all of them.
           gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble > "$RUNNER_TEMP/baize-formal-rebuild.log" 2>&1
           status=$?
           tail -n 160 "$RUNNER_TEMP/baize-formal-rebuild.log"
           exit "$status"
+      - name: Retain signed candidate and mapping for diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-30002-Signed-Candidate
+          path: |
+            v2/app/build/outputs/apk/release/app-release.apk
+            v2/app/build/outputs/mapping/release/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prepare original APK and KVM for final-package startup tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/baize-startup-baseline"
+          gh release download v3.0.0 --repo "$GITHUB_REPOSITORY" --pattern 'BaiZe-v3.0.0.apk' --dir "$RUNNER_TEMP/baize-startup-baseline"
+          echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-startup-baseline/BaiZe-v3.0.0.apk" >> "$GITHUB_ENV"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start the final signed APK on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: false
+          script: python3 .github/scripts/smoke-release-apk.py v2/app/build/outputs/apk/release/app-release.apk 30002
       - name: Run complete core regression and package module
         working-directory: v2
         run: sh scripts/package-module.sh
@@ -84,7 +112,7 @@ jobs:
           ACTUAL=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT" | tr -d ':[:space:]')
           test "$ACTUAL" = "$BAIZE_CERT_SHA256"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/rebuild-badging.txt"
-          grep -q "versionCode='30001'" "$RUNNER_TEMP/rebuild-badging.txt"
+          grep -q "versionCode='30002'" "$RUNNER_TEMP/rebuild-badging.txt"
           grep -q "versionName='3.0.0'" "$RUNNER_TEMP/rebuild-badging.txt"
           cp "$APK" v2/dist/BaiZe-v3.0.0.apk
           cd v2/dist
@@ -95,7 +123,7 @@ jobs:
       - name: Retain verified formal artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v3.0.0-build30001-Formal
+          name: BaiZe-v3.0.0-build30002-Formal
           path: v2/dist/*
           if-no-files-found: error
       - name: Backup existing release before replacement
@@ -105,7 +133,7 @@ jobs:
       - name: Retain rollback assets
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v3.0.0-build30000-Rollback
+          name: BaiZe-v3.0.0-build30001-Rollback
           path: ${{ runner.temp }}/baize-formal-rollback/
           if-no-files-found: error
           retention-days: 30
@@ -122,22 +150,23 @@ jobs:
           git worktree add "$OTA" origin/main
           cd "$OTA"
           test "$(tr -d '[:space:]' < .github/rebuild-stable.publish)" = "$BAIZE_RELEASE_TARGET_SHA"
-          grep -Fxq 'versionCode=30001' module.prop
+          grep -Fxq 'versionCode=30002' module.prop
           sh v2/scripts/sync-version.sh --source-only --check
           sh v2/scripts/sync-version.sh
           sh v2/scripts/sync-version.sh --check
           test "$(git diff --name-only)" = update.json
           git add update.json
-          git commit -m 'release: enable verified 3.0.0 UI rebuild OTA (30001)'
+          git commit -m 'release: enable startup-verified 3.0.0 repair OTA (30002)'
           git push origin HEAD:main
-      - name: Retain release receipt and UI evidence
+      - name: Retain release receipt and startup evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BaiZe-v3.0.0-Rebuild-Evidence
+          name: BaiZe-v3.0.0-30002-Evidence
           path: |
             ${{ runner.temp }}/baize-formal-rebuild.log
             ${{ runner.temp }}/baize-formal-receipt.json
+            ${{ runner.temp }}/baize-apk-startup/
             v2/app/build/reports/ui-screenshots/*.png
             v2/app/build/test-results/**/*.xml
             v2/app/build/reports/lint-results-*.txt
