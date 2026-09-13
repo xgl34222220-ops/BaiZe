@@ -55,15 +55,10 @@ jobs:
       - name: Build native engines
         working-directory: v2
         run: sh scripts/build-native.sh
-      - name: Verify all JVM tests, lint and signed App
-        working-directory: v2
-        shell: bash
-        run: |
-          set +e
-          gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble > "$RUNNER_TEMP/baize-formal-rebuild.log" 2>&1
-          status=$?
-          tail -n 160 "$RUNNER_TEMP/baize-formal-rebuild.log"
-          exit "$status"
+      - name: Verify source-identical signed APK and existing JVM lint results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/reuse-verified-30002.py
       - name: Retain signed candidate and mapping for diagnosis
         uses: actions/upload-artifact@v4
         with:
@@ -90,7 +85,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -cores 2 -memory 3072 -no-snapshot -noaudio -no-boot-anim
           disable-animations: false
           script: python3 .github/scripts/smoke-release-apk.py v2/app/build/outputs/apk/release/app-release.apk 30002
       - name: Run complete core regression and package module
@@ -166,6 +161,7 @@ jobs:
           path: |
             ${{ runner.temp }}/baize-formal-rebuild.log
             ${{ runner.temp }}/baize-formal-receipt.json
+            ${{ runner.temp }}/baize-build-reuse.json
             ${{ runner.temp }}/baize-apk-startup/
             v2/app/build/reports/ui-screenshots/*.png
             v2/app/build/test-results/**/*.xml

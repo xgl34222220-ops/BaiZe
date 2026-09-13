@@ -34,6 +34,7 @@ def capture(name: str) -> None:
     save_text(f'{name}-crash.txt', adb('logcat', '-d', '-b', 'crash', '-v', 'threadtime', check=False))
     save_text(f'{name}-logcat.txt', adb('logcat', '-d', '-v', 'threadtime', check=False))
     save_text(f'{name}-activities.txt', adb('shell', 'dumpsys', 'activity', 'activities', check=False))
+    save_text(f'{name}-gfxinfo.txt', adb('shell', 'dumpsys', 'gfxinfo', APP, check=False))
     p = subprocess.run(['adb', 'exec-out', 'screencap', '-p'], capture_output=True, timeout=30)
     if p.returncode == 0:
         (OUT / f'{name}.png').write_bytes(p.stdout)
@@ -53,6 +54,11 @@ def alive() -> str:
     crash = adb('logcat', '-d', '-b', 'crash')
     if f'Process: {APP}' in crash or f'>>> {APP} <<<' in crash:
         raise AssertionError('App crash detected in Android crash buffer')
+    # A live PID is not proof of responsiveness. Do not click Wait or extend the
+    # platform ANR timeout to make a failed startup pass.
+    full = adb('logcat', '-d')
+    if f'ANR in {APP}' in full:
+        raise AssertionError('Android reported an App ANR')
     return pid
 
 
@@ -67,6 +73,7 @@ def launch(name: str, wait: int = 8) -> ET.Element:
         labels = {n.attrib.get('text') for n in root.iter('node')}
         if not {'首页', '清理', '记录', '设置'}.issubset(labels):
             raise AssertionError(f'Launcher navigation is not displayed: {labels}')
+        alive()
         RESULTS.append({'case': name, 'pid': pid, 'four_tabs_visible': True})
         return root
     finally:
@@ -91,6 +98,21 @@ def tap_label(label: str, name: str) -> None:
     capture(name)
 
 
+def settle_emulator_boot() -> None:
+    # First attempt coincided with 90% CPU pressure, memory reclaim and first-boot
+    # Google package setup. Let the emulator finish booting BEFORE any App launch.
+    # This does not change App effects, compile the App, or alter Android ANR limits.
+    stats = []
+    for _ in range(6):
+        stats.append({'time': time.time(), 'boot': adb('shell', 'getprop', 'sys.boot_completed'),
+                      'cpu_pressure': adb('shell', 'cat', '/proc/pressure/cpu', check=False),
+                      'memory_pressure': adb('shell', 'cat', '/proc/pressure/memory', check=False)})
+        time.sleep(15)
+    save_text('emulator-boot.json', json.dumps(stats, indent=2))
+    if stats[-1]['boot'] != '1':
+        raise AssertionError('Emulator did not finish booting')
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         raise SystemExit('Usage: smoke-release-apk.py MINIFIED_APK EXPECTED_VERSION_CODE')
@@ -100,15 +122,15 @@ def main() -> None:
     if hashlib.sha256(baseline.read_bytes()).hexdigest() != '570ece2a97e348d392ed45fd89b7ab452937af3cb58f923744f6260ef9021f76':
         raise AssertionError('Baseline must be the exact failed 30001 formal APK')
     adb('shell', 'input', 'keyevent', '82')
+    settle_emulator_boot()
     adb('install', '-r', str(baseline), timeout=120)
+    time.sleep(8)
     adb('logcat', '-c')
     adb('shell', 'am', 'start', '-W', '-n', ACTIVITY, timeout=45, check=False)
     time.sleep(5)
     capture('baseline-30001')
     if 'WorkDatabase_Impl.<init>' not in (OUT / 'baseline-30001-crash.txt').read_text():
         raise AssertionError('Baseline did not reproduce the known constructor failure')
-    # Data marker belongs to the App UID, not the CI root shell. The directory may
-    # not yet exist because the baseline failed before Application.onCreate.
     adb('root', check=False)
     adb('wait-for-device')
     data_dir = f'/data/user/0/{APP}'
@@ -118,6 +140,7 @@ def main() -> None:
     adb('shell', f'uid=$(stat -c %u {data_dir}); chown $uid:$uid {data_dir}/files {marker}; chmod 700 {data_dir}/files; chmod 600 {marker}; restorecon -RF {data_dir}/files')
     adb('install', '-r', str(apk), timeout=120)
     adb('shell', 'pm', 'grant', APP, 'android.permission.POST_NOTIFICATIONS', check=False)
+    time.sleep(8)
     package = adb('shell', 'dumpsys', 'package', APP)
     if f'versionCode={code} ' not in package:
         raise AssertionError('Wrong build installed')
@@ -132,6 +155,7 @@ def main() -> None:
     adb('uninstall', APP)
     adb('install', str(apk), timeout=120)
     adb('shell', 'pm', 'grant', APP, 'android.permission.POST_NOTIFICATIONS', check=False)
+    time.sleep(8)
     launch('fresh-install')
     adb('shell', 'input', 'keyevent', '3')
     adb('shell', 'am', 'start', '-W', '-n', ACTIVITY)
@@ -139,7 +163,8 @@ def main() -> None:
     RESULTS.append({'case': 'background-foreground', 'pid': alive()})
     save_text('passed.json', json.dumps({'versionCode': int(code), 'apk_sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
         'android_api': adb('shell', 'getprop', 'ro.build.version.sdk'),
-        'graphics_settings_modified': False, 'cases': RESULTS}, ensure_ascii=False, indent=2))
+        'graphics_settings_modified': False, 'anr_check': True, 'emulator_boot_settle_seconds': 90,
+        'cases': RESULTS}, ensure_ascii=False, indent=2))
     print((OUT / 'passed.json').read_text())
 
 
@@ -148,4 +173,8 @@ if __name__ == '__main__':
         main()
     except Exception:
         capture('failure')
+        adb('root', check=False)
+        adb('wait-for-device')
+        adb('pull', '/data/anr', str(OUT / 'anr'), check=False, timeout=60)
+        save_text('failure-exit-info.txt', adb('shell', 'dumpsys', 'activity', 'exit-info', APP, check=False))
         raise
