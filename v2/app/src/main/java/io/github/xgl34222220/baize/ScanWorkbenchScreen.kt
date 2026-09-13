@@ -37,6 +37,7 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -95,7 +96,9 @@ internal data class WorkbenchActions(
     val onSelectAll: () -> Unit,
     val onClear: () -> Unit,
     val onProtect: (WorkbenchItem) -> Unit,
-    val onQuarantine: (WorkbenchItem) -> Unit
+    val onQuarantine: (WorkbenchItem) -> Unit,
+    val onSelectMedium: () -> Unit = {},
+    val onManageWhitelist: () -> Unit = {}
 )
 
 private data class WorkbenchGroup(
@@ -110,11 +113,9 @@ private data class WorkbenchGroup(
 
 private sealed interface WorkbenchRow {
     val key: String
-
     data class Group(val group: WorkbenchGroup) : WorkbenchRow {
         override val key: String = "group:${group.key}"
     }
-
     data class Candidate(val item: WorkbenchItem) : WorkbenchRow {
         override val key: String = "item:${item.id}"
     }
@@ -136,6 +137,10 @@ private fun workbenchPresentation(
 ): WorkbenchPresentation {
     val filtered = items.filter { item ->
         when (filter) {
+            "medium" -> item.risk == "medium"
+            "high" -> item.risk == "high"
+            "unfinished" -> item.outcome.isNotBlank() && item.outcome != "未勾选，保留" &&
+                item.outcome !in setOf("已清理", "已按所选缓存执行清理")
             "unselected" -> item.id !in selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
             "blocked" -> !item.selectable
             "deep" -> item.profile == "deep"
@@ -167,6 +172,7 @@ private fun workbenchPresentation(
 }
 
 /** Task outcome, selection and the list have separate roles; connection is never success. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ScanWorkbenchScreen(
     appearance: AppearanceSettings,
@@ -182,14 +188,26 @@ internal fun ScanWorkbenchScreen(
     var showReport by rememberSaveable { mutableStateOf(false) }
     var inspected by remember { mutableStateOf<WorkbenchItem?>(null) }
     var confirmedSelection by remember { mutableStateOf<Pair<Long, Set<String>>?>(null) }
-    val editable = state.connected && state.scanReady && !state.running && !state.loadingResults
+    val now by produceState(SystemClock.elapsedRealtime(), state.scanReady, state.expiresAtRealtime) {
+        value = SystemClock.elapsedRealtime()
+        while (state.scanReady && value < state.expiresAtRealtime) {
+            delay(1_000L)
+            value = SystemClock.elapsedRealtime()
+        }
+    }
+    val liveSnapshot = state.scanReady && now < state.expiresAtRealtime
+    val lockedReason = reviewSelectionBlockReason(state, now)
+    val editable = lockedReason == null
+    val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
+        scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描结果已过期，请重新扫描") else state
     val presentation by produceState(WorkbenchPresentation(), state.items, state.selectedIds,
         filter, expandedGroups, state.loadingResults) {
         value = withContext(Dispatchers.Default) {
             workbenchPresentation(state.items, state.selectedIds, filter, expandedGroups, state.loadingResults)
         }
     }
-    val filters = listOf("all" to "全部", "unselected" to "待处理", "blocked" to "不可选",
+    val filters = listOf("all" to "全部", "medium" to "中风险", "high" to "高风险",
+        "unselected" to "待处理", "unfinished" to "未完成", "blocked" to "不可选",
         "deep" to "深度规则", "cache" to "应用缓存", "empty" to "空项目",
         "rules" to "规则垃圾", "fragments" to "残留碎片")
     val selected = remember(state.items, state.selectedIds) { state.items.filter { it.selectable && it.id in state.selectedIds } }
@@ -205,14 +223,17 @@ internal fun ScanWorkbenchScreen(
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomBarHeight + 12.dp)) {
             item {
                 DetailPageHeader("扫描结果", "", actions.onBack) {
+                    IconButton(onClick = actions.onManageWhitelist, enabled = !state.running && !state.loadingResults) {
+                        Icon(Icons.Rounded.Shield, "管理白名单", Modifier.size(22.dp))
+                    }
                     IconButton(onClick = { showGuide = true }) { Icon(Icons.Rounded.Info, "扫描说明", Modifier.size(22.dp)) }
                 }
             }
             if (state.items.isEmpty()) {
-                item { WorkbenchEmptyCard(state, onDetails = { showReport = true }) }
+                item { WorkbenchEmptyCard(visibleState, onDetails = { showReport = true }) }
             } else {
                 item {
-                    WorkbenchSummaryCard(state, presentation, selected.size, selectedHigh.size,
+                    WorkbenchSummaryCard(visibleState, presentation, selected.size, selectedHigh.size,
                         selected.any { it.bytes < 0L }, onDetails = { showReport = true })
                 }
                 item {
@@ -227,14 +248,23 @@ internal fun ScanWorkbenchScreen(
                                 Icon(Icons.Rounded.Tune, "筛选结果", Modifier.size(17.dp))
                             }
                         }
-                        if (editable) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(actions.onSelectAll, contentPadding = PaddingValues(end = 12.dp)) {
-                                Text("选中低、中风险", fontSize = 12.sp)
+                        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(actions.onSelectAll, enabled = editable, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                Text("全选低、中风险", fontSize = 13.sp)
                             }
-                            TextButton(actions.onClear, enabled = selected.isNotEmpty(),
+                            TextButton(actions.onSelectMedium, enabled = editable, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                                Text("仅选中风险", fontSize = 13.sp)
+                            }
+                            TextButton(actions.onClear, enabled = editable && selected.isNotEmpty(),
                                 contentPadding = PaddingValues(horizontal = 8.dp)) {
-                                Text("清空选择", fontSize = 12.sp)
+                                Text("清空选择", fontSize = 13.sp)
                             }
+                        }
+                        Text(lockedReason ?: "批量选择作用于全部扫描结果；高风险请展开后逐项选择。",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (state.items.any { it.outcome.isNotBlank() && it.outcome != "未勾选，保留" &&
+                                it.outcome !in setOf("已清理", "已按所选缓存执行清理") }) {
+                            TextButton(onClick = { filter = "unfinished" }) { Text("查看未完成项目") }
                         }
                     }
                 }
@@ -250,14 +280,13 @@ internal fun ScanWorkbenchScreen(
                             } }, onSelect = { actions.onToggleGroup(row.group.key) }
                         )
                         is WorkbenchRow.Candidate -> WorkbenchCandidateRow(
-                            row.item, row.item.id in state.selectedIds, editable,
+                            row.item, row.item.id in state.selectedIds, editable, lockedReason,
                             onToggle = { actions.onToggleItem(row.item.id) }, onDetails = { inspected = row.item }
                         )
                     }
                 }
             }
         }
-        // A compact floating dock keeps the only primary action reachable above system navigation.
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
             .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = inset + 12.dp)) {
@@ -265,19 +294,19 @@ internal fun ScanWorkbenchScreen(
                 tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.scanReady && !state.running) IconButton(onClick = actions.onScan,
+                    if (liveSnapshot && !state.running) IconButton(onClick = actions.onScan,
                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
                             .background(BaiZeTokens.colors.surfaceOverlay)) {
                         Icon(Icons.Rounded.Refresh, "重扫", Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurface)
                     }
                     GlassActionButton(
-                        label = when { state.running -> "停止当前任务"; state.scanReady -> "清理已选 ${selected.size} 项";
+                        label = when { state.running -> "停止当前任务"; liveSnapshot -> "清理已选 ${selected.size} 项";
                             !state.connected -> "重新连接并扫描"; state.items.isNotEmpty() || state.notice == WorkbenchNotice.ERROR -> "重新扫描"; else -> "开始扫描" },
-                        onClick = when { state.running -> actions.onStop; state.scanReady -> clean; else -> actions.onScan },
+                        onClick = when { state.running -> actions.onStop; liveSnapshot -> clean; else -> actions.onScan },
                         modifier = Modifier.weight(1f),
-                        enabled = if (state.scanReady && !state.running) canClean else true,
+                        enabled = if (liveSnapshot && !state.running) canClean else true,
                         secondary = state.running,
-                        icon = if (state.running) Icons.Rounded.Stop else if (state.scanReady) Icons.Rounded.CleaningServices else Icons.Rounded.Search
+                        icon = if (state.running) Icons.Rounded.Stop else if (liveSnapshot) Icons.Rounded.CleaningServices else Icons.Rounded.Search
                     )
                 }
             }
@@ -293,11 +322,14 @@ internal fun ScanWorkbenchScreen(
         } }, confirmButton = { TextButton({ showFilters = false }) { Text("取消") } })
     if (showGuide) WorkbenchInfoDialog("扫描与选择", buildString {
         append("按应用展开后，可以逐项选择文件。低、中风险支持批量选择，高风险需单独勾选并确认。\n\n")
-        append("白名单、关键系统数据和已变化的文件会继续保留。\n\n")
+        append("应用行复选框只批量选择低、中风险；全部是高风险的分组请点“逐项选择”。\n\n")
+        append("白名单、关键系统数据和已变化的文件会继续保留，具体原因在每项下方显示。\n\n")
+        append("应用及路径白名单都可在右上角盾牌入口管理。取消保护不等于立即删除，之后需重新扫描。\n\n")
         append("扫描结果保留 30 分钟；过期或执行结果未确认时，需要重新扫描。大小未完成统计的项目仍可显示。\n\n")
         append("当前策略：${state.policyTitle}")
     }) { showGuide = false }
-    if (showReport) WorkbenchInfoDialog("任务详情", listOf(state.phase, state.resultText, state.currentPath)
+    if (showReport) WorkbenchInfoDialog(if (liveSnapshot || state.running) "任务详情" else "上次任务详情",
+        listOf(visibleState.phase, if (!liveSnapshot && state.items.isNotEmpty()) REVIEW_HISTORY_HINT else "", state.resultText, state.currentPath)
         .filter { it.isNotBlank() }.distinct().joinToString("\n\n")) { showReport = false }
     inspected?.let { item ->
         AlertDialog(onDismissRequest = { inspected = null }, title = { Text(item.title, fontSize = 18.sp) },
@@ -305,7 +337,12 @@ internal fun ScanWorkbenchScreen(
                 RiskBadge(item.risk)
                 SelectionContainer { Text(listOf(item.groupTitle, item.outcome.ifBlank { item.reason }, item.path)
                     .filter { it.isNotBlank() }.joinToString("\n\n"), fontSize = 13.sp, lineHeight = 20.sp) }
-                if (!item.selectable) Text("此项目不可选：${item.reason}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                reviewItemRestriction(item, lockedReason)?.let { reason ->
+                    Text(reason, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                }
+                if (!state.running && !state.loadingResults) TextButton({ inspected = null; actions.onManageWhitelist() }) {
+                    Text("管理应用 / 路径白名单")
+                }
                 if (editable && item.selectable && item.risk == "high" && state.highRiskMode != "audit") {
                     TextButton({ inspected = null; actions.onQuarantine(item) }) {
                         Icon(Icons.Rounded.Inventory2, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("移入隔离区")
@@ -336,7 +373,6 @@ internal fun ScanWorkbenchScreen(
 
 private fun workbenchErrorSummary(state: WorkbenchUiState): String {
     val details = "${state.phase}\n${state.resultText}"
-    // Binder failure does not establish whether the service died or its buffer was exhausted.
     if (listOf("transaction failed", "deadobjectexception", "binder buffer", "failed binder transaction")
             .any { details.contains(it, ignoreCase = true) }) {
         return "清理服务通信失败，结果未确认"
@@ -361,7 +397,8 @@ private fun workbenchStatusColor(state: WorkbenchUiState) = when {
 private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
     state.running -> if (state.loadingResults) "正在读取扫描结果" else "正在处理"
     state.notice == WorkbenchNotice.ERROR -> workbenchErrorSummary(state)
-    state.notice == WorkbenchNotice.WARNING -> "有项目需要核对"
+    !state.scanReady && state.items.isNotEmpty() -> reviewRecordTitle(state)
+    state.notice == WorkbenchNotice.WARNING -> state.phase.ifBlank { "扫描未完成，请查看原因" }
     state.scanReady -> "扫描完成"
     state.notice == WorkbenchNotice.SUCCESS -> "任务已完成"
     !state.connected -> "等待清理服务连接"
@@ -393,7 +430,7 @@ private fun WorkbenchSummaryCard(
                 Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(20.dp))
-            Text(if (state.scanReady) "已选项目 · 预计释放" else "保留的扫描记录",
+            Text(if (state.scanReady) "已选项目 · 预计释放" else "上次扫描记录 · 非剩余垃圾量",
                 style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (state.scanReady) Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
                 else "${state.items.size} 项", Modifier.padding(top = 3.dp),
@@ -401,7 +438,7 @@ private fun WorkbenchSummaryCard(
             Row(Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(16.dp))
                 .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 12.dp)) {
                 WorkbenchStat("${presentation.appCount}", "应用", Modifier.weight(1f))
-                WorkbenchStat("$selectedCount", "已选项目", Modifier.weight(1f))
+                WorkbenchStat("$selectedCount", if (state.scanReady) "已选项目" else "原选择", Modifier.weight(1f))
                 WorkbenchStat("${presentation.protectedCount}", "不可选", Modifier.weight(1f))
             }
             when {
@@ -409,7 +446,7 @@ private fun WorkbenchSummaryCard(
                     fontSize = 12.sp, lineHeight = 18.sp, color = BaiZeTokens.colors.warning)
                 state.scanReady && hasUnknownSize -> Text("部分大小待统计，释放量以清理结果为准", Modifier.padding(top = 12.dp),
                     fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                !state.scanReady && !state.running -> Text("记录可继续查看，重新扫描后可选择清理", Modifier.padding(top = 12.dp),
+                !state.scanReady && !state.running -> Text(REVIEW_HISTORY_HINT, Modifier.padding(top = 12.dp),
                     fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (state.running) WorkbenchProgress(state)
@@ -508,10 +545,14 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
                 if (group.selectedCount > 0) Text("已选 ${group.selectedCount} 项", fontSize = 11.sp, lineHeight = 15.sp,
                     color = MaterialTheme.colorScheme.primary)
             }
-            TriStateCheckbox(state = when { group.bulkSelectedCount == 0 -> ToggleableState.Off;
-                group.bulkSelectedCount == group.selectableCount -> ToggleableState.On; else -> ToggleableState.Indeterminate },
-                onClick = onSelect, enabled = enabled && group.selectableCount > 0,
-                modifier = Modifier.semantics { contentDescription = "选择${group.title}的低中风险项目" })
+            if (group.selectableCount > 0) {
+                TriStateCheckbox(state = when { group.bulkSelectedCount == 0 -> ToggleableState.Off;
+                    group.bulkSelectedCount == group.selectableCount -> ToggleableState.On; else -> ToggleableState.Indeterminate },
+                    onClick = onSelect, enabled = enabled,
+                    modifier = Modifier.semantics { contentDescription = "选择${group.title}的低中风险项目" })
+            } else TextButton(onClick = onExpand, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                Text(if (group.items.any { it.selectable && it.risk == "high" }) "逐项选择" else "查看原因", fontSize = 12.sp)
+            }
             Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null,
                 Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -519,11 +560,11 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
 }
 
 @Composable
-private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enabled: Boolean, onToggle: () -> Unit, onDetails: () -> Unit) {
+private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enabled: Boolean, lockedReason: String?, onToggle: () -> Unit, onDetails: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 4.dp)
         .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .72f))
         .padding(start = 2.dp, end = 3.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
-        Checkbox(selected, onCheckedChange = { onToggle() }, enabled = enabled && item.selectable,
+        Checkbox(selected, onCheckedChange = { onToggle() }, enabled = enabled && item.selectable && item.risk != "critical",
             modifier = Modifier.semantics { contentDescription = "选择${item.title}" })
         Column(Modifier.weight(1f).clickable(onClickLabel = "查看文件明细", onClick = onDetails).padding(top = 7.dp, bottom = 5.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -533,7 +574,12 @@ private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enable
                 Text(if (item.bytes < 0L) "大小待统计" else Formatter.formatFileSize(LocalContext.current, item.bytes),
                     fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(item.outcome.ifBlank { if (!item.selectable) item.reason else item.path }, fontSize = 11.sp, lineHeight = 17.sp,
+            reviewItemRestriction(item, lockedReason)?.let { reason ->
+                Text(reason, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (item.risk == "high" && item.selectable && enabled) Text("可单独勾选，删除前须确认路径", fontSize = 12.sp,
+                color = BaiZeTokens.colors.warning)
+            Text(item.outcome.ifBlank { item.path }, fontSize = 11.sp, lineHeight = 17.sp,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onDetails, Modifier.size(40.dp)) { Icon(Icons.Rounded.MoreHoriz, "${item.title}详情", Modifier.size(19.dp)) }
