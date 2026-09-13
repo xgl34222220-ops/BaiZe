@@ -9,12 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/**
- * Thin Binder facade for BaiZe's persistent Root process.
- *
- * Task locking/state lives in [TaskCoordinator]. Scheduler/configuration, history, diagnostics,
- * package catalog, whitelist and organizer logic are isolated so Binder routing stays stable.
- */
+/** Binder facade; repositories own validation and task coordination. */
 class BaiZeProfileRootService : RootService() {
     private val coordinator = TaskCoordinator()
     private val schedulerRepository = SchedulerRepository()
@@ -26,7 +21,6 @@ class BaiZeProfileRootService : RootService() {
     private val cacheSelectionRepository = CacheSelectionRepository()
     private val quarantineRepository = QuarantineRepository()
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
-
     private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled, quarantineRepository) }
     private val instantCacheEngine by lazy {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
@@ -40,261 +34,165 @@ class BaiZeProfileRootService : RootService() {
     }
 
     private val binder = object : IProfileRootService.Stub() {
-
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
             JsonFileTransport.serve(File(RootPaths.STATE_DIR, "ipc"), request) { dispatchJson(operation, it) }
-
         override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
             JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
 
-        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
-            return when (operation) {
-                "scanProfile" -> {
-                    require(arguments.length() == 2)
-                    scanProfile(arguments.getString(0), arguments.getString(1))
-                }
-                "getProfilePage" -> {
-                    require(arguments.length() == 3)
-                    getProfilePage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
-                }
-                "cleanProfileSelected" -> {
-                    require(arguments.length() == 3)
-                    cleanProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                }
-                "quarantineProfileSelected" -> {
-                    require(arguments.length() == 3)
-                    quarantineProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
-                }
-                "prepareCacheSelection" -> {
-                    require(arguments.length() == 2)
-                    prepareCacheSelection(arguments.getString(0), arguments.getString(1))
-                }
-                "getQuarantinePage" -> {
-                    require(arguments.length() == 2)
-                    getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
-                }
-                "getModuleState" -> {
-                    require(arguments.length() == 0)
-                    getModuleState()
-                }
-                "getTaskHistory" -> {
-                    require(arguments.length() == 1)
-                    getTaskHistory(arguments.getInt(0))
-                }
-                "getTaskHistoryPage" -> {
-                    require(arguments.length() == 2)
-                    getTaskHistoryPage(arguments.getInt(0), arguments.getInt(1))
-                }
-                "getAuditTimelinePage" -> {
-                    require(arguments.length() == 2)
-                    getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
-                }
-                "getScanCoverage" -> {
-                    require(arguments.length() == 0)
-                    getScanCoverage()
-                }
-                "clearPackageCaches" -> {
-                    require(arguments.length() == 1)
-                    clearPackageCaches(arguments.getString(0))
-                }
-                "scanFileOrganizer" -> {
-                    require(arguments.length() == 0)
-                    scanFileOrganizer()
-                }
-                "applyFileOrganizer" -> {
-                    require(arguments.length() == 2)
-                    applyFileOrganizer(arguments.getString(0), arguments.getString(1))
-                }
-                "undoFileOrganizer" -> {
-                    require(arguments.length() == 0)
-                    undoFileOrganizer()
-                }
-                "getInstalledPackageCatalog" -> {
-                    require(arguments.length() == 0)
-                    getInstalledPackageCatalog()
-                }
-                "getWhitelistPackages" -> {
-                    require(arguments.length() == 0)
-                    getWhitelistPackages()
-                }
-                "saveWhitelistPackages" -> {
-                    require(arguments.length() == 1)
-                    saveWhitelistPackages(arguments.getString(0))
-                }
-                "getWhitelistPaths" -> {
-                    require(arguments.length() == 0)
-                    getWhitelistPaths()
-                }
-                else -> throw IllegalArgumentException("不支持的服务请求")
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String = when (operation) {
+            "scanProfile" -> {
+                require(arguments.length() == 2)
+                scanProfile(arguments.getString(0), arguments.getString(1))
             }
+            "getProfilePage" -> {
+                require(arguments.length() == 3)
+                getProfilePage(arguments.getString(0), arguments.getInt(1), arguments.getInt(2))
+            }
+            "cleanProfileSelected" -> {
+                require(arguments.length() == 3)
+                cleanProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+            }
+            "quarantineProfileSelected" -> {
+                require(arguments.length() == 3)
+                quarantineProfileSelected(arguments.getString(0), arguments.getString(1), arguments.getString(2))
+            }
+            "prepareCacheSelection" -> {
+                require(arguments.length() == 2)
+                prepareCacheSelection(arguments.getString(0), arguments.getString(1))
+            }
+            "getQuarantinePage" -> {
+                require(arguments.length() == 2)
+                getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
+            }
+            "getModuleState" -> { require(arguments.length() == 0); getModuleState() }
+            "getTaskHistory" -> { require(arguments.length() == 1); getTaskHistory(arguments.getInt(0)) }
+            "getTaskHistoryPage" -> {
+                require(arguments.length() == 2)
+                getTaskHistoryPage(arguments.getInt(0), arguments.getInt(1))
+            }
+            "getAuditTimelinePage" -> {
+                require(arguments.length() == 2)
+                getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
+            }
+            "getScanCoverage" -> { require(arguments.length() == 0); getScanCoverage() }
+            "clearPackageCaches" -> { require(arguments.length() == 1); clearPackageCaches(arguments.getString(0)) }
+            "scanFileOrganizer" -> { require(arguments.length() == 0); scanFileOrganizer() }
+            "applyFileOrganizer" -> {
+                require(arguments.length() == 2)
+                applyFileOrganizer(arguments.getString(0), arguments.getString(1))
+            }
+            "undoFileOrganizer" -> { require(arguments.length() == 0); undoFileOrganizer() }
+            "getInstalledPackageCatalog" -> { require(arguments.length() == 0); getInstalledPackageCatalog() }
+            "getWhitelistPackages" -> { require(arguments.length() == 0); getWhitelistPackages() }
+            "saveWhitelistPackages" -> { require(arguments.length() == 1); saveWhitelistPackages(arguments.getString(0)) }
+            "getWhitelistPaths" -> { require(arguments.length() == 0); getWhitelistPaths() }
+            // Only edit whitelist configuration records, never the target files.
+            // Reuse the App-owned FD channel; preserve existing AIDL transaction IDs.
+            "removeWhitelistPath" -> {
+                require(arguments.length() == 1)
+                if (coordinator.isBusy()) coordinator.busy("whitelist-path-remove") else
+                    coordinator.runExclusive("whitelist-path-remove", "正在取消路径保护", "whitelist_write_failed") {
+                        whitelistRepository.removePath(arguments.getString(0))
+                    }
+            }
+            "updateWhitelistPackages" -> {
+                require(arguments.length() == 2)
+                if (coordinator.isBusy()) coordinator.busy("whitelist-package-update") else
+                    coordinator.runExclusive("whitelist-package-update", "正在保存应用白名单", "whitelist_write_failed") {
+                        whitelistRepository.updatePackages(arguments.getString(0), arguments.getString(1))
+                    }
+            }
+            else -> throw IllegalArgumentException("不支持的服务请求")
         }
 
         override fun ping(): String = JSONObject()
-            .put("uid", Process.myUid())
-            .put("root", Process.myUid() == 0)
+            .put("uid", Process.myUid()).put("root", Process.myUid() == 0)
             .put("module", File(RootPaths.MODULE_DIR, "module.prop").isFile)
             .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
             .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
             .put("engine", "unified-root-task-coordinator-v2-audit")
-            .also { RootVersionInfo.putInto(it) }
-            .toString()
-
+            .also { RootVersionInfo.putInto(it) }.toString()
         override fun getProfileCatalog(): String = profileEngine.catalog()
 
         override fun scanProfile(profile: String?, optionsJson: String?): String = audited("profile-scan") {
-            coordinator.runExclusive(
-                operation = "profile-scan",
-                phase = "正在扫描保护项",
-                failureCode = "profile_scan_failed"
-            ) { started ->
+            coordinator.runExclusive(operation = "profile-scan", phase = "正在扫描保护项", failureCode = "profile_scan_failed") { started ->
                 profileEngine.scan(profile.orEmpty(), optionsJson.orEmpty()) { progress ->
-                    coordinator.update(
-                        operation = "profile-scan",
-                        phase = progress.phase,
-                        current = progress.current,
-                        total = progress.total,
-                        currentPath = progress.path,
-                        startedRealtime = started,
-                        deletedBytes = progress.bytes,
-                        deletedFiles = progress.files,
-                        failures = progress.failures
-                    )
+                    coordinator.update(operation = "profile-scan", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started,
+                        deletedBytes = progress.bytes, deletedFiles = progress.files, failures = progress.failures)
                 }
             }
         }
-
         override fun getProfilePage(snapshotId: String?, offset: Int, limit: Int): String {
             if (coordinator.isBusy()) return coordinator.busy("profile-page")
             coordinator.cancelled.set(false)
             return profileEngine.page(snapshotId.orEmpty(), offset, limit)
         }
-
-        override fun cleanProfileSelected(
-            snapshotId: String?,
-            selectionJson: String?,
-            optionsJson: String?
-        ): String = audited("profile-clean") {
-            coordinator.runExclusive(
-                operation = "profile-clean",
-                phase = "正在清理已选择项目",
-                failureCode = "profile_clean_failed"
-            ) { started ->
+        override fun cleanProfileSelected(snapshotId: String?, selectionJson: String?, optionsJson: String?): String = audited("profile-clean") {
+            coordinator.runExclusive(operation = "profile-clean", phase = "正在清理已选择项目", failureCode = "profile_clean_failed") { started ->
                 profileEngine.clean(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { progress ->
-                    coordinator.update(
-                        operation = "profile-clean",
-                        phase = progress.phase,
-                        current = progress.current,
-                        total = progress.total,
-                        currentPath = progress.path,
-                        startedRealtime = started,
-                        deletedBytes = progress.bytes,
-                        deletedFiles = progress.files,
-                        failures = progress.failures
-                    )
+                    coordinator.update(operation = "profile-clean", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started,
+                        deletedBytes = progress.bytes, deletedFiles = progress.files, failures = progress.failures)
                 }
             }
         }
-
-        override fun quarantineProfileSelected(
-            snapshotId: String?,
-            selectionJson: String?,
-            optionsJson: String?
-        ): String = audited("profile-quarantine") {
-            coordinator.runExclusive(
-                operation = "profile-quarantine",
-                phase = "正在隔离高风险项目",
-                failureCode = "profile_quarantine_failed"
-            ) { started ->
+        override fun quarantineProfileSelected(snapshotId: String?, selectionJson: String?, optionsJson: String?): String = audited("profile-quarantine") {
+            coordinator.runExclusive(operation = "profile-quarantine", phase = "正在隔离高风险项目", failureCode = "profile_quarantine_failed") { started ->
                 profileEngine.quarantine(snapshotId.orEmpty(), selectionJson.orEmpty(), optionsJson.orEmpty()) { progress ->
-                    coordinator.update(
-                        operation = "profile-quarantine",
-                        phase = progress.phase,
-                        current = progress.current,
-                        total = progress.total,
-                        currentPath = progress.path,
-                        startedRealtime = started,
-                        deletedBytes = progress.bytes,
-                        deletedFiles = progress.files,
-                        failures = progress.failures
-                    )
+                    coordinator.update(operation = "profile-quarantine", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started,
+                        deletedBytes = progress.bytes, deletedFiles = progress.files, failures = progress.failures)
                 }
             }
         }
-
         override fun prepareCacheSelection(snapshotId: String?, selectionJson: String?): String =
             cacheSelectionRepository.prepare(snapshotId, selectionJson)
-
         override fun getQuarantinePage(offset: Int, limit: Int): String {
             if (coordinator.isBusy()) return coordinator.busy("quarantine-page")
             return quarantineRepository.page(offset, limit)
         }
-
         override fun restoreQuarantineItem(id: String?): String = audited("quarantine-restore") {
-            coordinator.runExclusive(
-                operation = "quarantine-restore",
-                phase = "正在恢复隔离内容",
-                failureCode = "quarantine_restore_failed"
-            ) { quarantineRepository.restore(id) }
+            coordinator.runExclusive(operation = "quarantine-restore", phase = "正在恢复隔离内容", failureCode = "quarantine_restore_failed") {
+                quarantineRepository.restore(id)
+            }
         }
-
         override fun purgeQuarantineItem(id: String?): String = audited("quarantine-purge") {
-            coordinator.runExclusive(
-                operation = "quarantine-purge",
-                phase = "正在永久删除隔离内容",
-                failureCode = "quarantine_purge_failed"
-            ) { quarantineRepository.purge(id) }
+            coordinator.runExclusive(operation = "quarantine-purge", phase = "正在永久删除隔离内容", failureCode = "quarantine_purge_failed") {
+                quarantineRepository.purge(id)
+            }
         }
-
         override fun purgeExpiredQuarantine(): String = audited("quarantine-expire") {
-            coordinator.runExclusive(
-                operation = "quarantine-expire",
-                phase = "正在清理过期隔离项",
-                failureCode = "quarantine_expire_failed"
-            ) { quarantineRepository.purgeExpired() }
+            coordinator.runExclusive(operation = "quarantine-expire", phase = "正在清理过期隔离项", failureCode = "quarantine_expire_failed") {
+                quarantineRepository.purgeExpired()
+            }
         }
-
-        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String =
-            diagnostics.runMaintenanceTool(tool, optionsJson)
-
+        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String = diagnostics.runMaintenanceTool(tool, optionsJson)
         override fun runModuleTask(mode: String?): String {
             val normalized = mode.orEmpty().trim().lowercase()
-            if (normalized.startsWith("scheduler-")) {
-                return schedulerRepository.control(normalized)
-            }
-            if (normalized !in MODULE_TASKS) {
-                return JSONObject().put("error", "unsupported_mode").put("mode", normalized).toString()
-            }
+            if (normalized.startsWith("scheduler-")) return schedulerRepository.control(normalized)
+            if (normalized !in MODULE_TASKS) return JSONObject().put("error", "unsupported_mode").put("mode", normalized).toString()
             val phase = when (normalized) {
                 "scan" -> "正在执行安全扫描"
                 "organize" -> "正在启动文件归类"
                 else -> "正在执行 Root 任务"
             }
             return audited(normalized) {
-                coordinator.runExclusive(
-                    operation = "module-$normalized",
-                    phase = phase,
-                    failureCode = "module_task_failed"
-                ) { started ->
-                    if (normalized in DETACHED_TASKS) {
-                        moduleTasks.startDetachedModuleTask(normalized, started)
-                    } else {
-                        moduleTasks.executeModuleTask(normalized, started)
-                    }
+                coordinator.runExclusive(operation = "module-$normalized", phase = phase, failureCode = "module_task_failed") { started ->
+                    if (normalized in DETACHED_TASKS) moduleTasks.startDetachedModuleTask(normalized, started)
+                    else moduleTasks.executeModuleTask(normalized, started)
                 }
             }
         }
-
         override fun getModuleState(): String {
             val state = moduleTasks.moduleState()
             RootMediaScanQueue.flush(this@BaiZeProfileRootService)
             return state
         }
         override fun getTaskHistory(limit: Int): String = historyRepository.taskHistoryJson(limit)
-        override fun getTaskHistoryPage(offset: Int, limit: Int): String =
-            historyRepository.taskHistoryPageJson(offset, limit)
-        override fun getAuditTimelinePage(offset: Int, limit: Int): String =
-            auditRepository.timelinePageJson(offset, limit)
+        override fun getTaskHistoryPage(offset: Int, limit: Int): String = historyRepository.taskHistoryPageJson(offset, limit)
+        override fun getAuditTimelinePage(offset: Int, limit: Int): String = auditRepository.timelinePageJson(offset, limit)
         override fun clearAuditTimeline(): String = auditRepository.clearTimelineJson()
         override fun updateRuleQualityReview(ruleKey: String?, action: String?, note: String?): String =
             auditRepository.updateRuleQualityReviewJson(ruleKey, action, note)
@@ -309,110 +207,61 @@ class BaiZeProfileRootService : RootService() {
             return result
         }
         override fun getSchedulerConfig(): String = schedulerRepository.configJson()
-        override fun saveSchedulerConfig(configJson: String?): String =
-            schedulerRepository.saveConfig(configJson.orEmpty())
+        override fun saveSchedulerConfig(configJson: String?): String = schedulerRepository.saveConfig(configJson.orEmpty())
         override fun resetScanWorkerProfile(): String = diagnostics.resetScanWorkerProfileJson()
-
         override fun clearPackageCaches(requestJson: String?): String = audited("instant-cache") {
-            coordinator.runExclusive(
-                operation = "instant-cache",
-                phase = "正在清理应用缓存",
-                failureCode = "instant_cache_failed"
-            ) { started ->
+            coordinator.runExclusive(operation = "instant-cache", phase = "正在清理应用缓存", failureCode = "instant_cache_failed") { started ->
                 instantCacheEngine.run(requestJson.orEmpty(), started)
             }
         }
-
         override fun scanFileOrganizer(): String = audited("file-organizer-scan") {
-            coordinator.runExclusive(
-                operation = "file-organizer-scan",
-                phase = "正在扫描可归类文件",
-                failureCode = "file_organizer_scan_failed"
-            ) { started ->
+            coordinator.runExclusive(operation = "file-organizer-scan", phase = "正在扫描可归类文件", failureCode = "file_organizer_scan_failed") { started ->
                 organizerController.scan { progress ->
-                    coordinator.update(
-                        operation = "file-organizer-scan",
-                        phase = progress.phase,
-                        current = progress.current,
-                        total = progress.total,
-                        currentPath = progress.path,
-                        startedRealtime = started
-                    )
+                    coordinator.update(operation = "file-organizer-scan", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started)
                 }
             }
         }
-
-        override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String =
-            audited("file-organizer-apply") {
-                coordinator.runExclusive(
-                    operation = "file-organizer-apply",
-                    phase = "正在归类文件",
-                    failureCode = "file_organizer_apply_failed"
-                ) { started ->
-                    val result = organizerController.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
-                        coordinator.update(
-                            operation = "file-organizer-apply",
-                            phase = progress.phase,
-                            current = progress.current,
-                            total = progress.total,
-                            currentPath = progress.path,
-                            startedRealtime = started
-                        )
-                    }
-                    RootMediaScanQueue.flush(this@BaiZeProfileRootService)
-                    result
-                }
-            }
-
-        override fun undoFileOrganizer(): String = audited("file-organizer-undo") {
-            coordinator.runExclusive(
-                operation = "file-organizer-undo",
-                phase = "正在撤销上次归类",
-                failureCode = "file_organizer_undo_failed"
-            ) { started ->
-                val result = organizerController.undo { progress ->
-                    coordinator.update(
-                        operation = "file-organizer-undo",
-                        phase = progress.phase,
-                        current = progress.current,
-                        total = progress.total,
-                        currentPath = progress.path,
-                        startedRealtime = started
-                    )
+        override fun applyFileOrganizer(snapshotId: String?, selectionJson: String?): String = audited("file-organizer-apply") {
+            coordinator.runExclusive(operation = "file-organizer-apply", phase = "正在归类文件", failureCode = "file_organizer_apply_failed") { started ->
+                val result = organizerController.apply(snapshotId.orEmpty(), selectionJson.orEmpty()) { progress ->
+                    coordinator.update(operation = "file-organizer-apply", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started)
                 }
                 RootMediaScanQueue.flush(this@BaiZeProfileRootService)
                 result
             }
         }
-
+        override fun undoFileOrganizer(): String = audited("file-organizer-undo") {
+            coordinator.runExclusive(operation = "file-organizer-undo", phase = "正在撤销上次归类", failureCode = "file_organizer_undo_failed") { started ->
+                val result = organizerController.undo { progress ->
+                    coordinator.update(operation = "file-organizer-undo", phase = progress.phase, current = progress.current,
+                        total = progress.total, currentPath = progress.path, startedRealtime = started)
+                }
+                RootMediaScanQueue.flush(this@BaiZeProfileRootService)
+                result
+            }
+        }
         override fun getInstalledPackageCatalog(): String = packageCatalog.installedPackagesJson()
         override fun getWhitelistPackages(): String = whitelistRepository.packagesJson()
-        override fun saveWhitelistPackages(packagesJson: String?): String =
-            whitelistRepository.savePackages(packagesJson.orEmpty())
+        override fun saveWhitelistPackages(packagesJson: String?): String = whitelistRepository.savePackages(packagesJson.orEmpty())
         override fun getWhitelistPaths(): String = whitelistRepository.pathsJson()
         override fun addWhitelistPath(path: String?): String = whitelistRepository.addPath(path)
-
         override fun getTaskState(): String = coordinator.currentState()
         override fun registerTaskProgressCallback(callback: ITaskProgressCallback?) = coordinator.register(callback)
         override fun unregisterTaskProgressCallback(callback: ITaskProgressCallback?) = coordinator.unregister(callback)
         override fun cancelCurrentTask() = coordinator.cancelCurrentTask()
     }
-
     private fun audited(operation: String, source: String = "app", block: () -> String): String {
         val started = System.currentTimeMillis()
         val result = block()
         runCatching { auditRepository.recordResult(operation, source, result, started) }
         return result
     }
-
     override fun onBind(intent: Intent): IBinder = binder
-
     companion object {
-        private val MODULE_TASKS = setOf(
-            "scan", "clean", "cache-clean", "empty-clean", "rules-clean", "fragment-scan",
-            "fragment-clean", "deep-scan", "deep-clean", "corpse-scan", "corpse-clean",
-            "apk-scan", "apk-clean", "organize"
-        )
+        private val MODULE_TASKS = setOf("scan", "clean", "cache-clean", "empty-clean", "rules-clean", "fragment-scan",
+            "fragment-clean", "deep-scan", "deep-clean", "corpse-scan", "corpse-clean", "apk-scan", "apk-clean", "organize")
         private val DETACHED_TASKS = setOf("clean", "organize")
     }
 }
