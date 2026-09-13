@@ -36,9 +36,9 @@ val LightBaiZeColors = BaiZeColors(
     warning = Color(0xFF956319),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFF5F6F8),
+    surfaceBase = Color(0xFFF1F4F9),
     surfaceRaised = Color(0xFFFFFFFF),
-    surfaceOverlay = Color(0xFFEDEFF3)
+    surfaceOverlay = Color(0xFFE8EDF5)
 )
 
 /** 普通深色：避免纯黑压迫感，维持柔和层级。 */
@@ -47,9 +47,9 @@ val DarkBaiZeColors = BaiZeColors(
     warning = Color(0xFFE8B45D),
     danger = Color(0xFFFF8585),
     info = Color(0xFF8EAFFF),
-    surfaceBase = Color(0xFF111316),
-    surfaceRaised = Color(0xFF1B1E23),
-    surfaceOverlay = Color(0xFF262A30)
+    surfaceBase = Color(0xFF101319),
+    surfaceRaised = Color(0xFF1C222C),
+    surfaceOverlay = Color(0xFF293240)
 )
 
 /** AMOLED：页面纯黑，主体与次级容器保留极轻阶差。 */
@@ -76,8 +76,8 @@ data class BaiZeCorners(
 val DefaultBaiZeCorners = BaiZeCorners(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -111,9 +111,9 @@ val DefaultBaiZeTypeScale = BaiZeTypeScale(
     caption = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
     body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal, letterSpacing = .15.sp),
     bodyLarge = TextStyle(fontSize = 14.5.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal, letterSpacing = .15.sp),
-    title = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
-    headline = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, letterSpacing = (-.4).sp),
-    display = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, letterSpacing = (-.5).sp),
+    title = TextStyle(fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium),
+    headline = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.4).sp),
+    display = TextStyle(fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.7).sp),
     hero = TextStyle(
         fontSize = 34.sp,
         lineHeight = 40.sp,

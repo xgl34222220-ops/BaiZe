@@ -99,6 +99,21 @@ class WorkbenchVisualReviewTest {
         save("empty")
     }
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun emptyFailedScanKeepsDetailsAndRetryReachable() {
+        render(WorkbenchUiState(profileConnected = true, cacheConnected = true,
+            notice = WorkbenchNotice.ERROR,
+            phase = "安全扫描失败：服务结果未确认：Transaction failed on small parcel; remote process probably died"),
+            fontScale = 1.3f)
+        compose.onNodeWithText("清理服务通信失败，结果未确认").assertIsDisplayed()
+        compose.onNodeWithContentDescription("查看任务详情").assertIsDisplayed()
+        compose.onNodeWithText("重新扫描").assertIsDisplayed().performClick()
+        assertEquals(1, scanRequests)
+        assertEquals(0, cleanRequests)
+        save("empty-failure-narrow-large-font")
+    }
+
     private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f) {
         state = initial
         val appearance = AppearanceSettings(monetEnabled = false, themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT,

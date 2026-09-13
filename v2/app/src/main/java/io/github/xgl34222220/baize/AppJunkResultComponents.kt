@@ -6,6 +6,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 internal fun AppJunkCardContent(item: AppJunkUiItem) {
@@ -49,35 +51,26 @@ internal fun AppJunkCardContent(item: AppJunkUiItem) {
             .clickable(enabled = categories.isNotEmpty()) { expanded = !expanded }
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            ApplicationIcon(item.packageName, item.label, Modifier.size(50.dp))
-            Spacer(Modifier.width(14.dp))
+            ApplicationIcon(item.packageName, item.label, Modifier.size(42.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         item.label,
                         modifier = Modifier.weight(1f),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         Formatter.formatFileSize(context, item.bytes),
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 17.sp
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp
                     )
                 }
-                Text(
-                    item.packageName,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(8.dp))
-                CategoryChipRow(categories, item.category)
-                Spacer(Modifier.height(7.dp))
+                Spacer(Modifier.height(5.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "${item.files} 个文件${if (item.errors > 0) " · ${item.errors} 个未清理" else ""}",
@@ -97,18 +90,21 @@ internal fun AppJunkCardContent(item: AppJunkUiItem) {
             }
         }
 
+        Spacer(Modifier.height(12.dp))
+        CategoryChipRow(categories, item.category)
         AnimatedVisibility(visible = expanded && categories.isNotEmpty()) {
-            Column {
-                HorizontalDivider(
-                    modifier = Modifier.padding(top = 14.dp, bottom = 7.dp),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f)
-                )
+            Column(Modifier.padding(top = 12.dp).clip(RoundedCornerShape(16.dp))
+                .background(BaiZeTokens.colors.surfaceBase).padding(12.dp)) {
+                Text(item.packageName, fontSize = 11.sp, lineHeight = 17.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 categories.forEach { CategoryDetailRow(it) }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CategoryChipRow(categories: List<AppJunkCategoryUiItem>, fallback: String) {
     val labels = if (categories.isNotEmpty()) {
@@ -116,7 +112,7 @@ private fun CategoryChipRow(categories: List<AppJunkCategoryUiItem>, fallback: S
     } else {
         fallback.split('、', ',', '，').map { friendlyCategory(it) }.filter { it.isNotBlank() }.distinct()
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         labels.take(3).forEach { CategoryChip(it) }
         if (labels.size > 3) CategoryChip("+${labels.size - 3}")
     }
@@ -127,10 +123,10 @@ private fun CategoryChip(label: String) {
     Box(
         Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f))
+            .background(BaiZeTokens.colors.surfaceBase)
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        Text(label, color = MaterialTheme.colorScheme.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
     }
 }
 
@@ -143,13 +139,13 @@ private fun CategoryDetailRow(category: AppJunkCategoryUiItem) {
             Text(
                 "${category.files} 个文件${if (category.errors > 0) " · ${category.errors} 个未清理" else ""}",
                 color = if (category.errors > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
+                fontSize = 12.sp
             )
             if (category.samplePath.isNotBlank()) {
                 Text(
                     category.samplePath,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f),
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -159,7 +155,7 @@ private fun CategoryDetailRow(category: AppJunkCategoryUiItem) {
             Formatter.formatFileSize(context, category.bytes),
             color = MaterialTheme.colorScheme.primary,
             fontSize = 13.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Medium
         )
     }
 }

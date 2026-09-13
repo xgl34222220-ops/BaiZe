@@ -8,9 +8,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -69,6 +72,7 @@ class UiVisualReviewTest {
 
     @Test fun homePlanOpensAutomaticPlan() {
         render("home-plan-entry", 0)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理"))
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
         save("clean-plan")

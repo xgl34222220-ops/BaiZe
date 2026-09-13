@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 internal fun CurrentCleanupSummaryContent(apps: List<AppJunkUiItem>, junk: List<GeneralJunkUiItem>) {
@@ -41,35 +42,26 @@ internal fun CurrentCleanupSummaryContent(apps: List<AppJunkUiItem>, junk: List<
 
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp))
-            }
-            Column(Modifier.padding(start = 13.dp).weight(1f)) {
-                Text("本次结果", fontSize = 20.sp, fontWeight = FontWeight.Black)
-                Text("全部按实际扫描或删除结果统计", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-            }
-            Text(
-                Formatter.formatFileSize(context, totalBytes),
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Black
-            )
+            Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp))
+            Text("本次结果", Modifier.padding(start = 7.dp), fontSize = 13.sp,
+                lineHeight = 19.sp, fontWeight = FontWeight.Medium)
         }
-
+        Text(Formatter.formatFileSize(context, totalBytes), Modifier.padding(top = 12.dp),
+            style = BaiZeTokens.type.hero, color = MaterialTheme.colorScheme.onSurface)
+        Text("按实际扫描或删除结果统计", Modifier.padding(top = 3.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 18.sp)
         Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            SummaryStat("${apps.size + junk.size}", "分类来源")
-            SummaryStat("$totalFiles", "文件项目")
-            SummaryStat("$totalErrors", "未处理")
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 13.dp)) {
+            SummaryStat("${apps.size + junk.size}", "分类来源", Modifier.weight(1f))
+            SummaryStat("$totalFiles", "文件项目", Modifier.weight(1f))
+            SummaryStat("$totalErrors", "未处理", Modifier.weight(1f))
         }
 
         if (largestApp != null || largestJunk != null) {
             Spacer(Modifier.height(16.dp))
-            Text("最大来源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            Text("最大来源", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (appWins && largestApp != null) {
                     ApplicationIcon(largestApp.packageName, largestApp.label, Modifier.size(30.dp))
@@ -77,11 +69,11 @@ internal fun CurrentCleanupSummaryContent(apps: List<AppJunkUiItem>, junk: List<
                         largestApp.label,
                         modifier = Modifier.padding(start = 9.dp).weight(1f),
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(Formatter.formatFileSize(context, largestApp.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(Formatter.formatFileSize(context, largestApp.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 } else if (largestJunk != null) {
                     Icon(
                         if (largestJunk.name.contains("APK", true) || largestJunk.name.contains("安装包")) Icons.Rounded.InstallMobile else Icons.Rounded.DeleteSweep,
@@ -93,11 +85,11 @@ internal fun CurrentCleanupSummaryContent(apps: List<AppJunkUiItem>, junk: List<
                         friendlyGeneralName(largestJunk.name),
                         modifier = Modifier.padding(start = 9.dp).weight(1f),
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Text(Formatter.formatFileSize(context, largestJunk.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(Formatter.formatFileSize(context, largestJunk.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
@@ -109,7 +101,7 @@ internal fun GeneralJunkCardContent(item: GeneralJunkUiItem) {
     val context = LocalContext.current
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(15.dp))
+            Modifier.size(42.dp).clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = .09f)),
             contentAlignment = Alignment.Center
         ) {
@@ -117,13 +109,13 @@ internal fun GeneralJunkCardContent(item: GeneralJunkUiItem) {
                 if (item.name.contains("APK", true) || item.name.contains("安装包")) Icons.Rounded.InstallMobile else Icons.Rounded.DeleteSweep,
                 null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(25.dp)
+                modifier = Modifier.size(23.dp)
             )
         }
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
+        Column(Modifier.padding(start = 12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(friendlyGeneralName(item.name), modifier = Modifier.weight(1f), fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                Text(friendlyGeneralName(item.name), modifier = Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(Formatter.formatFileSize(context, item.bytes), color = MaterialTheme.colorScheme.primary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
             Text(
                 "${item.files} 个文件${if (item.errors > 0) " · ${item.errors} 个未处理" else ""}",
@@ -131,17 +123,17 @@ internal fun GeneralJunkCardContent(item: GeneralJunkUiItem) {
                 fontSize = 11.sp
             )
             if (item.samplePath.isNotBlank()) {
-                Text(item.samplePath, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f), fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.samplePath, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
 }
 
 @Composable
-private fun SummaryStat(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, fontWeight = FontWeight.Black)
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+private fun SummaryStat(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 16.sp)
     }
 }
 

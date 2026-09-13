@@ -2,8 +2,10 @@ package io.github.xgl34222220.baize.ui.history.miuix
 
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,10 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Refresh
@@ -40,8 +43,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -62,13 +65,15 @@ import io.github.xgl34222220.baize.ui.miuix.VideoListRow
 import io.github.xgl34222220.baize.ui.miuix.VideoSectionTitle
 import io.github.xgl34222220.baize.ui.miuix.VideoTabs
 import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp)
+        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
             VideoTopBar("记录", actions = {
@@ -81,19 +86,23 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
             item { CurrentResultCard(state, actions.onReviewProtected) }
         }
         item {
-            VideoTabs(listOf("任务时间线", "应用与文件"), selectedTab, { selectedTab = it }, Modifier.padding(top = 14.dp, bottom = 18.dp))
+            VideoTabs(listOf("任务时间线", "应用与文件"), selectedTab, { selectedTab = it })
         }
         if (selectedTab == 0) {
             if (state.records.isEmpty()) item {
-                VideoEmptyState(Icons.Rounded.History, "暂无清理记录", "任务完成后会保存在这里。", Modifier.padding(horizontal = 20.dp))
+                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    VideoEmptyState(Icons.Rounded.History, "暂无清理记录", "完成一次清理后，在这里回看结果。")
+                }
             } else {
-                itemsIndexed(state.records, key = { index, record -> "${record.time}|${record.title}|$index" }) { index, record ->
-                    HistoryTimelineRow(record, index == 0, index == state.records.lastIndex)
+                itemsIndexed(state.records, key = { index, record -> "${record.time}|${record.title}|$index" }) { _, record ->
+                    HistoryTimelineRow(record)
                 }
             }
         } else {
             if (state.recentApps.isEmpty() && state.recentJunk.isEmpty()) item {
-                VideoEmptyState(Icons.Rounded.Folder, "暂无分类结果", "扫描或清理后可查看应用与文件明细。", Modifier.padding(horizontal = 20.dp))
+                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    VideoEmptyState(Icons.Rounded.Folder, "暂无分类结果", "扫描后可按应用、文件查看明细。")
+                }
             }
             if (state.recentApps.isNotEmpty()) {
                 item { VideoSectionTitle("按应用", "最近一次任务") }
@@ -105,9 +114,8 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                 item { VideoSectionTitle("其他文件", modifier = Modifier.padding(top = 16.dp)) }
                 itemsIndexed(state.recentJunk, key = { index, junk -> "junk:${junk.name}:$index" }) { _, junk ->
                     val context = LocalContext.current
-                    Column(Modifier.padding(horizontal = 20.dp)) {
+                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                         VideoListRow(Icons.Rounded.Folder, junk.name, junk.samplePath.ifBlank { "未记录示例路径" }, value = "${Formatter.formatFileSize(context, junk.bytes)}\n${junk.files} 项")
-                        VideoDivider(start = 0)
                     }
                 }
             }
@@ -119,38 +127,47 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
 private fun LifetimeSummary(state: HistoryUiState) {
     val context = LocalContext.current
     var expanded by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("累计释放", Modifier.weight(1f), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(if (expanded) "收起统计" else "详细统计",
-                Modifier.heightIn(min = 40.dp).clickable(role = Role.Button) { expanded = !expanded }.padding(vertical = 10.dp),
-                fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        containerColor = lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .04f),
+        contentPadding = 20) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("累计释放", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                .clickable(role = Role.Button) { expanded = !expanded }.padding(start = 8.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(if (expanded) "收起统计" else "详细统计", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary)
+                Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ChevronRight,
+                    null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+            }
         }
-        Text(Formatter.formatFileSize(context, state.lifetimeReleased), fontSize = 30.sp, lineHeight = 38.sp,
-            fontWeight = FontWeight.Medium, letterSpacing = (-.6).sp)
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Text(Formatter.formatFileSize(context, state.lifetimeReleased), fontSize = 38.sp, lineHeight = 46.sp,
+            fontWeight = FontWeight.SemiBold, letterSpacing = (-1.1).sp)
+        Spacer(Modifier.height(20.dp))
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = .045f)).padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             SmallMetric("完成任务", state.lifetimeRuns.toString(), Modifier.weight(1f))
             SmallMetric("处理文件", state.lifetimeFiles.toString(), Modifier.weight(1f))
         }
         AnimatedVisibility(expanded) {
-            Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                VideoDivider(start = 0)
+            Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatisticRow("累计运行时长", formatElapsed(state.lifetimeElapsed))
                 StatisticRow("空文件", state.lifetimeEmptyFiles.toString())
                 StatisticRow("空目录", state.lifetimeEmptyDirs.toString())
                 StatisticRow("残留碎片", state.lifetimeFragments.toString())
             }
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
 private fun SmallMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(value, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
-        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(value, fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -166,9 +183,9 @@ private fun StatisticRow(label: String, value: String) {
 private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Unit) {
     val context = LocalContext.current
     val hasResult = state.hasCurrentResult || state.latestResult.isNotBlank()
-    VideoCard(Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth()) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
         if (hasResult) {
-            Column(Modifier.padding(16.dp)) {
+            Column(Modifier.padding(18.dp)) {
                 Text(listOf("最近一次", state.lastTaskTime).filter { it.isNotBlank() }.joinToString(" · "),
                     fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 DetailStatusText(state.latestResult.ifBlank { "最近一次任务已完成" }, Modifier.padding(top = 6.dp))
@@ -190,8 +207,8 @@ private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Un
 @Composable
 private fun AppResultRow(packageName: String, label: String, subtitle: String, bytes: Long, files: Long) {
     val context = LocalContext.current
-    Column(Modifier.padding(horizontal = 24.dp)) {
-        Row(Modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             AppPackageIcon(packageName = packageName, label = label, size = 38.dp, corner = 12.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -206,37 +223,41 @@ private fun AppResultRow(packageName: String, label: String, subtitle: String, b
                 Text("$subtitle · $files 项", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 18.sp)
             }
         }
-        VideoDivider(start = 50)
     }
 }
 
 @Composable
-private fun HistoryTimelineRow(record: HistoryUiItem, first: Boolean, last: Boolean) {
+private fun HistoryTimelineRow(record: HistoryUiItem) {
     val context = LocalContext.current
     var expanded by rememberSaveable(record.time, record.title) { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
-    Column(Modifier.fillMaxWidth().drawBehind {
-        val x = 28.dp.toPx()
-        val y = 10.dp.toPx()
-        drawLine(accent.copy(alpha = .15f), Offset(x, if (first) y else 0f), Offset(x, if (last) y else size.height), 1.dp.toPx())
-        drawCircle(accent.copy(alpha = .12f), 7.dp.toPx(), Offset(x, y))
-        drawCircle(accent, 3.dp.toPx(), Offset(x, y))
-    }.clickable(role = Role.Button, onClickLabel = if (expanded) "收起任务详情" else "展开任务详情") { expanded = !expanded }
-        .padding(start = 48.dp, end = 24.dp, bottom = 20.dp)) {
-        Text("${record.time} · ${record.trigger}", fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(5.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(record.title, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-            Icon(if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight, null,
-                Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
+    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button,
+            onClickLabel = if (expanded) "收起任务详情" else "展开任务详情") { expanded = !expanded }.padding(18.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(7.dp).clip(RoundedCornerShape(4.dp)).background(accent.copy(alpha = .7f)))
+                Text("${record.time} · ${record.trigger}", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ChevronRight, null,
+                    Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(record.title, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(5.dp))
+            Text(record.result.ifBlank { "任务已完成" }, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                .background(accent.copy(alpha = .045f)).padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${Formatter.formatFileSize(context, record.bytes)} · ${record.files} 项", Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelLarge, color = accent)
+                Text(if (record.cleaned) "已清理" else "已记录", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-        Spacer(Modifier.height(5.dp))
-        Text(record.result.ifBlank { "任务已完成" }, fontSize = 13.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(8.dp))
-        Text("${Formatter.formatFileSize(context, record.bytes)} · ${record.files} 项 · ${if (record.cleaned) "已清理" else "已记录"}",
-            fontSize = 12.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, color = accent)
     }
 }
 

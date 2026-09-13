@@ -73,7 +73,7 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 60.dp).padding(horizontal = 20.dp, vertical = 6.dp),
+            .heightIn(min = 72.dp).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -147,9 +147,9 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
 
 @Composable
 fun VideoSectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 22.dp, vertical = 4.dp),
+    Column(modifier.padding(horizontal = 24.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium,
+        Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface)
         if (!subtitle.isNullOrBlank()) {
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -185,8 +185,8 @@ fun VideoCard(
 fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier,
     color: Color? = null) {
     val tint = color ?: if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
-        .background(if (primary || color != null) tint.copy(alpha = .065f) else Color.Transparent),
+    Box(modifier.size(40.dp).clip(RoundedCornerShape(14.dp))
+        .background(if (primary || color != null) tint.copy(alpha = .08f) else Color.Transparent),
         contentAlignment = Alignment.Center) {
         Icon(icon, null, Modifier.size(22.dp), tint = tint)
     }
@@ -204,9 +204,9 @@ fun VideoListRow(
     trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().heightIn(min = 68.dp)
+        modifier = modifier.fillMaxWidth().heightIn(min = 72.dp)
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         VideoLeadingIcon(icon, primary = enabled)
@@ -250,7 +250,7 @@ fun VideoSwitchRow(icon: ImageVector, title: String, subtitle: String, checked: 
 @Composable
 fun VideoDivider(start: Int = 66) {
     HorizontalDivider(Modifier.padding(start = start.dp, end = 18.dp),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
 }
 
 @Composable

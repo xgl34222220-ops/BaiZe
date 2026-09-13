@@ -43,11 +43,11 @@ internal fun Modifier.glassSurface(
     dark: Boolean
 ): Modifier = this
     .shadow(
-        elevation = 8.dp,
+        elevation = 12.dp,
         shape = shape,
         clip = false,
-        ambientColor = Color(0xFF244064).copy(alpha = if (dark) .10f else .045f),
-        spotColor = Color(0xFF244064).copy(alpha = if (dark) .14f else .065f)
+        ambientColor = Color(0xFF1E3558).copy(alpha = if (dark) .10f else .055f),
+        spotColor = Color(0xFF1E3558).copy(alpha = if (dark) .16f else .085f)
     )
     .shadow(
         elevation = 1.dp,
@@ -59,12 +59,12 @@ internal fun Modifier.glassSurface(
     .clip(shape)
     .background(
         Brush.verticalGradient(
-            0f to lerp(color, Color.White, if (dark) .035f else .45f),
-            .10f to lerp(color, Color.White, if (dark) .012f else .12f),
-            1f to color
+            0f to lerp(color, Color.White, if (dark) .045f else .32f),
+            .20f to color,
+            1f to lerp(color, if (dark) Color.Black else Color(0xFFCEDBED), .025f)
         )
     )
-    .insetTopLight(if (dark) .055f else .32f)
+    .insetTopLight(if (dark) .055f else .22f)
 
 /** A six-dp internal reflection, clipped by the parent shape rather than drawn as a border. */
 private fun Modifier.insetTopLight(alpha: Float): Modifier = drawWithCache {
@@ -79,7 +79,7 @@ private fun Modifier.insetTopLight(alpha: Float): Modifier = drawWithCache {
     }
 }
 
-/** Shared 48dp action. Motion only follows the user's press and honours disabled state. */
+/** Shared action; its reflection and press response match the floating navigation. */
 @Composable
 fun GlassActionButton(
     label: String,
@@ -91,7 +91,7 @@ fun GlassActionButton(
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(18.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -120,7 +120,7 @@ fun GlassActionButton(
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .heightIn(min = 48.dp)
+            .heightIn(min = 50.dp)
             .shadow(
                 elevation = if (enabled) 6.dp else 0.dp,
                 shape = shape,
@@ -137,7 +137,7 @@ fun GlassActionButton(
             )
             .clip(shape)
             .background(Brush.verticalGradient(listOf(upper, base, lower)))
-            .insetTopLight(if (!enabled) .08f else if (dark) .10f else if (secondary) .45f else .18f)
+            .insetTopLight(if (!enabled) .06f else if (dark) .08f else if (secondary) .30f else .09f)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
