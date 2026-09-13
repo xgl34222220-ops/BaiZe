@@ -20,72 +20,11 @@ jobs:
     env:
       KEEP_TAG: refactor-v1.0.0
       KEEP_VERSION: v1.0.0
-      KEEP_APK_SHA256: a1c1d8d345c57892e8666970be1a4d738d37872b4b90f0ebcde9995588a3bc1a
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Remove legacy public-version material from main
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-          # Future refactor releases must use the first refactor release as the upgrade baseline,
-          # so deleting the old public releases cannot break the next formal build.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('.github/workflows/refactor-release.yml')
-          s = p.read_text(encoding='utf-8')
-          s = s.replace('Prepare legacy upgrade baseline and KVM', 'Prepare first refactor upgrade baseline and KVM')
-          s = s.replace(
-              "'https://github.com/xgl34222220-ops/BaiZe/releases/download/v3.0.0/BaiZe-v3.0.0.apk'",
-              "'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v1.0.0/BaiZe-v1.0.0.apk'",
-          )
-          s = s.replace(
-              "600ac2de5f33fdf282f222a2c1099ec63f9ed7766482fe56f238e487836a4fc4  ",
-              "a1c1d8d345c57892e8666970be1a4d738d37872b4b90f0ebcde9995588a3bc1a  ",
-          )
-          if 'releases/download/v3.0.0/' in s or '600ac2de5f33fdf282f222a2c1099ec63f9ed7766482fe56f238e487836a4fc4' in s:
-              raise SystemExit('legacy upgrade baseline still present')
-          p.write_text(s, encoding='utf-8')
-          PY
-
-          # Public documentation starts from the refactor line only.
-          rm -f RELEASE_NOTES_v*.md
-          rm -rf docs/ui/v2.*
-
-          # Remove obsolete legacy-release automation while retaining current CI and refactor release flow.
-          rm -f \
-            .github/release-cleanup.publish \
-            .github/rebuild-stable.publish \
-            .github/mirror-release.publish \
-            .github/release.cancel \
-            .github/release.publish \
-            .github/scripts/cleanup-releases.sh \
-            .github/scripts/replace-formal-release.py \
-            .github/scripts/reuse-verified-30002.py \
-            .github/workflows/release-cleanup.yml \
-            .github/workflows/release-control.yml \
-            .github/workflows/release-mirror.yml \
-            .github/workflows/stable-release.yml \
-            .github/workflows/stable-ui-rebuild.yml \
-            .github/workflows/v2.4.0-release.yml \
-            .github/workflows/v2.4.0-signing-preflight.yml \
-            .github/workflows/v2.4.0-source-export.yml
-          find .github/workflows -maxdepth 1 -type f -name 'v2.*release*.yml' -delete
-          find .github/workflows -maxdepth 1 -type f -name 'v2.*tag-publisher*.yml' -delete
-          find .github/workflows -maxdepth 1 -type f -name 'v2.*release-status-probe*.yml' -delete
-          find .github/workflows -maxdepth 1 -type f -name 'v2.*release-verifier*.yml' -delete
-
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m 'chore: remove legacy public release history'
-            git push origin HEAD:main
-          fi
 
       - name: Delete every GitHub Release except refactor v1.0.0
         shell: bash
@@ -105,7 +44,7 @@ jobs:
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id"
           done < "$RUNNER_TEMP/releases.tsv"
 
-      - name: Delete every tag except refactor v1.0.0
+      - name: Delete every Git tag except refactor v1.0.0
         shell: bash
         run: |
           set -euo pipefail
@@ -129,10 +68,8 @@ jobs:
           git worktree add "$MIRROR" origin/downloads
           git -C "$MIRROR" config user.name 'github-actions[bot]'
           git -C "$MIRROR" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
           mkdir -p "$MIRROR/releases"
           find "$MIRROR/releases" -mindepth 1 -maxdepth 1 -type d ! -name "$KEEP_TAG" -exec rm -rf {} +
-
           git -C "$MIRROR" add -A releases
           if ! git -C "$MIRROR" diff --cached --quiet; then
             git -C "$MIRROR" commit -m 'chore: keep only refactor v1.0.0 mirror'
@@ -145,9 +82,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git fetch origin main
           NOTES="$RUNNER_TEMP/refactor-v1.0.0.md"
-          git show origin/main:docs/releases/refactor-v1.0.0.md > "$NOTES"
+          cp docs/releases/refactor-v1.0.0.md "$NOTES"
           gh release edit "$KEEP_TAG" \
             --title '白泽重构版 1.0.0 正式版' \
             --notes-file "$NOTES" \
@@ -159,7 +95,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
           mapfile -t releases < <(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
           test "${#releases[@]}" -eq 1
           test "${releases[0]}" = "$KEEP_TAG"
@@ -169,12 +104,11 @@ jobs:
           test "${tags[0]}" = "$KEEP_TAG"
 
           git fetch origin downloads
-          MIRROR="$RUNNER_TEMP/verify-downloads"
-          git worktree add "$MIRROR" origin/downloads
-          test -d "$MIRROR/releases/$KEEP_TAG"
-          test "$(find "$MIRROR/releases" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -eq 1
+          VERIFY="$RUNNER_TEMP/verify-downloads"
+          git worktree add "$VERIFY" origin/downloads
+          test -d "$VERIFY/releases/$KEEP_TAG"
+          test "$(find "$VERIFY/releases" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" -eq 1
 
-          test "$(git show origin/main:update.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "$KEEP_VERSION"
-          test "$(git show origin/main:update.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["versionCode"])')" = 30003
-
+          test "$(python3 -c 'import json; print(json.load(open("update.json"))["version"])')" = "$KEEP_VERSION"
+          test "$(python3 -c 'import json; print(json.load(open("update.json"))["versionCode"])')" = 30003
           echo 'Only refactor-v1.0.0 remains as the public version.'
