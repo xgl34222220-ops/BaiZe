@@ -8,55 +8,47 @@ LATEST_TAG="$(git -C "$TOP" tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
-git -C "$TOP" archive "$LATEST_TAG" | tar -xf - -C "$TMP"
+OLD_TREE="$TMP/old"
+mkdir -p "$OLD_TREE"
+git -C "$TOP" archive "$LATEST_TAG" | tar -xf - -C "$OLD_TREE"
 
-OLD_VERSION="$(sed -n 's/^version=//p' "$TMP/module.prop")"
-OLD_CODE="$(sed -n 's/^versionCode=//p' "$TMP/module.prop")"
+OLD_VERSION="$(sed -n 's/^version=//p' "$OLD_TREE/module.prop")"
+OLD_CODE="$(sed -n 's/^versionCode=//p' "$OLD_TREE/module.prop")"
 NEXT_VERSION="$(sed -n 's/^version=//p' "$TOP/module.prop")"
 NEXT_CODE="$(sed -n 's/^versionCode=//p' "$TOP/module.prop")"
 
 [ "$OLD_VERSION" = "$LATEST_TAG" ] || { echo "标签与旧包版本不一致"; exit 1; }
 [ "$OLD_CODE" -lt "$NEXT_CODE" ] || { echo "内部版本号没有继续递增"; exit 1; }
 
-calc_next_version() {
-    version=${1#v}
-    major=${version%%.*}
-    rest=${version#*.}
-    minor=${rest%%.*}
-    patch=${rest##*.}
-
-    if [ "$patch" -gt 0 ]; then
-        step_patch=1
-    else
-        step_patch=$((patch + 1))
-    fi
-
-    if [ "$minor" -eq 0 ] && [ "$patch" -eq 0 ]; then
-        next_minor=1
-        next_patch=1
-    else
-        next_minor=$minor
-        next_patch=$step_patch
-    fi
-    printf 'v%s.%s.%s\n' "$major" "$next_minor" "$next_patch"
+# 重构正式版使用独立显示版本序列；旧 v2/v3 标签只作为覆盖升级的
+# versionCode 基线，不能拿旧显示版本去推导重构版名称。
+[ -f "$TOP/docs/releases/refactor-$NEXT_VERSION.md" ] || {
+    echo "缺少重构版发布说明：docs/releases/refactor-$NEXT_VERSION.md"
+    exit 1
 }
 
-# 重构 1.x 使用独立版本序列校验；这里仍校验内部版本号和发布暂存，
-# 但不再把旧 v2/v3 正式版本名推导套到重构版本上。
-if [ ! -f "$TOP/docs/releases/refactor-$NEXT_VERSION.md" ]; then
-    EXPECTED_VERSION="$(calc_next_version "$OLD_VERSION")"
-    [ "$NEXT_VERSION" = "$EXPECTED_VERSION" ] || { echo "下一个正式版本必须是 $EXPECTED_VERSION"; exit 1; }
+# sync-version.sh 以它所在仓库树为工作根目录，只接受 --check、
+# --source-only、--next、--set。发布暂存测试因此复制最小仓库树后，
+# 在暂存树内调用脚本；不要把暂存目录当作位置参数传入。
+STAGE_DIR="$TMP/stage"
+mkdir -p "$STAGE_DIR/v2/scripts" "$STAGE_DIR/v2/module" "$STAGE_DIR/v2/app"
+cp "$TOP/v2/scripts/sync-version.sh" "$TOP/v2/scripts/package-module.sh" "$STAGE_DIR/v2/scripts/"
+cp "$TOP/module.prop" "$TOP/update.json" "$STAGE_DIR/"
+cp "$TOP/v2/module/module.prop" "$TOP/v2/module/customize.sh" "$TOP/v2/module/task-worker.sh" "$STAGE_DIR/v2/module/"
+cp "$TOP/v2/app/build.gradle.kts" "$STAGE_DIR/v2/app/"
+cp "$STAGE_DIR/update.json" "$TMP/previous-update.json"
+
+# 源码元数据必须已经是待发布版本，同时 OTA 仍停留在旧正式版。
+sh "$STAGE_DIR/v2/scripts/sync-version.sh" --source-only --check
+cmp "$STAGE_DIR/update.json" "$TMP/previous-update.json"
+if sh "$STAGE_DIR/v2/scripts/sync-version.sh" --check >/dev/null 2>&1; then
+    echo "正式发布前的全量检查必须拒绝尚未切换的 OTA"
+    exit 1
 fi
 
-STAGE_DIR="$TMP/stage"
-mkdir -p "$STAGE_DIR"
-MODULE_ARCHIVE="$TMP/BaiZe-$NEXT_VERSION.zip"
-
-sh "$TOP/v2/scripts/sync-version.sh" \
-    "$STAGE_DIR" "$MODULE_ARCHIVE" "$TMP/git-update.json" \
-    "https://example.invalid/$NEXT_VERSION.zip" \
-    "https://example.invalid/$NEXT_VERSION.md" \
-    "https://example.invalid/checksums-$NEXT_VERSION.txt"
+# 模拟正式产物已验证后切 OTA，再进行完整一致性检查。
+sh "$STAGE_DIR/v2/scripts/sync-version.sh"
+sh "$STAGE_DIR/v2/scripts/sync-version.sh" --check
 
 [ "$(sed -n 's/^version=//p' "$STAGE_DIR/module.prop")" = "$NEXT_VERSION" ] || {
     echo "发布暂存仍写入旧版本号"
@@ -66,7 +58,11 @@ sh "$TOP/v2/scripts/sync-version.sh" \
     echo "发布暂存仍写入旧内部版本号"
     exit 1
 }
-grep -q "\"versionCode\": $NEXT_CODE" "$TMP/git-update.json"
-grep -q "\"version\": \"$NEXT_VERSION\"" "$TMP/git-update.json"
+[ "$NEXT_VERSION" = "$(sed -n 's/^version=//p' "$STAGE_DIR/v2/module/module.prop")" ]
+
+grep -q "\"versionCode\": $NEXT_CODE" "$STAGE_DIR/update.json"
+grep -q "\"version\": \"$NEXT_VERSION\"" "$STAGE_DIR/update.json"
+grep -q "/releases/refactor-$NEXT_VERSION/BaiZe-$NEXT_VERSION-Module.zip" "$STAGE_DIR/update.json"
+grep -q "/docs/releases/refactor-$NEXT_VERSION.md" "$STAGE_DIR/update.json"
 
 echo "版本切换与发布暂存测试通过"
