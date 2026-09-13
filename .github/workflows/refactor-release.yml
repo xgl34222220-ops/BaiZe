@@ -1,0 +1,195 @@
+name: BaiZe Refactor Formal Release
+on:
+  push:
+    branches: [main]
+    paths: ['.github/refactor.publish']
+permissions:
+  contents: write
+concurrency:
+  group: baize-stable-release
+  cancel-in-progress: false
+env:
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve request and commit generated version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          REQUEST=$(tr -d '[:space:]' < .github/refactor.publish)
+          [[ "$REQUEST" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$REQUEST" HEAD
+          test "$(git diff --name-only "$REQUEST" HEAD)" = .github/refactor.publish
+          VERSION=$(sed -n 's/^version=//p' module.prop)
+          CODE=$(sed -n 's/^versionCode=//p' module.prop)
+          test "$CODE" -gt 30002
+          test -s "docs/releases/refactor-$VERSION.md"
+          # Only generate the normal version metadata. Do not apply patches or change App logic.
+          sh v2/scripts/sync-version.sh --source-only
+          python3 - <<'PY'
+          import subprocess
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          allowed = {'v2/app/build.gradle.kts', 'v2/module/module.prop', 'v2/module/customize.sh', 'v2/module/task-worker.sh', 'v2/scripts/package-module.sh'}
+          if not changed <= allowed:
+              raise SystemExit(f'Unexpected generated change: {changed - allowed}')
+          PY
+          sh v2/scripts/sync-version.sh --source-only --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet; then
+            git add v2/app/build.gradle.kts v2/module/module.prop v2/module/customize.sh v2/module/task-worker.sh v2/scripts/package-module.sh
+            git commit -m "chore: synchronize $VERSION refactor metadata ($CODE)"
+            git push origin HEAD:main
+          fi
+          echo "BAIZE_RELEASE_REQUEST_SHA=$REQUEST" >> "$GITHUB_ENV"
+          echo "BAIZE_RELEASE_TARGET_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION_NAME=${VERSION#v}" >> "$GITHUB_ENV"
+          echo "BAIZE_TAG=refactor-$VERSION" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Install native tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox-static toybox
+          sdkmanager 'ndk;27.2.12479018' 'build-tools;36.0.0'
+      - name: Prepare original formal signing key
+        env:
+          BAIZE_KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          BAIZE_KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS }}
+          BAIZE_KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: python3 .github/scripts/prepare-formal-signing.py
+      - name: Build native engines
+        working-directory: v2
+        run: sh scripts/build-native.sh
+      - name: Compile test lint and build final signed APK
+        working-directory: v2
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble 2>&1 | tee "$RUNNER_TEMP/baize-refactor-build.log"
+      - name: Prepare legacy upgrade baseline and KVM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api 'repos/xgl34222220-ops/BaiZe/contents/releases/v3.0.0/BaiZe-v3.0.0.apk?ref=downloads' -H 'Accept: application/vnd.github.raw+json' > "$RUNNER_TEMP/baize-baseline.apk"
+          echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-baseline.apk" >> "$GITHUB_ENV"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify actual signed APK startup and upgrade
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          disable-animations: false
+          script: python3 .github/scripts/refactor-startup.py v2/app/build/outputs/apk/release/app-release.apk "$BAIZE_VERSION_CODE" "$BAIZE_VERSION_NAME"
+      - name: Core regression and module packaging
+        working-directory: v2
+        run: sh scripts/package-module.sh
+      - name: Verify exact signed payload and hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=v2/app/build/outputs/apk/release/app-release.apk
+          ZIP="v2/dist/BaiZe-$BAIZE_VERSION-Module.zip"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" app/baize.apk > "$RUNNER_TEMP/embedded.apk"
+          cmp "$APK" "$RUNNER_TEMP/embedded.apk"
+          unzip -p "$ZIP" module.prop > "$RUNNER_TEMP/module.prop"
+          cmp module.prop "$RUNNER_TEMP/module.prop"
+          CERT="v2/dist/BaiZe-$BAIZE_VERSION-signing-certificate.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > "$CERT"
+          test "$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$CERT" | tr -d ':[:space:]')" = "$BAIZE_CERT_SHA256"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/refactor-badging.txt"
+          grep -F "versionCode='$BAIZE_VERSION_CODE'" "$RUNNER_TEMP/refactor-badging.txt"
+          grep -F "versionName='$BAIZE_VERSION_NAME'" "$RUNNER_TEMP/refactor-badging.txt"
+          cp "$APK" "v2/dist/BaiZe-$BAIZE_VERSION.apk"
+          cd v2/dist
+          sha256sum "BaiZe-$BAIZE_VERSION-Module.zip" > "BaiZe-$BAIZE_VERSION-Module.zip.sha256"
+          sha256sum "BaiZe-$BAIZE_VERSION.apk" > "BaiZe-$BAIZE_VERSION.apk.sha256"
+      - name: Keep verified formal artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-refactor-${{ env.BAIZE_VERSION }}-Formal
+          path: v2/dist/*
+          if-no-files-found: error
+      - name: Publish new formal release and verified mirror
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main downloads
+          test "$(git show origin/main:.github/refactor.publish | tr -d '[:space:]')" = "$BAIZE_RELEASE_REQUEST_SHA"
+          if git ls-remote --exit-code --tags origin "refs/tags/$BAIZE_TAG" >/dev/null 2>&1; then
+            echo 'Refactor tag already exists; no replacement authorized' >&2; exit 1
+          fi
+          MIRROR="$RUNNER_TEMP/baize-refactor-downloads"
+          git worktree add "$MIRROR" origin/downloads
+          DEST="$MIRROR/releases/$BAIZE_TAG"
+          test ! -e "$DEST"
+          mkdir -p "$DEST"
+          cp v2/dist/* "$DEST/"
+          git -C "$MIRROR" add -f "releases/$BAIZE_TAG"
+          git -C "$MIRROR" commit -m "release: verified $BAIZE_TAG downloads"
+          git -C "$MIRROR" push origin HEAD:downloads
+          gh release create "$BAIZE_TAG" v2/dist/* --target "$BAIZE_RELEASE_TARGET_SHA" --title "白泽重构版 $BAIZE_VERSION_NAME 正式版" --notes-file "docs/releases/refactor-$BAIZE_VERSION.md" --latest
+          gh release download "$BAIZE_TAG" --dir "$RUNNER_TEMP/refactor-published"
+          (cd "$RUNNER_TEMP/refactor-published"; sha256sum -c "BaiZe-$BAIZE_VERSION.apk.sha256"; sha256sum -c "BaiZe-$BAIZE_VERSION-Module.zip.sha256")
+          for name in "BaiZe-$BAIZE_VERSION.apk" "BaiZe-$BAIZE_VERSION-Module.zip"; do
+            cmp "v2/dist/$name" "$RUNNER_TEMP/refactor-published/$name"
+            cmp "$DEST/$name" "$RUNNER_TEMP/refactor-published/$name"
+          done
+      - name: Enable OTA only after published bytes match
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          OTA="$RUNNER_TEMP/refactor-ota"
+          git worktree add "$OTA" origin/main
+          cd "$OTA"
+          test "$(tr -d '[:space:]' < .github/refactor.publish)" = "$BAIZE_RELEASE_REQUEST_SHA"
+          grep -Fxq "versionCode=$BAIZE_VERSION_CODE" module.prop
+          sh v2/scripts/sync-version.sh --source-only --check
+          sh v2/scripts/sync-version.sh
+          sh v2/scripts/sync-version.sh --check
+          test "$(git diff --name-only)" = update.json
+          git add update.json
+          git commit -m "release: enable verified $BAIZE_TAG OTA"
+          git push origin HEAD:main
+      - name: Keep validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-refactor-validation
+          path: |
+            ${{ runner.temp }}/baize-refactor-build.log
+            ${{ runner.temp }}/baize-apk-startup/
+            ${{ runner.temp }}/refactor-badging.txt
+            v2/app/build/test-results/**/*.xml
+            v2/app/build/reports/ui-screenshots/*.png
+            v2/app/build/reports/lint-results-*.txt
+          if-no-files-found: warn
+      - name: Remove ephemeral signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
