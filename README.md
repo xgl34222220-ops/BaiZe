@@ -2,151 +2,173 @@
 
 # 白泽 BaiZe
 
-**Android Root 缓存、日志与存储垃圾清理模块**
+**Android Root 智能清理模块 + 原生 App**
 
 适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/version-v3.0.0-2364db)
+![Version](https://img.shields.io/badge/重构版-1.0.0-2364db)
+![Build](https://img.shields.io/badge/build-30003-6f42c1)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
+[下载正式版](https://github.com/xgl34222220-ops/BaiZe/releases/tag/refactor-v1.0.0)
+
 </div>
 
-白泽以准确统计、分级保护和可审计清理为核心。项目保留完整深度规则库，但把规则存在与删除权限分离：低、中风险内容可参与安全定时，高风险与关键风险内容默认只扫描，完整深度清理必须由用户手动确认。
+白泽是一套面向 Root Android 设备的清理工具，目标不是“扫得越多越好”，而是把 **扫描、风险判断、用户确认、实际删除、结果复核** 做成一条完整且可追踪的流程。
 
-v2 以原生 App 为主界面，通过 libsu RootService 调用模块内的 C 扫描引擎，不再依赖 WebUI。
+**当前公开版本线从「重构版 1.0.0」重新开始，1.0.0 就是第一个正式版本。**
 
-## 3.0.0 正式版更新
+## 重构版 1.0.0
 
-修复扫描 Root 响应文件跨权限传输的兼容问题，四类 Root 服务统一使用由 App 创建的请求与结果文件；大批量数据不塞入 Binder 消息，结果未确认时不自动重复清理。扫描失败直接显示具体原因。完整模块内置同签名 App，刷入后重启，原配置保留。详见 [3.0.0 发布说明](RELEASE_NOTES_v3.0.0.md)。
+本次重构把 App、模块、清理流程和界面统一到新的正式版本线：
 
-传输与 Android 自动回归已通过；此前报错的两台手机尚未反馈更新后实测结果，真机兼容性仍需确认。
-
-此前的规则、按项清理及界面改进见 [2.9.3 发布说明](RELEASE_NOTES_v2.9.3.md)；[2.9.3 实际界面截图与检查范围](docs/ui/v2.9.3/README.md) 包含浅色、深色与窄屏大字号页面。
-
-要每小时清安装包，在“清理 → 自动计划”的安装包项目设置 **1 小时 + 不保留**。执行间隔与文件保留期限分别生效，升级会保留旧的保留天数。安装包工具按独立开关处理下载位置的 APK/APKS/XAPK/APKM，其他文档与照片不属于安装包清理目标。
+- 洛书同源的 MIUIX / 液态玻璃视觉：首页、设置页与悬浮底栏统一设计语言。
+- 扫描结果按应用和文件展示，不再只给一个模糊的总大小。
+- 明确区分实时扫描、历史结果、过期快照与未完成任务，避免把旧记录误认为当前垃圾。
+- 常驻“全选低、中风险”和“仅选中风险”，高风险项目坚持逐项选择与再次确认。
+- 新增统一白名单管理，可管理应用保护和手动路径保护。
+- 白名单读取失败或 Root 连接异常时禁止误写，不把“读取失败”当成“空名单”。
+- 清理记录、实际释放空间与任务结果继续保留，只有真正删除成功的内容才计入统计。
+- 模块内置 App 与独立 APK 使用同一正式签名，支持直接覆盖升级。
 
 ## 核心功能
 
-- 应用内部缓存、`code_cache` 与 `Android/data` 外部缓存清理
-- 空文件、空目录、隐藏垃圾、系统日志和残留碎片清理
-- 4,714 条深度规则分级扫描与安全执行
-- 安装包（APK / APKS / XAPK / APKM）扫描与保留期清理
-- 卸载应用残留扫描，清理前再次检查应用是否重新安装
-- 应用下载、接收、附件与导出文件的自动归类
-- 每组任务独立周期或每日固定时间
-- 息屏、充电、系统空闲、电量、温度和运行时长条件
-- 扫描快照、规则 SHA 校验、白名单与单文件上限保护
-- 实际删除后复核，通知和累计统计只记录真正释放的空间
-- 审计报告、任务历史、隔离区与原子配置保存
-- 深度扫描实时进度、慢目录限时保护与缓存根目录合并扫描
-- 断点续清：扫描快照持久化，任务中断后可继续
+### 垃圾扫描与清理
+
+- 应用内部缓存、`code_cache` 与外部缓存
+- 系统日志、临时文件、空文件、空目录与隐藏垃圾
+- 卸载应用残留与残留碎片
+- APK / APKS / XAPK / APKM 安装包扫描与保留期清理
+- 4,714 条深度规则分级扫描
+- 深度扫描实时进度、慢目录限时与扫描快照
+- 清理中断后的断点续清与结果复核
+
+### 文件归类
+
+- 对下载、接收、附件、导出等文件进行分类整理
+- 分类规则与垃圾清理规则分离，避免把正常文件当垃圾
+- 操作结果可追踪，异常时不静默吞掉文件
+
+### 自动任务
+
+- 每个任务可独立设置周期或每日固定时间
+- 支持充电、息屏、系统空闲、电量、温度与运行时长条件
+- 自动任务只执行允许的风险等级，不会因为定时配置而绕过高风险保护
+
+### 白名单与保护
+
+白泽提供两层保护：
+
+- **应用保护**：保护某个应用相关的清理内容
+- **路径保护**：保护指定路径，支持逐条管理和移除
+
+移除白名单只会取消保护记录，**不会删除对应应用或文件**。对白名单进行修改后，旧扫描快照会失效，需要重新扫描，避免拿旧授权继续清理。
+
+## 风险分级
+
+| 等级 | 默认行为 |
+|---|---|
+| `low` | 可批量选择，可进入安全自动任务 |
+| `medium` | 可批量选择，但仍受规则与白名单保护 |
+| `high` | 默认不选，必须手动逐项选择并再次确认 |
+| `critical` | 关键数据保护，默认禁止自动清理 |
+
+白泽把“发现某个文件”和“允许删除某个文件”分开处理。规则命中不等于直接删除，高风险和关键数据始终经过额外限制。
 
 ## 安全边界
 
-- 风险分为 `low` / `medium` / `high` / `critical` 四级
-- **定时深度任务永不执行 high 与 critical**，这是脚本层的硬边界，改配置也绕不过
-- 完整深度清理必须先扫描，并在 30 分钟内手动确认；扫描授权使用一次后失效
-- 不跟随软链接，不允许清理模块、Root 配置和系统关键路径
-- 删除前双次 `lstat` 并与快照元数据比对，文件被改动过即跳过
+- 不跟随软链接进行跨路径删除
+- 模块自身、Root 配置和关键系统路径禁止清理
+- 删除前重新检查文件状态，内容变化后会跳过
 - 默认保护下载、文档、相册、影音、数据库、SharedPreferences、密钥、草稿、备份与 OBB 主体
-
-### 自己决定删到哪一级
-
-风险等级不是写死的，四个层次都可以调：
-
-| 位置 | 作用 |
-|---|---|
-| `config/default.conf` 的 `deep_scheduled_max_risk` | 定时任务的上限，默认 `medium`；设为 `low` 更保守 |
-| `config/default.conf` 的 `deep_manual_max_risk` | 手动完整清理的上限，默认 `high` |
-| `config/risk-overrides.conf` | 按路径逐条覆盖，可升可降，优先级最高 |
-| `config/whitelist.conf` | 彻底保护，连手动清理都不碰 |
-
-`deep.rules` 里的规则也可以写成 `路径|risk` 形式显式标注等级。
-优先级：用户覆盖 > 规则标注 > 按路径分段推断。
-
-### 规则完整性
-
-`config/rules.meta.env` 是规则元数据的唯一来源，包含条数与 SHA-256。
-改动规则后运行以下命令重新生成，CI 会校验一致性：
-
-```sh
-python3 v2/scripts/validate-rules.py
-```
+- 自动深度任务不会执行 `high` / `critical`
+- 完整深度清理必须基于有效扫描结果和用户确认
+- 扫描、清理、统计分离，只有实际删除成功才计入释放空间
 
 ## 安装
 
-1. 从 GitHub Releases 下载最新 ZIP。
-2. 在 Magisk、KernelSU 或 APatch 中选择该 ZIP 安装。
-3. 重启设备。
-4. 打开白泽 App 进行扫描、清理与定时设置。
-5. 第一次完整深度清理前，先执行深度扫描并检查审计报告。
+### 完整安装
 
-安装时会校验内嵌 APK 的 SHA-256，不匹配会拒绝安装 App。
+1. 打开 [GitHub Releases](https://github.com/xgl34222220-ops/BaiZe/releases/tag/refactor-v1.0.0)。
+2. 下载 `BaiZe-v1.0.0-Module.zip`。
+3. 在 Magisk、KernelSU 或 APatch 中刷入模块。
+4. 重启设备。
+5. 打开白泽 App，授予所需 Root 权限后开始扫描。
+
+### 只更新 App
+
+可以直接安装 `BaiZe-v1.0.0.apk`。完整功能仍建议同时使用对应版本模块。
+
+模块安装时会校验内置 APK 的 SHA-256；正式模块中的 App 与 Release 提供的独立 APK 字节一致。
 
 ## 在线更新
 
-白泽直接使用 Magisk、KernelSU、APatch 自带的模块更新机制，不需要在 App 里另外下载更新包。
+白泽使用 `update.json` 提供模块在线更新信息，正式 ZIP 同步到 `downloads` 分支的稳定 Raw 镜像。
 
-1. 打开 Root 管理器的模块页面并刷新更新。
-2. 出现白泽新版本后直接点击更新。
-3. Root 管理器会下载正式模块 ZIP 并刷入。
-4. 按提示重启设备。
+Root 管理器检测到新版本后可直接更新；GitHub Releases 同时保留独立 APK、模块 ZIP、SHA-256 与签名证书。
 
-在线更新的版本信息来自 `update.json`，模块 ZIP 使用 GitHub Raw 稳定镜像，避免部分 Root 管理器无法正确处理 GitHub Release 附件重定向的问题。Raw 镜像与 GitHub Releases 中的正式模块 ZIP 保持同一份文件和同一 SHA-256。
+## 正式版本规则
 
-GitHub Releases 仍然是正式版本归档和手动下载入口，独立 APK、校验文件和签名证书也继续保留在那里。
+从重构版开始只使用这一套版本序列：
+
+**1.0.0 → 1.1.1 → 2.0.0 → 2.2.2 → 3.0.0 → 3.3.3 → 4.0.0 → 4.4.4 …**
+
+显示版本与内部 `versionCode` 分开管理，内部构建号持续递增，用于保证覆盖升级和在线更新判断正常。
+
+Release 标签统一使用：
+
+```text
+refactor-v1.0.0
+refactor-v1.1.1
+refactor-v2.0.0
+...
+```
+
+## 兼容性
+
+- Android 8.0+
+- Magisk / KernelSU / APatch
+- `arm64-v8a`
+- `armeabi-v7a`
+- `x86_64`
+
+不同 ROM 对 Root 服务、Doze、存储权限和后台任务的实现不同。自动化测试不能替代所有真机环境；出现问题时建议附上系统版本、Root 方案、白泽版本和脱敏后的错误信息。
 
 ## 从源码构建
 
-需要 JDK 17、Android SDK（platform 36、build-tools 36）与 Android NDK：
+主要 Android 与模块源码位于 `v2/` 目录。目录名属于源码结构，不代表公开版本号。
+
+需要 JDK 21、Android SDK、NDK 27.2 与对应 Build Tools：
 
 ```sh
 cd v2
-sh scripts/build-native.sh        # 编译 arm64-v8a / armeabi-v7a / x86_64 引擎
-./gradlew :app:assembleRelease    # 构建 APK（需要签名环境变量）
-sh scripts/package-module.sh      # 打包模块 ZIP
+sh scripts/build-native.sh
+./gradlew :app:test :app:assembleRelease
+sh scripts/package-module.sh
 ```
 
-产物位于 `v2/dist/`。
-
-提交前的检查：
+常用检查：
 
 ```sh
-bash v2/tests/run-all.sh                  # 全量回归（shell / python / 原生）
-sh v2/scripts/sync-version.sh --check     # 版本一致性
+bash v2/tests/run-all.sh
+sh v2/scripts/sync-version.sh --source-only --check
 python3 v2/scripts/validate-rules.py --check
-cd v2 && ./gradlew :app:testDebugUnitTest # JVM 单元测试
 ```
 
-发布：
-
-```sh
-sh v2/scripts/sync-version.sh --set v2.6.0
-git commit -am "chore: v2.6.0" && git push
-git tag v2.6.0 && git push origin v2.6.0
-```
-
-发布正式版后，需要把对应的 `BaiZe-vX.Y.Z-Module.zip` 同步到 `downloads/releases/vX.Y.Z/`。`update.json` 的在线更新地址固定使用该 Raw 镜像；GitHub Releases 继续保存正式归档与独立 APK。
+正式发布由 GitHub Actions 完成签名、单元/界面测试、lint、Android 模拟器安装与覆盖升级验证、核心回归、模块内置 APK 一致性、SHA-256、Release 镜像和 OTA 校验。
 
 ## 文档
 
+- [重构版 1.0.0 发布说明](docs/releases/refactor-v1.0.0.md)
 - [详细使用说明](docs/README-detailed.md)
 - [更新日志](CHANGELOG.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
 - [来源与致谢](NOTICE.md)
 
-## 兼容性
-
-- Android 8.0+
-- Magisk / KernelSU / APatch
-- arm64-v8a、armeabi-v7a、x86_64
-
-模块不修改 `/system`，也不依赖 KernelSU 元模块。不同 ROM 对通知、Doze、电池状态和外部存储权限的实现可能不同，提交问题时请附带经过脱敏的环境信息。
-
 ## 许可证
 
-本项目以 GPL-3.0 许可证发布。第三方项目、规则来源、名称和资源仍遵循其各自许可证，详见 [NOTICE.md](NOTICE.md)。
+本项目以 GPL-3.0 许可证发布。第三方项目、规则来源、名称和资源继续遵循各自许可证，详见 [NOTICE.md](NOTICE.md)。
 
 作者：**惜故里丶**
