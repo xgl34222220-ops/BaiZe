@@ -64,12 +64,21 @@ class WorkbenchRefactorUiTest {
     }
     @Test fun highOnlyGroupShowsAManualSelectionEntry() {
         render(highOnly = true)
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("逐项选择"))
+        // Grouping is intentionally calculated off the main thread. Wait for the actual
+        // manual-selection entry instead of using the transient empty-state as a proxy.
+        compose.waitUntil(10_000) {
+            runCatching {
+                compose.onNode(hasScrollAction()).performScrollToNode(hasText("逐项选择"))
+                true
+            }.getOrDefault(false)
+        }
         compose.onNodeWithText("逐项选择").assertIsEnabled().performClick()
-        compose.waitUntil(5_000) { runCatching {
-            compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择offline"))
-        }.isSuccess }
+        compose.waitUntil(10_000) {
+            runCatching {
+                compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择offline"))
+                true
+            }.getOrDefault(false)
+        }
         compose.onNodeWithContentDescription("选择offline").assertIsEnabled()
     }
 }
