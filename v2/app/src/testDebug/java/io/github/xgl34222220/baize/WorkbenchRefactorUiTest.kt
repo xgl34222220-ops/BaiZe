@@ -64,18 +64,24 @@ class WorkbenchRefactorUiTest {
     }
     @Test fun highOnlyGroupShowsAManualSelectionEntry() {
         render(highOnly = true)
-        // Grouping is intentionally calculated off the main thread. Wait for the actual
-        // manual-selection entry instead of using the transient empty-state as a proxy.
-        compose.waitUntil(10_000) {
+        // ScanWorkbenchScreen has one primary LazyColumn plus transient/nested scroll semantics.
+        // Always drive the first (outer) scroll container so Robolectric cannot randomly
+        // target a different scrollable node while the presentation is produced off-thread.
+        compose.waitUntil(15_000) {
             runCatching {
-                compose.onNode(hasScrollAction()).performScrollToNode(hasText("逐项选择"))
+                compose.onAllNodes(hasScrollAction()).onFirst()
+                    .performScrollToNode(hasText("逐项选择"))
+                compose.onNodeWithText("逐项选择").assertExists()
                 true
             }.getOrDefault(false)
         }
         compose.onNodeWithText("逐项选择").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) {
+        compose.waitForIdle()
+        compose.waitUntil(15_000) {
             runCatching {
-                compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择offline"))
+                compose.onAllNodes(hasScrollAction()).onFirst()
+                    .performScrollToNode(hasContentDescription("选择offline"))
+                compose.onNodeWithContentDescription("选择offline").assertExists()
                 true
             }.getOrDefault(false)
         }
