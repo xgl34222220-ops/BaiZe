@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,11 +31,22 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 /** LuoShu SettingsHubScreen structure: overview -> navigation groups -> separate detail page. */
 @Composable
-fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions) {
+fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDetailChanged: (Boolean) -> Unit = {}) {
     var section by rememberSaveable { mutableStateOf("") }
+    val notify by rememberUpdatedState(onDetailChanged)
+    LaunchedEffect(section) { notify(section.isNotEmpty()) }
+    DisposableEffect(Unit) { onDispose { notify(false) } }
     BackHandler(enabled = section.isNotEmpty()) { section = "" }
     AnimatedContent(targetState = section,
-        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) }, label = "settingsHub") { target ->
+        transitionSpec = {
+            if (targetState.isNotEmpty()) {
+                (fadeIn(tween(250)) + slideInHorizontally(tween(340)) { it }) togetherWith
+                    (fadeOut(tween(210), targetAlpha = .52f) + slideOutHorizontally(tween(340)) { -it / 7 })
+            } else {
+                (fadeIn(tween(230)) + slideInHorizontally(tween(340)) { -it / 7 }) togetherWith
+                    (fadeOut(tween(210)) + slideOutHorizontally(tween(340)) { it })
+            }
+        }, label = "settingsHub") { target ->
         when (target) {
             "tasks" -> TaskSettings(state, actions, { section = "" })
             "service" -> ServiceDetails(state, actions, { section = "" })
@@ -43,8 +56,8 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions) {
 }
 
 @Composable
-private fun pagePadding(): PaddingValues = PaddingValues(start = 20.dp, end = 20.dp,
-    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 118.dp)
+private fun pagePadding(detail: Boolean = false): PaddingValues = PaddingValues(start = 20.dp, end = 20.dp,
+    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (detail) 32.dp else 118.dp)
 
 @Composable
 private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit) {
@@ -127,7 +140,7 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
             actions.onUpdateScheduler(if (edit == "battery") s.copy(minBattery = it) else s.copy(maxFileMb = it))
             edit = ""
         })
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(detail = true), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             LuoShuPageHeader("自动任务设置", back) {
                 TextButton(onClick = { actions.onSaveScheduler(s) }, enabled = !s.saving) { Text(if (s.saving) "保存中" else "保存") }
@@ -185,7 +198,7 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
 
 @Composable
 private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, back: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(detail = true), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { LuoShuPageHeader("连接与诊断", back) }
         item {
             LuoShuGroup {

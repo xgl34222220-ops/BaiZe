@@ -23,6 +23,7 @@ fun SettingsRoute(
     scheduler: SchedulerUiState,
     appearance: AppearanceSettings,
     dashboardActions: DashboardActions,
+    onDetailChanged: (Boolean) -> Unit = {},
     onOpenDetails: () -> Unit
 ) {
     var draft by remember { mutableStateOf(scheduler.copy(saving = false)) }
@@ -77,7 +78,7 @@ fun SettingsRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions)
+        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
         else VideoSettingsScreenMiuix(state, actions)
     }
 }
