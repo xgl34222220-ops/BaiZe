@@ -111,7 +111,8 @@ internal fun LuoShuLiquidDock(
         .fillMaxWidth().height(itemHeight + 12.dp + if (floating) 0.dp else bottomInset)) {
         Box(Modifier.fillMaxSize().testTag("dock-shell-${mode.name.lowercase()}")
             .shadow(if (floating) 18.dp else 5.dp, shape, clip = false)
-            .then(if (floating) Modifier.squircleClip(31.dp) else Modifier.clip(shape))
+            // Squircle clipping also uses RuntimeShader; gate it with the refractive layer.
+            .then(if (floating && mode == DockRendering.LIQUID) Modifier.squircleClip(31.dp) else Modifier.clip(shape))
             .then(if (shellBackdrop != null) Modifier.layerBackdrop(shellBackdrop) else Modifier)
             .then(effect)
             .border(if (mode == DockRendering.LIQUID) .45.dp else .7.dp,
@@ -172,7 +173,7 @@ internal fun LuoShuLiquidDock(
             Box(Modifier.offset(x = x + 4.dp - if (direction < 0f) extra else 0.dp)
                 .width((itemWidth - 8.dp + extra).coerceAtLeast(1.dp)).height(itemHeight)
                 .shadow(if (shellBackdrop != null) 4.dp else 3.dp, indicatorShape, clip = false)
-                .squircleClip(23.dp).then(lens)
+                .then(if (shellBackdrop != null) Modifier.squircleClip(23.dp) else Modifier.clip(indicatorShape)).then(lens)
                 .border(1.dp, Color.White.copy(alpha = if (dark) .18f else .46f), indicatorShape))
             Row(Modifier.fillMaxWidth().selectableGroup()) {
                 items.forEachIndexed { index, item ->

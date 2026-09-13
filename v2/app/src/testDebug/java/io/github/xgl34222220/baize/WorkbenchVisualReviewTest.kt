@@ -68,13 +68,16 @@ class WorkbenchVisualReviewTest {
         val medium = item(0).copy(id = "medium", title = "诊断日志", groupKey = "manual", groupTitle = "示例应用", risk = "medium")
         val high = item(1).copy(id = "high", title = "离线资源", groupKey = "manual", groupTitle = "示例应用", risk = "high")
         render(ready().copy(items = listOf(medium, high), selectedIds = emptySet(), policyTitle = "保守"))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("示例应用").fetchSemanticsNodes().isNotEmpty() }
+        // Wait for asynchronous grouping, then scroll the LazyColumn to the target.
+        // Offscreen rows are not required to be present in the semantics tree.
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用"))
         compose.onNodeWithText("示例应用").performClick()
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithContentDescription("选择诊断日志").fetchSemanticsNodes().size == 1 &&
-                compose.onAllNodesWithContentDescription("选择离线资源").fetchSemanticsNodes().size == 1
+            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
         }
         compose.onNodeWithContentDescription("选择诊断日志").assertIsEnabled().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择离线资源"))
         compose.onNodeWithContentDescription("选择离线资源").assertIsEnabled().performClick()
         compose.onNodeWithText("清理已选 2 项").assertIsDisplayed().performClick()
         assertEquals(0, cleanRequests)
