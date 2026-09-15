@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=BaiZe Android Release, OU=Release Signing, O=xgl34222220-ops, L=Tokyo, ST=Tokyo, C=JP
+Signer #1 certificate SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+Signer #1 certificate SHA-1 digest: 57e2c0293fe0582d20c17efc1bde8aa05e4b969d
+Signer #1 certificate MD5 digest: 57533fe706de8e9e2ec647ee97c653e9
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: a40faebbf0458ee0afb174cade78790966b20788c4228bb35d65fde61566772b
+Signer #1 public key SHA-1 digest: ee8d91df52a98faf155d3f01e9981d63e73c6452
+Signer #1 public key MD5 digest: 1941adb1f79fb885ef835a0dacaa3f7c
