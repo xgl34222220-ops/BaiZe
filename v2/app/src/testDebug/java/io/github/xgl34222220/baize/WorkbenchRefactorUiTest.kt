@@ -62,25 +62,22 @@ class WorkbenchRefactorUiTest {
         compose.onNodeWithText("全选低、中风险").performClick()
         assertEquals(setOf("low", "medium"), state.selectedIds)
     }
-    @Test fun highOnlyGroupShowsAManualSelectionEntry() {
+    @Test
+    @Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h2400dp-mdpi")
+    fun highOnlyGroupShowsAManualSelectionEntry() {
+        // This test verifies high-risk selection behavior, not LazyColumn scrolling.
+        // A tall test viewport keeps the group composed so the assertion is independent
+        // of nested scroll semantics and item virtualization.
         render(highOnly = true)
-        // Identify the primary workbench LazyColumn by its visible section content instead
-        // of assuming the first scroll semantics node is always the outer list.
-        val primaryList = hasScrollAction() and hasAnyDescendant(hasText("应用与文件"))
         compose.waitUntil(15_000) {
             runCatching {
-                compose.onNode(primaryList).performScrollToNode(hasText("逐项选择"))
                 compose.onNodeWithText("逐项选择").assertExists()
                 true
             }.getOrDefault(false)
         }
         compose.onNodeWithText("逐项选择").assertIsEnabled().performClick()
-        compose.waitForIdle()
-        // After expansion the group remains visible, which uniquely anchors the same outer list.
-        val expandedList = hasScrollAction() and hasAnyDescendant(hasText("测试应用"))
         compose.waitUntil(15_000) {
             runCatching {
-                compose.onNode(expandedList).performScrollToNode(hasContentDescription("选择offline"))
                 compose.onNodeWithContentDescription("选择offline").assertExists()
                 true
             }.getOrDefault(false)
