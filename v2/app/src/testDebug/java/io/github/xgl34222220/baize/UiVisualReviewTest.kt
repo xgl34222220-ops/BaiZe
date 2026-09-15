@@ -87,9 +87,9 @@ class UiVisualReviewTest {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理"))
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
+        compose.onNodeWithText("手动工具").assertIsDisplayed()
+        compose.onNodeWithText("扫描工作台").assertIsDisplayed()
         save("clean-plan")
-        compose.onNodeWithText("安装包保留时间", substring = true).performScrollTo().assertIsDisplayed()
-        save("clean-plan-apk-retention")
     }
 
     @Test fun homePlanIsVisibleOnTheFirstScreen() {
