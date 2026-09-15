@@ -149,13 +149,13 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
         item { LuoShuSection("清理执行条件", "条件满足后，才会运行自动任务") }
         item {
             LuoShuGroup {
-                VideoSwitchRow(Icons.Rounded.DarkMode, "仅息屏时执行", "使用手机时暂缓清理", s.screenOffOnly,
+                LuoShuSwitchRow(Icons.Rounded.DarkMode, "仅息屏时执行", "使用手机时暂缓清理", s.screenOffOnly,
                     { actions.onUpdateScheduler(s.copy(screenOffOnly = it)) })
                 LuoShuGroupDivider()
-                VideoSwitchRow(Icons.Rounded.BatterySaver, "仅充电时执行", "连接电源后开始", s.chargingOnly,
+                LuoShuSwitchRow(Icons.Rounded.BatterySaver, "仅充电时执行", "连接电源后开始", s.chargingOnly,
                     { actions.onUpdateScheduler(s.copy(chargingOnly = it)) })
                 LuoShuGroupDivider()
-                VideoSwitchRow(Icons.Rounded.SettingsSuggest, "仅空闲时执行", "设备空闲后开始", s.idleOnly,
+                LuoShuSwitchRow(Icons.Rounded.SettingsSuggest, "仅空闲时执行", "设备空闲后开始", s.idleOnly,
                     { actions.onUpdateScheduler(s.copy(idleOnly = it)) })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.BatterySaver, "最低执行电量", "${s.minBattery}% · 电量不足时等待", { edit = "battery" })
@@ -166,23 +166,23 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
         item { LuoShuSection("文件归类") }
         item {
             LuoShuGroup {
-                VideoSwitchRow(Icons.Rounded.DarkMode, "归类时等待息屏", "避免打断前台使用", s.organizeScreenOffOnly,
+                LuoShuSwitchRow(Icons.Rounded.DarkMode, "归类时等待息屏", "避免打断前台使用", s.organizeScreenOffOnly,
                     { actions.onUpdateScheduler(s.copy(organizeScreenOffOnly = it)) })
                 LuoShuGroupDivider()
-                VideoSwitchRow(Icons.Rounded.BatterySaver, "归类时等待充电", "连接电源后整理", s.organizeChargingOnly,
+                LuoShuSwitchRow(Icons.Rounded.BatterySaver, "归类时等待充电", "连接电源后整理", s.organizeChargingOnly,
                     { actions.onUpdateScheduler(s.copy(organizeChargingOnly = it)) })
                 LuoShuGroupDivider()
-                VideoSwitchRow(Icons.Rounded.SettingsSuggest, "归类时等待空闲", "设备空闲后整理", s.organizeIdleOnly,
+                LuoShuSwitchRow(Icons.Rounded.SettingsSuggest, "归类时等待空闲", "设备空闲后整理", s.organizeIdleOnly,
                     { actions.onUpdateScheduler(s.copy(organizeIdleOnly = it)) })
             }
         }
         item { LuoShuSection("任务通知") }
         item {
             LuoShuGroup {
-                VideoSwitchRow(Icons.Rounded.Notifications, "任务完成通知", "自动任务结束后显示结果", s.notifyOnComplete,
+                LuoShuSwitchRow(Icons.Rounded.Notifications, "任务完成通知", "自动任务结束后显示结果", s.notifyOnComplete,
                     { actions.onUpdateScheduler(s.copy(notifyOnComplete = it)) })
                 LuoShuGroupDivider()
-                VideoSwitchRow(Icons.Rounded.Notifications, "零结果也通知", "没有可清理内容时也提醒", s.notifyZero,
+                LuoShuSwitchRow(Icons.Rounded.Notifications, "零结果也通知", "没有可清理内容时也提醒", s.notifyZero,
                     { actions.onUpdateScheduler(s.copy(notifyZero = it)) })
             }
         }
