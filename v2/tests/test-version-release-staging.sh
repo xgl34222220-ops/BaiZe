@@ -67,7 +67,11 @@ cmp "$STAGE/update.json" "$TMP/update-before.json"
 [ "$(sed -n 's/^versionCode=//p' "$STAGE/v2/module/module.prop")" = "$NEXT_CODE" ]
 grep -Fq "versionCode = $NEXT_CODE" "$STAGE/v2/app/build.gradle.kts"
 grep -Fq "versionName = \"${NEXT_VERSION#v}\"" "$STAGE/v2/app/build.gradle.kts"
-grep -Fq "BaiZe-$NEXT_VERSION-Module.zip" "$STAGE/v2/scripts/package-module.sh"
+# package-module.sh intentionally resolves the release name dynamically from
+# module.prop. Do not require a literal future version string that is never
+# written into this script by sync-version.sh.
+grep -Fq "VERSION=\$(sed -n 's/^version=//p' \"\$REPO/module.prop\" | head -n1)" "$STAGE/v2/scripts/package-module.sh"
+grep -Fq 'OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"' "$STAGE/v2/scripts/package-module.sh"
 grep -Fq "正在安装白泽 $NEXT_VERSION" "$STAGE/v2/module/customize.sh"
 grep -Fq "detached-root-worker-$NEXT_VERSION" "$STAGE/v2/module/task-worker.sh"
 
