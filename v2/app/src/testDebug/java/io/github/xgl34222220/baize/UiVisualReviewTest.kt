@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.hasScrollAction
@@ -88,7 +89,7 @@ class UiVisualReviewTest {
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
         save("clean-plan")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("安装包保留时间", substring = true))
+        compose.onAllNodes(hasScrollAction())[0].performScrollToNode(hasText("安装包保留时间", substring = true))
         compose.onNodeWithText("安装包保留时间", substring = true).performScrollTo().assertIsDisplayed()
         save("clean-plan-apk-retention")
     }
