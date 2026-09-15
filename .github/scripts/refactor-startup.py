@@ -1,4 +1,4 @@
-"""Install the exact signed refactor APK on a disposable Android emulator, including 30002 upgrade."""
+"""Install the exact signed refactor APK on a disposable Android emulator, including upgrade validation."""
 from __future__ import annotations
 import hashlib
 import importlib.util
@@ -37,7 +37,7 @@ def main() -> None:
     apk = Path(sys.argv[1]).resolve()
     code, version = sys.argv[2:]
     baseline = Path(os.environ['BAIZE_BASELINE_APK']).resolve()
-    assert hashlib.sha256(baseline.read_bytes()).hexdigest() == '600ac2de5f33fdf282f222a2c1099ec63f9ed7766482fe56f238e487836a4fc4'
+    assert hashlib.sha256(baseline.read_bytes()).hexdigest() == 'a1c1d8d345c57892e8666970be1a4d738d37872b4b90f0ebcde9995588a3bc1a'
     smoke.adb('shell', 'input', 'keyevent', '82')
     smoke.settle_emulator_boot()
     smoke.adb('install', '-r', str(baseline), timeout=120)
