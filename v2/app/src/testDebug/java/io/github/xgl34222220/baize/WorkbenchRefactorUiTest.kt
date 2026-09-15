@@ -64,23 +64,23 @@ class WorkbenchRefactorUiTest {
     }
     @Test fun highOnlyGroupShowsAManualSelectionEntry() {
         render(highOnly = true)
-        // ScanWorkbenchScreen has one primary LazyColumn plus transient/nested scroll semantics.
-        // Always drive the first (outer) scroll container so Robolectric cannot randomly
-        // target a different scrollable node while the presentation is produced off-thread.
+        // Identify the primary workbench LazyColumn by its visible section content instead
+        // of assuming the first scroll semantics node is always the outer list.
+        val primaryList = hasScrollAction() and hasAnyDescendant(hasText("应用与文件"))
         compose.waitUntil(15_000) {
             runCatching {
-                compose.onAllNodes(hasScrollAction()).onFirst()
-                    .performScrollToNode(hasText("逐项选择"))
+                compose.onNode(primaryList).performScrollToNode(hasText("逐项选择"))
                 compose.onNodeWithText("逐项选择").assertExists()
                 true
             }.getOrDefault(false)
         }
         compose.onNodeWithText("逐项选择").assertIsEnabled().performClick()
         compose.waitForIdle()
+        // After expansion the group remains visible, which uniquely anchors the same outer list.
+        val expandedList = hasScrollAction() and hasAnyDescendant(hasText("测试应用"))
         compose.waitUntil(15_000) {
             runCatching {
-                compose.onAllNodes(hasScrollAction()).onFirst()
-                    .performScrollToNode(hasContentDescription("选择offline"))
+                compose.onNode(expandedList).performScrollToNode(hasContentDescription("选择offline"))
                 compose.onNodeWithContentDescription("选择offline").assertExists()
                 true
             }.getOrDefault(false)
