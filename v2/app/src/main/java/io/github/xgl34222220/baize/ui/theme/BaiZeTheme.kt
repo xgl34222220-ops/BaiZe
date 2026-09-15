@@ -69,10 +69,10 @@ private val SharedTypography = Typography(
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
 )
 
-// Ported from LuoShu ui/theme/LuoShuTheme.kt at fe4df5f. Material keeps its own typography.
+// Keep MIUIX typography in lock-step with LuoShu's active theme.
 private val LuoShuMiuixTypography = Typography(
     displaySmall = TextStyle(fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
+    headlineLarge = TextStyle(fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
     headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
     headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
     titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
@@ -100,8 +100,6 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         animate = true
     ) {
         val generatedScheme = MaterialTheme.colorScheme
-        // The default blue is deliberately crisp. Explicit Monet, alternate accents and
-        // the neutral/vibrant palette options continue to use their generated colours.
         val defaultBlue = settings.uiStyle == UiStyle.MATERIAL && !settings.monetEnabled &&
             settings.seedArgb == AccentOptions.first().argb && settings.kolorStyle == KolorStyle.SOFT
         val scheme = if (defaultBlue) generatedScheme.copy(

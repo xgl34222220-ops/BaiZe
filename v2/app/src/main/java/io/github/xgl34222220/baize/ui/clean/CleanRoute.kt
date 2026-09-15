@@ -11,6 +11,7 @@ import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
+import io.github.xgl34222220.baize.ui.clean.miuix.CleanScreenMiuix
 import io.github.xgl34222220.baize.ui.clean.miuix.VideoCleanScreenMiuix
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
@@ -72,16 +73,21 @@ fun CleanRoute(
         }
     )
 
-    val skin = when (style) {
-        UiStyle.MATERIAL -> VideoSkin.MATERIAL3
-        UiStyle.MIUIX -> VideoSkin.MIUIX
-    }
-    ProvideVideoSkin(skin) {
-        VideoCleanScreenMiuix(
+    if (style == UiStyle.MIUIX) {
+        CleanScreenMiuix(
             state = state,
             actions = actions,
             expandedCategory = expandedCategory,
             onExpandedCategoryChanged = onExpandedCategoryChanged
         )
+    } else {
+        ProvideVideoSkin(VideoSkin.MATERIAL3) {
+            VideoCleanScreenMiuix(
+                state = state,
+                actions = actions,
+                expandedCategory = expandedCategory,
+                onExpandedCategoryChanged = onExpandedCategoryChanged
+            )
+        }
     }
 }

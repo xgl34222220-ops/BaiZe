@@ -35,6 +35,10 @@ jobs:
           java-version: '17'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Google's repository no longer exposes the legacy package "tools".
+          # AGP resolves the compile platform/build-tools itself.
+          packages: platform-tools
       # Match LuoShu: let the current AGP resolve its required compile platform.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

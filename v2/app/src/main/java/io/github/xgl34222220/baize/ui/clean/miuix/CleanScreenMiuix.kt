@@ -3,23 +3,7 @@ package io.github.xgl34222220.baize.ui.clean.miuix
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,14 +16,9 @@ import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.FolderDelete
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,9 +41,14 @@ import io.github.xgl34222220.baize.ui.clean.CleanUiState
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
 import io.github.xgl34222220.baize.ui.clean.formatMinutes
+import io.github.xgl34222220.baize.ui.miuix.LuoShuGroup
+import io.github.xgl34222220.baize.ui.miuix.LuoShuGroupDivider
+import io.github.xgl34222220.baize.ui.miuix.LuoShuNavigationRow
+import io.github.xgl34222220.baize.ui.miuix.LuoShuPageHeader
+import io.github.xgl34222220.baize.ui.miuix.LuoShuSection
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-private val miuixIntervalOptions = listOf(30, 60, 180, 360, 720, 1_440, 10_080, 43_200)
+private val luoShuIntervalOptions = listOf(30, 60, 180, 360, 720, 1_440, 10_080, 43_200)
 
 @Composable
 fun CleanScreenMiuix(
@@ -75,6 +60,7 @@ fun CleanScreenMiuix(
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
+    var showApkDaysDialog by remember { mutableStateOf(false) }
 
     if (showDailyTimeDialog) {
         TimeValueDialog(
@@ -95,123 +81,153 @@ fun CleanScreenMiuix(
             onConfirm = actions.onDailyGraceChanged
         )
     }
+    if (showApkDaysDialog) {
+        IntValueDialog(
+            title = "安装包保留时间",
+            description = "超过保留天数的安装包才会进入自动清理范围；0 天表示允许清理当天发现的安装包。",
+            initialValue = state.apkPackageDays,
+            range = 0..365,
+            suffix = "天",
+            onDismiss = { showApkDaysDialog = false },
+            onConfirm = actions.onApkPackageDaysChanged
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 118.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item { MiuixCleanHeader() }
-        item { MiuixAutomaticPanel(state, actions) }
-        item { MiuixSectionTitle("定时模式", "智能、严格间隔或每日固定时间") }
-        item {
-            MiuixScheduleGroup(
+        item(key = "clean-header") {
+            LuoShuPageHeader("清理")
+        }
+        item(key = "clean-auto") {
+            AutomaticCleaningHero(state, actions)
+        }
+        item(key = "clean-manual-title") {
+            LuoShuSection("手动工具", "先扫描、再确认，重要操作保持可控")
+        }
+        item(key = "clean-manual") {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "查看垃圾明细并选择需要处理的项目", actions.onScan)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "扫描 APK / APKS / XAPK / APKM", actions.onApkScan)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "立即检查应用缓存与临时文件", actions.onInstantCache)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载目录和散落文件", actions.onFileOrganizer)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩大扫描范围，继续受白名单保护", actions.onDeepClean)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "检查已卸载应用留下的文件", actions.onCorpses)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "检查规则命中和保护情况", actions.onAudit)
+            }
+        }
+        item(key = "clean-schedule-title") {
+            LuoShuSection("定时模式", "智能、严格间隔或每日固定时间")
+        }
+        item(key = "clean-schedule") {
+            ScheduleGroup(
                 state = state,
                 actions = actions,
                 onEditTime = { showDailyTimeDialog = true },
                 onEditGrace = { showDailyGraceDialog = true }
             )
         }
-        item { MiuixSectionTitle("任务计划", "点击周期可快速切换") }
-        item {
-            MiuixTaskGroup(
+        item(key = "clean-task-title") {
+            LuoShuSection("任务计划", "每个清理类别都可以单独控制周期")
+        }
+        item(key = "clean-tasks") {
+            TaskGroup(
                 state = state,
                 actions = actions,
                 expandedCategory = expandedCategory,
                 onExpandedCategoryChanged = onExpandedCategoryChanged
             )
         }
-        item { MiuixSectionTitle("附加项目", "自动清理过期安装包") }
-        item {
-            MiuixGroup {
-                MiuixSwitchRow(
+        item(key = "clean-extra-title") {
+            LuoShuSection("附加项目", "安装包保留时间与自动清理")
+        }
+        item(key = "clean-extra") {
+            LuoShuGroup {
+                SwitchRow(
                     icon = Icons.Rounded.InstallMobile,
                     title = "过期安装包",
                     subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
                     checked = state.apkPackagesEnabled,
                     onCheckedChange = actions.onApkPackagesChanged
                 )
-            }
-        }
-        item {
-            Surface(
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable(enabled = !state.saving, onClick = actions.onSave),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.primary
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        if (state.saving) "正在保存…" else "保存设置",
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                if (state.apkPackagesEnabled) {
+                    LuoShuGroupDivider()
+                    ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysDialog = true }
                 }
             }
         }
+        item(key = "clean-save") {
+            Button(
+                onClick = actions.onSave,
+                enabled = !state.saving,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(if (state.saving) "正在保存…" else "保存清理计划", style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 
 @Composable
-private fun MiuixCleanHeader() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .padding(horizontal = 22.dp, vertical = 20.dp)
-    ) {
-        Text("清理计划", fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(5.dp))
-        Text(
-            "选择执行模式与清理项目",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 14.sp
-        )
-    }
-}
-
-@Composable
-private fun MiuixAutomaticPanel(state: CleanUiState, actions: CleanUiActions) {
+private fun AutomaticCleaningHero(state: CleanUiState, actions: CleanUiActions) {
+    val colors = BaiZeTokens.colors
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = colors.surfaceRaised,
+        shadowElevation = 2.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 19.dp),
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            scheme.primaryContainer.copy(alpha = .46f),
+                            colors.surfaceRaised
+                        )
+                    )
+                )
+                .padding(22.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(15.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .14f)),
-                contentAlignment = Alignment.Center
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = colors.surfaceOverlay
             ) {
-                Icon(
-                    Icons.Rounded.CleaningServices,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.CleaningServices,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = scheme.primary
+                    )
+                }
             }
             Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text("自动清理", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("自动清理", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    if (state.automaticCleaningEnabled) {
-                        "${state.enabledCategoryCount} 项任务已启用"
-                    } else {
-                        "所有自动任务已暂停"
+                    when {
+                        !state.engineReady -> state.serviceText.ifBlank { "清理服务尚未就绪" }
+                        state.running -> "正在执行清理任务"
+                        state.automaticCleaningEnabled -> "${state.enabledCategoryCount} 项任务已启用"
+                        else -> "所有自动任务已暂停"
                     },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Switch(
@@ -223,98 +239,72 @@ private fun MiuixAutomaticPanel(state: CleanUiState, actions: CleanUiActions) {
 }
 
 @Composable
-private fun MiuixSectionTitle(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 22.dp)) {
-        Text(title, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(2.dp))
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun MiuixScheduleGroup(
+private fun ScheduleGroup(
     state: CleanUiState,
     actions: CleanUiActions,
     onEditTime: () -> Unit,
     onEditGrace: () -> Unit
 ) {
-    MiuixGroup {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+    LuoShuGroup {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Rounded.CalendarMonth,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
+                IconTile(Icons.Rounded.CalendarMonth)
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("选择执行方式", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text("选择执行方式", style = MaterialTheme.typography.titleSmall)
                     Text(
                         state.scheduleSummary,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-            Spacer(Modifier.height(11.dp))
+            Spacer(Modifier.height(12.dp))
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CleanScheduleMode.entries.forEach { mode ->
                     FilterChip(
                         selected = state.scheduleMode == mode,
                         onClick = { actions.onScheduleModeChanged(mode) },
-                        label = { Text(mode.title, fontSize = 11.sp) }
+                        label = { Text(mode.title, style = MaterialTheme.typography.labelSmall) }
                     )
                 }
             }
-            Spacer(Modifier.height(7.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 state.scheduleMode.description,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (state.scheduleMode == CleanScheduleMode.FIXED_DAILY) {
-            MiuixDivider()
-            MiuixValueRow("执行时间", state.dailyTimeText, onEditTime)
-            MiuixDivider()
-            MiuixValueRow("补做窗口", formatMinutes(state.dailyGraceMinutes), onEditGrace)
+            LuoShuGroupDivider()
+            ValueRow("执行时间", state.dailyTimeText, onEditTime)
+            LuoShuGroupDivider()
+            ValueRow("补做窗口", formatMinutes(state.dailyGraceMinutes), onEditGrace)
             Text(
                 "文件自动归类继续使用独立周期。",
-                modifier = Modifier.padding(start = 68.dp, end = 18.dp, bottom = 14.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp
+                modifier = Modifier.padding(start = 74.dp, end = 18.dp, bottom = 15.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
 @Composable
-private fun MiuixTaskGroup(
+private fun TaskGroup(
     state: CleanUiState,
     actions: CleanUiActions,
     expandedCategory: String,
     onExpandedCategoryChanged: (String) -> Unit
 ) {
-    MiuixGroup {
+    LuoShuGroup {
         state.categories.forEachIndexed { index, item ->
             val key = item.id.name
-            MiuixCategoryRow(
+            CategoryRow(
                 item = item,
                 expanded = expandedCategory == key,
                 dailyEnabled = state.scheduleMode == CleanScheduleMode.FIXED_DAILY && item.id != CleanCategoryId.ORGANIZE,
@@ -324,13 +314,13 @@ private fun MiuixTaskGroup(
                 },
                 onIntervalChanged = { actions.onCategoryIntervalChanged(item.id, it) }
             )
-            if (index != state.categories.lastIndex) MiuixDivider()
+            if (index != state.categories.lastIndex) LuoShuGroupDivider()
         }
     }
 }
 
 @Composable
-private fun MiuixCategoryRow(
+private fun CategoryRow(
     item: CleanCategoryUiItem,
     expanded: Boolean,
     dailyEnabled: Boolean,
@@ -340,46 +330,33 @@ private fun MiuixCategoryRow(
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    categoryIcon(item.id),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(Modifier.width(12.dp))
+            IconTile(categoryIcon(item.id))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(item.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(item.title, style = MaterialTheme.typography.titleSmall)
                 Text(
                     item.description,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(Modifier.width(8.dp))
             Switch(checked = item.enabled, onCheckedChange = onEnabledChanged)
         }
         if (item.enabled) {
             Surface(
                 modifier = Modifier
-                    .padding(start = 68.dp, end = 14.dp, bottom = 11.dp)
+                    .padding(start = 74.dp, end = 14.dp, bottom = 12.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .clickable(onClick = onExpandedChanged),
+                    .clickable(enabled = !dailyEnabled, onClick = onExpandedChanged),
                 shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .045f)
+                color = BaiZeTokens.colors.surfaceOverlay
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
@@ -388,11 +365,16 @@ private fun MiuixCategoryRow(
                     Text(
                         if (dailyEnabled) "跟随每日固定时间" else "每 ${formatMinutes(item.intervalMinutes)}执行一次",
                         modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (!dailyEnabled) {
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Icon(
+                            Icons.Rounded.ChevronRight,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -401,14 +383,14 @@ private fun MiuixCategoryRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 68.dp, end = 14.dp, bottom = 13.dp),
+                        .padding(start = 74.dp, end = 14.dp, bottom = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    miuixIntervalOptions.forEach { minutes ->
+                    luoShuIntervalOptions.forEach { minutes ->
                         FilterChip(
                             selected = item.intervalMinutes == minutes,
                             onClick = { onIntervalChanged(minutes) },
-                            label = { Text(formatMinutes(minutes), fontSize = 11.sp) }
+                            label = { Text(formatMinutes(minutes), style = MaterialTheme.typography.labelSmall) }
                         )
                     }
                 }
@@ -418,20 +400,7 @@ private fun MiuixCategoryRow(
 }
 
 @Composable
-private fun MiuixGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        modifier = Modifier
-            .padding(horizontal = 18.dp)
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = BaiZeTokens.colors.surfaceRaised
-    ) {
-        Column(content = content)
-    }
-}
-
-@Composable
-private fun MiuixSwitchRow(
+private fun SwitchRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
@@ -439,49 +408,59 @@ private fun MiuixSwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-        Spacer(Modifier.width(12.dp))
+        IconTile(icon)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+        Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
 @Composable
-private fun MiuixValueRow(label: String, value: String, onClick: () -> Unit) {
+private fun ValueRow(label: String, value: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 68.dp, end = 16.dp, top = 13.dp, bottom = 13.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(start = 74.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, modifier = Modifier.weight(1f), fontSize = 14.sp)
-        Text(value, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(value, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.width(4.dp))
-        Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(18.dp))
+        Icon(
+            Icons.Rounded.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
-private fun MiuixDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 68.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .50f)
-    )
+private fun IconTile(icon: ImageVector) {
+    Surface(
+        modifier = Modifier.size(42.dp),
+        shape = RoundedCornerShape(13.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
 }
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {

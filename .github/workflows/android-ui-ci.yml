@@ -50,6 +50,11 @@ jobs:
           java-version: '21'
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The legacy SDK package named "tools" was removed from Google's repository.
+          # AGP installs the required compile platform/build-tools; only keep the
+          # still-supported platform-tools package here.
+          packages: platform-tools
       # AGP resolves the compile SDK, as in LuoShu's proven Android UI smoke workflow.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
