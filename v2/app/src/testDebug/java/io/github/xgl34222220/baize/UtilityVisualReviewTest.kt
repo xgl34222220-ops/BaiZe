@@ -52,7 +52,7 @@ class UtilityVisualReviewTest {
 
     private fun renderAppearance(name: String, dark: Boolean = false) {
         render(name, dark) { settings -> AppearanceScreenMiuix(settings, appearanceActions) }
-        compose.onNodeWithText("界面与主题").assertIsDisplayed()
+        compose.onNodeWithText("外观与主题").assertIsDisplayed()
     }
 
     private fun render(name: String, dark: Boolean, content: @Composable (AppearanceSettings) -> Unit) {
