@@ -1,0 +1,118 @@
+name: BaiZe Paired APK Engine Test
+
+on:
+  push:
+    branches: [fix/apk-scan-engine-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-apk-engine-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+
+jobs:
+  build-paired-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Identify paired test build
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=8 HEAD)
+          echo "BAIZE_TEST_LABEL=apk-engine-test+$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION=$(sed -n 's/^version=//p' module.prop | head -n1)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android and native toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+          sudo apt-get update
+          sudo apt-get install -y busybox-static toybox
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Prepare formal signing certificate
+        env:
+          BAIZE_KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          BAIZE_KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS }}
+          BAIZE_KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: python3 .github/scripts/prepare-formal-signing.py
+
+      - name: Verify shell and full cleaner regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in service.sh cleaner.sh v2/module/*.sh v2/scripts/*.sh; do
+            [ -f "$script" ] || continue
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          bash v2/tests/run-all.sh
+
+      - name: Build native engines
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed App
+        working-directory: v2
+        run: gradle --no-daemon :app:compileReleaseKotlin :app:assembleRelease
+
+      - name: Package matching Magisk module
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify paired artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=v2/app/build/outputs/apk/release/app-release.apk
+          ZIP="v2/dist/BaiZe-$BAIZE_VERSION-Module.zip"
+          OUT=v2/dist/apk-engine-test
+          mkdir -p "$OUT"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > "$OUT/signing-certificate.txt"
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$OUT/signing-certificate.txt" | tr -d ':[:space:]')
+          test "$APK_CERT" = "$BAIZE_CERT_SHA256"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" app/baize.apk > "$RUNNER_TEMP/embedded.apk"
+          cmp "$APK" "$RUNNER_TEMP/embedded.apk"
+          cp "$APK" "$OUT/BaiZe-$BAIZE_TEST_LABEL.apk"
+          cp "$ZIP" "$OUT/BaiZe-$BAIZE_TEST_LABEL-Module.zip"
+          cd "$OUT"
+          sha256sum "BaiZe-$BAIZE_TEST_LABEL.apk" "BaiZe-$BAIZE_TEST_LABEL-Module.zip" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Upload paired test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-${{ env.BAIZE_TEST_LABEL }}-Paired-Test
+          path: v2/dist/apk-engine-test/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
