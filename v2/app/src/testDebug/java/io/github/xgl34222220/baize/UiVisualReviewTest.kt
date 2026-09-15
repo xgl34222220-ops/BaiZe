@@ -88,8 +88,8 @@ class UiVisualReviewTest {
         compose.onNodeWithText("自动清理").performScrollTo().performClick()
         compose.waitForIdle()
         save("clean-plan")
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("安装包保留时间"))
-        compose.onNodeWithText("安装包保留时间").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("安装包保留时间", substring = true))
+        compose.onNodeWithText("安装包保留时间", substring = true).performScrollTo().assertIsDisplayed()
         save("clean-plan-apk-retention")
     }
 
