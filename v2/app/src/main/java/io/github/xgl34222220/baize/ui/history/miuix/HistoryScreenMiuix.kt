@@ -60,9 +60,9 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         .take(50)
         .groupBy { record -> record.time.trim().take(10).ifBlank { "更早记录" } }
     var showZeroApps by rememberSaveable { mutableStateOf(false) }
-    val meaningfulApps = state.recentApps.filter { it.bytes > 0L || it.files > 0L }
-    val zeroApps = state.recentApps.filter { it.bytes <= 0L && it.files <= 0L }
-    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L || it.files > 0L }
+    val meaningfulApps = state.recentApps.filter { it.bytes > 0L }
+    val zeroApps = state.recentApps.filter { it.bytes <= 0L }
+    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -284,9 +284,9 @@ private fun ZeroAppGroup(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("未产生垃圾应用", style = MaterialTheme.typography.titleSmall)
+                Text("无占用应用", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "${apps.size} 个 · 默认折叠",
+                    "${apps.size} 个 · 扫描到条目但未产生占用",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
