@@ -160,7 +160,7 @@ unzip -p "$OUTPUT" config/default.conf | grep -q '^app_cache_days=2$'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
 unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.2-shared-index'
+unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.3-global-index'
 unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-files.nul'
 unzip -p "$OUTPUT" module.prop | grep -Fqx "version=$VERSION"
 unzip -p "$OUTPUT" module.prop | grep -Fqx "versionCode=$VERSION_CODE"
