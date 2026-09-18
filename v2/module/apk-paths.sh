@@ -184,6 +184,20 @@ apk_scan_candidate_allowed() {
         ;;
     esac
   done
+  _apk_scan_real=$(readlink -f "$1" 2>/dev/null || true)
+  if [ -n "$_apk_scan_real" ]; then
+    for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+      _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null || true)
+      [ -n "$_apk_base_real" ] || continue
+      case "$_apk_scan_real" in
+        "$_apk_base_real"/*)
+          set +f
+          IFS=$_apk_scan_save_ifs
+          return 0
+          ;;
+      esac
+    done
+  fi
   for _apk_base in $APK_PRIVATE_BOUNDARIES; do
     case "$1" in
       "$_apk_base"/*)
@@ -253,6 +267,7 @@ $_apk_seen_roots
 $_apk_root
 "*) continue ;; esac
     apk_list_append _apk_seen_roots "$_apk_root"
+    apk_add_fallback_root "$_apk_root"
     find "$_apk_root" -type f \
       \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
       -print0 >>"$_apk_out" 2>/dev/null || true
