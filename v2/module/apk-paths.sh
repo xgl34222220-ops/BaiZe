@@ -47,6 +47,7 @@ apk_load_roots() {
   APK_FALLBACK_ROOTS=
   APK_PRIVATE_BOUNDARIES=
   _apk_media_root=${MEDIA_ROOT:-/data/media}
+  APK_PUBLIC_MEDIA_ROOT=${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}
   _apk_media_users=0
 
   # Prefer the underlying media tree. It bypasses scoped-storage/FUSE quirks
@@ -59,13 +60,13 @@ apk_load_roots() {
     _apk_media_users=$((_apk_media_users + 1))
     # Keep the emulated-storage view as a read fallback only. It is scanned
     # only when the physical media view yields no package files.
-    apk_add_fallback_root "/storage/emulated/$_apk_id"
+    apk_add_fallback_root "$APK_PUBLIC_MEDIA_ROOT/$_apk_id"
   done
 
   # Some ROM/root namespaces do not expose /data/media even though the public
   # emulated volume is mounted. Promote the public view in that case.
   if [ "$_apk_media_users" -eq 0 ]; then
-    for _apk_user in /storage/emulated/[0-9]*; do
+    for _apk_user in "$APK_PUBLIC_MEDIA_ROOT"/[0-9]*; do
       _apk_id=${_apk_user##*/}
       case "$_apk_id" in ''|*[!0-9]*) continue ;; esac
       apk_add_root "$_apk_user"
@@ -189,7 +190,7 @@ apk_fallback_for_root() {
   case "$1" in
     /data/media/[0-9]*)
       _apk_id=${1##*/}
-      printf '%s\n' "/storage/emulated/$_apk_id"
+      printf '%s\n' "$APK_PUBLIC_MEDIA_ROOT/$_apk_id"
       ;;
     /mnt/media_rw/*)
       _apk_uuid=${1##*/}
