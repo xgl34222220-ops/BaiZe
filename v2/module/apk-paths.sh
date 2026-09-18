@@ -415,18 +415,96 @@ apk_realpath_or_self() {
   [ -n "$_apk_input" ] || _apk_input=/
   _apk_resolved=$(readlink -f "$_apk_input" 2>/dev/null || true)
   if [ -n "$_apk_resolved" ]; then
-    printf '%s\n' "$_apk_\ÛÛY[ÙB[	É\×ÈØ\×Ú[]BB\×ØYÜÛÝ
+    printf '%s\n' "$_apk_resolved"
+  else
+    printf '%s\n' "$_apk_input"
+  fi
+}
 
-HÂÈYHH]\Ø\×Ç&ö÷CÒBµñÉ±ÁÑ¡}½É}Í±Ä¤(lµ}Á­}É½½ÐtñðÉÑÕÉ¸À(Á­}É½½Ñ}Í}Á­|root" || return 0
-  apk_list_append APK_ROOTS "$_apk_ÛÝB\×ØYÙ[XÚ×ÜÛÝ
+apk_add_root() {
+  [ -d "$1" ] || return 0
+  _apk_root=$(apk_realpath_or_self "$1")
+  [ -d "$_apk_root" ] || return 0
+  apk_root_safe "$_apk_root" || return 0
+  apk_list_append APK_ROOTS "$_apk_root"
+}
 
-HÂÈYHH]\Ø\×Ç&ö÷CÒBµñÉ±ÁÑ¡}½É}Í±Ä¤(lµ}Á­}É½½ÐtñðÉÑÕÉ¸À(Á­}É½½Ñ}Í}Á­|root" || return 0
-  apk_list_append APK_FALLBACK_ROOTS "$_apk_ÛÝB\×Û[Ý[Ý[\ØØ\J
-HÂ[	É\ÉÈHÙY	ÜË×ÈÙÎÈË×LK×ÙÎÈË×LÍ×ÙÉÂB\×ØYÝ\Ù\ÝY]ÜÊ
-HÂØ\×ÝZYIBØ\×ÛYYXWÜÛÝIÓQQPWÔÓÕKÙ]KÛYYX_BØ\×ÜXX×ÜÛÝIÐRVWÔPP×ÓQQPWÔÓÕKÜÝÜYÙKÙ[][]YB\×ØYÜÛÝØ\×ÛYYXWÜÛÝÉØ\×ÝZY\×ØYÙ[XÚ×ÜÛÝØ\×ÜXX×ÜÛÝÉØ\×ÝZYÜØ\×ÝY]È[Û[Ü[[YKÙY][Ù[][]YÉØ\×ÝZYÛ[Ü[[YKÜXYÙ[][]YÉØ\×ÝZYÛ[Ü[[YKÝÜ]KÙ[][]YÉØ\×ÝZYÛ[Ü[[YKÙ[Ù[][]YÉØ\×ÝZYÛ[Ú[Ý[\ÉØ\×ÝZYÙ[][]YÉØ\×ÝZYÛ[Ø[ÚYÜ]XKÉØ\×ÝZYÙ[][]YÉØ\×ÝZYÛ[Ü\Ü×ÝÝYÚÉØ\×ÝZYÙ[][]YÉØ\×ÝZYÛ[Ý\Ù\ÉØ\×ÝZYÜ[X\HÂ\×ØYÙ[XÚ×ÜÛÝØ\×ÝY]ÈÛBB\×Ù\ØÛÝ\Ü[[YWÜÛÝÊ
-HÂØ\×ÜÙY[Ý\Ù\ÏBÜØ\×Ý\Ù\\[ÓQQPWÔÓÕKÙ]KÛYYX_HÖÌNWJÐRVWÔPP×ÓQQPWÔÓÕKÜÝÜYÙKÙ[][]YHÖÌNWJÈÂÈYØ\×Ý\Ù\\HÛÛ[YBØ\×ÝZYI×Ø\×Ý\Ù\\ÈÊßBØ\ÙHØ\×ÝZY[	ÉÈ
-ÈLNWJHÛÛ[YHÎÈ\ØXÂØ\ÙHØ\×ÜÙY[Ý\Ù\Â[
-Ø\×ÝZYHÛÛ[YHÎÈ\ØXÂ\×Û\ÝØ\[Ø\×ÜÙY[Ý\Ù\ÈØ\×ÝZY\×ÆFE÷W6W%÷fWw2"Eöµ÷VB ¢FöæP ¢öµö7W'&VçE÷W6W#ÒB¢6ÖB7FfGvWBÖ7W'&VçB×W6W"#âöFWböçVÆÂÇÂÒvWBÖ7W'&VçB×W6W"#âöFWböçVÆÂÇÂG'VRÀ¢G"Ö6BsÓÆârÂVBÖâ¢¢66R"Eöµö7W'&VçE÷W6W""ârwÂ¥²ÓÒ¢³²¢¢µöFE÷W6W%÷fWw2"Eöµö7W'&VçE÷W6W" ¢³°¢W60 ¢b²×"÷&ö2÷6VÆböÖ÷VçFæfòÓ²FVà¢vÆRe3Ò&VB×"öµöÖ÷VçEöÆæRÇÂ²Öâ"EöµöÖ÷VçEöÆæR"Ó²Fð¢öµöÖ÷VçE÷öçCÒB&çFbrW5Æâr"EöµöÖ÷VçEöÆæR"Âv²w·&çBCWÒr¢²Öâ"EöµöÖ÷VçE÷öçB"ÒÇÂ6öçFçVP¢öµöÖ÷VçE÷öçCÒBµöÖ÷VçE÷VæW66R"EöµöÖ÷VçE÷öçB"¢66R"EöµöÖ÷VçE÷öçB"à¢÷7F÷&vRöV×VÆFVBõ³ÓÒ§ÂöÖçB÷'VçFÖRò¢öV×VÆFVBõ³ÓÒ§ÂöÖçBöç7FÆÆW"õ³ÓÒ¢öV×VÆFVBõ³ÓÒ§ÂöÖçBöæG&öGw&F&ÆRõ³ÓÒ¢öV×VÆFVBõ³ÓÒ§ÂöÖçB÷75÷F&÷Vvõ³ÓÒ¢öV×VÆFVBõ³ÓÒ§ÂöÖçB÷W6W"õ³ÓÒ¢÷&Ö'¢µñ}±±­}É½½Ð}Á­}µ½Õ¹Ñ}Á½¥¹Ð(ìì(½µ¹Ð½µ¥}ÉÜ¼¨¤(Á­}}É½½Ð}Á­}µ½Õ¹Ñ}Á½¥¹Ð(}Á­}ÕÕ¥ôí}Á­}µ½Õ¹Ñ}Á½¥¹Ð¨½ô(Á­}}±±­}É½½Ð½ÍÑ½É¼}Á­}ÕÕ¥(ìì(½ÍÑ½É¼¨¤(}Á­}¹µôí}Á­}µ½Õ¹Ñ}Á½¥¹Ð¨½ô(Í}Á­}¹µ¥¸µÕ±ÑñÍ±ñ¹}µÕ±ÑñÉÕ¹Ñ¥µ¤½¹Ñ¥¹ÕììÍ(Á­|add_fallback_root "$_apk_mount_point"
+apk_add_fallback_root() {
+  [ -d "$1" ] || return 0
+  _apk_root=$(apk_realpath_or_self "$1")
+  [ -d "$_apk_root" ] || return 0
+  apk_root_safe "$_apk_root" || return 0
+  apk_list_append APK_FALLBACK_ROOTS "$_apk_root"
+}
+
+apk_mount_unescape() {
+  printf '%s' "$1" | sed 's/\\040/ /g; s/\\011/\t/g; s/\\134/\\/g'
+}
+
+apk_add_user_views() {
+  _apk_uid=$1
+  _apk_media_root=${MEDIA_ROOT:-/data/media}
+  _apk_public_root=${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}
+
+  apk_add_root "$_apk_media_root/$_apk_uid"
+  apk_add_fallback_root "$_apk_public_root/$_apk_uid"
+
+  for _apk_view in \
+    "/mnt/runtime/default/emulated/$_apk_uid" \
+    "/mnt/runtime/read/emulated/$_apk_uid" \
+    "/mnt/runtime/write/emulated/$_apk_uid" \
+    "/mnt/runtime/full/emulated/$_apk_uid" \
+    "/mnt/installer/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/androidwritable/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/pass_through/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/user/$_apk_uid/primary"
+  do
+    apk_add_fallback_root "$_apk_view"
+  done
+}
+
+apk_discover_runtime_roots() {
+  _apk_seen_users=
+  for _apk_userdir in "${MEDIA_ROOT:-/data/media}"/[0-9]* "${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}"/[0-9]*; do
+    [ -d "$_apk_userdir" ] || continue
+    _apk_uid=${_apk_userdir##*/}
+    case "$_apk_uid" in ''|*[!0-9]*) continue ;; esac
+    case "
+$_apk_seen_users
+" in *"
+$_apk_uid
+"*) continue ;; esac
+    apk_list_append _apk_seen_users "$_apk_uid"
+    apk_add_user_views "$_apk_uid"
+  done
+
+  _apk_current_user=$(
+    (cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true) |
+      tr -cd '0-9\n' | head -n 1
+  )
+  case "$_apk_current_user" in ''|*[!0-9]*) ;; *)
+    apk_add_user_views "$_apk_current_user"
+    ;;
+  esac
+
+  if [ -r /proc/self/mountinfo ]; then
+    while IFS= read -r _apk_mount_line || [ -n "$_apk_mount_line" ]; do
+      _apk_mount_point=$(printf '%s\n' "$_apk_mount_line" | awk '{print $5}')
+      [ -n "$_apk_mount_point" ] || continue
+      _apk_mount_point=$(apk_mount_unescape "$_apk_mount_point")
+      case "$_apk_mount_point" in
+        /storage/emulated/[0-9]*|/mnt/runtime/*/emulated/[0-9]*|/mnt/installer/[0-9]*/emulated/[0-9]*|/mnt/androidwritable/[0-9]*/emulated/[0-9]*|/mnt/pass_through/[0-9]*/emulated/[0-9]*|/mnt/user/[0-9]*/primary)
+          apk_add_fallback_root "$_apk_mount_point"
+          ;;
+        /mnt/media_rw/*)
+          apk_add_root "$_apk_mount_point"
+          _apk_uuid=${_apk_mount_point##*/}
+          apk_add_fallback_root "/storage/$_apk_uuid"
+          ;;
+        /storage/*)
+          _apk_name=${_apk_mount_point##*/}
+          case "$_apk_name" in emulated|self|enc_emulated|runtime) continue ;; esac
+          apk_add_fallback_root "$_apk_mount_point"
           ;;
       esac
     done </proc/self/mountinfo
@@ -444,9 +522,66 @@ apk_load_roots() {
     _apk_old_ifs=$IFS
     IFS=:
     for _apk_volume in $BAIZE_EXTRA_STORAGE_ROOTS; do
-      apk_YÜÛÝØ\×ÝÛ[YHÛBQÏIØ\×ÛÛÚYÂ[ÙBÜØ\×ÝÛ[YH[Û[ÛYYXWÜËÊÜÝÜYÙKÊÈÂÈYØ\×ÝÛ[YHHÛÛ[YBØ\×Û[YOI×Ø\×ÝÛ[YHÈÊßBØ\ÙHØ\×Û[YH[[][]YÙ[[×Ù[][]Y[[YJHÛÛ[YHÎÈ\ØXÂØ\ÙHØ\×ÝÛ[YH[Û[ÛYYXWÜËÊH\×ØYÜÛÝØ\×ÝÛ[YHÎÈ
-H\×ØYÙ[XÚ×ÜÛÝØ\×ÝÛ[YHÎÈ\ØXÂÛBBB\×Ù[Ú[Ê
-HÂØ\×Ø\ÙOIBØ\×ÛÝ]IØ\×ÛÝ]YÈ^ÜÞ\Ý[KØ[ÝÞXÞNÈ[ÜÞ\Ý[KØ[ÝÞXÞ[Ø\×Ø\ÙH]\H
-Z[[YH	Ê\ÉÈ[ÈZ[[YH	Ê\ÜÉÈ[ÈZ[[YH	Ê\ÉÈ[ÈZ[[YH	Ê\ÛIÈ[ÈZ[[YH	ÊXXÈ
-H\[Ø\×ÛÝ]Ù]Û[[ÙB[Ø\×Æ&6R"×GRbÀ¢ÂÖæÖRr¢æ²rÖòÖæÖRr¢æ·2rÖòÖæÖRr¢ç²rÖòÖæÖRr¢æ¶ÒrÖòÖæÖRr¢æ"rÂÀ¢×&çCâ"Eöµö÷WB"#âöFWböçVÆÀ¢f§Ð ¦µö''WFVf÷&6Uö6æFFFW2°¢öµö÷WCÒC¢¢â"Eöµö÷WB ¢µöF66÷fW%÷'VçFÖU÷&ö÷G0¢öµ÷6VVå÷&VÃÐ¢öµ÷&ö÷EöæóÓ ¢öµñ½±}¥Ìô%L(%Lô((ÍÐµ(½È}Á­}É½½Ð¥¸I-}I==QLA-}11	-}I==QLì¼(lµ}Á­}É½½Ðtñð½¹Ñ¥¹Õ(}Á­|real=$(apk_X[]ÛÜÜÙ[Ø\×ÜÛÝBØ\ÙHØ\×ÜÙY[ÜX[[
-Ø\×ÜX[HÛÛ[YHÎÈ\ØXÂ\×Û\ÝØ\[Ø\×ÜÙY[ÜX[Ø\×Ç&VÂ ¢öµ÷&ö÷EöæóÒBöµ÷&ö÷Eöæò²¢öµ÷F×Ò"Gµöµö÷WGÒç&ö÷BâBBâEöµ÷&ö÷Eöæò ¢µöfæEöçFò"EöµñÉ½½Ð}Á­}ÑµÀñðÑÉÕ(lµÌ}Á­}ÑµÀtñðÐ}Á­}ÑµÀøø}Á­}½ÕÐ(É´µ}Á­}ÑµÀ(½¹(ÍÐ­(%Lô}Á­}½±}¥Ì((¥lµ¸íA-}AI%YQ}	=U9I%LèµôtìÑ¡¸(}Á­}ÁÉ¥ÙÑ}ÑµÀôí}Á­}½ÕÑô¹ÁÉ¥ÙÑ¸(Á­}½±±Ñ}ÁÉ¥ÙÑ}¹¥ÑÌ}Á­}ÁÉ¥ÙÑ}ÑµÀ(lµÌ}Á­}ÁÉ¥ÙÑ}ÑµÀtñðÐ}Á­}ÁÉ¥ÙÑ}ÑµÀøø}Á­}½ÕÐ(É´µ}Á­}ÁÉ¥ÙÑ}ÑµÀ(¤)ô(
+      apk_add_root "$_apk_volume"
+    done
+    IFS=$_apk_old_ifs
+  else
+    for _apk_volume in /mnt/media_rw/* /storage/*; do
+      [ -d "$_apk_volume" ] || continue
+      _apk_name=${_apk_volume##*/}
+      case "$_apk_name" in emulated|self|enc_emulated|runtime) continue ;; esac
+      case "$_apk_volume" in /mnt/media_rw/*) apk_add_root "$_apk_volume" ;; *) apk_add_fallback_root "$_apk_volume" ;; esac
+    done
+  fi
+}
+
+apk_find_into() {
+  _apk_base=$1
+  _apk_out=$2
+  : >"$_apk_out"
+  if [ -x /system/bin/toybox ]; then
+    /system/bin/toybox find "$_apk_base" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >"$_apk_out" 2>/dev/null
+  else
+    find "$_apk_base" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >"$_apk_out" 2>/dev/null
+  fi
+}
+
+apk_bruteforce_candidates() {
+  _apk_out=$1
+  : >"$_apk_out"
+  apk_discover_runtime_roots
+  _apk_seen_real=
+  _apk_root_no=0
+  _apk_old_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_root in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+    [ -d "$_apk_root" ] || continue
+    _apk_real=$(apk_realpath_or_self "$_apk_root")
+    case "
+$_apk_seen_real
+" in *"
+$_apk_real
+"*) continue ;; esac
+    apk_list_append _apk_seen_real "$_apk_real"
+    _apk_root_no=$((_apk_root_no + 1))
+    _apk_tmp="${_apk_out}.root.$$.$_apk_root_no"
+    apk_find_into "$_apk_root" "$_apk_tmp" || true
+    [ ! -s "$_apk_tmp" ] || cat "$_apk_tmp" >>"$_apk_out"
+    rm -f "$_apk_tmp"
+  done
+  set +f
+  IFS=$_apk_old_ifs
+
+  if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
+    _apk_private_tmp="${_apk_out}.private.$$"
+    apk_collect_private_candidates "$_apk_private_tmp"
+    [ ! -s "$_apk_private_tmp" ] || cat "$_apk_private_tmp" >>"$_apk_out"
+    rm -f "$_apk_private_tmp"
+  fi
+}
