@@ -30,7 +30,7 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 /** LuoShu SettingsHubScreen structure: overview -> navigation groups -> separate detail page. */
 @Composable
 fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDetailChanged: (Boolean) -> Unit = {}) {
-    var section by rememberSaveable { mutableStateOf("") }
+    var section by remember { mutableStateOf("") }
     val notify by rememberUpdatedState(onDetailChanged)
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
