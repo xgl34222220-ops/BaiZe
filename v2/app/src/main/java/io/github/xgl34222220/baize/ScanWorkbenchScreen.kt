@@ -225,7 +225,12 @@ internal fun ScanWorkbenchScreen(
     val inset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomBarHeight + 12.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                bottom = if (historicalSnapshot && !showHistoryRecords) inset + 20.dp else bottomBarHeight + 12.dp
+            )
+        ) {
             item {
                 DetailPageHeader("扫描结果", "", actions.onBack) {
                     IconButton(onClick = actions.onManageWhitelist, enabled = !state.running && !state.loadingResults) {
@@ -236,20 +241,19 @@ internal fun ScanWorkbenchScreen(
             }
             if (state.items.isEmpty()) {
                 item { WorkbenchEmptyCard(visibleState, onDetails = { showReport = true }) }
+            } else if (historicalSnapshot && !showHistoryRecords) {
+                item {
+                    HistoricalResultGate(
+                        state = visibleState,
+                        onRescan = actions.onScan,
+                        onShowHistory = { showHistoryRecords = true }
+                    )
+                }
             } else {
                 item {
                     WorkbenchSummaryCard(visibleState, presentation, selected.size, selectedHigh.size,
                         selected.any { it.bytes < 0L }, onDetails = { showReport = true })
                 }
-                if (historicalSnapshot && !showHistoryRecords) {
-                    item {
-                        HistoricalResultGate(
-                            state = visibleState,
-                            onRescan = actions.onScan,
-                            onShowHistory = { showHistoryRecords = true }
-                        )
-                    }
-                } else {
                 item {
                     Column(Modifier.padding(horizontal = 20.dp).padding(top = 20.dp, bottom = 4.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -299,11 +303,10 @@ internal fun ScanWorkbenchScreen(
                         )
                     }
                 }
-
-                }
             }
         }
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+        if (!historicalSnapshot || showHistoryRecords) {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
             .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = inset + 12.dp)) {
             Surface(color = BaiZeTokens.colors.surfaceRaised.copy(alpha = .97f),
@@ -326,6 +329,7 @@ internal fun ScanWorkbenchScreen(
                     )
                 }
             }
+        }
         }
     }
     if (showFilters) AlertDialog(onDismissRequest = { showFilters = false }, title = { Text("筛选结果") },
