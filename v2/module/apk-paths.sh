@@ -536,17 +536,19 @@ apk_load_roots() {
 }
 
 apk_find_into() {
-  _apk_base=$1
-  _apk_out=$2
-  : >"$_apk_out"
+  # Shell functions share variables by default. Do not reuse _apk_out here:
+  # apk_bruteforce_candidates owns that name for its aggregate destination.
+  _apk_find_base=$1
+  _apk_find_output=$2
+  : >"$_apk_find_output"
   if [ -x /system/bin/toybox ]; then
-    /system/bin/toybox find "$_apk_base" -type f \
+    /system/bin/toybox find "$_apk_find_base" -type f \
       \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
-      -print0 >"$_apk_out" 2>/dev/null
+      -print0 >"$_apk_find_output" 2>/dev/null
   else
-    find "$_apk_base" -type f \
+    find "$_apk_find_base" -type f \
       \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
-      -print0 >"$_apk_out" 2>/dev/null
+      -print0 >"$_apk_find_output" 2>/dev/null
   fi
 }
 
