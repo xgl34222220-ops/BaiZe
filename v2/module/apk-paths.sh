@@ -272,6 +272,25 @@ $_apk_root
       \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
       -print0 >>"$_apk_out" 2>/dev/null || true
   done
+  if [ -n "${BAIZE_BRUTE_STORAGE_ROOTS:-}" ]; then
+    _apk_old_ifs=$IFS
+    IFS=:
+    for _apk_root in $BAIZE_BRUTE_STORAGE_ROOTS; do
+      [ -d "$_apk_root" ] || continue
+      [ ! -L "$_apk_root" ] || continue
+      case "
+$_apk_seen_roots
+" in *"
+$_apk_root
+"*) continue ;; esac
+      apk_list_append _apk_seen_roots "$_apk_root"
+      apk_add_fallback_root "$_apk_root"
+      find "$_apk_root" -type f \
+        \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+        -print0 >>"$_apk_out" 2>/dev/null || true
+    done
+    IFS=$_apk_old_ifs
+  fi
   if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
     _apk_private_tmp="${_apk_out}.private.$"
     apk_collect_private_candidates "$_apk_private_tmp"
