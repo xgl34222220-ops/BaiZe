@@ -1,7 +1,10 @@
 package io.github.xgl34222220.baize.ui.home.miuix
 
 import android.text.format.Formatter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -10,6 +13,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +111,11 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val progress = if (state.taskProgressTotal > 0)
         (state.taskProgressCurrent.toFloat() / state.taskProgressTotal).coerceIn(0f, 1f) else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 320),
+        label = "homeTaskProgress"
+    )
     val hasResults = state.scanCompleted && state.scanFiles > 0
     val value = when {
         state.running && state.taskProgressTotal > 0 -> "${(progress * 100).roundToInt()}%"
@@ -158,6 +168,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
+            .animateContentSize()
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val statusColor = when {
                 state.ready && !state.running -> colors.success
@@ -179,24 +190,14 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                Text(
-                    value,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 32.sp,
-                        lineHeight = 40.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFeatureSettings = "tnum"
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                HeroMetricValue(value)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.running && state.taskProgressTotal <= 0) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape))
                 } else if (state.running) {
                     LinearProgressIndicator(
-                        progress = { progress },
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
                     )
                 } else if (state.storageTotal > 0) {
@@ -225,6 +226,47 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 TextButton(actions.dismissScan, Modifier.fillMaxWidth()) { Text("收起结果") }
             }
         }
+    }
+}
+
+@Composable
+private fun HeroMetricValue(value: String) {
+    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
+    if (match == null) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum"
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        return
+    }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            match.groupValues[1],
+            modifier = Modifier.alignByBaseline(),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontSize = 36.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum"
+            )
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            match.groupValues[2],
+            modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

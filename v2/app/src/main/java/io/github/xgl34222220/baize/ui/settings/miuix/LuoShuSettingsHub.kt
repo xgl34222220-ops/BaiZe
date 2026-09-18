@@ -30,7 +30,7 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 /** LuoShu SettingsHubScreen structure: overview -> navigation groups -> separate detail page. */
 @Composable
 fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDetailChanged: (Boolean) -> Unit = {}) {
-    var section by rememberSaveable { mutableStateOf("") }
+    var section by remember { mutableStateOf("") }
     val notify by rememberUpdatedState(onDetailChanged)
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
@@ -191,15 +191,14 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 LuoShuGroupDivider()
                 LuoShuSwitchRow(Icons.Rounded.Notifications, "零结果也通知", "没有可清理内容时也提醒", s.notifyZero,
                     { actions.onUpdateScheduler(s.copy(notifyZero = it)) })
+                LuoShuGroupDivider()
+                Text(
+                    if (s.saving) "正在保存…" else "修改后点右上角“保存”生效",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
             }
-        }
-        item {
-            Text(
-                if (s.saving) "正在保存…" else "修改后点右上角“保存”生效",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 2.dp)
-            )
         }
     }
 }

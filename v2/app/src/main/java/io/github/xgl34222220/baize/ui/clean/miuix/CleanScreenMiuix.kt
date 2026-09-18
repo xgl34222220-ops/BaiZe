@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.clean.CleanCategoryId
@@ -427,19 +428,33 @@ private fun CategoryRow(
                 }
             }
             if (expanded && !dailyEnabled) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(start = 74.dp, end = 14.dp, bottom = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Column(
+                    modifier = Modifier.padding(start = 74.dp, end = 16.dp, bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    luoShuIntervalOptions.forEach { minutes ->
-                        FilterChip(
-                            selected = item.intervalMinutes == minutes,
-                            onClick = { onIntervalChanged(minutes) },
-                            label = { Text(formatMinutes(minutes), style = MaterialTheme.typography.labelSmall) }
-                        )
+                    luoShuIntervalOptions.chunked(4).forEach { rowItems ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowItems.forEach { minutes ->
+                                FilterChip(
+                                    selected = item.intervalMinutes == minutes,
+                                    onClick = { onIntervalChanged(minutes) },
+                                    label = {
+                                        Text(
+                                            formatMinutes(minutes),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textAlign = TextAlign.Center,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }

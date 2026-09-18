@@ -76,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -457,22 +458,54 @@ private fun ScheduleCard(
             Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) },
                 modifier = Modifier.semantics { contentDescription = "定时文件归类" })
         }
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            intervals.forEach { minutes ->
-                FilterChip(selected = schedule.intervalMinutes == minutes,
-                    onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
-                    label = { Text(FileOrganizerWorker.intervalLabel(minutes), fontSize = 12.sp) },
-                    border = null, shape = RoundedCornerShape(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            intervals.chunked(4).forEach { rowItems ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { minutes ->
+                        FilterChip(
+                            selected = schedule.intervalMinutes == minutes,
+                            onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
+                            label = {
+                                Text(
+                                    FileOrganizerWorker.intervalLabel(minutes),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 12.sp,
+                                    maxLines = 1
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            border = null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                    repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
         Text("同名文件", fontWeight = FontWeight.Medium, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             (0..2).forEach { policy ->
-                FilterChip(selected = schedule.conflictPolicy == policy,
+                FilterChip(
+                    selected = schedule.conflictPolicy == policy,
                     onClick = { onChange(schedule.copy(conflictPolicy = policy)) },
-                    label = { Text(FileOrganizerWorker.conflictPolicyLabel(policy), fontSize = 12.sp) },
-                    border = null, shape = RoundedCornerShape(12.dp))
+                    label = {
+                        Text(
+                            FileOrganizerWorker.conflictPolicyLabel(policy),
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    border = null,
+                    shape = RoundedCornerShape(12.dp)
+                )
             }
         }
         Row(Modifier.fillMaxWidth().clickable { advanced = !advanced }.heightIn(min = 52.dp),
