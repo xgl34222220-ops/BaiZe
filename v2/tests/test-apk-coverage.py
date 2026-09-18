@@ -21,6 +21,8 @@ class PackageCoverage(unittest.TestCase):
         self.media = self.root / 'media'
         self.data = self.root / 'data'
         self.data.mkdir()
+        self.public = self.root / 'public'
+        self.public.mkdir()
         self.sd = self.root / 'sd'
         self.sd.mkdir()
         for name in ('apk-snapshot-scan.sh', 'apk-snapshot-clean.sh', 'apk-paths.sh', 'whitelist-match.sh'):
@@ -32,6 +34,7 @@ class PackageCoverage(unittest.TestCase):
             BAIZE_STATE_DIR=str(self.state),
             BAIZE_MEDIA_ROOT=str(self.media),
             BAIZE_DATA_ROOT=str(self.data),
+            BAIZE_PUBLIC_MEDIA_ROOT=str(self.public),
             BAIZE_EXTRA_STORAGE_ROOTS=str(self.sd),
         )
 
@@ -72,6 +75,22 @@ class PackageCoverage(unittest.TestCase):
         self.assertTrue(all(not p.exists() for p in packages))
         self.assertTrue(keep.exists())
         self.assertIn('files=121\n', (self.state / 'latest.env').read_text())
+
+    def test_public_emulated_fallback_when_raw_media_is_missing(self):
+        missing_raw = self.root / 'missing-media'
+        public_apk = self.public / '0/Download/public.apk'
+        public_apk.parent.mkdir(parents=True, exist_ok=True)
+        public_apk.write_bytes(b'public package')
+        env = dict(self.env, BAIZE_MEDIA_ROOT=str(missing_raw))
+        proc = subprocess.run(
+            ['bash', str(self.module / 'apk-snapshot-scan.sh'), 'apk-scan', 'app'],
+            env=env, text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(
+            set((self.state / 'apk_scan.targets').read_bytes().split(b'\0')) - {b''},
+            {os.fsencode(public_apk)}
+        )
 
     def test_retention_whitelist_and_symlink_boundaries(self):
         old = self.make('0/Download/old.apk', 31)
