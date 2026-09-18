@@ -70,7 +70,6 @@ fun CleanScreenMiuix(
     LaunchedEffect(expandedCategory) {
         if (expandedCategory == "__open_plan__") {
             automationExpanded = true
-            onExpandedCategoryChanged("")
         }
     }
 
