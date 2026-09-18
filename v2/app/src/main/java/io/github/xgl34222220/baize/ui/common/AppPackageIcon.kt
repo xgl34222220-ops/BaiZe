@@ -86,6 +86,9 @@ private object PersistentAppIconStore {
 
     fun load(context: Context, packageName: String): Bitmap? {
         if (packageName.isBlank()) return null
+        val pm = context.packageManager
+        val info = appInfo(pm, packageName) ?: return null
+        if (info.icon == 0 && info.roundIcon == 0) return null
         synchronized(this) { memoryCache.get(packageName) }?.let { return it }
         val lock = packageLocks.getOrPut(packageName) { Any() }
         return synchronized(lock) {
@@ -102,8 +105,6 @@ private object PersistentAppIconStore {
                 return@synchronized remember(packageName, legacy)
             }
 
-            val pm = context.packageManager
-            val info = appInfo(pm, packageName) ?: return@synchronized null
             val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@synchronized null
             val bitmap = runCatching {
                 Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888).also { target ->
