@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.os.SystemClock
 import android.text.format.Formatter
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
@@ -429,24 +431,28 @@ private fun HistoricalResultGate(
     onResume: () -> Unit,
     onRescan: () -> Unit
 ) {
+    val warning = BaiZeTokens.colors.warning
+    val surface = BaiZeTokens.colors.surfaceRaised
+    val warningSurface = lerp(surface, warning, .08f)
+    val warningAction = lerp(surface, warning, .18f)
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp),
-        color = BaiZeTokens.colors.surfaceRaised
+        color = warningSurface
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .46f)
+                    color = warningAction
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Rounded.History,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
-                            tint = BaiZeTokens.colors.warning
+                            tint = warning
                         )
                     }
                 }
@@ -457,7 +463,7 @@ private fun HistoricalResultGate(
                         workbenchStatusTitle(state),
                         fontSize = 12.sp,
                         lineHeight = 18.sp,
-                        color = BaiZeTokens.colors.warning
+                        color = warning
                     )
                 }
             }
@@ -472,8 +478,8 @@ private fun HistoricalResultGate(
                     modifier = Modifier.weight(1f).heightIn(min = 46.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        containerColor = warningAction,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     )
                 ) {
                     Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
@@ -483,7 +489,9 @@ private fun HistoricalResultGate(
                 OutlinedButton(
                     onClick = onRescan,
                     modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                    border = BorderStroke(1.dp, warning.copy(alpha = .45f))
                 ) {
                     Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
