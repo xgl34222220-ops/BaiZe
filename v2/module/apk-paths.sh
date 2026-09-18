@@ -113,15 +113,16 @@ apk_path_allowed() {
     *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
     *) return 1 ;;
   esac
+  [ ! -L "$1" ] || return 1
   _apk_real=$(readlink -f "$1" 2>/dev/null) || return 1
-  [ "$_apk_real" = "$1" ] || return 1
   _apk_save_ifs=$IFS
   IFS='
 '
   set -f
   for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
-    case "$1" in
-      "$_apk_base"/*)
+    _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null) || continue
+    case "$_apk_real" in
+      "$_apk_base_real"/*)
         set +f
         IFS=$_apk_save_ifs
         return 0
@@ -159,12 +160,14 @@ apk_fallback_for_root() {
 
 apk_fallback_allowed() {
   _apk_candidate=$1
+  _apk_candidate_real=$(readlink -f "$_apk_candidate" 2>/dev/null) || return 1
   _apk_save_ifs=$IFS
   IFS='
 '
   set -f
   for _apk_base in $APK_FALLBACK_ROOTS; do
-    [ "$_apk_base" = "$_apk_candidate" ] && {
+    _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null) || continue
+    [ "$_apk_base_real" = "$_apk_candidate_real" ] && {
       set +f
       IFS=$_apk_save_ifs
       return 0
