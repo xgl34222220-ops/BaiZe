@@ -1138,7 +1138,12 @@ internal class NativeProfileEngine(
         val explicitTrash = name in setOf(".cache", ".thumbnails", ".tmp", ".temp", ".logs", "logs", "mipushlog", "xlog", "app_bugly", ".crashlytics.v3") ||
             name.startsWith(".com.google.firebase.crashlytics.files.") ||
             name.endsWith(".tmp") || name.endsWith(".temp") || name.endsWith(".part") || name.endsWith(".crdownload")
+        val personalContent = PERSONAL_CONTENT.any { value.contains(it) }
         return when {
+            // Traversal is broad, mutation remains conservative: user-authored content roots
+            // are visible to review but never become default-clean candidates just because
+            // a filename looks temporary.
+            personalContent -> "critical"
             explicitTrash && !value.contains("/databases/") && !value.contains("/shared_prefs/") -> "medium"
             CRITICAL.any { value.contains(it) } -> "critical"
             HIGH.any { value.contains(it) } -> "high"
@@ -1289,6 +1294,10 @@ internal class NativeProfileEngine(
         )
         private val HIDDEN_PROTECTED = setOf(
             ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine"
+        )
+        private val PERSONAL_CONTENT = setOf(
+            "/documents/", "/dcim/", "/pictures/", "/movies/", "/music/",
+            "/audiobooks/", "/podcasts/"
         )
         private val CRITICAL = setOf(
             "/download", "/documents", "/dcim", "/pictures", "/movies", "/music", "/android/obb",
