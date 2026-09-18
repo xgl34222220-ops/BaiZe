@@ -13,7 +13,10 @@ import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -955,6 +958,11 @@ internal fun ResumeSmartScreen(
         (state.progressCurrent.toFloat() / state.progressTotal.toFloat()).coerceIn(0f, 1f)
     } else 0f
     val scheme = MaterialTheme.colorScheme
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 320),
+        label = "resumeProgress"
+    )
     val metric = when {
         state.running && state.operation == "scan" -> "正在扫描"
         state.running -> "正在清理"
@@ -990,7 +998,7 @@ internal fun ResumeSmartScreen(
             DetailPageHeader("断点续清", "中断后，可从剩余项目继续", onBack)
         }
         item(contentType = "task") {
-            DetailGlassPanel {
+            DetailGlassPanel(Modifier.animateContentSize()) {
                 Text(metricLabel, fontSize = 12.sp, color = scheme.onSurfaceVariant)
                 Text(
                     metric,
@@ -1006,10 +1014,10 @@ internal fun ResumeSmartScreen(
                 DetailStatusText(state.phase, Modifier.padding(top = 5.dp, bottom = 14.dp))
                 if (state.running) {
                     if (state.progressTotal > 0) {
-                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                        LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth().height(8.dp))
                         Text("${state.progressCurrent.coerceAtMost(state.progressTotal)} / ${state.progressTotal}",
                             Modifier.padding(top = 5.dp), fontSize = 12.sp, color = scheme.onSurfaceVariant)
-                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(8.dp))
                     GlassActionButton("停止并保存", onStop, Modifier.fillMaxWidth().padding(top = 12.dp),
                         icon = Icons.Rounded.Stop, secondary = true)
                 } else if (state.cleanReady) {
