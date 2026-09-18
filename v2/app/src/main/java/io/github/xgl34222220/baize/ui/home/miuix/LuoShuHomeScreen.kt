@@ -1,7 +1,10 @@
 package io.github.xgl34222220.baize.ui.home.miuix
 
 import android.text.format.Formatter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.animation.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -107,6 +110,11 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val progress = if (state.taskProgressTotal > 0)
         (state.taskProgressCurrent.toFloat() / state.taskProgressTotal).coerceIn(0f, 1f) else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 320),
+        label = "homeTaskProgress"
+    )
     val hasResults = state.scanCompleted && state.scanFiles > 0
     val value = when {
         state.running && state.taskProgressTotal > 0 -> "${(progress * 100).roundToInt()}%"
@@ -159,6 +167,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
+            .animateContentSize()
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val statusColor = when {
                 state.ready && !state.running -> colors.success
@@ -187,7 +196,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape))
                 } else if (state.running) {
                     LinearProgressIndicator(
-                        progress = { progress },
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
                     )
                 } else if (state.storageTotal > 0) {
