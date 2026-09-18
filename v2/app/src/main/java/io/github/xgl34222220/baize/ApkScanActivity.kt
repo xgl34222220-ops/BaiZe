@@ -307,34 +307,27 @@ class ApkScanActivity : ComponentActivity() {
                 )
                 return@launch
             }
+
             val latest = json.optJSONObject("latest") ?: JSONObject()
-            val success = json.optBoolean("success") && !json.optBoolean("cancelled")
+            val cancelled = json.optBoolean("cancelled")
             val result = latest.optString("result").ifBlank {
                 when {
-                    json.optBoolean("cancelled") -> "安装包清理已停止，扫描快照仍保留"
-                    success -> "安装包快照清理完成"
-                    else -> json.optString("message", "安装包清理失败")
+                    cancelled -> "安装包清理已停止"
+                    json.optBoolean("success") -> "安装包清理命令已完成"
+                    else -> json.optString("message", "安装包清理未完全生效")
                 }
             }
-            screenState = if (success) {
-                screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = result,
-                    items = emptyList(),
-                    totalFiles = 0,
-                    totalBytes = 0,
-                    cleanReady = false,
-                    output = json.optString("output").trim().takeLast(6000)
-                )
-            } else {
-                screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = result,
-                    output = json.optString("output").trim().takeLast(6000)
-                )
-            }
+
+            screenState = screenState.copy(
+                running = false,
+                operation = "",
+                cleanReady = false,
+                phase = if (cancelled) result else "$result\n正在重新扫描核对实际剩余文件…",
+                output = json.optString("output").trim().takeLast(6000)
+            )
+
+            // Verify against the filesystem instead of trusting the command exit code or old snapshot.
+            if (!cancelled) startScan()
         }
     }
 
