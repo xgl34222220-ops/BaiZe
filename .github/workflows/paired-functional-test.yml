@@ -3,6 +3,8 @@ name: BaiZe Paired Functional Test
 on:
   push:
     branches: [fix/apk-scan-engine-sync]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +19,7 @@ env:
 
 jobs:
   build-paired-test:
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'build/paired-functional-')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
