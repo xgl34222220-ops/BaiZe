@@ -66,7 +66,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 118.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomInset + 132.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item(key = "history-header") {
@@ -151,7 +151,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                         )
                     )
                 )
-                .padding(22.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -236,7 +236,7 @@ private fun CurrentResultGroup(state: HistoryUiState) {
             Spacer(Modifier.width(10.dp))
             Text(
                 Formatter.formatFileSize(context, state.currentBytes),
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
             )
         }
         if (state.lastTaskTime.isNotBlank()) {
@@ -284,9 +284,9 @@ private fun ZeroAppGroup(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("无垃圾产生应用", style = MaterialTheme.typography.titleSmall)
+                Text("未产生垃圾应用", style = MaterialTheme.typography.titleSmall)
                 Text(
-                    "共 ${apps.size} 个 · 默认折叠",
+                    "${apps.size} 个 · 默认折叠",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -380,7 +380,7 @@ private fun AppResultRow(item: AppJunkUiItem) {
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(Formatter.formatFileSize(context, item.bytes), style = MaterialTheme.typography.labelLarge)
+                Text(Formatter.formatFileSize(context, item.bytes), style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                 Text(
                     "${item.files} 项",
                     style = MaterialTheme.typography.labelSmall,
@@ -603,7 +603,7 @@ private fun RecordCard(record: HistoryUiItem) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(Formatter.formatFileSize(context, record.bytes), style = MaterialTheme.typography.titleSmall)
+                    Text(Formatter.formatFileSize(context, record.bytes), style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
                 }
             }
 
