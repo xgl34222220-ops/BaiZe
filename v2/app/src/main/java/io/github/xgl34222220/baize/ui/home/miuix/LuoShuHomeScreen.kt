@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -179,17 +180,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                Text(
-                    value,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 32.sp,
-                        lineHeight = 40.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFeatureSettings = "tnum"
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                HeroMetricValue(value)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.running && state.taskProgressTotal <= 0) {
@@ -225,6 +216,47 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 TextButton(actions.dismissScan, Modifier.fillMaxWidth()) { Text("收起结果") }
             }
         }
+    }
+}
+
+@Composable
+private fun HeroMetricValue(value: String) {
+    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
+    if (match == null) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum"
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        return
+    }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            match.groupValues[1],
+            modifier = Modifier.alignByBaseline(),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontSize = 36.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum"
+            )
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            match.groupValues[2],
+            modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
