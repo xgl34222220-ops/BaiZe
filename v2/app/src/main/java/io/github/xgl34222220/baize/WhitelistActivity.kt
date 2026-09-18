@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -84,9 +85,9 @@ class WhitelistActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalAppearanceSettings provides settings) {
                     WhitelistManagerScreen(state,
                         onBack = ::finish, onRefresh = { if (service == null) connect() else load() },
-                        onToggle = { pkg -> if (canEditApps()) state = state.copy(draft = state.draft.toggle(pkg)) },
-                        onClearApps = { if (canEditApps()) state = state.copy(draft = state.draft.copy(selected = emptySet())) },
-                        onSaveApps = ::saveApps, onRemovePath = ::removePath)
+                        onToggle = ::toggleAppProtection,
+                        onClearApps = ::clearAppProtection,
+                        onRemovePath = ::removePath)
                 }
             }
         }
@@ -157,11 +158,20 @@ class WhitelistActivity : ComponentActivity() {
         }
     }
 
-    private fun saveApps() {
+    private fun toggleAppProtection(packageName: String) {
+        if (!canEditApps()) return
+        saveApps(state.draft.toggle(packageName))
+    }
+
+    private fun clearAppProtection() {
+        if (!canEditApps() || state.draft.selected.isEmpty()) return
+        saveApps(state.draft.copy(selected = emptySet()))
+    }
+
+    private fun saveApps(draft: WhitelistDraft) {
         val remote = service ?: return
-        if (!canEditApps() || !state.draft.dirty) return
-        val draft = state.draft
-        state = state.copy(saving = true, message = "正在保存应用白名单…")
+        if (!canEditApps() || !draft.dirty) return
+        state = state.copy(saving = true, draft = draft, message = "正在自动保存应用白名单…")
         lifecycleScope.launch {
             val result = runCatching { withContext(Dispatchers.IO) {
                 requireSuccess(WhitelistFileClient.updatePackages(remote, applicationContext.cacheDir, draft.added, draft.removed))
@@ -170,7 +180,8 @@ class WhitelistActivity : ComponentActivity() {
             if (service !== remote) return@launch
             result.onSuccess { latest ->
                 state = state.copy(saving = false, draft = WhitelistDraft(latest, latest),
-                    message = "应用白名单已保存。取消勾选的应用不再受这条保护；重新扫描后生效。")
+                    message = "已自动保存应用白名单；重新扫描后按新保护范围生效。")
+                Toast.makeText(this@WhitelistActivity, "白名单已保存", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 if (it is CancellationException) throw it
                 state = state.copy(saving = false, message = operationFailure(it))

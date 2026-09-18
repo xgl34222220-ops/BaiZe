@@ -11,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material.icons.rounded.FolderDelete
@@ -20,14 +22,17 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +66,13 @@ fun CleanScreenMiuix(
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
     var showApkDaysDialog by remember { mutableStateOf(false) }
+    var automationExpanded by rememberSaveable { mutableStateOf(expandedCategory == "__open_plan__") }
+
+    LaunchedEffect(expandedCategory) {
+        if (expandedCategory == "__open_plan__") {
+            automationExpanded = true
+        }
+    }
 
     if (showDailyTimeDialog) {
         TimeValueDialog(
@@ -94,91 +106,106 @@ fun CleanScreenMiuix(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag("clean-scroll"),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 118.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(key = "clean-header") {
             LuoShuPageHeader("清理")
         }
-        item(key = "clean-auto") {
-            AutomaticCleaningHero(state, actions)
-        }
         item(key = "clean-manual-title") {
-            LuoShuSection("手动工具", "先扫描、再确认，重要操作保持可控")
+            LuoShuSection("手动工具", "需要时立即扫描、核对并清理")
         }
         item(key = "clean-manual") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "查看垃圾明细并选择需要处理的项目", actions.onScan)
+                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "按应用查看垃圾并逐项选择", actions.onScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "扫描 APK / APKS / XAPK / APKM", actions.onApkScan)
+                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "查找 APK / APKS / XAPK / APKM", actions.onApkScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "立即检查应用缓存与临时文件", actions.onInstantCache)
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "快速检查应用缓存与临时文件", actions.onInstantCache)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载目录和散落文件", actions.onFileOrganizer)
+                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载目录与散落文件", actions.onFileOrganizer)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩大扫描范围，继续受白名单保护", actions.onDeepClean)
+                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩大扫描范围，仍受白名单保护", actions.onDeepClean)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "检查已卸载应用留下的文件", actions.onCorpses)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "检查规则命中和保护情况", actions.onAudit)
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "查看规则命中与保护情况", actions.onAudit)
             }
         }
-        item(key = "clean-schedule-title") {
-            LuoShuSection("定时模式", "智能、严格间隔或每日固定时间")
+        item(key = "clean-auto-title") {
+            LuoShuSection("自动化策略", if (automationExpanded) "收起后只保留运行状态" else "按需展开执行方式、周期和保留规则")
         }
-        item(key = "clean-schedule") {
-            ScheduleGroup(
+        item(key = "clean-auto") {
+            AutomaticCleaningHero(
                 state = state,
                 actions = actions,
-                onEditTime = { showDailyTimeDialog = true },
-                onEditGrace = { showDailyGraceDialog = true }
+                expanded = automationExpanded,
+                onExpandedChanged = { automationExpanded = !automationExpanded }
             )
         }
-        item(key = "clean-task-title") {
-            LuoShuSection("任务计划", "每个清理类别都可以单独控制周期")
-        }
-        item(key = "clean-tasks") {
-            TaskGroup(
-                state = state,
-                actions = actions,
-                expandedCategory = expandedCategory,
-                onExpandedCategoryChanged = onExpandedCategoryChanged
-            )
-        }
-        item(key = "clean-extra-title") {
-            LuoShuSection("附加项目", "安装包保留时间与自动清理")
-        }
-        item(key = "clean-extra") {
-            LuoShuGroup {
-                SwitchRow(
-                    icon = Icons.Rounded.InstallMobile,
-                    title = "过期安装包",
-                    subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
-                    checked = state.apkPackagesEnabled,
-                    onCheckedChange = actions.onApkPackagesChanged
+        if (automationExpanded) {
+            item(key = "clean-schedule-title") {
+                LuoShuSection("执行方式", "智能、严格间隔或每日固定时间")
+            }
+            item(key = "clean-schedule") {
+                ScheduleGroup(
+                    state = state,
+                    actions = actions,
+                    onEditTime = { showDailyTimeDialog = true },
+                    onEditGrace = { showDailyGraceDialog = true }
                 )
-                if (state.apkPackagesEnabled) {
-                    LuoShuGroupDivider()
-                    ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysDialog = true }
+            }
+            item(key = "clean-task-title") {
+                LuoShuSection("任务计划", "每类清理任务都可以单独控制周期")
+            }
+            item(key = "clean-tasks") {
+                TaskGroup(
+                    state = state,
+                    actions = actions,
+                    expandedCategory = expandedCategory,
+                    onExpandedCategoryChanged = onExpandedCategoryChanged
+                )
+            }
+            item(key = "clean-extra-title") {
+                LuoShuSection("附加项目", "安装包保留时间与自动清理")
+            }
+            item(key = "clean-extra") {
+                LuoShuGroup {
+                    SwitchRow(
+                        icon = Icons.Rounded.InstallMobile,
+                        title = "过期安装包",
+                        subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
+                        checked = state.apkPackagesEnabled,
+                        onCheckedChange = actions.onApkPackagesChanged
+                    )
+                    if (state.apkPackagesEnabled) {
+                        LuoShuGroupDivider()
+                        ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysDialog = true }
+                    }
                 }
             }
-        }
-        item(key = "clean-save") {
-            Button(
-                onClick = actions.onSave,
-                enabled = !state.saving,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                shape = RoundedCornerShape(18.dp)
-            ) {
-                Text(if (state.saving) "正在保存…" else "保存清理计划", style = MaterialTheme.typography.labelLarge)
+            item(key = "clean-save") {
+                Button(
+                    onClick = actions.onSave,
+                    enabled = !state.saving,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Text(if (state.saving) "正在保存…" else "保存清理计划", style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun AutomaticCleaningHero(state: CleanUiState, actions: CleanUiActions) {
+private fun AutomaticCleaningHero(
+    state: CleanUiState,
+    actions: CleanUiActions,
+    expanded: Boolean,
+    onExpandedChanged: () -> Unit
+) {
     val colors = BaiZeTokens.colors
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -228,6 +255,13 @@ private fun AutomaticCleaningHero(state: CleanUiState, actions: CleanUiActions) 
                     color = scheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onExpandedChanged) {
+                Icon(
+                    if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = if (expanded) "收起自动清理设置" else "展开自动清理设置",
+                    tint = scheme.onSurfaceVariant
                 )
             }
             Switch(
@@ -370,8 +404,8 @@ private fun CategoryRow(
                     )
                     if (!dailyEnabled) {
                         Icon(
-                            Icons.Rounded.ChevronRight,
-                            contentDescription = null,
+                            if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                            contentDescription = if (expanded) "收起周期选项" else "展开周期选项",
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -1,6 +1,5 @@
 package io.github.xgl34222220.baize
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,19 +26,17 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 @Composable
 internal fun WhitelistManagerScreen(
     state: WhitelistUiState, onBack: () -> Unit, onRefresh: () -> Unit,
-    onToggle: (String) -> Unit, onClearApps: () -> Unit, onSaveApps: () -> Unit,
+    onToggle: (String) -> Unit, onClearApps: () -> Unit,
     onRemovePath: (String) -> Unit
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var protectedOnly by rememberSaveable { mutableStateOf(false) }
     var showClear by rememberSaveable { mutableStateOf(false) }
-    var showLeave by rememberSaveable { mutableStateOf(false) }
     var removal by rememberSaveable { mutableStateOf<String?>(null) }
     val edit = state.connected && state.packagesLoaded && !state.loading && !state.saving
     val pathEdit = state.connected && state.pathsLoaded && !state.loading && !state.saving
-    val leave: () -> Unit = { if (state.draft.dirty) showLeave = true else onBack() }
-    BackHandler(state.draft.dirty, onBack = { showLeave = true })
+    val leave: () -> Unit = { if (!state.saving) onBack() }
     val visible = remember(state.apps, state.draft.selected, query, protectedOnly) {
         state.apps.filter { (!protectedOnly || it.packageName in state.draft.selected) &&
             (it.label.contains(query, true) || it.packageName.contains(query, true)) }
@@ -84,14 +81,12 @@ internal fun WhitelistManagerScreen(
                         }
                     }
                 }
-                Column(inset.navigationBarsPadding().imePadding().padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(if (state.draft.dirty) "有未保存修改：新增 ${state.draft.added.size}，取消 ${state.draft.removed.size}。"
-                        else "取消勾选后点保存；不会删除应用或文件。", style = MaterialTheme.typography.bodySmall)
-                    Button(onSaveApps, enabled = edit && state.draft.dirty,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
-                        Text(if (state.saving) "正在保存…" else "保存应用白名单")
-                    }
-                }
+                Text(
+                    if (state.saving) "正在自动保存修改…" else "勾选或取消后立即保存；不会删除应用或文件。",
+                    modifier = inset.navigationBarsPadding().imePadding().padding(top = 4.dp, bottom = 14.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
                 Text("这里只列手动添加的路径。移除仅取消此条保护，不删除文件，也不解除其它白名单或关键数据限制。",
                     inset.padding(bottom = 10.dp), style = MaterialTheme.typography.bodySmall)
@@ -113,7 +108,7 @@ internal fun WhitelistManagerScreen(
         }
     }
     if (showClear) AlertDialog(onDismissRequest = { showClear = false }, title = { Text("取消全部应用保护？") },
-        text = { Text("将取消当前选择的 ${state.draft.selected.size} 个应用保护，需要再点保存才生效。手动路径保护不变，不会删除任何文件。") },
+        text = { Text("将取消当前选择的 ${state.draft.selected.size} 个应用保护，并立即保存。手动路径保护不变，不会删除任何文件。") },
         confirmButton = { TextButton({ showClear = false; onClearApps() }, enabled = edit) { Text("取消这些保护") } },
         dismissButton = { TextButton({ showClear = false }) { Text("返回") } })
     removal?.let { path -> AlertDialog(onDismissRequest = { removal = null }, title = { Text("移除路径白名单？") },
@@ -123,8 +118,4 @@ internal fun WhitelistManagerScreen(
         } },
         confirmButton = { TextButton({ removal = null; onRemovePath(path) }, enabled = pathEdit && path in state.paths) { Text("确认移除") } },
         dismissButton = { TextButton({ removal = null }) { Text("保留") } }) }
-    if (showLeave) AlertDialog(onDismissRequest = { showLeave = false }, title = { Text("应用白名单尚未保存") },
-        text = { Text("离开不会把未保存的修改写入清理引擎。") },
-        confirmButton = { TextButton({ showLeave = false; onBack() }) { Text("不保存并离开") } },
-        dismissButton = { TextButton({ showLeave = false }) { Text("继续编辑") } })
 }

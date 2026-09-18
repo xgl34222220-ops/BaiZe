@@ -59,6 +59,10 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
     val recordGroups = state.records
         .take(50)
         .groupBy { record -> record.time.trim().take(10).ifBlank { "更早记录" } }
+    var showZeroApps by rememberSaveable { mutableStateOf(false) }
+    val meaningfulApps = state.recentApps.filter { it.bytes > 0L || it.files > 0L }
+    val zeroApps = state.recentApps.filter { it.bytes <= 0L && it.files <= 0L }
+    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L || it.files > 0L }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -75,14 +79,23 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         item(key = "history-current-title") { LuoShuSection("最近结果", "最近一次扫描或清理任务") }
         item(key = "history-current") { CurrentResultGroup(state) }
 
-        if (state.recentApps.isNotEmpty()) {
-            item(key = "history-app-title") { LuoShuSection("应用垃圾", "点击应用查看清理分类与路径") }
-            item(key = "history-apps") { AppResultGroup(state.recentApps) }
+        if (meaningfulApps.isNotEmpty()) {
+            item(key = "history-app-title") { LuoShuSection("应用垃圾", "仅展示本次产生清理量的应用") }
+            item(key = "history-apps") { AppResultGroup(meaningfulApps) }
+        }
+        if (zeroApps.isNotEmpty()) {
+            item(key = "history-zero-apps") {
+                ZeroAppGroup(
+                    apps = zeroApps,
+                    expanded = showZeroApps,
+                    onToggle = { showZeroApps = !showZeroApps }
+                )
+            }
         }
 
-        if (state.recentJunk.isNotEmpty()) {
+        if (meaningfulJunk.isNotEmpty()) {
             item(key = "history-junk-title") { LuoShuSection("其他垃圾", "本次任务处理的非应用垃圾") }
-            item(key = "history-junk") { JunkResultGroup(state.recentJunk) }
+            item(key = "history-junk") { JunkResultGroup(meaningfulJunk) }
         }
 
         item(key = "history-record-title") { LuoShuSection("任务记录", "按日期排列，扫描与清理状态分开显示") }
@@ -161,7 +174,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                     Text("累计释放", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                     Text(
                         Formatter.formatFileSize(context, state.lifetimeReleased),
-                        style = MaterialTheme.typography.headlineLarge
+                        style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = "tnum")
                     )
                 }
             }
@@ -178,7 +191,7 @@ private fun LifetimeHero(state: HistoryUiState) {
 private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleSmall)
+        Text(value, style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
     }
 }
 
@@ -238,6 +251,87 @@ private fun CurrentResultGroup(state: HistoryUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZeroAppGroup(
+    apps: List<AppJunkUiItem>,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    LuoShuGroup {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle)
+                .padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(13.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(19.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("无垃圾产生应用", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "共 ${apps.size} 个 · 默认折叠",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = if (expanded) "收起无垃圾应用" else "展开无垃圾应用",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            apps.forEachIndexed { index, app ->
+                LuoShuGroupDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppPackageIcon(
+                        app.packageName,
+                        app.label.ifBlank { app.packageName },
+                        size = 34.dp,
+                        corner = 11.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            sanitizeText(app.label.ifBlank { app.packageName }),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            sanitizeText(app.packageName),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        "0 B · 0 项",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

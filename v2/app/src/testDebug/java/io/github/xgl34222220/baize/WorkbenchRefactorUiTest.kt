@@ -46,10 +46,12 @@ class WorkbenchRefactorUiTest {
         }
         compose.waitForIdle()
     }
-    @Test fun historyExplainsWhyBatchSelectionIsDisabled() {
+    @Test fun historyIsCollapsedUntilTheUserChoosesToInspectIt() {
         render(history = true)
         compose.onNodeWithText("历史记录 · 需重新扫描").assertIsDisplayed()
-        compose.onNodeWithText("有项目需要核对").assertDoesNotExist()
+        compose.onNodeWithText("上次扫描结果仅作为历史缓存").assertIsDisplayed()
+        compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
+        compose.onNodeWithText("查看历史缓存").performClick()
         compose.onNodeWithText("全选低、中风险").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("仅选中风险").assertIsNotEnabled()
         compose.onNodeWithText("重新扫描").performClick()
