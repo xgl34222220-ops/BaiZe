@@ -223,6 +223,8 @@ root_total=$(printf '%s\n' "$APK_ROOTS" | awk 'NF{n++} END{print n+0}')
 root_current=$root_total
 apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
 protected=0
+path_filtered=0
+whitelist_filtered=0
 errors=0
 cutoff=$((START_EPOCH - DAYS * 86400))
 files=0
@@ -258,7 +260,13 @@ while IFS= read -r -d '' candidate; do
     case "$modified" in ''|*[!0-9]*) modified=$START_EPOCH ;; esac
     [ "$modified" -lt "$cutoff" ] || continue
   fi
-  if ! apk_path_allowed "$candidate" || path_conflicts_whitelist "$candidate"; then
+  if ! apk_scan_candidate_allowed "$candidate"; then
+    path_filtered=$((path_filtered + 1))
+    protected=$((protected + 1))
+    continue
+  fi
+  if path_conflicts_whitelist "$candidate"; then
+    whitelist_filtered=$((whitelist_filtered + 1))
     protected=$((protected + 1))
     continue
   fi
@@ -288,6 +296,9 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "include_private=$INCLUDE_PRIVATE"
   echo "direct_index_code=$direct_index_code"
   echo "shared_index_code=$shared_index_code"
+  echo "raw_candidates=$apk_total"
+  echo "path_filtered=$path_filtered"
+  echo "whitelist_filtered=$whitelist_filtered"
   echo "bytes=$bytes"
   echo "files=$files"
   echo "engine=apk-snapshot-v2.3-global-index"
@@ -300,7 +311,11 @@ end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 mv -f "$DETAILS_TMP" "$REPORT_FILE"
 COVERAGE="$STATE_DIR/apk-coverage.tsv"
-printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$$"
+printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$"
+printf 'scanned\t扫描诊断\t-\t-\t%s\t%s\t%s\t%s\n' \
+  "$files" "$bytes" "Root 可见存储" \
+  "扫描根 $root_total · 原始命中 $apk_total · 路径过滤 $path_filtered · 白名单 $whitelist_filtered · direct=$direct_index_code shared=$shared_index_code" \
+  >>"$COVERAGE.tmp.$"
 old_ifs=$IFS; IFS='
 '
 for root in $APK_ROOTS; do
@@ -345,6 +360,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "$result"
   echo "扫描快照: $snapshot_id"
   echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
+  echo "原始候选: $apk_total | 路径过滤: $path_filtered | 白名单: $whitelist_filtered"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
   echo "扫描覆盖来源: $root_total（直接根） + 全局共享索引；direct=$direct_index_code shared=$shared_index_code"
 } >>"$LOG_FILE"
