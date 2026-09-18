@@ -21,7 +21,7 @@
 #define PATH_MAX 4096
 #endif
 
-#define ENGINE_VERSION "43.5-v225-deep-budget"
+#define ENGINE_VERSION "44.0-native-storage-one-pass"
 #define MAX_CANDIDATES 200000U
 
 typedef struct { char **v; size_t n, cap; } StrVec;
@@ -40,6 +40,7 @@ typedef struct {
     const char *risk_overrides_path;
     /* index-files 模式：共享存储索引 */
     const char *index_list_path, *index_seen_path, *index_records_path;
+    const char *index_roots_path, *index_coverage_path;
     const char *index_apk_path, *index_empty_path, *index_large_path;
     const char *index_organizer_path, *index_duplicates_path;
     const char *index_organizer_exts_path;
@@ -533,6 +534,8 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--allow-high-risk") == 0) o->allow_high_risk = atoi(arg_value(argc, argv, &i)) != 0;
         else if (strcmp(a, "--risk-overrides") == 0) o->risk_overrides_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--list") == 0) o->index_list_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--roots") == 0) o->index_roots_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--coverage") == 0) o->index_coverage_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--seen") == 0) o->index_seen_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--records") == 0) o->index_records_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--apk") == 0) o->index_apk_path = arg_value(argc, argv, &i);
@@ -1893,6 +1896,267 @@ static bool b64_encode(const char *in, FILE *out) {
     return !ferror(out);
 }
 
+
+typedef struct {
+    FILE *records, *apk, *empty, *large, *organizer, *dups, *coverage;
+    SeenSet seen;
+    uint64_t files, bytes, dirs, duplicates, skipped;
+    uint64_t roots_scanned, roots_failed;
+    int rc;
+} StorageIndexContext;
+
+static bool index_write_nul(FILE *file, const char *path) {
+    if (!file) return true;
+    size_t length = strlen(path);
+    return fwrite(path, 1, length, file) == length && fputc('\0', file) != EOF;
+}
+
+static bool index_path_is_volatile(const char *path) {
+    static const char *segments[] = {
+        "/cache/", "/code_cache/", "/no_backup/", "/databases/", "/shared_prefs/",
+        "/lib/", "/tmp/", "/temp/"
+    };
+    char lower[PATH_MAX];
+    size_t n = strlen(path);
+    if (n >= sizeof(lower)) return true;
+    for (size_t i = 0; i <= n; i++) lower[i] = (char)tolower((unsigned char)path[i]);
+    for (size_t i = 0; i < sizeof(segments) / sizeof(segments[0]); i++) {
+        if (strstr(lower, segments[i])) return true;
+    }
+    return false;
+}
+
+static int index_classify_native(StorageIndexContext *ctx, const Options *o,
+                                 const char *path, const struct stat *st,
+                                 uint64_t *root_files, uint64_t *root_bytes,
+                                 uint64_t *root_duplicates, uint64_t *root_skipped) {
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+    if (is_partial(base)) {
+        ctx->skipped++;
+        (*root_skipped)++;
+        return 0;
+    }
+
+    SeenResult seen_result = seen_add(&ctx->seen, st->st_dev, st->st_ino);
+    if (seen_result == SEEN_ERROR) return 12;
+    if (seen_result == SEEN_DUP) {
+        ctx->duplicates++;
+        (*root_duplicates)++;
+        return 0;
+    }
+
+    uint64_t size = st->st_size > 0 ? (uint64_t)st->st_size : 0U;
+    bool volatile_path = index_path_is_volatile(path);
+
+    if (!index_write_nul(ctx->records, path)) return 5;
+    ctx->files++;
+    ctx->bytes += size;
+    (*root_files)++;
+    (*root_bytes) += size;
+
+    if (ctx->apk && is_apk(base) && !index_write_nul(ctx->apk, path)) return 5;
+    if (ctx->empty && size == 0U && !index_write_nul(ctx->empty, path)) return 5;
+    if (ctx->large && !volatile_path && o->index_large_bytes > 0U &&
+        size >= o->index_large_bytes && !index_write_nul(ctx->large, path)) return 5;
+    if (ctx->organizer && !volatile_path && is_organizer(base) &&
+        !index_write_nul(ctx->organizer, path)) return 5;
+    if (ctx->dups && !volatile_path && size > 0U) {
+        if (fprintf(ctx->dups, "%" PRIu64 "\t", size) < 0 || !b64_encode(path, ctx->dups) ||
+            fputc('\n', ctx->dups) == EOF) return 5;
+    }
+    return 0;
+}
+
+static int scan_storage_tree_native(StorageIndexContext *ctx, const Options *o,
+                                    const char *path, dev_t root_dev,
+                                    unsigned depth, unsigned max_depth,
+                                    uint64_t *root_files, uint64_t *root_bytes,
+                                    uint64_t *root_duplicates, uint64_t *root_skipped) {
+    if (stop_requested(o)) return 9;
+    struct stat st;
+    if (lstat(path, &st) != 0) {
+        (*root_skipped)++;
+        ctx->skipped++;
+        return 0;
+    }
+    if (S_ISLNK(st.st_mode)) {
+        (*root_skipped)++;
+        ctx->skipped++;
+        return 0;
+    }
+    if (S_ISREG(st.st_mode)) {
+        return index_classify_native(ctx, o, path, &st, root_files, root_bytes,
+                                     root_duplicates, root_skipped);
+    }
+    if (!S_ISDIR(st.st_mode)) return 0;
+    if (depth > 0U && st.st_dev != root_dev) return 0;
+
+    ctx->dirs++;
+    if (depth >= max_depth) return 0;
+
+    DIR *dir = opendir(path);
+    if (!dir) {
+        (*root_skipped)++;
+        ctx->skipped++;
+        return 0;
+    }
+    int rc = 0;
+    struct dirent *entry;
+    uint64_t local_counter = 0;
+    while (rc == 0 && (entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        if (((++local_counter) & 0xFFU) == 0U && stop_requested(o)) { rc = 9; break; }
+        char child[PATH_MAX];
+        if (!path_join(child, sizeof(child), path, entry->d_name)) {
+            ctx->skipped++;
+            (*root_skipped)++;
+            continue;
+        }
+        rc = scan_storage_tree_native(ctx, o, child, root_dev, depth + 1U, max_depth,
+                                      root_files, root_bytes, root_duplicates, root_skipped);
+    }
+    if (errno != 0 && rc == 0) {
+        /* readdir failures are partial-root failures, not a reason to discard other roots. */
+        clearerr(dir);
+    }
+    closedir(dir);
+    return rc;
+}
+
+static int scan_storage_index(const Options *o) {
+    if (!o->index_roots_path) die("scan-storage-index requires --roots");
+    FILE *roots = fopen(o->index_roots_path, "r");
+    if (!roots) return 5;
+    if (o->index_organizer_path && !load_organizer_exts(o->index_organizer_exts_path)) {
+        fclose(roots);
+        return 5;
+    }
+
+    StorageIndexContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    if (!seen_init(&ctx.seen, 8192)) {
+        fclose(roots);
+        vec_free(&g_organizer_exts);
+        return 12;
+    }
+
+    ctx.records   = o->index_records_path    ? fopen(o->index_records_path, "wb")    : NULL;
+    ctx.apk       = o->index_apk_path        ? fopen(o->index_apk_path, "wb")        : NULL;
+    ctx.empty     = o->index_empty_path      ? fopen(o->index_empty_path, "wb")      : NULL;
+    ctx.large     = o->index_large_path      ? fopen(o->index_large_path, "wb")      : NULL;
+    ctx.organizer = o->index_organizer_path  ? fopen(o->index_organizer_path, "wb")  : NULL;
+    ctx.dups      = o->index_duplicates_path ? fopen(o->index_duplicates_path, "w")  : NULL;
+    ctx.coverage  = o->index_coverage_path   ? fopen(o->index_coverage_path, "w")    : NULL;
+
+    if ((o->index_records_path && !ctx.records) || (o->index_apk_path && !ctx.apk) ||
+        (o->index_empty_path && !ctx.empty) || (o->index_large_path && !ctx.large) ||
+        (o->index_organizer_path && !ctx.organizer) || (o->index_duplicates_path && !ctx.dups) ||
+        (o->index_coverage_path && !ctx.coverage)) {
+        ctx.rc = 5;
+        goto storage_index_done;
+    }
+
+    if (ctx.coverage)
+        fprintf(ctx.coverage, "status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n");
+
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    uint64_t root_index = 0;
+    while ((length = getline(&line, &capacity, roots)) >= 0) {
+        while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r'))
+            line[--length] = '\0';
+        if (length == 0) continue;
+
+        char *fields[5] = {0};
+        char *cursor = line;
+        bool valid = true;
+        for (size_t i = 0; i < 4U; i++) {
+            fields[i] = cursor;
+            char *tab = strchr(cursor, '\t');
+            if (!tab) { valid = false; break; }
+            *tab = '\0';
+            cursor = tab + 1;
+        }
+        fields[4] = cursor;
+        if (!valid || !fields[4] || !*fields[4]) continue;
+
+        char *end = NULL;
+        unsigned long parsed_depth = strtoul(fields[3], &end, 10);
+        unsigned max_depth = (!end || *end != '\0') ? 32U :
+            (unsigned)(parsed_depth > 128UL ? 128UL : parsed_depth);
+        if (max_depth == 0U) max_depth = 1U;
+
+        struct stat root_stat;
+        uint64_t root_files = 0, root_bytes = 0, root_duplicates = 0, root_skipped = 0;
+        const char *status = "scanned";
+        const char *reason = "";
+
+        root_index++;
+        atomic_progress(o, "storage-index", "C 原生单遍索引", root_index, 0, fields[4]);
+        if (lstat(fields[4], &root_stat) != 0 || !S_ISDIR(root_stat.st_mode) || S_ISLNK(root_stat.st_mode)) {
+            ctx.roots_failed++;
+            status = "partial";
+            reason = "根目录不可读或不是目录";
+        } else {
+            int rc = scan_storage_tree_native(&ctx, o, fields[4], root_stat.st_dev, 0U, max_depth,
+                                              &root_files, &root_bytes,
+                                              &root_duplicates, &root_skipped);
+            if (rc == 9) { ctx.rc = 9; break; }
+            if (rc != 0) { ctx.rc = rc; break; }
+            ctx.roots_scanned++;
+            if (root_skipped > 0U) {
+                status = "partial";
+                reason = "部分条目不可读或受边界保护";
+            }
+        }
+
+        if (ctx.coverage) {
+            fprintf(ctx.coverage, "%s\t%s\t%s\t%s\t%" PRIu64 "\t%" PRIu64 "\t%s\t%s",
+                    status, fields[0], fields[1], fields[2], root_files, root_bytes,
+                    fields[4], reason);
+            if (root_duplicates > 0U)
+                fprintf(ctx.coverage, "%s去重 %" PRIu64 " 个重叠文件",
+                        *reason ? "；" : "", root_duplicates);
+            fputc('\n', ctx.coverage);
+        }
+    }
+    free(line);
+    if (ctx.rc == 0 && ferror(roots)) ctx.rc = 5;
+    if (ctx.rc == 0 && ctx.roots_scanned == 0U) ctx.rc = 5;
+
+storage_index_done:
+    fclose(roots);
+    if (ctx.records && fclose(ctx.records) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.apk && fclose(ctx.apk) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.empty && fclose(ctx.empty) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.large && fclose(ctx.large) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.organizer && fclose(ctx.organizer) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.dups && fclose(ctx.dups) != 0 && ctx.rc == 0) ctx.rc = 5;
+    if (ctx.coverage && fclose(ctx.coverage) != 0 && ctx.rc == 0) ctx.rc = 5;
+
+    uint64_t elapsed = monotonic_ms() >= g_started_ms ? monotonic_ms() - g_started_ms : 0U;
+    if (ctx.rc == 0 && o->summary_path) {
+        FILE *summary = fopen(o->summary_path, "w");
+        if (!summary) ctx.rc = 5;
+        else {
+            fprintf(summary,
+                    "files=%" PRIu64 "\nbytes=%" PRIu64 "\ndirs=%" PRIu64
+                    "\nduplicates=%" PRIu64 "\nskipped=%" PRIu64
+                    "\nroots_scanned=%" PRIu64 "\nroots_failed=%" PRIu64
+                    "\nelapsed_ms=%" PRIu64 "\nengine=native-storage-one-pass\n",
+                    ctx.files, ctx.bytes, ctx.dirs, ctx.duplicates, ctx.skipped,
+                    ctx.roots_scanned, ctx.roots_failed, elapsed);
+            if (fclose(summary) != 0) ctx.rc = 5;
+        }
+    }
+
+    seen_free(&ctx.seen);
+    vec_free(&g_organizer_exts);
+    return ctx.rc;
+}
+
 static int index_files(const Options *o) {
     if (!o->index_list_path) die("index-files requires --list");
     FILE *list = fopen(o->index_list_path, "rb");
@@ -2216,7 +2480,7 @@ static int scan_deep(const Options *o) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-external-one-pass|clean-cache-snapshot|scan-deep|index-files> [options]");
+    if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-external-one-pass|clean-cache-snapshot|scan-deep|scan-storage-index|index-files> [options]");
     g_started = time(NULL);
     g_started_ms = monotonic_ms();
     Options o;
@@ -2229,6 +2493,7 @@ int main(int argc, char **argv) {
     else if (strcmp(argv[1], "collect-rule-files") == 0) rc = collect_rule_files(&o);
     else if (strcmp(argv[1], "rule-targets") == 0) rc = rule_targets(&o);
     else if (strcmp(argv[1], "scan-deep") == 0) rc = scan_deep(&o);
+    else if (strcmp(argv[1], "scan-storage-index") == 0) rc = scan_storage_index(&o);
     else if (strcmp(argv[1], "index-files") == 0) rc = index_files(&o);
     else die("unsupported command");
     vec_free(&g_whitelist);
