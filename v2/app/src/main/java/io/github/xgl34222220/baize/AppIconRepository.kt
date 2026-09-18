@@ -43,8 +43,13 @@ internal object AppIconRepository {
         val info = runCatching { pm.getApplicationInfo(packageName, 0) }.getOrNull() ?: return@withContext null
         if (info.icon == 0) return@withContext null
         memoryCache.get(packageName)?.let { return@withContext it }
+        val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@withContext null
+        val defaultIcon = runCatching { pm.defaultActivityIcon }.getOrNull()
+        if (defaultIcon != null && drawable.constantState != null && drawable.constantState == defaultIcon.constantState) {
+            return@withContext null
+        }
         runCatching {
-            info.loadIcon(pm)
+            drawable
                 .toBitmap(
                     width = ICON_BITMAP_SIZE,
                     height = ICON_BITMAP_SIZE,
@@ -69,7 +74,7 @@ internal fun ApplicationIcon(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f)),
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
@@ -81,10 +86,17 @@ internal fun ApplicationIcon(
             )
         } else {
             Text(
-                text = label.trim().firstOrNull()?.uppercase() ?: packageName.trim().firstOrNull()?.uppercase() ?: "?",
-                color = MaterialTheme.colorScheme.primary,
+                text = appIconFallbackText(label, packageName),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold
             )
         }
     }
+}
+
+
+private fun appIconFallbackText(label: String, packageName: String): String {
+    val source = label.trim().takeIf { it.isNotBlank() && it != packageName }
+        ?: packageName.substringAfterLast('.').ifBlank { packageName }
+    return source.filterNot(Char::isWhitespace).take(2).uppercase().ifBlank { "?" }
 }

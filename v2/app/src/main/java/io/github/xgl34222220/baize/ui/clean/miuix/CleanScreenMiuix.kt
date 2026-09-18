@@ -107,34 +107,34 @@ fun CleanScreenMiuix(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("clean-scroll"),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 118.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomInset + 132.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(key = "clean-header") {
             LuoShuPageHeader("清理")
         }
         item(key = "clean-manual-title") {
-            LuoShuSection("手动工具", "需要时立即扫描、核对并清理")
+            LuoShuSection("手动工具")
         }
         item(key = "clean-manual") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "按应用查看垃圾并逐项选择", actions.onScan)
+                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "分类管理与清理", actions.onScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "查找 APK / APKS / XAPK / APKM", actions.onApkScan)
+                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "安装包扫描", actions.onApkScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "快速检查应用缓存与临时文件", actions.onInstantCache)
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "缓存快速检查", actions.onInstantCache)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载目录与散落文件", actions.onFileOrganizer)
+                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "下载与散落文件", actions.onFileOrganizer)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩大扫描范围，仍受白名单保护", actions.onDeepClean)
+                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩展扫描范围", actions.onDeepClean)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "检查已卸载应用留下的文件", actions.onCorpses)
+                LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "残留文件检查", actions.onCorpses)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "查看规则命中与保护情况", actions.onAudit)
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "规则命中与保护", actions.onAudit)
             }
         }
         item(key = "clean-auto-title") {
-            LuoShuSection("自动化策略", if (automationExpanded) "收起后只保留运行状态" else "按需展开执行方式、周期和保留规则")
+            LuoShuSection("自动化策略", if (automationExpanded) "执行方式与周期" else "")
         }
         item(key = "clean-auto") {
             AutomaticCleaningHero(
@@ -146,7 +146,7 @@ fun CleanScreenMiuix(
         }
         if (automationExpanded) {
             item(key = "clean-schedule-title") {
-                LuoShuSection("执行方式", "智能、严格间隔或每日固定时间")
+                LuoShuSection("执行方式")
             }
             item(key = "clean-schedule") {
                 ScheduleGroup(
@@ -157,7 +157,7 @@ fun CleanScreenMiuix(
                 )
             }
             item(key = "clean-task-title") {
-                LuoShuSection("任务计划", "每类清理任务都可以单独控制周期")
+                LuoShuSection("任务计划", "分类周期")
             }
             item(key = "clean-tasks") {
                 TaskGroup(
@@ -168,7 +168,7 @@ fun CleanScreenMiuix(
                 )
             }
             item(key = "clean-extra-title") {
-                LuoShuSection("附加项目", "安装包保留时间与自动清理")
+                LuoShuSection("附加项目")
             }
             item(key = "clean-extra") {
                 LuoShuGroup {
@@ -185,15 +185,13 @@ fun CleanScreenMiuix(
                     }
                 }
             }
-            item(key = "clean-save") {
-                Button(
-                    onClick = actions.onSave,
-                    enabled = !state.saving,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Text(if (state.saving) "正在保存…" else "保存清理计划", style = MaterialTheme.typography.labelLarge)
-                }
+            item(key = "clean-auto-save-note") {
+                Text(
+                    if (state.saving) "正在保存设置…" else "修改后自动保存",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 2.dp)
+                )
             }
         }
     }
@@ -224,7 +222,7 @@ private fun AutomaticCleaningHero(
                         )
                     )
                 )
-                .padding(22.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -280,7 +278,7 @@ private fun ScheduleGroup(
     onEditGrace: () -> Unit
 ) {
     LuoShuGroup {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconTile(Icons.Rounded.CalendarMonth)
                 Spacer(Modifier.width(14.dp))
@@ -302,7 +300,18 @@ private fun ScheduleGroup(
                     FilterChip(
                         selected = state.scheduleMode == mode,
                         onClick = { actions.onScheduleModeChanged(mode) },
-                        label = { Text(mode.title, style = MaterialTheme.typography.labelSmall) }
+                        label = { Text(mode.title, style = MaterialTheme.typography.labelSmall) },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .30f),
+                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .68f)
+                        )
                     )
                 }
             }
@@ -337,6 +346,11 @@ private fun TaskGroup(
 ) {
     LuoShuGroup {
         state.categories.forEachIndexed { index, item ->
+            if (index == 0) TaskGroupLabel("常规清理")
+            if (item.id == CleanCategoryId.FRAGMENTS) {
+                LuoShuGroupDivider()
+                TaskGroupLabel("维护与深度")
+            }
             val key = item.id.name
             CategoryRow(
                 item = item,
@@ -348,7 +362,7 @@ private fun TaskGroup(
                 },
                 onIntervalChanged = { actions.onCategoryIntervalChanged(item.id, it) }
             )
-            if (index != state.categories.lastIndex) LuoShuGroupDivider()
+            if (index != state.categories.lastIndex && state.categories.getOrNull(index + 1)?.id != CleanCategoryId.FRAGMENTS) LuoShuGroupDivider()
         }
     }
 }
@@ -364,7 +378,7 @@ private fun CategoryRow(
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconTile(categoryIcon(item.id))
@@ -385,12 +399,12 @@ private fun CategoryRow(
         if (item.enabled) {
             Surface(
                 modifier = Modifier
-                    .padding(start = 74.dp, end = 14.dp, bottom = 12.dp)
+                    .padding(start = 74.dp, end = 16.dp, bottom = 12.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .clickable(enabled = !dailyEnabled, onClick = onExpandedChanged),
                 shape = RoundedCornerShape(14.dp),
-                color = BaiZeTokens.colors.surfaceOverlay
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .34f)
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
@@ -406,7 +420,7 @@ private fun CategoryRow(
                         Icon(
                             if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                             contentDescription = if (expanded) "收起周期选项" else "展开周期选项",
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -434,6 +448,16 @@ private fun CategoryRow(
 }
 
 @Composable
+private fun TaskGroupLabel(label: String) {
+    Text(
+        label,
+        modifier = Modifier.padding(start = 74.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
 private fun SwitchRow(
     icon: ImageVector,
     title: String,
@@ -442,7 +466,7 @@ private fun SwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconTile(icon)
@@ -464,16 +488,16 @@ private fun SwitchRow(
 private fun ValueRow(label: String, value: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-            .padding(start = 74.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
+            .padding(start = 74.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Text(value, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.width(4.dp))
         Icon(
-            Icons.Rounded.ChevronRight,
+            Icons.Rounded.ExpandMore,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

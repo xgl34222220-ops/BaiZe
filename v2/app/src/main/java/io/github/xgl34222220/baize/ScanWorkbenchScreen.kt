@@ -98,7 +98,8 @@ internal data class WorkbenchActions(
     val onProtect: (WorkbenchItem) -> Unit,
     val onQuarantine: (WorkbenchItem) -> Unit,
     val onSelectMedium: () -> Unit = {},
-    val onManageWhitelist: () -> Unit = {}
+    val onManageWhitelist: () -> Unit = {},
+    val onResumeSavedScan: () -> Unit = {}
 )
 
 private data class WorkbenchGroup(
@@ -186,7 +187,6 @@ internal fun ScanWorkbenchScreen(
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var showGuide by rememberSaveable { mutableStateOf(false) }
     var showReport by rememberSaveable { mutableStateOf(false) }
-    var showHistoryRecords by rememberSaveable { mutableStateOf(false) }
     var inspected by remember { mutableStateOf<WorkbenchItem?>(null) }
     var confirmedSelection by remember { mutableStateOf<Pair<Long, Set<String>>?>(null) }
     val now by produceState(SystemClock.elapsedRealtime(), state.scanReady, state.expiresAtRealtime) {
@@ -198,9 +198,6 @@ internal fun ScanWorkbenchScreen(
     }
     val liveSnapshot = state.scanReady && now < state.expiresAtRealtime
     val historicalSnapshot = state.items.isNotEmpty() && !liveSnapshot && !state.running
-    LaunchedEffect(state.running, liveSnapshot) {
-        if (state.running || liveSnapshot) showHistoryRecords = false
-    }
     val lockedReason = reviewSelectionBlockReason(state, now)
     val editable = lockedReason == null
     val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
@@ -228,7 +225,7 @@ internal fun ScanWorkbenchScreen(
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                bottom = if (historicalSnapshot && !showHistoryRecords) inset + 20.dp else bottomBarHeight + 12.dp
+                bottom = if (historicalSnapshot) inset + 24.dp else bottomBarHeight + 16.dp
             )
         ) {
             item {
@@ -241,12 +238,12 @@ internal fun ScanWorkbenchScreen(
             }
             if (state.items.isEmpty()) {
                 item { WorkbenchEmptyCard(visibleState, onDetails = { showReport = true }) }
-            } else if (historicalSnapshot && !showHistoryRecords) {
+            } else if (historicalSnapshot) {
                 item {
                     HistoricalResultGate(
                         state = visibleState,
-                        onRescan = actions.onScan,
-                        onShowHistory = { showHistoryRecords = true }
+                        onResume = actions.onResumeSavedScan,
+                        onRescan = actions.onScan
                     )
                 }
             } else {
@@ -255,7 +252,7 @@ internal fun ScanWorkbenchScreen(
                         selected.any { it.bytes < 0L }, onDetails = { showReport = true })
                 }
                 item {
-                    Column(Modifier.padding(horizontal = 20.dp).padding(top = 20.dp, bottom = 4.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp, bottom = 4.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("应用与文件", Modifier.weight(1f), style = BaiZeTokens.type.title)
                             TextButton(onClick = { showFilters = true },
@@ -305,10 +302,10 @@ internal fun ScanWorkbenchScreen(
                 }
             }
         }
-        if (!historicalSnapshot || showHistoryRecords) {
+        if (!historicalSnapshot) {
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
-            .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = inset + 12.dp)) {
+            .padding(horizontal = 16.dp).padding(top = 12.dp, bottom = inset + 16.dp)) {
             Surface(color = BaiZeTokens.colors.surfaceRaised.copy(alpha = .97f),
                 tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -429,20 +426,20 @@ private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
 @Composable
 private fun HistoricalResultGate(
     state: WorkbenchUiState,
-    onRescan: () -> Unit,
-    onShowHistory: () -> Unit
+    onResume: () -> Unit,
+    onRescan: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = RoundedCornerShape(24.dp),
         color = BaiZeTokens.colors.surfaceRaised
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),
                     shape = RoundedCornerShape(14.dp),
-                    color = BaiZeTokens.colors.warning.copy(alpha = .10f)
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .46f)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -470,17 +467,27 @@ private fun HistoricalResultGate(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                FilledTonalButton(
+                    onClick = onResume,
+                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("继续上次扫描")
+                }
+                OutlinedButton(
                     onClick = onRescan,
                     modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("重新扫描")
-                }
-                TextButton(onClick = onShowHistory, modifier = Modifier.heightIn(min = 46.dp)) {
-                    Text("查看历史缓存")
+                    Spacer(Modifier.width(6.dp))
+                    Text("重新完整扫描")
                 }
             }
         }
@@ -497,9 +504,9 @@ private fun WorkbenchSummaryCard(
     onDetails: () -> Unit
 ) {
     val color = workbenchStatusColor(state)
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .clickable(onClickLabel = "查看任务详情", onClick = onDetails)
                 .semantics { contentDescription = "查看任务详情" },
@@ -515,7 +522,7 @@ private fun WorkbenchSummaryCard(
                 style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (state.scanReady) Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
                 else "需重新扫描", Modifier.padding(top = 3.dp),
-                style = BaiZeTokens.type.hero, color = MaterialTheme.colorScheme.onSurface)
+                style = BaiZeTokens.type.hero.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurface)
             Row(Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(16.dp))
                 .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 12.dp)) {
                 WorkbenchStat("${presentation.appCount}", "应用", Modifier.weight(1f))
@@ -540,8 +547,16 @@ private fun WorkbenchSummaryCard(
 private fun WorkbenchStat(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(value, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 17.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Medium,
+                fontFeatureSettings = "tnum"
+            ),
+            color = MaterialTheme.colorScheme.onSurface
+        )
         Text(label, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -603,7 +618,10 @@ private fun WorkbenchProgress(state: WorkbenchUiState) {
         if (state.progressTotal > 0L) Text(
             "${state.progressCurrent.coerceIn(0L, state.progressTotal)} / ${state.progressTotal}",
             Modifier.padding(top = 5.dp),
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontFeatureSettings = "tnum"
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -687,7 +705,7 @@ private fun compactScanPath(path: String): String {
 
 @Composable
 private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled: Boolean, onExpand: () -> Unit, onSelect: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 4.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 4.dp),
         shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "收起应用明细" else "展开应用明细", onClick = onExpand)
             .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -723,7 +741,7 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
 
 @Composable
 private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enabled: Boolean, lockedReason: String?, onToggle: () -> Unit, onDetails: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 4.dp)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 4.dp)
         .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .72f))
         .padding(start = 2.dp, end = 3.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
         Checkbox(selected, onCheckedChange = { onToggle() }, enabled = enabled && item.selectable && item.risk != "critical",
@@ -741,8 +759,8 @@ private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enable
             }
             if (item.risk == "high" && item.selectable && enabled) Text("可单独勾选，删除前须确认路径", fontSize = 12.sp,
                 color = BaiZeTokens.colors.warning)
-            Text(item.outcome.ifBlank { item.path }, fontSize = 11.sp, lineHeight = 17.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(item.outcome.ifBlank { compactScanPath(item.path) }, fontSize = 11.sp, lineHeight = 17.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onDetails, Modifier.size(40.dp)) { Icon(Icons.Rounded.MoreHoriz, "${item.title}详情", Modifier.size(19.dp)) }
     }

@@ -147,13 +147,12 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
             }
         }
         item {
-            Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassActionButton(if (scheduler.saving) "正在保存…" else "保存任务设置",
-                    onClick = { actions.onSaveScheduler(scheduler) }, enabled = !scheduler.saving,
-                    secondary = true, modifier = Modifier.fillMaxWidth())
-                Text("执行条件与通知保存后生效。", Modifier.padding(horizontal = 4.dp),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(
+                if (scheduler.saving) "正在保存…" else "修改后点右上角“保存”生效",
+                Modifier.padding(horizontal = 20.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         item { VideoSectionTitle("记录与诊断") }
         item {

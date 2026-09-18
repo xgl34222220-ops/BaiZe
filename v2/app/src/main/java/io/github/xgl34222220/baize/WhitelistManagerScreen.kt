@@ -42,7 +42,7 @@ internal fun WhitelistManagerScreen(
             (it.label.contains(query, true) || it.packageName.contains(query, true)) }
     }
     val visiblePaths = remember(state.paths, query) { state.paths.filter { it.contains(query, true) } }
-    val inset = Modifier.padding(horizontal = 20.dp)
+    val inset = Modifier.padding(horizontal = 16.dp)
 
     Surface(Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
         Column {
@@ -63,14 +63,14 @@ internal fun WhitelistManagerScreen(
                     FilterChip(selected = protectedOnly, onClick = { protectedOnly = true }, label = { Text("已保护 ${state.draft.selected.size}") })
                     TextButton({ showClear = true }, enabled = edit && state.draft.selected.isNotEmpty()) { Text("取消全部应用保护") }
                 }
-                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (visible.isEmpty() && !state.loading) item { Text("没有匹配的应用", style = MaterialTheme.typography.bodyMedium) }
                     items(visible, key = { it.packageName }) { app ->
                         LuoShuGroup {
                             Row(Modifier.fillMaxWidth().clickable(enabled = edit, role = Role.Checkbox) { onToggle(app.packageName) }
-                                .padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                ApplicationIcon(app.packageName, app.label, Modifier.size(42.dp))
+                                .padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                ApplicationIcon(app.packageName, app.label, Modifier.size(40.dp))
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                     Text(app.label, style = MaterialTheme.typography.titleSmall)
                                     Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -88,14 +88,15 @@ internal fun WhitelistManagerScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                Text("这里只列手动添加的路径。移除仅取消此条保护，不删除文件，也不解除其它白名单或关键数据限制。",
-                    inset.padding(bottom = 10.dp), style = MaterialTheme.typography.bodySmall)
+                Text("这里只列手动添加的路径。移除保护不会删除文件。",
+                    inset.padding(bottom = 10.dp), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyColumn(Modifier.weight(1f).navigationBarsPadding(),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (visiblePaths.isEmpty() && !state.loading) item { LuoShuGroup {
                         Text(if (state.pathsLoaded) "没有匹配的手动保护路径" else "路径名单尚未读取，原保护不变",
-                            Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
+                            Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
                     } }
                     items(visiblePaths, key = { it }) { path -> LuoShuGroup {
                         Column(Modifier.padding(16.dp)) {

@@ -102,17 +102,17 @@ fun GlassActionButton(
     val base = when {
         !enabled -> BaiZeTokens.colors.surfaceOverlay
         secondary -> BaiZeTokens.colors.surfaceRaised
-        else -> scheme.primary
+        else -> lerp(scheme.primaryContainer, scheme.primary, if (dark) .14f else .08f)
     }
     val foreground = when {
         !enabled -> scheme.onSurfaceVariant.copy(alpha = .55f)
         secondary -> scheme.primary
-        else -> scheme.onPrimary
+        else -> scheme.onPrimaryContainer
     }
     val upper = if (secondary || !enabled) {
         lerp(base, Color.White, if (dark) .05f else .7f)
     } else {
-        lerp(base, Color.White, if (dark) .05f else .09f)
+        lerp(base, Color.White, if (dark) .06f else .18f)
     }
 
     val lower = if (enabled && !secondary) lerp(base, Color.Black, if (dark) .015f else .04f) else base

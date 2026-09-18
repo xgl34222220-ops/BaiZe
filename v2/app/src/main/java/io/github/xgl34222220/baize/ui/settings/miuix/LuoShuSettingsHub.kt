@@ -63,8 +63,8 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
 }
 
 @Composable
-private fun pagePadding(detail: Boolean = false): PaddingValues = PaddingValues(start = 20.dp, end = 20.dp,
-    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (detail) 32.dp else 118.dp)
+private fun pagePadding(detail: Boolean = false): PaddingValues = PaddingValues(start = 16.dp, end = 16.dp,
+    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (detail) 32.dp else 132.dp)
 
 @Composable
 private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit) {
@@ -104,24 +104,24 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 }
             }
         }
-        item { LuoShuSection("你的白泽", "调整喜欢的样子，回看每次清理") }
+        item { LuoShuSection("你的白泽") }
         item {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Palette, "外观与主题", "颜色、深色模式与界面效果", actions.onOpenAppearance)
+                LuoShuNavigationRow(Icons.Rounded.Palette, "外观与主题", "颜色与显示效果", actions.onOpenAppearance)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.History, "清理记录", "结果明细、保留项目与任务记录", actions.onOpenAudit)
+                LuoShuNavigationRow(Icons.Rounded.History, "清理记录", "结果与任务记录", actions.onOpenAudit)
             }
         }
         item { LuoShuSection("管理与维护") }
         item {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "执行条件、文件上限与完成通知", { open("tasks") })
+                LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Shield, "应用白名单", "已保护 ${state.whitelistCount} 个应用", actions.onOpenWhitelist)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存的扫描任务", actions.onOpenResumableScan)
+                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存任务", actions.onOpenResumableScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "连接与诊断", "服务详情、重新连接与异常信息", { open("service") })
+                LuoShuNavigationRow(Icons.Rounded.Security, "连接与诊断", "服务与异常信息", { open("service") })
             }
         }
         item {
@@ -153,7 +153,7 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 TextButton(onClick = { actions.onSaveScheduler(s) }, enabled = !s.saving) { Text(if (s.saving) "保存中" else "保存") }
             }
         }
-        item { LuoShuSection("清理执行条件", "条件满足后，才会运行自动任务") }
+        item { LuoShuSection("清理执行条件") }
         item {
             LuoShuGroup {
                 LuoShuSwitchRow(Icons.Rounded.DarkMode, "仅息屏时执行", "使用手机时暂缓清理", s.screenOffOnly,
@@ -165,9 +165,9 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 LuoShuSwitchRow(Icons.Rounded.SettingsSuggest, "仅空闲时执行", "设备空闲后开始", s.idleOnly,
                     { actions.onUpdateScheduler(s.copy(idleOnly = it)) })
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.BatterySaver, "最低执行电量", "${s.minBattery}% · 电量不足时等待", { edit = "battery" })
+                LuoShuNavigationRow(Icons.Rounded.BatterySaver, "最低执行电量", "${s.minBattery}%", { edit = "battery" })
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "单文件清理上限", "${s.maxFileMb} MB · 大于上限的文件会保留", { edit = "limit" })
+                LuoShuNavigationRow(Icons.Rounded.Security, "单文件清理上限", "${s.maxFileMb} MB", { edit = "limit" })
             }
         }
         item { LuoShuSection("文件归类") }
@@ -194,12 +194,13 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
             }
         }
         item {
-            Button(onClick = { actions.onSaveScheduler(s) }, enabled = !s.saving,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
-                Text(if (s.saving) "正在保存…" else "保存任务设置")
-            }
+            Text(
+                if (s.saving) "正在保存…" else "修改后点右上角“保存”生效",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 2.dp)
+            )
         }
-        item { Text("执行条件与通知保存后生效。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -209,7 +210,7 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
         item { LuoShuPageHeader("连接与诊断", back) }
         item {
             LuoShuGroup {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("清理服务 · ${state.connectionLabel}", style = MaterialTheme.typography.titleMedium)
                     DetailStatusText(listOf(state.serviceText, state.schedulerText).filter { it.isNotBlank() }.distinct().joinToString("\n"))
                 }
@@ -217,9 +218,9 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
         }
         item {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Refresh, "重新连接服务", "重新获取服务连接", actions.onReconnect)
+                LuoShuNavigationRow(Icons.Rounded.Refresh, "重新连接服务", "重新连接", actions.onReconnect)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.BugReport, "崩溃与诊断信息", "查看异常与故障记录", actions.onOpenCrashDiagnostics)
+                LuoShuNavigationRow(Icons.Rounded.BugReport, "崩溃与诊断信息", "异常与故障记录", actions.onOpenCrashDiagnostics)
             }
         }
     }

@@ -24,6 +24,7 @@ class WorkbenchRefactorUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var state by mutableStateOf(WorkbenchUiState())
     private var scans = 0
+    private var resumes = 0
     private var whitelistRequests = 0
     private fun item(id: String, risk: String, selectable: Boolean = true) = WorkbenchItem(id,
         "profile", "rules", "test.app", "测试应用", "日志", "app:test.app", "测试应用", id, risk,
@@ -41,21 +42,22 @@ class WorkbenchRefactorUiTest {
                     { id -> state = state.copy(selectedIds = state.selectedIds.toMutableSet().apply { if (!add(id)) remove(id) }) },
                     {}, { state = state.copy(selectedIds = reviewRiskSelection(state.items, setOf("low", "medium"))) },
                     { state = state.copy(selectedIds = emptySet()) }, {}, {},
-                    { state = state.copy(selectedIds = reviewRiskSelection(state.items, setOf("medium"))) }, { whitelistRequests++ }))
+                    { state = state.copy(selectedIds = reviewRiskSelection(state.items, setOf("medium"))) },
+                    { whitelistRequests++ }, { resumes++ }))
             } }
         }
         compose.waitForIdle()
     }
-    @Test fun historyIsCollapsedUntilTheUserChoosesToInspectIt() {
+    @Test fun historyStateOnlyOffersResumeOrFullRescan() {
         render(history = true)
         compose.onNodeWithText("历史记录 · 需重新扫描").assertIsDisplayed()
         compose.onNodeWithText("上次扫描结果仅作为历史缓存").assertIsDisplayed()
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
-        compose.onNodeWithText("查看历史缓存").performClick()
-        compose.onNodeWithText("全选低、中风险").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("仅选中风险").assertIsNotEnabled()
-        compose.onNodeWithText("重新扫描").performClick()
+        compose.onNodeWithText("继续上次扫描").performClick()
+        assertEquals(1, resumes)
+        compose.onNodeWithText("重新完整扫描").performClick()
         assertEquals(1, scans)
+        compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
     }
     @Test fun mediumSelectionExcludesBlockedAndHigh() {
         render()
