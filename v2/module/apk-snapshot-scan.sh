@@ -109,7 +109,7 @@ set_phase() {
     echo "progress_current=$current"
     echo "progress_total=$total"
     printf 'current_path=%s' "$path" | tr '\r\n' '  '; echo
-    echo "engine=apk-snapshot-v2.2-shared-index"
+    echo "engine=apk-snapshot-v2.3-global-index"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -193,11 +193,32 @@ MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 . "$MODDIR/apk-paths.sh"
 apk_load_roots
 [ "$INCLUDE_PRIVATE" = "1" ] && apk_load_private_roots
+DIRECT_APK_INDEX="$TMP_DIR/apk-files-direct.nul"
 APK_INDEX="$TMP_DIR/apk-files.nul"
+: >"$APK_INDEX"
 set_phase "正在查找安装包" 0 0 "$MEDIA_ROOT"
-apk_collect_candidates "$APK_INDEX"
-index_code=$?
-[ "$index_code" -eq 0 ] || { echo "安装包目录读取不完整，请重试（$index_code）" >&2; exit "$index_code"; }
+apk_collect_candidates "$DIRECT_APK_INDEX"
+direct_index_code=$?
+if [ "$direct_index_code" -eq 0 ] && [ -s "$DIRECT_APK_INDEX" ]; then
+  cat "$DIRECT_APK_INDEX" >>"$APK_INDEX"
+fi
+
+shared_index_code=1
+INDEXER="$MODDIR/storage-index.sh"
+SHARED_APK_INDEX="$STATE_DIR/index/apk-files.nul"
+if [ -f "$INDEXER" ]; then
+  if BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" \
+      /system/bin/sh "$INDEXER" ensure storage-analysis >/dev/null 2>&1; then
+    shared_index_code=0
+    [ -s "$SHARED_APK_INDEX" ] && cat "$SHARED_APK_INDEX" >>"$APK_INDEX"
+  fi
+fi
+
+if [ "$direct_index_code" -ne 0 ] && [ "$shared_index_code" -ne 0 ] && [ ! -s "$APK_INDEX" ]; then
+  echo "安装包目录与共享索引均不可读，请检查 Root 存储挂载" >&2
+  exit 5
+fi
+
 root_total=$(printf '%s\n' "$APK_ROOTS" | awk 'NF{n++} END{print n+0}')
 root_current=$root_total
 apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
@@ -208,6 +229,8 @@ files=0
 bytes=0
 sample_path=""
 current=0
+SEEN_OBJECTS="$TMP_DIR/apk-seen-objects.txt"
+: >"$SEEN_OBJECTS"
 set_phase "正在校验安装包文件" 0 "$apk_total" "$APK_INDEX"
 while IFS= read -r -d '' candidate; do
   should_stop && handle_signal
@@ -219,6 +242,14 @@ while IFS= read -r -d '' candidate; do
   # One metadata read captures the object shown to the user. ctime and inode
   # prevent a same-name replacement (even with restored mtime) being deleted.
   identity=$(stat -c '%d:%i:%s:%y:%z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
+  device=${identity%%:*}
+  identity_rest=${identity#*:}
+  inode=${identity_rest%%:*}
+  object_key="$device:$inode"
+  if grep -Fqx -- "$object_key" "$SEEN_OBJECTS" 2>/dev/null; then
+    continue
+  fi
+  printf '%s\n' "$object_key" >>"$SEEN_OBJECTS"
   metadata=${identity#*:*:}; size=${metadata%%:*}
   case "$size" in ''|*[!0-9]*) errors=$((errors + 1)); continue ;; esac
   [ "$size" -le "$MAX_FILE_BYTES" ] || continue
@@ -255,9 +286,11 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "package_days=$DAYS"
   echo "configured_package_days=$CONFIG_DAYS"
   echo "include_private=$INCLUDE_PRIVATE"
+  echo "direct_index_code=$direct_index_code"
+  echo "shared_index_code=$shared_index_code"
   echo "bytes=$bytes"
   echo "files=$files"
-  echo "engine=apk-snapshot-v2.2-shared-index"
+  echo "engine=apk-snapshot-v2.3-global-index"
 } >"$STATE_FILE.tmp.$$"
 mv -f "$STATE_FILE.tmp.$$" "$STATE_FILE"
 chmod 0600 "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE" 2>/dev/null
@@ -304,7 +337,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "deep_progress_current=$root_current"
   echo "deep_progress_total=$root_total"
   echo "elapsed=$elapsed"
-  echo "engine=apk-snapshot-v2.2-shared-index"
+  echo "engine=apk-snapshot-v2.3-global-index"
   echo "result=$result"
 } >"$STATE_DIR/latest.env"
 {
@@ -313,7 +346,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "扫描快照: $snapshot_id"
   echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
-  echo "扫描覆盖来源: $root_total（共享存储与外置存储）"
+  echo "扫描覆盖来源: $root_total（直接根） + 全局共享索引；direct=$direct_index_code shared=$shared_index_code"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
