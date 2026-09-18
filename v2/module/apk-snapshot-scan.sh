@@ -326,7 +326,7 @@ mv -f "$DETAILS_TMP" "$REPORT_FILE"
 COVERAGE="$STATE_DIR/apk-coverage.tsv"
 printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$"
 printf 'scanned\t扫描诊断\t-\t-\t%s\t%s\t%s\t%s\n' \
-  "$files" "$bytes" "Root 可见存储" \
+  "0" "0" "Root 可见存储" \
   "扫描根 $root_total · 原始命中 $apk_total · Root兜底 $brute_force_used · 路径过滤 $path_filtered · 白名单 $whitelist_filtered · direct=$direct_index_code shared=$shared_index_code" \
   >>"$COVERAGE.tmp.$"
 old_ifs=$IFS; IFS='
