@@ -530,15 +530,17 @@ private fun EmptyRecordsCard() {
 private fun RecordCard(record: HistoryUiItem) {
     val context = LocalContext.current
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
-    val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
+    val visibleApps = record.apps.filter { it.bytes > 0L }
+    val visibleCategories = record.categories.filter { it.bytes > 0L }
+    val hasDetails = visibleCategories.isNotEmpty() || visibleApps.isNotEmpty()
     val title = sanitizeText(record.title).ifBlank { "历史任务" }
     val meta = listOf(sanitizeText(record.time), sanitizeText(record.trigger))
         .filter(String::isNotBlank)
         .joinToString(" · ")
     val summary = sanitizeText(
         when {
-            record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
-            record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
+            visibleApps.isNotEmpty() -> "涉及 ${visibleApps.size} 个应用 · ${record.files} 项"
+            visibleCategories.isNotEmpty() -> visibleCategories.take(2).joinToString(" · ") { it.name }
             record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
             else -> record.result
         }
@@ -637,7 +639,7 @@ private fun RecordCard(record: HistoryUiItem) {
                     modifier = Modifier.padding(start = 56.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .20f)
                 )
-                record.apps.forEach { app ->
+                visibleApps.forEach { app ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 56.dp, top = 11.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -664,7 +666,7 @@ private fun RecordCard(record: HistoryUiItem) {
                         )
                     }
                 }
-                record.categories.forEach { detail ->
+                visibleCategories.forEach { detail ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 56.dp, top = 11.dp),
                         verticalAlignment = Alignment.CenterVertically
