@@ -92,6 +92,31 @@ class PackageCoverage(unittest.TestCase):
             {os.fsencode(public_apk)}
         )
 
+    def test_root_bruteforce_fallback_when_normal_discovery_is_zero(self):
+        brute = self.root / 'brute-only'
+        package = brute / 'deep/vendor/downloads/recovered.apk'
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_bytes(b'brute package')
+        env = dict(
+            self.env,
+            BAIZE_MEDIA_ROOT=str(self.root / 'missing-raw'),
+            BAIZE_PUBLIC_MEDIA_ROOT=str(self.root / 'missing-public'),
+            BAIZE_EXTRA_STORAGE_ROOTS=str(self.sd),
+            BAIZE_BRUTE_STORAGE_ROOTS=str(brute),
+        )
+        proc = subprocess.run(
+            ['bash', str(self.module / 'apk-snapshot-scan.sh'), 'apk-scan', 'app'],
+            env=env, text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        targets = set((self.state / 'apk_scan.targets').read_bytes().split(b'\0')) - {b''}
+        self.assertEqual(targets, {os.fsencode(package)})
+        state = (self.state / 'apk_scan.env').read_text()
+        self.assertIn('brute_force_used=1\n', state)
+        self.assertIn('raw_candidates=1\n', state)
+        coverage = (self.state / 'apk-coverage.tsv').read_text()
+        self.assertIn('Root兜底 1', coverage)
+
     def test_retention_whitelist_and_symlink_boundaries(self):
         old = self.make('0/Download/old.apk', 31)
         recent = self.make('0/Download/new.apk', 1)
