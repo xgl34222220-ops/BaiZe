@@ -126,17 +126,12 @@ fun CleanScreenMaterial(
         item { MaterialSectionHeader("附加项目", "自动处理过期安装包") }
         item { MaterialApkPackageCard(state, actions) }
         item {
-            Button(
-                onClick = actions.onSave,
-                enabled = !state.saving,
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = MaterialTheme.shapes.extraLarge
-            ) {
-                Text(if (state.saving) "正在保存…" else "保存设置", fontWeight = FontWeight.Bold)
-            }
+            Text(
+                if (state.saving) "正在保存设置…" else "修改后自动保存",
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
