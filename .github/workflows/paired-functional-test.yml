@@ -111,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-${{ env.BAIZE_TEST_LABEL }}-Paired-Test
-          path: v2/dist/apk-engine-test/*
+          path: v2/dist/functional-test/*
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
