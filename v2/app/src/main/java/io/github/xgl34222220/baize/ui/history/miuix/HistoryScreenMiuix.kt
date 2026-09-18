@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
