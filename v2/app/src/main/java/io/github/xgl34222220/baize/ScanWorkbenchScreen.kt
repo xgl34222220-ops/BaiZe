@@ -643,6 +643,7 @@ private fun CurrentScanTarget(path: String) {
         }.orEmpty()
     }
     val kind = remember(path) { scanTargetKind(path) }
+    val location = remember(path) { scanPathContext(path) }
     Row(
         Modifier.fillMaxWidth().padding(top = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -653,7 +654,7 @@ private fun CurrentScanTarget(path: String) {
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                if (packageName != null) "${label.ifBlank { packageName }} · $kind" else kind,
+                if (packageName != null) "${label.ifBlank { packageName }} · $kind" else "$location · $kind",
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
                 fontWeight = FontWeight.Medium,
@@ -662,11 +663,11 @@ private fun CurrentScanTarget(path: String) {
             )
             Text(
                 compactScanPath(path),
-                fontSize = 10.sp,
-                lineHeight = 15.sp,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.outline
             )
         }
     }
@@ -696,11 +697,36 @@ private fun scanTargetKind(path: String): String {
     }
 }
 
+private fun scanPathContext(path: String): String {
+    val normalized = path.replace('\\', '/').lowercase()
+    val root = when {
+        normalized.startsWith("/storage/emulated/") || normalized.startsWith("/data/media/") -> "内部存储"
+        normalized.startsWith("/data/user/") || normalized.startsWith("/data/user_de/") || normalized.startsWith("/data/data/") -> "应用内部"
+        normalized.startsWith("/data/") -> "系统数据"
+        else -> "文件系统"
+    }
+    val category = when {
+        "/.recycle/" in normalized || "/recycle/" in normalized || "/.trash/" in normalized -> "回收站缓存"
+        "/dcim/" in normalized || "/pictures/" in normalized -> "相册与图片"
+        "/download/" in normalized -> "下载目录"
+        "/android/data/" in normalized -> "应用数据"
+        "/android/media/" in normalized -> "应用媒体"
+        "/android/obb/" in normalized -> "应用资源"
+        "/cache/" in normalized || normalized.endsWith("/cache") -> "缓存目录"
+        "/log/" in normalized || "/logs/" in normalized -> "日志目录"
+        else -> "扫描目录"
+    }
+    return "$root > $category"
+}
+
 private fun compactScanPath(path: String): String {
     val normalized = path.replace('\\', '/').trim()
-    if (normalized.length <= 68) return normalized
-    val tail = normalized.split('/').filter(String::isNotBlank).takeLast(3).joinToString("/")
-    return "…/$tail"
+    val parts = normalized.split('/').filter(String::isNotBlank)
+    if (normalized.length <= 44) return normalized
+    if (parts.size <= 2) return normalized.take(18) + "…" + normalized.takeLast(18)
+    val head = parts.first()
+    val tail = parts.takeLast(2).joinToString("/")
+    return "$head/…/$tail"
 }
 
 @Composable
