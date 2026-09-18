@@ -736,11 +736,21 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "收起应用明细" else "展开应用明细", onClick = onExpand)
             .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             val owner = group.items.firstOrNull()?.packageName.orEmpty()
-            if (owner.isNotBlank()) ApplicationIcon(owner, group.title, Modifier.size(42.dp))
-            else Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .075f), RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center) {
-                Icon(categoryIcon(group.items.firstOrNull()?.profile.orEmpty()), null,
-                    Modifier.size(23.dp), tint = MaterialTheme.colorScheme.primary)
+            if (owner.isNotBlank()) {
+                ApplicationIcon(owner, group.title, Modifier.size(42.dp))
+            } else {
+                Box(
+                    Modifier.size(42.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        group.title.filterNot(Char::isWhitespace).take(2).ifBlank { "系统" },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(group.title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
