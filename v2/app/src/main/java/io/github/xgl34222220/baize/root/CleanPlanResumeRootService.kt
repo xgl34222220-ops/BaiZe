@@ -103,7 +103,18 @@ class CleanPlanResumeRootService : RootService() {
             val terminal = cacheTerminalPaths(state)
             val hasFailure = result.has("error") || result.optInt("failures", 0) > 0
             val interrupted = result.optBoolean("cancelled") || result.optBoolean("timedOut")
-            val cleanFinished = result.optBoolean("success") && !hasFailure && !interrupted
+            val mutated = result.optBoolean(
+                "mutated",
+                result.optLong("deletedFiles", 0L) > 0L || result.optInt("cleanedCandidates", 0) > 0
+            )
+            val hasNonCleanOutcomes =
+                result.optInt("changedCandidates", 0) > 0 ||
+                result.optInt("protectedCandidates", 0) > 0 ||
+                result.optInt("partialCandidates", 0) > 0 ||
+                result.optInt("failedCandidates", 0) > 0 ||
+                result.optInt("skippedCandidates", 0) > 0
+            val cleanFinished = result.optBoolean("success") && mutated &&
+                !hasFailure && !interrupted && !hasNonCleanOutcomes
             captureCacheOutcomes(state, result, directory, terminal, cleanFinished)
 
             val remaining = if (cleanFinished) {

@@ -400,19 +400,33 @@ class CacheActivity : ComponentActivity() {
                 .filter { it.isNotBlank() }
                 .takeLast(5)
                 .joinToString("\n")
+            val latest = json.optJSONObject("latest") ?: JSONObject()
+            val deletedFiles = latest.optLong("files", 0L).coerceAtLeast(0L)
+            val deletedBytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
+            val cleanedCandidates = latest.optInt("cleaned_candidates", 0).coerceAtLeast(0)
+            val skippedCandidates = latest.optInt("skipped_candidates", latest.optInt("skipped", 0)).coerceAtLeast(0)
+            val partialCandidates = latest.optInt("partial_candidates", 0).coerceAtLeast(0)
+            val failedCandidates = latest.optInt("failed_candidates", latest.optInt("errors", 0)).coerceAtLeast(0)
             val success = json.optBoolean("success") && !json.optBoolean("cancelled")
+            val mutated = deletedFiles > 0L || cleanedCandidates > 0
             val phase = buildString {
                 append(
                     when {
                         json.optBoolean("cancelled") -> "缓存清理已停止，扫描快照仍保留"
-                        success -> "缓存扫描快照清理完成"
-                        else -> json.optString("message", "缓存清理失败")
+                        !success -> json.optString("message", "缓存清理失败")
+                        mutated -> "实际删除 $deletedFiles 个文件 · 释放 ${Formatter.formatFileSize(this@CacheActivity, deletedBytes)}"
+                        skippedCandidates > 0 || partialCandidates > 0 || failedCandidates > 0 ->
+                            "本次未删除文件 · 跳过 $skippedCandidates 项 · 部分 $partialCandidates 项 · 失败 $failedCandidates 项"
+                        else -> "本次未删除任何缓存文件，请重新扫描查看当前状态"
                     }
                 )
-                if (output.isNotBlank()) append("\n").append(output)
+                if (!success && output.isNotBlank()) append("\n").append(output)
             }
             if (success) {
-                preferences.edit().putString("last_report_text", phase).apply()
+                preferences.edit()
+                    .putLong("last_clean_bytes", deletedBytes)
+                    .putString("last_report_text", phase)
+                    .apply()
                 clearSnapshotUi(phase)
             } else {
                 screenState = screenState.copy(running = false, operation = "", phase = phase)

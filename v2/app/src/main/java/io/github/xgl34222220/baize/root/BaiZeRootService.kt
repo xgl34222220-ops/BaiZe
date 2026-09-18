@@ -449,20 +449,50 @@ class BaiZeRootService : RootService() {
 
         if (code == 3) return busy("cache-clean")
         if (code == 0 && !wasCancelled) clearSnapshotMemory()
+
+        val deletedBytes = latest.optLong("bytes", report.deletedBytes).coerceAtLeast(0L)
+        val deletedFiles = latest.optLong("files", report.deletedFiles).coerceAtLeast(0L)
+        val cleanedCandidates = latest.optInt("cleaned_candidates", report.cleanedCandidates).coerceAtLeast(0)
+        val changedCandidates = latest.optInt("changed_candidates", 0).coerceAtLeast(0)
+        val protectedCandidates = latest.optInt("protected_candidates", 0).coerceAtLeast(0)
+        val partialCandidates = latest.optInt("partial_candidates", 0).coerceAtLeast(0)
+        val failedCandidates = latest.optInt("failed_candidates", report.failures).coerceAtLeast(0)
+        val skippedCandidates = latest.optInt(
+            "skipped_candidates",
+            changedCandidates + protectedCandidates
+        ).coerceAtLeast(0)
+        val processedCandidates = latest.optInt(
+            "processed_candidates",
+            cleanedCandidates + changedCandidates + protectedCandidates + partialCandidates + failedCandidates
+        ).coerceAtLeast(0)
+        val mutated = deletedFiles > 0L || cleanedCandidates > 0
+        val honestMessage = when {
+            code != 0 || wasCancelled -> message
+            mutated -> message
+            skippedCandidates > 0 || partialCandidates > 0 ->
+                "本次未删除文件：$skippedCandidates 项已变化或受保护，$partialCandidates 项仅部分可处理"
+            beforeCount > 0 -> "本次未删除任何缓存文件，请重新扫描查看当前状态"
+            else -> message
+        }
+
         val result = JSONObject()
             .put("success", code == 0)
+            .put("mutated", mutated)
             .put("cancelled", wasCancelled)
             .put("elapsedMs", elapsed)
-            .put("deletedBytes", latest.optLong("bytes", report.deletedBytes).coerceAtLeast(0L))
-            .put("deletedFiles", latest.optLong("files", report.deletedFiles).coerceAtLeast(0L))
+            .put("authorizedCandidates", beforeCount)
+            .put("processedCandidates", processedCandidates)
+            .put("cleanedCandidates", cleanedCandidates)
+            .put("changedCandidates", changedCandidates)
+            .put("protectedCandidates", protectedCandidates)
+            .put("partialCandidates", partialCandidates)
+            .put("failedCandidates", failedCandidates)
+            .put("skippedCandidates", skippedCandidates)
+            .put("deletedBytes", deletedBytes)
+            .put("deletedFiles", deletedFiles)
             .put("deletedDirectories", 0L)
-            .put(
-                "cleanedCandidates",
-                if (report.cleanedCandidates > 0) report.cleanedCandidates
-                else if (code == 0) beforeCount else 0
-            )
             .put("failures", latest.optInt("errors", report.failures).coerceAtLeast(0))
-            .put("message", message)
+            .put("message", honestMessage)
             .put("output", output)
         if (code != 0 && !wasCancelled) result.put("error", "cache_clean_exit_$code")
         return result.toString()

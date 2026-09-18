@@ -1189,6 +1189,10 @@ class MiuixDashboardActivity : ComponentActivity() {
             var emptyDirs = 0L
             var fragments = 0L
             var cleanedCandidates = 0
+            var changedCandidates = 0
+            var protectedCandidates = 0
+            var partialCandidates = 0
+            var failedCandidates = 0
             var failures = 0
             var cancelled = false
             var stale = false
@@ -1206,6 +1210,10 @@ class MiuixDashboardActivity : ComponentActivity() {
                 deletedFiles += result.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                 deletedDirectories += result.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
                 cleanedCandidates += result.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                changedCandidates += result.optInt("changedCandidates", 0).coerceAtLeast(0)
+                protectedCandidates += result.optInt("protectedCandidates", 0).coerceAtLeast(0)
+                partialCandidates += result.optInt("partialCandidates", 0).coerceAtLeast(0)
+                failedCandidates += result.optInt("failedCandidates", 0).coerceAtLeast(0)
                 failures += result.optInt("failures", 0).coerceAtLeast(0)
                 cancelled = cancelled || result.optBoolean("cancelled")
                 if (profileResult) {
@@ -1261,18 +1269,22 @@ class MiuixDashboardActivity : ComponentActivity() {
 
             pollJob?.cancel()
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
+            val skippedCandidates = changedCandidates + protectedCandidates
             val title = when {
                 cancelled -> "白泽快照清理已停止"
                 stale -> "部分扫描结果已过期"
-                failures > 0 -> "白泽快照清理完成，但有异常"
+                failures > 0 || failedCandidates > 0 -> "白泽快照清理完成，但有异常"
+                !mutated -> "本次未删除任何文件"
                 else -> "白泽快照清理完成"
             }
             val resultLine = when {
                 stale -> "扫描快照已过期，没有重新扫描；请手动再次扫描"
                 cancelled -> "任务已安全停止，已释放 ${formatBytes(deletedBytes)}"
-                else -> "释放 ${formatBytes(deletedBytes)} · 处理 $cleanedCandidates 项"
+                !mutated -> "未删除任何文件 · 跳过/保护 $skippedCandidates 项 · 部分 $partialCandidates 项"
+                else -> "实际释放 ${formatBytes(deletedBytes)} · 清理 $cleanedCandidates 项"
             }
-            val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
+            val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 跳过/保护 $skippedCandidates · 部分 $partialCandidates · 失败 $failedCandidates · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
             val taskTime = markTaskTime()
             saveProtectedItems(protectedItems)
             dashboardState.value = dashboardState.value.copy(
@@ -1294,7 +1306,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                         recorder.recordNativeTask(
                             JSONObject()
                                 .put("mode", "snapshot-clean")
-                                .put("success", !cancelled && failures == 0)
+                                .put("success", !cancelled && failures == 0 && failedCandidates == 0 && mutated)
                                 .put("cancelled", cancelled)
                                 .put("bytes", deletedBytes)
                                 .put("files", deletedFiles)

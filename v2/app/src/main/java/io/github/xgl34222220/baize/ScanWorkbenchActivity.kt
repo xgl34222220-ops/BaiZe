@@ -480,24 +480,69 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         val cacheResult = JSONObject(attempt.mutate {
                             cache.cleanSelected(selectedSnapshotId, JSONObject().put("__all_safe__", true).toString(), packageWhitelist)
                         })
-                        bytes += cacheResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
-                        files += cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
-                        failures += cacheResult.optInt("failures", if (cacheResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
-                        cleanedCandidates += cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        val cacheDeletedBytes = cacheResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
+                        val cacheDeletedFiles = cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
+                        val cacheCleanedCandidates = cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
+                        val cacheChangedCandidates = cacheResult.optInt("changedCandidates", 0).coerceAtLeast(0)
+                        val cacheProtectedCandidates = cacheResult.optInt("protectedCandidates", 0).coerceAtLeast(0)
+                        val cachePartialCandidates = cacheResult.optInt("partialCandidates", 0).coerceAtLeast(0)
+                        val cacheFailedCandidates = cacheResult.optInt("failedCandidates", 0).coerceAtLeast(0)
+                        val cacheSkippedCandidates = cacheResult.optInt(
+                            "skippedCandidates",
+                            cacheChangedCandidates + cacheProtectedCandidates
+                        ).coerceAtLeast(0)
+                        val cacheMutated = cacheResult.optBoolean(
+                            "mutated",
+                            cacheDeletedFiles > 0L || cacheCleanedCandidates > 0
+                        )
+                        val cacheFailures = cacheResult.optInt(
+                            "failures",
+                            if (cacheResult.optBoolean("success")) cacheFailedCandidates else 1
+                        ).coerceAtLeast(0)
+
+                        bytes += cacheDeletedBytes
+                        files += cacheDeletedFiles
+                        failures += cacheFailures
+                        cleanedCandidates += cacheCleanedCandidates
                         cancelled = cacheResult.optBoolean("cancelled")
-                        incomplete = incomplete || !cacheResult.optBoolean("success") || cancelled || cacheResult.optInt("failures") > 0
+                        incomplete = incomplete || !cacheResult.optBoolean("success") || cancelled ||
+                            cacheFailures > 0 || !cacheMutated || cacheSkippedCandidates > 0 ||
+                            cachePartialCandidates > 0 || cacheFailedCandidates > 0
                         messages += cacheResult.optString("message", "应用缓存处理完成")
-                        val status = if (cacheResult.optBoolean("success") && !cacheResult.optBoolean("cancelled") && cacheResult.optInt("failures") == 0)
-                            "已按所选缓存执行清理" else "未全部完成，请查看任务结果"
+
+                        val status = when {
+                            !cacheResult.optBoolean("success") || cancelled ->
+                                "缓存清理未完成"
+                            !cacheMutated ->
+                                "未删除文件 · 跳过 $cacheSkippedCandidates 项"
+                            cacheSkippedCandidates > 0 || cachePartialCandidates > 0 || cacheFailedCandidates > 0 ->
+                                "实际删除 $cacheDeletedFiles 个文件 · 跳过 $cacheSkippedCandidates 项"
+                            else ->
+                                "实际删除 $cacheDeletedFiles 个文件 · 释放 ${formatBytes(cacheDeletedBytes)}"
+                        }
                         cacheItems.forEach { outcomes[it.id] = status }
-                        val report = if (cacheResult.optBoolean("success"))
-                            runCatching { JSONObject(profile.getModuleState()).optJSONArray("appDetails") }.getOrNull() ?: JSONArray()
-                        else JSONArray()
-                        for (index in 0 until report.length()) {
-                            val app = report.optJSONObject(index) ?: continue
-                            val pkg = app.optString("packageName")
-                            if (cacheItems.none { it.packageName == pkg }) continue
-                            actualApps += AppJunkUiItem(pkg, applicationLabel(pkg), "应用缓存", app.optLong("files"), app.optLong("bytes"), app.optLong("errors"))
+
+                        if (cacheMutated) {
+                            val packages = cacheItems.map { it.packageName }.filter { it.isNotBlank() }.distinct()
+                            if (packages.size == 1) {
+                                val pkg = packages.single()
+                                actualApps += AppJunkUiItem(
+                                    pkg,
+                                    applicationLabel(pkg),
+                                    "应用缓存",
+                                    cacheDeletedFiles,
+                                    cacheDeletedBytes,
+                                    cacheFailures.toLong()
+                                )
+                            } else {
+                                actualJunk += GeneralJunkUiItem(
+                                    "应用缓存（实际清理）",
+                                    cacheDeletedFiles,
+                                    cacheDeletedBytes,
+                                    cacheFailures.toLong(),
+                                    ""
+                                )
+                            }
                         }
                     }
                     if (!cancelled && profileItems.isNotEmpty()) {
