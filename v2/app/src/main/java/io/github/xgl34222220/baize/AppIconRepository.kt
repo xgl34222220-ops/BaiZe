@@ -44,10 +44,7 @@ internal object AppIconRepository {
         if (info.icon == 0) return@withContext null
         memoryCache.get(packageName)?.let { return@withContext it }
         val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@withContext null
-        val defaultIcon = runCatching { pm.defaultActivityIcon }.getOrNull()
-        if (defaultIcon != null && drawable.constantState != null && drawable.constantState == defaultIcon.constantState) {
-            return@withContext null
-        }
+        if (isGenericSystemIcon(context, info, drawable)) return@withContext null
         runCatching {
             drawable
                 .toBitmap(
@@ -99,4 +96,29 @@ private fun appIconFallbackText(label: String, packageName: String): String {
     val source = label.trim().takeIf { it.isNotBlank() && it != packageName }
         ?: packageName.substringAfterLast('.').ifBlank { packageName }
     return source.filterNot(Char::isWhitespace).take(2).uppercase().ifBlank { "?" }
+}
+
+
+private fun isGenericSystemIcon(
+    context: Context,
+    info: android.content.pm.ApplicationInfo,
+    drawable: android.graphics.drawable.Drawable
+): Boolean {
+    val pm = context.packageManager
+    val resourcePackage = runCatching {
+        pm.getResourcesForApplication(info).getResourcePackageName(info.icon)
+    }.getOrDefault("")
+    val entryName = runCatching {
+        pm.getResourcesForApplication(info).getResourceEntryName(info.icon).lowercase()
+    }.getOrDefault("")
+    if (resourcePackage == "android" && info.packageName != "android") return true
+    if (entryName in setOf("sym_def_app_icon", "default_app_icon", "ic_default_app_icon", "ic_launcher_android", "ic_android")) {
+        return true
+    }
+    val defaultIcon = runCatching { pm.defaultActivityIcon }.getOrNull() ?: return false
+    if (drawable.constantState != null && drawable.constantState == defaultIcon.constantState) return true
+    return runCatching {
+        drawable.toBitmap(48, 48, Bitmap.Config.ARGB_8888)
+            .sameAs(defaultIcon.toBitmap(48, 48, Bitmap.Config.ARGB_8888))
+    }.getOrDefault(false)
 }
