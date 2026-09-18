@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
@@ -61,7 +62,7 @@ class HistoryZeroByteUiTest {
 
         compose.onNodeWithText("示例应用").assertIsDisplayed()
         compose.onNodeWithText("支付宝").assertDoesNotExist()
-        compose.onNodeWithText("无占用应用").assertIsDisplayed().performClick()
+        compose.onNodeWithText("无占用应用").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("支付宝").assertIsDisplayed()
     }
 }
