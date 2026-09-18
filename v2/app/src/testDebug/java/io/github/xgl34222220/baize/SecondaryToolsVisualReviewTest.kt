@@ -97,9 +97,15 @@ class SecondaryToolsVisualReviewTest {
         ), selected = setOf("example.browser", "example.video")
     )
     private val planState = ResumeSmartUiState(
-        connected = true, status = "扫描、快照与断点事务引擎已连接",
-        phase = "扫描完成，可清理 48 项。", totalSafe = 48, cleanReady = true, scanCompleted = true,
-        cacheSummary = "32 项 · 842 MB", safeSummary = "16 项 · 空项目 4 · 规则 8 · 碎片 4"
+        connected = true,
+        status = "清理服务已就绪",
+        phase = "扫描完成 · 发现 48 项可清理内容",
+        totalSafe = 48,
+        cleanReady = true,
+        scanCompleted = true,
+        estimatedBytes = 842L * 1024 * 1024,
+        cacheSummary = "32 项 · 642 MB",
+        safeSummary = "16 项 · 200 MB · 空项目 4 · 规则 8 · 碎片 4"
     )
 
     private fun render(name: String, dark: Boolean = false, fontScale: Float = 1f, content: @Composable () -> Unit) {
