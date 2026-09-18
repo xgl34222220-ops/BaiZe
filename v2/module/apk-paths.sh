@@ -114,7 +114,6 @@ apk_private_path_allowed() {
   for _apk_base in $APK_PRIVATE_BOUNDARIES; do
     case "$_apk_private_real" in
       "$_apk_base"/*)
-        _apk_relative=${_apk_private_real#"$_apk_base"/}
         _apk_relative=${_apk_private_real#$_apk_base/}
         _apk_package=${_apk_relative%%/*}
         _apk_tail=${_apk_relative#*/}
