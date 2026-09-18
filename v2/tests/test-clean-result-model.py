@@ -8,6 +8,7 @@ SHELL = (ROOT / "v2/module/cache-snapshot-clean.sh").read_text()
 CACHE_SERVICE = (APP / "root/BaiZeRootService.kt").read_text()
 WORKBENCH = (APP / "ScanWorkbenchActivity.kt").read_text()
 CACHE_ACTIVITY = (APP / "CacheActivity.kt").read_text()
+DASHBOARD = (APP / "MiuixDashboardActivity.kt").read_text()
 
 
 def require(value: bool, message: str) -> None:
@@ -55,6 +56,10 @@ require('profile.getModuleState()).optJSONArray("appDetails")' not in WORKBENCH,
         "workbench still reuses stale scan app details as cleanup results")
 require('val mutated = deletedFiles > 0L || cleanedCandidates > 0' in CACHE_ACTIVITY,
         "cache detail page still treats exit code as cleanup success")
+require('val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0' in DASHBOARD,
+        "dashboard snapshot cleanup still treats exit code as a real cleanup")
+require('本次未删除任何文件' in DASHBOARD,
+        "dashboard does not expose zero-mutation cleanup honestly")
 require('result.optBoolean("success") && mutated' in SERVICE,
         "resume transaction can still complete a cache plan without a real mutation")
 
