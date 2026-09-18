@@ -24,13 +24,15 @@ data class HistoryUiState(
     val records: List<HistoryUiItem>
 ) {
     val hasCurrentResult: Boolean
-        get() = recentApps.isNotEmpty() || recentJunk.isNotEmpty()
+        get() = recentApps.any { it.bytes > 0L } || recentJunk.any { it.bytes > 0L }
 
     val currentItemCount: Long
-        get() = recentApps.sumOf { it.files } + recentJunk.sumOf { it.files }
+        get() = recentApps.filter { it.bytes > 0L }.sumOf { it.files } +
+            recentJunk.filter { it.bytes > 0L }.sumOf { it.files }
 
     val currentBytes: Long
-        get() = recentApps.sumOf { it.bytes } + recentJunk.sumOf { it.bytes }
+        get() = recentApps.sumOf { it.bytes.coerceAtLeast(0L) } +
+            recentJunk.sumOf { it.bytes.coerceAtLeast(0L) }
 }
 
 data class HistoryUiActions(
