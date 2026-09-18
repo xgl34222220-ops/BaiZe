@@ -37,7 +37,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottom + 118.dp),
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom + 132.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") {
             LuoShuPageHeader("白泽") {
@@ -55,24 +55,24 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("常用工具", "先看清文件，再决定清理哪些")
+                LuoShuSection("常用工具")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     if (maxWidth.value / LocalDensity.current.fontScale < 240f) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LuoShuShortcut("安装包", "查找并清理安装包", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
-                            LuoShuShortcut("文件归类", "整理下载与散落文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
+                            LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
+                            LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
                         }
                     } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LuoShuShortcut("安装包", "查找并清理安装包", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                        LuoShuShortcut("文件归类", "整理下载与散落文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                        LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
+                        LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
                     }
                 }
                 LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "查看应用占用、缓存与残留", actions.deep)
+                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "扩展扫描范围", actions.deep)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "保留指定应用与路径", actions.whitelist)
+                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理类别与自动计划", onOpenClean)
+                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理与自动化", onOpenClean)
                 }
             }
         }
@@ -80,13 +80,13 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LuoShuSection("清理记录")
                 LuoShuGroup {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Metric("累计释放", Formatter.formatFileSize(context, state.lifetimeReleased), Modifier.weight(1f))
                         Metric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f))
                     }
                     if (state.lastTaskTime.isNotBlank()) Text(
                         "上次清理 ${state.lastTaskTime} · 释放 ${Formatter.formatFileSize(context, state.lastReleased)}",
-                        Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+                        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -158,7 +158,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
-            .padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val statusColor = when {
                 state.ready && !state.running -> colors.success
                 state.connectionFailed -> scheme.error
@@ -179,16 +179,23 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                Text(value, fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    value,
+                    fontSize = 32.sp,
+                    lineHeight = 40.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFeatureSettings = "tnum",
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.running && state.taskProgressTotal <= 0) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape))
                 } else if (state.running) {
                     LinearProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape)
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
                     )
                 } else if (state.storageTotal > 0) {
                     StorageSegments(state)
@@ -197,6 +204,10 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                     color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
             }
             Button(onClick = action, enabled = state.running || !state.connecting || state.scanCompleted,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = scheme.primaryContainer,
+                    contentColor = scheme.onPrimaryContainer
+                ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
                 Icon(when {
                     state.running -> Icons.Rounded.Stop
@@ -229,7 +240,7 @@ private fun StorageSegments(state: DashboardUiState) {
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
-            Modifier.fillMaxWidth().height(9.dp).clip(CircleShape),
+            Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             if (occupied > 0L) Box(
@@ -266,6 +277,6 @@ private fun StorageLegend(label: String, color: Color) {
 private fun Metric(label: String, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleLarge)
+        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"))
     }
 }
