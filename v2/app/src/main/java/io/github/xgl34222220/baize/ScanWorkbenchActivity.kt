@@ -142,7 +142,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         onToggleGroup = ::toggleGroup, onSelectAll = ::selectAllSafe,
                         onClear = ::clearSelection, onProtect = ::protectItem,
                         onQuarantine = ::quarantineItem, onSelectMedium = ::selectAllMedium,
-                        onManageWhitelist = ::openWhitelist
+                        onManageWhitelist = ::openWhitelist,
+                        onResumeSavedScan = ::openResumableScan
                     ))
                 }
             }
@@ -678,6 +679,11 @@ class ScanWorkbenchActivity : ComponentActivity() {
             }.onFailure { screenState = screenState.copy(notice = WorkbenchNotice.ERROR,
                 phase = "白名单保存失败：${it.message ?: it.javaClass.simpleName}") }
         }
+    }
+
+    private fun openResumableScan() {
+        if (screenState.running || screenState.loadingResults) return
+        startActivity(Intent(this, ResumableSmartScanActivity::class.java))
     }
 
     private fun openWhitelist() {
