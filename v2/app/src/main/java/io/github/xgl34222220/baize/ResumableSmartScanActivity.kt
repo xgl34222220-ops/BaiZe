@@ -228,7 +228,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 cacheBindingRequested = true
             }.onFailure {
                 cacheBindingRequested = false
-                screenState = screenState.copy(phase = "缓存 Root 服务启动失败：${it.message}")
+                screenState = screenState.copy(phase = "缓存服务连接失败，请重试")
             }
         }
         if (planService == null && !planBindingRequested) {
@@ -241,7 +241,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 planBindingRequested = true
             }.onFailure {
                 planBindingRequested = false
-                screenState = screenState.copy(phase = "安全项目 Root 服务启动失败：${it.message}")
+                screenState = screenState.copy(phase = "扫描服务连接失败，请重试")
             }
         }
         if (resumeService == null && !resumeBindingRequested) {
@@ -254,7 +254,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 resumeBindingRequested = true
             }.onFailure {
                 resumeBindingRequested = false
-                screenState = screenState.copy(phase = "断点事务 Root 服务启动失败：${it.message}")
+                screenState = screenState.copy(phase = "续清服务连接失败，请重试")
             }
         }
         updateConnectionState()
@@ -390,7 +390,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val plans = planService
         val transactions = resumeService
         if (cache == null || plans == null || transactions == null) {
-            screenState = screenState.copy(phase = "Root 引擎尚未全部连接")
+            screenState = screenState.copy(phase = "清理服务尚未就绪")
             bindServices()
             return
         }
@@ -718,12 +718,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     persistCleanPlan()
                     screenState = screenState.copy(
                         phase = if (resumable) {
-                            "事务断点恢复完成 · 剩余 $remaining 项，可直接继续清理"
-                        } else "清理计划 ${cleanPlanId.take(8)} 已恢复 · $remaining 项可直接清理",
+                            "已恢复上次清理进度 · 剩余 $remaining 项"
+                        } else "已恢复上次扫描结果 · $remaining 项可清理",
                         totalSafe = remaining,
                         cleanReady = true,
                         scanCompleted = true,
                         resumable = resumable,
+                        estimatedBytes = estimatedBytes,
                         runCount = runCount,
                         deletedBytes = deletedBytes,
                         cleanedCandidates = cleanedCandidates,
