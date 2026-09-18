@@ -8,9 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CleaningServices
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +20,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
@@ -39,10 +38,13 @@ internal object AppIconRepository {
     private val memoryCache = object : LruCache<String, ImageBitmap>(ICON_CACHE_SIZE) {}
 
     suspend fun load(context: Context, packageName: String): ImageBitmap? = withContext(Dispatchers.IO) {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION")
+        val info = runCatching { pm.getApplicationInfo(packageName, 0) }.getOrNull() ?: return@withContext null
+        if (info.icon == 0 && info.roundIcon == 0) return@withContext null
         memoryCache.get(packageName)?.let { return@withContext it }
         runCatching {
-            context.packageManager
-                .getApplicationIcon(packageName)
+            info.loadIcon(pm)
                 .toBitmap(
                     width = ICON_BITMAP_SIZE,
                     height = ICON_BITMAP_SIZE,
@@ -78,11 +80,10 @@ internal fun ApplicationIcon(
                 contentScale = ContentScale.Crop
             )
         } else {
-            Icon(
-                imageVector = Icons.Rounded.CleaningServices,
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(25.dp)
+            Text(
+                text = label.trim().firstOrNull()?.uppercase() ?: packageName.trim().firstOrNull()?.uppercase() ?: "?",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
