@@ -41,7 +41,7 @@ internal object AppIconRepository {
         val pm = context.packageManager
         @Suppress("DEPRECATION")
         val info = runCatching { pm.getApplicationInfo(packageName, 0) }.getOrNull() ?: return@withContext null
-        if (info.icon == 0 && info.roundIcon == 0) return@withContext null
+        if (info.icon == 0) return@withContext null
         memoryCache.get(packageName)?.let { return@withContext it }
         runCatching {
             info.loadIcon(pm)
