@@ -2,6 +2,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
 SERVICE = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/root/CleanPlanResumeRootService.kt").read_text()
 ACTIVITY = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/ResumableSmartScanActivity.kt").read_text()
 SHELL = (ROOT / "v2/module/cache-snapshot-clean.sh").read_text()
