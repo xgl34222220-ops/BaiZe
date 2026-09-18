@@ -324,20 +324,26 @@ end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 mv -f "$DETAILS_TMP" "$REPORT_FILE"
 COVERAGE="$STATE_DIR/apk-coverage.tsv"
-printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$"
-printf 'scanned\t扫描诊断\t-\t-\t%s\t%s\t%s\t%s\n' \
-  "0" "0" "Root 可见存储" \
+COVERAGE_TMP="$COVERAGE.tmp.$$"
+printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE_TMP"
+printf 'scanned\t扫描诊断\t-\t-\t0\t0\t%s\t%s\n' \
+  "Root 可见存储" \
   "扫描根 $root_total · 原始命中 $apk_total · Root兜底 $brute_force_used · 路径过滤 $path_filtered · 白名单 $whitelist_filtered · direct=$direct_index_code shared=$shared_index_code" \
-  >>"$COVERAGE.tmp.$"
+  >>"$COVERAGE_TMP"
+printf 'scanned\t安装包总计\t-\t-\t%s\t%s\t%s\t%s\n' \
+  "$files" "$bytes" "全部授权扫描根" "最终可清理候选汇总" >>"$COVERAGE_TMP"
+
 old_ifs=$IFS; IFS='
 '
-for root in $APK_ROOTS; do
+for root in $APK_ROOTS $APK_FALLBACK_ROOTS $APK_PRIVATE_BOUNDARIES; do
+  [ -n "$root" ] || continue
   coverage_stats=$(awk -F '\t' -v prefix="$root/" 'NR>1 && index($6,prefix)==1 {n+=$4;b+=$5} END {printf "%.0f %.0f",n,b}' "$REPORT_FILE")
   coverage_files=${coverage_stats%% *}; coverage_bytes=${coverage_stats##* }
-  printf 'scanned\t安装包存储\t-\t-\t%s\t%s\t%s\t\n' "$coverage_files" "$coverage_bytes" "$root" >>"$COVERAGE.tmp.$$"
+  printf 'scanned\t安装包存储\t-\t-\t0\t0\t%s\t%s\n' \
+    "$root" "该根命中 $coverage_files 个 / $(human_bytes "$coverage_bytes")" >>"$COVERAGE_TMP"
 done
 IFS=$old_ifs
-mv -f "$COVERAGE.tmp.$$" "$COVERAGE"
+mv -f "$COVERAGE_TMP" "$COVERAGE"
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
 {
   echo "mode=apk-scan"
