@@ -214,15 +214,29 @@ if [ -f "$INDEXER" ]; then
   fi
 fi
 
-if [ "$direct_index_code" -ne 0 ] && [ "$shared_index_code" -ne 0 ] && [ ! -s "$APK_INDEX" ]; then
-  echo "安装包目录与共享索引均不可读，请检查 Root 存储挂载" >&2
+brute_force_used=0
+apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
+if [ "$apk_total" -eq 0 ]; then
+  set_phase "常规索引为 0，正在执行 Root 全存储兜底扫描" 0 0 "$MEDIA_ROOT"
+  BRUTE_APK_INDEX="$TMP_DIR/apk-files-bruteforce.nul"
+  apk_bruteforce_candidates "$BRUTE_APK_INDEX"
+  if [ -s "$BRUTE_APK_INDEX" ]; then
+    cat "$BRUTE_APK_INDEX" >>"$APK_INDEX"
+    brute_force_used=1
+  fi
+  apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
+fi
+
+if [ "$direct_index_code" -ne 0 ] && [ "$shared_index_code" -ne 0 ] && [ "$apk_total" -eq 0 ]; then
+  echo "安装包目录、共享索引与 Root 兜底扫描均未发现可读候选" >&2
   exit 5
 fi
 
-root_total=$(printf '%s\n' "$APK_ROOTS" | awk 'NF{n++} END{print n+0}')
+root_total=$(printf '%s\n' "$APK_ROOTS $APK_FALLBACK_ROOTS" | tr ' ' '\n' | awk 'NF{n++} END{print n+0}')
 root_current=$root_total
-apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
 protected=0
+path_filtered=0
+whitelist_filtered=0
 errors=0
 cutoff=$((START_EPOCH - DAYS * 86400))
 files=0
@@ -258,7 +272,13 @@ while IFS= read -r -d '' candidate; do
     case "$modified" in ''|*[!0-9]*) modified=$START_EPOCH ;; esac
     [ "$modified" -lt "$cutoff" ] || continue
   fi
-  if ! apk_path_allowed "$candidate" || path_conflicts_whitelist "$candidate"; then
+  if ! apk_scan_candidate_allowed "$candidate"; then
+    path_filtered=$((path_filtered + 1))
+    protected=$((protected + 1))
+    continue
+  fi
+  if path_conflicts_whitelist "$candidate"; then
+    whitelist_filtered=$((whitelist_filtered + 1))
     protected=$((protected + 1))
     continue
   fi
@@ -288,6 +308,10 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "include_private=$INCLUDE_PRIVATE"
   echo "direct_index_code=$direct_index_code"
   echo "shared_index_code=$shared_index_code"
+  echo "raw_candidates=$apk_total"
+  echo "brute_force_used=$brute_force_used"
+  echo "path_filtered=$path_filtered"
+  echo "whitelist_filtered=$whitelist_filtered"
   echo "bytes=$bytes"
   echo "files=$files"
   echo "engine=apk-snapshot-v2.3-global-index"
@@ -300,16 +324,26 @@ end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 mv -f "$DETAILS_TMP" "$REPORT_FILE"
 COVERAGE="$STATE_DIR/apk-coverage.tsv"
-printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE.tmp.$$"
+COVERAGE_TMP="$COVERAGE.tmp.$$"
+printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE_TMP"
+printf 'scanned\t扫描诊断\t-\t-\t0\t0\t%s\t%s\n' \
+  "Root 可见存储" \
+  "扫描根 $root_total · 原始命中 $apk_total · Root兜底 $brute_force_used · 路径过滤 $path_filtered · 白名单 $whitelist_filtered · direct=$direct_index_code shared=$shared_index_code" \
+  >>"$COVERAGE_TMP"
+printf 'scanned\t安装包总计\t-\t-\t%s\t%s\t%s\t%s\n' \
+  "$files" "$bytes" "全部授权扫描根" "最终可清理候选汇总" >>"$COVERAGE_TMP"
+
 old_ifs=$IFS; IFS='
 '
-for root in $APK_ROOTS; do
+for root in $APK_ROOTS $APK_FALLBACK_ROOTS $APK_PRIVATE_BOUNDARIES; do
+  [ -n "$root" ] || continue
   coverage_stats=$(awk -F '\t' -v prefix="$root/" 'NR>1 && index($6,prefix)==1 {n+=$4;b+=$5} END {printf "%.0f %.0f",n,b}' "$REPORT_FILE")
   coverage_files=${coverage_stats%% *}; coverage_bytes=${coverage_stats##* }
-  printf 'scanned\t安装包存储\t-\t-\t%s\t%s\t%s\t\n' "$coverage_files" "$coverage_bytes" "$root" >>"$COVERAGE.tmp.$$"
+  printf 'scanned\t安装包存储\t-\t-\t0\t0\t%s\t%s\n' \
+    "$root" "该根命中 $coverage_files 个 / $(human_bytes "$coverage_bytes")" >>"$COVERAGE_TMP"
 done
 IFS=$old_ifs
-mv -f "$COVERAGE.tmp.$$" "$COVERAGE"
+mv -f "$COVERAGE_TMP" "$COVERAGE"
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
 {
   echo "mode=apk-scan"
@@ -345,6 +379,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "$result"
   echo "扫描快照: $snapshot_id"
   echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
+  echo "原始候选: $apk_total | Root兜底: $brute_force_used | 路径过滤: $path_filtered | 白名单: $whitelist_filtered"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
   echo "扫描覆盖来源: $root_total（直接根） + 全局共享索引；direct=$direct_index_code shared=$shared_index_code"
 } >>"$LOG_FILE"

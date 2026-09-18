@@ -163,6 +163,63 @@ apk_collect_private_candidates() {
   IFS=$_apk_save_ifs
 }
 
+apk_scan_candidate_allowed() {
+  case "$1" in
+    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$1" ] || return 1
+  [ ! -L "$1" ] || return 1
+
+  _apk_scan_save_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+    case "$1" in
+      "$_apk_base"/*)
+        set +f
+        IFS=$_apk_scan_save_ifs
+        return 0
+        ;;
+    esac
+  done
+  _apk_scan_real=$(readlink -f "$1" 2>/dev/null || true)
+  if [ -n "$_apk_scan_real" ]; then
+    for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+      _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null || true)
+      [ -n "$_apk_base_real" ] || continue
+      case "$_apk_scan_real" in
+        "$_apk_base_real"/*)
+          set +f
+          IFS=$_apk_scan_save_ifs
+          return 0
+          ;;
+      esac
+    done
+  fi
+  for _apk_base in $APK_PRIVATE_BOUNDARIES; do
+    case "$1" in
+      "$_apk_base"/*)
+        _apk_relative=${1#"$_apk_base"/}
+        _apk_package=${_apk_relative%%/*}
+        _apk_tail=${_apk_relative#*/}
+        case "$_apk_package" in ''|*/*) continue ;; esac
+        case "$_apk_tail" in
+          cache/*|code_cache/*|files/*)
+            set +f
+            IFS=$_apk_scan_save_ifs
+            return 0
+            ;;
+        esac
+        ;;
+    esac
+  done
+  set +f
+  IFS=$_apk_scan_save_ifs
+  return 1
+}
+
 apk_path_allowed() {
   case "$1" in
     *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
@@ -195,6 +252,51 @@ apk_find_into() {
   find "$_apk_base" -xdev -type f \
     \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
     -print0 >"$_apk_out" 2>/dev/null
+}
+
+apk_bruteforce_candidates() {
+  _apk_out=$1
+  : >"$_apk_out"
+  _apk_seen_roots=
+  for _apk_root in "${MEDIA_ROOT:-/data/media}" "${APK_PUBLIC_MEDIA_ROOT:-/storage/emulated}" /sdcard /storage /mnt/media_rw /data/local/tmp; do
+    [ -d "$_apk_root" ] || continue
+    [ ! -L "$_apk_root" ] || continue
+    case "
+$_apk_seen_roots
+" in *"
+$_apk_root
+"*) continue ;; esac
+    apk_list_append _apk_seen_roots "$_apk_root"
+    apk_add_fallback_root "$_apk_root"
+    find "$_apk_root" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >>"$_apk_out" 2>/dev/null || true
+  done
+  if [ -n "${BAIZE_BRUTE_STORAGE_ROOTS:-}" ]; then
+    _apk_old_ifs=$IFS
+    IFS=:
+    for _apk_root in $BAIZE_BRUTE_STORAGE_ROOTS; do
+      [ -d "$_apk_root" ] || continue
+      [ ! -L "$_apk_root" ] || continue
+      case "
+$_apk_seen_roots
+" in *"
+$_apk_root
+"*) continue ;; esac
+      apk_list_append _apk_seen_roots "$_apk_root"
+      apk_add_fallback_root "$_apk_root"
+      find "$_apk_root" -type f \
+        \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+        -print0 >>"$_apk_out" 2>/dev/null || true
+    done
+    IFS=$_apk_old_ifs
+  fi
+  if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
+    _apk_private_tmp="${_apk_out}.private.$"
+    apk_collect_private_candidates "$_apk_private_tmp"
+    [ ! -s "$_apk_private_tmp" ] || cat "$_apk_private_tmp" >>"$_apk_out"
+    rm -f "$_apk_private_tmp"
+  fi
 }
 
 apk_fallback_for_root() {
