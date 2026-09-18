@@ -554,6 +554,17 @@ apk_bruteforce_candidates() {
   _apk_out=$1
   : >"$_apk_out"
   apk_discover_runtime_roots
+  # Keep the explicit brute-force hook used by diagnostics/tests and ROM-specific
+  # recovery. Dynamic mount discovery supplements this list; it does not replace it.
+  if [ -n "${BAIZE_BRUTE_STORAGE_ROOTS:-}" ]; then
+    _apk_brute_ifs=$IFS
+    IFS=:
+    for _apk_brute_root in $BAIZE_BRUTE_STORAGE_ROOTS; do
+      apk_add_fallback_root "$_apk_brute_root"
+    done
+    IFS=$_apk_brute_ifs
+  fi
+  apk_add_fallback_root /sdcard
   _apk_seen_real=
   _apk_root_no=0
   _apk_old_ifs=$IFS
