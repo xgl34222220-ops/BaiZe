@@ -238,7 +238,7 @@ internal fun ScanWorkbenchScreen(
             }
             if (state.items.isEmpty()) {
                 item { WorkbenchEmptyCard(visibleState, onDetails = { showReport = true }) }
-            } else if (historicalSnapshot && !showHistoryRecords) {
+            } else if (historicalSnapshot) {
                 item {
                     HistoricalResultGate(
                         state = visibleState,
@@ -547,8 +547,16 @@ private fun WorkbenchSummaryCard(
 private fun WorkbenchStat(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(value, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium,
-            fontFeatureSettings = "tnum", color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 17.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Medium,
+                fontFeatureSettings = "tnum"
+            ),
+            color = MaterialTheme.colorScheme.onSurface
+        )
         Text(label, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -610,8 +618,10 @@ private fun WorkbenchProgress(state: WorkbenchUiState) {
         if (state.progressTotal > 0L) Text(
             "${state.progressCurrent.coerceIn(0L, state.progressTotal)} / ${state.progressTotal}",
             Modifier.padding(top = 5.dp),
-            fontSize = 11.sp,
-            fontFeatureSettings = "tnum",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontFeatureSettings = "tnum"
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
