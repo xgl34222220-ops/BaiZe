@@ -163,6 +163,49 @@ apk_collect_private_candidates() {
   IFS=$_apk_save_ifs
 }
 
+apk_scan_candidate_allowed() {
+  case "$1" in
+    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$1" ] || return 1
+  [ ! -L "$1" ] || return 1
+
+  _apk_scan_save_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+    case "$1" in
+      "$_apk_base"/*)
+        set +f
+        IFS=$_apk_scan_save_ifs
+        return 0
+        ;;
+    esac
+  done
+  for _apk_base in $APK_PRIVATE_BOUNDARIES; do
+    case "$1" in
+      "$_apk_base"/*)
+        _apk_relative=${1#"$_apk_base"/}
+        _apk_package=${_apk_relative%%/*}
+        _apk_tail=${_apk_relative#*/}
+        case "$_apk_package" in ''|*/*) continue ;; esac
+        case "$_apk_tail" in
+          cache/*|code_cache/*|files/*)
+            set +f
+            IFS=$_apk_scan_save_ifs
+            return 0
+            ;;
+        esac
+        ;;
+    esac
+  done
+  set +f
+  IFS=$_apk_scan_save_ifs
+  return 1
+}
+
 apk_path_allowed() {
   case "$1" in
     *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
