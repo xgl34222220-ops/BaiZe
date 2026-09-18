@@ -522,7 +522,7 @@ private fun WorkbenchSummaryCard(
                 style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (state.scanReady) Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
                 else "需重新扫描", Modifier.padding(top = 3.dp),
-                style = BaiZeTokens.type.hero, color = MaterialTheme.colorScheme.onSurface)
+                style = BaiZeTokens.type.hero.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurface)
             Row(Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(16.dp))
                 .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 12.dp)) {
                 WorkbenchStat("${presentation.appCount}", "应用", Modifier.weight(1f))
@@ -548,7 +548,7 @@ private fun WorkbenchStat(value: String, label: String, modifier: Modifier = Mod
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(value, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface)
+            fontFeatureSettings = "tnum", color = MaterialTheme.colorScheme.onSurface)
         Text(label, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -611,6 +611,7 @@ private fun WorkbenchProgress(state: WorkbenchUiState) {
             "${state.progressCurrent.coerceIn(0L, state.progressTotal)} / ${state.progressTotal}",
             Modifier.padding(top = 5.dp),
             fontSize = 11.sp,
+            fontFeatureSettings = "tnum",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
