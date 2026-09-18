@@ -88,7 +88,7 @@ private object PersistentAppIconStore {
         if (packageName.isBlank()) return null
         val pm = context.packageManager
         val info = appInfo(pm, packageName) ?: return null
-        if (info.icon == 0 && info.roundIcon == 0) return null
+        if (info.icon == 0) return null
         synchronized(this) { memoryCache.get(packageName) }?.let { return it }
         val lock = packageLocks.getOrPut(packageName) { Any() }
         return synchronized(lock) {
