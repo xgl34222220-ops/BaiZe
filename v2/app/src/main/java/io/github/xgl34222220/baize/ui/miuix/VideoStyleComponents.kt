@@ -293,11 +293,11 @@ fun VideoActionTile(icon: ImageVector, title: String, subtitle: String, onClick:
 @Composable
 fun VideoStatusPill(text: String, positive: Boolean = true, modifier: Modifier = Modifier) {
     val color = if (positive) BaiZeTokens.colors.success else BaiZeTokens.colors.warning
-    Surface(modifier, shape = CircleShape, color = color.copy(alpha = .09f)) {
-        Row(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+    Surface(modifier, shape = CircleShape, color = color.copy(alpha = .075f)) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.size(6.dp).background(color, CircleShape))
-            Text(text, color = color, style = MaterialTheme.typography.labelMedium)
+            Box(Modifier.size(6.dp).background(color.copy(alpha = .88f), CircleShape))
+            Text(text, color = color.copy(alpha = .84f), style = MaterialTheme.typography.labelMedium)
         }
     }
 }
