@@ -215,17 +215,24 @@ if [ -f "$INDEXER" ]; then
 fi
 
 brute_force_used=0
-apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
-if [ "$apk_total" -eq 0 ]; then
-  set_phase "常规索引为 0，正在执行 Root 全存储兜底扫描" 0 0 "$MEDIA_ROOT"
+pre_supplement_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
+apk_total=$pre_supplement_total
+complete_supplement=0
+case "$TRIGGER" in manual|app|ui) complete_supplement=1 ;; esac
+# Interactive scans must always supplement the fixed roots with every safe
+# mount view discovered from /proc/self/mountinfo. The previous code did this
+# only when the first-pass count was exactly zero, so one incidental hit could
+# hide dozens of packages on another Android/HyperOS storage view.
+if [ "$complete_supplement" -eq 1 ] || [ "$apk_total" -eq 0 ]; then
+  set_phase "正在补充扫描 Android 实际存储挂载点" 0 0 "$MEDIA_ROOT"
   BRUTE_APK_INDEX="$TMP_DIR/apk-files-bruteforce.nul"
   apk_bruteforce_candidates "$BRUTE_APK_INDEX"
-  if [ -s "$BRUTE_APK_INDEX" ]; then
-    cat "$BRUTE_APK_INDEX" >>"$APK_INDEX"
-    brute_force_used=1
-  fi
+  brute_force_used=1
+  [ ! -s "$BRUTE_APK_INDEX" ] || cat "$BRUTE_APK_INDEX" >>"$APK_INDEX"
   apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
 fi
+supplemental_candidates=$((apk_total - pre_supplement_total))
+[ "$supplemental_candidates" -ge 0 ] || supplemental_candidates=0
 
 if [ "$direct_index_code" -ne 0 ] && [ "$shared_index_code" -ne 0 ] && [ "$apk_total" -eq 0 ]; then
   echo "安装包目录、共享索引与 Root 兜底扫描均未发现可读候选" >&2
@@ -309,7 +316,7 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "direct_index_code=$direct_index_code"
   echo "shared_index_code=$shared_index_code"
   echo "raw_candidates=$apk_total"
-  echo "brute_force_used=$brute_force_used"
+  echo "brute_force_used=$brute_force_used"\n  echo "pre_supplement_candidates=$pre_supplement_total"\n  echo "supplemental_candidates=$supplemental_candidates"
   echo "path_filtered=$path_filtered"
   echo "whitelist_filtered=$whitelist_filtered"
   echo "bytes=$bytes"
@@ -379,7 +386,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "$result"
   echo "扫描快照: $snapshot_id"
   echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
-  echo "原始候选: $apk_total | Root兜底: $brute_force_used | 路径过滤: $path_filtered | 白名单: $whitelist_filtered"
+  echo "原始候选: $apk_total | 首轮: $pre_supplement_total | 挂载补充: $supplemental_candidates | 完整补扫: $brute_force_used | 路径过滤: $path_filtered | 白名单: $whitelist_filtered"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
   echo "扫描覆盖来源: $root_total（直接根） + 全局共享索引；direct=$direct_index_code shared=$shared_index_code"
 } >>"$LOG_FILE"
