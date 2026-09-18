@@ -83,4 +83,14 @@ if tr '\000' '\n' < "$T/out-native/storage-files.nul" | grep -qE '\.(part|crdown
   echo "  [FAIL] 下载中间态文件不应进入索引"; fail=$((fail+1))
 fi
 
+# 模拟 HyperOS / Android 16：raw media 根不可见，但 public emulated 根可见。
+rm -rf "$T/state-public" "$T/public"; mkdir -p "$T/state-public" "$T/public/0/Download"
+printf 'max_file_mb=1\n' > "$T/state-public/config.conf"
+printf 'fallback' > "$T/public/0/Download/public.apk"
+( cd "$T" && env BAIZE_STATE_DIR="$T/state-public" BAIZE_MEDIA_ROOT="$T/missing-media" \
+    BAIZE_PUBLIC_MEDIA_ROOT="$T/public" BAIZE_NATIVE_ENGINE="$ENGINE" \
+    bash ./storage-index.sh refresh storage-analysis >/dev/null 2>&1 )
+public_count=$(tr -cd '\000' < "$T/state-public/index/apk-files.nul" | wc -c | tr -d ' ')
+[ "$public_count" = 1 ] || { echo "  [FAIL] raw media 缺失时 public emulated APK 应被索引，实际 $public_count"; fail=$((fail+1)); }
+
 if [ "$fail" -eq 0 ]; then echo "原生索引器与 shell 退路输出一致：ok"; else echo "$fail 项失败"; exit 1; fi

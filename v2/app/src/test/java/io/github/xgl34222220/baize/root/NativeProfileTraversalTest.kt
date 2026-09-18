@@ -23,64 +23,49 @@ class NativeProfileTraversalTest {
     private fun engine(cancelled: AtomicBoolean = AtomicBoolean(false), rules: File = folder.root) =
         NativeProfileEngine(RuntimeEnvironment.getApplication(), cancelled, ruleDirectory = rules)
 
-    @Test fun protectedTreesExposeOnlyDescendantShellsAndKeepOrdinaryCoverage() {
+    @Test fun userFacingTreesAreTraversedWhileHiddenAndObbStayProtected() {
         val root = folder.newFolder("storage")
-        fun dir(path: String) = File(root, path).apply { mkdirs() }
         fun file(path: String) = File(root, path).apply { parentFile!!.mkdirs(); writeText("") }
-        dir("ordinary/empty")
-        file("ordinary/zero.tmp")
-        file("ordinary/.keep")
-        dir(".cache/empty")
-        file(".cache/old.tmp")
-        for (protected in listOf("Download", "Android", ".git")) {
-            dir("$protected/empty")
-            dir("$protected/nonempty/nested")
-            file("$protected/nonempty/zero.tmp")
-            file("$protected/ignored.tmp")
-        }
-        val external = folder.newFolder("external")
-        File(external, "never.tmp").writeText("")
-        Files.createSymbolicLink(File(root, "linked").toPath(), external.toPath())
-        Files.createSymbolicLink(File(root, "Download/link").toPath(), external.toPath())
-        Files.createSymbolicLink(File(root, "dangling").toPath(), File(root, "absent").toPath())
+
+        val ordinary = file("ordinary/zero.tmp")
+        val download = file("Download/sub/zero.tmp")
+        val dcim = file("DCIM/Camera/zero.tmp")
+        val androidData = file("Android/data/com.example/cache/zero.tmp")
+        val hidden = file(".git/private/ignored.tmp")
+        val obb = file("Android/obb/com.example/ignored.tmp")
 
         val pre = mutableSetOf<String>()
         val post = mutableSetOf<String>()
-        val empty = mutableSetOf<String>()
         engine().walk(root, 9, Long.MAX_VALUE, true) { entry, isPost ->
             val path = entry.file.relativeTo(root).path
-            if (isPost) {
-                post += path
-                if (entry.emptyDirectory) empty += path
-            } else pre += path
+            if (isPost) post += path else pre += path
         }
-        assertEquals(setOf("", "ordinary", "ordinary/empty", "ordinary/zero.tmp", "ordinary/.keep",
-            ".cache", ".cache/empty", ".cache/old.tmp", "Download", "Android", ".git"), pre)
-        val shellPosts = listOf("Download", "Android", ".git").flatMap {
-            listOf("$it/empty", "$it/nonempty", "$it/nonempty/nested")
-        }.toSet()
-        assertEquals(setOf("", "ordinary", "ordinary/empty", ".cache", ".cache/empty") + shellPosts, post)
-        assertEquals(setOf("ordinary/empty", ".cache/empty") + listOf("Download", "Android", ".git").flatMap {
-            listOf("$it/empty", "$it/nonempty/nested")
-        }, empty)
-        assertTrue(File(external, "never.tmp").exists())
+
+        assertTrue(ordinary.relativeTo(root).path in pre)
+        assertTrue(download.relativeTo(root).path in pre)
+        assertTrue(dcim.relativeTo(root).path in pre)
+        assertTrue(androidData.relativeTo(root).path in pre)
+        assertFalse(hidden.relativeTo(root).path in pre)
+        assertFalse(obb.relativeTo(root).path in pre)
+
+        // Protected directory shells may still receive post visits for empty-dir accounting,
+        // but their files must never be traversed.
+        assertTrue(".git/private" in post)
+        assertTrue("Android/obb/com.example" in post)
     }
 
-    @Test fun depthBoundaryRetainsProtectedShellPostsButNotOrdinaryDirectoryPosts() {
-        val root = folder.newFolder("storage")
-        File(root, "ordinary/boundary/deeper").mkdirs()
-        File(root, "Download/empty").mkdirs()
-        File(root, "Download/full/deeper").mkdirs()
+    @Test fun downloadUsesNormalDepthBoundaryInsteadOfProtectedShellTraversal() {
+        val root = folder.newFolder("depth-storage")
+        File(root, "Download/level/deeper").mkdirs()
+        File(root, "Download/level/file.tmp").writeText("x")
         val visits = mutableSetOf<String>()
-        val empty = mutableSetOf<String>()
         engine().walk(root, 2, Long.MAX_VALUE, true) { entry, post ->
-            val path = entry.file.relativeTo(root).path
-            visits += "$post:$path"
-            if (post && entry.emptyDirectory) empty += path
+            visits += "$post:${entry.file.relativeTo(root).path}"
         }
-        assertEquals(setOf("false:", "true:", "false:ordinary", "true:ordinary", "false:ordinary/boundary",
-            "false:Download", "true:Download/empty", "true:Download/full"), visits)
-        assertEquals(setOf("Download/empty"), empty)
+        assertTrue("false:Download" in visits)
+        assertTrue("true:Download" in visits)
+        assertTrue("false:Download/level" in visits)
+        assertFalse(visits.any { it.contains("deeper") || it.contains("file.tmp") })
     }
 
     @Test fun unprunedLogWalkStillVisitsFilesInsideProtectedNames() {

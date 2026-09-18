@@ -120,9 +120,17 @@ class NativeProfileRuleCoverageTest {
             sharedRootOverride = listOf(storage))
         val result = items(engine, "safe")
         val paths = result.map { it.getString("path") }.toSet()
-        assertTrue(paths.containsAll(setOf(thumbnail.parentFile!!.canonicalPath, metadata.canonicalPath, log.canonicalPath, oldTrash.canonicalPath)))
-        for (keep in listOf(recentLog, recentTrash, document, marker)) assertFalse(keep.path, paths.contains(keep.canonicalPath))
+        assertTrue(paths.containsAll(setOf(
+            thumbnail.parentFile!!.canonicalPath,
+            metadata.canonicalPath,
+            log.canonicalPath,
+            oldTrash.canonicalPath,
+            document.canonicalPath
+        )))
+        for (keep in listOf(recentLog, recentTrash, marker)) assertFalse(keep.path, paths.contains(keep.canonicalPath))
         assertFalse(paths.contains(oldTrash.parentFile!!.canonicalPath))
+        assertEquals("critical", result.single { it.getString("path") == document.canonicalPath }.getString("risk"))
+        assertTrue(result.single { it.getString("path") == document.canonicalPath }.getString("blockedReason").isNotBlank())
         assertEquals(30, result.single { it.getString("path") == oldTrash.canonicalPath }.getInt("retentionDays"))
         assertEquals(7, result.single { it.getString("path") == log.canonicalPath }.getInt("retentionDays"))
     }

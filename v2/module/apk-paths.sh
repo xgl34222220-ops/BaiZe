@@ -45,7 +45,9 @@ apk_add_fallback_root() {
 apk_load_roots() {
   APK_ROOTS=
   APK_FALLBACK_ROOTS=
+  APK_PRIVATE_BOUNDARIES=
   _apk_media_root=${MEDIA_ROOT:-/data/media}
+  APK_PUBLIC_MEDIA_ROOT=${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}
   _apk_media_users=0
 
   # Prefer the underlying media tree. It bypasses scoped-storage/FUSE quirks
@@ -58,13 +60,13 @@ apk_load_roots() {
     _apk_media_users=$((_apk_media_users + 1))
     # Keep the emulated-storage view as a read fallback only. It is scanned
     # only when the physical media view yields no package files.
-    apk_add_fallback_root "/storage/emulated/$_apk_id"
+    apk_add_fallback_root "$APK_PUBLIC_MEDIA_ROOT/$_apk_id"
   done
 
   # Some ROM/root namespaces do not expose /data/media even though the public
   # emulated volume is mounted. Promote the public view in that case.
   if [ "$_apk_media_users" -eq 0 ]; then
-    for _apk_user in /storage/emulated/[0-9]*; do
+    for _apk_user in "$APK_PUBLIC_MEDIA_ROOT"/[0-9]*; do
       _apk_id=${_apk_user##*/}
       case "$_apk_id" in ''|*[!0-9]*) continue ;; esac
       apk_add_root "$_apk_user"
@@ -97,15 +99,57 @@ apk_load_private_roots() {
       _apk_id=${_apk_user##*/}
       case "$_apk_id" in ''|*[!0-9]*) continue ;; esac
       [ -d "$_apk_user" ] || continue
-      for _apk_app in "$_apk_user"/*; do
-        [ -d "$_apk_app" ] || continue
-        [ ! -L "$_apk_app" ] || continue
-        for _apk_leaf in cache code_cache files; do
-          apk_add_root "$_apk_app/$_apk_leaf"
-        done
-      done
+      [ ! -L "$_apk_user" ] || continue
+      _apk_real=$(readlink -f "$_apk_user" 2>/dev/null) || continue
+      apk_list_append APK_PRIVATE_BOUNDARIES "$_apk_real"
     done
   done
+}
+
+apk_private_path_allowed() {
+  _apk_private_real=$1
+  _apk_save_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_base in $APK_PRIVATE_BOUNDARIES; do
+    case "$_apk_private_real" in
+      "$_apk_base"/*)
+        _apk_relative=${_apk_private_real#$_apk_base/}
+        _apk_package=${_apk_relative%%/*}
+        _apk_tail=${_apk_relative#*/}
+        case "$_apk_package" in ''|*/*) continue ;; esac
+        case "$_apk_tail" in
+          cache/*|code_cache/*|files/*)
+            set +f
+            IFS=$_apk_save_ifs
+            return 0
+            ;;
+        esac
+        ;;
+    esac
+  done
+  set +f
+  IFS=$_apk_save_ifs
+  return 1
+}
+
+apk_collect_private_candidates() {
+  _apk_private_out=$1
+  : >"$_apk_private_out"
+  _apk_save_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_base in $APK_PRIVATE_BOUNDARIES; do
+    [ -d "$_apk_base" ] || continue
+    find "$_apk_base" -xdev -mindepth 3 -maxdepth 12 -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      \( -path "$_apk_base/*/cache/*" -o -path "$_apk_base/*/code_cache/*" -o -path "$_apk_base/*/files/*" \) \
+      -print0 >>"$_apk_private_out" 2>/dev/null || true
+  done
+  set +f
+  IFS=$_apk_save_ifs
 }
 
 apk_path_allowed() {
@@ -113,15 +157,16 @@ apk_path_allowed() {
     *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
     *) return 1 ;;
   esac
+  [ ! -L "$1" ] || return 1
   _apk_real=$(readlink -f "$1" 2>/dev/null) || return 1
-  [ "$_apk_real" = "$1" ] || return 1
   _apk_save_ifs=$IFS
   IFS='
 '
   set -f
   for _apk_base in $APK_ROOTS $APK_FALLBACK_ROOTS; do
-    case "$1" in
-      "$_apk_base"/*)
+    _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null) || continue
+    case "$_apk_real" in
+      "$_apk_base_real"/*)
         set +f
         IFS=$_apk_save_ifs
         return 0
@@ -130,7 +175,7 @@ apk_path_allowed() {
   done
   set +f
   IFS=$_apk_save_ifs
-  return 1
+  apk_private_path_allowed "$_apk_real"
 }
 
 apk_find_into() {
@@ -145,7 +190,7 @@ apk_fallback_for_root() {
   case "$1" in
     /data/media/[0-9]*)
       _apk_id=${1##*/}
-      printf '%s\n' "/storage/emulated/$_apk_id"
+      printf '%s\n' "$APK_PUBLIC_MEDIA_ROOT/$_apk_id"
       ;;
     /mnt/media_rw/*)
       _apk_uuid=${1##*/}
@@ -159,12 +204,14 @@ apk_fallback_for_root() {
 
 apk_fallback_allowed() {
   _apk_candidate=$1
+  _apk_candidate_real=$(readlink -f "$_apk_candidate" 2>/dev/null) || return 1
   _apk_save_ifs=$IFS
   IFS='
 '
   set -f
   for _apk_base in $APK_FALLBACK_ROOTS; do
-    [ "$_apk_base" = "$_apk_candidate" ] && {
+    _apk_base_real=$(readlink -f "$_apk_base" 2>/dev/null) || continue
+    [ "$_apk_base_real" = "$_apk_candidate_real" ] && {
       set +f
       IFS=$_apk_save_ifs
       return 0
@@ -231,6 +278,16 @@ apk_collect_candidates() {
   done
   set +f
   IFS=$_apk_save_ifs
+
+  if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
+    _apk_private_tmp="${_apk_output}.private.$"
+    apk_collect_private_candidates "$_apk_private_tmp"
+    if [ -s "$_apk_private_tmp" ]; then
+      cat "$_apk_private_tmp" >>"$_apk_output"
+      _apk_success_roots=$((_apk_success_roots + 1))
+    fi
+    rm -f "$_apk_private_tmp"
+  fi
 
   # One unreadable subtree must never discard packages found elsewhere. Only
   # fail when every storage root was unreadable and no candidate could be read.
