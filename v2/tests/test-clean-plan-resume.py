@@ -26,6 +26,13 @@ require("transactions.recover(" in clean_path, "failure path must recover transa
 require("继续清理" in ACTIVITY, "resume action is not visible to the user")
 require("smart_clean_plan_v2" in ACTIVITY, "resume plan schema is missing")
 require("LEGACY_PLAN_KEY" in ACTIVITY, "v1 clean plans must migrate")
+require("确认执行清理？" in ACTIVITY, "cleanup confirmation must use product-facing copy")
+require("estimatedBytes" in ACTIVITY, "cleanup confirmation must carry estimated bytes when available")
+require("可恢复清理计划生成完成" not in ACTIVITY, "developer scan-completion copy leaked to users")
+require("cleanPlanId.take(8)" not in ACTIVITY, "clean plan hash must never be shown to users")
+require("执行清理计划 ${" not in ACTIVITY, "internal clean-plan identifier leaked to confirmation copy")
+require('append(" · ${elapsed}ms")' not in ACTIVITY, "cleanup duration milliseconds must stay out of user copy")
+require('optLong("elapsedMs")' not in ACTIVITY, "scan duration milliseconds must stay out of user summaries")
 
 clear_start = ACTIVITY.index("private fun clearLocalPlan()")
 clear_end = ACTIVITY.index("private fun resetPlanFields()", clear_start)

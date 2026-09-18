@@ -55,7 +55,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 32.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomInset + 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item(key = "appearance-header") {
@@ -65,7 +65,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
             AppearancePreview(settings, usesMonet)
         }
 
-        item(key = "appearance-style-title") { LuoShuSection("界面风格", "白泽默认使用洛书同款 MIUIX 设计") }
+        item(key = "appearance-style-title") { LuoShuSection("界面风格") }
         item(key = "appearance-style") {
             ChoiceCard(
                 values = UiStyle.entries,
@@ -78,7 +78,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
         item(key = "appearance-theme-title") { LuoShuSection("明暗模式") }
         item(key = "appearance-theme") { ThemeChoices(settings.themeMode, actions.onThemeMode) }
 
-        item(key = "appearance-color-title") { LuoShuSection("主题配色", "保留白泽自己的品牌色，同时沿用洛书的层级") }
+        item(key = "appearance-color-title") { LuoShuSection("主题配色") }
         item(key = "appearance-color") {
             LuoShuGroup {
                 LuoShuSwitchRow(
@@ -109,7 +109,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
             ChoiceCard(KolorStyle.entries, settings.kolorStyle, { it.label }, actions.onKolorStyle)
         }
 
-        item(key = "appearance-effects-title") { LuoShuSection("显示效果", "玻璃、模糊与悬浮底栏使用同一套能力门控") }
+        item(key = "appearance-effects-title") { LuoShuSection("显示效果") }
         item(key = "appearance-effects") {
             LuoShuGroup {
                 LuoShuSwitchRow(
@@ -182,7 +182,7 @@ private fun AppearancePreview(settings: AppearanceSettings, usesMonet: Boolean) 
                         listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)
                     )
                 )
-                .padding(22.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(

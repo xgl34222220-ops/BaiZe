@@ -19,13 +19,21 @@ class PackageCoverage(unittest.TestCase):
         self.state = self.root / 'state'
         self.state.mkdir()
         self.media = self.root / 'media'
+        self.data = self.root / 'data'
+        self.data.mkdir()
         self.sd = self.root / 'sd'
         self.sd.mkdir()
         for name in ('apk-snapshot-scan.sh', 'apk-snapshot-clean.sh', 'apk-paths.sh', 'whitelist-match.sh'):
             shutil.copy(ROOT / 'v2/module' / name, self.module / name)
         (self.state / 'config.conf').write_text('apk_package_days=30\napk_package_max_mb=4096\n')
         (self.state / 'whitelist.conf').touch()
-        self.env = dict(os.environ, BAIZE_STATE_DIR=str(self.state), BAIZE_MEDIA_ROOT=str(self.media), BAIZE_EXTRA_STORAGE_ROOTS=str(self.sd))
+        self.env = dict(
+            os.environ,
+            BAIZE_STATE_DIR=str(self.state),
+            BAIZE_MEDIA_ROOT=str(self.media),
+            BAIZE_DATA_ROOT=str(self.data),
+            BAIZE_EXTRA_STORAGE_ROOTS=str(self.sd),
+        )
 
     def tearDown(self):
         self.work.cleanup()
@@ -80,6 +88,37 @@ class PackageCoverage(unittest.TestCase):
         self.assertTrue(recent.exists() and protected.exists() and outside.exists())
         self.run_task('scan')
         self.assertEqual(self.targets(), {os.fsencode(recent)})
+
+    def private_package(self, relative, age=0):
+        path = self.data / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'private package payload')
+        stamp = time.time() - age * 86400
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def test_manual_scan_includes_private_app_cache_and_files_but_scheduler_does_not(self):
+        private_cache = self.private_package('user/0/com.example.browser/cache/update.apk', 40)
+        private_file = self.private_package('user/0/com.example.chat/files/downloads/share.apks', 40)
+        private_de = self.private_package('user_de/0/com.example.installer/code_cache/staged.apkm', 40)
+        shared = self.make('0/Download/shared.apk', 40)
+
+        self.run_task('scan', 'app')
+        self.assertEqual(
+            self.targets(),
+            {os.fsencode(private_cache), os.fsencode(private_file), os.fsencode(private_de), os.fsencode(shared)}
+        )
+        state = (self.state / 'apk_scan.env').read_text()
+        self.assertIn('include_private=1\n', state)
+        self.run_task('clean', 'app')
+        self.assertTrue(all(not path.exists() for path in (private_cache, private_file, private_de, shared)))
+
+        private_cache = self.private_package('user/0/com.example.browser/cache/again.apk', 40)
+        shared = self.make('0/Download/scheduled.apk', 40)
+        self.run_task('scan', 'scheduler:interval')
+        self.assertEqual(self.targets(), {os.fsencode(shared)})
+        self.assertTrue(private_cache.exists())
+        self.assertIn('include_private=0\n', (self.state / 'apk_scan.env').read_text())
 
     def test_same_path_replacement_and_restored_mtime_are_protected(self):
         replaced = self.make('0/Download/replaced.apk', 3)

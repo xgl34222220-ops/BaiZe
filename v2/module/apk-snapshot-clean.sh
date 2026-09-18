@@ -203,10 +203,12 @@ expected_whitelist_sha=$(state_value whitelist_sha)
 max_file_bytes=$(state_value max_file_bytes)
 authorized_files=$(state_value files)
 authorized_bytes=$(state_value bytes)
+include_private=$(state_value include_private)
 case "$epoch" in ''|*[!0-9]*) epoch=0 ;; esac
 case "$max_file_bytes" in ''|*[!0-9]*) max_file_bytes=$((4096 * 1024 * 1024)) ;; esac
 case "$authorized_files" in ''|*[!0-9]*) authorized_files=0 ;; esac
 case "$authorized_bytes" in ''|*[!0-9]*) authorized_bytes=0 ;; esac
+case "$include_private" in 1) apk_load_private_roots ;; *) include_private=0 ;; esac
 
 now=$(date +%s)
 age=$((now - epoch))

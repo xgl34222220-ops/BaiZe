@@ -1,7 +1,10 @@
 package io.github.xgl34222220.baize.ui.home.miuix
 
 import android.text.format.Formatter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -10,8 +13,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -20,7 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.xgl34222220.baize.BuildConfig
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.SchedulerUiState
@@ -37,7 +42,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottom + 118.dp),
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom + 132.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") {
             LuoShuPageHeader("白泽") {
@@ -55,24 +60,24 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("常用工具", "先看清文件，再决定清理哪些")
+                LuoShuSection("常用工具")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     if (maxWidth.value / LocalDensity.current.fontScale < 240f) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LuoShuShortcut("安装包", "查找 · 选择 · 清理", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
-                            LuoShuShortcut("文件归类", "整理散落的文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
+                            LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
+                            LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
                         }
                     } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LuoShuShortcut("安装包", "查找 · 选择 · 清理", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                        LuoShuShortcut("文件归类", "整理散落的文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                        LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
+                        LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
                     }
                 }
                 LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "查看应用占用、缓存与残留", actions.deep)
+                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "扩展扫描范围", actions.deep)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "保留指定应用与路径", actions.whitelist)
+                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理类别与自动计划", onOpenClean)
+                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理与自动化", onOpenClean)
                 }
             }
         }
@@ -80,13 +85,13 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LuoShuSection("清理记录")
                 LuoShuGroup {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Metric("累计释放", Formatter.formatFileSize(context, state.lifetimeReleased), Modifier.weight(1f))
                         Metric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f))
                     }
                     if (state.lastTaskTime.isNotBlank()) Text(
                         "上次清理 ${state.lastTaskTime} · 释放 ${Formatter.formatFileSize(context, state.lastReleased)}",
-                        Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+                        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -106,6 +111,11 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     val context = LocalContext.current
     val progress = if (state.taskProgressTotal > 0)
         (state.taskProgressCurrent.toFloat() / state.taskProgressTotal).coerceIn(0f, 1f) else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 320),
+        label = "homeTaskProgress"
+    )
     val hasResults = state.scanCompleted && state.scanFiles > 0
     val value = when {
         state.running && state.taskProgressTotal > 0 -> "${(progress * 100).roundToInt()}%"
@@ -158,43 +168,49 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
-            .padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val compact = maxWidth.value / LocalDensity.current.fontScale < 230f
-                val badge: @Composable () -> Unit = {
-                    Surface(shape = CircleShape, color = colors.surfaceRaised.copy(alpha = .72f)) {
-                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(6.dp).background(if (state.ready) colors.success else colors.warning, CircleShape))
-                            Spacer(Modifier.width(6.dp))
-                            Text(status, style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-                if (compact) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    badge()
-                    Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    badge()
-                    Spacer(Modifier.weight(1f))
-                    Text(BuildConfig.VERSION_NAME, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            .animateContentSize()
+            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            val statusColor = when {
+                state.ready && !state.running -> colors.success
+                state.connectionFailed -> scheme.error
+                else -> colors.warning
+            }
+            Surface(
+                shape = CircleShape,
+                color = statusColor.copy(alpha = .10f)
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(6.dp).background(statusColor, CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text(status, style = MaterialTheme.typography.labelMedium, color = statusColor)
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                Text(value, fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.SemiBold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                HeroMetricValue(value)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.running && state.taskProgressTotal <= 0) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth().height(5.dp))
-                } else if (state.running || (!state.scanCompleted && state.storageTotal > 0)) {
-                    LinearProgressIndicator(progress = { if (state.running) progress else state.storagePercent.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth().height(5.dp))
+                    LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape))
+                } else if (state.running) {
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(CircleShape)
+                    )
+                } else if (state.storageTotal > 0) {
+                    StorageSegments(state)
                 }
                 Text(description, style = MaterialTheme.typography.bodySmall,
                     color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
             }
             Button(onClick = action, enabled = state.running || !state.connecting || state.scanCompleted,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = scheme.primaryContainer,
+                    contentColor = scheme.onPrimaryContainer
+                ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
                 Icon(when {
                     state.running -> Icons.Rounded.Stop
@@ -214,9 +230,97 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
 }
 
 @Composable
+private fun HeroMetricValue(value: String) {
+    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
+    if (match == null) {
+        Text(
+            value,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = 32.sp,
+                lineHeight = 40.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFeatureSettings = "tnum"
+            ),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        return
+    }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            match.groupValues[1],
+            modifier = Modifier.alignByBaseline(),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontSize = 36.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum"
+            )
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            match.groupValues[2],
+            modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun StorageSegments(state: DashboardUiState) {
+    val scheme = MaterialTheme.colorScheme
+    val colors = BaiZeTokens.colors
+    val total = state.storageTotal.coerceAtLeast(1L)
+    val cleanable = if (state.scanCompleted) state.scanBytes.coerceIn(0L, state.storageUsed.coerceAtLeast(0L)) else 0L
+    val occupied = (state.storageUsed - cleanable).coerceAtLeast(0L)
+    val free = state.storageFree.coerceAtLeast(0L)
+    val occupiedWeight = (occupied.toFloat() / total).coerceAtLeast(.0001f)
+    val cleanableWeight = (cleanable.toFloat() / total).coerceAtLeast(.0001f)
+    val freeWeight = (free.toFloat() / total).coerceAtLeast(.0001f)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().height(8.dp).clip(CircleShape),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (occupied > 0L) Box(
+                Modifier.weight(occupiedWeight).fillMaxHeight()
+                    .background(scheme.onSurfaceVariant.copy(alpha = .22f))
+            )
+            if (cleanable > 0L) Box(
+                Modifier.weight(cleanableWeight).fillMaxHeight()
+                    .background(scheme.primary.copy(alpha = .72f))
+            )
+            if (free > 0L) Box(
+                Modifier.weight(freeWeight).fillMaxHeight()
+                    .background(colors.surfaceOverlay)
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            StorageLegend("已占用", scheme.onSurfaceVariant.copy(alpha = .58f))
+            if (cleanable > 0L) StorageLegend("可清理", scheme.primary)
+            StorageLegend("可用", scheme.onSurfaceVariant.copy(alpha = .36f))
+        }
+    }
+}
+
+@Composable
+private fun StorageLegend(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Spacer(Modifier.width(5.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun Metric(label: String, value: String, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleLarge)
+        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"))
     }
 }

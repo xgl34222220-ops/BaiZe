@@ -7,7 +7,10 @@ ROUTE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRout
 SCREEN="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/VideoCleanScreenMiuix.kt"
 
 grep -Fq 'CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)' "$SCAN"
-grep -Fq 'manual|app|ui) DAYS=0' "$SCAN"
+grep -Fq 'manual|app|ui)' "$SCAN"
+grep -Fq 'INCLUDE_PRIVATE=1' "$SCAN"
+grep -Fq '[ "$INCLUDE_PRIVATE" = "1" ] && apk_load_private_roots' "$SCAN"
+grep -Fq 'include_private=$INCLUDE_PRIVATE' "$SCAN"
 grep -Fq 'apk_collect_candidates "$APK_INDEX"' "$SCAN"
 grep -Fq 'APK_INDEX="$TMP_DIR/apk-files.nul"' "$SCAN"
 grep -Fq 'done <"$APK_INDEX"' "$SCAN"

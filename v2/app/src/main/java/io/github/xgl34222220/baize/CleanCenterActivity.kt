@@ -157,7 +157,7 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
                 label = "按当前规则快速清理",
                 onClick = actions.onQuickClean,
                 icon = Icons.Rounded.CleaningServices,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 20.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp),
                 secondary = true
             )
         }
@@ -200,23 +200,23 @@ private fun CleanCenterGroup(items: List<CleanCenterItem>, openItem: (CleanCente
             val accent = MaterialTheme.colorScheme.primary
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .clickable { openItem(item) }.heightIn(min = 66.dp).padding(vertical = 9.dp),
+                    .clickable { openItem(item) }.heightIn(min = 76.dp).padding(vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(11.dp)
             ) {
                 Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = .07f)) {
                     Icon(item.icon, null, Modifier.padding(9.dp).size(20.dp), tint = accent)
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(item.title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
                     Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp, lineHeight = 17.sp)
+                        fontSize = 12.sp, lineHeight = 18.sp)
                 }
                 Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
             }
-            if (index != items.lastIndex) HorizontalDivider(Modifier.padding(start = 49.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
+            if (index != items.lastIndex) HorizontalDivider(Modifier.padding(start = 52.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .06f))
         }
     }
 }

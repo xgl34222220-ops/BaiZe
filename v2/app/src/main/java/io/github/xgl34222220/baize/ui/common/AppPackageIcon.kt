@@ -53,14 +53,18 @@ fun AppPackageIcon(
     }
     Box(
         modifier.size(size).clip(RoundedCornerShape(corner))
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .10f)),
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f)),
         contentAlignment = Alignment.Center
     ) {
         val current = bitmap
         if (current != null && !current.isRecycled) {
             Image(current.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         } else {
-            Text(label.trim().firstOrNull()?.uppercase() ?: "?", fontWeight = FontWeight.Bold)
+            Text(
+                appPackageFallbackText(label, stablePackage),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -76,6 +80,12 @@ fun AppPackageIconPreloader(packageNames: List<String>) {
     }
 }
 
+private fun appPackageFallbackText(label: String, packageName: String): String {
+    val source = label.trim().takeIf { it.isNotBlank() && it != packageName }
+        ?: packageName.substringAfterLast('.').ifBlank { packageName }
+    return source.filterNot(Char::isWhitespace).take(2).uppercase().ifBlank { "?" }
+}
+
 private object PersistentAppIconStore {
     private const val PX = 128
     private val memoryCache = object : LruCache<String, Bitmap>(192) {}
@@ -86,25 +96,22 @@ private object PersistentAppIconStore {
 
     fun load(context: Context, packageName: String): Bitmap? {
         if (packageName.isBlank()) return null
+        val pm = context.packageManager
+        val info = appInfo(pm, packageName) ?: return null
+        if (info.icon == 0) return null
         synchronized(this) { memoryCache.get(packageName) }?.let { return it }
         val lock = packageLocks.getOrPut(packageName) { Any() }
         return synchronized(lock) {
             synchronized(this) { memoryCache.get(packageName) }?.let { return@synchronized it }
 
             val fileName = sha256(packageName) + ".png"
-            val persistentDirectory = File(context.noBackupFilesDir, "baize-app-icons-v2").apply { mkdirs() }
+            val persistentDirectory = File(context.noBackupFilesDir, "baize-app-icons-v4").apply { mkdirs() }
             val persistentFile = File(persistentDirectory, fileName)
-            val legacyFile = File(File(context.filesDir, "baize-app-icons"), fileName)
 
             decode(persistentFile)?.let { return@synchronized remember(packageName, it) }
-            decode(legacyFile)?.let { legacy ->
-                writeAtomic(persistentFile, legacy)
-                return@synchronized remember(packageName, legacy)
-            }
 
-            val pm = context.packageManager
-            val info = appInfo(pm, packageName) ?: return@synchronized null
             val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@synchronized null
+            if (isGenericSystemIcon(pm, info, drawable)) return@synchronized null
             val bitmap = runCatching {
                 Bitmap.createBitmap(PX, PX, Bitmap.Config.ARGB_8888).also { target ->
                     val canvas = Canvas(target)
@@ -117,6 +124,33 @@ private object PersistentAppIconStore {
             writeAtomic(persistentFile, bitmap)
             bitmap
         }.also { packageLocks.remove(packageName, lock) }
+    }
+
+    private fun isGenericSystemIcon(
+        pm: PackageManager,
+        info: ApplicationInfo,
+        drawable: android.graphics.drawable.Drawable
+    ): Boolean {
+        val resources = runCatching { pm.getResourcesForApplication(info) }.getOrNull()
+        val resourcePackage = runCatching { resources?.getResourcePackageName(info.icon).orEmpty() }.getOrDefault("")
+        val entryName = runCatching { resources?.getResourceEntryName(info.icon).orEmpty().lowercase() }.getOrDefault("")
+        if (resourcePackage == "android" && info.packageName != "android") return true
+        if (entryName in setOf("sym_def_app_icon", "default_app_icon", "ic_default_app_icon", "ic_launcher_android", "ic_android")) {
+            return true
+        }
+        val defaultIcon = runCatching { pm.defaultActivityIcon }.getOrNull() ?: return false
+        if (drawable.constantState != null && drawable.constantState == defaultIcon.constantState) return true
+        return runCatching {
+            drawable.setBounds(0, 0, 48, 48)
+            defaultIcon.setBounds(0, 0, 48, 48)
+            val a = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).also {
+                drawable.draw(Canvas(it))
+            }
+            val b = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).also {
+                defaultIcon.draw(Canvas(it))
+            }
+            a.sameAs(b)
+        }.getOrDefault(false)
     }
 
     private fun decode(file: File): Bitmap? {

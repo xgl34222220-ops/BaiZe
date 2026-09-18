@@ -21,6 +21,7 @@
         android:roundIcon="@mipmap/ic_baize"
         android:supportsRtl="true"
         android:theme="@style/Theme.BaiZe"
+        android:enableOnBackInvokedCallback="false"
         android:usesCleartextTraffic="false">
 
         <activity
@@ -63,7 +64,8 @@
 
         <activity
             android:name=".MiuixDashboardActivity"
-            android:exported="true">
+            android:exported="true"
+            android:enableOnBackInvokedCallback="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

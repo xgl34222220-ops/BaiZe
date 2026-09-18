@@ -100,8 +100,8 @@ internal fun LuoShuGroup(modifier: Modifier = Modifier, content: @Composable Col
 @Composable
 internal fun LuoShuGroupDivider() {
     HorizontalDivider(
-        Modifier.padding(start = 74.dp, end = 18.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .20f)
+        Modifier.padding(start = 74.dp, end = 16.dp),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .06f)
     )
 }
 
@@ -114,21 +114,23 @@ internal fun LuoShuNavigationRow(
 ) {
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), color = Color.Transparent) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 15.dp),
+            Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             LuoShuIconTile(icon)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-                Text(
-                    subtitle,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Spacer(Modifier.width(8.dp))
             Icon(
@@ -153,21 +155,23 @@ internal fun LuoShuSwitchRow(
     Row(
         Modifier.fillMaxWidth().heightIn(min = 80.dp)
             .alpha(if (enabled) 1f else .45f)
-            .padding(horizontal = 16.dp, vertical = 15.dp),
+            .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         LuoShuIconTile(icon)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-            Text(
-                subtitle,
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         Spacer(Modifier.width(8.dp))
         Switch(
@@ -194,7 +198,7 @@ internal fun LuoShuShortcut(
         color = BaiZeTokens.colors.surfaceRaised,
         shadowElevation = 1.dp
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(shape = RoundedCornerShape(15.dp), color = BaiZeTokens.colors.surfaceOverlay) {
                 Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                     Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
@@ -202,11 +206,15 @@ internal fun LuoShuShortcut(
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -217,7 +225,7 @@ private fun LuoShuIconTile(icon: ImageVector) {
     Surface(
         Modifier.size(42.dp),
         shape = RoundedCornerShape(13.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .56f)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)

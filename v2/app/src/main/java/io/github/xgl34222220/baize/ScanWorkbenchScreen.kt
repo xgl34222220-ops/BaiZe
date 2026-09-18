@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.os.SystemClock
 import android.text.format.Formatter
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
@@ -98,7 +100,8 @@ internal data class WorkbenchActions(
     val onProtect: (WorkbenchItem) -> Unit,
     val onQuarantine: (WorkbenchItem) -> Unit,
     val onSelectMedium: () -> Unit = {},
-    val onManageWhitelist: () -> Unit = {}
+    val onManageWhitelist: () -> Unit = {},
+    val onResumeSavedScan: () -> Unit = {}
 )
 
 private data class WorkbenchGroup(
@@ -196,6 +199,7 @@ internal fun ScanWorkbenchScreen(
         }
     }
     val liveSnapshot = state.scanReady && now < state.expiresAtRealtime
+    val historicalSnapshot = state.items.isNotEmpty() && !liveSnapshot && !state.running
     val lockedReason = reviewSelectionBlockReason(state, now)
     val editable = lockedReason == null
     val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
@@ -220,7 +224,12 @@ internal fun ScanWorkbenchScreen(
     val inset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomBarHeight + 12.dp)) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                bottom = if (historicalSnapshot) inset + 24.dp else bottomBarHeight + 16.dp
+            )
+        ) {
             item {
                 DetailPageHeader("扫描结果", "", actions.onBack) {
                     IconButton(onClick = actions.onManageWhitelist, enabled = !state.running && !state.loadingResults) {
@@ -231,13 +240,21 @@ internal fun ScanWorkbenchScreen(
             }
             if (state.items.isEmpty()) {
                 item { WorkbenchEmptyCard(visibleState, onDetails = { showReport = true }) }
+            } else if (historicalSnapshot) {
+                item {
+                    HistoricalResultGate(
+                        state = visibleState,
+                        onResume = actions.onResumeSavedScan,
+                        onRescan = actions.onScan
+                    )
+                }
             } else {
                 item {
                     WorkbenchSummaryCard(visibleState, presentation, selected.size, selectedHigh.size,
                         selected.any { it.bytes < 0L }, onDetails = { showReport = true })
                 }
                 item {
-                    Column(Modifier.padding(horizontal = 20.dp).padding(top = 20.dp, bottom = 4.dp)) {
+                    Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp, bottom = 4.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("应用与文件", Modifier.weight(1f), style = BaiZeTokens.type.title)
                             TextButton(onClick = { showFilters = true },
@@ -287,9 +304,10 @@ internal fun ScanWorkbenchScreen(
                 }
             }
         }
-        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+        if (!historicalSnapshot) {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
-            .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = inset + 12.dp)) {
+            .padding(horizontal = 16.dp).padding(top = 12.dp, bottom = inset + 16.dp)) {
             Surface(color = BaiZeTokens.colors.surfaceRaised.copy(alpha = .97f),
                 tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(24.dp)) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
@@ -310,6 +328,7 @@ internal fun ScanWorkbenchScreen(
                     )
                 }
             }
+        }
         }
     }
     if (showFilters) AlertDialog(onDismissRequest = { showFilters = false }, title = { Text("筛选结果") },
@@ -407,6 +426,83 @@ private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
 }
 
 @Composable
+private fun HistoricalResultGate(
+    state: WorkbenchUiState,
+    onResume: () -> Unit,
+    onRescan: () -> Unit
+) {
+    val warning = BaiZeTokens.colors.warning
+    val surface = BaiZeTokens.colors.surfaceRaised
+    val warningSurface = lerp(surface, warning, .08f)
+    val warningAction = lerp(surface, warning, .18f)
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = warningSurface
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = warningAction
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = warning
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("上次扫描结果仅作为历史缓存", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        workbenchStatusTitle(state),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = warning
+                    )
+                }
+            }
+            Text(
+                REVIEW_HISTORY_HINT,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = onResume,
+                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = warningAction,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("继续上次扫描")
+                }
+                OutlinedButton(
+                    onClick = onRescan,
+                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                    border = BorderStroke(1.dp, warning.copy(alpha = .45f))
+                ) {
+                    Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("重新完整扫描")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun WorkbenchSummaryCard(
     state: WorkbenchUiState,
     presentation: WorkbenchPresentation,
@@ -416,9 +512,9 @@ private fun WorkbenchSummaryCard(
     onDetails: () -> Unit
 ) {
     val color = workbenchStatusColor(state)
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
-        Column(Modifier.padding(20.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .clickable(onClickLabel = "查看任务详情", onClick = onDetails)
                 .semantics { contentDescription = "查看任务详情" },
@@ -430,15 +526,16 @@ private fun WorkbenchSummaryCard(
                 Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(20.dp))
-            Text(if (state.scanReady) "已选项目 · 预计释放" else "上次扫描记录 · 非剩余垃圾量",
+            Text(if (state.scanReady) "已选项目 · 预计释放" else "上次扫描缓存",
                 style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(if (state.scanReady) Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
-                else "${state.items.size} 项", Modifier.padding(top = 3.dp),
-                style = BaiZeTokens.type.hero, color = MaterialTheme.colorScheme.onSurface)
+                else "需重新扫描", Modifier.padding(top = 3.dp),
+                style = BaiZeTokens.type.hero.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSurface)
             Row(Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(16.dp))
                 .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 12.dp)) {
                 WorkbenchStat("${presentation.appCount}", "应用", Modifier.weight(1f))
-                WorkbenchStat("$selectedCount", if (state.scanReady) "已选项目" else "原选择", Modifier.weight(1f))
+                WorkbenchStat(if (state.scanReady) "$selectedCount" else "${state.items.size}",
+                    if (state.scanReady) "已选项目" else "历史项目", Modifier.weight(1f))
                 WorkbenchStat("${presentation.protectedCount}", "不可选", Modifier.weight(1f))
             }
             when {
@@ -458,8 +555,16 @@ private fun WorkbenchSummaryCard(
 private fun WorkbenchStat(value: String, label: String, modifier: Modifier = Modifier) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(value, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = 17.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Medium,
+                fontFeatureSettings = "tnum"
+            ),
+            color = MaterialTheme.colorScheme.onSurface
+        )
         Text(label, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -513,28 +618,147 @@ private fun WorkbenchProgress(state: WorkbenchUiState) {
     Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
         if (state.progressTotal > 0L) LinearProgressIndicator(
             progress = { (state.progressCurrent.toFloat() / state.progressTotal).coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().clip(CircleShape))
-        else LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape))
-        if (state.currentPath.isNotBlank()) Text(state.currentPath, Modifier.padding(top = 8.dp),
-            fontSize = 11.sp, lineHeight = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (state.progressTotal > 0L) Text("${state.progressCurrent.coerceIn(0L, state.progressTotal)} / ${state.progressTotal}",
-            Modifier.padding(top = 4.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+        else LinearProgressIndicator(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+        if (state.currentPath.isNotBlank()) {
+            CurrentScanTarget(state.currentPath)
+        }
+        if (state.progressTotal > 0L) Text(
+            "${state.progressCurrent.coerceIn(0L, state.progressTotal)} / ${state.progressTotal}",
+            Modifier.padding(top = 5.dp),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 11.sp,
+                fontFeatureSettings = "tnum"
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
+private fun CurrentScanTarget(path: String) {
+    val context = LocalContext.current.applicationContext
+    val packageName = remember(path) { packageNameFromScanPath(path) }
+    val label by produceState(initialValue = packageName.orEmpty(), packageName) {
+        value = packageName?.let { pkg ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    val info = context.packageManager.getApplicationInfo(pkg, 0)
+                    context.packageManager.getApplicationLabel(info).toString()
+                }.getOrDefault(pkg)
+            }
+        }.orEmpty()
+    }
+    val kind = remember(path) { scanTargetKind(path) }
+    val location = remember(path) { scanPathContext(path) }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (packageName != null) {
+            ApplicationIcon(packageName, label.ifBlank { packageName }, Modifier.size(34.dp))
+            Spacer(Modifier.width(9.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                if (packageName != null) "${label.ifBlank { packageName }} · $kind" else "$location · $kind",
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                compactScanPath(path),
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
+private fun packageNameFromScanPath(path: String): String? {
+    val normalized = path.replace('\\', '/')
+    val patterns = listOf(
+        Regex("""/data/user(?:_de)?/\d+/([^/]+)"""),
+        Regex("""/data/data/([^/]+)"""),
+        Regex("""/Android/(?:data|media|obb)/([^/]+)""")
+    )
+    return patterns.firstNotNullOfOrNull { pattern ->
+        pattern.find(normalized)?.groupValues?.getOrNull(1)
+    }?.takeIf { it.contains('.') }
+}
+
+private fun scanTargetKind(path: String): String {
+    val normalized = path.lowercase()
+    return when {
+        "/code_cache" in normalized -> "代码缓存"
+        "/cache" in normalized -> "缓存临时文件"
+        "thumbnail" in normalized -> "缩略图缓存"
+        "log" in normalized -> "日志与临时记录"
+        "/files/" in normalized -> "应用文件"
+        else -> "正在扫描文件"
+    }
+}
+
+private fun scanPathContext(path: String): String {
+    val normalized = path.replace('\\', '/').lowercase()
+    val root = when {
+        normalized.startsWith("/storage/emulated/") || normalized.startsWith("/data/media/") -> "内部存储"
+        normalized.startsWith("/data/user/") || normalized.startsWith("/data/user_de/") || normalized.startsWith("/data/data/") -> "应用内部"
+        normalized.startsWith("/data/") -> "系统数据"
+        else -> "文件系统"
+    }
+    val category = when {
+        "/.recycle/" in normalized || "/recycle/" in normalized || "/.trash/" in normalized -> "回收站缓存"
+        "/dcim/" in normalized || "/pictures/" in normalized -> "相册与图片"
+        "/download/" in normalized -> "下载目录"
+        "/android/data/" in normalized -> "应用数据"
+        "/android/media/" in normalized -> "应用媒体"
+        "/android/obb/" in normalized -> "应用资源"
+        "/cache/" in normalized || normalized.endsWith("/cache") -> "缓存目录"
+        "/log/" in normalized || "/logs/" in normalized -> "日志目录"
+        else -> "扫描目录"
+    }
+    return "$root > $category"
+}
+
+private fun compactScanPath(path: String): String {
+    val normalized = path.replace('\\', '/').trim()
+    val parts = normalized.split('/').filter(String::isNotBlank)
+    if (normalized.length <= 44) return normalized
+    if (parts.size <= 2) return normalized.take(18) + "…" + normalized.takeLast(18)
+    val head = parts.first()
+    val tail = parts.takeLast(2).joinToString("/")
+    return "$head/…/$tail"
+}
+
+@Composable
 private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled: Boolean, onExpand: () -> Unit, onSelect: () -> Unit) {
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 4.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 4.dp),
         shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "收起应用明细" else "展开应用明细", onClick = onExpand)
             .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             val owner = group.items.firstOrNull()?.packageName.orEmpty()
-            if (owner.isNotBlank()) ApplicationIcon(owner, group.title, Modifier.size(42.dp))
-            else Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .075f), RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center) {
-                Icon(categoryIcon(group.items.firstOrNull()?.profile.orEmpty()), null,
-                    Modifier.size(23.dp), tint = MaterialTheme.colorScheme.primary)
+            if (owner.isNotBlank()) {
+                ApplicationIcon(owner, group.title, Modifier.size(42.dp))
+            } else {
+                Box(
+                    Modifier.size(42.dp)
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        group.title.filterNot(Char::isWhitespace).take(2).ifBlank { "系统" },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp, end = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(group.title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
@@ -561,7 +785,7 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
 
 @Composable
 private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enabled: Boolean, lockedReason: String?, onToggle: () -> Unit, onDetails: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 28.dp).padding(bottom = 4.dp)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 4.dp)
         .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .72f))
         .padding(start = 2.dp, end = 3.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.Top) {
         Checkbox(selected, onCheckedChange = { onToggle() }, enabled = enabled && item.selectable && item.risk != "critical",
@@ -579,8 +803,8 @@ private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enable
             }
             if (item.risk == "high" && item.selectable && enabled) Text("可单独勾选，删除前须确认路径", fontSize = 12.sp,
                 color = BaiZeTokens.colors.warning)
-            Text(item.outcome.ifBlank { item.path }, fontSize = 11.sp, lineHeight = 17.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(item.outcome.ifBlank { compactScanPath(item.path) }, fontSize = 11.sp, lineHeight = 17.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         IconButton(onDetails, Modifier.size(40.dp)) { Icon(Icons.Rounded.MoreHoriz, "${item.title}详情", Modifier.size(19.dp)) }
     }

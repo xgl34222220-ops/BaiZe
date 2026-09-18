@@ -8,9 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CleaningServices
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +20,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.Dispatchers
@@ -39,10 +38,15 @@ internal object AppIconRepository {
     private val memoryCache = object : LruCache<String, ImageBitmap>(ICON_CACHE_SIZE) {}
 
     suspend fun load(context: Context, packageName: String): ImageBitmap? = withContext(Dispatchers.IO) {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION")
+        val info = runCatching { pm.getApplicationInfo(packageName, 0) }.getOrNull() ?: return@withContext null
+        if (info.icon == 0) return@withContext null
         memoryCache.get(packageName)?.let { return@withContext it }
+        val drawable = runCatching { info.loadIcon(pm).mutate() }.getOrNull() ?: return@withContext null
+        if (isGenericSystemIcon(context, info, drawable)) return@withContext null
         runCatching {
-            context.packageManager
-                .getApplicationIcon(packageName)
+            drawable
                 .toBitmap(
                     width = ICON_BITMAP_SIZE,
                     height = ICON_BITMAP_SIZE,
@@ -67,7 +71,7 @@ internal fun ApplicationIcon(
     Box(
         modifier = modifier
             .clip(shape)
-            .background(MaterialTheme.colorScheme.primary.copy(alpha = .11f)),
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f)),
         contentAlignment = Alignment.Center
     ) {
         if (bitmap != null) {
@@ -78,12 +82,43 @@ internal fun ApplicationIcon(
                 contentScale = ContentScale.Crop
             )
         } else {
-            Icon(
-                imageVector = Icons.Rounded.CleaningServices,
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(25.dp)
+            Text(
+                text = appIconFallbackText(label, packageName),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
+}
+
+
+private fun appIconFallbackText(label: String, packageName: String): String {
+    val source = label.trim().takeIf { it.isNotBlank() && it != packageName }
+        ?: packageName.substringAfterLast('.').ifBlank { packageName }
+    return source.filterNot(Char::isWhitespace).take(2).uppercase().ifBlank { "?" }
+}
+
+
+private fun isGenericSystemIcon(
+    context: Context,
+    info: android.content.pm.ApplicationInfo,
+    drawable: android.graphics.drawable.Drawable
+): Boolean {
+    val pm = context.packageManager
+    val resourcePackage = runCatching {
+        pm.getResourcesForApplication(info).getResourcePackageName(info.icon)
+    }.getOrDefault("")
+    val entryName = runCatching {
+        pm.getResourcesForApplication(info).getResourceEntryName(info.icon).lowercase()
+    }.getOrDefault("")
+    if (resourcePackage == "android" && info.packageName != "android") return true
+    if (entryName in setOf("sym_def_app_icon", "default_app_icon", "ic_default_app_icon", "ic_launcher_android", "ic_android")) {
+        return true
+    }
+    val defaultIcon = runCatching { pm.defaultActivityIcon }.getOrNull() ?: return false
+    if (drawable.constantState != null && drawable.constantState == defaultIcon.constantState) return true
+    return runCatching {
+        drawable.toBitmap(48, 48, Bitmap.Config.ARGB_8888)
+            .sameAs(defaultIcon.toBitmap(48, 48, Bitmap.Config.ARGB_8888))
+    }.getOrDefault(false)
 }

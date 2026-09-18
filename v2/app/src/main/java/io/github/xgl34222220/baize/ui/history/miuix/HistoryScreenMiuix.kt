@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.AppJunkUiItem
 import io.github.xgl34222220.baize.GeneralJunkUiItem
 import io.github.xgl34222220.baize.HistoryUiItem
@@ -59,10 +60,14 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
     val recordGroups = state.records
         .take(50)
         .groupBy { record -> record.time.trim().take(10).ifBlank { "更早记录" } }
+    var showZeroApps by rememberSaveable { mutableStateOf(false) }
+    val meaningfulApps = state.recentApps.filter { it.bytes > 0L }
+    val zeroApps = state.recentApps.filter { it.bytes <= 0L }
+    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = bottomInset + 118.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottomInset + 132.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item(key = "history-header") {
@@ -75,14 +80,23 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         item(key = "history-current-title") { LuoShuSection("最近结果", "最近一次扫描或清理任务") }
         item(key = "history-current") { CurrentResultGroup(state) }
 
-        if (state.recentApps.isNotEmpty()) {
-            item(key = "history-app-title") { LuoShuSection("应用垃圾", "点击应用查看清理分类与路径") }
-            item(key = "history-apps") { AppResultGroup(state.recentApps) }
+        if (meaningfulApps.isNotEmpty()) {
+            item(key = "history-app-title") { LuoShuSection("应用垃圾", "仅展示本次产生清理量的应用") }
+            item(key = "history-apps") { AppResultGroup(meaningfulApps) }
+        }
+        if (zeroApps.isNotEmpty()) {
+            item(key = "history-zero-apps") {
+                ZeroAppGroup(
+                    apps = zeroApps,
+                    expanded = showZeroApps,
+                    onToggle = { showZeroApps = !showZeroApps }
+                )
+            }
         }
 
-        if (state.recentJunk.isNotEmpty()) {
+        if (meaningfulJunk.isNotEmpty()) {
             item(key = "history-junk-title") { LuoShuSection("其他垃圾", "本次任务处理的非应用垃圾") }
-            item(key = "history-junk") { JunkResultGroup(state.recentJunk) }
+            item(key = "history-junk") { JunkResultGroup(meaningfulJunk) }
         }
 
         item(key = "history-record-title") { LuoShuSection("任务记录", "按日期排列，扫描与清理状态分开显示") }
@@ -138,7 +152,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                         )
                     )
                 )
-                .padding(22.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -159,10 +173,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text("累计释放", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    Text(
-                        Formatter.formatFileSize(context, state.lifetimeReleased),
-                        style = MaterialTheme.typography.headlineLarge
-                    )
+                    HistoryMetricValue(Formatter.formatFileSize(context, state.lifetimeReleased))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -175,10 +186,37 @@ private fun LifetimeHero(state: HistoryUiState) {
 }
 
 @Composable
+private fun HistoryMetricValue(value: String) {
+    val match = Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+)$""").matchEntire(value.trim())
+    if (match == null) {
+        Text(value, style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = "tnum"))
+        return
+    }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            match.groupValues[1],
+            modifier = Modifier.alignByBaseline(),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum"
+            )
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            match.groupValues[2],
+            modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
 private fun Metric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleSmall)
+        Text(value, style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
     }
 }
 
@@ -223,7 +261,7 @@ private fun CurrentResultGroup(state: HistoryUiState) {
             Spacer(Modifier.width(10.dp))
             Text(
                 Formatter.formatFileSize(context, state.currentBytes),
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
             )
         }
         if (state.lastTaskTime.isNotBlank()) {
@@ -238,6 +276,87 @@ private fun CurrentResultGroup(state: HistoryUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZeroAppGroup(
+    apps: List<AppJunkUiItem>,
+    expanded: Boolean,
+    onToggle: () -> Unit
+) {
+    LuoShuGroup {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle)
+                .padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(13.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .08f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(19.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text("无占用应用", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "${apps.size} 个 · 扫描到条目但未产生占用",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = if (expanded) "收起无垃圾应用" else "展开无垃圾应用",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            apps.forEachIndexed { index, app ->
+                LuoShuGroupDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 11.dp, bottom = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppPackageIcon(
+                        app.packageName,
+                        app.label.ifBlank { app.packageName },
+                        size = 34.dp,
+                        corner = 11.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            sanitizeText(app.label.ifBlank { app.packageName }),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            sanitizeText(app.packageName),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Text(
+                        "0 B · 0 项",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
@@ -286,7 +405,7 @@ private fun AppResultRow(item: AppJunkUiItem) {
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(Formatter.formatFileSize(context, item.bytes), style = MaterialTheme.typography.labelLarge)
+                Text(Formatter.formatFileSize(context, item.bytes), style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"))
                 Text(
                     "${item.files} 项",
                     style = MaterialTheme.typography.labelSmall,
@@ -412,15 +531,17 @@ private fun EmptyRecordsCard() {
 private fun RecordCard(record: HistoryUiItem) {
     val context = LocalContext.current
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
-    val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
+    val visibleApps = record.apps.filter { it.bytes > 0L }
+    val visibleCategories = record.categories.filter { it.bytes > 0L }
+    val hasDetails = visibleCategories.isNotEmpty() || visibleApps.isNotEmpty()
     val title = sanitizeText(record.title).ifBlank { "历史任务" }
     val meta = listOf(sanitizeText(record.time), sanitizeText(record.trigger))
         .filter(String::isNotBlank)
         .joinToString(" · ")
     val summary = sanitizeText(
         when {
-            record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
-            record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
+            visibleApps.isNotEmpty() -> "涉及 ${visibleApps.size} 个应用 · ${record.files} 项"
+            visibleCategories.isNotEmpty() -> visibleCategories.take(2).joinToString(" · ") { it.name }
             record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
             else -> record.result
         }
@@ -509,7 +630,7 @@ private fun RecordCard(record: HistoryUiItem) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(Formatter.formatFileSize(context, record.bytes), style = MaterialTheme.typography.titleSmall)
+                    Text(Formatter.formatFileSize(context, record.bytes), style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
                 }
             }
 
@@ -519,7 +640,7 @@ private fun RecordCard(record: HistoryUiItem) {
                     modifier = Modifier.padding(start = 56.dp),
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .20f)
                 )
-                record.apps.forEach { app ->
+                visibleApps.forEach { app ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 56.dp, top = 11.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -546,7 +667,7 @@ private fun RecordCard(record: HistoryUiItem) {
                         )
                     }
                 }
-                record.categories.forEach { detail ->
+                visibleCategories.forEach { detail ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 56.dp, top = 11.dp),
                         verticalAlignment = Alignment.CenterVertically

@@ -63,6 +63,8 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun HistoryScreenMaterial(state: HistoryUiState, actions: HistoryUiActions) {
+    val meaningfulApps = state.recentApps.filter { it.bytes > 0L }
+    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L }
     val iconPackages = buildList {
         addAll(state.recentApps.map { it.packageName })
         state.records.forEach { record -> addAll(record.apps.map { it.packageName }) }
@@ -80,13 +82,13 @@ fun HistoryScreenMaterial(state: HistoryUiState, actions: HistoryUiActions) {
         item { MaterialLifetimeSummary(state) }
         item { MaterialSectionHeader("最近结果", "最近一次自动任务的清理内容") }
         item { MaterialCurrentResult(state) }
-        if (state.recentApps.isNotEmpty()) {
+        if (meaningfulApps.isNotEmpty()) {
             item { MaterialSectionHeader("应用垃圾", "点击应用查看清理分类与路径") }
-            item { MaterialAppResultGroup(state.recentApps) }
+            item { MaterialAppResultGroup(meaningfulApps) }
         }
-        if (state.recentJunk.isNotEmpty()) {
+        if (meaningfulJunk.isNotEmpty()) {
             item { MaterialSectionHeader("其他垃圾", "本次任务处理的非应用垃圾") }
-            item { MaterialJunkResultGroup(state.recentJunk) }
+            item { MaterialJunkResultGroup(meaningfulJunk) }
         }
         item { MaterialSectionHeader("任务记录", "点击有明细的任务可展开查看") }
         item { MaterialRecordGroup(state.records) }

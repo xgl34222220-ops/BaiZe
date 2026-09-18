@@ -59,7 +59,7 @@ class WorkbenchVisualReviewTest {
     fun failedReviewFitsNarrowLargeFont() {
         render(ready().copy(scanReady = false, notice = WorkbenchNotice.ERROR,
             phase = "清理结果未确认；记录已保留，请重新扫描"), fontScale = 1.3f)
-        compose.onNodeWithText("重新扫描").assertIsDisplayed().performClick()
+        compose.onNodeWithText("重新完整扫描").assertIsDisplayed().performClick()
         assertEquals(1, scanRequests)
         save("failure-narrow-large-font")
     }

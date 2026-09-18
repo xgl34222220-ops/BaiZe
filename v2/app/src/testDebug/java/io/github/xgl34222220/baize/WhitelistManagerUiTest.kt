@@ -34,9 +34,15 @@ class WhitelistManagerUiTest {
         compose.setContent {
             BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
                 WhitelistManagerScreen(state, {}, {},
-                    { state = state.copy(draft = state.draft.toggle(it)) },
-                    { state = state.copy(draft = state.draft.copy(selected = emptySet())) },
-                    { saves++ }, { removals += it })
+                    {
+                        state = state.copy(draft = state.draft.toggle(it))
+                        saves++
+                    },
+                    {
+                        state = state.copy(draft = state.draft.copy(selected = emptySet()))
+                        saves++
+                    },
+                    { removals += it })
             } }
         }
         compose.waitForIdle()
@@ -57,13 +63,12 @@ class WhitelistManagerUiTest {
         compose.onNodeWithText("保留").performClick()
         assertTrue(removals.isEmpty())
     }
-    @Test fun uncheckingAnAppDoesNotSaveUntilRequested() {
+    @Test fun uncheckingAnAppSavesImmediately() {
         render()
-        compose.onNodeWithText("保存应用白名单").assertIsNotEnabled()
+        compose.onNodeWithText("保存应用白名单").assertDoesNotExist()
         compose.onNodeWithContentDescription("保护测试应用").performClick()
-        assertEquals(0, saves)
-        compose.onNodeWithText("保存应用白名单").assertIsEnabled().performClick()
         assertEquals(1, saves)
+        compose.onNodeWithText("勾选或取消后立即保存；不会删除应用或文件。").assertIsDisplayed()
         screenshot("whitelist-apps")
     }
     @Test fun disconnectedWhitelistCannotWrite() {

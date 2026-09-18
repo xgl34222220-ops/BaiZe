@@ -6,6 +6,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,6 +19,7 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 class ThemeSettingsActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -43,24 +47,29 @@ class ThemeSettingsActivity : ComponentActivity() {
             }
 
             BaiZeTheme(settings) {
-                CompositionLocalProvider(LocalAppearanceSettings provides settings) {
-                    AppearanceRoute(
-                        settings = settings,
-                        actions = AppearanceUiActions(
-                            onBack = ::finish,
-                            onUiStyle = appearanceViewModel::setUiStyle,
-                            onThemeMode = appearanceViewModel::setThemeMode,
-                            onSeedArgb = appearanceViewModel::setSeedArgb,
-                            onKolorStyle = appearanceViewModel::setKolorStyle,
-                            onMonetEnabled = appearanceViewModel::setMonetEnabled,
-                            onAmoledBlack = appearanceViewModel::setAmoledBlack,
-                            onGlassEnabled = appearanceViewModel::setGlassEnabled,
-                            onBlurEnabled = appearanceViewModel::setBlurEnabled,
-                            onFloatingDock = appearanceViewModel::setFloatingDock,
-                            onRefreshRateMode = appearanceViewModel::setRefreshRateMode,
-                            onAdaptiveSmoothMode = appearanceViewModel::setAdaptiveSmoothMode
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = BaiZeTokens.colors.surfaceBase
+                ) {
+                    CompositionLocalProvider(LocalAppearanceSettings provides settings) {
+                        AppearanceRoute(
+                            settings = settings,
+                            actions = AppearanceUiActions(
+                                onBack = ::finish,
+                                onUiStyle = appearanceViewModel::setUiStyle,
+                                onThemeMode = appearanceViewModel::setThemeMode,
+                                onSeedArgb = appearanceViewModel::setSeedArgb,
+                                onKolorStyle = appearanceViewModel::setKolorStyle,
+                                onMonetEnabled = appearanceViewModel::setMonetEnabled,
+                                onAmoledBlack = appearanceViewModel::setAmoledBlack,
+                                onGlassEnabled = appearanceViewModel::setGlassEnabled,
+                                onBlurEnabled = appearanceViewModel::setBlurEnabled,
+                                onFloatingDock = appearanceViewModel::setFloatingDock,
+                                onRefreshRateMode = appearanceViewModel::setRefreshRateMode,
+                                onAdaptiveSmoothMode = appearanceViewModel::setAdaptiveSmoothMode
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
