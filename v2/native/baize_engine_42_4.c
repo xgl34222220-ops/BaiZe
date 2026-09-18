@@ -2016,10 +2016,6 @@ static int scan_storage_tree_native(StorageIndexContext *ctx, const Options *o,
         rc = scan_storage_tree_native(ctx, o, child, root_dev, depth + 1U, max_depth,
                                       root_files, root_bytes, root_duplicates, root_skipped);
     }
-    if (errno != 0 && rc == 0) {
-        /* readdir failures are partial-root failures, not a reason to discard other roots. */
-        clearerr(dir);
-    }
     closedir(dir);
     return rc;
 }
