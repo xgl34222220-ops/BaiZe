@@ -89,6 +89,7 @@ class UiVisualReviewTest {
         compose.waitForIdle()
         compose.onNodeWithText("手动工具").assertIsDisplayed()
         compose.onNodeWithText("扫描工作台").assertIsDisplayed()
+        compose.onNodeWithText("任务计划").performScrollTo().assertIsDisplayed()
         save("clean-plan")
     }
 
