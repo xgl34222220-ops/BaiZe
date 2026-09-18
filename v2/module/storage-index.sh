@@ -7,6 +7,7 @@ MODE=${1:-ensure}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
+PUBLIC_MEDIA_ROOT=${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}
 CONFIG=${BAIZE_CONFIG_PATH:-$STATE_DIR/config.conf}
 INDEX_DIR="$STATE_DIR/index"
 CACHE_DIR="$INDEX_DIR/roots"
@@ -174,7 +175,7 @@ done
 # HyperOS / Android 16 Root namespaces may expose the emulated view but hide
 # /data/media. Never turn that into an empty shared index.
 if [ "$internal_users" -eq 0 ]; then
-  for userdir in /storage/emulated/[0-9]*; do
+  for userdir in "$PUBLIC_MEDIA_ROOT"/[0-9]*; do
     [ -d "$userdir" ] || continue
     add_user_root "${userdir##*/}" "$userdir" internal-public
     internal_users=$((internal_users + 1))
