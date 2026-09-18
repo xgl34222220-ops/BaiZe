@@ -54,7 +54,7 @@ case "$TRIGGER" in storage-analysis|duplicates|large-files) SCOPE=storage ;; esa
 # Changing the large-file threshold or category table must refresh its side index.
 INPUT_SIGNATURE=$({
   cat "$CONFIG" "$ORGANIZER_CATEGORIES" 2>/dev/null
-  printf '\n%s\n%s\n%s\n' "$MEDIA_ROOT" "${BAIZE_EXTRA_STORAGE_ROOTS:-}" "$SCOPE"
+  printf '\n%s\n%s\n%s\n%s\n' "$MEDIA_ROOT" "$PUBLIC_MEDIA_ROOT" "${BAIZE_EXTRA_STORAGE_ROOTS:-}" "$SCOPE"
 } | cksum | awk '{print $1 ":" $2}')
 index_is_fresh() {
   [ "$MODE" = ensure ] || return 1
