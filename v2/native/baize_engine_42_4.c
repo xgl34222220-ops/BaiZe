@@ -1912,16 +1912,26 @@ static bool index_write_nul(FILE *file, const char *path) {
 }
 
 static bool index_path_is_volatile(const char *path) {
-    static const char *segments[] = {
-        "/cache/", "/code_cache/", "/no_backup/", "/databases/", "/shared_prefs/",
-        "/lib/", "/tmp/", "/temp/"
-    };
     char lower[PATH_MAX];
     size_t n = strlen(path);
-    if (n >= sizeof(lower)) return true;
+    if (n >= sizeof(lower)) return false;
     for (size_t i = 0; i <= n; i++) lower[i] = (char)tolower((unsigned char)path[i]);
-    for (size_t i = 0; i < sizeof(segments) / sizeof(segments[0]); i++) {
-        if (strstr(lower, segments[i])) return true;
+
+    /* Only suppress user-content side buckets inside real app-private external trees.
+     * A generic /tmp/ segment is valid user data on tests and on real removable storage. */
+    const char *marker = strstr(lower, "/android/data/");
+    if (!marker) return false;
+    const char *package = marker + strlen("/android/data/");
+    const char *slash = strchr(package, '/');
+    if (!slash || slash == package) return false;
+    const char *leaf = slash + 1;
+    static const char *volatile_roots[] = {
+        "cache", "code_cache", "no_backup", "databases", "shared_prefs", "lib", "tmp", "temp"
+    };
+    for (size_t i = 0; i < sizeof(volatile_roots) / sizeof(volatile_roots[0]); i++) {
+        size_t length = strlen(volatile_roots[i]);
+        if (strncmp(leaf, volatile_roots[i], length) == 0 &&
+            (leaf[length] == '\0' || leaf[length] == '/')) return true;
     }
     return false;
 }
