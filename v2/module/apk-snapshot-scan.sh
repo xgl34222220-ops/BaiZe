@@ -178,14 +178,21 @@ should_stop() { [ -f "$STOP_FILE" ]; }
 CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)
 # App 内点击、命令行手动扫描都必须展示当前可找到的全部安装包；保留期只用于自动任务。
 case "$TRIGGER" in
-  manual|app|ui) DAYS=0 ;;
-  *) DAYS=$CONFIG_DAYS ;;
+  manual|app|ui)
+    DAYS=0
+    INCLUDE_PRIVATE=1
+    ;;
+  *)
+    DAYS=$CONFIG_DAYS
+    INCLUDE_PRIVATE=0
+    ;;
 esac
 MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 # The package-only scanner and cleaner share exactly the same storage roots.
 . "$MODDIR/apk-paths.sh"
 apk_load_roots
+[ "$INCLUDE_PRIVATE" = "1" ] && apk_load_private_roots
 APK_INDEX="$TMP_DIR/apk-files.nul"
 set_phase "正在查找安装包" 0 0 "$MEDIA_ROOT"
 apk_collect_candidates "$APK_INDEX"
@@ -247,6 +254,7 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "package_days=$DAYS"
   echo "configured_package_days=$CONFIG_DAYS"
+  echo "include_private=$INCLUDE_PRIVATE"
   echo "bytes=$bytes"
   echo "files=$files"
   echo "engine=apk-snapshot-v2.2-shared-index"
@@ -303,7 +311,7 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "----------------------------------------"
   echo "$result"
   echo "扫描快照: $snapshot_id"
-  echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否)"
+  echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
   echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
   echo "扫描覆盖来源: $root_total（共享存储与外置存储）"
 } >>"$LOG_FILE"
