@@ -83,12 +83,23 @@ apk_load_roots() {
     IFS=$_apk_ifs
   else
     # Prefer the raw removable-volume view and keep /storage/<uuid> as fallback.
+    _apk_external_found=0
     for _apk_volume in /mnt/media_rw/*; do
       [ -d "$_apk_volume" ] || continue
       apk_add_root "$_apk_volume"
       _apk_uuid=${_apk_volume##*/}
       apk_add_fallback_root "/storage/$_apk_uuid"
+      _apk_external_found=1
     done
+    # Some ROMs only expose removable volumes through /storage/<uuid>.
+    if [ "$_apk_external_found" -eq 0 ]; then
+      for _apk_volume in /storage/*; do
+        [ -d "$_apk_volume" ] || continue
+        _apk_uuid=${_apk_volume##*/}
+        case "$_apk_uuid" in emulated|self|enc_emulated|runtime) continue ;; esac
+        apk_add_root "$_apk_volume"
+      done
+    fi
   fi
 }
 
@@ -115,7 +126,7 @@ apk_private_path_allowed() {
   for _apk_base in $APK_PRIVATE_BOUNDARIES; do
     case "$_apk_private_real" in
       "$_apk_base"/*)
-        _apk_relative=${_apk_private_real#$_apk_base/}
+        _apk_relative=${_apk_private_real#"$_apk_base"/}
         _apk_package=${_apk_relative%%/*}
         _apk_tail=${_apk_relative#*/}
         case "$_apk_package" in ''|*/*) continue ;; esac
