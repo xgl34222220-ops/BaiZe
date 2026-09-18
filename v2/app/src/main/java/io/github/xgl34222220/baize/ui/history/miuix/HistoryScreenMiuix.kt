@@ -172,10 +172,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text("累计释放", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    Text(
-                        Formatter.formatFileSize(context, state.lifetimeReleased),
-                        style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = "tnum")
-                    )
+                    HistoryMetricValue(Formatter.formatFileSize(context, state.lifetimeReleased))
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -184,6 +181,33 @@ private fun LifetimeHero(state: HistoryUiState) {
                 Metric("累计耗时", formatElapsed(state.lifetimeElapsed), Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun HistoryMetricValue(value: String) {
+    val match = Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+)$""").matchEntire(value.trim())
+    if (match == null) {
+        Text(value, style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = "tnum"))
+        return
+    }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            match.groupValues[1],
+            modifier = Modifier.alignByBaseline(),
+            style = MaterialTheme.typography.headlineLarge.copy(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                fontFeatureSettings = "tnum"
+            )
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            match.groupValues[2],
+            modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
