@@ -90,6 +90,24 @@ apk_load_roots() {
   fi
 }
 
+apk_load_private_roots() {
+  _apk_data_root=${BAIZE_DATA_ROOT:-/data}
+  for _apk_scope in user user_de; do
+    for _apk_user in "$_apk_data_root/$_apk_scope"/[0-9]*; do
+      _apk_id=${_apk_user##*/}
+      case "$_apk_id" in ''|*[!0-9]*) continue ;; esac
+      [ -d "$_apk_user" ] || continue
+      for _apk_app in "$_apk_user"/*; do
+        [ -d "$_apk_app" ] || continue
+        [ ! -L "$_apk_app" ] || continue
+        for _apk_leaf in cache code_cache files; do
+          apk_add_root "$_apk_app/$_apk_leaf"
+        done
+      done
+    done
+  done
+}
+
 apk_path_allowed() {
   case "$1" in
     *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
