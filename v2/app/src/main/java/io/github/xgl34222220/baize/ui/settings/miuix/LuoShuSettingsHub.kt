@@ -191,15 +191,14 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 LuoShuGroupDivider()
                 LuoShuSwitchRow(Icons.Rounded.Notifications, "零结果也通知", "没有可清理内容时也提醒", s.notifyZero,
                     { actions.onUpdateScheduler(s.copy(notifyZero = it)) })
+                LuoShuGroupDivider()
+                Text(
+                    if (s.saving) "正在保存…" else "修改后点右上角“保存”生效",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                )
             }
-        }
-        item {
-            Text(
-                if (s.saving) "正在保存…" else "修改后点右上角“保存”生效",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 2.dp)
-            )
         }
     }
 }
