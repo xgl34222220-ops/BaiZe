@@ -69,6 +69,8 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
+    val meaningfulApps = state.recentApps.filter { it.bytes > 0L }
+    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L }
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     LazyColumn(
@@ -99,20 +101,20 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                 }
             }
         } else {
-            if (state.recentApps.isEmpty() && state.recentJunk.isEmpty()) item {
+            if (meaningfulApps.isEmpty() && meaningfulJunk.isEmpty()) item {
                 VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                     VideoEmptyState(Icons.Rounded.Folder, "暂无分类结果", "扫描后可按应用、文件查看明细。")
                 }
             }
-            if (state.recentApps.isNotEmpty()) {
+            if (meaningfulApps.isNotEmpty()) {
                 item { VideoSectionTitle("按应用", "最近一次任务") }
-                itemsIndexed(state.recentApps, key = { index, app -> "app:${app.packageName}:$index" }) { _, app ->
+                itemsIndexed(meaningfulApps, key = { index, app -> "app:${app.packageName}:$index" }) { _, app ->
                     AppResultRow(app.packageName, app.label.ifBlank { app.packageName }, app.category.ifBlank { "应用垃圾" }, app.bytes, app.files)
                 }
             }
-            if (state.recentJunk.isNotEmpty()) {
+            if (meaningfulJunk.isNotEmpty()) {
                 item { VideoSectionTitle("其他文件", modifier = Modifier.padding(top = 16.dp)) }
-                itemsIndexed(state.recentJunk, key = { index, junk -> "junk:${junk.name}:$index" }) { _, junk ->
+                itemsIndexed(meaningfulJunk, key = { index, junk -> "junk:${junk.name}:$index" }) { _, junk ->
                     val context = LocalContext.current
                     VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                         VideoListRow(Icons.Rounded.Folder, junk.name, junk.samplePath.ifBlank { "未记录示例路径" }, value = "${Formatter.formatFileSize(context, junk.bytes)}\n${junk.files} 项")
