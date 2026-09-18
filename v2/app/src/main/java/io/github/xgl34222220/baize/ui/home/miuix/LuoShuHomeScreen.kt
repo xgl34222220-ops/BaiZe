@@ -181,10 +181,12 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                 Text(
                     value,
-                    fontSize = 32.sp,
-                    lineHeight = 40.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFeatureSettings = "tnum",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontSize = 32.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFeatureSettings = "tnum"
+                    ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
