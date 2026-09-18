@@ -207,6 +207,59 @@ total_reused=0; total_scanned=0; total_duplicates=0; TAB=$(printf '\t')
 : >"$TMP/apk.nul"; : >"$TMP/empty.nul"; : >"$TMP/large.nul"; : >"$TMP/organizer.nul"; : >"$TMP/duplicates.tsv"
 large_mb=$(sed -n 's/^max_file_mb=//p' "$CONFIG" 2>/dev/null | tail -n 1); case "$large_mb" in ''|*[!0-9]*) large_mb=256 ;; esac
 large_bytes=$((large_mb * 1024 * 1024))
+
+# 正常路径：由一个 C 原生进程直接遍历所有共享存储根并一次完成分桶。
+# shell 不再为每个根启动 find，也不再把几十万路径先落成中间清单。
+if [ -n "${NATIVE_ENGINE:-}" ] && [ -x "$NATIVE_ENGINE" ]; then
+  native_summary="$TMP/native-storage-index.env"
+  if "$NATIVE_ENGINE" scan-storage-index \
+      --roots "$ROOTS" \
+      --records "$RECORDS" \
+      --apk "$TMP/apk.nul" \
+      --empty "$TMP/empty.nul" \
+      --large "$TMP/large.nul" \
+      --organizer "$TMP/organizer.nul" \
+      --duplicates "$TMP/duplicates.tsv" \
+      --coverage "$COVERAGE" \
+      --large-bytes "$large_bytes" \
+      --organizer-exts "$ORGANIZER_CATEGORIES" \
+      --stop "$STOP_FILE" \
+      --summary "$native_summary"; then
+    total_files=$(sed -n 's/^files=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    total_bytes=$(sed -n 's/^bytes=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    total_duplicates=$(sed -n 's/^duplicates=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    native_dirs=$(sed -n 's/^dirs=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    native_roots_scanned=$(sed -n 's/^roots_scanned=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    native_roots_failed=$(sed -n 's/^roots_failed=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    native_elapsed_ms=$(sed -n 's/^elapsed_ms=//p' "$native_summary" 2>/dev/null | tail -n 1)
+    for value_name in total_files total_bytes total_duplicates native_dirs native_roots_scanned native_roots_failed native_elapsed_ms; do
+      eval "value=\${$value_name:-}"
+      case "$value" in ''|*[!0-9]*) eval "$value_name=0" ;; esac
+    done
+
+    mv -f "$RECORDS" "$INDEX_FILE"; mv -f "$COVERAGE" "$COVERAGE_FILE"
+    mv -f "$TMP/apk.nul" "$APK_INDEX"; mv -f "$TMP/empty.nul" "$EMPTY_INDEX"
+    mv -f "$TMP/large.nul" "$LARGE_INDEX"; mv -f "$TMP/organizer.nul" "$ORGANIZER_INDEX"
+    sort -n -k1,1 "$TMP/duplicates.tsv" >"$DUPLICATE_CANDIDATES" 2>/dev/null || mv -f "$TMP/duplicates.tsv" "$DUPLICATE_CANDIDATES"
+    {
+      echo "epoch=$(date +%s)"; echo "trigger=$TRIGGER"; echo "roots=$root_total"; echo "files=$total_files"; echo "bytes=$total_bytes"
+      echo "dirs=$native_dirs"; echo "roots_reused=0"; echo "roots_scanned=$native_roots_scanned"; echo "roots_failed=$native_roots_failed"
+      echo "overlap_duplicates=$total_duplicates"; echo "elapsed_ms=$native_elapsed_ms"
+      echo "input_signature=$INPUT_SIGNATURE"; echo "scope=$SCOPE"
+      echo "engine=baize-storage-index-v6-native-one-pass"
+    } >"$META_FILE"
+    chmod 0600 "$INDEX_FILE" "$COVERAGE_FILE" "$META_FILE" "$APK_INDEX" "$EMPTY_INDEX" "$LARGE_INDEX" "$ORGANIZER_INDEX" "$DUPLICATE_CANDIDATES" 2>/dev/null || true
+    echo "共享索引完成：$native_roots_scanned/$root_total 个来源，$total_files 个唯一文件，原生单遍 ${native_elapsed_ms}ms"
+    exit 0
+  else
+    native_rc=$?
+    [ "$native_rc" -eq 9 ] && exit 9
+    echo "原生共享索引失败（代码 $native_rc），为避免长时间 shell 全盘遍历，本次直接中止" >&2
+    exit "$native_rc"
+  fi
+fi
+
+# 兼容退路：仅在模块缺少原生引擎时使用旧的 shell 遍历。
 while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
   [ -d "${root:-}" ] || continue; [ ! -f "$STOP_FILE" ] || exit 9; current=$((current + 1))
   key=$(hash_text "$root"); cache="$CACHE_DIR/$key.nul"; meta="$CACHE_DIR/$key.env"

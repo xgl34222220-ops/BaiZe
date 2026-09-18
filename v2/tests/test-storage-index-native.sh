@@ -57,6 +57,26 @@ run() {
 run "$T/out-native" "$ENGINE" || exit 1
 run "$T/out-shell"  /nonexistent-engine || exit 1
 
+# 原生路径必须自己遍历目录，不能再偷偷调用 shell find。
+rm -rf "$T/state-no-find" "$T/fake-bin"; mkdir -p "$T/state-no-find" "$T/fake-bin"
+printf 'max_file_mb=1\n' > "$T/state-no-find/config.conf"
+cat >"$T/fake-bin/find" <<'SH'
+#!/bin/sh
+echo "native path unexpectedly called find" >&2
+exit 99
+SH
+chmod +x "$T/fake-bin/find"
+(
+  cd "$T"
+  env PATH="$T/fake-bin:$PATH" BAIZE_STATE_DIR="$T/state-no-find" BAIZE_MEDIA_ROOT="$T/media" \
+    BAIZE_NATIVE_ENGINE="$ENGINE" bash ./storage-index.sh refresh manual >/dev/null 2>&1
+) || { echo "  [FAIL] 原生索引仍依赖 shell find"; exit 1; }
+no_find_apk=$(tr -cd '\000' < "$T/state-no-find/index/apk-files.nul" | wc -c | tr -d ' ')
+[ "$no_find_apk" = 4 ] || { echo "  [FAIL] 原生单遍索引 APK 桶异常，实际 $no_find_apk"; exit 1; }
+grep -Fq 'engine=baize-storage-index-v6-native-one-pass' "$T/state-no-find/index/meta.env" || {
+  echo "  [FAIL] 未进入原生单遍索引路径"; exit 1;
+}
+
 fail=0
 for f in storage-files.nul apk-files.nul empty-files.nul large-files.nul \
          organizer-files.nul duplicate-candidates.tsv; do
