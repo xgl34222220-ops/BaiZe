@@ -2,8 +2,6 @@ package io.github.xgl34222220.baize.ui.settings.miuix
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -37,20 +35,29 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
     BackHandler(enabled = section.isNotEmpty()) { section = "" }
-    AnimatedContent(targetState = section,
+    AnimatedContent(
+        targetState = section,
+        modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             if (targetState.isNotEmpty()) {
-                (fadeIn(tween(250)) + slideInHorizontally(tween(340)) { it }) togetherWith
-                    (fadeOut(tween(210), targetAlpha = .52f) + slideOutHorizontally(tween(340)) { -it / 7 })
+                slideInHorizontally(tween(300)) { it } togetherWith
+                    slideOutHorizontally(tween(300)) { -it / 8 }
             } else {
-                (fadeIn(tween(230)) + slideInHorizontally(tween(340)) { -it / 7 }) togetherWith
-                    (fadeOut(tween(210)) + slideOutHorizontally(tween(340)) { it })
+                slideInHorizontally(tween(300)) { -it / 8 } togetherWith
+                    slideOutHorizontally(tween(300)) { it }
             }
-        }, label = "settingsHub") { target ->
-        when (target) {
-            "tasks" -> TaskSettings(state, actions, { section = "" })
-            "service" -> ServiceDetails(state, actions, { section = "" })
-            else -> SettingsHome(state, actions, { section = it })
+        },
+        label = "settingsHub"
+    ) { target ->
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = BaiZeTokens.colors.surfaceBase
+        ) {
+            when (target) {
+                "tasks" -> TaskSettings(state, actions, { section = "" })
+                "service" -> ServiceDetails(state, actions, { section = "" })
+                else -> SettingsHome(state, actions, { section = it })
+            }
         }
     }
 }
