@@ -240,6 +240,31 @@ apk_find_into() {
     -print0 >"$_apk_out" 2>/dev/null
 }
 
+apk_bruteforce_candidates() {
+  _apk_out=$1
+  : >"$_apk_out"
+  _apk_seen_roots=
+  for _apk_root in "${MEDIA_ROOT:-/data/media}" "${APK_PUBLIC_MEDIA_ROOT:-/storage/emulated}" /sdcard /storage /mnt/media_rw /data/local/tmp; do
+    [ -d "$_apk_root" ] || continue
+    [ ! -L "$_apk_root" ] || continue
+    case "
+$_apk_seen_roots
+" in *"
+$_apk_root
+"*) continue ;; esac
+    apk_list_append _apk_seen_roots "$_apk_root"
+    find "$_apk_root" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >>"$_apk_out" 2>/dev/null || true
+  done
+  if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
+    _apk_private_tmp="${_apk_out}.private.$"
+    apk_collect_private_candidates "$_apk_private_tmp"
+    [ ! -s "$_apk_private_tmp" ] || cat "$_apk_private_tmp" >>"$_apk_out"
+    rm -f "$_apk_private_tmp"
+  fi
+}
+
 apk_fallback_for_root() {
   case "$1" in
     /data/media/[0-9]*)
