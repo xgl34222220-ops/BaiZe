@@ -1085,12 +1085,35 @@ internal class NativeProfileEngine(
     private fun storageRoots(): List<File> {
         sharedRootOverride?.let { return it.distinctBy(::canonical) }
         val result = ArrayList<File>()
-        val emulated = File("/storage/emulated")
-        val users = emulated.listFiles()
-        if (users != null) {
-            for (file in users) if (file.isDirectory && file.name.all { it.isDigit() }) result.add(file)
+
+        fun numericUsers(root: File): List<File> = root.listFiles()
+            ?.filter { file ->
+                file.isDirectory && !isSymlink(file) &&
+                    file.name.isNotBlank() && file.name.all { it.isDigit() }
+            }
+            .orEmpty()
+
+        // RootService may not share the app process' /storage/emulated mount namespace.
+        // Prefer the raw media tree that Root can always see, then fall back to public views.
+        val rawUsers = numericUsers(File("/data/media"))
+        if (rawUsers.isNotEmpty()) {
+            result.addAll(rawUsers)
+        } else {
+            result.addAll(numericUsers(File("/storage/emulated")))
+            if (result.isEmpty() && File("/sdcard").isDirectory) result.add(File("/sdcard"))
         }
-        if (result.isEmpty() && File("/sdcard").isDirectory) result.add(File("/sdcard"))
+
+        // Removable storage must participate in the same discovery pass.
+        File("/mnt/media_rw").listFiles()
+            ?.filter { it.isDirectory && !isSymlink(it) }
+            ?.let(result::addAll)
+        File("/storage").listFiles()
+            ?.filter { file ->
+                file.isDirectory && !isSymlink(file) &&
+                    file.name !in setOf("emulated", "self", "enc_emulated", "runtime")
+            }
+            ?.let(result::addAll)
+
         return result.distinctBy { canonical(it) }
     }
 
@@ -1154,7 +1177,12 @@ internal class NativeProfileEngine(
 
     private fun prune(entry: ScanEntry): Boolean {
         val name = entry.file.name.lowercase()
-        return SHARED_PROTECTED.contains(name) || HIDDEN_PROTECTED.contains(name) || entry.path.contains("/Android/media/")
+        val path = entry.path.lowercase()
+        // User-facing folders are protected from root deletion, not from traversal.
+        // Skipping Download/DCIM/Pictures/Android entirely made safe discovery nearly empty.
+        if (HIDDEN_PROTECTED.contains(name)) return true
+        // OBB trees can be huge and are not ordinary junk-search roots.
+        return path.endsWith("/android/obb") || path.contains("/android/obb/")
     }
 
     private fun protectedDirectoryName(name: String): Boolean = HIDDEN_PROTECTED.contains(name.lowercase())
@@ -1258,10 +1286,6 @@ internal class NativeProfileEngine(
         )
         private val READ_ONLY = setOf(
             "/system", "/vendor", "/product", "/odm", "/apex", "/proc", "/sys", "/dev", "/metadata"
-        )
-        private val SHARED_PROTECTED = setOf(
-            "android", "dcim", "pictures", "movies", "music", "download", "downloads", "documents",
-            "audiobooks", "podcasts", "ringtones", "notifications", "alarms"
         )
         private val HIDDEN_PROTECTED = setOf(
             ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine"
