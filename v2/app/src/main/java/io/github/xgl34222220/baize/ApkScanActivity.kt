@@ -7,11 +7,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
-import android.media.MediaScannerConnection
-import android.system.Os
-import android.system.OsConstants
 import android.provider.Settings
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
@@ -264,17 +260,14 @@ class ApkScanActivity : ComponentActivity() {
                 return@launch
             }
 
-            val snapshots = withContext(Dispatchers.IO) {
-                indexed.candidates.mapNotNull { candidate ->
-                    val stat = runCatching { Os.lstat(candidate.path) }.getOrNull() ?: return@mapNotNull null
-                    if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) return@mapNotNull null
-                    DirectApkSnapshot(
-                        path = candidate.path,
-                        name = candidate.name,
-                        bytes = stat.st_size.coerceAtLeast(0L),
-                        identity = directIdentity(stat)
-                    )
-                }
+            val snapshots = indexed.candidates.map { candidate ->
+                DirectApkSnapshot(
+                    uri = candidate.uri,
+                    path = candidate.path,
+                    name = candidate.name,
+                    bytes = candidate.bytes,
+                    modifiedSeconds = candidate.modifiedSeconds
+                )
             }
             directSnapshot = snapshots
             val totalBytes = indexed.candidates.sumOf { it.bytes }
@@ -295,7 +288,7 @@ class ApkScanActivity : ComponentActivity() {
                     files = indexed.candidates.size.toLong(),
                     bytes = totalBytes,
                     path = "content://media/external/file",
-                    reason = "系统索引 ${indexed.candidates.size} 条 · App 直校验 ${snapshots.size} 条 · 未经过 Root 二次过滤"
+                    reason = "系统索引 ${indexed.candidates.size} 条 · 可直接清理 ${snapshots.size} 条 · MediaStore URI 删除"
                 )
             )
             screenState = screenState.copy(
@@ -308,7 +301,7 @@ class ApkScanActivity : ComponentActivity() {
                 totalFiles = indexed.candidates.size.toLong(),
                 totalBytes = totalBytes,
                 cleanReady = snapshots.isNotEmpty(),
-                output = "MediaStore.Files ${indexed.elapsedMs} ms · App lstat ${elapsed - indexed.elapsedMs} ms · Root 未参与前台扫描"
+                output = "MediaStore.Files ${indexed.elapsedMs} ms · 清理快照 ${snapshots.size} 条 · Root 未参与前台扫描"
             )
         }
     }
@@ -333,38 +326,25 @@ class ApkScanActivity : ComponentActivity() {
                 var deletedBytes = 0L
                 var skipped = 0
                 var failed = 0
-                val deletedPaths = ArrayList<String>(snapshot.size)
                 snapshot.forEach { item ->
-                    val stat = runCatching { Os.lstat(item.path) }.getOrNull()
-                    if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
-                        skipped += 1
-                        return@forEach
-                    }
-                    if (directIdentity(stat) != item.identity) {
-                        skipped += 1
-                        return@forEach
-                    }
-                    val removed = runCatching { Os.remove(item.path); true }.getOrDefault(false)
-                    if (removed) {
-                        deletedFiles += 1
-                        deletedBytes += item.bytes
-                        deletedPaths += item.path
-                    } else {
-                        failed += 1
+                    when (ApkMediaStoreIndex.deleteIfUnchanged(
+                        context = applicationContext,
+                        uriString = item.uri,
+                        expectedPath = item.path,
+                        expectedBytes = item.bytes,
+                        expectedModifiedSeconds = item.modifiedSeconds
+                    )) {
+                        ApkIndexedDeleteResult.DELETED -> {
+                            deletedFiles += 1
+                            deletedBytes += item.bytes
+                        }
+                        ApkIndexedDeleteResult.CHANGED -> skipped += 1
+                        ApkIndexedDeleteResult.FAILED -> failed += 1
                     }
                 }
-                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, deletedPaths)
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed)
             }
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-            if (result.deletedPaths.isNotEmpty()) {
-                MediaScannerConnection.scanFile(
-                    applicationContext,
-                    result.deletedPaths.toTypedArray(),
-                    null,
-                    null
-                )
-            }
-
             directSnapshot = emptyList()
             val phase = when {
                 result.failed > 0 || result.skipped > 0 ->
@@ -381,7 +361,7 @@ class ApkScanActivity : ComponentActivity() {
                 coverage = emptyList(),
                 totalFiles = 0,
                 totalBytes = 0,
-                output = "App 直删：lstat → remove；媒体库刷新已异步提交；总耗时 ${elapsed} ms"
+                output = "MediaStore URI 直接删除；总耗时 ${elapsed} ms"
             )
         }
     }
@@ -445,14 +425,6 @@ class ApkScanActivity : ComponentActivity() {
         )
     }
 
-    private fun directIdentity(stat: android.system.StructStat): String =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
-                "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
-        } else {
-            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
-        }
-
     private fun parseCoverage(array: JSONArray?): List<ScanCoverageItem> = buildList {
         if (array == null) return@buildList
         for (index in 0 until array.length()) {
@@ -488,18 +460,18 @@ class ApkScanActivity : ComponentActivity() {
 }
 
 internal data class DirectApkSnapshot(
+    val uri: String,
     val path: String,
     val name: String,
     val bytes: Long,
-    val identity: String
+    val modifiedSeconds: Long
 )
 
 internal data class DirectCleanResult(
     val deletedFiles: Int,
     val deletedBytes: Long,
     val skipped: Int,
-    val failed: Int,
-    val deletedPaths: List<String>
+    val failed: Int
 )
 
 internal data class ApkScanUiState(
