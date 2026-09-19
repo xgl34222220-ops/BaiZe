@@ -320,6 +320,234 @@ class BaiZeRootService : RootService() {
 
     override fun onBind(intent: Intent): IBinder = binder
 
+    private fun runForegroundScan(whitelistJson: String, started: Long): String {
+        taskStateJson = JSONObject()
+            .put("running", true)
+            .put("operation", "foreground-cache-scan")
+            .put("mode", "cache-scan")
+            .put("phase", "正在扫描应用缓存")
+            .put("elapsedMs", 0L)
+            .toString()
+        val snapshot = foregroundEngine.scan(whitelistJson) { phase, current, total, path ->
+            taskStateJson = JSONObject()
+                .put("running", true)
+                .put("operation", "foreground-cache-scan")
+                .put("mode", "cache-scan")
+                .put("phase", phase)
+                .put("current", current)
+                .put("total", total)
+                .put("currentPath", path.takeLast(512))
+                .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
+                .toString()
+        }
+        foregroundSnapshot = snapshot
+        synchronized(resultLock) { items = snapshot.items.map(::cacheItem) }
+        setSnapshotState(snapshot)
+        persistForegroundSnapshot(snapshot)
+        return JSONObject()
+            .put("cancelled", cancelled.get())
+            .put("elapsedMs", snapshot.elapsedMs)
+            .put("snapshotId", snapshot.id)
+            .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
+            .put("totalCandidates", snapshot.items.size)
+            .put("totalFiles", snapshot.totalFiles)
+            .put("totalBytes", snapshot.totalBytes)
+            .put("visitedDirs", snapshot.visitedDirs)
+            .put("whitelisted", 0)
+            .put("engine", "app-root-foreground-cache-v1")
+            .toString()
+    }
+
+    private fun runForegroundClean(whitelistJson: String, started: Long): String {
+        val snapshot = foregroundSnapshot ?: return JSONObject()
+            .put("error", "snapshot_expired")
+            .put("message", "缓存扫描快照已失效，请重新扫描")
+            .toString()
+        taskStateJson = JSONObject()
+            .put("running", true)
+            .put("operation", "foreground-cache-clean")
+            .put("mode", "cache-clean")
+            .put("phase", "正在清理应用缓存")
+            .put("elapsedMs", 0L)
+            .toString()
+        val result = foregroundEngine.clean(snapshot, whitelistJson) { phase, current, total, path ->
+            taskStateJson = JSONObject()
+                .put("running", true)
+                .put("operation", "foreground-cache-clean")
+                .put("mode", "cache-clean")
+                .put("phase", phase)
+                .put("current", current)
+                .put("total", total)
+                .put("currentPath", path.takeLast(512))
+                .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
+                .toString()
+        }
+        writeForegroundCleanReport(result)
+        if (result.remainingItems.isEmpty() && !result.cancelled) {
+            clearForegroundSnapshot()
+        } else {
+            val remaining = ForegroundCacheEngine.Snapshot(
+                id = snapshot.id,
+                createdAt = snapshot.createdAt,
+                items = result.remainingItems,
+                totalBytes = result.remainingItems.sumOf { it.bytes },
+                totalFiles = result.remainingItems.sumOf { it.files },
+                visitedDirs = result.remainingItems.sumOf { it.directories },
+                elapsedMs = snapshot.elapsedMs
+            )
+            foregroundSnapshot = remaining
+            synchronized(resultLock) { items = remaining.items.map(::cacheItem) }
+            setSnapshotState(remaining)
+            persistForegroundSnapshot(remaining)
+        }
+        return result.json().put("output", "App RootService 直接清理；未调用模块脚本").toString()
+    }
+
+    private fun cacheItem(item: ForegroundCacheEngine.Item): CacheItem = CacheItem(
+        packageName = item.packageName,
+        category = item.category,
+        files = item.files,
+        bytes = item.bytes,
+        directories = item.directories,
+        path = item.path
+    )
+
+    private fun setSnapshotState(snapshot: ForegroundCacheEngine.Snapshot) {
+        snapshotState.set(
+            SnapshotState(
+                id = snapshot.id,
+                createdAt = snapshot.createdAt,
+                files = snapshot.totalFiles,
+                bytes = snapshot.totalBytes,
+                visitedDirs = snapshot.visitedDirs,
+                firstResultMs = snapshot.elapsedMs,
+                engineElapsedMs = snapshot.elapsedMs,
+                itemsPerSecond = if (snapshot.elapsedMs > 0L) snapshot.items.size * 1000L / snapshot.elapsedMs else snapshot.items.size.toLong(),
+                workerPolicy = "app-root",
+                workerReason = "foreground-module-independent"
+            )
+        )
+    }
+
+    private fun foregroundStateDir(): File = File(STATE_DIR).apply { mkdirs() }
+
+    private fun persistForegroundSnapshot(snapshot: ForegroundCacheEngine.Snapshot) {
+        val stateDir = foregroundStateDir()
+        val itemsFile = File(stateDir, "cache_scan.items.tsv")
+        val targetsFile = File(stateDir, "cache_scan.targets")
+        val envFile = File(stateDir, "cache_scan.env")
+        val itemsText = buildString {
+            append("package\tcategory\tfiles\tbytes\tdirectories\tpath\n")
+            snapshot.items.forEach { item ->
+                append(item.packageName).append('\t')
+                    .append(item.category.replace('\t', ' ')).append('\t')
+                    .append(item.files).append('\t')
+                    .append(item.bytes).append('\t')
+                    .append(item.directories).append('\t')
+                    .append(item.path.replace('\t', ' ').replace('\n', ' ')).append('\n')
+            }
+        }
+        val targetsText = snapshot.items.joinToString("\n", postfix = if (snapshot.items.isEmpty()) "" else "\n") { it.path }
+        atomicWrite(itemsFile, itemsText)
+        atomicWrite(targetsFile, targetsText)
+        atomicWrite(envFile, buildString {
+            appendLine("snapshot_id=${snapshot.id}")
+            appendLine("epoch=${snapshot.createdAt / 1000L}")
+            appendLine("items=${snapshot.items.size}")
+            appendLine("targets=${snapshot.items.size}")
+            appendLine("files=${snapshot.totalFiles}")
+            appendLine("bytes=${snapshot.totalBytes}")
+            appendLine("visited_dirs=${snapshot.visitedDirs}")
+            appendLine("first_result_ms=${snapshot.elapsedMs}")
+            appendLine("engine_elapsed_ms=${snapshot.elapsedMs}")
+            appendLine("worker_policy=app-root")
+            appendLine("worker_reason=foreground-module-independent")
+            appendLine("engine=app-root-foreground-cache-v1")
+        })
+    }
+
+    private fun restoreForegroundSnapshot(): Boolean {
+        val current = foregroundSnapshot
+        if (current != null && snapshotValid(current.id)) return true
+        val stateDir = foregroundStateDir()
+        val envFile = File(stateDir, "cache_scan.env")
+        val itemsFile = File(stateDir, "cache_scan.items.tsv")
+        val targetsFile = File(stateDir, "cache_scan.targets")
+        if (!envFile.isFile || !itemsFile.isFile || !targetsFile.isFile) {
+            clearSnapshotMemory()
+            foregroundSnapshot = null
+            return false
+        }
+        val env = readEnv(envFile)
+        val id = env.optString("snapshot_id").trim()
+        val createdAt = env.optLong("epoch", 0L) * 1000L
+        if (id.isBlank() || createdAt <= 0L || System.currentTimeMillis() - createdAt !in 0..SNAPSHOT_MAX_AGE_MS) {
+            clearForegroundSnapshot()
+            return false
+        }
+        val restoredItems = parseItems(itemsFile).map { item ->
+            ForegroundCacheEngine.Item(
+                packageName = item.packageName,
+                appName = item.packageName,
+                category = item.category,
+                path = item.path,
+                bytes = item.bytes,
+                files = item.files,
+                directories = item.directories
+            )
+        }
+        val snapshot = ForegroundCacheEngine.Snapshot(
+            id = id,
+            createdAt = createdAt,
+            items = restoredItems,
+            totalBytes = restoredItems.sumOf { it.bytes },
+            totalFiles = restoredItems.sumOf { it.files },
+            visitedDirs = env.optLong("visited_dirs", restoredItems.sumOf { it.directories }),
+            elapsedMs = env.optLong("engine_elapsed_ms", 0L)
+        )
+        foregroundSnapshot = snapshot
+        synchronized(resultLock) { items = snapshot.items.map(::cacheItem) }
+        setSnapshotState(snapshot)
+        return true
+    }
+
+    private fun writeForegroundCleanReport(result: ForegroundCacheEngine.CleanResult) {
+        val report = File(foregroundStateDir(), "reports/latest.tsv")
+        report.parentFile?.mkdirs()
+        val text = buildString {
+            append("action\trisk\tcategory\titems\tbytes\tpath\n")
+            val details = result.details
+            for (index in 0 until details.length()) {
+                val detail = details.optJSONObject(index) ?: continue
+                append(detail.optString("action", "changed")).append("\tlow\tcache\t")
+                    .append(detail.optLong("files", 0L)).append('\t')
+                    .append(detail.optLong("bytes", 0L)).append('\t')
+                    .append(detail.optString("path").replace('\t', ' ').replace('\n', ' ')).append('\n')
+            }
+        }
+        atomicWrite(report, text)
+    }
+
+    private fun clearForegroundSnapshot() {
+        foregroundSnapshot = null
+        clearSnapshotMemory()
+        for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv")) {
+            File(STATE_DIR, name).delete()
+        }
+    }
+
+    private fun atomicWrite(target: File, content: String) {
+        target.parentFile?.mkdirs()
+        val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
+        temp.writeText(content)
+        if (!temp.renameTo(target)) {
+            temp.copyTo(target, overwrite = true)
+            temp.delete()
+        }
+        target.setReadable(true, true)
+        target.setWritable(true, true)
+    }
+
     private fun runNativeScan(whitelistJson: String, started: Long): String {
         val cleaner = File(MODULE_DIR, "cleaner.sh")
         if (!cleaner.isFile) {
