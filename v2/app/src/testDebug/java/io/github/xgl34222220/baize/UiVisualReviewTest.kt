@@ -97,7 +97,7 @@ class UiVisualReviewTest {
     @Test fun homeCleanerToolsAreVisibleBeforeAutomation() {
         render("home-cleaner-first", 0)
         compose.onNodeWithText("开始扫描").assertIsDisplayed()
-        compose.onNodeWithText("专项清理").assertIsDisplayed()
+        compose.onNodeWithText("整理空间").assertIsDisplayed()
         compose.onNodeWithText("安装包").assertIsDisplayed()
     }
 

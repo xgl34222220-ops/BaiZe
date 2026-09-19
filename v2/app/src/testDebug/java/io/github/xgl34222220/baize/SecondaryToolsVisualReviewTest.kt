@@ -69,7 +69,8 @@ class SecondaryToolsVisualReviewTest {
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun resumableInterruptedDarkLargeFont() = render("resumable-interrupted-dark-large-font", dark = true, fontScale = 1.3f) {
         ResumeSmartScreen(planState.copy(
-            resumable = true, totalSafe = 12, runCount = 1, phase = "清理已暂停，剩余 12 项可以继续处理。",
+            resumable = true, totalSafe = 12, cacheCount = 8, safeCount = 4, cacheBytes = null, safeBytes = null,
+            cacheSummary = "应用缓存剩余 8 项", safeSummary = "规则垃圾剩余 4 项", runCount = 1, phase = "清理已暂停，剩余 12 项可以继续处理。",
             processedCandidates = 36, cleanedCandidates = 34, protectedCandidates = 2,
             deletedBytes = 428L * 1024 * 1024, failures = 2, failedCandidates = 2
         ), {}, {}, {}, {}, {}, {})
