@@ -207,14 +207,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 scheduler = schedulerState.value,
                 actions = DashboardActions(
                     refresh = { refreshAll() },
-                    clean = { runSmartClean() },
-                    organize = { runOneTapOrganize() },
-                    scan = { openScanReview() },
-                    apkScan = { runApkScan() },
-                    cleanScan = { openScanReview() },
+                    clean = { openForegroundCleaner() },
+                    organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) },
+                    scan = { openForegroundCleaner() },
+                    apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) },
+                    cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
-                    deep = { confirmDeepClean() },
+                    deep = { openProfile("deep") },
                     corpses = { openProfile("corpses") },
                     audit = { startActivity(Intent(this, CleanCenterActivity::class.java)) },
                     updateScheduler = { schedulerState.value = it },
@@ -241,14 +241,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
-            if (hasUsableScanSnapshots()) {
-                cleanNativeSnapshots()
-            } else if (rootService == null) {
-                pendingSmartClean = true
-                connectPrimaryService()
-            } else {
-                runSmartClean()
-            }
+            openForegroundCleaner()
         }
     }
 
@@ -312,6 +305,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 delay(3_000L)
             }
         }
+    }
+
+    private fun openForegroundCleaner() {
+        if (dashboardState.value.running) {
+            showTaskBusy("当前已有任务正在运行，请先停止后再开始前台清理")
+            return
+        }
+        startActivity(Intent(this, ResumableSmartScanActivity::class.java))
     }
 
     private fun refreshAll() {
@@ -775,22 +776,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runOneTapOrganize() {
-        if (dashboardState.value.running) {
-            showTaskBusy("当前已有任务正在运行，请等待完成后再归类")
-            return
-        }
-        val service = rootService
-        if (service == null) {
-            pendingModuleTask = "organize"
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 服务，连接后自动开始文件归类"
-            )
-            connectPrimaryService()
-            return
-        }
-        runDetachedOrganizer(service)
+        startActivity(Intent(this, FileOrganizerActivity::class.java))
     }
 
     private fun runDetachedOrganizer(service: IProfileRootService) {
@@ -851,22 +837,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runApkScan() {
-        if (dashboardState.value.running) {
-            showTaskBusy()
-            return
-        }
-        val service = rootService
-        if (service == null) {
-            pendingModuleTask = "apk-scan"
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 服务，连接后自动扫描安装包"
-            )
-            connectPrimaryService()
-            return
-        }
-        runModuleUtilityTask(service, "apk-scan")
+        startActivity(Intent(this, ApkScanActivity::class.java))
     }
 
     private fun runModuleUtilityTask(service: IProfileRootService, mode: String) {
@@ -925,23 +896,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runSmartClean() {
-        if (dashboardState.value.running) {
-            showTaskBusy()
-            return
-        }
-        if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        val service = rootService
-        if (service == null) {
-            pendingSmartClean = true
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 清理服务，连接成功后继续清理"
-            )
-            connectPrimaryService()
-            return
-        }
-        runModuleClean(service)
+        openForegroundCleaner()
     }
 
     private fun runModuleClean(service: IProfileRootService) {
