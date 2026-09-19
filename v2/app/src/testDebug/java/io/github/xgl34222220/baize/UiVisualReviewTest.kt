@@ -84,8 +84,8 @@ class UiVisualReviewTest {
 
     @Test fun homePlanOpensAutomaticPlan() {
         render("home-plan-entry", 0)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理"))
-        compose.onNodeWithText("自动清理").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理模块"))
+        compose.onNodeWithText("自动清理模块").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("手动工具").assertIsDisplayed()
         compose.onNodeWithText("扫描工作台").assertIsDisplayed()
@@ -94,9 +94,11 @@ class UiVisualReviewTest {
         save("clean-plan")
     }
 
-    @Test fun homePlanIsVisibleOnTheFirstScreen() {
-        render("home-plan-visible", 0)
-        compose.onNodeWithText("自动清理").assertIsDisplayed()
+    @Test fun homeCleanerToolsAreVisibleBeforeAutomation() {
+        render("home-cleaner-first", 0)
+        compose.onNodeWithText("开始扫描").assertIsDisplayed()
+        compose.onNodeWithText("专项清理").assertIsDisplayed()
+        compose.onNodeWithText("安装包").assertIsDisplayed()
     }
 
     @Test fun groupedHomeToolsKeepTheirOwnActions() {
@@ -242,7 +244,7 @@ class UiVisualReviewTest {
     }
 
     private val previewActions = DashboardActions(
-        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, cleanScan = {},
+        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {},
         dismissScan = {}, stop = {}, deep = {}, corpses = {}, audit = {},
         updateScheduler = {}, saveScheduler = {}, schedulerCommand = {}, clearHistory = {},
         clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
