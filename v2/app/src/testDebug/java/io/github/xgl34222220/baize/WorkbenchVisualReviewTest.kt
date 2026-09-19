@@ -35,9 +35,11 @@ class WorkbenchVisualReviewTest {
 
     @Test fun thousandsOfResultsKeepTheCleanupActionInView() {
         render(ready())
+        // Wait for the visible summary from background grouping. A lazy list row can be
+        // outside the composed viewport and must not be used as a readiness signal.
         compose.waitUntil(timeoutMillis = 5000) {
-            compose.onAllNodesWithText("示例应用 12").fetchSemanticsNodes().isNotEmpty() &&
-                compose.onAllNodesWithText("1.66").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithText("1.66", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithText("12", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed().performClick()
         assertEquals(1, cleanRequests)
