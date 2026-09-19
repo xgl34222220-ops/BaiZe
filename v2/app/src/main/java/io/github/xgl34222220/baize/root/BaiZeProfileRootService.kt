@@ -27,7 +27,12 @@ class BaiZeProfileRootService : RootService() {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
-    private val apkFastSnapshot = ApkFastSnapshotRepository(cancelled = coordinator.cancelled)
+    private val apkFastSnapshot by lazy {
+        ApkFastSnapshotRepository(
+            cancelled = coordinator.cancelled,
+            mediaRefresh = { paths -> RootMediaScanQueue.enqueueAsync(this, paths) }
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -88,7 +93,7 @@ class BaiZeProfileRootService : RootService() {
                         phase = "正在快速清理安装包",
                         failureCode = "apk_fast_clean_failed"
                     ) {
-                        apkFastSnapshot.clean().also { RootMediaScanQueue.flush(this@BaiZeProfileRootService) }
+                        apkFastSnapshot.clean()
                     }
             }
             "getTaskHistory" -> { require(arguments.length() == 1); getTaskHistory(arguments.getInt(0)) }
