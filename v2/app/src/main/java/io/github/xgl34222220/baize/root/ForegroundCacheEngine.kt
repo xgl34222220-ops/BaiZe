@@ -65,7 +65,8 @@ internal class ForegroundCacheEngine(
         val deletedDirectories: Long,
         val elapsedMs: Long,
         val cancelled: Boolean,
-        val details: JSONArray
+        val details: JSONArray,
+        val remainingItems: List<Item>
     ) {
         fun json(): JSONObject {
             val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
@@ -164,6 +165,7 @@ internal class ForegroundCacheEngine(
         var deletedFiles = 0L
         var deletedDirs = 0L
         val details = JSONArray()
+        val remaining = ArrayList<Item>()
 
         snapshot.items.forEachIndexed { index, item ->
             if (cancelled.get()) return@forEachIndexed
@@ -171,6 +173,7 @@ internal class ForegroundCacheEngine(
             progress("正在清理应用缓存", index, snapshot.items.size, item.path)
             if (item.packageName in whitelist || !knownCachePath(item.path, item.packageName)) {
                 protected += 1
+                remaining += item
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "protected", "白名单或路径保护", 0, 0, 0))
                 return@forEachIndexed
             }
@@ -178,6 +181,7 @@ internal class ForegroundCacheEngine(
             val stat = lstat(root)
             if (stat == null || !OsConstants.S_ISDIR(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
                 changed += 1
+                remaining += item
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "changed", "缓存目录已变化", 0, 0, 0))
                 return@forEachIndexed
             }
@@ -188,6 +192,7 @@ internal class ForegroundCacheEngine(
             when {
                 !result.complete -> {
                     partial += 1
+                    remaining += item
                     if (details.length() < MAX_DETAILS) details.put(detail(item, "partial", "部分文件未能删除", result.bytes, result.files, result.directories))
                 }
                 result.files > 0 || result.directories > 0 -> {
@@ -215,7 +220,8 @@ internal class ForegroundCacheEngine(
             deletedDirectories = deletedDirs,
             elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
             cancelled = cancelled.get(),
-            details = details
+            details = details,
+            remainingItems = remaining
         )
     }
 
