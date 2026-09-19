@@ -10,6 +10,9 @@ PROFILE = (APP / "root/BaiZeProfileRootService.kt").read_text(encoding="utf-8")
 PROFILE_ENGINE = (APP / "root/NativeProfileEngine.kt").read_text(encoding="utf-8")
 DASH = (APP / "MiuixDashboardActivity.kt").read_text(encoding="utf-8")
 GRADLE = (ROOT / "v2/app/build.gradle.kts").read_text(encoding="utf-8")
+ROOT_SUPPORT = (APP / "root/RootSupport.kt").read_text(encoding="utf-8")
+STORAGE = (APP / "StorageMediaRepository.kt").read_text(encoding="utf-8")
+HOME = (APP / "ui/home/miuix/LuoShuHomeScreen.kt").read_text(encoding="utf-8")
 
 def require(value, message):
     if not value:
@@ -44,6 +47,14 @@ require('organize = { startActivity(Intent(this, FileOrganizerActivity::class.ja
         "organizer tool must be App-owned")
 require("ProcessBuilder" not in CACHE_ENGINE and "cleaner.sh" not in CACHE_ENGINE,
         "App cache engine must not shell out to module")
+require("FOREGROUND_STATE_DIR" in ROOT_SUPPORT and "app-foreground" in ROOT_SUPPORT,
+        "foreground snapshot state must be isolated from automation module state")
+require("StorageMediaRepository" in STORAGE and "contentResolver.query" in STORAGE,
+        "storage tools must be App-native")
+require('actions.largeFiles' in HOME and 'actions.duplicates' in HOME and 'actions.storageAnalysis' in HOME,
+        "home must expose App-native storage tools")
+require('自动清理模块' in HOME,
+        "home must label automation as an optional module capability")
 
 print("foreground App cleaner architecture contract passed")
 
