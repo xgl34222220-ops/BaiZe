@@ -563,6 +563,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 val runFiles = (deletedFiles - beforeDeletedFiles).coerceAtLeast(0L)
                 val runCleaned = (cleanedCandidates - beforeCleanedCandidates).coerceAtLeast(0)
                 val runElapsed = (SystemClock.elapsedRealtime() - cleanStarted).coerceAtLeast(0L)
+                val historyCategories = historyCategoriesForRun()
                 AppTaskHistoryStore.append(
                     context = this@ResumableSmartScanActivity,
                     title = if (remaining > 0) "一键清理（部分完成）" else "一键清理",
@@ -570,8 +571,21 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     bytes = runReleased,
                     files = maxOf(runFiles.toInt(), runCleaned),
                     elapsedMs = runElapsed,
-                    categories = historyCategoriesForRun(),
+                    categories = historyCategories,
                     cleaned = runReleased > 0L || runCleaned > 0
+                )
+                LastCleanupStore.save(
+                    this@ResumableSmartScanActivity,
+                    emptyList(),
+                    historyCategories.map { item ->
+                        GeneralJunkUiItem(
+                            name = item.name,
+                            files = item.files,
+                            bytes = item.bytes,
+                            errors = 0,
+                            samplePath = ""
+                        )
+                    }
                 )
 
                 if (remaining <= 0) {
