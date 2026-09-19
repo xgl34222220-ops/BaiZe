@@ -201,6 +201,162 @@ internal class ApkFastSnapshotRepository(
             .toString()
     }
 
+    fun clean(): String {
+        val started = SystemClock.elapsedRealtime()
+        val stateFile = File(stateDir, "apk_scan.env")
+        val targetsFile = File(stateDir, "apk_scan.targets")
+        val identitiesFile = File(stateDir, "apk_scan.identities")
+        val whitelistFile = File(stateDir, "whitelist.conf").also { if (!it.exists()) it.createNewFile() }
+        val state = RootFileStore.readEnv(stateFile)
+        if (state.optString("engine") != "apk-mediastore-fast-v1") {
+            return failure("snapshot_engine_mismatch", "当前不是系统索引快照，请重新扫描")
+        }
+        val epoch = state.optLong("epoch", 0L)
+        val age = System.currentTimeMillis() / 1000L - epoch
+        if (epoch <= 0L || age !in 0..1800L) return failure("snapshot_expired", "安装包快照已过期，请重新扫描")
+        if (!targetsFile.isFile || !identitiesFile.isFile) return failure("snapshot_missing", "安装包快照缺失，请重新扫描")
+
+        val targetBytes = runCatching { targetsFile.readBytes() }.getOrElse { return failure("snapshot_read_failed", "无法读取安装包快照") }
+        val identityBytes = runCatching { identitiesFile.readBytes() }.getOrElse { return failure("snapshot_read_failed", "无法读取安装包身份快照") }
+        if (sha256(targetBytes) != state.optString("targets_sha") ||
+            sha256(identityBytes) != state.optString("identities_sha")) {
+            return failure("snapshot_changed", "安装包快照校验失败，请重新扫描")
+        }
+        val currentWhitelistSha = if (whitelistFile.isFile) sha256(whitelistFile.readBytes()) else "missing"
+        if (currentWhitelistSha != state.optString("whitelist_sha")) {
+            return failure("whitelist_changed", "白名单已变化，请重新扫描")
+        }
+
+        val targets = readNul(targetBytes)
+        val identities = readNul(identityBytes)
+        if (targets.size != identities.size) return failure("snapshot_incomplete", "安装包身份快照不完整，请重新扫描")
+        val whitelistPaths = readWhitelist(whitelistFile)
+        val details = JSONArray()
+        val deletedPaths = ArrayList<String>()
+        var deletedFiles = 0
+        var deletedBytes = 0L
+        var skipped = 0
+        var errors = 0
+        var stopped = false
+
+        targets.indices.forEach { index ->
+            if (cancelled.get()) { stopped = true; return@forEach }
+            val path = targets[index]
+            val expected = identities[index]
+            if (!isAllowedStoragePath(path) || whitelistPaths.any { pathContains(it, path) }) {
+                skipped += 1
+                details.put(resultRow("protected", path, 0L, "路径或白名单保护"))
+                return@forEach
+            }
+            val stat = runCatching { Os.lstat(path) }.getOrNull()
+            if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
+                skipped += 1
+                details.put(resultRow("protected", path, 0L, "目标已变化或不存在"))
+                return@forEach
+            }
+            if (fastIdentity(stat) != expected) {
+                skipped += 1
+                details.put(resultRow("protected", path, stat.st_size, "扫描后文件已变化"))
+                return@forEach
+            }
+            val size = stat.st_size.coerceAtLeast(0L)
+            val deleted = runCatching { Os.unlink(path); true }.getOrDefault(false)
+            if (deleted) {
+                deletedFiles += 1
+                deletedBytes += size
+                deletedPaths += path
+                details.put(resultRow("cleaned", path, size, "已删除"))
+            } else {
+                errors += 1
+                details.put(resultRow("failed", path, size, "删除失败"))
+            }
+        }
+
+        if (deletedPaths.isNotEmpty()) RootMediaScanQueue.enqueue(stateDir, deletedPaths)
+        if (!stopped) {
+            stateFile.delete()
+            targetsFile.delete()
+            identitiesFile.delete()
+        }
+        val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+        val success = !stopped && skipped == 0 && errors == 0
+        val result = when {
+            stopped -> "安装包清理已停止：已删除 $deletedFiles 个"
+            skipped > 0 || errors > 0 -> "安装包清理未完全生效：删除 $deletedFiles 个，跳过 $skipped 个，失败 $errors 个"
+            else -> "安装包清理完成：删除 $deletedFiles 个，释放 ${humanBytes(deletedBytes)}"
+        }
+        val latest = JSONObject()
+            .put("mode", "apk-clean")
+            .put("files", deletedFiles)
+            .put("bytes", deletedBytes)
+            .put("skipped", skipped)
+            .put("errors", errors)
+            .put("elapsed", elapsed / 1000L)
+            .put("engine", "apk-mediastore-fast-v1")
+            .put("result", result)
+        RootFileStore.writeAtomic(
+            File(stateDir, "latest.env"),
+            buildString {
+                appendLine("mode=apk-clean")
+                appendLine("files=$deletedFiles")
+                appendLine("regular_files=$deletedFiles")
+                appendLine("bytes=$deletedBytes")
+                appendLine("skipped=$skipped")
+                appendLine("errors=$errors")
+                appendLine("protected_items=$skipped")
+                appendLine("elapsed=${elapsed / 1000L}")
+                appendLine("engine=apk-mediastore-fast-v1")
+                appendLine("result=$result")
+            }
+        )
+        return JSONObject()
+            .put("success", success)
+            .put("cancelled", stopped)
+            .put("exitCode", if (stopped) 9 else if (success) 0 else 8)
+            .put("elapsedMs", elapsed)
+            .put("latest", latest)
+            .put("otherDetails", details)
+            .put("message", result)
+            .put("output", "RootService lstat/unlink；未启动 shell rm/find 子进程")
+            .toString()
+    }
+
+    private fun resultRow(action: String, path: String, bytes: Long, reason: String): JSONObject =
+        JSONObject()
+            .put("action", action)
+            .put("name", File(path).name)
+            .put("files", 1)
+            .put("bytes", bytes)
+            .put("errors", if (action == "failed") 1 else 0)
+            .put("samplePath", path)
+            .put("reason", reason)
+
+    private fun fastIdentity(stat: android.system.StructStat): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
+                "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
+        } else {
+            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
+        }
+
+    private fun readNul(bytes: ByteArray): List<String> {
+        val result = ArrayList<String>()
+        var start = 0
+        for (index in bytes.indices) {
+            if (bytes[index] != 0.toByte()) continue
+            if (index > start) result += String(bytes, start, index - start, Charsets.UTF_8)
+            start = index + 1
+        }
+        if (start < bytes.size) result += String(bytes, start, bytes.size - start, Charsets.UTF_8)
+        return result.filter { it.isNotBlank() }
+    }
+
+    private fun humanBytes(bytes: Long): String = when {
+        bytes >= 1024L * 1024L * 1024L -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024L -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
+        bytes >= 1024L -> "%.2f KB".format(bytes / 1024.0)
+        else -> "$bytes B"
+    }
     private fun quickSupplementPaths(): Sequence<String> = sequence {
         val userRoots = LinkedHashSet<File>()
         listOf(File("/data/media"), File("/storage/emulated")).forEach { parent ->
