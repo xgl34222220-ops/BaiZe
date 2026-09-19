@@ -7,9 +7,13 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.net.Uri
+import android.media.MediaScannerConnection
+import android.system.Os
+import android.system.OsConstants
 import android.provider.Settings
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -94,6 +98,7 @@ class ApkScanActivity : ComponentActivity() {
     }
     private var screenState by mutableStateOf(ApkScanUiState())
     private var showCleanConfirm by mutableStateOf(false)
+    private var directSnapshot: List<DirectApkSnapshot> = emptyList()
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -202,13 +207,6 @@ class ApkScanActivity : ComponentActivity() {
             screenState = screenState.copy(phase = "安装包任务仍在运行，请先停止或等待完成")
             return
         }
-        val root = service
-        if (root == null) {
-            screenState = screenState.copy(phase = "Root 服务尚未连接，正在重新连接…")
-            connectService()
-            return
-        }
-
         screenState = screenState.copy(
             running = true,
             operation = "scan",
@@ -223,14 +221,16 @@ class ApkScanActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                        RootServiceClients.profileExchange(
-                            root, applicationContext.cacheDir, "ensureAllFilesAccess"
-                        )
+                service?.let { root ->
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            RootServiceClients.profileExchange(
+                                root, applicationContext.cacheDir, "ensureAllFilesAccess"
+                            )
+                        }
                     }
+                    delay(80)
                 }
-                delay(120)
             }
 
             if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
@@ -250,8 +250,10 @@ class ApkScanActivity : ComponentActivity() {
                 return@launch
             }
 
+            val started = SystemClock.elapsedRealtime()
             val indexed = withContext(Dispatchers.IO) { ApkMediaStoreIndex.query(applicationContext) }
             if (indexed.error != null) {
+                directSnapshot = emptyList()
                 screenState = screenState.copy(
                     running = false,
                     operation = "",
@@ -261,7 +263,22 @@ class ApkScanActivity : ComponentActivity() {
                 return@launch
             }
 
-            val preview = indexed.candidates.take(500).map { candidate ->
+            val snapshots = withContext(Dispatchers.IO) {
+                indexed.candidates.mapNotNull { candidate ->
+                    val stat = runCatching { Os.lstat(candidate.path) }.getOrNull() ?: return@mapNotNull null
+                    if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) return@mapNotNull null
+                    DirectApkSnapshot(
+                        path = candidate.path,
+                        name = candidate.name,
+                        bytes = stat.st_size.coerceAtLeast(0L),
+                        identity = directIdentity(stat)
+                    )
+                }
+            }
+            directSnapshot = snapshots
+            val totalBytes = indexed.candidates.sumOf { it.bytes }
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            val items = indexed.candidates.take(500).map { candidate ->
                 ApkScanItem(
                     name = candidate.name,
                     files = 1,
@@ -270,160 +287,101 @@ class ApkScanActivity : ComponentActivity() {
                     samplePath = candidate.path
                 )
             }
-            val previewBytes = indexed.candidates.sumOf { it.bytes }
-            screenState = screenState.copy(
-                items = preview,
-                totalFiles = indexed.candidates.size.toLong(),
-                totalBytes = previewBytes,
-                phase = "系统索引命中 ${indexed.candidates.size} 个 · ${indexed.elapsedMs} ms，正在 Root 校验…"
+            val coverage = listOf(
+                ScanCoverageItem(
+                    status = "scanned",
+                    group = "MediaStore.Files 系统索引",
+                    files = indexed.candidates.size.toLong(),
+                    bytes = totalBytes,
+                    path = "content://media/external/file",
+                    reason = "系统索引 ${indexed.candidates.size} 条 · App 直校验 ${snapshots.size} 条 · 未经过 Root 二次过滤"
+                )
             )
-
-            val payload = JSONArray()
-            indexed.candidates.forEach { candidate ->
-                payload.put(
-                    JSONObject()
-                        .put("path", candidate.path)
-                        .put("name", candidate.name)
-                        .put("bytes", candidate.bytes)
-                        .put("modified", candidate.modifiedSeconds)
-                )
-            }
-            val response = withContext(Dispatchers.IO) {
-                runCatching {
-                    JSONObject(
-                        RootServiceClients.profileExchange(
-                            root,
-                            applicationContext.cacheDir,
-                            "prepareApkFastSnapshot",
-                            JSONArray().put(payload.toString())
-                        )
-                    )
-                }
-            }
-            if (response.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = "Root 快照校验失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
-                )
-                return@launch
-            }
-
-            val json = response.getOrThrow()
-            if (!json.optBoolean("success")) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    cleanReady = false,
-                    phase = json.optString("message", "Root 快照校验失败"),
-                    output = json.optString("output").trim().takeLast(6000)
-                )
-                return@launch
-            }
-
-            val latest = json.optJSONObject("latest") ?: JSONObject()
-            val parsedItems = parseItems(json.optJSONArray("otherDetails"))
-            val coverage = parseCoverage(json.optJSONArray("coverage"))
-            val totalFiles = latest.optLong("files", parsedItems.sumOf { it.files }).coerceAtLeast(0L)
-            val totalBytes = latest.optLong("bytes", parsedItems.sumOf { it.bytes }).coerceAtLeast(0L)
             screenState = screenState.copy(
                 running = false,
                 operation = "",
-                phase = latest.optString("result").ifBlank {
-                    if (totalFiles > 0) "安装包索引完成，可清理 ${Formatter.formatFileSize(this@ApkScanActivity, totalBytes)}"
-                    else "系统索引没有发现可清理的安装包"
-                },
-                items = parsedItems,
+                phase = if (indexed.candidates.isEmpty()) "快速索引完成：发现 0 个安装包" else
+                    "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms",
+                items = items,
                 coverage = coverage,
-                totalFiles = totalFiles,
+                totalFiles = indexed.candidates.size.toLong(),
                 totalBytes = totalBytes,
-                cleanReady = totalFiles > 0,
-                output = json.optString("output").trim().takeLast(6000)
+                cleanReady = snapshots.isNotEmpty(),
+                output = "MediaStore.Files ${indexed.elapsedMs} ms · App lstat ${elapsed - indexed.elapsedMs} ms · Root 未参与前台扫描"
             )
         }
     }
 
     private fun cleanSnapshot() {
         if (screenState.running || !screenState.cleanReady) return
-        val root = service
-        if (root == null) {
-            screenState = screenState.copy(phase = "Root 服务尚未连接，正在重新连接…")
-            connectService()
+        val snapshot = directSnapshot
+        if (snapshot.isEmpty()) {
+            screenState = screenState.copy(cleanReady = false, phase = "当前没有可清理的安装包快照，请重新扫描")
             return
         }
 
         screenState = screenState.copy(
             running = true,
             operation = "clean",
-            phase = "正在通过 RootService 快速删除已校验安装包…"
+            phase = "正在快速删除 ${snapshot.size} 个安装包…"
         )
-        startPolling()
         lifecycleScope.launch {
-            val response = withContext(Dispatchers.IO) {
-                runCatching {
-                    JSONObject(
-                        RootServiceClients.profileExchange(
-                            root, applicationContext.cacheDir, "cleanApkFastSnapshot"
-                        )
-                    )
+            val started = SystemClock.elapsedRealtime()
+            val result = withContext(Dispatchers.IO) {
+                var deletedFiles = 0
+                var deletedBytes = 0L
+                var skipped = 0
+                var failed = 0
+                val deletedPaths = ArrayList<String>(snapshot.size)
+                snapshot.forEach { item ->
+                    val stat = runCatching { Os.lstat(item.path) }.getOrNull()
+                    if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
+                        skipped += 1
+                        return@forEach
+                    }
+                    if (directIdentity(stat) != item.identity) {
+                        skipped += 1
+                        return@forEach
+                    }
+                    val removed = runCatching { Os.remove(item.path); true }.getOrDefault(false)
+                    if (removed) {
+                        deletedFiles += 1
+                        deletedBytes += item.bytes
+                        deletedPaths += item.path
+                    } else {
+                        failed += 1
+                    }
                 }
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, deletedPaths)
             }
-            pollJob?.cancel()
-            if (response.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = "安装包清理失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
-                )
-                return@launch
-            }
-
-            val json = response.getOrThrow()
-            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = json.optString("message", "当前已有其他扫描或清理任务正在运行")
-                )
-                return@launch
-            }
-
-            val latest = json.optJSONObject("latest") ?: JSONObject()
-            val cancelled = json.optBoolean("cancelled")
-            val result = latest.optString("result").ifBlank {
-                when {
-                    cancelled -> "安装包清理已停止"
-                    json.optBoolean("success") -> "安装包清理命令已完成"
-                    else -> json.optString("message", "安装包清理未完全生效")
-                }
-            }
-
-            val success = json.optBoolean("success") && !cancelled
-            val elapsedMs = json.optLong("elapsedMs", -1L)
-            screenState = if (success) {
-                screenState.copy(
-                    running = false,
-                    operation = "",
-                    cleanReady = false,
-                    phase = if (elapsedMs >= 0) "$result · ${elapsedMs} ms" else result,
-                    items = emptyList(),
-                    coverage = emptyList(),
-                    totalFiles = 0,
-                    totalBytes = 0,
-                    output = json.optString("output").trim().takeLast(6000)
-                )
-            } else {
-                screenState.copy(
-                    running = false,
-                    operation = "",
-                    cleanReady = false,
-                    phase = if (cancelled) result else "$result\n正在快速复核剩余文件…",
-                    output = json.optString("output").trim().takeLast(6000)
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            if (result.deletedPaths.isNotEmpty()) {
+                MediaScannerConnection.scanFile(
+                    applicationContext,
+                    result.deletedPaths.toTypedArray(),
+                    null,
+                    null
                 )
             }
 
-            // Successful RootService deletion is authoritative; media refresh runs asynchronously.
-            if (!success && !cancelled) startScan()
+            directSnapshot = emptyList()
+            val phase = when {
+                result.failed > 0 || result.skipped > 0 ->
+                    "清理完成：删除 ${result.deletedFiles} 个，跳过 ${result.skipped} 个，失败 ${result.failed} 个 · ${elapsed} ms"
+                else ->
+                    "清理完成：删除 ${result.deletedFiles} 个，释放 ${Formatter.formatFileSize(this@ApkScanActivity, result.deletedBytes)} · ${elapsed} ms"
+            }
+            screenState = screenState.copy(
+                running = false,
+                operation = "",
+                cleanReady = false,
+                phase = phase,
+                items = emptyList(),
+                coverage = emptyList(),
+                totalFiles = 0,
+                totalBytes = 0,
+                output = "App 直删：lstat → remove；媒体库刷新已异步提交；总耗时 ${elapsed} ms"
+            )
         }
     }
 
@@ -486,6 +444,10 @@ class ApkScanActivity : ComponentActivity() {
         )
     }
 
+    private fun directIdentity(stat: android.system.StructStat): String =
+        "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
+            "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
+
     private fun parseCoverage(array: JSONArray?): List<ScanCoverageItem> = buildList {
         if (array == null) return@buildList
         for (index in 0 until array.length()) {
@@ -519,6 +481,21 @@ class ApkScanActivity : ComponentActivity() {
         }
     }.sortedWith(compareByDescending<ApkScanItem> { it.bytes }.thenByDescending { it.files })
 }
+
+internal data class DirectApkSnapshot(
+    val path: String,
+    val name: String,
+    val bytes: Long,
+    val identity: String
+)
+
+internal data class DirectCleanResult(
+    val deletedFiles: Int,
+    val deletedBytes: Long,
+    val skipped: Int,
+    val failed: Int,
+    val deletedPaths: List<String>
+)
 
 internal data class ApkScanUiState(
     val connected: Boolean = false,
