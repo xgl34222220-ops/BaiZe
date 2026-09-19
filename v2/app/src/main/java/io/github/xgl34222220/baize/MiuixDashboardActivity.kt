@@ -686,20 +686,18 @@ class MiuixDashboardActivity : ComponentActivity() {
             versionObservationCurrent = true
             ConnectionDiagnostics.observeVersions(this@MiuixDashboardActivity, requireNotNull(observedVersions))
             val root = json.optBoolean("root")
+            val foregroundReady = json.optBoolean("foregroundReady", root && json.optBoolean("appRules"))
             val module = json.optBoolean("module")
-            val cleaner = json.optBoolean("cleaner")
             val scheduler = json.optBoolean("scheduler")
-            val rules = json.optBoolean("deepRules")
-            val ready = root && module && cleaner && scheduler && rules
+            val ready = root && foregroundReady
             val status = when {
-                !root -> "服务已连接，但未取得完整 Root"
-                !module -> "Root 已连接 · 未检测到白泽模块"
-                !cleaner -> "模块已连接 · 清理引擎缺失"
-                !scheduler -> "清理引擎已连接 · 调度器缺失"
-                !rules -> "自动清理可用 · 深度规则库缺失"
-                else -> "Root、完整清理引擎、定时任务与规则库均已就绪"
+                !root -> "前台清理服务未取得完整 Root"
+                !foregroundReady -> "Root 已连接 · App 前台规则库未就绪"
+                module && scheduler -> "前台清理已就绪 · 自动清理模块已启用"
+                module -> "前台清理已就绪 · 自动清理调度器未就绪"
+                else -> "前台清理已就绪 · 未安装自动清理模块"
             }
-            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "模块校验：$status")
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "前台清理校验：$status")
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
                 ready = ready,
