@@ -355,12 +355,18 @@ class ApkScanActivity : ComponentActivity() {
         screenState = screenState.copy(
             running = true,
             operation = "clean",
-            phase = "正在清理刚才扫描到的安装包，不会重新扫描…"
+            phase = "正在通过 RootService 快速删除已校验安装包…"
         )
         startPolling()
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(root.runModuleTask("apk-clean")) }
+                runCatching {
+                    JSONObject(
+                        RootServiceClients.profileExchange(
+                            root, applicationContext.cacheDir, "cleanApkFastSnapshot"
+                        )
+                    )
+                }
             }
             pollJob?.cancel()
             if (response.isFailure) {
