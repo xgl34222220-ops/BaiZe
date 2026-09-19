@@ -73,6 +73,6 @@ grep -Fq "versionName = \"${NEXT_VERSION#v}\"" "$STAGE/v2/app/build.gradle.kts"
 grep -Fq "VERSION=\$(sed -n 's/^version=//p' \"\$REPO/module.prop\" | head -n1)" "$STAGE/v2/scripts/package-module.sh"
 grep -Fq 'OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"' "$STAGE/v2/scripts/package-module.sh"
 grep -Fq "正在安装白泽 $NEXT_VERSION" "$STAGE/v2/module/customize.sh"
-grep -Fq "detached-root-worker-$NEXT_VERSION" "$STAGE/v2/module/task-worker.sh"
+grep -Fq "detached-root-worker-$NEXT_VERSION" "$STAGE/v2/module/scripts/task-worker.sh"
 
 echo "重构版发布暂存测试通过：$CURRENT_VERSION -> $NEXT_VERSION"

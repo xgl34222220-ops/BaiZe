@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 /* Only transforms manifests. Policy, traversal, deletion and accounting stay in
- * cleaner.sh.compat. Inputs are never modified; the caller commits both outputs
+ * cleaner-compat.sh. Inputs are never modified; the caller commits both outputs
  * only after success, or runs the original filter on failure. */
 #define MAX_KEYS 1000000U
 #define MAX_KEY_BYTES (64U * 1024U * 1024U)

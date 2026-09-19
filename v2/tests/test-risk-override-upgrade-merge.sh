@@ -7,9 +7,9 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/tmp"
 TMP_DIR="$T/tmp"
 
-# 只抽取纯合并函数，避免 source native-scan.sh 时启动真实扫描流程。
+# 只抽取纯合并函数，避免 source native-cleaner.sh 时启动真实扫描流程。
 sed -n '/^build_effective_risk_overrides()/,/^}/p' \
-  "$ROOT/v2/module/native-scan.sh" >"$T/merge-fn.sh"
+  "$ROOT/v2/module/scripts/native-cleaner.sh" >"$T/merge-fn.sh"
 # shellcheck disable=SC1090
 . "$T/merge-fn.sh"
 
@@ -48,9 +48,9 @@ expect_line '/storage/emulated/0/LegacyOnly|high'
 ! grep -Fqx '/storage/emulated/0/Documents|critical' "$T/effective.conf"
 
 # 关键升级合同：运行时同时读取模块内置表和持久用户表，不再只在首次安装复制一次。
-grep -Fq 'BUILTIN_RISK_OVERRIDES=' "$ROOT/v2/module/native-scan.sh"
-grep -Fq 'USER_RISK_OVERRIDES=' "$ROOT/v2/module/native-scan.sh"
-grep -Fq 'build_effective_risk_overrides "$BUILTIN_RISK_OVERRIDES" "$USER_RISK_OVERRIDES"' "$ROOT/v2/module/native-scan.sh"
-! grep -Fq 'cp -f "$MODDIR/config/risk-overrides.conf" "$RISK_OVERRIDES"' "$ROOT/v2/module/native-scan.sh"
+grep -Fq 'BUILTIN_RISK_OVERRIDES=' "$ROOT/v2/module/scripts/native-cleaner.sh"
+grep -Fq 'USER_RISK_OVERRIDES=' "$ROOT/v2/module/scripts/native-cleaner.sh"
+grep -Fq 'build_effective_risk_overrides "$BUILTIN_RISK_OVERRIDES" "$USER_RISK_OVERRIDES"' "$ROOT/v2/module/scripts/native-cleaner.sh"
+! grep -Fq 'cp -f "$MODDIR/config/risk-overrides.conf" "$RISK_OVERRIDES"' "$ROOT/v2/module/scripts/native-cleaner.sh"
 
 echo "risk override upgrade merge: ok"

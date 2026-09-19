@@ -45,7 +45,7 @@ class StorageTools(unittest.TestCase):
         return target
 
     def run_tool(self, name, *args, success=True):
-        result = subprocess.run(['bash', str(ROOT / 'v2/module' / name), *map(str, args)],
+        result = subprocess.run(['bash', str(ROOT / 'v2/module/scripts' / name), *map(str, args)],
                                 env=self.env, capture_output=True, text=True)
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

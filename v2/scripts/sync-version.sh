@@ -60,7 +60,7 @@ if ! grep -Fq 'OUTPUT="$OUT/BaiZe-$VERSION-Module.zip"' "$ROOT/v2/scripts/packag
   apply "$ROOT/v2/scripts/package-module.sh" 'BaiZe-v[0-9.]*-Module.zip' "BaiZe-$VERSION-Module.zip"
 fi
 apply "$ROOT/v2/module/customize.sh" 'ui_print "- 正在安装白泽 v[0-9.]*"' "ui_print \"- 正在安装白泽 $VERSION\""
-apply "$ROOT/v2/module/task-worker.sh" 'detached-root-worker-v[0-9.]*' "detached-root-worker-$VERSION"
+apply "$ROOT/v2/module/scripts/task-worker.sh" 'detached-root-worker-v[0-9.]*' "detached-root-worker-$VERSION"
 EXPECTED_JSON=$(cat <<EOF
 {
   "version": "$VERSION",

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -341,8 +342,8 @@ private fun RuleQualityScreen(
 ) {
     var stateFilter by remember { mutableStateOf("pending") }
     var typeFilter by remember { mutableStateOf("all") }
-    val horizontal = 20.dp
-    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 16.dp
+    val shape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.reviewQueue.filter { item ->
         val stateMatches = when (stateFilter) {
             "all" -> true
@@ -644,7 +645,7 @@ private fun RuleQualityCard(
     }
 
     pendingAction?.let { action ->
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { pendingAction = null },
             title = { Text(reviewActionTitle(action)) },
             text = {
@@ -665,12 +666,12 @@ private fun RuleQualityCard(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     pendingAction = null
                     onReview(item, action, if (action == "reset") "" else note)
                 }) { Text("确认") }
             },
-            dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { pendingAction = null }) { Text("取消") } }
         )
     }
 }

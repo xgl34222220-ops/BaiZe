@@ -19,7 +19,7 @@ class OrganizerContinuation(unittest.TestCase):
         self.work = Path(self.temp.name)
         self.module = self.work / 'module'
         (self.module / 'config').mkdir(parents=True)
-        shutil.copy(ROOT / 'v2/module/organizer-worker.sh', self.module)
+        shutil.copy(ROOT / 'v2/module/scripts/organizer-worker.sh', self.module)
         shutil.copy(ROOT / 'config/organizer-categories.conf', self.module / 'config')
         (self.module / 'storage-index.sh').write_text('#!/bin/sh\nexit 5\n')
         self.state = self.work / 'state'

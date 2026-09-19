@@ -4,7 +4,7 @@ ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/module" "$T/state" "$T/bin"
-cp "$ROOT/v2/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
+cp "$ROOT/v2/module/scripts/scheduler.sh" "$T/module/scheduler.sh"
 cat >"$T/bin/dumpsys" <<'DUMP'
 #!/bin/sh
 printf '%s\n' "$1" >>"$BAIZE_STATE_DIR/dumpsys-calls"
@@ -68,8 +68,8 @@ printf '%s\n' $((now+864000)) >"$T/state/last_cache_run.epoch"
 run_once
 [ "$(wc -l <"$T/state/executed")" -eq 3 ]
 # Real runner persists success even with no scheduler process left to consume its result.
-cp "$ROOT/v2/module/worker-runner.sh" "$T/module/worker-runner.sh"
-cp "$ROOT/v2/module/task-worker.sh" "$T/module/task-worker.sh"
+cp "$ROOT/v2/module/scripts/worker-runner.sh" "$T/module/worker-runner.sh"
+cp "$ROOT/v2/module/scripts/task-worker.sh" "$T/module/task-worker.sh"
 cat >"$T/module/cleaner.sh" <<'CLEANER'
 #!/bin/sh
 exit 0
@@ -95,7 +95,7 @@ CLEANER
 BAIZE_STATE_DIR="$T/state" sh "$T/module/worker-runner.sh" cache-auto scheduler:interval cancelled && exit 1 || test "$?" -eq 9
 grep -qx 'exit_code=9' "$T/state/task-results/cancelled.env"
 # Two boot/App recovery requests must converge on one supervisor/scheduler instance.
-cp "$ROOT/v2/module/supervisor.sh" "$T/module/supervisor.sh"
+cp "$ROOT/v2/module/scripts/supervisor.sh" "$T/module/supervisor.sh"
 cat >"$T/module/scheduler.sh" <<'SCHEDULER'
 #!/bin/sh
 printf '%s\n' "$$" >>"$BAIZE_STATE_DIR/supervisor-launches"

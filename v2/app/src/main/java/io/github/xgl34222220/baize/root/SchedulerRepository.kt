@@ -155,8 +155,8 @@ internal class SchedulerRepository(
         }
 
         record("module", "模块目录", moduleDir.isDirectory, moduleDir.path)
-        record("scheduler", "调度器脚本", File(moduleDir, "scheduler.sh").isFile)
-        record("supervisor", "守护脚本", File(moduleDir, "supervisor.sh").isFile)
+        record("scheduler", "调度器脚本", RootPaths.script("scheduler.sh", moduleDir).isFile)
+        record("supervisor", "守护脚本", RootPaths.script("supervisor.sh", moduleDir).isFile)
         record("config", "计划配置", File(RootPaths.CONFIG_FILE).isFile)
         record("rules", "深度规则库", File(moduleDir, "config/deep.rules").isFile)
 
@@ -229,7 +229,7 @@ internal class SchedulerRepository(
     }
 
     private fun exportDiagnostics(): String = runCatching {
-        val script = File(moduleDir, "diagnostics-export.sh")
+        val script = RootPaths.script("diagnostics-export.sh", moduleDir)
         require(script.isFile) { "diagnostics_export_missing" }
         val process = ProcessBuilder("/system/bin/sh", script.absolutePath)
             .redirectErrorStream(true)
@@ -350,7 +350,7 @@ internal class SchedulerRepository(
                 .toString()
         }
 
-        val supervisor = File(moduleDir, "supervisor.sh")
+        val supervisor = RootPaths.script("supervisor.sh", moduleDir)
         require(supervisor.isFile) { "supervisor_missing" }
         val log = File(stateDir, "logs/supervisor-launch.log").apply { parentFile?.mkdirs() }
         val command = "if command -v setsid >/dev/null 2>&1; then setsid /system/bin/sh ${shellQuote(supervisor.path)} </dev/null >>${shellQuote(log.path)} 2>&1 & " +

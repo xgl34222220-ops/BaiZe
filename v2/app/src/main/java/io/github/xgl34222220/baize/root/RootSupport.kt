@@ -8,10 +8,17 @@ import java.io.IOException
 internal object RootPaths {
     const val MODULE_DIR = "/data/adb/modules/baize_v2"
     const val STATE_DIR = "/data/adb/baize-v2"
+    const val FOREGROUND_STATE_DIR = "$STATE_DIR/app-foreground"
     const val CONFIG_FILE = "$STATE_DIR/config.conf"
     const val WHITELIST_FILE = "$STATE_DIR/whitelist.conf"
     const val WHITELIST_PACKAGES_FILE = "$STATE_DIR/whitelist.packages"
     const val RISK_OVERRIDES_FILE = "$STATE_DIR/risk-overrides.conf"
+
+    /** New modules group implementations under scripts/; App-first upgrades still accept the old layout. */
+    fun script(name: String, moduleDir: File = File(MODULE_DIR)): File {
+        val grouped = File(moduleDir, "scripts/$name")
+        return if (grouped.isFile) grouped else File(moduleDir, name)
+    }
 
     /**
      * 按设备 ABI 优先级查找原生引擎。

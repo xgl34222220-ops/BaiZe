@@ -1,5 +1,9 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZePathText
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -36,13 +40,11 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -154,7 +156,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
                         onReconnect = ::bindServices
                     )
                     if (showCleanConfirm) {
-                        AlertDialog(
+                        BaiZeDialog(
                             onDismissRequest = { showCleanConfirm = false },
                             title = { Text("执行清理计划 ${cleanPlanId.take(8)}？") },
                             text = {
@@ -164,7 +166,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                TextButton(
+                                BaiZeDialogButton(
                                     onClick = {
                                         showCleanConfirm = false
                                         cleanSnapshots()
@@ -172,7 +174,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
                                 ) { Text("立即清理") }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showCleanConfirm = false }) { Text("取消") }
+                                BaiZeDialogButton(onClick = { showCleanConfirm = false }) { Text("取消") }
                             }
                         )
                     }
@@ -709,8 +711,8 @@ private fun PersistentSmartScreen(
 
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -718,7 +720,7 @@ private fun PersistentSmartScreen(
                         Box(
                             modifier = Modifier.size(58.dp).background(
                                 MaterialTheme.colorScheme.primaryContainer,
-                                RoundedCornerShape(20.dp)
+                                RoundedCornerShape(16.dp)
                             ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -732,20 +734,17 @@ private fun PersistentSmartScreen(
                         Spacer(Modifier.size(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(state.status, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.phase,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 6,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (state.running) BaiZePathText(state.phase, live = true)
+                            else Text(state.phase, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 6, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
                     if (state.running) {
                         if (state.progressTotal > 0) {
-                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                            BaiZeProgress(progress = progress, modifier = Modifier.fillMaxWidth())
                         } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            BaiZeProgress(modifier = Modifier.fillMaxWidth())
                         }
                         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Rounded.Stop, contentDescription = null)
@@ -784,8 +783,8 @@ private fun PersistentSmartScreen(
         item { PlanSummaryCard("安全项目", state.safeSummary) }
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
-                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Text(
@@ -804,8 +803,8 @@ private fun PersistentSmartScreen(
 @Composable
 private fun PlanSummaryCard(title: String, summary: String) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {

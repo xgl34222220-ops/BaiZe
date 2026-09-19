@@ -1,5 +1,8 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -37,12 +40,10 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -287,7 +288,7 @@ internal fun QuarantineScreen(
                             color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 7.dp))
+                    if (state.loading) BaiZeProgress(Modifier.fillMaxWidth().padding(top = 7.dp))
                 }
             }
             if (state.message.length > 85) item { DetailExpandableText("完整状态", state.message) }
@@ -307,7 +308,7 @@ internal fun QuarantineScreen(
             if (state.items.isNotEmpty()) item {
                 GlassActionButton("清理过期项", onClick = onPurgeExpired, secondary = true,
                     enabled = state.connected && !state.loading,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp))
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp))
             }
             item {
                 DetailExpandableText("隔离与恢复说明", "隔离内容可以在到期前恢复；到期后会永久删除。恢复时若原路径已有内容，会保留现有文件，将隔离内容恢复为带 baize-restored 标记的副本。手动永久删除后无法撤销。")
@@ -318,19 +319,19 @@ internal fun QuarantineScreen(
     detail?.let { item -> QuarantineDetails(item, onDismiss = { detail = null }) }
     pending?.let { (action, item) ->
         val restore = action == "restore"
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { pending = null },
             title = { Text(if (restore) "恢复隔离内容？" else "永久删除隔离内容？") },
             text = {
                 Text(if (restore) "将恢复到原路径；若原路径已有内容，会恢复为带 baize-restored 标记的副本。" else "永久删除后无法撤销。只会删除本次选择的隔离内容。")
             },
             confirmButton = {
-                TextButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
+                BaiZeDialogButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
                     Text(if (restore) "确认恢复" else "确认永久删除",
                         color = if (restore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { pending = null }) { Text("取消") } }
         )
     }
 }
@@ -348,7 +349,7 @@ private fun QuarantineRow(
     val context = LocalContext.current
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape).background(BaiZeTokens.colors.surfaceRaised)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape).background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = "查看完整路径与详情", onClick = onDetails)
             .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.Top) {
@@ -395,10 +396,10 @@ private fun QuarantineDetails(item: QuarantineItem, onDismiss: () -> Unit) {
         if (item.profile.isNotBlank()) appendLine("来源：${item.profile}")
         append("完整路径：${item.originalPath}")
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("隔离详情", fontSize = 18.sp) },
-        text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp) } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("隔离详情", fontSize = 18.sp) },
+        text = { SelectionContainer { Text(text, Modifier, fontSize = 13.sp, lineHeight = 20.sp) } },
+        confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { BaiZeDialogButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
 }
 
 private fun quarantineRiskLabel(risk: String): String = when (risk) {

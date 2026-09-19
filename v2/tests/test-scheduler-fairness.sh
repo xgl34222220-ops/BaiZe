@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=${TMPDIR:-/tmp}/baize-v240-scheduler-test
 rm -rf "$T"; mkdir -p "$T/module/config" "$T/state/scheduler-requests" "$T/state/scheduler-skips"
-cp "$ROOT/v2/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
+cp "$ROOT/v2/module/scripts/scheduler.sh" "$T/module/scheduler.sh"
 cat > "$T/module/task-worker.sh" <<'SH2'
 #!/bin/sh
 printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"${BAIZE_STATE_DIR}/executed.tsv"
@@ -87,9 +87,9 @@ retry_until=$(sed -n '1p' "$T/state/scheduler-retry-cache.until")
 retry_delay=$((retry_until - $(date +%s)))
 [ "$retry_delay" -ge 0 ] && [ "$retry_delay" -le 3 ]
 ! grep -Eq '连续失败|熔断|暂停|failed|paused' "$T/state/scheduler.env"
-grep -q 'QUEUE_RETRY_SECONDS=.*1' "$ROOT/v2/module/scheduler-v2.5.sh"
-grep -q 'queue_dispatch_stalled' "$ROOT/v2/module/supervisor.sh"
-grep -q 'QUEUE_RESTART_AFTER_SECONDS=.*12' "$ROOT/v2/module/supervisor.sh"
+grep -q 'QUEUE_RETRY_SECONDS=.*1' "$ROOT/v2/module/scripts/scheduler.sh"
+grep -q 'queue_dispatch_stalled' "$ROOT/v2/module/scripts/supervisor.sh"
+grep -q 'QUEUE_RESTART_AFTER_SECONDS=.*12' "$ROOT/v2/module/scripts/supervisor.sh"
 
 # Deep scheduled tasks must request the atomic scan -> clean chain.
 cat > "$T/module/task-worker.sh" <<'SH2'
@@ -113,8 +113,8 @@ run_once
 # exit 6 followed by an endless scheduler retry. Fast workers must not leave worker.env behind.
 W="$T/worker-lifecycle"
 rm -rf "$W"; mkdir -p "$W/module" "$W/state/task-results" "$W/state/logs"
-cp "$ROOT/v2/module/task-worker.sh" "$W/module/task-worker.sh"
-cp "$ROOT/v2/module/worker-runner.sh" "$W/module/worker-runner.sh"
+cp "$ROOT/v2/module/scripts/task-worker.sh" "$W/module/task-worker.sh"
+cp "$ROOT/v2/module/scripts/worker-runner.sh" "$W/module/worker-runner.sh"
 cat > "$W/module/cleaner.sh" <<'SH2'
 #!/bin/sh
 mode=$1

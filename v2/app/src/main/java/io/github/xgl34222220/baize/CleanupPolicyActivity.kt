@@ -305,7 +305,7 @@ internal fun CleanupPolicyScreen(
                 },
                 onClick = { onSelect(selected) },
                 enabled = enabled && pending,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp)
             )
         }
         item { DetailExpandableText("${selected.title}档的清理范围", selected.highlights.joinToString("\n\n")) }

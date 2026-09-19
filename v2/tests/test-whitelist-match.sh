@@ -24,7 +24,7 @@ legacy_conflicts() {
 }
 
 # shellcheck disable=SC1090
-. "$ROOT/v2/module/whitelist-match.sh"
+. "$ROOT/v2/module/scripts/whitelist-match.sh"
 
 fail=0
 check() {

@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TMP=${TMPDIR:-/tmp}/baize-scheduler-temperature-nonblocking-$$
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/module" "$TMP/state" "$TMP/bin"
-cp "$ROOT/v2/module/scheduler-v2.5.sh" "$TMP/module/scheduler.sh"
+cp "$ROOT/v2/module/scripts/scheduler.sh" "$TMP/module/scheduler.sh"
 
 cat >"$TMP/module/task-worker.sh" <<'EOF_WORKER'
 #!/bin/sh

@@ -11,7 +11,7 @@ check_script() {
   local f=$1
   local load source fallback
   load=$(grep -n '^baize_whitelist_load "\$WHITELIST"$' "$f" | tail -n 1 | cut -d: -f1)
-  source=$(grep -n '^  \. "\$MODDIR/whitelist-match.sh"$' "$f" | tail -n 1 | cut -d: -f1)
+  source=$(grep -n '^  \. "\$SCRIPTDIR/whitelist-match.sh"$' "$f" | tail -n 1 | cut -d: -f1)
   fallback=$(grep -n '^  path_conflicts_whitelist() {' "$f" | tail -n 1 | cut -d: -f1)
 
   case "$load:$source:$fallback" in
@@ -27,17 +27,17 @@ check_script() {
   fi
 }
 
-check_script "$ROOT/v2/module/apk-snapshot-clean.sh"
-check_script "$ROOT/v2/module/apk-snapshot-scan.sh"
-check_script "$ROOT/v2/module/profile-snapshot-clean-fast.sh"
+check_script "$ROOT/v2/module/scripts/apk-cleaner.sh"
+check_script "$ROOT/v2/module/scripts/apk-scanner.sh"
+check_script "$ROOT/v2/module/scripts/profile-cleaner.sh"
 
 # 发布分发器也不能依赖 $0 必须包含斜杠。
 for f in \
-  "$ROOT/v2/module/cleaner.sh" \
-  "$ROOT/v2/module/apk-snapshot-clean.sh" \
-  "$ROOT/v2/module/apk-snapshot-scan.sh" \
-  "$ROOT/v2/module/profile-snapshot-clean-fast.sh" \
-  "$ROOT/v2/module/storage-index.sh"; do
+  "$ROOT/v2/module/scripts/cleaner.sh" \
+  "$ROOT/v2/module/scripts/apk-cleaner.sh" \
+  "$ROOT/v2/module/scripts/apk-scanner.sh" \
+  "$ROOT/v2/module/scripts/profile-cleaner.sh" \
+  "$ROOT/v2/module/scripts/storage-index.sh"; do
   grep -q 'case "\$0" in \*/\*) MODDIR=' "$f" || {
     echo "  [FAIL] ${f#$ROOT/}: MODDIR 仍依赖 \${0%/*} 的不安全假设"
     fail=$((fail + 1))

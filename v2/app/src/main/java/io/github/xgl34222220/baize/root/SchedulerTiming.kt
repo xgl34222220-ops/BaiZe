@@ -1,6 +1,6 @@
 package io.github.xgl34222220.baize.root
 
-/** Shared timing semantics with scheduler-v2.5.sh; completion and advice stay separate. */
+/** Shared timing semantics with scheduler.sh; completion and advice stay separate. */
 internal object SchedulerTiming {
     fun intervalDue(
         now: Long,

@@ -5,8 +5,8 @@ ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 T=${TMPDIR:-/tmp}/baize-v250-concurrent-scheduler-test
 rm -rf "$T"
 mkdir -p "$T/module/config" "$T/state/scheduler-requests" "$T/state/scheduler-skips"
-cp "$ROOT/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
-cp "$ROOT/module/cache-lane-worker.sh" "$T/module/cache-lane-worker.sh"
+cp "$ROOT/module/scripts/scheduler.sh" "$T/module/scheduler.sh"
+cp "$ROOT/module/scripts/cache-lane-worker.sh" "$T/module/cache-lane-worker.sh"
 
 cat >"$T/module/task-worker.sh" <<'SH'
 #!/bin/sh

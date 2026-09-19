@@ -61,10 +61,14 @@ class WorkbenchRefactorUiTest {
     }
     @Test fun mediumSelectionExcludesBlockedAndHigh() {
         render()
-        compose.onNodeWithText("仅选中风险").performScrollTo().performClick()
+        compose.onNodeWithText("仅选中风险").assertDoesNotExist()
+        compose.onNodeWithContentDescription("更多操作").performClick()
+        compose.onNodeWithText("仅选中风险").performClick()
         assertEquals(setOf("medium"), state.selectedIds)
         compose.onNodeWithText("全选低、中风险").performClick()
         assertEquals(setOf("low", "medium"), state.selectedIds)
+        compose.onNodeWithText("取消全选").performClick()
+        assertTrue(state.selectedIds.isEmpty())
     }
     @Test fun highOnlyGroupShowsAManualSelectionEntry() {
         // The UI branch shows “逐项选择” exactly when a group has no low/medium

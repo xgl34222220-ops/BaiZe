@@ -1,0 +1,409 @@
+#!/system/bin/sh
+# set -u：未定义变量视为错误。清理脚本以 root 身份删文件，
+# 变量拼写错误静默展开成空串会造成 rm -rf "/foo" 这类事故。
+set -u
+
+case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
+MODE=${1:-apk-scan}
+TRIGGER=${2:-manual}
+STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
+CONFIG="$STATE_DIR/config.conf"
+WHITELIST="$STATE_DIR/whitelist.conf"
+STATE_FILE="$STATE_DIR/apk_scan.env"
+TARGETS_FILE="$STATE_DIR/apk_scan.targets"
+IDENTITIES_FILE="$STATE_DIR/apk_scan.identities"
+REPORT_DIR="$STATE_DIR/reports"
+LOG_DIR="$STATE_DIR/logs"
+LOCK_DIR="$STATE_DIR/run.lock"
+RUNNING_FILE="$STATE_DIR/running.env"
+STOP_FILE="$STATE_DIR/stop"
+HISTORY_FILE="$STATE_DIR/history.tsv"
+
+[ "$MODE" = "apk-scan" ] || { echo "不支持的安装包扫描模式：$MODE" >&2; exit 2; }
+mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
+[ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
+[ -f "$WHITELIST" ] || : >"$WHITELIST"
+
+file_sha() {
+  file=$1
+  [ -f "$file" ] || { echo missing; return; }
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+  else
+    toybox sha256sum "$file" 2>/dev/null | awk 'NR==1{print $1}'
+  fi
+}
+
+get_uint() {
+  key=$1 fallback=$2 min=$3 max=$4
+  value=$(sed -n "s/^$key=//p" "$CONFIG" 2>/dev/null | tail -n 1)
+  case "$value" in ''|*[!0-9]*) value=$fallback ;; esac
+  [ "$value" -lt "$min" ] && value=$min
+  [ "$value" -gt "$max" ] && value=$max
+  echo "$value"
+}
+
+pid_is_baize_task() {
+  pid=$1
+  [ "$pid" -gt 1 ] 2>/dev/null || return 1
+  [ -r "/proc/$pid/cmdline" ] || return 1
+  cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
+  case "$cmdline" in
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
+  esac
+  return 1
+}
+
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  old_pid=$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null)
+  case "$old_pid" in ''|*[!0-9]*) old_pid=0 ;; esac
+  if [ "$old_pid" -gt 1 ] && kill -0 "$old_pid" 2>/dev/null && pid_is_baize_task "$old_pid"; then
+    echo "已有扫描或清理任务正在运行"
+    exit 3
+  fi
+  rm -rf -- "$LOCK_DIR" 2>/dev/null
+  rm -f "$RUNNING_FILE" 2>/dev/null
+  mkdir "$LOCK_DIR" 2>/dev/null || { echo "无法恢复任务锁，请重试"; exit 4; }
+fi
+printf '%s\n' "$$" >"$LOCK_DIR/pid"
+TMP_DIR="$LOCK_DIR/tmp"
+mkdir -p "$TMP_DIR"
+
+cleanup_lock() {
+  rm -f "$RUNNING_FILE" 2>/dev/null
+  rm -rf -- "$LOCK_DIR" 2>/dev/null
+}
+handle_signal() {
+  trap - EXIT INT TERM
+  : >"$STOP_FILE" 2>/dev/null
+  rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
+  cleanup_lock
+  exit 9
+}
+trap cleanup_lock EXIT
+trap handle_signal INT TERM
+rm -f "$STOP_FILE" "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
+
+START_EPOCH=$(date +%s)
+STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
+REPORT_FILE="$REPORT_DIR/$STAMP-apk-scan.tsv"
+LOG_FILE="$LOG_DIR/$STAMP-apk-scan.log"
+TARGETS_TMP="$TMP_DIR/apk-scan.targets"
+: >"$TARGETS_TMP"
+IDENTITIES_TMP="$TMP_DIR/apk-scan.identities"
+: >"$IDENTITIES_TMP"
+DETAILS_TMP="$TMP_DIR/apk-details.tsv"
+printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$DETAILS_TMP"
+
+set_phase() {
+  phase=$1
+  current=${2:-0}
+  total=${3:-0}
+  path=${4:-}
+  tmp="$RUNNING_FILE.tmp.$$"
+  {
+    echo "mode=apk-scan"
+    echo "phase=$phase"
+    echo "started=$START_EPOCH"
+    echo "progress_current=$current"
+    echo "progress_total=$total"
+    printf 'current_path=%s' "$path" | tr '\r\n' '  '; echo
+    echo "engine=apk-snapshot-v2.3-global-index"
+  } >"$tmp"
+  mv -f "$tmp" "$RUNNING_FILE"
+}
+
+path_relation() {
+  parent=${1%/}
+  child=${2%/}
+  [ "$parent" = "$child" ] && return 0
+  case "$child" in "$parent"/*) return 0 ;; esac
+  return 1
+}
+
+# 白名单匹配。测试夹具可能只暂存部分脚本，缺失时退回内联实现。
+if [ -f "$SCRIPTDIR/whitelist-match.sh" ]; then
+  . "$SCRIPTDIR/whitelist-match.sh"
+else
+  baize_whitelist_load() {
+    _wl_file=${1:-${WHITELIST:-}}
+    BAIZE_WL_ITEMS=""
+    [ -n "$_wl_file" ] && [ -f "$_wl_file" ] || return 0
+    while IFS= read -r _wl_raw || [ -n "$_wl_raw" ]; do
+      _wl_item=${_wl_raw#"${_wl_raw%%[![:space:]]*}"}
+      _wl_item=${_wl_item%"${_wl_item##*[![:space:]]}"}
+      case "$_wl_item" in ''|'#'*) continue ;; esac
+      case "$_wl_item" in /*) ;; *) continue ;; esac
+      _wl_item=${_wl_item%/}
+      [ -n "$_wl_item" ] || _wl_item=/
+      BAIZE_WL_ITEMS="$BAIZE_WL_ITEMS$_wl_item
+"
+    done <"$_wl_file"
+    return 0
+  }
+  path_conflicts_whitelist() {
+    _wl_target=${1%/}
+    [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
+    _wl_old_ifs=$IFS
+    case "$-" in *f*) _wl_had_f=1 ;; *) _wl_had_f=0 ;; esac
+    IFS='
+'
+    set -f
+    for _wl_item in $BAIZE_WL_ITEMS; do
+      if [ "$_wl_item" = "/" ]; then
+        IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0
+      fi
+      case "$_wl_target" in
+        "$_wl_item"|"$_wl_item"/*) IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0 ;;
+      esac
+      case "$_wl_item" in
+        "$_wl_target"|"$_wl_target"/*) IFS=$_wl_old_ifs; [ "$_wl_had_f" = 1 ] || set +f; return 0 ;;
+      esac
+    done
+    IFS=$_wl_old_ifs
+    [ "$_wl_had_f" = 1 ] || set +f
+    return 1
+  }
+fi
+# matcher 已可用后再加载；禁止在函数定义前调用导致白名单静默失效。
+baize_whitelist_load "$WHITELIST"
+
+
+
+
+human_bytes() { awk -v b="$1" 'BEGIN { if (b>=1073741824) printf "%.2f GB",b/1073741824; else if(b>=1048576) printf "%.2f MB",b/1048576; else if(b>=1024) printf "%.2f KB",b/1024; else printf "%.0f B",b }'; }
+should_stop() { [ -f "$STOP_FILE" ]; }
+
+CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)
+# App 内点击、命令行手动扫描都必须展示当前可找到的全部安装包；保留期只用于自动任务。
+case "$TRIGGER" in
+  manual|app|ui)
+    DAYS=0
+    INCLUDE_PRIVATE=1
+    ;;
+  *)
+    DAYS=$CONFIG_DAYS
+    INCLUDE_PRIVATE=0
+    ;;
+esac
+MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
+MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
+# The package-only scanner and cleaner share exactly the same storage roots.
+. "$SCRIPTDIR/apk-paths.sh"
+apk_load_roots
+[ "$INCLUDE_PRIVATE" = "1" ] && apk_load_private_roots
+DIRECT_APK_INDEX="$TMP_DIR/apk-files-direct.nul"
+APK_INDEX="$TMP_DIR/apk-files.nul"
+: >"$APK_INDEX"
+set_phase "正在查找安装包" 0 0 "$MEDIA_ROOT"
+apk_collect_candidates "$DIRECT_APK_INDEX"
+direct_index_code=$?
+if [ "$direct_index_code" -eq 0 ] && [ -s "$DIRECT_APK_INDEX" ]; then
+  cat "$DIRECT_APK_INDEX" >>"$APK_INDEX"
+fi
+
+shared_index_code=1
+INDEXER="$SCRIPTDIR/storage-index.sh"
+SHARED_APK_INDEX="$STATE_DIR/index/apk-files.nul"
+if [ -f "$INDEXER" ]; then
+  if BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" \
+      /system/bin/sh "$INDEXER" ensure storage-analysis >/dev/null 2>&1; then
+    shared_index_code=0
+    [ -s "$SHARED_APK_INDEX" ] && cat "$SHARED_APK_INDEX" >>"$APK_INDEX"
+  fi
+fi
+
+brute_force_used=0
+pre_supplement_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
+apk_total=$pre_supplement_total
+complete_supplement=0
+case "$TRIGGER" in manual|app|ui) complete_supplement=1 ;; esac
+# Interactive scans must always supplement the fixed roots with every safe
+# mount view discovered from /proc/self/mountinfo. The previous code did this
+# only when the first-pass count was exactly zero, so one incidental hit could
+# hide dozens of packages on another Android/HyperOS storage view.
+if [ "$complete_supplement" -eq 1 ] || [ "$apk_total" -eq 0 ]; then
+  set_phase "正在补充扫描 Android 实际存储挂载点" 0 0 "$MEDIA_ROOT"
+  BRUTE_APK_INDEX="$TMP_DIR/apk-files-bruteforce.nul"
+  apk_bruteforce_candidates "$BRUTE_APK_INDEX"
+  brute_force_used=1
+  [ ! -s "$BRUTE_APK_INDEX" ] || cat "$BRUTE_APK_INDEX" >>"$APK_INDEX"
+  apk_total=$(tr -cd '\000' <"$APK_INDEX" | wc -c | tr -d ' ')
+fi
+supplemental_candidates=$((apk_total - pre_supplement_total))
+[ "$supplemental_candidates" -ge 0 ] || supplemental_candidates=0
+
+if [ "$direct_index_code" -ne 0 ] && [ "$shared_index_code" -ne 0 ] && [ "$apk_total" -eq 0 ]; then
+  echo "安装包目录、共享索引与 Root 兜底扫描均未发现可读候选" >&2
+  exit 5
+fi
+
+root_total=$(printf '%s\n' "$APK_ROOTS $APK_FALLBACK_ROOTS" | tr ' ' '\n' | awk 'NF{n++} END{print n+0}')
+root_current=$root_total
+protected=0
+path_filtered=0
+whitelist_filtered=0
+errors=0
+cutoff=$((START_EPOCH - DAYS * 86400))
+files=0
+bytes=0
+sample_path=""
+current=0
+SEEN_OBJECTS="$TMP_DIR/apk-seen-objects.txt"
+: >"$SEEN_OBJECTS"
+set_phase "正在校验安装包文件" 0 "$apk_total" "$APK_INDEX"
+while IFS= read -r -d '' candidate; do
+  should_stop && handle_signal
+  current=$((current + 1))
+  if [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$apk_total" ]; then
+    set_phase "正在校验安装包文件" "$current" "$apk_total" "$candidate"
+  fi
+  [ -f "$candidate" ] || continue
+  # One metadata read captures the object shown to the user. ctime and inode
+  # prevent a same-name replacement (even with restored mtime) being deleted.
+  identity=$(stat -c '%d:%i:%s:%y:%z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
+  device=${identity%%:*}
+  identity_rest=${identity#*:}
+  inode=${identity_rest%%:*}
+  object_key="$device:$inode"
+  if grep -Fqx -- "$object_key" "$SEEN_OBJECTS" 2>/dev/null; then
+    continue
+  fi
+  printf '%s\n' "$object_key" >>"$SEEN_OBJECTS"
+  metadata=${identity#*:*:}; size=${metadata%%:*}
+  case "$size" in ''|*[!0-9]*) errors=$((errors + 1)); continue ;; esac
+  [ "$size" -le "$MAX_FILE_BYTES" ] || continue
+  if [ "$DAYS" -gt 0 ]; then
+    modified=$(stat -c %Y "$candidate" 2>/dev/null)
+    case "$modified" in ''|*[!0-9]*) modified=$START_EPOCH ;; esac
+    [ "$modified" -lt "$cutoff" ] || continue
+  fi
+  if ! apk_scan_candidate_allowed "$candidate"; then
+    path_filtered=$((path_filtered + 1))
+    protected=$((protected + 1))
+    continue
+  fi
+  if path_conflicts_whitelist "$candidate"; then
+    whitelist_filtered=$((whitelist_filtered + 1))
+    protected=$((protected + 1))
+    continue
+  fi
+  printf '%s\0' "$candidate" >>"$TARGETS_TMP"
+  printf '%s\0' "$identity" >>"$IDENTITIES_TMP"
+  display_path=$(printf '%s' "$candidate" | tr '\t\r\n' '   ')
+  printf 'candidate\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$display_path" >>"$DETAILS_TMP"
+  files=$((files + 1)); bytes=$((bytes + size))
+  [ -n "$sample_path" ] || sample_path=$candidate
+done <"$APK_INDEX"
+
+scan_epoch=$(date +%s)
+targets_sha=$(file_sha "$TARGETS_TMP")
+snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
+mv -f "$TARGETS_TMP" "$TARGETS_FILE"
+mv -f "$IDENTITIES_TMP" "$IDENTITIES_FILE"
+targets_sha=$(file_sha "$TARGETS_FILE")
+{
+  echo "epoch=$scan_epoch"
+  echo "snapshot_id=$snapshot_id"
+  echo "targets_sha=$targets_sha"
+  echo "identities_sha=$(file_sha "$IDENTITIES_FILE")"
+  echo "whitelist_sha=$(file_sha "$WHITELIST")"
+  echo "max_file_bytes=$MAX_FILE_BYTES"
+  echo "package_days=$DAYS"
+  echo "configured_package_days=$CONFIG_DAYS"
+  echo "include_private=$INCLUDE_PRIVATE"
+  echo "direct_index_code=$direct_index_code"
+  echo "shared_index_code=$shared_index_code"
+  echo "raw_candidates=$apk_total"
+  echo "brute_force_used=$brute_force_used"
+  echo "pre_supplement_candidates=$pre_supplement_total"
+  echo "supplemental_candidates=$supplemental_candidates"
+  echo "path_filtered=$path_filtered"
+  echo "whitelist_filtered=$whitelist_filtered"
+  echo "bytes=$bytes"
+  echo "files=$files"
+  echo "engine=apk-snapshot-v2.3-global-index"
+} >"$STATE_FILE.tmp.$$"
+mv -f "$STATE_FILE.tmp.$$" "$STATE_FILE"
+chmod 0600 "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE" 2>/dev/null
+
+result="安装包扫描完成，发现 $files 个 / $(human_bytes "$bytes")"
+end=$(date +%s)
+elapsed=$((end - START_EPOCH))
+mv -f "$DETAILS_TMP" "$REPORT_FILE"
+COVERAGE="$STATE_DIR/apk-coverage.tsv"
+COVERAGE_TMP="$COVERAGE.tmp.$$"
+printf 'status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n' >"$COVERAGE_TMP"
+printf 'scanned\t扫描诊断\t-\t-\t0\t0\t%s\t%s\n' \
+  "Root 可见存储" \
+  "扫描根 $root_total · 原始命中 $apk_total · Root兜底 $brute_force_used · 路径过滤 $path_filtered · 白名单 $whitelist_filtered · direct=$direct_index_code shared=$shared_index_code" \
+  >>"$COVERAGE_TMP"
+printf 'scanned\t安装包总计\t-\t-\t%s\t%s\t%s\t%s\n' \
+  "$files" "$bytes" "全部授权扫描根" "最终可清理候选汇总" >>"$COVERAGE_TMP"
+
+old_ifs=$IFS; IFS='
+'
+for root in $APK_ROOTS $APK_FALLBACK_ROOTS $APK_PRIVATE_BOUNDARIES; do
+  [ -n "$root" ] || continue
+  coverage_stats=$(awk -F '\t' -v prefix="$root/" 'NR>1 && index($6,prefix)==1 {n+=$4;b+=$5} END {printf "%.0f %.0f",n,b}' "$REPORT_FILE")
+  coverage_files=${coverage_stats%% *}; coverage_bytes=${coverage_stats##* }
+  printf 'scanned\t安装包存储\t-\t-\t0\t0\t%s\t%s\n' \
+    "$root" "该根命中 $coverage_files 个 / $(human_bytes "$coverage_bytes")" >>"$COVERAGE_TMP"
+done
+IFS=$old_ifs
+mv -f "$COVERAGE_TMP" "$COVERAGE"
+cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
+{
+  echo "mode=apk-scan"
+  echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
+  echo "files=$files"
+  echo "regular_files=$files"
+  echo "empty_files=0"
+  echo "empty_dirs=0"
+  echo "hidden_items=0"
+  echo "fragment_files=0"
+  echo "bytes=$bytes"
+  echo "skipped=0"
+  echo "errors=$errors"
+  echo "protected_items=$protected"
+  echo "protected_bytes=0"
+  echo "risk_low=$files"
+  echo "risk_medium=0"
+  echo "risk_high=0"
+  echo "risk_critical=0"
+  echo "deep_slow_items=0"
+  echo "deep_mount_items=0"
+  echo "deep_truncated=0"
+  echo "cache_slow_dirs=0"
+  echo "cache_truncated=0"
+  echo "deep_progress_current=$root_current"
+  echo "deep_progress_total=$root_total"
+  echo "elapsed=$elapsed"
+  echo "engine=apk-snapshot-v2.3-global-index"
+  echo "result=$result"
+} >"$STATE_DIR/latest.env"
+{
+  echo "----------------------------------------"
+  echo "$result"
+  echo "扫描快照: $snapshot_id"
+  echo "扫描根目录: $root_total | 快速索引候选: $apk_total | 交互扫描全部年龄: $([ "$DAYS" -eq 0 ] && echo 是 || echo 否) | 应用私有目录: $([ "$INCLUDE_PRIVATE" -eq 1 ] && echo 是 || echo 否)"
+  echo "原始候选: $apk_total | 首轮: $pre_supplement_total | 挂载补充: $supplemental_candidates | 完整补扫: $brute_force_used | 路径过滤: $path_filtered | 白名单: $whitelist_filtered"
+  echo "白名单或异常保护: $protected | 失败: $errors | 耗时: ${elapsed}s"
+  echo "扫描覆盖来源: $root_total（直接根） + 全局共享索引；direct=$direct_index_code shared=$shared_index_code"
+} >>"$LOG_FILE"
+cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  "$(date '+%Y-%m-%d %H:%M:%S')" "apk-scan" "$bytes" "$files" 0 "$errors" \
+  "$result" "$TRIGGER" "APK安装包|$bytes|$files" "$snapshot_id" >>"$HISTORY_FILE"
+tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
+
+echo "$result"
+echo "扫描快照: $snapshot_id | 安装包: $files 个 | 索引候选: $apk_total | 扫描根: $root_total | 受保护: $protected | 耗时: ${elapsed}s"
+cleanup_lock
+trap - EXIT INT TERM
+exit 0

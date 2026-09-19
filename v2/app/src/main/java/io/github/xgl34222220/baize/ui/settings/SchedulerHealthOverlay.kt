@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize.ui.settings
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +21,6 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SettingsSuggest
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -115,7 +116,7 @@ private fun SchedulerHealthDialog(
     val blocked = blockedSummary(scheduler.blockedGroups)
     val healthy = state.connected && state.ready && !scheduler.runtimeStale
 
-    AlertDialog(
+    BaiZeDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
@@ -138,7 +139,7 @@ private fun SchedulerHealthDialog(
         },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 HealthStatusCard(
@@ -193,7 +194,7 @@ private fun SchedulerHealthDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("完成") }
+            BaiZeDialogButton(onClick = onDismiss) { Text("完成") }
         }
     )
 }

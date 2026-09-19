@@ -1,7 +1,11 @@
 # 白泽 v2
 
-白泽 v2 是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。
-App 通过 libsu RootService 调用模块内的 C 扫描引擎，不依赖 WebUI。
+白泽是原生 Android 清理 App，前台扫描、文件管理与清理由 App 自身负责。
+私有缓存和深度规则通过 App 自带的 libsu RootService 执行；共享文件分析使用系统文件索引。
+Magisk / KernelSU / APatch 模块是可选的后台自动化组件，只在需要定时扫描、自动清理和开机调度时安装。
+前台使用不以安装模块为前提；私有缓存与深度清理仍需要 Root，文件分析需要相应存储权限。
+
+本轮功能与竞品参照见 [清理工作台 v5](docs/CLEANER_WORKBENCH_V5.md)。
 
 项目总览与安全边界见[根目录 README](../README.md)，
 版本历史见 [CHANGELOG.md](../CHANGELOG.md)，
@@ -18,7 +22,7 @@ v2/
 │       ├── main/   主源码
 │       └── test/   JVM 单元测试
 ├── native/         C 扫描引擎与深度不可变快照引擎
-├── module/         Magisk 模块脚本（打包进 ZIP 根目录）
+├── module/         模块入口与 scripts/ 内部实现
 ├── scripts/        构建、打包、版本与规则校验脚本
 ├── tests/          shell / python / 原生回归测试
 └── macrobenchmark/ 启动与滚动性能基准
@@ -54,12 +58,25 @@ bash tests/run-native-tests.sh        # 只跑 C 引擎相关（宿主 cc 即可
 | `scripts/validate-rules.py` | 校验规则库并回写 `config/rules.meta.env` 的条数与 SHA |
 | `scripts/build-native.sh` | 多 ABI 交叉编译原生引擎 |
 | `scripts/package-module.sh` | 打包模块 ZIP，打包前跑全量回归 |
-| `module/abi-resolve.sh` | 运行时按设备 ABI 解析引擎路径 |
+| `module/scripts/abi-resolve.sh` | 运行时按设备 ABI 解析引擎路径 |
 
 ## 模块脚本入口
 
-- `module/cleaner.sh` — 清理总入口，原生引擎不可用时退回 `cleaner.sh.compat`
-- `module/native-scan.sh` — 原生扫描执行器
-- `module/scheduler-v2.5.sh` — Root 调度器（打包后重命名为 `scheduler.sh`）
-- `module/supervisor.sh` — 调度器守护进程
-- `module/task-worker.sh` — 统一 Root Worker
+- `module/scripts/cleaner.sh` — 清理总入口，原生引擎不可用时退回 `cleaner-compat.sh`
+- `module/scripts/native-cleaner.sh` — 原生扫描执行器
+- `module/scripts/scheduler.sh` — Root 调度器（源码与打包名称一致）
+- `module/scripts/supervisor.sh` — 调度器守护进程
+- `module/scripts/task-worker.sh` — 统一 Root Worker
+
+## 安装后的模块布局
+
+| 路径 | 内容 |
+|---|---|
+| 根目录 | `module.prop`、`skip_mount` 与安装、开机、操作、卸载四个入口 |
+| `scripts/` | 清理、调度、守护、归类、索引和公共辅助脚本 |
+| `bin/<ABI>/` | 对应设备架构的原生引擎 |
+| `config/` | 内置规则和默认配置 |
+| `app/` | 同版本 APK 与校验值 |
+
+运行状态继续保存在 `/data/adb/baize-v2`；本次整理不迁移或重置用户配置、白名单与历史。
+App 优先查找 `scripts/`，仍可连接采用平铺目录的旧模块。源码与打包路径保持一致。

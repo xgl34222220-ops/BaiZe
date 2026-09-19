@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-CONTROLLER="$ROOT/module/autopilot-controller.sh"
+CONTROLLER="$ROOT/module/scripts/autopilot-controller.sh"
 TMP=${TMPDIR:-/tmp}/baize-autopilot-test-$$
 STATE="$TMP/state"
 CONFIG="$STATE/config.conf"

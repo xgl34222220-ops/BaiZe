@@ -1,5 +1,11 @@
 package io.github.xgl34222220.baize
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import io.github.xgl34222220.baize.ui.theme.BaiZeSafeViewport
 import android.app.Application
 import android.graphics.Bitmap
 import android.view.View
@@ -40,6 +46,23 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun homeScrollClearsStatusBar() = renderSafeScroll("home-safe-scroll", 0)
+    @Test fun cleanScrollClearsStatusBar() = renderSafeScroll("clean-safe-scroll", 1)
+    @Test fun historyScrollClearsStatusBar() = renderSafeScroll("history-safe-scroll", 2)
+    @Test fun settingsScrollClearsStatusBar() = renderSafeScroll("settings-safe-scroll", 3)
+
+    private fun renderSafeScroll(name: String, page: Int) {
+        render(name, page, safeInset = 48)
+        val list = compose.onNode(hasScrollAction())
+        list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 420f) }
+        compose.waitForIdle()
+        val viewport = compose.onNodeWithTag("inset-page").fetchSemanticsNode().boundsInRoot
+        val scrollBounds = list.fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("The viewport must start below the 48px status/cutout area", viewport.top >= 48f)
+        org.junit.Assert.assertTrue("The scrolled list must stay inside the viewport", scrollBounds.top >= viewport.top)
+        save(name)
+    }
 
     @Test fun homeLight() = render("home-light", 0)
     @Test fun homeDark() = render("home-dark", 0, dark = true)
@@ -83,9 +106,17 @@ class UiVisualReviewTest {
     fun narrowLargeFontRecords() = render("records-narrow-large-font", 2, fontScale = 1.3f)
 
     @Test fun homePlanOpensAutomaticPlan() {
-        render("home-plan-entry", 0)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理"))
-        compose.onNodeWithText("自动清理").performScrollTo().performClick()
+        render("home-plan-entry", 0, automationAvailable = true)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理模块"))
+        val entry = compose.onNodeWithText("自动清理模块").performScrollTo()
+        val dockTop = compose.onNodeWithTag("luoshu-dock").fetchSemanticsNode().boundsInRoot.top
+        val overlap = entry.fetchSemanticsNode().boundsInRoot.center.y - dockTop + 28f
+        if (overlap > 0f) {
+            compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, overlap) }
+            compose.waitForIdle()
+        }
+        org.junit.Assert.assertTrue(entry.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
+        entry.performClick()
         compose.waitForIdle()
         compose.onNodeWithText("手动工具").assertIsDisplayed()
         compose.onNodeWithText("扫描工作台").assertIsDisplayed()
@@ -94,17 +125,19 @@ class UiVisualReviewTest {
         save("clean-plan")
     }
 
-    @Test fun homePlanIsVisibleOnTheFirstScreen() {
-        render("home-plan-visible", 0)
-        compose.onNodeWithText("自动清理").assertIsDisplayed()
+    @Test fun homeCleanerToolsAreVisibleBeforeAutomation() {
+        render("home-cleaner-first", 0)
+        compose.onNodeWithText("开始扫描").assertIsDisplayed()
+        compose.onNodeWithText("整理空间").assertIsDisplayed()
+        compose.onNodeWithText("安装包").assertIsDisplayed()
     }
 
     @Test fun groupedHomeToolsKeepTheirOwnActions() {
         val calls = mutableListOf<String>()
         render("home-tools", 0, actions = previewActions.copy(
-            apkScan = { calls += "apk" }, organize = { calls += "organize" },
-            deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
-        listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
+            apkScan = { calls += "apk" }, largeFiles = { calls += "large" },
+            duplicates = { calls += "duplicates" }, storageAnalysis = { calls += "analysis" }))
+        listOf("安装包", "大文件", "重复文件", "存储分析").forEach { title ->
             val list = compose.onNode(hasScrollAction())
             list.performScrollToNode(hasText(title))
             val node = compose.onNodeWithText(title).performScrollTo()
@@ -120,7 +153,7 @@ class UiVisualReviewTest {
                 node.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
             node.assertIsDisplayed().performClick()
         }
-        assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
+        assertEquals(listOf("apk", "large", "duplicates", "analysis"), calls)
     }
 
     @Test fun disconnectedHomeOnlyReconnects() {
@@ -180,10 +213,13 @@ class UiVisualReviewTest {
         fontScale: Float = 1f,
         blur: Boolean = false,
         actions: DashboardActions = previewActions,
+        safeInset: Int = 0,
+        automationAvailable: Boolean = false,
     ) {
         val state = DashboardUiState(
             ready = connected,
             connected = connected,
+            automationAvailable = automationAvailable,
             serviceText = if (connected) "清理服务已就绪" else "请授予 Root 权限",
             schedulerText = "定时计划已启用",
             storageTotal = 256L * 1024 * 1024 * 1024,
@@ -213,6 +249,8 @@ class UiVisualReviewTest {
                 LocalDensity provides Density(density.density, fontScale),
                 LocalView provides if (blur) captureView else hostView,
             ) {
+                BaiZeSafeViewport(insets = WindowInsets(top = safeInset)) {
+                Box(Modifier.fillMaxSize().testTag("inset-page")) {
                 BaiZeMiuixApp(
                     state = state,
                     scheduler = SchedulerUiState(enabled = true, apkPackagesEnabled = true, apkMinutes = 60, apkPackageDays = 0),
@@ -226,6 +264,8 @@ class UiVisualReviewTest {
                     ),
                     initialPage = page,
                 )
+                }
+                }
             }
         }
         compose.waitForIdle()
@@ -242,7 +282,7 @@ class UiVisualReviewTest {
     }
 
     private val previewActions = DashboardActions(
-        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, cleanScan = {},
+        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {},
         dismissScan = {}, stop = {}, deep = {}, corpses = {}, audit = {},
         updateScheduler = {}, saveScheduler = {}, schedulerCommand = {}, clearHistory = {},
         clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},

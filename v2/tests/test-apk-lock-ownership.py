@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='baize-lock-') as work:
             print('SKIP live lock check: procfs does not match process PID namespace')
             raise SystemExit(0)
         checked = 0
-        for file in [ROOT / 'cleaner.sh', *(ROOT / 'v2/module').glob('*.sh')]:
+        for file in [ROOT / 'v2/module/scripts/cleaner-compat.sh', *(ROOT / 'v2/module').rglob('*.sh')]:
             source = file.read_text()
             for match in re.finditer(r'^(pid_is_baize_task|pid_is_task|is_baize_pid)\(\) \{\n.*?^\}', source, re.M | re.S):
                 definition = match.group()

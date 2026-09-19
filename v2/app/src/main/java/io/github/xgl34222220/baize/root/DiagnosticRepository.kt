@@ -19,7 +19,7 @@ internal class DiagnosticRepository(
             else -> return JSONObject().put("success", false).put("error", "unsupported_tool").toString()
         }
         return runCatching {
-            val file = File(moduleDir, script)
+            val file = RootPaths.script(script, moduleDir)
             require(file.isFile) { "tool_missing" }
             val arg = JSONObject(optionsJson.orEmpty().ifBlank { "{}" }).optInt("value", 0)
             val command = mutableListOf("/system/bin/sh", file.absolutePath)

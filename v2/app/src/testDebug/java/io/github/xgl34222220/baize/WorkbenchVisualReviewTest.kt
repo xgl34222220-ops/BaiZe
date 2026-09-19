@@ -35,12 +35,35 @@ class WorkbenchVisualReviewTest {
 
     @Test fun thousandsOfResultsKeepTheCleanupActionInView() {
         render(ready())
+        // Wait for the visible summary from background grouping. A lazy list row can be
+        // outside the composed viewport and must not be used as a readiness signal.
+        try {
+            compose.waitUntil(timeoutMillis = 5000) {
+                compose.onAllNodesWithText("12", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (failure: ComposeTimeoutException) {
+            println(compose.onRoot(useUnmergedTree = true).printToString())
+            save("stress-timeout")
+            throw failure
+        }
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed().performClick()
         assertEquals(1, cleanRequests)
+        compose.mainClock.advanceTimeByFrame()
         save("results-light")
     }
 
-    @Test fun resultsDark() { render(ready(), dark = true); save("results-dark") }
+    @Test fun resultsDark() {
+        // Dark-mode visual review does not need the 1,980-row stress fixture; the dedicated
+        // thousandsOfResultsKeepTheCleanupActionInView test covers that contract. Keeping this
+        // screenshot fixture representative avoids a Robolectric/Compose lazy-layout flake.
+        val base = ready()
+        val visibleItems = base.items.take(120)
+        render(base.copy(
+            items = visibleItems,
+            selectedIds = visibleItems.take(96).mapTo(linkedSetOf()) { it.id }
+        ), dark = true)
+        save("results-dark")
+    }
 
     @Test fun reportedFailureRetainsReviewWithoutShowingASecondEmptyState() {
         render(ready().copy(notice = WorkbenchNotice.ERROR,

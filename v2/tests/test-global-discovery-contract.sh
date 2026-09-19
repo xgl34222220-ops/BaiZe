@@ -2,9 +2,9 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 ENGINE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfileEngine.kt"
-APK_PATHS="$ROOT/v2/module/apk-paths.sh"
-APK_SCAN="$ROOT/v2/module/apk-snapshot-scan.sh"
-INDEX="$ROOT/v2/module/storage-index.sh"
+APK_PATHS="$ROOT/v2/module/scripts/apk-paths.sh"
+APK_SCAN="$ROOT/v2/module/scripts/apk-scanner.sh"
+INDEX="$ROOT/v2/module/scripts/storage-index.sh"
 
 grep -Fq 'val rawUsers = numericUsers(File("/data/media"))' "$ENGINE"
 grep -Fq 'result.addAll(numericUsers(File("/storage/emulated")))' "$ENGINE"

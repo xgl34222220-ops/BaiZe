@@ -8,7 +8,7 @@ STATE="$WORK/state"
 PUBLIC="$WORK/public"
 rm -rf "$WORK"
 mkdir -p "$MODULE/config" "$STATE/logs" "$STATE/reports" "$PUBLIC"
-cp "$ROOT/module/diagnostics-export.sh" "$MODULE/diagnostics-export.sh"
+cp "$ROOT/module/scripts/diagnostics-export.sh" "$MODULE/diagnostics-export.sh"
 chmod +x "$MODULE/diagnostics-export.sh"
 
 cat >"$MODULE/module.prop" <<'EOF'

@@ -215,7 +215,7 @@ Shell 侧同理（`echo "当前架构不支持原生扫描"` 等）。
 
 ### 15. 只支持 arm64-v8a
 
-`build-native.sh` 只编 `aarch64-linux-android`，`native-scan.sh:40`、`cache-snapshot-clean.sh:32` 遇到非 arm64 直接 `exit 8`。armeabi-v7a 老设备（恰恰是最需要清理垃圾的那批）完全用不了。
+`build-native.sh` 只编 `aarch64-linux-android`，`native-cleaner.sh:40`、`cache-snapshot-clean.sh:32` 遇到非 arm64 直接 `exit 8`。armeabi-v7a 老设备（恰恰是最需要清理垃圾的那批）完全用不了。
 
 NDK 交叉编译加一个 ABI 成本很低：
 
@@ -239,7 +239,7 @@ done
 
 两者产出的 zip 都是 `id=baize_v2`。而根 `README.md` 的"从源码构建"章节写的是 `sh scripts/build.sh`——照做会得到一个和 Release 完全不同的东西。
 
-更麻烦的是 `package-module.sh:37` 还把 v1 的 `cleaner.sh` 当 `cleaner.sh.compat` 塞进 v2 包里，再用 `sed` 改路径。105 KB 的遗留脚本靠 sed 打补丁维持兼容，是个定时炸弹。
+更麻烦的是 `package-module.sh:37` 还把 v1 的 `cleaner.sh` 当 `cleaner-compat.sh` 塞进 v2 包里，再用 `sed` 改路径。105 KB 的遗留脚本靠 sed 打补丁维持兼容，是个定时炸弹。
 
 建议：确认 v1 是否还有兼容需求；若无，删除根目录的 `cleaner.sh` / `webctl.sh` / `status.sh` / `job-runner.sh` / `webroot/` / `scripts/build.sh`，仓库瞬间清爽。若有，把 compat 路径写成显式配置项而不是构建期 sed。
 
@@ -283,7 +283,7 @@ override fun ping(): String = snapshot.get().toJson().toString()
 
 ### 20. 19 个 shell 脚本没有 `set -eu`
 
-包括核心的 `v2/module/cleaner.sh`、`one-pass-scan.sh`、`native-scan.sh`、`cache-snapshot-clean.sh`、`profile-snapshot-clean.sh`、`customize.sh`、`service.sh`。在一个**以 root 身份删文件**的项目里，未定义变量静默展开成空字符串是相当危险的（`rm -rf "$UNDEFINED/foo"` → `rm -rf "/foo"`）。
+包括核心的 `v2/module/scripts/cleaner.sh`、`one-pass-scan.sh`、`native-cleaner.sh`、`cache-snapshot-clean.sh`、`profile-snapshot-clean.sh`、`customize.sh`、`service.sh`。在一个**以 root 身份删文件**的项目里，未定义变量静默展开成空字符串是相当危险的（`rm -rf "$UNDEFINED/foo"` → `rm -rf "/foo"`）。
 
 这些脚本里已经有 140 处 `rm -rf`/`rm -f`。虽然抽查下来变量都做了引号包裹、`deep_allowed()` 也有兜底，但 `set -u` 是几乎零成本的第二道防线。
 

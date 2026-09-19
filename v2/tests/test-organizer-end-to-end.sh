@@ -9,7 +9,7 @@ command -v base64 >/dev/null 2>&1 || { echo "  [skip] 缺少 base64"; exit 0; }
 T=${TMPDIR:-/tmp}/baize-org-e2e
 rm -rf "$T"; mkdir -p "$T/module/config" "$T/state/index" "$T/media"
 
-cp "$ROOT/v2/module/organizer-worker.sh" "$T/module/"
+cp "$ROOT/v2/module/scripts/organizer-worker.sh" "$T/module/"
 # 索引已经由测试直接写好，这里放一个只做校验的桩，避免依赖真实索引器
 cat > "$T/module/storage-index.sh" <<'STUB'
 #!/bin/sh

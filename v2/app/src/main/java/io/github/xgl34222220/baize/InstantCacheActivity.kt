@@ -1,5 +1,8 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -45,13 +48,11 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PauseCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -347,27 +348,27 @@ internal fun InstantCacheScreen(
     val allVisibleSelected = visible.isNotEmpty() && visible.all { it.packageName in state.selected }
 
     if (showConfirmation) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { if (!state.running) showConfirmation = false },
             title = { Text("清除 ${state.selected.size} 个应用的缓存？", fontSize = 18.sp) },
             text = { Text("保留账号、设置和应用数据。应用下次启动时可能重新生成缓存。") },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     showConfirmation = false
                     onRun(state.selected)
                 }) { Text("清除缓存") }
             },
-            dismissButton = { TextButton(onClick = { showConfirmation = false }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { showConfirmation = false }) { Text("取消") } }
         )
     }
     if (showHelp) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { showHelp = false },
             title = { Text("即时清缓存", fontSize = 18.sp) },
             text = {
                 Text("通过系统清除所选应用的当前缓存，保留账号、设置和应用数据。单次最多选择 $MAX_VISIBLE_SELECTION 个应用。\n\n部分系统应用可能不允许清除缓存，失败时可以查看任务结果。")
             },
-            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("知道了") } }
+            confirmButton = { BaiZeDialogButton(onClick = { showHelp = false }) { Text("知道了") } }
         )
     }
 
@@ -383,7 +384,7 @@ internal fun InstantCacheScreen(
         bottomBar = {
             Surface(color = BaiZeTokens.colors.surfaceBase, modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                    Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -415,7 +416,7 @@ internal fun InstantCacheScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     DetailStatusText(state.status, Modifier.padding(top = 4.dp))
-                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 10.dp))
+                    if (state.running) BaiZeProgress(Modifier.fillMaxWidth().padding(top = 10.dp))
                 }
             }
             state.lastResult?.let { result ->
@@ -434,7 +435,7 @@ internal fun InstantCacheScreen(
                     }
                     val tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp)
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
                             .clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = .055f)).padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -456,7 +457,7 @@ internal fun InstantCacheScreen(
                     leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(21.dp)) },
                     singleLine = true,
                     enabled = !state.running,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = BaiZeTokens.colors.surfaceRaised,
@@ -477,7 +478,7 @@ internal fun InstantCacheScreen(
                 )
             }
             item(contentType = "selection") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${visible.size} 个应用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f))
                     TextButton(
@@ -534,7 +535,7 @@ private fun InstantCacheAppRow(
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(if (selected) scheme.primary.copy(alpha = .045f) else BaiZeTokens.colors.surfaceRaised)
         .toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })) {
         Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(start = 13.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),

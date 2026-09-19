@@ -109,7 +109,7 @@ class Rules(unittest.TestCase):
         for key in ('builtin_risk_sha', 'user_risk_sha', 'config_sha'):
             with self.subTest(key=key):
                 files[key].write_text('edited after scanning\n')
-                result = subprocess.run(['bash', str(ROOT / 'v2/module/deep-manifest-clean.sh'),
+                result = subprocess.run(['bash', str(ROOT / 'v2/module/scripts/deep-manifest-clean.sh'),
                                          'deep-clean', 'manual'], env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
                 self.assertIn('风险策略已变化', result.stdout)
@@ -161,7 +161,7 @@ class Rules(unittest.TestCase):
             self.run_engine('rule-targets', '--rules', rules, '--targets', targets, expected=7)
 
     def test_partial_empty_directory_discovery_never_deletes(self):
-        source = (ROOT / 'cleaner.sh').read_text()
+        source = (ROOT / 'v2/module/scripts/cleaner-compat.sh').read_text()
         real_find = shutil.which('find')
         self.assertIsNotNone(real_find)
         for exit_code in (124, 1, 9):
@@ -205,7 +205,7 @@ class Rules(unittest.TestCase):
                     self.assertIn('protected\tincomplete\t空目录:', (state / 'reports/latest.tsv').read_text())
 
     def test_real_rules_clean_native_and_fallback_preserve_content(self):
-        source = (ROOT / 'cleaner.sh').read_text()
+        source = (ROOT / 'v2/module/scripts/cleaner-compat.sh').read_text()
         for native in (False, True):
             with self.subTest(native=native):
                 case = self.tmp / str(native); case.mkdir()

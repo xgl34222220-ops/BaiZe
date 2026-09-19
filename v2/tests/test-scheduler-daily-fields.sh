@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=${TMPDIR:-/tmp}/baize-scheduler-daily-fields-test
 rm -rf "$T"
 mkdir -p "$T/module" "$T/state/scheduler-requests" "$T/state/scheduler-skips" "$T/state/logs"
-cp "$ROOT/v2/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
+cp "$ROOT/v2/module/scripts/scheduler.sh" "$T/module/scheduler.sh"
 chmod +x "$T/module/scheduler.sh"
 
 cat >"$T/module/task-worker.sh" <<'SH'

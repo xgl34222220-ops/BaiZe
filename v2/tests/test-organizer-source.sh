@@ -8,7 +8,7 @@
 set -uo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
-SRC="$ROOT/v2/module/organizer-worker.sh"
+SRC="$ROOT/v2/module/scripts/organizer-worker.sh"
 T=${TMPDIR:-/tmp}/baize-org-src; rm -rf "$T"; mkdir -p "$T"
 
 MEDIA_ROOT=/data/media

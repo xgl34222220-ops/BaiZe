@@ -23,7 +23,7 @@ class StaleLaunchRace(unittest.TestCase):
             module, state, fake = [root / name for name in ('module', 'state', 'bin')]
             for directory in (module, state, fake):
                 directory.mkdir()
-            shutil.copy2(ROOT / 'v2/module/task-worker.sh', module)
+            shutil.copy2(ROOT / 'v2/module/scripts/task-worker.sh', module)
             runner = module / 'worker-runner.sh'
             runner.write_text('''#!/bin/sh
 mkdir -p "$BAIZE_STATE_DIR/task-results"

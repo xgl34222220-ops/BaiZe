@@ -112,7 +112,7 @@ private fun MaterialHomeHeader(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -160,7 +160,7 @@ private fun MaterialNextTaskCard(
 ) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
@@ -173,7 +173,7 @@ private fun MaterialNextTaskCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 17.dp)) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "下一个任务",
@@ -219,7 +219,7 @@ private fun MaterialPrimaryActions(
     onOrganize: () -> Unit
 ) {
     Row(
-        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         MaterialActionButton(
@@ -285,7 +285,7 @@ private fun MaterialSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 2.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -316,7 +316,7 @@ private fun MaterialTaskScheduleCard(
 ) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = MaterialTheme.shapes.large,
@@ -388,7 +388,7 @@ private fun MaterialRecentSummary(state: DashboardUiState) {
     val context = LocalContext.current
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -442,7 +442,7 @@ private fun MaterialMetric(label: String, value: String, modifier: Modifier = Mo
 private fun MaterialServiceStatus(state: DashboardUiState) {
     Surface(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLowest

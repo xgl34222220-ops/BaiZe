@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -54,7 +56,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -356,8 +357,8 @@ private fun AuditScreen(
     var filter by rememberSaveable { mutableStateOf("all") }
     var confirmClear by remember { mutableStateOf(false) }
     val miuix = style == UiStyle.MIUIX
-    val horizontal = 20.dp
-    val cardShape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 16.dp
+    val cardShape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     val filtered = remember(state.events, filter) {
         state.events.filter { event ->
             when (filter) {
@@ -424,17 +425,17 @@ private fun AuditScreen(
     }
 
     if (confirmClear) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("清空审计时间线？") },
             text = { Text("只隐藏当前时间点之前的审计事件，不会删除累计统计、白名单、隔离内容或原始清理历史。") },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     confirmClear = false
                     onClear()
                 }) { Text("清空") }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { confirmClear = false }) { Text("取消") } }
         )
     }
 }

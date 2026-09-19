@@ -13,7 +13,7 @@ internal class ModuleTaskController(
     private val diagnostics: DiagnosticRepository
 ) {
     fun startDetachedModuleTask(mode: String, started: Long): String {
-        val worker = File(RootPaths.MODULE_DIR, "task-worker.sh")
+        val worker = RootPaths.script("task-worker.sh")
         if (!worker.isFile) {
             return JSONObject().put("error", "worker_missing")
                 .put("message", "独立 Root Worker 缺失，请重新刷入完整模块").toString()
@@ -50,12 +50,29 @@ internal class ModuleTaskController(
 
     fun executeModuleTask(mode: String, started: Long): String {
         val taskStartedAt = System.currentTimeMillis()
-        val cleaner = File(RootPaths.MODULE_DIR, "cleaner.sh")
+        val cleaner = RootPaths.script("cleaner.sh")
         if (!cleaner.isFile) {
             return JSONObject()
                 .put("error", "cleaner_missing")
                 .put("message", "模块清理引擎缺失，请重新刷入完整模块")
                 .toString()
+        }
+
+        if (mode.startsWith("apk-")) {
+            val apkPaths = RootPaths.script("apk-paths.sh")
+            val engineMarker = "# --- BaiZe real-device storage discovery v3 ---"
+            val matched = apkPaths.isFile && runCatching {
+                apkPaths.bufferedReader().use { reader ->
+                    generateSequence { reader.readLine() }.any { it == engineMarker }
+                }
+            }.getOrDefault(false)
+            if (!matched) {
+                return JSONObject()
+                    .put("success", false)
+                    .put("error", "module_engine_mismatch")
+                    .put("message", "App 与 Root 模块清理引擎不匹配，请同时刷入当前测试包中的 Module ZIP 后再测试")
+                    .toString()
+            }
         }
 
         val stateDir = File(RootPaths.STATE_DIR).apply { mkdirs() }
@@ -308,7 +325,7 @@ internal class ModuleTaskController(
         val running = RootFileStore.readEnv(File(stateDir, "running.env"))
         return JSONObject()
             .put("moduleInstalled", File(RootPaths.MODULE_DIR, "module.prop").isFile)
-            .put("cleanerReady", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
+            .put("cleanerReady", RootPaths.script("cleaner.sh").isFile)
             .put("rulesReady", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
             .put("scheduler", scheduler)
             .put("supervisor", RootFileStore.readEnv(File(stateDir, "supervisor.env")))

@@ -275,9 +275,9 @@ try:
     module = WORK / "module"
     module.mkdir()
     for script in ("deep-scan-manifest.sh", "deep-manifest-clean.sh"):
-        shutil.copy2(ROOT / "module" / script, module / script)
+        shutil.copy2(ROOT / "module/scripts" / script, module / script)
     scanner = module / "native-cleaner.sh"
-    scanner.write_text((ROOT / "module/native-scan.sh").read_text().replace("#!/system/bin/sh", "#!/bin/bash", 1))
+    scanner.write_text((ROOT / "module/scripts/native-cleaner.sh").read_text().replace("#!/system/bin/sh", "#!/bin/bash", 1))
     scanner.chmod(0o755)
     (s / "config.conf").write_text("deep_dir_timeout_seconds=8\ndeep_stage_limit_seconds=180\n")
     (s / "whitelist.conf").write_text("")

@@ -140,7 +140,7 @@ MODULE="$WORK/module"
 STATE="$WORK/module-state"
 INTEGRATION_TARGET="$HOST_ROOT/integration-cache"
 mkdir -p "$MODULE/bin/arm64-v8a" "$STATE/reports" "$STATE/logs" "$INTEGRATION_TARGET"
-cp "$ROOT/module/deep-manifest-clean.sh" "$MODULE/deep-manifest-clean.sh"
+cp "$ROOT/module/scripts/deep-manifest-clean.sh" "$MODULE/deep-manifest-clean.sh"
 cp "$BIN" "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
 chmod +x "$MODULE/bin/arm64-v8a/baize_deep_snapshot"
 printf 'integration' >"$INTEGRATION_TARGET/item.bin"
@@ -174,8 +174,8 @@ grep -q '^engine=deep-manifest-v1$' "$STATE/latest.env"
 grep -q '^deep_remaining_records=0$' "$STATE/latest.env"
 
 # Cleanup scripts are manifest consumers; directory rediscovery is forbidden.
-! grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]' "$ROOT/module/deep-manifest-clean.sh"
-grep -q 'snapshot_schema=deep-file-manifest-v1' "$ROOT/module/deep-scan-manifest.sh"
-grep -q 'deep_manifest_cursor' "$ROOT/module/deep-manifest-clean.sh"
+! grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]' "$ROOT/module/scripts/deep-manifest-clean.sh"
+grep -q 'snapshot_schema=deep-file-manifest-v1' "$ROOT/module/scripts/deep-scan-manifest.sh"
+grep -q 'deep_manifest_cursor' "$ROOT/module/scripts/deep-manifest-clean.sh"
 
 echo 'deep immutable manifest and resume cursor: ok'

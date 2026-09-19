@@ -3,7 +3,7 @@
 set -uo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
-SH="$ROOT/v2/module/organizer-worker.sh"
+SH="$ROOT/v2/module/scripts/organizer-worker.sh"
 KT="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/FileOrganizerEngine.kt"
 QUEUE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/RootMediaScanQueue.kt"
 SERVICE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-SCHEDULER="$ROOT/v2/module/scheduler-v2.5.sh"
+SCHEDULER="$ROOT/v2/module/scripts/scheduler.sh"
 HOME_STATUS="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/home/HomeTaskPresentation.kt"
 REPOSITORY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt"
 TMP=${TMPDIR:-/tmp}/baize-active-heartbeat-test

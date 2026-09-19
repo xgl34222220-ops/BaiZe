@@ -32,7 +32,7 @@ check() {
  rm -f "$work/state/installed-app.sha256"
  : > "$PM_CALLS"
  set +e
- sh "$ROOT/v2/module/app-installer.sh" ensure >/dev/null 2>&1
+ sh "$ROOT/v2/module/scripts/app-installer.sh" ensure >/dev/null 2>&1
  code=$?
  set -e
  test "$code" = "$2"

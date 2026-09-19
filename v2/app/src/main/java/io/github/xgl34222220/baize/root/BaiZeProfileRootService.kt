@@ -8,6 +8,7 @@ import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /** Binder facade; repositories own validation and task coordination. */
 class BaiZeProfileRootService : RootService() {
@@ -26,6 +27,12 @@ class BaiZeProfileRootService : RootService() {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
+    private val apkFastSnapshot by lazy {
+        ApkFastSnapshotRepository(
+            cancelled = coordinator.cancelled,
+            mediaRefresh = { paths -> RootMediaScanQueue.enqueueAsync(this, paths) }
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -65,6 +72,30 @@ class BaiZeProfileRootService : RootService() {
                 getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
             }
             "getModuleState" -> { require(arguments.length() == 0); getModuleState() }
+            "ensureAllFilesAccess" -> {
+                require(arguments.length() == 0)
+                ensureAllFilesAccessJson()
+            }
+            "prepareApkFastSnapshot" -> {
+                require(arguments.length() == 1)
+                if (coordinator.isBusy()) coordinator.busy("apk-fast-scan") else
+                    coordinator.runExclusive(
+                        operation = "apk-fast-scan",
+                        phase = "正在校验系统文件索引",
+                        failureCode = "apk_fast_snapshot_failed"
+                    ) { apkFastSnapshot.prepare(arguments.getString(0)) }
+            }
+            "cleanApkFastSnapshot" -> {
+                require(arguments.length() == 0)
+                if (coordinator.isBusy()) coordinator.busy("apk-fast-clean") else
+                    coordinator.runExclusive(
+                        operation = "apk-fast-clean",
+                        phase = "正在快速清理安装包",
+                        failureCode = "apk_fast_clean_failed"
+                    ) {
+                        apkFastSnapshot.clean()
+                    }
+            }
             "getTaskHistory" -> { require(arguments.length() == 1); getTaskHistory(arguments.getInt(0)) }
             "getTaskHistoryPage" -> {
                 require(arguments.length() == 2)
@@ -105,14 +136,23 @@ class BaiZeProfileRootService : RootService() {
             else -> throw IllegalArgumentException("不支持的服务请求")
         }
 
-        override fun ping(): String = JSONObject()
-            .put("uid", Process.myUid()).put("root", Process.myUid() == 0)
-            .put("module", File(RootPaths.MODULE_DIR, "module.prop").isFile)
-            .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
-            .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
-            .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
-            .put("engine", "unified-root-task-coordinator-v2-audit")
-            .also { RootVersionInfo.putInto(it) }.toString()
+        override fun ping(): String {
+            val appRules = AppRuleStore.ensure(this@BaiZeProfileRootService)
+            val modulePresent = File(RootPaths.MODULE_DIR, "module.prop").isFile
+            return JSONObject()
+                .put("uid", Process.myUid())
+                .put("root", Process.myUid() == 0)
+                .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
+                .put("appRules", File(appRules, "deep.rules").isFile)
+                .put("module", modulePresent)
+                .put("cleaner", RootPaths.script("cleaner.sh").isFile)
+                .put("deepRules", File(appRules, "deep.rules").isFile)
+                .put("scheduler", RootPaths.script("scheduler.sh").isFile)
+                .put("modulePurpose", "background-automation")
+                .put("engine", "app-root-foreground-v1")
+                .also { RootVersionInfo.putInto(it) }
+                .toString()
+        }
         override fun getProfileCatalog(): String = profileEngine.catalog()
 
         override fun scanProfile(profile: String?, optionsJson: String?): String = audited("profile-scan") {
@@ -258,6 +298,31 @@ class BaiZeProfileRootService : RootService() {
         runCatching { auditRepository.recordResult(operation, source, result, started) }
         return result
     }
+    private fun ensureAllFilesAccessJson(): String {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            return JSONObject().put("success", true).put("alreadyGranted", true).toString()
+        }
+        return runCatching {
+            val process = ProcessBuilder(
+                "/system/bin/cmd", "appops", "set", packageName,
+                "MANAGE_EXTERNAL_STORAGE", "allow"
+            ).redirectErrorStream(true).start()
+            val finished = process.waitFor(5, TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            val output = runCatching { process.inputStream.bufferedReader().use { it.readText().trim().take(1200) } }.getOrDefault("")
+            val code = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
+            JSONObject()
+                .put("success", finished && code == 0)
+                .put("exitCode", code)
+                .put("output", output)
+                .put("message", if (finished && code == 0) "已启用所有文件访问" else "无法自动启用所有文件访问")
+                .toString()
+        }.getOrElse { error ->
+            JSONObject().put("success", false).put("error", "appops_failed")
+                .put("message", error.message ?: error.javaClass.simpleName).toString()
+        }
+    }
+
     override fun onBind(intent: Intent): IBinder = binder
     companion object {
         private val MODULE_TASKS = setOf("scan", "clean", "cache-clean", "empty-clean", "rules-clean", "fragment-scan",

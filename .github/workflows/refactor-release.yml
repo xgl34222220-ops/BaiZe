@@ -34,7 +34,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
           changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
-          allowed = {'v2/app/build.gradle.kts', 'v2/module/module.prop', 'v2/module/customize.sh', 'v2/module/task-worker.sh', 'v2/scripts/package-module.sh'}
+          allowed = {'v2/app/build.gradle.kts', 'v2/module/module.prop', 'v2/module/customize.sh', 'v2/module/scripts/task-worker.sh', 'v2/scripts/package-module.sh'}
           if not changed <= allowed:
               raise SystemExit(f'Unexpected generated change: {changed - allowed}')
           PY
@@ -42,7 +42,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if ! git diff --quiet; then
-            git add v2/app/build.gradle.kts v2/module/module.prop v2/module/customize.sh v2/module/task-worker.sh v2/scripts/package-module.sh
+            git add v2/app/build.gradle.kts v2/module/module.prop v2/module/customize.sh v2/module/scripts/task-worker.sh v2/scripts/package-module.sh
             git commit -m "chore: synchronize $VERSION refactor metadata ($CODE)"
             git push origin HEAD:main
           fi

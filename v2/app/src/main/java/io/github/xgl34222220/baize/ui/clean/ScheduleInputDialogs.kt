@@ -1,11 +1,12 @@
 package io.github.xgl34222220.baize.ui.clean
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,7 +33,7 @@ internal fun IntValueDialog(
     val value = text.toIntOrNull()
     val valid = value != null && value in range
 
-    AlertDialog(
+    BaiZeDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -53,7 +54,7 @@ internal fun IntValueDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            BaiZeDialogButton(
                 enabled = valid,
                 onClick = {
                     onConfirm(requireNotNull(value))
@@ -61,7 +62,7 @@ internal fun IntValueDialog(
                 }
             ) { Text("确定") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { BaiZeDialogButton(onClick = onDismiss) { Text("取消") } }
     )
 }
 
@@ -78,7 +79,7 @@ internal fun TimeValueDialog(
     val minute = minuteText.toIntOrNull()
     val valid = hour != null && hour in 0..23 && minute != null && minute in 0..59
 
-    AlertDialog(
+    BaiZeDialog(
         onDismissRequest = onDismiss,
         title = { Text("设置每日执行时间") },
         text = {
@@ -109,7 +110,7 @@ internal fun TimeValueDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            BaiZeDialogButton(
                 enabled = valid,
                 onClick = {
                     onConfirm(requireNotNull(hour), requireNotNull(minute))
@@ -117,6 +118,6 @@ internal fun TimeValueDialog(
                 }
             ) { Text("确定") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+        dismissButton = { BaiZeDialogButton(onClick = onDismiss) { Text("取消") } }
     )
 }
