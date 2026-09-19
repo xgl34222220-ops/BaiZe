@@ -59,7 +59,7 @@ fun DetailPageHeader(
 @Composable
 fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp, bottom = 9.dp)) {
-        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+        Text(title, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface)
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(top = 3.dp),
             fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -68,12 +68,12 @@ fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier
 
 @Composable
 fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = BaiZeTokens.corners.large
+    val shape = RoundedCornerShape(20.dp)
     val surface = BaiZeTokens.colors.surfaceRaised
     val dark = surface.luminance() < .3f
     Column(modifier.fillMaxWidth().padding(horizontal = 20.dp)
         .glassSurface(color = surface, shape = shape, dark = dark)
-        .padding(20.dp), content = content)
+        .padding(18.dp), content = content)
 }
 
 @Composable
@@ -175,7 +175,10 @@ fun DetailResultRow(
     icon: ImageVector,
     first: Boolean,
     last: Boolean,
-    accent: Color = MaterialTheme.colorScheme.primary
+    accent: Color = MaterialTheme.colorScheme.primary,
+    selected: Boolean? = null,
+    selectionEnabled: Boolean = true,
+    onToggle: () -> Unit = {}
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
     val shape = RoundedCornerShape(topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
@@ -184,7 +187,9 @@ fun DetailResultRow(
         .background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .92f))
         .clickable(onClickLabel = "查看完整路径与详情") { showDetails = true }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = .08f)) {
+            if (selected != null) Checkbox(checked = selected, onCheckedChange = { onToggle() },
+                enabled = selectionEnabled, modifier = Modifier.size(48.dp))
+            else Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = .08f)) {
                 Icon(icon, null, Modifier.padding(8.dp).size(20.dp), tint = accent)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

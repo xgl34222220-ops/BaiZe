@@ -28,6 +28,9 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.DataUsage
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -162,6 +165,18 @@ fun VideoCleanScreenMiuix(
                 }
             }
             item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VideoSectionTitle("文件工具", "直接分析手机存储，不依赖自动清理模块")
+                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                        VideoListRow(Icons.Rounded.FolderOpen, "大文件", "查找 100 MB 以上的大文件", onClick = actions.onLargeFiles)
+                        VideoDivider()
+                        VideoListRow(Icons.Rounded.ContentCopy, "重复文件", "按内容哈希确认真正重复的文件", onClick = actions.onDuplicates)
+                        VideoDivider()
+                        VideoListRow(Icons.Rounded.DataUsage, "存储分析", "查看图片、视频、安装包等空间占用", onClick = actions.onStorageAnalysis)
+                    }
+                }
+            }
+            item {
                 VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
                     VideoListRow(Icons.Rounded.AutoAwesome, "深度清理", "日志、碎片与更多残留", onClick = actions.onDeepClean)
                     VideoDivider()
@@ -174,10 +189,17 @@ fun VideoCleanScreenMiuix(
             }
             item {
                 VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
-                    VideoListRow(Icons.Rounded.CalendarMonth, "自动清理计划",
-                        if (state.automaticCleaningEnabled) "${state.enabledCategoryCount} 个类别 · ${state.scheduleMode.title}" else "设置周期与保留时间",
-                        value = if (state.automaticCleaningEnabled) "已开启" else "已暂停",
-                        onClick = { selectedPage = 1 })
+                    VideoListRow(
+                        Icons.Rounded.CalendarMonth,
+                        "自动清理模块",
+                        if (state.automationAvailable) {
+                            if (state.automaticCleaningEnabled) "${state.enabledCategoryCount} 个类别 · ${state.scheduleMode.title}"
+                            else "模块已安装 · 自动任务已暂停"
+                        } else "可选功能 · 前台手动清理不依赖模块",
+                        value = if (!state.automationAvailable) "未安装"
+                            else if (state.automaticCleaningEnabled) "已开启" else "已暂停",
+                        onClick = { selectedPage = 1 }
+                    )
                 }
             }
         } else {
@@ -198,7 +220,7 @@ fun VideoCleanScreenMiuix(
                                 item = category, expanded = expandedCategory == category.id.name,
                                 dailyMode = state.scheduleMode == CleanScheduleMode.FIXED_DAILY && category.id != CleanCategoryId.ORGANIZE,
                                 retentionDays = state.apkPackageDays,
-                                onEnabledChanged = { actions.onCategoryEnabledChanged(category.id, it) },
+                                onEnabledChanged = { if (state.automationAvailable) actions.onCategoryEnabledChanged(category.id, it) },
                                 onExpandedChanged = { onExpandedCategoryChanged(if (expandedCategory == category.id.name) "" else category.id.name) },
                                 onEditInterval = { intervalCategory = category },
                                 onEditRetention = { showApkRetentionDialog = true }
@@ -211,7 +233,7 @@ fun VideoCleanScreenMiuix(
                 GlassActionButton(
                     label = if (state.saving) "正在应用…" else "重新应用当前计划",
                     onClick = actions.onSave,
-                    enabled = !state.saving,
+                    enabled = state.automationAvailable && !state.saving,
                     secondary = true,
                     modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
                 )
@@ -314,16 +336,28 @@ private fun AutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             VideoLeadingIcon(Icons.Rounded.CalendarMonth)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("自动清理", fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
+                Text("自动清理模块", fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold)
                 Text(when {
-                    state.saving -> "正在保存计划…"
-                    state.automaticCleaningEnabled -> "${state.enabledCategoryCount} 个类别已开启 · 自动保存"
-                    else -> "已暂停 · 手动清理可用"
+                    !state.automationAvailable -> "未安装模块 · App 前台扫描与清理仍可正常使用"
+                    state.saving -> "正在保存后台计划…"
+                    state.automaticCleaningEnabled -> "${state.enabledCategoryCount} 个类别已开启 · 后台自动执行"
+                    else -> "模块已安装 · 自动任务已暂停"
                 }, fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = state.automaticCleaningEnabled, onCheckedChange = actions.onAutomaticCleaningChanged,
-                modifier = Modifier.semantics { contentDescription = "自动清理" })
+            Switch(
+                checked = state.automationAvailable && state.automaticCleaningEnabled,
+                onCheckedChange = if (state.automationAvailable) actions.onAutomaticCleaningChanged else null,
+                enabled = state.automationAvailable,
+                modifier = Modifier.semantics { contentDescription = "自动清理模块" }
+            )
         }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            state.automationText,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = .045f)).padding(14.dp),
