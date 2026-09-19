@@ -1706,14 +1706,20 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun refreshHistory() {
-        val service = rootService ?: return
         lifecycleScope.launch {
-            val json = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.getTaskHistoryPage(0, 30)) }.getOrNull()
-            } ?: return@launch
-            if (!json.optBoolean("success")) return@launch
-            val array = json.optJSONArray("entries")
-            val entries = buildList {
+            val appHistory = withContext(Dispatchers.IO) {
+                AppTaskHistoryStore.read(this@MiuixDashboardActivity)
+            }
+
+            val service = rootService
+            val moduleJson = if (service != null) {
+                withContext(Dispatchers.IO) {
+                    runCatching { JSONObject(service.getTaskHistoryPage(0, 50)) }.getOrNull()
+                }
+            } else null
+
+            val moduleEntries = buildList {
+                val array = moduleJson?.takeIf { it.optBoolean("success") }?.optJSONArray("entries")
                 if (array != null) for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     add(
@@ -1733,15 +1739,31 @@ class MiuixDashboardActivity : ComponentActivity() {
                     )
                 }
             }
+
+            val merged = (appHistory.entries + moduleEntries)
+                .distinctBy { listOf(it.time, it.title, it.trigger, it.result).joinToString("|") }
+                .sortedByDescending { it.time }
+                .take(50)
+
+            val moduleRuns = moduleJson?.optLong("lifetimeRuns", moduleJson.optLong("cleanedRuns", 0L))
+                ?.coerceAtLeast(0L) ?: 0L
+            val moduleReleased = moduleJson?.optLong("lifetimeReleased", moduleJson.optLong("totalReleased", 0L))
+                ?.coerceAtLeast(0L) ?: 0L
+            val moduleFiles = moduleJson?.optLong("lifetimeFiles", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleEmptyFiles = moduleJson?.optLong("lifetimeEmptyFiles", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleEmptyDirs = moduleJson?.optLong("lifetimeEmptyDirs", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleFragments = moduleJson?.optLong("lifetimeFragments", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleElapsed = moduleJson?.optLong("lifetimeElapsed", 0L)?.coerceAtLeast(0L) ?: 0L
+
             dashboardState.value = dashboardState.value.copy(
-                history = entries,
-                lifetimeRuns = json.optLong("lifetimeRuns", json.optLong("cleanedRuns", 0L)).coerceAtLeast(0L),
-                lifetimeReleased = json.optLong("lifetimeReleased", json.optLong("totalReleased", 0L)).coerceAtLeast(0L),
-                lifetimeFiles = json.optLong("lifetimeFiles", 0L).coerceAtLeast(0L),
-                lifetimeEmptyFiles = json.optLong("lifetimeEmptyFiles", 0L).coerceAtLeast(0L),
-                lifetimeEmptyDirs = json.optLong("lifetimeEmptyDirs", 0L).coerceAtLeast(0L),
-                lifetimeFragments = json.optLong("lifetimeFragments", 0L).coerceAtLeast(0L),
-                lifetimeElapsed = json.optLong("lifetimeElapsed", 0L).coerceAtLeast(0L)
+                history = merged,
+                lifetimeRuns = moduleRuns + appHistory.lifetimeRuns,
+                lifetimeReleased = moduleReleased + appHistory.lifetimeReleased,
+                lifetimeFiles = moduleFiles + appHistory.lifetimeFiles,
+                lifetimeEmptyFiles = moduleEmptyFiles,
+                lifetimeEmptyDirs = moduleEmptyDirs,
+                lifetimeFragments = moduleFragments,
+                lifetimeElapsed = moduleElapsed + appHistory.lifetimeElapsed
             )
         }
     }
@@ -1795,21 +1817,28 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun confirmClearHistory() {
-        val service = rootService ?: return
         AlertDialog.Builder(this)
             .setTitle("清空最近记录？")
-            .setMessage("只删除最近任务摘要；累计清理次数与累计释放空间会继续保留。")
+            .setMessage("删除 App 手动清理与自动清理的最近任务摘要；累计清理统计继续保留。")
             .setNegativeButton("取消", null)
             .setPositiveButton("清空") { _, _ ->
                 lifecycleScope.launch {
-                    val success = withContext(Dispatchers.IO) {
-                        runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
+                    val service = rootService
+                    val moduleSuccess = if (service != null) {
+                        withContext(Dispatchers.IO) {
+                            runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
+                        }
+                    } else true
+                    withContext(Dispatchers.IO) {
+                        AppTaskHistoryStore.clearRecent(this@MiuixDashboardActivity)
                     }
-                    toast(if (success) "最近记录已清空" else "清空失败")
-                    if (success) {
-                        LastCleanupStore.save(this@MiuixDashboardActivity, emptyList(), emptyList())
-                        dashboardState.value = dashboardState.value.copy(history = emptyList(), recentApps = emptyList(), recentJunk = emptyList())
-                    }
+                    LastCleanupStore.save(this@MiuixDashboardActivity, emptyList(), emptyList())
+                    dashboardState.value = dashboardState.value.copy(
+                        history = emptyList(),
+                        recentApps = emptyList(),
+                        recentJunk = emptyList()
+                    )
+                    toast(if (moduleSuccess) "最近记录已清空" else "App 记录已清空，自动模块记录清理失败")
                     refreshHistory()
                 }
             }.show()
