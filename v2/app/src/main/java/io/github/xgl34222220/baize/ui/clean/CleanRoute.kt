@@ -8,6 +8,7 @@ import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
 import io.github.xgl34222220.baize.FileOrganizerActivity
 import io.github.xgl34222220.baize.InstantCacheActivity
+import io.github.xgl34222220.baize.ResumableSmartScanActivity
 import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
@@ -30,7 +31,9 @@ fun CleanRoute(
         engineReady = dashboard.ready,
         running = dashboard.running,
         scanSnapshotReady = dashboard.scanCompleted,
-        serviceText = dashboard.serviceText
+        serviceText = dashboard.serviceText,
+        automationAvailable = dashboard.automationAvailable,
+        automationText = dashboard.automationText
     )
 
     fun applyAndSave(next: SchedulerUiState) {
@@ -61,7 +64,7 @@ fun CleanRoute(
             applyAndSave(scheduler.copy(apkPackagesEnabled = enabled))
         },
         onSave = { dashboardActions.saveScheduler(scheduler) },
-        onScan = { context.startActivity(Intent(context, ScanWorkbenchActivity::class.java)) },
+        onScan = { context.startActivity(Intent(context, ResumableSmartScanActivity::class.java)) },
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
         onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
         onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },
