@@ -702,6 +702,12 @@ class MiuixDashboardActivity : ComponentActivity() {
                 connected = true,
                 ready = ready,
                 serviceText = if (dashboardState.value.connectionFailed) recoveryFailureText() else status,
+                automationAvailable = module && scheduler,
+                automationText = when {
+                    module && scheduler -> "自动清理模块已启用"
+                    module -> "模块已安装，但后台调度器未就绪"
+                    else -> "未安装自动清理模块"
+                },
                 versionWarning = versionWarning(),
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
