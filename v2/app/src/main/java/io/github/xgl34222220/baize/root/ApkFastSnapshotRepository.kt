@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.root
 
+import android.os.Build
 import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
@@ -9,13 +10,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Converts MediaStore hits into the same immutable APK snapshot consumed by apk-cleaner.sh.
  * No directory traversal happens here: cost is proportional only to the number of indexed hits.
  */
 internal class ApkFastSnapshotRepository(
-    private val stateDir: File = File(RootPaths.STATE_DIR)
+    private val stateDir: File = File(RootPaths.STATE_DIR),
+    private val cancelled: AtomicBoolean = AtomicBoolean(false)
 ) {
     private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
 
@@ -52,7 +55,7 @@ internal class ApkFastSnapshotRepository(
             if (whitelistPaths.any { pathContains(it, canonical) }) { protected += 1; return }
             val objectKey = "${stat.st_dev}:${stat.st_ino}"
             if (!seenObjects.add(objectKey)) return
-            val identity = "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
+            val identity = fastIdentity(stat)
             accepted += Candidate(canonical, file.name, stat.st_size, identity)
             if (fromSupplement) supplemented += 1
         }
