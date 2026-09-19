@@ -9,6 +9,8 @@ import org.json.JSONObject
 import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -117,24 +119,40 @@ internal class ForegroundCacheEngine(
         var totalFiles = 0L
         var visitedDirs = 0L
 
-        roots.forEachIndexed { index, seed ->
-            if (cancelled.get()) return@forEachIndexed
-            progress("正在扫描应用缓存", index, roots.size, seed.path)
-            val stats = measure(seed.file)
-            visitedDirs += stats.directories
-            if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L) {
-                items += Item(
-                    packageName = seed.packageName,
-                    appName = labels[seed.packageName].orEmpty().ifBlank { seed.packageName },
-                    category = seed.category,
-                    path = seed.path,
-                    bytes = stats.bytes,
-                    files = stats.files,
-                    directories = stats.directories
-                )
-                totalBytes += stats.bytes
-                totalFiles += stats.files
+        val workerCount = minOf(
+            roots.size.coerceAtLeast(1),
+            (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
+        )
+        val executor = Executors.newFixedThreadPool(workerCount)
+        try {
+            val futures = roots.map { seed ->
+                executor.submit(Callable {
+                    MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(seed.file))
+                })
             }
+            futures.forEachIndexed { index, future ->
+                if (cancelled.get()) return@forEachIndexed
+                val measured = runCatching { future.get() }.getOrNull() ?: return@forEachIndexed
+                val seed = measured.seed
+                val stats = measured.stats
+                progress("正在扫描应用缓存", index + 1, roots.size, seed.path)
+                visitedDirs += stats.directories
+                if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L) {
+                    items += Item(
+                        packageName = seed.packageName,
+                        appName = labels[seed.packageName].orEmpty().ifBlank { seed.packageName },
+                        category = seed.category,
+                        path = seed.path,
+                        bytes = stats.bytes,
+                        files = stats.files,
+                        directories = stats.directories
+                    )
+                    totalBytes += stats.bytes
+                    totalFiles += stats.files
+                }
+            }
+        } finally {
+            executor.shutdownNow()
         }
 
         return Snapshot(
@@ -230,6 +248,11 @@ internal class ForegroundCacheEngine(
         val category: String,
         val file: File,
         val path: String
+    )
+
+    private data class MeasuredRoot(
+        val seed: CacheSeed,
+        val stats: Stats
     )
 
     private fun discoverCacheRoots(whitelist: Set<String>, labels: Map<String, String>): List<CacheSeed> {
