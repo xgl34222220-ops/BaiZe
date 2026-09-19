@@ -6,6 +6,8 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
+import android.provider.Settings
 import android.media.MediaScannerConnection
 import android.os.Bundle
 import android.os.IBinder
@@ -281,6 +283,20 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun startSmartScan() {
         if (screenState.running) return
+        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+            screenState = screenState.copy(
+                phase = "需要“所有文件访问”才能完成安装包、大文件和存储扫描"
+            )
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            return
+        }
         val cache = cacheService
         val plans = planService
         val transactions = resumeService
