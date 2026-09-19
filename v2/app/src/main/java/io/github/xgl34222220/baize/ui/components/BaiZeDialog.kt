@@ -36,7 +36,9 @@ internal fun BaiZeDialog(
     text: (@Composable () -> Unit)? = null
 ) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * .86f).dp
+    val contentDensity = LocalDensity.current
     Dialog(onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        CompositionLocalProvider(LocalDensity provides contentDensity) {
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
         val appearance = LocalAppearanceSettings.current
         val blur = appearance.blurEnabled && !PerformanceRuntime.degraded.value
@@ -73,6 +75,7 @@ internal fun BaiZeDialog(
                     }
                 }
             }
+        }
         }
     }
 }

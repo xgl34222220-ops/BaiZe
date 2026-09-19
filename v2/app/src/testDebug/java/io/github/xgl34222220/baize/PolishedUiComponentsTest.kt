@@ -61,6 +61,7 @@ class PolishedUiComponentsTest {
     fun largeFontConfirmationHasReachableActionsAndCancelDoesNotClean() {
         var open by mutableStateOf(true)
         var cleaned = 0
+        var dialogFontScale = 0f
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
@@ -69,7 +70,8 @@ class PolishedUiComponentsTest {
                     if (open) BaiZeDialog(onDismissRequest = { open = false },
                         title = {
                             val view = LocalView.current
-                            SideEffect { dialogView = view.rootView }
+                            val fontScale = LocalDensity.current.fontScale
+                            SideEffect { dialogView = view.rootView; dialogFontScale = fontScale }
                             Text("确认清理高风险项目")
                         },
                         text = { Text(("请核对完整路径：/storage/emulated/0/Android/data/example.app/files/离线文件。\n").repeat(15)) },
@@ -78,6 +80,7 @@ class PolishedUiComponentsTest {
                 }
             }
         }
+        compose.runOnIdle { assertEquals(1.5f, dialogFontScale, .001f) }
         compose.onNodeWithText("确认清理").assertIsDisplayed()
         compose.onNodeWithText("返回核对").assertIsDisplayed()
         save("v7-dialog-dark-large-font")
