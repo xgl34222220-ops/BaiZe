@@ -257,7 +257,7 @@ while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
     printf 'protected\tlow\t目标已变化\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
     continue
   fi
-  current_identity=$(stat -c '%d:%i:%s:%Y:%Z' "$target" 2>/dev/null) || current_identity=
+  current_identity=$(stat -c '%d:%i:%s:%y:%z' "$target" 2>/dev/null) || current_identity=
   if [ -z "$current_identity" ] || [ "$current_identity" != "$expected_identity" ]; then
     skipped=$((skipped + 1))
     printf 'protected\tlow\t扫描后已修改\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
