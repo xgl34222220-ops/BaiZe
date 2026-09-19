@@ -106,7 +106,7 @@ class UiVisualReviewTest {
     fun narrowLargeFontRecords() = render("records-narrow-large-font", 2, fontScale = 1.3f)
 
     @Test fun homePlanOpensAutomaticPlan() {
-        render("home-plan-entry", 0)
+        render("home-plan-entry", 0, automationAvailable = true)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理模块"))
         compose.onNodeWithText("自动清理模块").performScrollTo().performClick()
         compose.waitForIdle()
@@ -127,9 +127,9 @@ class UiVisualReviewTest {
     @Test fun groupedHomeToolsKeepTheirOwnActions() {
         val calls = mutableListOf<String>()
         render("home-tools", 0, actions = previewActions.copy(
-            apkScan = { calls += "apk" }, organize = { calls += "organize" },
-            deep = { calls += "deep" }, whitelist = { calls += "whitelist" }))
-        listOf("安装包", "文件归类", "深度清理", "白名单").forEach { title ->
+            apkScan = { calls += "apk" }, largeFiles = { calls += "large" },
+            duplicates = { calls += "duplicates" }, storageAnalysis = { calls += "analysis" }))
+        listOf("安装包", "大文件", "重复文件", "存储分析").forEach { title ->
             val list = compose.onNode(hasScrollAction())
             list.performScrollToNode(hasText(title))
             val node = compose.onNodeWithText(title).performScrollTo()
@@ -145,7 +145,7 @@ class UiVisualReviewTest {
                 node.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
             node.assertIsDisplayed().performClick()
         }
-        assertEquals(listOf("apk", "organize", "deep", "whitelist"), calls)
+        assertEquals(listOf("apk", "large", "duplicates", "analysis"), calls)
     }
 
     @Test fun disconnectedHomeOnlyReconnects() {
@@ -206,10 +206,12 @@ class UiVisualReviewTest {
         blur: Boolean = false,
         actions: DashboardActions = previewActions,
         safeInset: Int = 0,
+        automationAvailable: Boolean = false,
     ) {
         val state = DashboardUiState(
             ready = connected,
             connected = connected,
+            automationAvailable = automationAvailable,
             serviceText = if (connected) "清理服务已就绪" else "请授予 Root 权限",
             schedulerText = "定时计划已启用",
             storageTotal = 256L * 1024 * 1024 * 1024,

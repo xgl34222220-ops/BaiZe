@@ -38,13 +38,13 @@ class StorageWorkbenchUiTest {
                 onCategory = { state = state.copy(category = it, selected = emptySet()) },
                 onToggleAll = { state = state.toggleAllSelection() })
         } }
-        save("v5-analysis-overview")
+        save("v6-analysis-overview")
         compose.onNodeWithText("视频", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("海边日落.mp4").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("全选当前结果").performClick()
         compose.onNodeWithText("删除已选 2 项").assertIsDisplayed()
         assertEquals(setOf("uri1", "uri3"), state.selected)
-        save("v5-analysis-video")
+        save("v6-analysis-video")
     }
 
     @Test
@@ -64,7 +64,7 @@ class StorageWorkbenchUiTest {
         compose.onNodeWithText("全选当前结果").performClick()
         compose.onNodeWithText("删除已选 1 项").assertIsDisplayed()
         compose.onNodeWithText("海边日落.mp4").performScrollTo()
-        save("v5-large-dark-320")
+        save("v6-large-dark-320")
     }
 
     @Test fun apkVersionFilterBulkSelection() {
@@ -77,12 +77,41 @@ class StorageWorkbenchUiTest {
             ApkScanScreen(state, {}, {}, {}, {}, {}, onToggleAll = { state = state.toggleAllSelection() },
                 onFilter = { state = state.copy(filter = it, selected = emptySet()) })
         } }
-        compose.onNodeWithText("低于已装版本").performScrollTo().performClick()
+        compose.onNodeWithText("低于已装版本").assertDoesNotExist()
+        compose.onNodeWithContentDescription("筛选安装包").performScrollTo().performClick()
+        compose.onNodeWithText("低于已装版本").performClick()
+        compose.onNodeWithText("应用").performClick()
         compose.onNodeWithText("全选").performClick()
         assertEquals(setOf(old.uri), state.selected)
         compose.onNodeWithText("地图_1.0.apk").performScrollTo()
-        save("v5-apk-version-filter")
+        save("v6-apk-version-filter")
     }
+    @Test fun filterChangesWaitForApplyAndCancelPreservesSelection() {
+        var state by mutableStateOf(StorageToolsUiState(records = records, buckets = storageBuckets(records),
+            minimumBytes = 100 * StorageToolsViewModel.MIB, selected = setOf("uri1"), status = "扫描完成"))
+        compose.setContent { BaiZeTheme(AppearanceSettings(themeMode = ThemeMode.LIGHT)) {
+            StorageToolsScreen(state, {}, {}, { state = state.toggleSelection(it) }, {}, {},
+                onCategory = { state = state.copy(category = it, selected = emptySet()) },
+                onThreshold = { state = state.copy(minimumBytes = it, selected = emptySet()) },
+                onSort = { state = state.copy(sort = it, selected = emptySet()) },
+                onToggleAll = { state = state.toggleAllSelection() })
+        } }
+        compose.onNodeWithText("最新").assertDoesNotExist()
+        compose.onNodeWithContentDescription("筛选文件").performScrollTo().performClick()
+        compose.onNodeWithText("≥ 500 MB").performScrollTo().performClick()
+        compose.onNodeWithText("取消").performClick()
+        assertEquals(100 * StorageToolsViewModel.MIB, state.minimumBytes)
+        assertEquals(setOf("uri1"), state.selected)
+        compose.onNodeWithContentDescription("筛选文件").performScrollTo().performClick()
+        compose.onNodeWithText("≥ 500 MB").performScrollTo().performClick()
+        compose.onNodeWithText("应用").performClick()
+        assertEquals(500 * StorageToolsViewModel.MIB, state.minimumBytes)
+        assertTrue(state.selected.isEmpty())
+        compose.onNodeWithText("全选当前结果").performClick()
+        assertEquals(setOf("uri1"), state.selected)
+        save("v6-filtered-selection")
+    }
+
     private fun save(name: String) {
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }

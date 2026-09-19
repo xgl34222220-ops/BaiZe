@@ -91,7 +91,8 @@ fun DetailTaskCard(
     onReconnect: () -> Unit,
     scanLabel: String = "开始扫描",
     cleanLabel: String = "清理这些项目",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAction: Boolean = true
 ) {
     DetailGlassPanel(modifier) {
         Text(metricLabel, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -101,7 +102,7 @@ fun DetailTaskCard(
         if (running) {
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
             GlassActionButton("停止当前任务", onStop, modifier = Modifier.fillMaxWidth(), secondary = true)
-        } else {
+        } else if (showAction) {
             GlassActionButton(if (ready) cleanLabel else scanLabel,
                 if (ready) onClean else onScan,
                 enabled = if (ready) cleanEnabled else scanEnabled,

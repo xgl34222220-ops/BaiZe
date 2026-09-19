@@ -58,6 +58,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -573,8 +575,19 @@ internal fun ApkScanScreen(
     onFilter: (ApkInstallStatus?) -> Unit = {}
 ) {
     val context = LocalContext.current
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    if (showFilters) {
+        var filter by remember { mutableStateOf(state.filter) }
+        FileFilterDialog({ showFilters = false }, {
+            if (filter != state.filter) onFilter(filter)
+            showFilters = false
+        }) { FileFilterChoices("安装状态", listOf<ApkInstallStatus?>(null).map { it to "全部状态" } +
+            ApkInstallStatus.entries.map { it to it.label }, filter) { filter = it } }
+    }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
-        topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) },
+        topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) {
+            if (state.cleanReady && !state.running) IconButton(onClick = onScan) { Icon(Icons.Rounded.Refresh, "重新扫描") }
+        } },
         bottomBar = {
             if (state.cleanReady && !state.running) CleanSelectionBar(
                 state.selected.size, state.visibleItems.size, Formatter.formatFileSize(context, state.selectedBytes),
@@ -598,20 +611,12 @@ internal fun ApkScanScreen(
                 cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
                 scanLabel = if (state.cleanReady) "重新扫描" else "开始扫描",
-                cleanLabel = "清理已选 ${state.selected.size} 个安装包"
+                cleanLabel = "清理已选 ${state.selected.size} 个安装包",
+                showAction = !state.cleanReady
             )
         }
         if (state.items.isNotEmpty()) item {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                OutlinedTextField(state.query, onQuery, Modifier.fillMaxWidth(), enabled = !state.running,
-                    singleLine = true, placeholder = { Text("搜索应用、安装包或路径") }, shape = RoundedCornerShape(18.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(state.filter == null, { onFilter(null) }, label = { Text("全部") }, enabled = !state.running)
-                    ApkInstallStatus.entries.forEach { status ->
-                        FilterChip(state.filter == status, { onFilter(status) }, label = { Text(status.label) }, enabled = !state.running)
-                    }
-                }
-            }
+            FileQueryBar(state.query, onQuery, !state.running, "搜索安装包", "筛选安装包", state.filter?.label.orEmpty()) { showFilters = true }
         }
         item {
             DetailSectionHeader("安装包明细", if (state.totalFiles > 0) {
@@ -630,20 +635,11 @@ internal fun ApkScanScreen(
             ApkResultCard(item, first = index == 0, last = index == state.visibleItems.lastIndex,
                 selected = item.uri in state.selected, enabled = !state.running, onToggle = { onToggle(item.uri) })
         }
-        if (state.coverage.isNotEmpty()) {
-            item { DetailSectionHeader("扫描范围", "已读取 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源") }
-            itemsIndexed(state.coverage.take(40), key = { _, item -> "${item.group}|${item.path}" }) { index, item ->
-                val status = if (item.status == "scanned") "已读取" else "部分可用"
-                val summary = "${item.files} 个文件 · ${Formatter.formatFileSize(context, item.bytes)}"
-                DetailResultRow(
-                    title = item.group, value = status, summary = item.reason.ifBlank { summary }, path = item.path,
-                    details = listOf(status, summary, item.path, item.reason).filter { it.isNotBlank() }.joinToString("\n\n"),
-                    icon = Icons.Rounded.Folder, first = index == 0, last = index == minOf(state.coverage.size, 40) - 1,
-                    accent = if (item.status == "scanned") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-            }
+        if (state.coverage.isNotEmpty() || state.output.isNotBlank()) item {
+            DetailExpandableText("扫描详情", state.coverage.joinToString("\n\n") {
+                "${it.group} · ${if (it.status == "scanned") "已读取" else "部分可用"}\n${it.files} 个文件 · ${Formatter.formatFileSize(context, it.bytes)}\n${it.path}\n${it.reason}"
+            } + if (state.output.isNotBlank()) "\n\n${state.output}" else "")
         }
-        if (state.output.isNotBlank()) item { DetailExpandableText("查看任务详情", state.output) }
         item { Spacer(Modifier.height(8.dp)) }
     }
     }

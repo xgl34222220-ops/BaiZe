@@ -15,6 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +42,7 @@ import kotlin.math.roundToInt
 @Composable
 fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actions: DashboardActions,
     onOpenClean: () -> Unit, onOpenPlan: () -> Unit) {
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
@@ -47,7 +51,16 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") {
             LuoShuPageHeader("白泽") {
-                LuoShuHeaderButton(Icons.Rounded.Refresh, "刷新状态", actions.refresh)
+                Box {
+                    LuoShuHeaderButton(Icons.Rounded.MoreVert, "更多操作", { menuOpen = true })
+                    DropdownMenu(menuOpen, { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("刷新状态") }, onClick = { menuOpen = false; actions.refresh() })
+                        if (!state.running && state.scanCompleted) {
+                            if (state.scanFiles > 0) DropdownMenuItem(text = { Text("重新扫描") }, onClick = { menuOpen = false; actions.scan() })
+                            DropdownMenuItem(text = { Text("收起结果") }, onClick = { menuOpen = false; actions.dismissScan() })
+                        }
+                    }
+                }
             }
         }
         item(key = "space") { SpaceHero(state, actions) }
@@ -55,56 +68,28 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LuoShuSection("整理空间", "按文件类型，快速找到需要处理的内容")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val compact = maxWidth.value / LocalDensity.current.fontScale < 240f
-                    if (compact) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            LuoShuShortcut("安装包", "下载后遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
-                            LuoShuShortcut("大文件", "100 MB 以上", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.fillMaxWidth())
-                            LuoShuShortcut("重复文件", "按内容确认", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.fillMaxWidth())
-                            LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.fillMaxWidth())
-                            LuoShuShortcut("卸载残留", "应用残留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.fillMaxWidth())
-                            LuoShuShortcut("文件归类", "下载与接收文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
-                        }
-                    } else if (maxWidth.value / LocalDensity.current.fontScale >= 340f) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val tools = listOf(
+                        Triple("安装包", Icons.Rounded.InstallMobile, actions.apkScan),
+                        Triple("大文件", Icons.Rounded.FolderOpen, actions.largeFiles),
+                        Triple("重复文件", Icons.Rounded.ContentCopy, actions.duplicates),
+                        Triple("存储分析", Icons.Rounded.DataUsage, actions.storageAnalysis)
+                    )
+                    val columns = if (maxWidth.value / LocalDensity.current.fontScale < 240f) 1 else 2
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        tools.chunked(columns).forEach { group ->
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                LuoShuShortcut("安装包", "下载遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                                LuoShuShortcut("大文件", "占用排行", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.weight(1f))
-                                LuoShuShortcut("重复文件", "保留一份", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.weight(1f))
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.weight(1f))
-                                LuoShuShortcut("卸载残留", "遗留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.weight(1f))
-                                LuoShuShortcut("文件归类", "整理文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
-                            }
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                LuoShuShortcut("安装包", "下载后遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                                LuoShuShortcut("大文件", "100 MB 以上", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.weight(1f))
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                LuoShuShortcut("重复文件", "按内容确认", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.weight(1f))
-                                LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.weight(1f))
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                LuoShuShortcut("卸载残留", "应用残留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.weight(1f))
-                                LuoShuShortcut("文件归类", "下载与接收文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                                group.forEach { (label, icon, action) ->
+                                    LuoShuShortcut(label, when (label) {
+                                        "安装包" -> "下载遗留"; "大文件" -> "占用排行"; "重复文件" -> "保留一份"; else -> "空间构成"
+                                    }, icon, action, Modifier.weight(1f))
+                                }
                             }
                         }
                     }
                 }
-                LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.AutoAwesome, "深度清理", "查看应用残留与可清理内容", actions.deep)
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部清理工具", "缓存、规则与更多清理选项", onOpenClean)
-                }
             }
         }
-        item(key = "plan") {
+        if (state.automationAvailable) item(key = "plan") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LuoShuSection("自动清理")
                 LuoShuGroup {
@@ -248,10 +233,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                     !state.ready && !state.scanCompleted -> Icons.Rounded.Security
                     else -> Icons.Rounded.Search
                 })
-            if (!state.running && state.scanCompleted) Column(Modifier.fillMaxWidth()) {
-                if (hasResults) TextButton(actions.scan, Modifier.fillMaxWidth()) { Text("重新扫描") }
-                TextButton(actions.dismissScan, Modifier.fillMaxWidth()) { Text("收起结果") }
-            }
+
         }
     }
 }

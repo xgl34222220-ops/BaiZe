@@ -143,14 +143,18 @@ internal fun StorageToolsScreen(
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然" }
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
-        topBar = { DetailPageHeader(title, subtitle, { if (state.mode == StorageToolMode.ANALYSIS && state.category != null) onCategory(null) else onBack() }) },
+        topBar = { DetailPageHeader(title, subtitle, { if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
+            if (state.allRecords.isNotEmpty() && !state.running && !state.permissionRequired) IconButton(onClick = onScan) {
+                Icon(Icons.Rounded.Refresh, "重新扫描")
+            }
+        } },
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
             state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected, true, onToggleAll, onDelete,
             cleanLabel = "删除已选 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) {
+                if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running && !state.failed && !state.permissionRequired && state.records.isNotEmpty()) {
                     DetailGlassPanel {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -183,19 +187,16 @@ internal fun StorageToolsScreen(
                         Text(state.coverage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (state.elapsedMs > 0) Text("用时 ${"%.1f".format(state.elapsedMs / 1000.0)} 秒", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(14.dp))
+                    if (state.permissionRequired || state.running || state.allRecords.isEmpty()) Spacer(Modifier.height(14.dp))
                     when { state.permissionRequired -> GlassActionButton("开启所有文件访问", onOpenPermission, Modifier.fillMaxWidth())
                         state.running -> GlassActionButton("停止", onStop, Modifier.fillMaxWidth(), secondary = true)
-                        else -> GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true) }
+                        state.allRecords.isEmpty() -> GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true) }
                 }
             }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null) {
                 item { StorageComposition(state.buckets) }
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
                 items(state.buckets, key = { "bucket-${it.key}" }) { bucket -> StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) } }
-            }
-            if (state.mode == StorageToolMode.ANALYSIS && state.category != null) item {
-                TextButton(onClick = { onCategory(null) }, modifier = Modifier.padding(horizontal = 16.dp), enabled = !state.running) { Text("全部分类 / ${storageCategoryLabel(state.category)}") }
             }
             if (state.allRecords.isNotEmpty()) {
                 item { StorageFilters(state, onQuery, onCategory, onSort, onThreshold) }
@@ -221,32 +222,28 @@ internal fun StorageToolsScreen(
 @Composable
 private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit, onCategory: (String?) -> Unit,
                            onSort: (StorageSort) -> Unit, onThreshold: (Long) -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        OutlinedTextField(state.query, onQuery, Modifier.fillMaxWidth(), enabled = !state.running, singleLine = true,
-            placeholder = { Text("搜索名称、路径或应用") }, leadingIcon = { Icon(Icons.Rounded.Search, null) }, shape = RoundedCornerShape(18.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (state.mode != StorageToolMode.ANALYSIS) {
-                FilterChip(state.category == null, { onCategory(null) }, label = { Text("全部") }, enabled = !state.running)
-                state.buckets.forEach { bucket -> FilterChip(state.category == bucket.key, { onCategory(bucket.key) }, label = { Text(bucket.label) }, enabled = !state.running) }
-            }
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (state.mode == StorageToolMode.LARGE) StorageThresholdPicker(state, onThreshold)
-            StorageSort.entries.forEach { sort -> FilterChip(state.sort == sort, { onSort(sort) }, label = { Text(sort.label) }, enabled = !state.running) }
-        }
-    }
-}
-
-@Composable
-private fun StorageThresholdPicker(state: StorageToolsUiState, onThreshold: (Long) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        FilterChip(true, { expanded = true }, enabled = !state.running,
-            label = { Text(if (state.minimumBytes > 0) "≥ ${state.minimumBytes / StorageToolsViewModel.MIB} MB" else "全部大小") },
-            trailingIcon = { Icon(Icons.Rounded.ExpandMore, null, Modifier.size(16.dp)) })
-        DropdownMenu(expanded, { expanded = false }) {
-            listOf(10, 100, 500).forEach { mb -> DropdownMenuItem(text = { Text("至少 $mb MB") },
-                onClick = { expanded = false; onThreshold(mb * StorageToolsViewModel.MIB) }) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
+    val summary = buildList {
+        if (state.mode != StorageToolMode.ANALYSIS && state.category != null) add(storageCategoryLabel(state.category))
+        if (state.mode == StorageToolMode.LARGE) add("≥ ${state.minimumBytes / StorageToolsViewModel.MIB} MB")
+        if (state.sort != StorageSort.SIZE) add("按${state.sort.label}排序")
+    }.joinToString(" · ")
+    FileQueryBar(state.query, onQuery, !state.running, "搜索文件", "筛选文件", summary) { showFilters = true }
+    if (showFilters) {
+        var category by remember { mutableStateOf(state.category) }
+        var sort by remember { mutableStateOf(state.sort) }
+        var minimum by remember { mutableStateOf(state.minimumBytes) }
+        FileFilterDialog(onDismiss = { showFilters = false }, onApply = {
+            if (category != state.category) onCategory(category)
+            if (sort != state.sort) onSort(sort)
+            if (minimum != state.minimumBytes) onThreshold(minimum)
+            showFilters = false
+        }) {
+            if (state.mode != StorageToolMode.ANALYSIS) FileFilterChoices("文件类型",
+                listOf<String?>(null).map { it to "全部类型" } + state.buckets.map { it.key to it.label }, category) { category = it }
+            if (state.mode == StorageToolMode.LARGE) FileFilterChoices("文件大小",
+                listOf(10, 100, 500).map { it * StorageToolsViewModel.MIB to "≥ $it MB" }, minimum) { minimum = it }
+            FileFilterChoices("排序", StorageSort.entries.map { it to it.label }, sort) { sort = it }
         }
     }
 }
