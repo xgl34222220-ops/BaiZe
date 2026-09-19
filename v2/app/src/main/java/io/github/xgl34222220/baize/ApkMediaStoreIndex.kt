@@ -23,12 +23,8 @@ internal data class ApkMediaStoreResult(
     val error: String? = null
 )
 
-/**
- * Fast path for installation archives.
- *
- * MediaProvider already maintains a database for shared-storage files. Reusing that index is
- * dramatically cheaper than recursively walking /data/media or /storage on every tap.
- */
+internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED }
+
 internal object ApkMediaStoreIndex {
     private const val APK_MIME = "application/vnd.android.package-archive"
     private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
@@ -47,7 +43,7 @@ internal object ApkMediaStoreIndex {
             )
         }
 
-        val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val collectionUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
         } else {
             MediaStore.Files.getContentUri("external")
@@ -76,7 +72,7 @@ internal object ApkMediaStoreIndex {
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
         val error = runCatching {
             context.contentResolver.query(
-                uri,
+                collectionUri,
                 projection,
                 selection,
                 args,
@@ -99,7 +95,14 @@ internal object ApkMediaStoreIndex {
                         path.startsWith("/vendor/") || path.startsWith("/product/")) continue
                     val bytes = if (sizeColumn >= 0) cursor.getLong(sizeColumn).coerceAtLeast(0L) else 0L
                     val modified = if (modifiedColumn >= 0) cursor.getLong(modifiedColumn).coerceAtLeast(0L) else 0L
-                    byPath[path] = IndexedApkCandidate(id, ContentUris.withAppendedId(uri, id).toString(), path, safeName, bytes, modified)
+                    byPath[path] = IndexedApkCandidate(
+                        id = id,
+                        uri = ContentUris.withAppendedId(collectionUri, id).toString(),
+                        path = path,
+                        name = safeName,
+                        bytes = bytes,
+                        modifiedSeconds = modified
+                    )
                 }
             }
         }.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message.orEmpty()}" }
@@ -109,6 +112,8 @@ internal object ApkMediaStoreIndex {
             elapsedMs = SystemClock.elapsedRealtime() - started,
             error = error
         )
+    }
+
     @Suppress("DEPRECATION")
     fun deleteIfUnchanged(
         context: Context,
@@ -136,12 +141,10 @@ internal object ApkMediaStoreIndex {
         if (current.first != expectedPath || current.second != expectedBytes ||
             (expectedModifiedSeconds > 0L && current.third != expectedModifiedSeconds)
         ) return ApkIndexedDeleteResult.CHANGED
+
         return runCatching {
             if (context.contentResolver.delete(itemUri, null, null) > 0) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
         }.getOrDefault(ApkIndexedDeleteResult.FAILED)
     }
-    }
 }
-
-internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED }
