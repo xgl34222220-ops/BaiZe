@@ -6,9 +6,9 @@ import java.io.File
 internal object RuntimeTaskOwnership {
     private val markers = listOf(
         "task-worker.sh", "worker-runner.sh", "organizer-worker.sh", "cache-lane-worker.sh",
-        "cleaner.sh", "cleaner.sh.compat", "native-cleaner.sh", "profile-cleaner.sh",
-        "cache-snapshot-clean.sh", "cache-transaction.sh", "one-pass-scan.sh", "native-scan.sh",
-        "apk-scanner.sh", "apk-cleaner.sh", "apk-snapshot-scan.sh", "apk-snapshot-clean.sh",
+        "cleaner.sh", "cleaner-compat.sh", "native-cleaner.sh", "profile-cleaner.sh",
+        "cache-snapshot-clean.sh", "cache-transaction.sh", "one-pass-scan.sh", "native-cleaner.sh",
+        "apk-scanner.sh", "apk-cleaner.sh", "apk-scanner.sh", "apk-cleaner.sh",
         "deep-scan-manifest.sh", "deep-manifest-clean.sh", "baize_engine", "baize_deep_snapshot"
     )
 

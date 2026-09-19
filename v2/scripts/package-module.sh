@@ -27,23 +27,12 @@ cp -a "$MODULE/." "$STAGE/"
 rm -rf "$STAGE/webroot" "$STAGE/webui" "$STAGE/www" "$STAGE/ksu-webui"
 cp -a "$REPO/config" "$STAGE/config"
 
-cp -f "$STAGE/native-scan.sh" "$STAGE/native-cleaner.sh"
-cp -f "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/profile-cleaner.sh"
-cp -f "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-scanner.sh"
-cp -f "$STAGE/apk-snapshot-clean.sh" "$STAGE/apk-cleaner.sh"
-cp -f "$STAGE/scheduler-v2.5.sh" "$STAGE/scheduler.sh"
-rm -f "$STAGE/native-scan.sh" "$STAGE/profile-snapshot-clean-fast.sh" "$STAGE/apk-snapshot-scan.sh" "$STAGE/apk-snapshot-clean.sh" "$STAGE/cleaner.native.sh" "$STAGE/scheduler-v2.5.sh"
-
-# 兼容清理引擎直接拷贝，不再做构建期 sed 改写。
-# STATE_DIR 与 MODULE_TAG 已改为环境变量注入且默认值即 v2 的取值，
-# 源码与打包产物行为一致，本地可直接复现。
-cp -f "$REPO/cleaner.sh" "$STAGE/cleaner.sh.compat"
-cp -f "$REPO/notify.sh" "$STAGE/notify.sh"
-grep -q 'STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}' "$STAGE/cleaner.sh.compat" || {
+# Source names and package names now match; scripts are copied without rewriting.
+grep -q 'STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}' "$STAGE/scripts/cleaner-compat.sh" || {
   echo "兼容引擎未使用 v2 状态目录默认值，拒绝打包" >&2
   exit 1
 }
-grep -q 'MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}' "$STAGE/cleaner.sh.compat" || {
+grep -q 'MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}' "$STAGE/scripts/cleaner-compat.sh" || {
   echo "兼容引擎未使用 v2 模块标识默认值，拒绝打包" >&2
   exit 1
 }
@@ -66,12 +55,9 @@ done
 [ -n "$packed_abis" ] || { echo "没有可打包的原生引擎" >&2; exit 1; }
 echo "已打包 ABI：$packed_abis"
 
-chmod 0755 "$STAGE/storage-index.sh" "$STAGE/task-worker.sh" "$STAGE/cache-lane-worker.sh" "$STAGE/organizer-worker.sh"
-chmod 0755 "$STAGE/cleaner.sh" "$STAGE/native-cleaner.sh" "$STAGE/cache-snapshot-clean.sh" "$STAGE/cache-transaction.sh" "$STAGE/one-pass-scan.sh" "$STAGE/profile-cleaner.sh" "$STAGE/deep-scan-manifest.sh" "$STAGE/deep-manifest-clean.sh" "$STAGE/apk-scanner.sh" "$STAGE/apk-cleaner.sh"
-chmod 0644 "$STAGE/abi-resolve.sh"
-chmod 0755 "$STAGE/cleaner.sh.compat"
-chmod 0755 "$STAGE/notify.sh" "$STAGE/scheduler.sh" "$STAGE/service.sh" "$STAGE/action.sh" "$STAGE/uninstall.sh"
-chmod 0755 "$STAGE/quarantine-manager.sh" "$STAGE/large-file-scanner.sh" "$STAGE/duplicate-scanner.sh" "$STAGE/storage-analyzer.sh" "$STAGE/diagnostics-export.sh" "$STAGE/app-installer.sh" "$STAGE/supervisor.sh" "$STAGE/autopilot-controller.sh" "$STAGE/worker-runner.sh" "$STAGE/task-worker.sh" "$STAGE/rules-validator.sh" "$STAGE/organizer-worker.sh" "$STAGE/cache-lane-worker.sh"
+# One permissions policy replaces repeated per-script chmod lists.
+chmod 0755 "$STAGE"/*.sh "$STAGE/scripts"/*.sh
+chmod 0644 "$STAGE/scripts/abi-resolve.sh" "$STAGE/module.prop" "$STAGE/skip_mount"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
 chmod 0644 "$STAGE/app/baize.apk"
@@ -99,69 +85,69 @@ unzip -l "$OUTPUT" | grep -q 'storage-index.sh'
 unzip -l "$OUTPUT" | grep -q 'apk-paths.sh'
 unzip -l "$OUTPUT" | grep -q 'task-worker.sh'
 unzip -l "$OUTPUT" | grep -q 'cache-lane-worker.sh'
-unzip -p "$OUTPUT" cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
+unzip -p "$OUTPUT" scripts/cache-lane-worker.sh | grep -q 'BAIZE_ROOT_STATE_DIR'
 unzip -l "$OUTPUT" | grep -q 'organizer-worker.sh'
 unzip -l "$OUTPUT" | grep -q 'autopilot-controller.sh'
-unzip -p "$OUTPUT" autopilot-controller.sh | grep -q 'autopilot_zero_yield_streak'
-unzip -p "$OUTPUT" supervisor.sh | grep -q 'run_autopilot'
-unzip -p "$OUTPUT" scheduler.sh | grep -q 'resource-lane scheduler'
-unzip -p "$OUTPUT" scheduler.sh | grep -q 'run_parallel_pair'
-unzip -p "$OUTPUT" scheduler.sh | grep -q 'fixed-seven-fields-v1'
-unzip -p "$OUTPUT" task-worker.sh | grep -q "detached-root-worker-$(sed -n 's/^version=//p' "$REPO/module.prop" | head -n1)"
-unzip -p "$OUTPUT" task-worker.sh | grep -q 'organize'
-unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'organizer-result.env'
-unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'operation=module-organize'
-unzip -p "$OUTPUT" organizer-worker.sh | grep -q 'build_fallback_index'
+unzip -p "$OUTPUT" scripts/autopilot-controller.sh | grep -q 'autopilot_zero_yield_streak'
+unzip -p "$OUTPUT" scripts/supervisor.sh | grep -q 'run_autopilot'
+unzip -p "$OUTPUT" scripts/scheduler.sh | grep -q 'resource-lane scheduler'
+unzip -p "$OUTPUT" scripts/scheduler.sh | grep -q 'run_parallel_pair'
+unzip -p "$OUTPUT" scripts/scheduler.sh | grep -q 'fixed-seven-fields-v1'
+unzip -p "$OUTPUT" scripts/task-worker.sh | grep -q "detached-root-worker-$(sed -n 's/^version=//p' "$REPO/module.prop" | head -n1)"
+unzip -p "$OUTPUT" scripts/task-worker.sh | grep -q 'organize'
+unzip -p "$OUTPUT" scripts/organizer-worker.sh | grep -q 'organizer-result.env'
+unzip -p "$OUTPUT" scripts/organizer-worker.sh | grep -q 'operation=module-organize'
+unzip -p "$OUTPUT" scripts/organizer-worker.sh | grep -q 'build_fallback_index'
 unzip -l "$OUTPUT" | grep -q 'profile-cleaner.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-scan-manifest.sh'
 unzip -l "$OUTPUT" | grep -q 'deep-manifest-clean.sh'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_deep_snapshot'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_compat_filter'
-unzip -p "$OUTPUT" cleaner.sh.compat | grep -q 'baize_compat_filter'
+unzip -p "$OUTPUT" scripts/cleaner-compat.sh | grep -q 'baize_compat_filter'
 unzip -l "$OUTPUT" | grep -q 'abi-resolve.sh'
 unzip -l "$OUTPUT" | grep -q 'config/risk-overrides.conf'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-scan-manifest.sh'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'deep-manifest-clean.sh'
-unzip -p "$OUTPUT" deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
-unzip -p "$OUTPUT" deep-scan-manifest.sh | grep -q 'manifest_sha='
-unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
-unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -q 'deep_remaining_records'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'deep-scan-manifest.sh'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'deep-manifest-clean.sh'
+unzip -p "$OUTPUT" scripts/deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
+unzip -p "$OUTPUT" scripts/deep-scan-manifest.sh | grep -q 'manifest_sha='
+unzip -p "$OUTPUT" scripts/deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
+unzip -p "$OUTPUT" scripts/deep-manifest-clean.sh | grep -q 'deep_remaining_records'
 unzip -p "$OUTPUT" service.sh | grep -q 'RUNTIME_SCHEMA=deep-manifest-v1'
-if unzip -p "$OUTPUT" deep-manifest-clean.sh | grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]'; then
+if unzip -p "$OUTPUT" scripts/deep-manifest-clean.sh | grep -Eq '(^|[[:space:]])find[[:space:]]|xargs[[:space:]]'; then
   echo "深度不可变快照清理器不得重新枚举目录" >&2
   exit 1
 fi
 unzip -l "$OUTPUT" | grep -q 'apk-scanner.sh'
 unzip -l "$OUTPUT" | grep -q 'apk-cleaner.sh'
-unzip -l "$OUTPUT" | grep -q 'cleaner.sh.compat'
+unzip -l "$OUTPUT" | grep -q 'cleaner-compat.sh'
 unzip -l "$OUTPUT" | grep -q 'bin/arm64-v8a/baize_engine'
 unzip -l "$OUTPUT" | grep -q 'scheduler.sh'
 unzip -l "$OUTPUT" | grep -q 'config/deep.rules'
 unzip -l "$OUTPUT" | grep -q 'config/organizer-categories.conf'
 # 归类分类表必须与索引侧同源，缺了会导致大量文件永远归类不到
 unzip -p "$OUTPUT" config/organizer-categories.conf | grep -q '^音频=' 
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'profile-cleaner.sh'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-snapshot-clean.sh'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'cache-transaction.sh'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'scan-external-one-pass'
-unzip -p "$OUTPUT" storage-index.sh | grep -q 'Android/media'
-unzip -p "$OUTPUT" storage-index.sh | grep -q 'Android/data'
-unzip -p "$OUTPUT" storage-index.sh | grep -q 'QQfile_recv'
-unzip -p "$OUTPUT" storage-index.sh | grep -q 'nu.gpu.nagramx\|Android/data'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'one_pass_app_dirs'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'whitelist_index_queries'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'pruned_subtrees'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
-unzip -p "$OUTPUT" one-pass-scan.sh | grep -q 'parallel_overlap_milli'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'profile-cleaner.sh'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'cache-snapshot-clean.sh'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'cache-transaction.sh'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'scan-external-one-pass'
+unzip -p "$OUTPUT" scripts/storage-index.sh | grep -q 'Android/media'
+unzip -p "$OUTPUT" scripts/storage-index.sh | grep -q 'Android/data'
+unzip -p "$OUTPUT" scripts/storage-index.sh | grep -q 'QQfile_recv'
+unzip -p "$OUTPUT" scripts/storage-index.sh | grep -q 'nu.gpu.nagramx\|Android/data'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'one_pass_app_dirs'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'whitelist_index_queries'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'pruned_subtrees'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'BAIZE_ROOT_WORKERS'
+unzip -p "$OUTPUT" scripts/one-pass-scan.sh | grep -q 'parallel_overlap_milli'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^scan_root_workers=0$'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^autopilot_enabled=1$'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^schedule_cache_minutes=1440$'
 unzip -p "$OUTPUT" config/default.conf | grep -q '^app_cache_days=2$'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-scanner.sh'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'apk-cleaner.sh'
-unzip -p "$OUTPUT" cleaner.sh | grep -q 'native-cleaner.sh'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-snapshot-v2.3-global-index'
-unzip -p "$OUTPUT" apk-scanner.sh | grep -q 'apk-files.nul'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'apk-scanner.sh'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'apk-cleaner.sh'
+unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'native-cleaner.sh'
+unzip -p "$OUTPUT" scripts/apk-scanner.sh | grep -q 'apk-snapshot-v2.3-global-index'
+unzip -p "$OUTPUT" scripts/apk-scanner.sh | grep -q 'apk-files.nul'
 unzip -p "$OUTPUT" module.prop | grep -Fqx "version=$VERSION"
 unzip -p "$OUTPUT" module.prop | grep -Fqx "versionCode=$VERSION_CODE"
 EXPECTED_INSTALL_LINE=$(printf 'ui_print "- 正在安装白泽 %s"' "$VERSION")
@@ -176,9 +162,10 @@ if unzip -Z1 "$OUTPUT" | grep -Eq '^(webroot|webui|www|ksu-webui)/'; then
 fi
 EXPECTED_DEEP_SHA=$(sha256sum "$REPO/config/deep.rules" | awk '{print $1}')
 unzip -p "$OUTPUT" config/deep.rules | sha256sum | grep -q "^$EXPECTED_DEEP_SHA"
-unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -q 'clean-cache-snapshot'
-if unzip -p "$OUTPUT" cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache|xargs[[:space:]].*rm'; then
+unzip -p "$OUTPUT" scripts/cache-snapshot-clean.sh | grep -q 'clean-cache-snapshot'
+if unzip -p "$OUTPUT" scripts/cache-snapshot-clean.sh | grep -Eq 'find[[:space:]].*cache|xargs[[:space:]].*rm'; then
   echo "缓存快照清理器不得重新枚举目录生成删除名单" >&2
   exit 1
 fi
+python3 "$ROOT/scripts/verify-module-layout.py" "$OUTPUT" "$REPO/design/app-icons/official-icon.webp"
 echo "已生成白泽 $VERSION 深度不可变快照模块：$OUTPUT"

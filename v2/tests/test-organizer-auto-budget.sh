@@ -4,7 +4,7 @@ ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 T=${TMPDIR:-/tmp}/baize-organizer-auto-budget
 rm -rf "$T"
 mkdir -p "$T/module" "$T/media/0/Download" "$T/media/0/DCIM/Camera" "$T/state"
-cp "$ROOT/v2/module/organizer-worker.sh" "$T/module/organizer-worker.sh"
+cp "$ROOT/v2/module/scripts/organizer-worker.sh" "$T/module/organizer-worker.sh"
 cat >"$T/module/storage-index.sh" <<'SH'
 #!/bin/sh
 touch "${BAIZE_STATE_DIR}/full-index-was-called"

@@ -27,12 +27,12 @@ fi
 echo "分类表：$(awk -F= '!/^#/ && NF>1' "$CONF" | wc -l | tr -d ' ') 个分类，$conf_count 个扩展名"
 
 # ——— 各处不得再有写死的扩展名清单 ———
-if grep -qE '\*\.(jpe?g|mp4|mp3)\|' "$ROOT/v2/module/storage-index.sh"; then
+if grep -qE '\*\.(jpe?g|mp4|mp3)\|' "$ROOT/v2/module/scripts/storage-index.sh"; then
   echo "  [FAIL] storage-index.sh 仍有写死的 organizer 扩展名清单"; fail=$((fail+1))
 fi
-grep -q 'organizer-exts' "$ROOT/v2/module/storage-index.sh" || {
+grep -q 'organizer-exts' "$ROOT/v2/module/scripts/storage-index.sh" || {
   echo "  [FAIL] storage-index.sh 未把分类表传给原生索引器"; fail=$((fail+1)); }
-grep -q 'organizer_categories_load' "$ROOT/v2/module/organizer-worker.sh" || {
+grep -q 'organizer_categories_load' "$ROOT/v2/module/scripts/organizer-worker.sh" || {
   echo "  [FAIL] organizer-worker.sh 未从分类表载入"; fail=$((fail+1)); }
 grep -q 'load_organizer_exts' "$ROOT/v2/native/baize_engine_42_4.c" || {
   echo "  [FAIL] 原生引擎未从分类表载入"; fail=$((fail+1)); }
@@ -50,9 +50,9 @@ fi
 
 # ——— 用真实的 category_for 验证每个扩展名都能归到类 ———
 T=${TMPDIR:-/tmp}/baize-org-cat; rm -rf "$T"; mkdir -p "$T"
-sed -n '/^BAIZE_CAT_MAP=/,/^}$/p' "$ROOT/v2/module/organizer-worker.sh" > "$T/fn.sh"
-sed -n '/^organizer_lower()/,/^}$/p' "$ROOT/v2/module/organizer-worker.sh" >> "$T/fn.sh"
-sed -n '/^category_for()/,/^}$/p' "$ROOT/v2/module/organizer-worker.sh" >> "$T/fn.sh"
+sed -n '/^BAIZE_CAT_MAP=/,/^}$/p' "$ROOT/v2/module/scripts/organizer-worker.sh" > "$T/fn.sh"
+sed -n '/^organizer_lower()/,/^}$/p' "$ROOT/v2/module/scripts/organizer-worker.sh" >> "$T/fn.sh"
+sed -n '/^category_for()/,/^}$/p' "$ROOT/v2/module/scripts/organizer-worker.sh" >> "$T/fn.sh"
 # shellcheck disable=SC1090
 . "$T/fn.sh"
 organizer_categories_load "$CONF" || { echo "  [FAIL] 载入分类表失败"; exit 1; }

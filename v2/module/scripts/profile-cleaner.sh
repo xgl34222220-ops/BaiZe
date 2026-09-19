@@ -3,6 +3,10 @@
 set -u
 
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-deep-clean}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -56,7 +60,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-scan.sh*|*profile-snapshot-clean*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-snapshot-clean*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;;
   esac
   return 1
 }
@@ -149,8 +153,8 @@ path_relation() {
 }
 
 # 白名单匹配。测试夹具可能只暂存部分脚本，缺失时退回内联实现。
-if [ -f "$MODDIR/whitelist-match.sh" ]; then
-  . "$MODDIR/whitelist-match.sh"
+if [ -f "$SCRIPTDIR/whitelist-match.sh" ]; then
+  . "$SCRIPTDIR/whitelist-match.sh"
 else
   baize_whitelist_load() {
     _wl_file=${1:-${WHITELIST:-}}

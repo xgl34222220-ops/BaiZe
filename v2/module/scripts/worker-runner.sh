@@ -1,12 +1,16 @@
 #!/system/bin/sh
 set -u
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:?mode}
 TRIGGER=${2:?trigger}
 TASK_ID=${3:?task_id}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
-CLEANER="$MODDIR/cleaner.sh"
-ORGANIZER="$MODDIR/organizer-worker.sh"
+CLEANER="$SCRIPTDIR/cleaner.sh"
+ORGANIZER="$SCRIPTDIR/organizer-worker.sh"
 RESULT_DIR="$STATE_DIR/task-results"
 RESULT_FILE="$RESULT_DIR/$TASK_ID.env"
 WORKER_FILE="$STATE_DIR/worker.env"

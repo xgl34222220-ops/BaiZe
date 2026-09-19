@@ -1,10 +1,14 @@
 #!/system/bin/sh
-# 兼容清理引擎（v1）。当 v2 原生引擎不可用时由 v2/module/cleaner.sh 退回到这里，
-# 打包为 cleaner.sh.compat。
+# 兼容清理引擎（v1）。当 v2 原生引擎不可用时由 v2/module/scripts/cleaner.sh 退回到这里，
+# 打包为 cleaner-compat.sh。
 #
 # STATE_DIR 与 MODULE_TAG 通过环境变量注入，默认值即 v2 的取值。
 # 此前打包脚本靠构建期 sed 改写这两处，源码与产物行为不一致且难以本地复现。
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 # 进程匹配用的模块目录名，v1 独立安装时为 safesweep。
 MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}
@@ -63,7 +67,7 @@ pid_is_safesweep() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
+    *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*|*apk-scanner.sh*|*apk-scanner.sh*) return 0 ;;
   esac
   return 1
 }
@@ -357,8 +361,8 @@ first_nul_path() {
 # It cannot discover or delete targets; unsupported ABIs keep the shell path.
 COMPAT_FILTER_ENGINE=""
 RULE_SCAN_ENGINE=""
-if [ -f "$MODDIR/abi-resolve.sh" ]; then
-  . "$MODDIR/abi-resolve.sh"
+if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
   COMPAT_FILTER_ENGINE=$(baize_resolve_engine "$MODDIR" baize_compat_filter 2>/dev/null) || COMPAT_FILTER_ENGINE=""
   RULE_SCAN_ENGINE=$(baize_resolve_engine "$MODDIR" baize_engine 2>/dev/null) || RULE_SCAN_ENGINE=""
 fi
@@ -521,7 +525,7 @@ send_completion_notification() {
   short="$RESULT"
   total_space=$(human_bytes "$CUM_BYTES")
   body="$RESULT · 文件 $FILES · 碎片 $FRAGMENT_FILES · 空文件 $EMPTY_FILES · 空目录 $EMPTY_DIRS · 受保护 $PROTECTED_ITEMS · 未清理 $ERRORS · 耗时 ${ELAPSED}秒；累计清理 $total_space（$CUM_RUNS 次）"
-  notify_result=$(sh "$MODDIR/notify.sh" "$title" "$body" "$short" "baize-$PROFILE" 2>&1)
+  notify_result=$(sh "$SCRIPTDIR/notify.sh" "$title" "$body" "$short" "baize-$PROFILE" 2>&1)
   case "$notify_result" in
     ok:*) log_line "[通知已发送:${notify_result#ok:}] $title" ;;
     *) log_line "[通知未发送] ${notify_result:-系统通知服务拒绝请求}" ;;
@@ -1181,7 +1185,7 @@ run_native_relative_rules() {
   native_rule_source=$1
   native_rule_category=$2
   native_rule_external=${3:-0}
-  [ -f "$MODDIR/abi-resolve.sh" ] || return 1
+  [ -f "$SCRIPTDIR/abi-resolve.sh" ] || return 1
   [ -n "$RULE_SCAN_ENGINE" ] || return 1
   native_rule_engine=$RULE_SCAN_ENGINE
   native_rule_targets="$TMP_DIR/relative-rule-targets.nul"
@@ -2363,8 +2367,8 @@ snapshot_sha256() {
 
 run_apk_packages() {
   MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
-  apk_helper=${BAIZE_APK_PATHS:-$MODDIR/apk-paths.sh}
-  [ -f "$apk_helper" ] || apk_helper="$MODDIR/v2/module/apk-paths.sh"
+  apk_helper=${BAIZE_APK_PATHS:-$SCRIPTDIR/apk-paths.sh}
+  [ -f "$apk_helper" ] || apk_helper="$MODDIR/v2/module/scripts/apk-paths.sh"
   [ -f "$apk_helper" ] || { echo "安装包组件缺失" >&2; return 5; }
   . "$apk_helper"
   apk_load_roots

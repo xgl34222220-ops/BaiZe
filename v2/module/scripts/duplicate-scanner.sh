@@ -2,6 +2,10 @@
 # Read-only duplicate inspection. Reuse index sizes, sample, then verify full hashes.
 set -eu
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 OUT="$STATE_DIR/reports/duplicates.tsv"
@@ -14,7 +18,7 @@ STOP_FILE=${BAIZE_DIAGNOSTIC_STOP_FILE:-$TMP/stop}
 # Read-only tools own their cancellation request. A prior cleaning cancellation
 # must neither block these tools nor be cleared while another task handles it.
 trap ': >"$STOP_FILE"; exit 9' INT TERM
-BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$MODDIR/storage-index.sh" refresh duplicates >&2
+BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$SCRIPTDIR/storage-index.sh" refresh duplicates >&2
 cp "$STATE_DIR/index/duplicate-candidates.tsv" "$TMP/candidates.tsv"
 check_stop() { [ ! -f "$STOP_FILE" ] || exit 9; }
 decode_path() {

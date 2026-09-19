@@ -4,6 +4,10 @@
 set -u
 
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-${1:-manual}}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
@@ -18,8 +22,8 @@ RUNNING_FILE="$STATE_DIR/running.env"
 STOP_FILE="$STATE_DIR/stop"
 HISTORY_FILE="$STATE_DIR/history.tsv"
 # ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
-if [ -f "$MODDIR/abi-resolve.sh" ]; then
-  . "$MODDIR/abi-resolve.sh"
+if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
 else
   baize_device_abis() { printf 'arm64-v8a\narmeabi-v7a\nx86_64\n'; }
   baize_resolve_engine() {
@@ -56,7 +60,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*) return 0 ;;
   esac
   return 1
 }

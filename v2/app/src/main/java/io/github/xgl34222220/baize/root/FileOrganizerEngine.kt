@@ -395,7 +395,7 @@ class FileOrganizerEngine(
         out: MutableMap<String, PlannedMove>,
         progress: (Progress) -> Unit
     ): Pair<Int, JSONArray>? {
-        val script = File("/data/adb/modules/baize_v2/storage-index.sh")
+        val script = RootPaths.script("storage-index.sh")
         if (!script.isFile) return null
         progress(Progress("正在建立全应用共享存储索引", 0, 0, displayPath(script.path)))
         val process = runCatching {

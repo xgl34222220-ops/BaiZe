@@ -3,6 +3,10 @@
 set -u
 # $0 不含斜杠时 ${0%/*} 会原样返回脚本名，这里显式兜底
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-ensure}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -22,15 +26,15 @@ DUPLICATE_CANDIDATES="$INDEX_DIR/duplicate-candidates.tsv"
 LOCK_DIR="$STATE_DIR/index.lock"
 STOP_FILE=${BAIZE_INDEX_STOP_FILE:-$STATE_DIR/stop}
 # 原生索引器。不可用时下面的逐文件循环会作为退路继续工作。
-if [ -f "$MODDIR/abi-resolve.sh" ]; then
-  . "$MODDIR/abi-resolve.sh"
+if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
   NATIVE_ENGINE=$(baize_resolve_engine "$MODDIR" baize_engine 2>/dev/null || true)
 else
   NATIVE_ENGINE=""
 fi
 NATIVE_ENGINE=${BAIZE_NATIVE_ENGINE:-$NATIVE_ENGINE}
 # 归类分类表：索引侧与归类器必须共用同一份来源。打包后位于
-# $MODDIR/config；源码测试直接运行 v2/module/storage-index.sh 时回退仓库根 config。
+# $MODDIR/config；源码测试直接运行 v2/module/scripts/storage-index.sh 时回退仓库根 config。
 ORGANIZER_CATEGORIES=${BAIZE_ORGANIZER_CATEGORIES:-$MODDIR/config/organizer-categories.conf}
 if [ ! -s "$ORGANIZER_CATEGORIES" ] && [ -s "$MODDIR/../../config/organizer-categories.conf" ]; then
   ORGANIZER_CATEGORIES="$MODDIR/../../config/organizer-categories.conf"

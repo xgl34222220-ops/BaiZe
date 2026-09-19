@@ -35,7 +35,7 @@ mk "Docs/plain.dat" 42              # 不进任何扩展名桶
 mkdir -p "$T/media/0/带空格 目录"
 printf 'x' > "$T/media/0/带空格 目录/中文文件.apk"
 
-cp "$ROOT/v2/module/storage-index.sh" "$ROOT/v2/module/abi-resolve.sh" "$T/"
+cp "$ROOT/v2/module/scripts/storage-index.sh" "$ROOT/v2/module/scripts/abi-resolve.sh" "$T/"
 # 归类分类表是模块的一部分，两条路径都要读它
 mkdir -p "$T/config"
 cp "$ROOT/config/organizer-categories.conf" "$T/config/"

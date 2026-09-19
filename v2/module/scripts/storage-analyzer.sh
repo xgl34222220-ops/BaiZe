@@ -2,6 +2,10 @@
 # Aggregate the metadata already collected by the native shared index in one pass.
 set -eu
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 OUT="$STATE_DIR/reports/storage-analysis.tsv"
@@ -13,7 +17,7 @@ STOP_FILE=${BAIZE_DIAGNOSTIC_STOP_FILE:-$TMP/stop}
 # Read-only tools own their cancellation request. A prior cleaning cancellation
 # must neither block these tools nor be cleared while another task handles it.
 trap ': >"$STOP_FILE"; exit 9' INT TERM
-BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$MODDIR/storage-index.sh" refresh storage-analysis >&2
+BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$SCRIPTDIR/storage-index.sh" refresh storage-analysis >&2
 # Decode the index's Base64 path in awk instead of spawning stat/base64 once for
 # every file. Size is from the same complete index generation. No Python needed.
 LC_ALL=C awk -F '\t' '

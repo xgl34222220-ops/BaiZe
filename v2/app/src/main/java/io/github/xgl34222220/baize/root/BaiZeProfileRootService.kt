@@ -145,9 +145,9 @@ class BaiZeProfileRootService : RootService() {
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)
-                .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
+                .put("cleaner", RootPaths.script("cleaner.sh").isFile)
                 .put("deepRules", File(appRules, "deep.rules").isFile)
-                .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
+                .put("scheduler", RootPaths.script("scheduler.sh").isFile)
                 .put("modulePurpose", "background-automation")
                 .put("engine", "app-root-foreground-v1")
                 .also { RootVersionInfo.putInto(it) }

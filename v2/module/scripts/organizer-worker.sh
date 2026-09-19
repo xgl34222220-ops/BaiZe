@@ -3,13 +3,17 @@ set -u
 
 # $0 不含斜杠时 ${0%/*} 会原样返回脚本名，这里显式兜底
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-organize}
 TRIGGER=${2:-app}
 TASK_ID=${3:-$(date +%s)-$$}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
-INDEXER="$MODDIR/storage-index.sh"
+INDEXER="$SCRIPTDIR/storage-index.sh"
 ALL_INDEX="$STATE_DIR/index/storage-files.nul"
 ORGANIZER_INDEX="$STATE_DIR/index/organizer-files.nul"
 # 兜底索引必须写自己的文件。此前 build_fallback_index 直接往 $INDEX_FILE 写，
@@ -57,7 +61,7 @@ lock_alive() {
   case "$la_ticks" in ''|*[!0-9]*) la_ticks=0 ;; esac
   [ "$la_ticks" -eq 0 ] || [ "$current_ticks" = "$la_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$la_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*cache-snapshot-clean.sh*|*native-cleaner.sh*|*baize_engine*) return 0 ;; esac
+  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*cache-snapshot-clean.sh*|*native-cleaner.sh*|*baize_engine*) return 0 ;; esac
   return 1
 }
 

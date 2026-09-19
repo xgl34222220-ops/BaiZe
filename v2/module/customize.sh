@@ -8,10 +8,12 @@ STATE_DIR="/data/adb/baize-v2"
 OLD_MOD="/data/adb/modules/safesweep"
 OLD_UPDATE="/data/adb/modules_update/safesweep"
 OLD_STATE="/data/adb/safesweep"
+SCRIPTDIR="$MODPATH/scripts"
+[ -d "$SCRIPTDIR" ] || SCRIPTDIR="$MODPATH"
 APK="$MODPATH/app/baize.apk"
 HASH_FILE="$MODPATH/app/baize.apk.sha256"
 # 按设备实际 ABI 解析引擎路径，不再假定 arm64。
-. "$MODPATH/abi-resolve.sh"
+. "$SCRIPTDIR/abi-resolve.sh"
 
 # KernelSU/MMRL 等管理器解压 ZIP 时可能不保留原生 ELF 的执行位。
 # ABI 解析器按 -x 选择引擎，所以必须先恢复打包引擎权限再解析。
@@ -27,7 +29,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v1.1.1"
+ui_print "- 正在安装白泽 v2.0.0"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
@@ -37,49 +39,40 @@ mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
 
 [ -f "$APK" ] || abort "! 模块包中缺少 app/baize.apk"
-[ -f "$MODPATH/cleaner.sh" ] || abort "! 模块包中缺少清理总入口"
-[ -f "$MODPATH/native-cleaner.sh" ] || abort "! 模块包中缺少原生扫描执行器"
-[ -f "$MODPATH/cache-snapshot-clean.sh" ] || abort "! 模块包中缺少缓存快照执行器"
-[ -f "$MODPATH/cache-transaction.sh" ] || abort "! 模块包中缺少自动缓存事务执行器"
-[ -f "$MODPATH/apk-scanner.sh" ] || abort "! 模块包中缺少安装包快照扫描器"
-[ -f "$MODPATH/apk-cleaner.sh" ] || abort "! 模块包中缺少安装包快照清理器"
-[ -f "$MODPATH/profile-cleaner.sh" ] || abort "! 模块包中缺少卸载残留快照执行器"
-[ -f "$MODPATH/deep-scan-manifest.sh" ] || abort "! 模块包中缺少深度不可变快照扫描器"
-[ -f "$MODPATH/deep-manifest-clean.sh" ] || abort "! 模块包中缺少深度不可变快照清理器"
-[ -f "$MODPATH/cleaner.sh.compat" ] || abort "! 模块包中缺少兼容清理引擎"
+[ -f "$SCRIPTDIR/cleaner.sh" ] || abort "! 模块包中缺少清理总入口"
+[ -f "$SCRIPTDIR/native-cleaner.sh" ] || abort "! 模块包中缺少原生扫描执行器"
+[ -f "$SCRIPTDIR/cache-snapshot-clean.sh" ] || abort "! 模块包中缺少缓存快照执行器"
+[ -f "$SCRIPTDIR/cache-transaction.sh" ] || abort "! 模块包中缺少自动缓存事务执行器"
+[ -f "$SCRIPTDIR/apk-scanner.sh" ] || abort "! 模块包中缺少安装包快照扫描器"
+[ -f "$SCRIPTDIR/apk-cleaner.sh" ] || abort "! 模块包中缺少安装包快照清理器"
+[ -f "$SCRIPTDIR/profile-cleaner.sh" ] || abort "! 模块包中缺少卸载残留快照执行器"
+[ -f "$SCRIPTDIR/deep-scan-manifest.sh" ] || abort "! 模块包中缺少深度不可变快照扫描器"
+[ -f "$SCRIPTDIR/deep-manifest-clean.sh" ] || abort "! 模块包中缺少深度不可变快照清理器"
+[ -f "$SCRIPTDIR/cleaner-compat.sh" ] || abort "! 模块包中缺少兼容清理引擎"
 [ -n "$NATIVE_ENGINE" ] && [ -f "$NATIVE_ENGINE" ] || \
   abort "! 模块包中没有适配当前架构（$DEVICE_ABIS）的原生扫描器"
 [ -n "$DEEP_SNAPSHOT_ENGINE" ] && [ -f "$DEEP_SNAPSHOT_ENGINE" ] || \
   abort "! 模块包中没有适配当前架构（$DEVICE_ABIS）的深度快照引擎"
 ui_print "- 已匹配架构：$(dirname "$NATIVE_ENGINE" | sed 's|.*/||')"
-[ -f "$MODPATH/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
-[ -f "$MODPATH/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
-[ -f "$MODPATH/autopilot-controller.sh" ] || abort "! 模块包中缺少自动驾驶控制器"
-[ -f "$MODPATH/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
-[ -f "$MODPATH/cache-lane-worker.sh" ] || abort "! 模块包中缺少应用缓存并行 Worker"
-[ -f "$MODPATH/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
+[ -f "$SCRIPTDIR/scheduler.sh" ] || abort "! 模块包中缺少自动调度器"
+[ -f "$SCRIPTDIR/supervisor.sh" ] || abort "! 模块包中缺少调度器守护进程"
+[ -f "$SCRIPTDIR/autopilot-controller.sh" ] || abort "! 模块包中缺少自动驾驶控制器"
+[ -f "$SCRIPTDIR/task-worker.sh" ] || abort "! 模块包中缺少统一 Root Worker"
+[ -f "$SCRIPTDIR/cache-lane-worker.sh" ] || abort "! 模块包中缺少应用缓存并行 Worker"
+[ -f "$SCRIPTDIR/organizer-worker.sh" ] || abort "! 模块包中缺少文件归类 Worker"
 [ -f "$MODPATH/config/deep.rules" ] || abort "! 模块包中缺少完整深度规则库"
 
 # Stop both the legacy and immutable-manifest pipelines before replacing module files.
 touch "$STATE_DIR/stop" 2>/dev/null
-pkill -f '/data/adb/modules/baize_v2/cleaner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/native-cleaner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/cache-snapshot-clean.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/cache-transaction.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/cache-lane-worker.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/apk-scanner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/apk-cleaner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/profile-cleaner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/deep-scan-manifest.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/deep-manifest-clean.sh' >/dev/null 2>&1 || true
-# 匹配任意 ABI 目录下的引擎进程
+# Stop old flat-layout workers and the new scripts/ workers before clearing task state.
+for worker in cleaner native-cleaner cache-snapshot-clean cache-transaction cache-lane-worker \
+  apk-scanner apk-cleaner profile-cleaner deep-scan-manifest deep-manifest-clean \
+  organizer-worker worker-runner task-worker scheduler supervisor; do
+  pkill -f "/data/adb/modules/baize_v2/$worker.sh" >/dev/null 2>&1 || true
+  pkill -f "/data/adb/modules/baize_v2/scripts/$worker.sh" >/dev/null 2>&1 || true
+done
 pkill -f '/data/adb/modules/baize_v2/bin/.*/baize_engine' >/dev/null 2>&1 || true
 pkill -f '/data/adb/modules/baize_v2/bin/.*/baize_deep_snapshot' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/organizer-worker.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/worker-runner.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/task-worker.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/scheduler.sh' >/dev/null 2>&1 || true
-pkill -f '/data/adb/modules/baize_v2/supervisor.sh' >/dev/null 2>&1 || true
 rm -rf "$STATE_DIR/run.lock" "$STATE_DIR/cache-lane.lock" "$STATE_DIR/cache-lane"
 rm -f "$STATE_DIR/running.env" "$STATE_DIR/stop"
 rm -f "$STATE_DIR/cache_scan.env" "$STATE_DIR/cache_scan.targets" "$STATE_DIR/cache_scan.items.tsv" "$STATE_DIR/cache_scan.manifest0"
@@ -156,9 +149,7 @@ fi
 
 chmod 0600 "$STATE_DIR/config.conf" "$STATE_DIR/whitelist.conf" "$STATE_DIR/custom.rules" 2>/dev/null
 chmod 0644 "$APK" "$HASH_FILE" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh" "$MODPATH/native-cleaner.sh" "$MODPATH/cache-snapshot-clean.sh" "$MODPATH/cache-transaction.sh" "$MODPATH/cache-lane-worker.sh" "$MODPATH/one-pass-scan.sh" "$MODPATH/apk-scanner.sh" "$MODPATH/apk-cleaner.sh" "$MODPATH/profile-cleaner.sh" "$MODPATH/deep-scan-manifest.sh" "$MODPATH/deep-manifest-clean.sh" 2>/dev/null
-chmod 0755 "$MODPATH/cleaner.sh.compat" "$MODPATH/scheduler.sh" "$MODPATH/notify.sh" "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
-chmod 0755 "$MODPATH/task-worker.sh" "$MODPATH/organizer-worker.sh" "$MODPATH/worker-runner.sh" "$MODPATH/supervisor.sh" "$MODPATH/autopilot-controller.sh" "$MODPATH/app-installer.sh" "$MODPATH/diagnostics-export.sh" "$MODPATH/storage-analyzer.sh" "$MODPATH/duplicate-scanner.sh" "$MODPATH/large-file-scanner.sh" "$MODPATH/quarantine-manager.sh" "$MODPATH/rules-validator.sh" 2>/dev/null
+chmod 0755 "$SCRIPTDIR"/*.sh "$NATIVE_ENGINE" "$DEEP_SNAPSHOT_ENGINE" 2>/dev/null
 
 # 安装前校验 APK 完整性。打包脚本会生成 baize.apk.sha256，
 # 此前该文件只被复制到 state 目录，从未真正比对过，等于没有校验。

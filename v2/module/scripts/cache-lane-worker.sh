@@ -2,6 +2,10 @@
 set -u
 
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-cache-auto}
 TRIGGER=${2:-scheduler:interval}
 TASK_ID=${3:-cache-$(date +%s)-$$}
@@ -19,7 +23,7 @@ GLOBAL_STOP="$ROOT_STATE_DIR/stop"
 CHILD_PID=0
 
 [ "$MODE" = cache-auto ] || { echo "缓存并行通道只接受 cache-auto" >&2; exit 2; }
-[ -f "$MODDIR/task-worker.sh" ] || { echo "统一 Root Worker 缺失" >&2; exit 5; }
+[ -f "$SCRIPTDIR/task-worker.sh" ] || { echo "统一 Root Worker 缺失" >&2; exit 5; }
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 
 lane_owner_alive() {
@@ -74,7 +78,7 @@ mirror_progress() {
 }
 
 BAIZE_ROOT_STATE_DIR="$ROOT_STATE_DIR" BAIZE_STATE_DIR="$TASK_STATE" BAIZE_SHELL_BIN="$SHELL_BIN" \
-  "$SHELL_BIN" "$MODDIR/task-worker.sh" "$MODE" "$TRIGGER" "$TASK_ID" "$WAIT_MODE" &
+  "$SHELL_BIN" "$SCRIPTDIR/task-worker.sh" "$MODE" "$TRIGGER" "$TASK_ID" "$WAIT_MODE" &
 CHILD_PID=$!
 
 while kill -0 "$CHILD_PID" 2>/dev/null; do

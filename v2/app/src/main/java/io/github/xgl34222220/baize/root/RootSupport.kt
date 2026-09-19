@@ -14,6 +14,12 @@ internal object RootPaths {
     const val WHITELIST_PACKAGES_FILE = "$STATE_DIR/whitelist.packages"
     const val RISK_OVERRIDES_FILE = "$STATE_DIR/risk-overrides.conf"
 
+    /** New modules group implementations under scripts/; App-first upgrades still accept the old layout. */
+    fun script(name: String, moduleDir: File = File(MODULE_DIR)): File {
+        val grouped = File(moduleDir, "scripts/$name")
+        return if (grouped.isFile) grouped else File(moduleDir, name)
+    }
+
     /**
      * 按设备 ABI 优先级查找原生引擎。
      *

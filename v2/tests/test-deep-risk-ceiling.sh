@@ -7,9 +7,9 @@ T=${TMPDIR:-/tmp}/baize-risk-ceiling
 rm -rf "$T"; mkdir -p "$T"
 CONFIG="$T/config.conf"
 
-# 从 native-scan.sh 里抽出被测函数，避免复制一份实现造成漂移。
-sed -n '/^deep_max_auto_risk() {$/,/^}$/p' "$ROOT/v2/module/native-scan.sh" > "$T/fn.sh"
-[ -s "$T/fn.sh" ] || { echo "未能从 native-scan.sh 提取 deep_max_auto_risk"; exit 1; }
+# 从 native-cleaner.sh 里抽出被测函数，避免复制一份实现造成漂移。
+sed -n '/^deep_max_auto_risk() {$/,/^}$/p' "$ROOT/v2/module/scripts/native-cleaner.sh" > "$T/fn.sh"
+[ -s "$T/fn.sh" ] || { echo "未能从 native-cleaner.sh 提取 deep_max_auto_risk"; exit 1; }
 # shellcheck disable=SC1090
 . "$T/fn.sh"
 

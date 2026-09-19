@@ -10,7 +10,7 @@ cat > "$T/state/config.conf" <<'CONF'
 shared_index_ttl_seconds=30
 max_file_mb=1
 CONF
-run_index() { BAIZE_STATE_DIR="$T/state" BAIZE_MEDIA_ROOT="$T/media" BAIZE_CONFIG_PATH="$T/state/config.conf" BAIZE_INDEX_TTL_SECONDS=30 busybox ash "$ROOT/v2/module/storage-index.sh" "$1" test; }
+run_index() { BAIZE_STATE_DIR="$T/state" BAIZE_MEDIA_ROOT="$T/media" BAIZE_CONFIG_PATH="$T/state/config.conf" BAIZE_INDEX_TTL_SECONDS=30 busybox ash "$ROOT/v2/module/scripts/storage-index.sh" "$1" test; }
 run_index refresh
 grep -q '^roots_scanned=' "$T/state/index/meta.env"
 tr '\0' '\n' < "$T/state/index/storage-files.nul" | grep -q '/a.apk$'

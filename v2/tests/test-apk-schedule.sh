@@ -4,7 +4,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/module" "$T/state" "$T/bin"
-cp "$ROOT/v2/module/scheduler-v2.5.sh" "$T/module/scheduler.sh"
+cp "$ROOT/v2/module/scripts/scheduler.sh" "$T/module/scheduler.sh"
 cat >"$T/state/config.conf" <<'CONF'
 enabled=1
 clean_apk_packages=1

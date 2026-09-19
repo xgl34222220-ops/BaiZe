@@ -2,6 +2,10 @@
 set -u
 
 MODDIR=${BAIZE_MODULE_DIR:-${0%/*}}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 CONFIG=${BAIZE_CONFIG_PATH:-$STATE_DIR/config.conf}
 HISTORY_FILE=${BAIZE_HISTORY_FILE:-$STATE_DIR/history.tsv}

@@ -8,8 +8,8 @@ CONTRACT="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanC
 MATERIAL="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/material/CleanScreenMaterial.kt"
 MIUIX="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt"
 REPOSITORY="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/SchedulerRepository.kt"
-AUTOPILOT="$ROOT/v2/module/autopilot-controller.sh"
-SCHEDULER="$ROOT/v2/module/scheduler-v2.5.sh"
+AUTOPILOT="$ROOT/v2/module/scripts/autopilot-controller.sh"
+SCHEDULER="$ROOT/v2/module/scripts/scheduler.sh"
 
 grep -qx 'schedule_mode=0' "$DEFAULTS"
 grep -q 'put("schedule_mode", scheduleMode.coerceIn(0, 2))' "$APP_STATE"

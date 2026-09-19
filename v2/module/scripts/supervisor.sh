@@ -1,11 +1,15 @@
 #!/system/bin/sh
 set -u
 MODDIR=${BAIZE_MODULE_DIR:-${0%/*}}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 STATE="$STATE_DIR/supervisor.env"
 SCHEDULER_STATE="$STATE_DIR/scheduler.env"
-SCHEDULER="$MODDIR/scheduler.sh"
-AUTOPILOT="$MODDIR/autopilot-controller.sh"
+SCHEDULER="$SCRIPTDIR/scheduler.sh"
+AUTOPILOT="$SCRIPTDIR/autopilot-controller.sh"
 STOP="$STATE_DIR/supervisor.stop"
 HEARTBEAT_SECONDS=${BAIZE_SUPERVISOR_HEARTBEAT_SECONDS:-5}
 QUEUE_WAKE_AFTER_SECONDS=${BAIZE_QUEUE_WAKE_AFTER_SECONDS:-2}

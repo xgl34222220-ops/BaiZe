@@ -556,7 +556,7 @@ class BaiZeRootService : RootService() {
     }
 
     private fun runNativeScan(whitelistJson: String, started: Long): String {
-        val cleaner = File(MODULE_DIR, "cleaner.sh")
+        val cleaner = RootPaths.script("cleaner.sh")
         if (!cleaner.isFile) {
             return JSONObject()
                 .put("error", "cleaner_missing")
@@ -619,7 +619,7 @@ class BaiZeRootService : RootService() {
     }
 
     private fun runSnapshotClean(whitelistJson: String, started: Long): String {
-        val cleaner = File(MODULE_DIR, "cleaner.sh")
+        val cleaner = RootPaths.script("cleaner.sh")
         if (!cleaner.isFile) {
             return JSONObject()
                 .put("error", "cleaner_missing")

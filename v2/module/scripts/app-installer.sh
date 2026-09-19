@@ -1,6 +1,10 @@
 #!/system/bin/sh
 set -u
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 APP_ID=${BAIZE_APP_ID:-io.github.xgl34222220.baize}
 APK=${BAIZE_APK:-$MODDIR/app/baize.apk}
 HASH_FILE=${BAIZE_HASH_FILE:-$MODDIR/app/baize.apk.sha256}

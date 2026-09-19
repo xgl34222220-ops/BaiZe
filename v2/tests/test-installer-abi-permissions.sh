@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 CUSTOMIZE="$ROOT/v2/module/customize.sh"
-RESOLVER="$ROOT/v2/module/abi-resolve.sh"
+RESOLVER="$ROOT/v2/module/scripts/abi-resolve.sh"
 chmod_line=$(grep -n 'for engine in "\$MODPATH"/bin/\*/baize_engine' "$CUSTOMIZE" | head -n1 | cut -d: -f1)
 resolve_line=$(grep -n 'NATIVE_ENGINE=$(baize_resolve_engine' "$CUSTOMIZE" | head -n1 | cut -d: -f1)
 [ -n "$chmod_line" ] && [ -n "$resolve_line" ] && [ "$chmod_line" -lt "$resolve_line" ]

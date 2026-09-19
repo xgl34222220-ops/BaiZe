@@ -1,6 +1,10 @@
 #!/system/bin/sh
 set -u
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-clean}
 TRIGGER=${2:-app}
 TASK_ID=${3:-$(date +%s)-$$}
@@ -11,7 +15,7 @@ RUNNING_FILE="$STATE_DIR/running.env"
 WORKER_FILE="$STATE_DIR/worker.env"
 LOCK_DIR="$STATE_DIR/run.lock"
 RESULT_FILE="$STATE_DIR/task-results/$TASK_ID.env"
-RUNNER="$MODDIR/worker-runner.sh"
+RUNNER="$SCRIPTDIR/worker-runner.sh"
 LAUNCH_LOCK="$STATE_DIR/task-launch.lock"
 LAUNCH_OWNED=0
 case "$TASK_ID" in ''|*[!a-zA-Z0-9_.-]*|.*) echo "任务编号无效" >&2; exit 2;; esac
@@ -47,7 +51,7 @@ lock_owner_alive() {
   case "$old_ticks" in ''|*[!0-9]*) old_ticks=0 ;; esac
   [ "$old_ticks" -eq 0 ] || [ "$current_ticks" = "$old_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$old_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_deep_snapshot*) return 0 ;; esac
+  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 worker_owner_alive() {
@@ -131,7 +135,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v1.1.1"
+  echo "worker=detached-root-worker-v2.0.0"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then

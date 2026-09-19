@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-SCAN="$ROOT/v2/module/apk-snapshot-scan.sh"
+SCAN="$ROOT/v2/module/scripts/apk-scanner.sh"
 CONTRACT="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt"
 ROUTE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt"
 SCREEN="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt"
@@ -33,7 +33,7 @@ grep -Fq 'ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysD
 # Both appearance routes use this same retention editor.
 grep -Fq 'CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)' "${SCREEN%/*}/VideoCleanScreenMiuix.kt"
 
-PATHS="$ROOT/v2/module/apk-paths.sh"
+PATHS="$ROOT/v2/module/scripts/apk-paths.sh"
 grep -Fq '_apk_base_real=$(readlink -f "$_apk_base"' "$PATHS"
 ! grep -Fq '[ "$_apk_real" = "$1" ] || return 1' "$PATHS"
 grep -Fq 'APK_PRIVATE_BOUNDARIES' "$PATHS"

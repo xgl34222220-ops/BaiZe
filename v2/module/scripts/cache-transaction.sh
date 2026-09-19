@@ -4,6 +4,10 @@
 set -u
 
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-${1:-scheduled:cache}}
 SHELL_BIN=${BAIZE_SHELL:-/system/bin/sh}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -21,7 +25,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-scan.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-snapshot-scan.sh*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*cache-transaction.sh*|*native-cleaner.sh*|*cache-snapshot-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*) return 0 ;;
   esac
   return 1
 }
@@ -74,7 +78,7 @@ run_component() {
   return "$code"
 }
 
-run_component "$MODDIR/native-cleaner.sh" cache-scan "$TRIGGER:scan"
+run_component "$SCRIPTDIR/native-cleaner.sh" cache-scan "$TRIGGER:scan"
 scan_code=$?
 [ "$scan_code" -eq 0 ] || exit "$scan_code"
 
@@ -97,5 +101,5 @@ if [ "$files" -eq 0 ]; then
   exit 0
 fi
 
-run_component "$MODDIR/cache-snapshot-clean.sh" cache-clean "$TRIGGER"
+run_component "$SCRIPTDIR/cache-snapshot-clean.sh" cache-clean "$TRIGGER"
 exit $?

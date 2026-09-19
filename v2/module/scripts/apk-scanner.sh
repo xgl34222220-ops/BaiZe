@@ -4,6 +4,10 @@
 set -u
 
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 MODE=${1:-apk-scan}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
@@ -50,7 +54,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
-    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
+    *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
   esac
   return 1
 }
@@ -123,8 +127,8 @@ path_relation() {
 }
 
 # 白名单匹配。测试夹具可能只暂存部分脚本，缺失时退回内联实现。
-if [ -f "$MODDIR/whitelist-match.sh" ]; then
-  . "$MODDIR/whitelist-match.sh"
+if [ -f "$SCRIPTDIR/whitelist-match.sh" ]; then
+  . "$SCRIPTDIR/whitelist-match.sh"
 else
   baize_whitelist_load() {
     _wl_file=${1:-${WHITELIST:-}}
@@ -190,7 +194,7 @@ esac
 MAX_MB=$(get_uint apk_package_max_mb 4096 16 16384)
 MAX_FILE_BYTES=$((MAX_MB * 1024 * 1024))
 # The package-only scanner and cleaner share exactly the same storage roots.
-. "$MODDIR/apk-paths.sh"
+. "$SCRIPTDIR/apk-paths.sh"
 apk_load_roots
 [ "$INCLUDE_PRIVATE" = "1" ] && apk_load_private_roots
 DIRECT_APK_INDEX="$TMP_DIR/apk-files-direct.nul"
@@ -204,7 +208,7 @@ if [ "$direct_index_code" -eq 0 ] && [ -s "$DIRECT_APK_INDEX" ]; then
 fi
 
 shared_index_code=1
-INDEXER="$MODDIR/storage-index.sh"
+INDEXER="$SCRIPTDIR/storage-index.sh"
 SHARED_APK_INDEX="$STATE_DIR/index/apk-files.nul"
 if [ -f "$INDEXER" ]; then
   if BAIZE_STATE_DIR="$STATE_DIR" BAIZE_MEDIA_ROOT="$MEDIA_ROOT" \

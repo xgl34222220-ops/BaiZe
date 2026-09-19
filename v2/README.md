@@ -58,12 +58,12 @@ bash tests/run-native-tests.sh        # 只跑 C 引擎相关（宿主 cc 即可
 | `scripts/validate-rules.py` | 校验规则库并回写 `config/rules.meta.env` 的条数与 SHA |
 | `scripts/build-native.sh` | 多 ABI 交叉编译原生引擎 |
 | `scripts/package-module.sh` | 打包模块 ZIP，打包前跑全量回归 |
-| `module/abi-resolve.sh` | 运行时按设备 ABI 解析引擎路径 |
+| `module/scripts/abi-resolve.sh` | 运行时按设备 ABI 解析引擎路径 |
 
 ## 模块脚本入口
 
-- `module/cleaner.sh` — 清理总入口，原生引擎不可用时退回 `cleaner.sh.compat`
-- `module/native-scan.sh` — 原生扫描执行器
-- `module/scheduler-v2.5.sh` — Root 调度器（打包后重命名为 `scheduler.sh`）
-- `module/supervisor.sh` — 调度器守护进程
-- `module/task-worker.sh` — 统一 Root Worker
+- `module/scripts/cleaner.sh` — 清理总入口，原生引擎不可用时退回 `cleaner-compat.sh`
+- `module/scripts/native-cleaner.sh` — 原生扫描执行器
+- `module/scripts/scheduler.sh` — Root 调度器（打包后重命名为 `scheduler.sh`）
+- `module/scripts/supervisor.sh` — 调度器守护进程
+- `module/scripts/task-worker.sh` — 统一 Root Worker

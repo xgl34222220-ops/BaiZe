@@ -4,6 +4,10 @@
 set -u
 
 MODDIR=${BAIZE_MODULE_DIR:-${0%/*}}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 CONFIG=${BAIZE_CONFIG_PATH:-$STATE_DIR/config.conf}
 LOG_DIR="$STATE_DIR/logs"
@@ -12,7 +16,7 @@ QUEUE_FILE="$STATE_DIR/scheduler-queue.tsv"
 REQUEST_DIR="$STATE_DIR/scheduler-requests"
 SKIP_DIR="$STATE_DIR/scheduler-skips"
 LOCK_DIR="$STATE_DIR/run.lock"
-CACHE_LANE_WORKER="$MODDIR/cache-lane-worker.sh"
+CACHE_LANE_WORKER="$SCRIPTDIR/cache-lane-worker.sh"
 STOP_FILE="$STATE_DIR/stop"
 RUNNING_FILE="$STATE_DIR/running.env"
 MIN_SLEEP_SECONDS=${BAIZE_MIN_SLEEP_SECONDS:-1}
@@ -182,7 +186,7 @@ scheduler_task_alive() {
   actual=$(proc_start_ticks "$pid"); case "$ticks" in ''|*[!0-9]*) ticks=0 ;; esac
   [ "$ticks" -eq 0 ] || [ "$actual" = "$ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*baize_engine*) return 0;; esac
+  case "$cmdline" in *task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_engine*) return 0;; esac
   return 1
 }
 clear_stale_task_markers() {
@@ -417,7 +421,7 @@ run_parallel_pair() {
   cache_id="scheduled-cache-$(date +%s)-$$"; organize_id="scheduled-organize-$(date +%s)-$$"
   write_scheduler_state running "cache+organize" "正在并行执行应用缓存与文件归类"
   BAIZE_SCHEDULE_CYCLE="$pc_cycle" BAIZE_STATE_DIR="$STATE_DIR" sh "$CACHE_LANE_WORKER" "$pc_mode" "scheduler:$pc_kind" "$cache_id" wait >>"$cache_log" 2>&1 & cache_pid=$!
-  BAIZE_SCHEDULE_CYCLE="$po_cycle" sh "$MODDIR/task-worker.sh" "$po_mode" "scheduler:$po_kind" "$organize_id" wait >>"$organize_log" 2>&1 & organize_pid=$!
+  BAIZE_SCHEDULE_CYCLE="$po_cycle" sh "$SCRIPTDIR/task-worker.sh" "$po_mode" "scheduler:$po_kind" "$organize_id" wait >>"$organize_log" 2>&1 & organize_pid=$!
   start_active_heartbeat "cache+organize" "正在并行执行应用缓存与文件归类" "$cache_pid" "$organize_pid"
   wait "$cache_pid" 2>/dev/null; cache_code=$?
   wait "$organize_pid" 2>/dev/null; organize_code=$?
@@ -443,7 +447,7 @@ run_next_fair_task() {
     if ! conditions_allow_task "$group"; then reason="$group:$SCHEDULE_REASON"; [ -n "$BLOCKED_GROUPS" ] && BLOCKED_GROUPS="$BLOCKED_GROUPS,$reason" || BLOCKED_GROUPS=$reason; continue; fi
     write_scheduler_state running "$group" "按超期时间与请求顺序执行"
     log="$LOG_DIR/scheduler-${group}.log"; rotate_log "$log"; task_id="scheduled-${group}-$(date +%s)-$$"
-    BAIZE_SCHEDULE_CYCLE="$cycle" sh "$MODDIR/task-worker.sh" "$mode" "scheduler:$kind" "$task_id" wait >>"$log" 2>&1 & task_pid=$!
+    BAIZE_SCHEDULE_CYCLE="$cycle" sh "$SCRIPTDIR/task-worker.sh" "$mode" "scheduler:$kind" "$task_id" wait >>"$log" 2>&1 & task_pid=$!
     start_active_heartbeat "$group" "按超期时间与请求顺序执行" "$task_pid"
     wait "$task_pid" 2>/dev/null; code=$?
     stop_active_heartbeat

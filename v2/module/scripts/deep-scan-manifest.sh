@@ -2,6 +2,10 @@
 set -u
 
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 LOCK_DIR="$STATE_DIR/run.lock"
@@ -12,10 +16,10 @@ TARGETS_FILE="$STATE_DIR/deep_scan.targets"
 MANIFEST_FILE="$STATE_DIR/deep_scan.manifest0"
 CURSOR_FILE="$STATE_DIR/deep_scan.cursor"
 BUILD_SUMMARY="$STATE_DIR/deep_scan.manifest.env"
-NATIVE_SCANNER="$MODDIR/native-cleaner.sh"
+NATIVE_SCANNER="$SCRIPTDIR/native-cleaner.sh"
 # ABI 解析辅助。测试夹具可能只暂存部分脚本，缺失时退回到内联实现。
-if [ -f "$MODDIR/abi-resolve.sh" ]; then
-  . "$MODDIR/abi-resolve.sh"
+if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
 else
   baize_device_abis() { printf 'arm64-v8a\narmeabi-v7a\nx86_64\n'; }
   baize_resolve_engine() {
@@ -41,7 +45,7 @@ pid_is_task() {
   [ "$pid" -gt 1 ] 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *deep-scan-manifest.sh*|*native-scan.sh*|*native-cleaner.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*apk-scanner.sh*|*apk-snapshot-scan.sh*|*apk-snapshot-clean.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;; esac
+  case "$cmdline" in *deep-scan-manifest.sh*|*native-cleaner.sh*|*native-cleaner.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 

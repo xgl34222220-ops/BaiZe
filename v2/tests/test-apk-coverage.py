@@ -25,8 +25,8 @@ class PackageCoverage(unittest.TestCase):
         self.public.mkdir()
         self.sd = self.root / 'sd'
         self.sd.mkdir()
-        for name in ('apk-snapshot-scan.sh', 'apk-snapshot-clean.sh', 'apk-paths.sh', 'whitelist-match.sh'):
-            shutil.copy(ROOT / 'v2/module' / name, self.module / name)
+        for name in ('apk-scanner.sh', 'apk-cleaner.sh', 'apk-paths.sh', 'whitelist-match.sh'):
+            shutil.copy(ROOT / 'v2/module/scripts' / name, self.module / name)
         (self.state / 'config.conf').write_text('apk_package_days=30\napk_package_max_mb=4096\n')
         (self.state / 'whitelist.conf').touch()
         self.env = dict(
@@ -50,7 +50,8 @@ class PackageCoverage(unittest.TestCase):
         return path
 
     def run_task(self, mode, trigger='manual'):
-        proc = subprocess.run(['bash', str(self.module / f'apk-snapshot-{mode}.sh'), f'apk-{mode}', trigger], env=self.env, text=True, capture_output=True)
+        script = {'scan': 'apk-scanner.sh', 'clean': 'apk-cleaner.sh'}[mode]
+        proc = subprocess.run(['bash', str(self.module / script), f'apk-{mode}', trigger], env=self.env, text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         return proc
 
@@ -83,7 +84,7 @@ class PackageCoverage(unittest.TestCase):
         public_apk.write_bytes(b'public package')
         env = dict(self.env, BAIZE_MEDIA_ROOT=str(missing_raw))
         proc = subprocess.run(
-            ['bash', str(self.module / 'apk-snapshot-scan.sh'), 'apk-scan', 'app'],
+            ['bash', str(self.module / 'apk-scanner.sh'), 'apk-scan', 'app'],
             env=env, text=True, capture_output=True
         )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -105,7 +106,7 @@ class PackageCoverage(unittest.TestCase):
             BAIZE_BRUTE_STORAGE_ROOTS=str(brute),
         )
         proc = subprocess.run(
-            ['bash', str(self.module / 'apk-snapshot-scan.sh'), 'apk-scan', 'app'],
+            ['bash', str(self.module / 'apk-scanner.sh'), 'apk-scan', 'app'],
             env=env, text=True, capture_output=True
         )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -176,7 +177,7 @@ class PackageCoverage(unittest.TestCase):
         for path, before in expected.items():
             os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
         result = subprocess.run(
-            ['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean', 'manual'],
+            ['bash', str(self.module / 'apk-cleaner.sh'), 'apk-clean', 'manual'],
             env=self.env, text=True, capture_output=True
         )
         self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
@@ -188,7 +189,7 @@ class PackageCoverage(unittest.TestCase):
         package = self.make('0/Download/keep.apk')
         self.run_task('scan')
         (self.state / 'apk_scan.identities').write_bytes(b'changed\0')
-        result = subprocess.run(['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean'],
+        result = subprocess.run(['bash', str(self.module / 'apk-cleaner.sh'), 'apk-clean'],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
         self.assertTrue(package.exists())
@@ -204,7 +205,7 @@ class PackageCoverage(unittest.TestCase):
         package.parent.symlink_to(outside, target_is_directory=True)
         new = self.make('0/Downloads/new.apk')
         result = subprocess.run(
-            ['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean', 'manual'],
+            ['bash', str(self.module / 'apk-cleaner.sh'), 'apk-clean', 'manual'],
             env=self.env, text=True, capture_output=True
         )
         self.assertEqual(result.returncode, 8, result.stdout + result.stderr)

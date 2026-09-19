@@ -2,7 +2,7 @@
 # 构建白泽原生扫描引擎与深度不可变快照引擎。
 #
 # 此前只编 arm64-v8a，导致 armeabi-v7a 的 32 位设备（恰恰是最需要清理
-# 垃圾的那批老机器）在 native-scan.sh 里直接 exit 8 用不了。
+# 垃圾的那批老机器）在 native-cleaner.sh 里直接 exit 8 用不了。
 # 现在默认编 arm64-v8a / armeabi-v7a / x86_64 三个 ABI。
 #
 # 可用 BAIZE_ABIS 覆盖，例如只编 arm64：BAIZE_ABIS=arm64-v8a sh build-native.sh

@@ -1,6 +1,10 @@
 #!/system/bin/sh
 set -eu
 MODDIR=${0%/*}
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 RULES=${BAIZE_RULES_PATH:-$MODDIR/config/deep.rules}
 META=${BAIZE_RULES_META:-${RULES%/*}/rules.meta.env}
 [ -f "$RULES" ] || exit 5

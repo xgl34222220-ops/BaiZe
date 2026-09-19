@@ -46,7 +46,6 @@ class WorkbenchVisualReviewTest {
             save("stress-timeout")
             throw failure
         }
-        println("Workbench summary ready: " + compose.onRoot(useUnmergedTree = true).printToString())
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed().performClick()
         assertEquals(1, cleanRequests)
         compose.mainClock.advanceTimeByFrame()

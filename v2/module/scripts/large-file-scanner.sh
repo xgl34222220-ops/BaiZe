@@ -1,6 +1,10 @@
 #!/system/bin/sh
 set -eu
 case "$0" in */*) MODDIR=${0%/*} ;; *) MODDIR=. ;; esac
+# Keep module data at the root; implementations live under scripts/.
+case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
+SCRIPTDIR="$MODDIR"
+[ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 SHELL_BIN=${BAIZE_SHELL_BIN:-/system/bin/sh}
 OUT="$STATE_DIR/reports/large-files.tsv"
@@ -16,7 +20,7 @@ STOP_FILE=${BAIZE_DIAGNOSTIC_STOP_FILE:-$TMP/stop}
 # Read-only tools own their cancellation request. A prior cleaning cancellation
 # must neither block these tools nor be cleared while another task handles it.
 trap ': >"$STOP_FILE"; exit 9' INT TERM
-BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$MODDIR/storage-index.sh" refresh large-files >&2
+BAIZE_INDEX_STOP_FILE="$STOP_FILE" "$SHELL_BIN" "$SCRIPTDIR/storage-index.sh" refresh large-files >&2
 # The shared large-files bucket may use a different threshold. Select from the
 # unified size table instead, so lowering the screen's threshold never misses files.
 awk -F '\t' -v minimum="$MIN" '$1>=minimum{print $2}' "$STATE_DIR/index/duplicate-candidates.tsv" >"$TMP/candidates"

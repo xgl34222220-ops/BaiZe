@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 T=${TMPDIR:-/tmp}/baize-deep-clean-stream-test
 rm -rf "$T"
 mkdir -p "$T/module/config" "$T/state" "$T/media/0/Android/data/com.example/cache/nested" "$T/bin"
-cp "$ROOT/module/profile-snapshot-clean-fast.sh" "$T/module/profile-cleaner.sh"
+cp "$ROOT/module/scripts/profile-cleaner.sh" "$T/module/profile-cleaner.sh"
 chmod +x "$T/module/profile-cleaner.sh"
 printf '%s\n' "$T/media/0/Android/data/com.example/cache" >"$T/module/config/deep.rules"
 : >"$T/state/whitelist.conf"

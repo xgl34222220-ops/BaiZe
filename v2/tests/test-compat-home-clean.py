@@ -16,7 +16,7 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = (ROOT / 'cleaner.sh').read_text()
+SOURCE = (ROOT / 'v2/module/scripts/cleaner-compat.sh').read_text()
 SCRATCH = Path(os.environ.get('TMPDIR', '/tmp'))
 
 
@@ -126,10 +126,10 @@ filter_processed_list "$STATE_DIR/list"
         module, state, data = [self.tmp / x for x in ('module', 'state', 'data')]
         module.mkdir(); state.mkdir(); data.mkdir()
         shutil.copytree(ROOT / 'config', module / 'config')
-        shutil.copy(ROOT / 'v2/module/cleaner.sh', module / 'cleaner.sh')
-        shutil.copy(ROOT / 'v2/module/apk-paths.sh', module / 'apk-paths.sh')
+        shutil.copy(ROOT / 'v2/module/scripts/cleaner.sh', module / 'cleaner.sh')
+        shutil.copy(ROOT / 'v2/module/scripts/apk-paths.sh', module / 'apk-paths.sh')
         compat = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), SOURCE)
-        (module / 'cleaner.sh.compat').write_text(compat)
+        (module / 'cleaner-compat.sh').write_text(compat)
         (module / 'abi-resolve.sh').write_text('baize_resolve_engine() {\n'
                                               ' [ -x "$1/bin/x86_64/$2" ] || return 1\n'
                                               ' printf "%s\\n" "$1/bin/x86_64/$2"\n}\n')
