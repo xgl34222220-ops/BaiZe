@@ -168,7 +168,7 @@ class StorageToolsActivity : ComponentActivity() {
     }
 }
 
-data class StorageToolsUiState(
+internal data class StorageToolsUiState(
     val mode: StorageToolMode = StorageToolMode.LARGE,
     val running: Boolean = false,
     val permissionRequired: Boolean = false,
