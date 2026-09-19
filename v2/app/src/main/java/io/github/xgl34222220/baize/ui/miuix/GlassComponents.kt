@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.miuix
 
+import io.github.xgl34222220.baize.ui.components.baiZeLineIcon
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -151,7 +152,7 @@ fun GlassActionButton(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {
-        if (icon != null) Icon(icon, null, Modifier.size(20.dp), tint = foreground)
+        if (icon != null) Icon(baiZeLineIcon(icon), null, Modifier.size(20.dp), tint = foreground)
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,

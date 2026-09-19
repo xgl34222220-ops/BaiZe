@@ -240,7 +240,7 @@ private fun AutomaticCleaningHero(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Rounded.CleaningServices,
+                        BaiZeIcons.Clean,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp),
                         tint = scheme.primary

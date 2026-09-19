@@ -376,7 +376,7 @@ internal fun FileOrganizerScreen(
             DetailGlassPanel {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)) {
-                        Icon(Icons.Rounded.FolderCopy, null, Modifier.padding(11.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(BaiZeIcons.Folder, null, Modifier.padding(11.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(if (state.running) "正在整理文件" else if (state.lastTotal > 0) "已整理 ${state.lastTotal} 个文件" else "整理散落文件",

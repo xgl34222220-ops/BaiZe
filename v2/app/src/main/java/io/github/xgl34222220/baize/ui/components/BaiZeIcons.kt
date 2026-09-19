@@ -29,14 +29,20 @@ internal object BaiZeIcons {
     val Clock = line("Clock") { moveTo(21f,12f); curveTo(21f,17f,17f,21f,12f,21f); curveTo(7f,21f,3f,17f,3f,12f); curveTo(3f,7f,7f,3f,12f,3f); curveTo(17f,3f,21f,7f,21f,12f); moveTo(12f,7f); lineTo(12f,12f); lineTo(16f,14f) }
     val Shield = line("Shield") { moveTo(12f,3f); lineTo(20f,6f); lineTo(20f,12f); curveTo(19f,17f,15f,20f,12f,21f); curveTo(9f,20f,5f,17f,4f,12f); lineTo(4f,6f); close(); moveTo(8f,12f); lineTo(11f,15f); lineTo(16f,9f) }
     val Clean = line("Clean") { moveTo(16f,3f); lineTo(10f,13f); moveTo(7f,12f); lineTo(14f,16f); lineTo(12f,21f); lineTo(3f,21f); lineTo(7f,12f); moveTo(7f,17f); lineTo(6f,21f); moveTo(18f,13f); lineTo(22f,13f); moveTo(20f,11f); lineTo(20f,15f) }
+    val Archive = line("Archive") { moveTo(5f,3f); lineTo(19f,3f); lineTo(19f,21f); lineTo(5f,21f); close(); moveTo(11f,3f); lineTo(11f,6f); lineTo(13f,6f); lineTo(13f,9f); lineTo(11f,9f); lineTo(11f,12f); lineTo(13f,12f); moveTo(10f,16f); lineTo(14f,16f); lineTo(14f,19f); lineTo(10f,19f); close() }
+    val Palette = line("Palette") { moveTo(12f,3f); curveTo(6f,3f,3f,7f,3f,12f); curveTo(3f,17f,7f,21f,12f,21f); curveTo(15f,21f,15f,19f,14f,17f); curveTo(13f,15f,15f,14f,18f,14f); curveTo(23f,14f,22f,3f,12f,3f); close(); moveTo(7f,11f); lineTo(7.1f,11f); moveTo(9f,7f); lineTo(9.1f,7f); moveTo(14f,7f); lineTo(14.1f,7f); moveTo(17f,10f); lineTo(17.1f,10f) }
+    val Settings = line("Settings") { moveTo(10f,3f); lineTo(14f,3f); lineTo(15f,6f); lineTo(18f,6f); lineTo(21f,10f); lineTo(19f,12f); lineTo(21f,15f); lineTo(18f,19f); lineTo(15f,18f); lineTo(14f,21f); lineTo(10f,21f); lineTo(9f,18f); lineTo(6f,19f); lineTo(3f,15f); lineTo(5f,12f); lineTo(3f,10f); lineTo(6f,6f); lineTo(9f,6f); close(); moveTo(15f,12f); curveTo(15f,16f,9f,16f,9f,12f); curveTo(9f,8f,15f,8f,15f,12f) }
     val Home = line("Home") { moveTo(3f,10f); lineTo(12f,3f); lineTo(21f,10f); moveTo(5f,9f); lineTo(5f,21f); lineTo(10f,21f); lineTo(10f,14f); lineTo(14f,14f); lineTo(14f,21f); lineTo(19f,21f); lineTo(19f,9f) }
 }
 
 internal fun baiZeLineIcon(icon: ImageVector): ImageVector = when (icon.name.substringAfterLast('.')) {
-    "InstallMobile", "Android", "FolderZip", "Inventory2" -> BaiZeIcons.Package
+    "InstallMobile", "Android", "Inventory2" -> BaiZeIcons.Package
     "Folder", "FolderOpen", "FolderCopy", "FolderDelete" -> BaiZeIcons.Folder
     "ContentCopy" -> BaiZeIcons.Copy
     "DataUsage", "PieChart", "Storage" -> BaiZeIcons.Chart
+    "FolderZip" -> BaiZeIcons.Archive
+    "Palette" -> BaiZeIcons.Palette
+    "Settings", "SettingsSuggest" -> BaiZeIcons.Settings
     "Image", "Photo", "PhotoLibrary" -> BaiZeIcons.Photo
     "Movie", "VideoLibrary", "Videocam" -> BaiZeIcons.Video
     "MusicNote", "AudioFile" -> BaiZeIcons.Music

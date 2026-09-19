@@ -163,8 +163,7 @@ internal fun StorageToolsScreen(
                                 Text(storageCategoryLabel(state.category), style = MaterialTheme.typography.titleMedium)
                                 Text("${visible.size} 个文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text(Formatter.formatFileSize(context, visible.sumOf { it.bytes }), fontSize = 24.sp,
-                                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                            BaiZeMetric(Formatter.formatFileSize(context, visible.sumOf { it.bytes }), Modifier.widthIn(max = 168.dp))
                         }
                         if (state.status.startsWith("已删除") || state.status.startsWith("已停止"))
                             Text(state.status, style = MaterialTheme.typography.bodySmall)
@@ -174,7 +173,7 @@ internal fun StorageToolsScreen(
                         else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.bytes } else visible.sumOf { it.bytes }
                     Text(if (state.mode == StorageToolMode.DUPLICATES) "可释放空间" else if (state.mode == StorageToolMode.ANALYSIS) "已索引文件占用" else "当前结果占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(Formatter.formatFileSize(context, bytes), fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    BaiZeMetric(Formatter.formatFileSize(context, bytes))
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                     if (state.running) {
                         Spacer(Modifier.height(12.dp))
