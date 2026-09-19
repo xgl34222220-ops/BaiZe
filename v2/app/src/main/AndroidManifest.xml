@@ -54,6 +54,7 @@
         <activity android:name=".ApkScanActivity" android:exported="false" />
         <activity android:name=".InstantCacheActivity" android:exported="false" />
         <activity android:name=".FileOrganizerActivity" android:exported="false" />
+        <activity android:name=".StorageToolsActivity" android:exported="false" />
         <activity android:name=".CleanCenterActivity" android:exported="false" />
         <activity android:name=".CleanupPolicyActivity" android:exported="false" />
         <activity android:name=".QuarantineActivity" android:exported="false" />
