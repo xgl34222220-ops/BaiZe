@@ -136,14 +136,23 @@ class BaiZeProfileRootService : RootService() {
             else -> throw IllegalArgumentException("不支持的服务请求")
         }
 
-        override fun ping(): String = JSONObject()
-            .put("uid", Process.myUid()).put("root", Process.myUid() == 0)
-            .put("module", File(RootPaths.MODULE_DIR, "module.prop").isFile)
-            .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
-            .put("deepRules", File(RootPaths.MODULE_DIR, "config/deep.rules").isFile)
-            .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
-            .put("engine", "unified-root-task-coordinator-v2-audit")
-            .also { RootVersionInfo.putInto(it) }.toString()
+        override fun ping(): String {
+            val appRules = AppRuleStore.ensure(this@BaiZeProfileRootService)
+            val modulePresent = File(RootPaths.MODULE_DIR, "module.prop").isFile
+            return JSONObject()
+                .put("uid", Process.myUid())
+                .put("root", Process.myUid() == 0)
+                .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
+                .put("appRules", File(appRules, "deep.rules").isFile)
+                .put("module", modulePresent)
+                .put("cleaner", File(RootPaths.MODULE_DIR, "cleaner.sh").isFile)
+                .put("deepRules", File(appRules, "deep.rules").isFile)
+                .put("scheduler", File(RootPaths.MODULE_DIR, "scheduler.sh").isFile)
+                .put("modulePurpose", "background-automation")
+                .put("engine", "app-root-foreground-v1")
+                .also { RootVersionInfo.putInto(it) }
+                .toString()
+        }
         override fun getProfileCatalog(): String = profileEngine.catalog()
 
         override fun scanProfile(profile: String?, optionsJson: String?): String = audited("profile-scan") {
