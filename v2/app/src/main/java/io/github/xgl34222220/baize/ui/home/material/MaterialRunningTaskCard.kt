@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.home.material
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,6 @@ import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -87,15 +87,13 @@ internal fun MaterialRunningTaskCard(state: DashboardUiState) {
 
             Spacer(Modifier.height(15.dp))
             if (determinate) {
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                BaiZeProgress(
+                    progress = fraction,
+                    modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                BaiZeProgress(
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
             Spacer(Modifier.height(12.dp))

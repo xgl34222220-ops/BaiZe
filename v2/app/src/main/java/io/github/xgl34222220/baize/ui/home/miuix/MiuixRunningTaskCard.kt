@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.home.miuix
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.FolderCopy
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,15 +92,13 @@ internal fun MiuixRunningTaskCard(state: DashboardUiState) {
 
             Spacer(Modifier.height(14.dp))
             if (determinate) {
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+                BaiZeProgress(
+                    progress = fraction,
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 )
             } else {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
+                BaiZeProgress(
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
                 )
             }
 

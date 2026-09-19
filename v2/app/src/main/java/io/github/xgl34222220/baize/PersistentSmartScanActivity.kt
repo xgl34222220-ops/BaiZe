@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZePathText
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
@@ -43,7 +45,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -733,20 +734,17 @@ private fun PersistentSmartScreen(
                         Spacer(Modifier.size(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(state.status, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.phase,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 6,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (state.running) BaiZePathText(state.phase, live = true)
+                            else Text(state.phase, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 6, overflow = TextOverflow.Ellipsis)
                         }
                     }
 
                     if (state.running) {
                         if (state.progressTotal > 0) {
-                            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                            BaiZeProgress(progress = progress, modifier = Modifier.fillMaxWidth())
                         } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            BaiZeProgress(modifier = Modifier.fillMaxWidth())
                         }
                         OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Rounded.Stop, contentDescription = null)

@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
@@ -45,7 +46,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -657,7 +657,7 @@ internal fun CacheScreen(
         item {
             DetailSectionHeader("缓存明细", if (state.total > 0) "${state.total} 项 · 第 ${state.page + 1}/${state.pages} 页" else "扫描结果会按应用列出")
         }
-        if (state.loadingPage) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
+        if (state.loadingPage) item { BaiZeProgress(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
         if (state.items.isEmpty()) {
             item {
                 DetailEmptyState(

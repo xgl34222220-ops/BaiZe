@@ -221,6 +221,6 @@ fun DetailResultRow(
             }
         },
         confirmButton = { BaiZeDialogButton(onClick = { showDetails = false }) { Text("完成") } },
-        dismissButton = { if (onOpen != null) BaiZeDialogButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }
+        dismissButton = if (onOpen != null) ({ BaiZeDialogButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }) else null
     )
 }

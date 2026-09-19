@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import androidx.compose.foundation.clickable
@@ -58,7 +59,7 @@ internal fun WhitelistManagerScreen(
                 placeholder = { Text(if (tab == 0) "搜索应用名称或包名" else "搜索保护路径") })
             Text(state.message, inset.padding(vertical = 12.dp), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state.loading || state.saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.loading || state.saving) BaiZeProgress(Modifier.fillMaxWidth())
             if (tab == 0) {
                 FlowRow(inset.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = !protectedOnly, onClick = { protectedOnly = false }, label = { Text("全部应用") })

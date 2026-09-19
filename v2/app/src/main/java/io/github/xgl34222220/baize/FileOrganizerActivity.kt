@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
@@ -59,7 +60,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -385,8 +385,9 @@ internal fun FileOrganizerScreen(
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                DetailStatusText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp))
-                if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+                if (state.running) BaiZePathText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp), live = true)
+                else DetailStatusText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp))
+                if (state.running) BaiZeProgress(Modifier.fillMaxWidth().padding(bottom = 12.dp))
                 GlassActionButton(if (state.running) "停止当前任务" else "一键归类",
                     if (state.running) onStop else onOneTap, enabled = state.connected,
                     modifier = Modifier.fillMaxWidth(), secondary = state.running)

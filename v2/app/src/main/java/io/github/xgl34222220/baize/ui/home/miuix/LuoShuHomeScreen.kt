@@ -198,7 +198,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                     Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (state.scanCompleted && state.scanErrors == 0 && !state.running) BaiZeSuccessMark()
+                    if (state.scanCompleted && state.scanErrors == 0L && !state.running) BaiZeSuccessMark()
                     else Box(Modifier.size(6.dp).background(statusColor, CircleShape))
                     Spacer(Modifier.width(6.dp))
                     Text(status, style = MaterialTheme.typography.labelMedium, color = statusColor)

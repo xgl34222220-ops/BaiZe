@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZePathText
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -1445,7 +1446,7 @@ internal fun ResumeSmartScreen(
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item(contentType = "task") {
-            DetailGlassPanel(Modifier.animateContentSize()) {
+            DetailGlassPanel() {
                 Text(metricLabel, fontSize = 12.sp, color = scheme.onSurfaceVariant)
                 Text(
                     metric,
@@ -1458,13 +1459,14 @@ internal fun ResumeSmartScreen(
                     ),
                     color = scheme.onSurface
                 )
-                DetailStatusText(state.phase, Modifier.padding(top = 5.dp, bottom = 14.dp))
+                if (state.running) BaiZePathText(state.phase, Modifier.padding(top = 5.dp, bottom = 14.dp), live = true)
+                else DetailStatusText(state.phase, Modifier.padding(top = 5.dp, bottom = 14.dp))
                 if (state.running) {
                     if (state.progressTotal > 0) {
-                        LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth().height(8.dp))
+                        BaiZeProgress(progress = animatedProgress, modifier = Modifier.fillMaxWidth().height(8.dp))
                         Text("${state.progressCurrent.coerceAtMost(state.progressTotal)} / ${state.progressTotal}",
                             Modifier.padding(top = 5.dp), fontSize = 12.sp, color = scheme.onSurfaceVariant)
-                    } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(8.dp))
+                    } else BaiZeProgress(modifier = Modifier.fillMaxWidth().height(8.dp))
                     GlassActionButton("停止并保存", onStop, Modifier.fillMaxWidth().padding(top = 12.dp),
                         icon = Icons.Rounded.Stop, secondary = true)
                 } else if (state.cleanReady) {

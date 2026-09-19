@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -393,7 +393,7 @@ internal fun ProtectedReviewScreen(
                             color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 7.dp))
+                    if (state.running) BaiZeProgress(Modifier.fillMaxWidth().padding(top = 7.dp))
                 }
             }
             if (state.status.length > 85) item {
