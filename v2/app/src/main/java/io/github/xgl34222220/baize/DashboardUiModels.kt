@@ -27,6 +27,8 @@ data class DashboardUiState(
     val ready: Boolean = false,
     val running: Boolean = false,
     val serviceText: String = "正在等待 Root 服务…",
+    val automationAvailable: Boolean = false,
+    val automationText: String = "未安装自动清理模块",
     val versionWarning: String = "",
     val taskPhase: String = "等待下一次清理",
     val taskOperation: String = "",
