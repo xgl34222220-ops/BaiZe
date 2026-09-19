@@ -260,7 +260,7 @@ internal class ApkFastSnapshotRepository(
                 return@forEach
             }
             val size = stat.st_size.coerceAtLeast(0L)
-            val deleted = runCatching { Os.unlink(path); true }.getOrDefault(false)
+            val deleted = runCatching { Os.remove(path); true }.getOrDefault(false)
             if (deleted) {
                 deletedFiles += 1
                 deletedBytes += size
