@@ -6,18 +6,18 @@
 
 自动清理模块适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/重构版-1.0.0-2364db)
-![Build](https://img.shields.io/badge/build-30003-6f42c1)
+![Version](https://img.shields.io/badge/重构版-2.0.0-2364db)
+![Build](https://img.shields.io/badge/build-30005-6f42c1)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
-[下载正式版](https://github.com/xgl34222220-ops/BaiZe/releases/tag/refactor-v1.0.0)
+[下载正式版](https://github.com/xgl34222220-ops/BaiZe/releases/latest)
 
 </div>
 
 白泽是一套面向 Root Android 设备的清理工具，目标不是“扫得越多越好”，而是把 **扫描、风险判断、用户确认、实际删除、结果复核** 做成一条完整且可追踪的流程。
 
-**当前公开版本线从「重构版 1.0.0」重新开始，1.0.0 就是第一个正式版本。**
+**当前源码版本为 2.0.0，沿用重构版编号规则。正式安装包以 Releases 最新发布为准。**
 
 ## 当前开发方向
 
@@ -26,10 +26,14 @@
 模块负责定时扫描、自动清理、开机调度与后台通知。手动使用与后台自动化分别配置。
 共享文件工具需要文件访问权限；私有缓存和深度清理需要 Root。
 
-测试分支新增分类钻取、文件搜索与排序、筛选后批量勾选、可停止的完整内容查重和 APK 版本识别。
-具体实现、竞品来源与尚待验证的部分见 [工作台 v5](v2/docs/CLEANER_WORKBENCH_V5.md)。测试功能不代表已经发布至稳定渠道。
+支持分类钻取、文件搜索与排序、筛选后批量勾选、可停止的完整内容查重和 APK 版本识别。
+2.0.0 整合统一界面、新图标与模块目录整理，见 [本版说明](docs/releases/refactor-v2.0.0.md)。
 
-## 重构版 1.0.0
+## 2.0.0
+
+统一页面视觉与选择操作，清理废弃 UI 代码；模块内部脚本集中到 `scripts/`，App 兼容旧版平铺目录。
+
+## 重构版基础
 
 本次重构把 App、模块、清理流程和界面统一到新的正式版本线：
 
@@ -100,7 +104,7 @@
 
 ### 完整安装
 
-1. 打开 [GitHub Releases](https://github.com/xgl34222220-ops/BaiZe/releases/tag/refactor-v1.0.0)。
+1. 打开 [GitHub Releases](https://github.com/xgl34222220-ops/BaiZe/releases/latest)。
 2. 下载 `BaiZe-v1.0.0-Module.zip`。
 3. 在 Magisk、KernelSU 或 APatch 中刷入模块。
 4. 重启设备。
@@ -189,6 +193,7 @@ python3 v2/scripts/validate-rules.py --check
 
 ## 文档
 
+- [2.0.0 发布说明](docs/releases/refactor-v2.0.0.md)
 - [重构版 1.0.0 发布说明](docs/releases/refactor-v1.0.0.md)
 - [详细使用说明](docs/README-detailed.md)
 - [更新日志](CHANGELOG.md)

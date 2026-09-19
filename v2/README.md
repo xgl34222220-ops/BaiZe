@@ -22,7 +22,7 @@ v2/
 │       ├── main/   主源码
 │       └── test/   JVM 单元测试
 ├── native/         C 扫描引擎与深度不可变快照引擎
-├── module/         Magisk 模块脚本（打包进 ZIP 根目录）
+├── module/         模块入口与 scripts/ 内部实现
 ├── scripts/        构建、打包、版本与规则校验脚本
 ├── tests/          shell / python / 原生回归测试
 └── macrobenchmark/ 启动与滚动性能基准
@@ -64,6 +64,19 @@ bash tests/run-native-tests.sh        # 只跑 C 引擎相关（宿主 cc 即可
 
 - `module/scripts/cleaner.sh` — 清理总入口，原生引擎不可用时退回 `cleaner-compat.sh`
 - `module/scripts/native-cleaner.sh` — 原生扫描执行器
-- `module/scripts/scheduler.sh` — Root 调度器（打包后重命名为 `scheduler.sh`）
+- `module/scripts/scheduler.sh` — Root 调度器（源码与打包名称一致）
 - `module/scripts/supervisor.sh` — 调度器守护进程
 - `module/scripts/task-worker.sh` — 统一 Root Worker
+
+## 安装后的模块布局
+
+| 路径 | 内容 |
+|---|---|
+| 根目录 | `module.prop`、`skip_mount` 与安装、开机、操作、卸载四个入口 |
+| `scripts/` | 清理、调度、守护、归类、索引和公共辅助脚本 |
+| `bin/<ABI>/` | 对应设备架构的原生引擎 |
+| `config/` | 内置规则和默认配置 |
+| `app/` | 同版本 APK 与校验值 |
+
+运行状态继续保存在 `/data/adb/baize-v2`；本次整理不迁移或重置用户配置、白名单与历史。
+App 优先查找 `scripts/`，仍可连接采用平铺目录的旧模块。源码与打包路径保持一致。
