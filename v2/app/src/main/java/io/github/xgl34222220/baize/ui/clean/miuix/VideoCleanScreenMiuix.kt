@@ -28,6 +28,9 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.DataUsage
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -158,6 +161,18 @@ fun VideoCleanScreenMiuix(
                         ToolTile(Icons.Rounded.InstallMobile, "安装包", "查找已下载安装包",
                             MaterialTheme.colorScheme.secondary, actions.onApkScan,
                             Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VideoSectionTitle("文件工具", "直接分析手机存储，不依赖自动清理模块")
+                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                        VideoListRow(Icons.Rounded.FolderOpen, "大文件", "查找 100 MB 以上的大文件", onClick = actions.onLargeFiles)
+                        VideoDivider()
+                        VideoListRow(Icons.Rounded.ContentCopy, "重复文件", "按内容哈希确认真正重复的文件", onClick = actions.onDuplicates)
+                        VideoDivider()
+                        VideoListRow(Icons.Rounded.DataUsage, "存储分析", "查看图片、视频、安装包等空间占用", onClick = actions.onStorageAnalysis)
                     }
                 }
             }
