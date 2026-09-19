@@ -415,7 +415,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun cleanSnapshots() {
         if (screenState.running) return
-        val totalBefore = cacheCount + safeCount
+        val totalBefore = cacheCount + safeCount + apkCount
         if (!screenState.cleanReady || totalBefore <= 0 || !cleanPlanCurrent()) {
             screenState = screenState.copy(phase = "清理计划已过期、失效或设置已变化，请重新扫描")
             return
@@ -450,6 +450,18 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
                 val selection = JSONObject().put("__all_safe__", true).toString()
                 val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+
+                if (apkCount > 0 && apkSnapshot.isNotEmpty()) {
+                    screenState = screenState.copy(phase = "正在快速清理 $apkCount 个安装包")
+                    val apkResult = withContext(Dispatchers.IO) { cleanApkForSmartClean() }
+                    mergeApkMetrics(apkResult)
+                    persistCleanPlan()
+                    screenState = screenState.copy(
+                        totalSafe = cacheCount + safeCount + apkCount,
+                        apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else
+                            "安装包清理完成 · ${apkResult.elapsedMs} ms"
+                    )
+                }
 
                 if (cacheSnapshotId.isNotBlank() && cacheCount > 0) {
                     screenState = screenState.copy(phase = "正在清理应用缓存")
@@ -489,7 +501,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     interrupted = result.has("error") || result.optBoolean("cancelled") || result.optBoolean("timedOut")
                 }
 
-                val remaining = cacheCount + safeCount
+                val remaining = cacheCount + safeCount + apkCount
                 val report = buildString {
                     append(if (remaining > 0) {
                         if (interrupted) "清理已安全停止" else "清理部分完成"
@@ -536,10 +548,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     categoryStats = categoryStats.toString(),
                     riskStats = riskStats.toString(),
                     failures = cumulativeFailures,
-                    progressCurrent = (originalCacheCount + originalSafeCount - remaining).coerceAtLeast(0),
-                    progressTotal = (originalCacheCount + originalSafeCount).coerceAtLeast(1),
-                    cacheSummary = if (remaining > 0) "应用缓存剩余 $cacheCount 项" else "应用缓存清理完成",
-                    safeSummary = if (remaining > 0) "安全项目剩余 $safeCount 项" else "安全项目清理完成"
+                    progressCurrent = (originalCacheCount + originalSafeCount + originalApkCount - remaining).coerceAtLeast(0),
+                    progressTotal = (originalCacheCount + originalSafeCount + originalApkCount).coerceAtLeast(1),
+                    cacheSummary = if (cacheCount > 0) "应用缓存剩余 $cacheCount 项" else "应用缓存清理完成",
+                    apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else "安装包清理完成",
+                    safeSummary = if (safeCount > 0) "安全项目剩余 $safeCount 项" else "安全项目清理完成"
                 )
                 NativeNotifier.showTaskResult(
                     this@ResumableSmartScanActivity,
@@ -568,6 +581,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     cleanedCandidates = cleanedCandidates,
                     failures = cumulativeFailures,
                     cacheSummary = "应用缓存剩余 $cacheCount 项",
+                    apkSummary = "安装包剩余 $apkCount 个",
                     safeSummary = "安全项目剩余 $safeCount 项"
                 )
             } finally {
