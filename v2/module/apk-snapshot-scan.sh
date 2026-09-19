@@ -262,7 +262,7 @@ while IFS= read -r -d '' candidate; do
   [ -f "$candidate" ] || continue
   # One metadata read captures the object shown to the user. ctime and inode
   # prevent a same-name replacement (even with restored mtime) being deleted.
-  identity=$(stat -c '%d:%i:%s:%y:%z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
+  identity=$(stat -c '%d:%i:%s:%Y:%Z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
   device=${identity%%:*}
   identity_rest=${identity#*:}
   inode=${identity_rest%%:*}
