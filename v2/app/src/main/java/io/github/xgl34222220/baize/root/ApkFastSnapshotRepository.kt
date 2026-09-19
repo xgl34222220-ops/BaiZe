@@ -41,22 +41,41 @@ internal class ApkFastSnapshotRepository(
         var rejected = 0
         var protected = 0
         var supplemented = 0
+        var remapped = 0
 
         fun acceptPath(requestedPath: String, fromSupplement: Boolean = false) {
             if (requestedPath.isBlank()) { rejected += 1; return }
-            val file = File(requestedPath)
-            val extension = file.name.substringAfterLast('.', "").lowercase()
-            if (extension !in extensions || !isAllowedStoragePath(requestedPath)) { rejected += 1; return }
-            val stat = runCatching { Os.lstat(requestedPath) }.getOrNull() ?: run { rejected += 1; return }
-            if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) { rejected += 1; return }
+            val displayPath = ApkRootPathMapper.publicPath(requestedPath)
+            val displayFile = File(displayPath)
+            val extension = displayFile.name.substringAfterLast('.', "").lowercase()
+            if (extension !in extensions || !isAllowedStoragePath(displayPath)) { rejected += 1; return }
+
+            var rootPath: String? = null
+            var rootStat: android.system.StructStat? = null
+            for (candidatePath in ApkRootPathMapper.rootCandidates(requestedPath)) {
+                if (!isAllowedStoragePath(candidatePath)) continue
+                val stat = runCatching { Os.lstat(candidatePath) }.getOrNull() ?: continue
+                if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) continue
+                rootPath = runCatching { File(candidatePath).canonicalPath }.getOrDefault(candidatePath)
+                rootStat = stat
+                break
+            }
+            val resolvedPath = rootPath ?: run { rejected += 1; return }
+            val stat = rootStat ?: run { rejected += 1; return }
             if (stat.st_size <= 0L || stat.st_size > maxBytes) { rejected += 1; return }
-            val canonical = runCatching { file.canonicalPath }.getOrDefault(requestedPath)
-            if (!isAllowedStoragePath(canonical)) { rejected += 1; return }
-            if (whitelistPaths.any { pathContains(it, canonical) }) { protected += 1; return }
+            if (!isAllowedStoragePath(resolvedPath)) { rejected += 1; return }
+            if (whitelistConflicts(displayPath, resolvedPath, whitelistPaths)) { protected += 1; return }
             val objectKey = "${stat.st_dev}:${stat.st_ino}"
             if (!seenObjects.add(objectKey)) return
             val identity = fastIdentity(stat)
-            accepted += Candidate(canonical, file.name, stat.st_size, identity)
+            if (resolvedPath != requestedPath) remapped += 1
+            accepted += Candidate(
+                rootPath = resolvedPath,
+                displayPath = displayPath,
+                name = displayFile.name,
+                bytes = stat.st_size,
+                identity = identity
+            )
             if (fromSupplement) supplemented += 1
         }
 
@@ -74,7 +93,7 @@ internal class ApkFastSnapshotRepository(
         }
 
         accepted.sortByDescending { it.bytes }
-        val targetsBytes = nulBytes(accepted.map { it.path })
+        val targetsBytes = nulBytes(accepted.map { it.rootPath })
         val identitiesBytes = nulBytes(accepted.map { it.identity })
         val epoch = System.currentTimeMillis() / 1000L
         val snapshotId = "$epoch-${sha256(targetsBytes).take(16)}"
@@ -89,7 +108,7 @@ internal class ApkFastSnapshotRepository(
             accepted.forEach { candidate ->
                 append("candidate\tlow\tAPK安装包\t1\t")
                 append(candidate.bytes).append('\t')
-                append(candidate.path.replace('\t', ' ').replace('\n', ' ').replace('\r', ' '))
+                append(candidate.displayPath.replace('\t', ' ').replace('\n', ' ').replace('\r', ' '))
                 append('\n')
             }
         }
@@ -112,6 +131,7 @@ internal class ApkFastSnapshotRepository(
             appendLine("raw_candidates=${source.length()}")
             appendLine("brute_force_used=0")
             appendLine("quick_supplemented=$supplemented")
+            appendLine("root_path_remapped=$remapped")
             appendLine("path_filtered=$rejected")
             appendLine("whitelist_filtered=$protected")
             appendLine("bytes=$totalBytes")
@@ -167,13 +187,13 @@ internal class ApkFastSnapshotRepository(
                 .put("files", accepted.size)
                 .put("bytes", totalBytes)
                 .put("path", "content://media/external/file")
-                .put("reason", "系统索引 ${source.length()} 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected")
+                .put("reason", "系统索引 ${source.length()} 条 · 路径映射 $remapped 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected")
         )
         RootFileStore.writeAtomic(
             File(stateDir, "apk-coverage.tsv"),
             "status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n" +
                 "scanned\tMediaStore.Files 系统索引\t-\texternal\t${accepted.size}\t$totalBytes\tcontent://media/external/file\t" +
-                "系统索引 ${source.length()} 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected\n"
+                "系统索引 ${source.length()} 条 · 路径映射 $remapped 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected\n"
         )
 
         val details = JSONArray()
@@ -184,7 +204,7 @@ internal class ApkFastSnapshotRepository(
                     .put("files", 1)
                     .put("bytes", candidate.bytes)
                     .put("errors", 0)
-                    .put("samplePath", candidate.path)
+                    .put("samplePath", candidate.displayPath)
             )
         }
         return JSONObject()
@@ -243,20 +263,21 @@ internal class ApkFastSnapshotRepository(
             if (cancelled.get()) { stopped = true; return@forEach }
             val path = targets[index]
             val expected = identities[index]
-            if (!isAllowedStoragePath(path) || whitelistPaths.any { pathContains(it, path) }) {
+            val displayPath = ApkRootPathMapper.publicPath(path)
+            if (!isAllowedStoragePath(path) || whitelistConflicts(displayPath, path, whitelistPaths)) {
                 skipped += 1
-                details.put(resultRow("protected", path, 0L, "路径或白名单保护"))
+                details.put(resultRow("protected", displayPath, 0L, "路径或白名单保护"))
                 return@forEach
             }
             val stat = runCatching { Os.lstat(path) }.getOrNull()
             if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
                 skipped += 1
-                details.put(resultRow("protected", path, 0L, "目标已变化或不存在"))
+                details.put(resultRow("protected", displayPath, 0L, "目标已变化或不存在"))
                 return@forEach
             }
             if (fastIdentity(stat) != expected) {
                 skipped += 1
-                details.put(resultRow("protected", path, stat.st_size, "扫描后文件已变化"))
+                details.put(resultRow("protected", displayPath, stat.st_size, "扫描后文件已变化"))
                 return@forEach
             }
             val size = stat.st_size.coerceAtLeast(0L)
@@ -264,11 +285,11 @@ internal class ApkFastSnapshotRepository(
             if (deleted) {
                 deletedFiles += 1
                 deletedBytes += size
-                deletedPaths += path
-                details.put(resultRow("cleaned", path, size, "已删除"))
+                deletedPaths += displayPath
+                details.put(resultRow("cleaned", displayPath, size, "已删除"))
             } else {
                 errors += 1
-                details.put(resultRow("failed", path, size, "删除失败"))
+                details.put(resultRow("failed", displayPath, size, "删除失败"))
             }
         }
 
@@ -357,6 +378,14 @@ internal class ApkFastSnapshotRepository(
         bytes >= 1024L -> "%.2f KB".format(bytes / 1024.0)
         else -> "$bytes B"
     }
+    private fun whitelistConflicts(displayPath: String, rootPath: String, whitelistPaths: List<String>): Boolean =
+        whitelistPaths.any { whitelistPath ->
+            val mappedWhitelist = ApkRootPathMapper.rootCandidates(whitelistPath)
+            pathContains(whitelistPath, displayPath) ||
+                pathContains(whitelistPath, rootPath) ||
+                mappedWhitelist.any { mapped -> pathContains(mapped, rootPath) }
+        }
+
     private fun quickSupplementPaths(): Sequence<String> = sequence {
         val userRoots = LinkedHashSet<File>()
         listOf(File("/data/media"), File("/storage/emulated")).forEach { parent ->
@@ -449,7 +478,8 @@ internal class ApkFastSnapshotRepository(
         JSONObject().put("success", false).put("error", code).put("message", message).toString()
 
     private data class Candidate(
-        val path: String,
+        val rootPath: String,
+        val displayPath: String,
         val name: String,
         val bytes: Long,
         val identity: String
