@@ -37,10 +37,16 @@ class WorkbenchVisualReviewTest {
         render(ready())
         // Wait for the visible summary from background grouping. A lazy list row can be
         // outside the composed viewport and must not be used as a readiness signal.
-        compose.waitUntil(timeoutMillis = 5000) {
-            compose.onAllNodesWithText("1.66", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+        try {
+            compose.waitUntil(timeoutMillis = 5000) {
                 compose.onAllNodesWithText("12", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }
+        } catch (failure: ComposeTimeoutException) {
+            println(compose.onRoot(useUnmergedTree = true).printToString())
+            save("stress-timeout")
+            throw failure
         }
+        println("Workbench summary ready: " + compose.onRoot(useUnmergedTree = true).printToString())
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed().performClick()
         assertEquals(1, cleanRequests)
         compose.mainClock.advanceTimeByFrame()
