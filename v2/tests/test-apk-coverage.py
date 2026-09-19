@@ -175,9 +175,14 @@ class PackageCoverage(unittest.TestCase):
         modified.write_bytes(b'changed payload')
         for path, before in expected.items():
             os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
-        self.run_task('clean')
+        result = subprocess.run(
+            ['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean', 'manual'],
+            env=self.env, text=True, capture_output=True
+        )
+        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
         self.assertTrue(replaced.exists() and modified.exists())
         self.assertIn('skipped=2\n', (self.state / 'latest.env').read_text())
+        self.assertIn('未完全生效', result.stdout)
 
     def test_tampered_or_missing_identity_snapshot_refuses_deletion(self):
         package = self.make('0/Download/keep.apk')
@@ -198,7 +203,11 @@ class PackageCoverage(unittest.TestCase):
         (outside / package.name).write_bytes(b'do not delete')
         package.parent.symlink_to(outside, target_is_directory=True)
         new = self.make('0/Downloads/new.apk')
-        self.run_task('clean')
+        result = subprocess.run(
+            ['bash', str(self.module / 'apk-snapshot-clean.sh'), 'apk-clean', 'manual'],
+            env=self.env, text=True, capture_output=True
+        )
+        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
         self.assertTrue((outside / package.name).exists() and new.exists())
 
 if __name__ == '__main__':

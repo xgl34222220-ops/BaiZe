@@ -92,7 +92,7 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         }
         if (selectedTab == 0) {
             if (state.records.isEmpty()) item {
-                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                     VideoEmptyState(Icons.Rounded.History, "暂无清理记录", "完成一次清理后，在这里回看结果。")
                 }
             } else {
@@ -102,7 +102,7 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
             }
         } else {
             if (meaningfulApps.isEmpty() && meaningfulJunk.isEmpty()) item {
-                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                     VideoEmptyState(Icons.Rounded.Folder, "暂无分类结果", "扫描后可按应用、文件查看明细。")
                 }
             }
@@ -116,7 +116,7 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                 item { VideoSectionTitle("其他文件", modifier = Modifier.padding(top = 16.dp)) }
                 itemsIndexed(meaningfulJunk, key = { index, junk -> "junk:${junk.name}:$index" }) { _, junk ->
                     val context = LocalContext.current
-                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                         VideoListRow(Icons.Rounded.Folder, junk.name, junk.samplePath.ifBlank { "未记录示例路径" }, value = "${Formatter.formatFileSize(context, junk.bytes)}\n${junk.files} 项")
                     }
                 }
@@ -129,7 +129,7 @@ fun VideoHistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
 private fun LifetimeSummary(state: HistoryUiState) {
     val context = LocalContext.current
     var expanded by rememberSaveable { mutableStateOf(false) }
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         containerColor = lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .04f),
         contentPadding = 20) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -185,7 +185,7 @@ private fun StatisticRow(label: String, value: String) {
 private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Unit) {
     val context = LocalContext.current
     val hasResult = state.hasCurrentResult || state.latestResult.isNotBlank()
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
         if (hasResult) {
             Column(Modifier.padding(18.dp)) {
                 Text(listOf("最近一次", state.lastTaskTime).filter { it.isNotBlank() }.joinToString(" · "),
@@ -209,7 +209,7 @@ private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Un
 @Composable
 private fun AppResultRow(packageName: String, label: String, subtitle: String, bytes: Long, files: Long) {
     val context = LocalContext.current
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), contentPadding = 16) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppPackageIcon(packageName = packageName, label = label, size = 38.dp, corner = 12.dp)
             Spacer(Modifier.width(12.dp))
@@ -233,7 +233,7 @@ private fun HistoryTimelineRow(record: HistoryUiItem) {
     val context = LocalContext.current
     var expanded by rememberSaveable(record.time, record.title) { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().clickable(role = Role.Button,
             onClickLabel = if (expanded) "收起任务详情" else "展开任务详情") { expanded = !expanded }.padding(18.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,

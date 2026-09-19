@@ -879,7 +879,7 @@ private fun ProfileMaterialTaskCard(
     TextButton(
         onClick = actions.onReview,
         enabled = !state.running && !state.loadingPage,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     ) {
         Text("按项选择清理", style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.width(4.dp))
@@ -932,7 +932,7 @@ private fun ProfileScreenMiuix(
 @Composable
 private fun ProfilePagination(state: ProfileUiState, actions: ProfileUiActions, miuix: Boolean) {
     if (!state.showCandidates || state.pageCount <= 1) return
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp),
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         GlassActionButton("上一页", actions.onPrevious,
             enabled = !state.running && !state.loadingPage && state.page > 0,

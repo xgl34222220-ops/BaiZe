@@ -209,7 +209,7 @@ private fun AutomaticCleaningHero(
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(26.dp),
         color = colors.surfaceRaised,
         shadowElevation = 2.dp
     ) {

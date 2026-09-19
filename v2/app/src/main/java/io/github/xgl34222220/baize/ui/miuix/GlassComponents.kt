@@ -43,7 +43,7 @@ internal fun Modifier.glassSurface(
     dark: Boolean
 ): Modifier = this
     .shadow(
-        elevation = 12.dp,
+        elevation = 4.dp,
         shape = shape,
         clip = false,
         ambientColor = Color(0xFF1E3558).copy(alpha = if (dark) .10f else .055f),
@@ -91,7 +91,7 @@ fun GlassActionButton(
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(14.dp)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -102,12 +102,12 @@ fun GlassActionButton(
     val base = when {
         !enabled -> BaiZeTokens.colors.surfaceOverlay
         secondary -> BaiZeTokens.colors.surfaceRaised
-        else -> lerp(scheme.primaryContainer, scheme.primary, if (dark) .14f else .08f)
+        else -> scheme.primary
     }
     val foreground = when {
         !enabled -> scheme.onSurfaceVariant.copy(alpha = .55f)
         secondary -> scheme.primary
-        else -> scheme.onPrimaryContainer
+        else -> scheme.onPrimary
     }
     val upper = if (secondary || !enabled) {
         lerp(base, Color.White, if (dark) .05f else .7f)
@@ -122,7 +122,7 @@ fun GlassActionButton(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .heightIn(min = 50.dp)
             .shadow(
-                elevation = if (enabled) 6.dp else 0.dp,
+                elevation = if (enabled) 1.dp else 0.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = scheme.primary.copy(alpha = if (secondary) .03f else .09f),

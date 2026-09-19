@@ -74,8 +74,8 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { LuoShuPageHeader("设置") }
         item {
-            Surface(onClick = { open("service") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
-                color = colors.surfaceRaised, shadowElevation = 1.dp) {
+            Surface(onClick = { open("service") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp),
+                color = colors.surfaceRaised, shadowElevation = 0.dp) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = scheme.primary.copy(alpha = .10f)) {

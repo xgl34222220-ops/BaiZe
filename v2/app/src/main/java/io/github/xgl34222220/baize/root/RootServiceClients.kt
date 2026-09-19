@@ -6,6 +6,14 @@ import java.io.File
 
 /** Keeps UI entry points on descriptor transport without changing their service contracts. */
 internal object RootServiceClients {
+    fun profileExchange(
+        remote: IProfileRootService,
+        directory: File,
+        operation: String,
+        arguments: JSONArray = JSONArray()
+    ): String = JsonFileTransport.callInto(directory, arguments) { request, response ->
+        remote.exchangeJsonInto(operation, request, response)
+    }
     fun profile(binder: IBinder?, directory: File): IProfileRootService {
         val remote = requireNotNull(IProfileRootService.Stub.asInterface(binder))
         return object : IProfileRootService by remote {

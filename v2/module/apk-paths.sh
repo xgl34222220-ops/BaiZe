@@ -407,3 +407,194 @@ apk_collect_candidates() {
   [ "$_apk_success_roots" -gt 0 ] || [ -s "$_apk_output" ] || return 5
   return 0
 }
+
+# --- BaiZe real-device storage discovery v3 ---
+# Discover Android 16 / HyperOS storage views dynamically. Scan broadly, delete only from snapshots.
+apk_realpath_or_self() {
+  _apk_input=${1%/}
+  [ -n "$_apk_input" ] || _apk_input=/
+  _apk_resolved=$(readlink -f "$_apk_input" 2>/dev/null || true)
+  if [ -n "$_apk_resolved" ]; then
+    printf '%s\n' "$_apk_resolved"
+  else
+    printf '%s\n' "$_apk_input"
+  fi
+}
+
+apk_add_root() {
+  [ -d "$1" ] || return 0
+  _apk_root=$(apk_realpath_or_self "$1")
+  [ -d "$_apk_root" ] || return 0
+  apk_root_safe "$_apk_root" || return 0
+  apk_list_append APK_ROOTS "$_apk_root"
+}
+
+apk_add_fallback_root() {
+  [ -d "$1" ] || return 0
+  _apk_root=$(apk_realpath_or_self "$1")
+  [ -d "$_apk_root" ] || return 0
+  apk_root_safe "$_apk_root" || return 0
+  apk_list_append APK_FALLBACK_ROOTS "$_apk_root"
+}
+
+apk_mount_unescape() {
+  printf '%s' "$1" | sed 's/\\040/ /g; s/\\011/\t/g; s/\\134/\\/g'
+}
+
+apk_add_user_views() {
+  _apk_uid=$1
+  _apk_media_root=${MEDIA_ROOT:-/data/media}
+  _apk_public_root=${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}
+
+  apk_add_root "$_apk_media_root/$_apk_uid"
+  apk_add_fallback_root "$_apk_public_root/$_apk_uid"
+
+  for _apk_view in \
+    "/mnt/runtime/default/emulated/$_apk_uid" \
+    "/mnt/runtime/read/emulated/$_apk_uid" \
+    "/mnt/runtime/write/emulated/$_apk_uid" \
+    "/mnt/runtime/full/emulated/$_apk_uid" \
+    "/mnt/installer/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/androidwritable/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/pass_through/$_apk_uid/emulated/$_apk_uid" \
+    "/mnt/user/$_apk_uid/primary"
+  do
+    apk_add_fallback_root "$_apk_view"
+  done
+}
+
+apk_discover_runtime_roots() {
+  _apk_seen_users=
+  for _apk_userdir in "${MEDIA_ROOT:-/data/media}"/[0-9]* "${BAIZE_PUBLIC_MEDIA_ROOT:-/storage/emulated}"/[0-9]*; do
+    [ -d "$_apk_userdir" ] || continue
+    _apk_uid=${_apk_userdir##*/}
+    case "$_apk_uid" in ''|*[!0-9]*) continue ;; esac
+    case "
+$_apk_seen_users
+" in *"
+$_apk_uid
+"*) continue ;; esac
+    apk_list_append _apk_seen_users "$_apk_uid"
+    apk_add_user_views "$_apk_uid"
+  done
+
+  _apk_current_user=$(
+    (cmd activity get-current-user 2>/dev/null || am get-current-user 2>/dev/null || true) |
+      tr -cd '0-9\n' | head -n 1
+  )
+  case "$_apk_current_user" in ''|*[!0-9]*) ;; *)
+    apk_add_user_views "$_apk_current_user"
+    ;;
+  esac
+
+  if [ -r /proc/self/mountinfo ]; then
+    while IFS= read -r _apk_mount_line || [ -n "$_apk_mount_line" ]; do
+      _apk_mount_point=$(printf '%s\n' "$_apk_mount_line" | awk '{print $5}')
+      [ -n "$_apk_mount_point" ] || continue
+      _apk_mount_point=$(apk_mount_unescape "$_apk_mount_point")
+      case "$_apk_mount_point" in
+        /storage/emulated/[0-9]*|/mnt/runtime/*/emulated/[0-9]*|/mnt/installer/[0-9]*/emulated/[0-9]*|/mnt/androidwritable/[0-9]*/emulated/[0-9]*|/mnt/pass_through/[0-9]*/emulated/[0-9]*|/mnt/user/[0-9]*/primary)
+          apk_add_fallback_root "$_apk_mount_point"
+          ;;
+        /mnt/media_rw/*)
+          apk_add_root "$_apk_mount_point"
+          _apk_uuid=${_apk_mount_point##*/}
+          apk_add_fallback_root "/storage/$_apk_uuid"
+          ;;
+        /storage/*)
+          _apk_name=${_apk_mount_point##*/}
+          case "$_apk_name" in emulated|self|enc_emulated|runtime) continue ;; esac
+          apk_add_fallback_root "$_apk_mount_point"
+          ;;
+      esac
+    done </proc/self/mountinfo
+  fi
+}
+
+apk_load_roots() {
+  APK_ROOTS=
+  APK_FALLBACK_ROOTS=
+  APK_PRIVATE_BOUNDARIES=
+  apk_discover_runtime_roots
+  apk_add_root /data/local/tmp
+
+  if [ -n "${BAIZE_EXTRA_STORAGE_ROOTS:-}" ]; then
+    _apk_old_ifs=$IFS
+    IFS=:
+    for _apk_volume in $BAIZE_EXTRA_STORAGE_ROOTS; do
+      apk_add_root "$_apk_volume"
+    done
+    IFS=$_apk_old_ifs
+  else
+    for _apk_volume in /mnt/media_rw/* /storage/*; do
+      [ -d "$_apk_volume" ] || continue
+      _apk_name=${_apk_volume##*/}
+      case "$_apk_name" in emulated|self|enc_emulated|runtime) continue ;; esac
+      case "$_apk_volume" in /mnt/media_rw/*) apk_add_root "$_apk_volume" ;; *) apk_add_fallback_root "$_apk_volume" ;; esac
+    done
+  fi
+}
+
+apk_find_into() {
+  # Shell functions share variables by default. Do not reuse _apk_out here:
+  # apk_bruteforce_candidates owns that name for its aggregate destination.
+  _apk_find_base=$1
+  _apk_find_output=$2
+  : >"$_apk_find_output"
+  if [ -x /system/bin/toybox ]; then
+    /system/bin/toybox find "$_apk_find_base" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >"$_apk_find_output" 2>/dev/null
+  else
+    find "$_apk_find_base" -type f \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      -print0 >"$_apk_find_output" 2>/dev/null
+  fi
+}
+
+apk_bruteforce_candidates() {
+  _apk_out=$1
+  : >"$_apk_out"
+  apk_discover_runtime_roots
+  # Keep the explicit brute-force hook used by diagnostics/tests and ROM-specific
+  # recovery. Dynamic mount discovery supplements this list; it does not replace it.
+  if [ -n "${BAIZE_BRUTE_STORAGE_ROOTS:-}" ]; then
+    _apk_brute_ifs=$IFS
+    IFS=:
+    for _apk_brute_root in $BAIZE_BRUTE_STORAGE_ROOTS; do
+      apk_add_fallback_root "$_apk_brute_root"
+    done
+    IFS=$_apk_brute_ifs
+  fi
+  apk_add_fallback_root /sdcard
+  _apk_seen_real=
+  _apk_root_no=0
+  _apk_old_ifs=$IFS
+  IFS='
+'
+  set -f
+  for _apk_root in $APK_ROOTS $APK_FALLBACK_ROOTS; do
+    [ -d "$_apk_root" ] || continue
+    _apk_real=$(apk_realpath_or_self "$_apk_root")
+    case "
+$_apk_seen_real
+" in *"
+$_apk_real
+"*) continue ;; esac
+    apk_list_append _apk_seen_real "$_apk_real"
+    _apk_root_no=$((_apk_root_no + 1))
+    _apk_tmp="${_apk_out}.root.$$.$_apk_root_no"
+    apk_find_into "$_apk_root" "$_apk_tmp" || true
+    [ ! -s "$_apk_tmp" ] || cat "$_apk_tmp" >>"$_apk_out"
+    rm -f "$_apk_tmp"
+  done
+  set +f
+  IFS=$_apk_old_ifs
+
+  if [ -n "${APK_PRIVATE_BOUNDARIES:-}" ]; then
+    _apk_private_tmp="${_apk_out}.private.$$"
+    apk_collect_private_candidates "$_apk_private_tmp"
+    [ ! -s "$_apk_private_tmp" ] || cat "$_apk_private_tmp" >>"$_apk_out"
+    rm -f "$_apk_private_tmp"
+  fi
+}

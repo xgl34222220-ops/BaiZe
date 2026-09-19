@@ -28,8 +28,10 @@ CLEAN_SECTION=$(sed -n '/private fun cleanSelection()/,/private fun quarantineIt
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanCandidates'
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanProfile'
 
-# The detailed workbench remains available from the clean page and must not intercept home one-tap clean.
-grep -q 'ScanWorkbenchActivity::class.java' "$CLEAN"
+# The detailed workbench remains registered as an expert/review surface, but primary cleaning now
+# routes through ResumableSmartScanActivity. It must not intercept either home or clean-page one-tap scan.
+grep -q 'ResumableSmartScanActivity::class.java' "$CLEAN"
+! grep -q 'onScan = { context.startActivity(Intent(context, ScanWorkbenchActivity::class.java)) }' "$CLEAN"
 ! grep -q 'ScanWorkbenchActivity::class.java' "$HOME"
 grep -q 'android:name=".ScanWorkbenchActivity"' "$MANIFEST"
 grep -q '不会直接删除，可单独移入隔离区' "$WORKBENCH"

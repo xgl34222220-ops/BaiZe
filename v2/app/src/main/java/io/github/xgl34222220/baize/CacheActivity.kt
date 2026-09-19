@@ -656,7 +656,7 @@ internal fun CacheScreen(
         item {
             DetailSectionHeader("缓存明细", if (state.total > 0) "${state.total} 项 · 第 ${state.page + 1}/${state.pages} 页" else "扫描结果会按应用列出")
         }
-        if (state.loadingPage) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) }
+        if (state.loadingPage) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
         if (state.items.isEmpty()) {
             item {
                 DetailEmptyState(
@@ -670,7 +670,7 @@ internal fun CacheScreen(
                 CacheCandidateCard(item, first = index == 0, last = index == state.items.lastIndex)
             }
             if (state.pages > 1) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GlassActionButton("上一页", onPrevious, enabled = !state.running && !state.loadingPage && state.page > 0, modifier = Modifier.weight(1f), secondary = true)
                     GlassActionButton("下一页", onNext, enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages, modifier = Modifier.weight(1f), secondary = true)
                 }

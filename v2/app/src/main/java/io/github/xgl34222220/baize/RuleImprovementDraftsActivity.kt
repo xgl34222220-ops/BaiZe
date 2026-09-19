@@ -323,8 +323,8 @@ private fun RuleImprovementDraftsScreen(
     onOpenRuleQuality: () -> Unit
 ) {
     var filter by rememberSaveable { mutableStateOf("all") }
-    val horizontal = 20.dp
-    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 16.dp
+    val shape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
     val filtered = remember(state.report.drafts, filter) {
         state.report.drafts.filter { draft ->
             when (filter) {

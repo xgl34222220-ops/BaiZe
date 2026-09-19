@@ -1,7 +1,7 @@
 package io.github.xgl34222220.baize.ui.miuix
 
-// Visual/optical parameters ported from LuoShu@fe4df5f LuoShuAppShell.kt.
-// Only the four BaiZe destinations and capability/accessibility fallback differ.
+// Matched to Hetu test.78: refractive shell with one flat, blue selected tab.
+// Keep BaiZe capability checks and larger-font sizing.
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
@@ -74,15 +74,14 @@ internal fun LuoShuLiquidDock(
         backdrop != null, hazeState?.blurEnabled == true)
     val glass = mode != DockRendering.OPAQUE
     // Do not initialise the runtime backdrop on devices taking the API 26-32 fallback.
-    val shellBackdrop = if (mode == DockRendering.LIQUID) rememberLayerBackdrop() else null
-    val shellTint = if (dark) scheme.surface.copy(alpha = .39f) else Color.White.copy(alpha = .40f)
+    val shellTint = if (dark) scheme.surface.copy(alpha = .26f) else Color(0xFFF8FBFF).copy(alpha = .34f)
     val effect = when (mode) {
         DockRendering.LIQUID -> Modifier.drawBackdrop(
             backdrop = requireNotNull(backdrop), shape = { shape },
             effects = {
                 padding = maxOf(padding, 30.dp.toPx())
-                colorControls(brightness = if (dark) -.015f else .025f, contrast = 1.05f, saturation = 1.40f)
-                blur(9.dp.toPx(), 9.dp.toPx())
+                colorControls(brightness = if (dark) -.015f else .025f, contrast = 1.05f, saturation = 1.80f)
+                blur(24.dp.toPx(), 24.dp.toPx())
                 liquidGlassLens(17.dp.toPx(), 13.dp.toPx(), depthEffect = true, chromaticAberration = .045f)
             },
             highlight = {
@@ -101,23 +100,28 @@ internal fun LuoShuLiquidDock(
             noiseFactor = .018f
             fallbackTint = HazeTint(tokens.surfaceOverlay)
         }.background(Brush.verticalGradient(if (dark)
-            listOf(Color.White.copy(alpha = .10f), Color.White.copy(alpha = .035f)) else
-            listOf(Color.White.copy(alpha = .22f), Color.White.copy(alpha = .09f))))
+            listOf(Color.White.copy(alpha = .085f), scheme.primary.copy(alpha = .035f)) else
+            listOf(Color(0xFFF8FBFF).copy(alpha = .58f), Color(0xFFEAF2FF).copy(alpha = .34f))))
         // No transparent imitation without an actual blur: background text must not ghost.
-        DockRendering.OPAQUE -> Modifier.background(if (amoled) Color.Black else tokens.surfaceOverlay.copy(alpha = 1f))
+        DockRendering.OPAQUE -> Modifier.background(Brush.verticalGradient(when {
+            amoled -> listOf(Color.Black, Color.Black)
+            dark -> listOf(Color(0xFF1A2230), Color(0xFF151C27))
+            else -> listOf(Color(0xFFF1F5F9), Color(0xFFE8EEF6))
+        }))
     }
     Box(modifier.testTag("luoshu-dock")
         .then(if (floating) Modifier.padding(horizontal = 20.dp).padding(bottom = bottomInset + 12.dp) else Modifier)
         .fillMaxWidth().height(itemHeight + 12.dp + if (floating) 0.dp else bottomInset)) {
         Box(Modifier.fillMaxSize().testTag("dock-shell-${mode.name.lowercase()}")
-            .shadow(if (floating) 18.dp else 5.dp, shape, clip = false)
+            .shadow(if (floating) 14.dp else 4.dp, shape, clip = false,
+                ambientColor = Color(0xFF0F172A).copy(alpha = if (dark) .12f else .035f),
+                spotColor = Color(0xFF0F172A).copy(alpha = if (dark) .16f else .075f))
             // Squircle clipping also uses RuntimeShader; gate it with the refractive layer.
             .then(if (floating && mode == DockRendering.LIQUID) Modifier.squircleClip(31.dp) else Modifier.clip(shape))
-            .then(if (shellBackdrop != null) Modifier.layerBackdrop(shellBackdrop) else Modifier)
             .then(effect)
-            .border(if (mode == DockRendering.LIQUID) .45.dp else .7.dp,
-                if (glass) Color.White.copy(alpha = if (dark) .11f else .32f)
-                else Color.White.copy(alpha = if (dark) .10f else .50f), shape))
+            .border(if (glass) .9.dp else .7.dp,
+                if (glass) Color.White.copy(alpha = if (dark) .13f else .78f)
+                else if (dark) Color.White.copy(alpha = .08f) else Color(0xFFCBD5E1).copy(alpha = .72f), shape))
         BoxWithConstraints(Modifier.fillMaxSize()
             .padding(start = 6.dp, top = 6.dp, end = 6.dp, bottom = if (floating) 6.dp else bottomInset + 6.dp)) {
             val itemWidth = maxWidth / items.size.toFloat()
@@ -141,40 +145,22 @@ internal fun LuoShuLiquidDock(
                     stiffness = if (glass) 310f else Spring.StiffnessMediumLow), label = "luoshuDockIndicator")
             val extra = if (glass) 13.dp * stretch.value else 0.dp
             val indicatorShape = RoundedCornerShape(23.dp)
-            val indicatorColor = scheme.primary.copy(alpha = if (dark) .28f else .16f)
-            val lens = if (shellBackdrop != null) Modifier.drawBackdrop(
-                backdrop = shellBackdrop, shape = { indicatorShape },
-                effects = {
-                    val amount = stretch.value
-                    padding = maxOf(padding, 22.dp.toPx())
-                    colorControls(brightness = .015f, contrast = 1.06f, saturation = 1.34f)
-                    blur(3.dp.toPx(), 3.dp.toPx())
-                    liquidGlassLens((13.dp + 4.dp * amount).toPx(), (14.dp + 5.dp * amount).toPx(),
-                        depthEffect = true, chromaticAberration = .08f + .10f * amount)
-                },
-                highlight = {
-                    (if (dark) Highlight.GlassStrokeSmallDark else Highlight.GlassStrokeSmallLight).copy(alpha = .88f)
-                },
-                layerBlock = { scaleY = 1f - .045f * stretch.value },
-                onDrawSurface = {
-                    drawRect(indicatorColor)
-                    drawRect(Brush.linearGradient(listOf(Color.White.copy(alpha = if (dark) .055f else .16f), Color.Transparent)))
-                },
-            ) else Modifier.drawBehind {
+            val indicatorColor = scheme.primary.copy(alpha = if (dark) .18f else .08f)
+            // Hetu removed the second refractive lens to avoid white patches on OEM GPUs.
+            // Only the outer dock samples the backdrop; the selected tab is a tonal surface.
+            val lens = Modifier.drawBehind {
                 val radius = CornerRadius(size.height / 2f)
-                drawRoundRect(Brush.verticalGradient(if (glass) listOf(
-                    indicatorColor.copy(alpha = (indicatorColor.alpha * 1.18f).coerceAtMost(1f)),
-                    indicatorColor.copy(alpha = indicatorColor.alpha * .72f)) else listOf(indicatorColor, indicatorColor)), cornerRadius = radius)
-                if (glass) drawRoundRect(Brush.radialGradient(
-                    listOf(Color.White.copy(alpha = if (dark) .10f else .24f), Color.Transparent),
-                    center = Offset(size.width * .27f, 0f), radius = size.width * .74f), cornerRadius = radius)
+                drawRoundRect(indicatorColor, cornerRadius = radius)
+                drawRoundRect(Brush.radialGradient(
+                    listOf(scheme.primary.copy(alpha = if (dark) .055f else .045f), Color.Transparent),
+                    center = Offset(size.width * .24f, size.height * .08f), radius = size.width * .72f),
+                    cornerRadius = radius)
             }
-            // Record ONLY the shell above. Labels stay outside both shader/capture layers.
+            // Labels remain above the shell shader, outside any captured layer.
             Box(Modifier.offset(x = x + 4.dp - if (direction < 0f) extra else 0.dp)
                 .width((itemWidth - 8.dp + extra).coerceAtLeast(1.dp)).height(itemHeight)
-                .shadow(if (shellBackdrop != null) 4.dp else 3.dp, indicatorShape, clip = false)
-                .then(if (shellBackdrop != null) Modifier.squircleClip(23.dp) else Modifier.clip(indicatorShape)).then(lens)
-                .border(1.dp, Color.White.copy(alpha = if (dark) .18f else .46f), indicatorShape))
+                .clip(indicatorShape).then(lens)
+                .border(1.dp, scheme.primary.copy(alpha = if (dark) .22f else .18f), indicatorShape))
             Row(Modifier.fillMaxWidth().selectableGroup()) {
                 items.forEachIndexed { index, item ->
                     val selected = index == target

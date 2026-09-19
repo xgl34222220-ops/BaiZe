@@ -63,6 +63,19 @@ internal object RootMediaScanQueue {
         return if (writeSpool(stateDir, payload)) unique.size else 0
     }
 
+    fun enqueueAsync(
+        context: Context,
+        paths: Collection<String>,
+        stateDir: File = File(RootPaths.STATE_DIR)
+    ) {
+        val snapshot = paths.asSequence().filter { it.isNotBlank() }.distinct().toList()
+        if (snapshot.isEmpty()) return
+        startupExecutor.execute {
+            enqueue(stateDir, snapshot)
+            flush(context, stateDir)
+        }
+    }
+
     fun onServiceStart(context: Context) {
         startupExecutor.execute { flush(context) }
         // A shell writer may have held the short queue lock exactly while the service started.

@@ -372,7 +372,7 @@ internal fun ProtectedReviewScreen(
                     onClick = { confirm = true },
                     enabled = state.connected && !state.running && state.selected.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 )
             }
         }
@@ -414,7 +414,7 @@ internal fun ProtectedReviewScreen(
                 )
             }
             if (state.pageCount > 1) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onPrevious, enabled = state.page > 0 && !state.running) {
                         Icon(Icons.Rounded.ChevronLeft, null, Modifier.size(18.dp))
@@ -462,7 +462,7 @@ private fun ProtectedItemRow(
 ) {
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = "查看完整路径与详情", onClick = onDetails)
             .padding(start = 13.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
