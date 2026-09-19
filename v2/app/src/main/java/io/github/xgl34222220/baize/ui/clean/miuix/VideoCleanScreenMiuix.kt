@@ -152,7 +152,7 @@ fun VideoCleanScreenMiuix(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     VideoSectionTitle("常用清理")
                     Row(
-                        Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(IntrinsicSize.Min),
+                        Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(IntrinsicSize.Min),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         ToolTile(Icons.Rounded.CleaningServices, "应用缓存", "释放日常缓存",
@@ -167,7 +167,7 @@ fun VideoCleanScreenMiuix(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     VideoSectionTitle("文件工具", "直接分析手机存储，不依赖自动清理模块")
-                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                         VideoListRow(Icons.Rounded.FolderOpen, "大文件", "查找 100 MB 以上的大文件", onClick = actions.onLargeFiles)
                         VideoDivider()
                         VideoListRow(Icons.Rounded.ContentCopy, "重复文件", "按内容哈希确认真正重复的文件", onClick = actions.onDuplicates)
@@ -177,7 +177,7 @@ fun VideoCleanScreenMiuix(
                 }
             }
             item {
-                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                     VideoListRow(Icons.Rounded.AutoAwesome, "深度清理", "日志、碎片与更多残留", onClick = actions.onDeepClean)
                     VideoDivider()
                     VideoListRow(Icons.Rounded.FolderDelete, "卸载残留", "找出应用卸载后的目录", onClick = actions.onCorpses)
@@ -188,7 +188,7 @@ fun VideoCleanScreenMiuix(
                 }
             }
             item {
-                VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                     VideoListRow(
                         Icons.Rounded.CalendarMonth,
                         "自动清理模块",
@@ -213,7 +213,7 @@ fun VideoCleanScreenMiuix(
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     VideoSectionTitle("清理类别", "点按周期可直接调整")
-                    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                         state.categories.forEachIndexed { index, category ->
                             if (index != 0) VideoDivider(start = 16)
                             CategoryRow(
@@ -235,7 +235,7 @@ fun VideoCleanScreenMiuix(
                     onClick = actions.onSave,
                     enabled = state.automationAvailable && !state.saving,
                     secondary = true,
-                    modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
                 )
             }
         }
@@ -246,7 +246,7 @@ fun VideoCleanScreenMiuix(
 private fun ScanSummary(state: CleanUiState, actions: CleanUiActions) {
     val primary = MaterialTheme.colorScheme.primary
     VideoCard(
-        Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         containerColor = lerp(BaiZeTokens.colors.surfaceRaised, primary, .04f),
         contentPadding = 20
     ) {
@@ -312,7 +312,7 @@ private fun ToolTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    VideoCard(modifier.clip(RoundedCornerShape(24.dp)).clickable(role = Role.Button, onClick = onClick), contentPadding = 18) {
+    VideoCard(modifier.clip(RoundedCornerShape(20.dp)).clickable(role = Role.Button, onClick = onClick), contentPadding = 18) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = .08f)),
                 contentAlignment = Alignment.Center) {
@@ -331,7 +331,7 @@ private fun ToolTile(
 
 @Composable
 private fun AutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         containerColor = lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .04f), contentPadding = 20) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             VideoLeadingIcon(Icons.Rounded.CalendarMonth)
@@ -377,7 +377,7 @@ private fun AutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
 
 @Composable
 private fun ScheduleCard(state: CleanUiState, actions: CleanUiActions, onEditTime: () -> Unit, onEditGrace: () -> Unit) {
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
         Column(Modifier.selectableGroup()) {
             CleanScheduleMode.entries.forEachIndexed { index, mode ->
                 val selected = state.scheduleMode == mode

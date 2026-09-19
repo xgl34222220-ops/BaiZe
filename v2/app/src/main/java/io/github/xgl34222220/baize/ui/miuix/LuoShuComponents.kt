@@ -41,7 +41,7 @@ internal fun LuoShuPageHeader(
         Text(
             title,
             Modifier.weight(1f),
-            fontSize = if (onBack == null) 28.sp else 22.sp,
+            fontSize = if (onBack == null) 26.sp else 20.sp,
             lineHeight = if (onBack == null) 34.sp else 30.sp,
             fontWeight = if (onBack == null) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
@@ -61,9 +61,9 @@ internal fun LuoShuHeaderButton(icon: ImageVector, label: String, onClick: () ->
         Surface(
             Modifier.size(44.dp),
             shape = CircleShape,
-            color = BaiZeTokens.colors.surfaceRaised,
+            color = BaiZeTokens.colors.surfaceOverlay,
             contentColor = MaterialTheme.colorScheme.primary,
-            shadowElevation = 1.dp
+            shadowElevation = 0.dp
         ) {
             IconButton(onClick = onClick, modifier = Modifier.fillMaxSize()) {
                 Icon(icon, label, Modifier.size(21.dp))
@@ -93,7 +93,7 @@ internal fun LuoShuGroup(modifier: Modifier = Modifier, content: @Composable Col
         shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 1.dp
+        shadowElevation = 0.dp
     ) {
         Column(content = content)
     }
@@ -116,7 +116,7 @@ internal fun LuoShuNavigationRow(
 ) {
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), color = Color.Transparent) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
+            Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             LuoShuIconTile(icon)
@@ -155,9 +155,9 @@ internal fun LuoShuSwitchRow(
     enabled: Boolean = true
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 80.dp)
+        Modifier.fillMaxWidth().heightIn(min = 72.dp)
             .alpha(if (enabled) 1f else .45f)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         LuoShuIconTile(icon)
@@ -198,12 +198,12 @@ internal fun LuoShuShortcut(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised,
-        shadowElevation = 1.dp
+        shadowElevation = 0.dp
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(shape = RoundedCornerShape(15.dp), color = BaiZeTokens.colors.surfaceOverlay) {
-                Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-                    Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -225,9 +225,9 @@ internal fun LuoShuShortcut(
 @Composable
 private fun LuoShuIconTile(icon: ImageVector) {
     Surface(
-        Modifier.size(42.dp),
+        Modifier.size(32.dp),
         shape = RoundedCornerShape(13.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .56f)
+        color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)

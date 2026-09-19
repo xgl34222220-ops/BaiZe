@@ -34,7 +34,7 @@ internal fun CleanSelectionBar(
     }
     Surface(
         modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised,
         shadowElevation = 8.dp
     ) {

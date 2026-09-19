@@ -1,5 +1,11 @@
 package io.github.xgl34222220.baize
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import io.github.xgl34222220.baize.ui.theme.BaiZeSafeViewport
 import android.app.Application
 import android.graphics.Bitmap
 import android.view.View
@@ -40,6 +46,23 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class UiVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun homeScrollClearsStatusBar() = renderSafeScroll("home-safe-scroll", 0)
+    @Test fun cleanScrollClearsStatusBar() = renderSafeScroll("clean-safe-scroll", 1)
+    @Test fun historyScrollClearsStatusBar() = renderSafeScroll("history-safe-scroll", 2)
+    @Test fun settingsScrollClearsStatusBar() = renderSafeScroll("settings-safe-scroll", 3)
+
+    private fun renderSafeScroll(name: String, page: Int) {
+        render(name, page, safeInset = 48)
+        val list = compose.onNode(hasScrollAction())
+        list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 420f) }
+        compose.waitForIdle()
+        val viewport = compose.onNodeWithTag("inset-page").fetchSemanticsNode().boundsInRoot
+        val scrollBounds = list.fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("The viewport must start below the 48px status/cutout area", viewport.top >= 48f)
+        org.junit.Assert.assertTrue("The scrolled list must stay inside the viewport", scrollBounds.top >= viewport.top)
+        save(name)
+    }
 
     @Test fun homeLight() = render("home-light", 0)
     @Test fun homeDark() = render("home-dark", 0, dark = true)
@@ -182,6 +205,7 @@ class UiVisualReviewTest {
         fontScale: Float = 1f,
         blur: Boolean = false,
         actions: DashboardActions = previewActions,
+        safeInset: Int = 0,
     ) {
         val state = DashboardUiState(
             ready = connected,
@@ -215,6 +239,8 @@ class UiVisualReviewTest {
                 LocalDensity provides Density(density.density, fontScale),
                 LocalView provides if (blur) captureView else hostView,
             ) {
+                BaiZeSafeViewport(insets = WindowInsets(top = safeInset)) {
+                Box(Modifier.fillMaxSize().testTag("inset-page")) {
                 BaiZeMiuixApp(
                     state = state,
                     scheduler = SchedulerUiState(enabled = true, apkPackagesEnabled = true, apkMinutes = 60, apkPackageDays = 0),
@@ -228,6 +254,8 @@ class UiVisualReviewTest {
                     ),
                     initialPage = page,
                 )
+                }
+                }
             }
         }
         compose.waitForIdle()

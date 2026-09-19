@@ -198,8 +198,8 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         !state.ready -> actions.reconnect
         else -> actions.scan
     }
-    Surface(modifier = Modifier.glassSurface(colors.surfaceRaised, RoundedCornerShape(24.dp), colors.surfaceRaised.luminance() < .3f),
-        shape = RoundedCornerShape(24.dp), color = Color.Transparent) {
+    Surface(modifier = Modifier.glassSurface(colors.surfaceRaised, RoundedCornerShape(20.dp), colors.surfaceRaised.luminance() < .3f),
+        shape = RoundedCornerShape(20.dp), color = Color.Transparent) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
             .animateContentSize()

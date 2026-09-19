@@ -383,7 +383,7 @@ internal fun InstantCacheScreen(
         bottomBar = {
             Surface(color = BaiZeTokens.colors.surfaceBase, modifier = Modifier.fillMaxWidth()) {
                 Column(
-                    Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                    Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -434,7 +434,7 @@ internal fun InstantCacheScreen(
                     }
                     val tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 12.dp)
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
                             .clip(RoundedCornerShape(16.dp)).background(tint.copy(alpha = .055f)).padding(13.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -456,7 +456,7 @@ internal fun InstantCacheScreen(
                     leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(21.dp)) },
                     singleLine = true,
                     enabled = !state.running,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(16.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = BaiZeTokens.colors.surfaceRaised,
@@ -477,7 +477,7 @@ internal fun InstantCacheScreen(
                 )
             }
             item(contentType = "selection") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${visible.size} 个应用", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f))
                     TextButton(
@@ -534,7 +534,7 @@ private fun InstantCacheAppRow(
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(if (selected) scheme.primary.copy(alpha = .045f) else BaiZeTokens.colors.surfaceRaised)
         .toggleable(value = selected, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() })) {
         Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(start = 13.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),

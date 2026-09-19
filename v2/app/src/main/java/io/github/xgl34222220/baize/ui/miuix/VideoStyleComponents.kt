@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -73,12 +74,12 @@ fun VideoTopBar(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            .heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+            .heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         start()
-        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge,
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp),
             color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
         Row(verticalAlignment = Alignment.CenterVertically,
@@ -89,13 +90,13 @@ fun VideoTopBar(
 @Composable
 fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit, primary: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
-    val color = if (primary) scheme.primaryContainer else BaiZeTokens.colors.surfaceRaised
+    val color = if (primary) scheme.primaryContainer else BaiZeTokens.colors.surfaceOverlay
     Surface(
         modifier = Modifier.size(48.dp)
             .clip(CircleShape).clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
-            .padding(2.dp).glassSurface(color, CircleShape, scheme.surface.luminance() < .3f),
+            .padding(2.dp),
         shape = CircleShape,
-        color = Color.Transparent,
+        color = color,
         contentColor = if (LocalVideoSkin.current == VideoSkin.MIUIX || primary) scheme.primary else scheme.onSurface
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -111,7 +112,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
     val dark = scheme.surface.luminance() < .3f
     val currentIndex = selectedIndex.coerceIn(labels.indices)
     Box(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp)
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(BaiZeTokens.colors.surfaceOverlay.copy(alpha = .62f))
             .selectableGroup()
@@ -148,7 +149,7 @@ fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Uni
 
 @Composable
 fun VideoSectionTitle(title: String, subtitle: String? = null, modifier: Modifier = Modifier) {
-    Column(modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+    Column(modifier.padding(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface)
@@ -177,7 +178,7 @@ fun VideoCard(
     } else {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
             Surface(modifier = modifier, shape = shape, color = color,
-                contentColor = scheme.onSurface, shadowElevation = 1.dp, tonalElevation = 0.dp) {
+                contentColor = scheme.onSurface, shadowElevation = 0.dp, tonalElevation = 0.dp) {
                 Column(Modifier.padding(contentPadding.dp), content = content)
             }
         }
@@ -188,10 +189,10 @@ fun VideoCard(
 fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier,
     color: Color? = null) {
     val tint = color ?: if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.size(40.dp).clip(RoundedCornerShape(14.dp))
+    Box(modifier.size(32.dp).clip(RoundedCornerShape(11.dp))
         .background(if (primary || color != null) tint.copy(alpha = .08f) else Color.Transparent),
         contentAlignment = Alignment.Center) {
-        Icon(icon, null, Modifier.size(22.dp), tint = tint)
+        Icon(icon, null, Modifier.size(20.dp), tint = tint)
     }
 }
 
