@@ -6,10 +6,14 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.media.MediaScannerConnection
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
 import android.text.format.Formatter
+import android.system.Os
+import android.system.OsConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -75,6 +79,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -93,10 +98,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
+    private var apkSnapshot: List<SmartApkSnapshot> = emptyList()
     private var cacheCount = 0
     private var safeCount = 0
+    private var apkCount = 0
     private var originalCacheCount = 0
     private var originalSafeCount = 0
+    private var originalApkCount = 0
+    private var apkBytes = 0L
     private var cleanPlanId = ""
     private var cleanPlanCreatedAt = 0L
     private var estimatedBytes = 0L
