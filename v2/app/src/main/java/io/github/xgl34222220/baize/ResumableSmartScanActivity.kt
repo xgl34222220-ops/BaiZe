@@ -460,6 +460,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
             return
         }
 
+        val cleanStarted = SystemClock.elapsedRealtime()
+        val beforeDeletedBytes = deletedBytes
+        val beforeDeletedFiles = deletedFiles
+        val beforeCleanedCandidates = cleanedCandidates
+
         screenState = screenState.copy(
             running = true,
             operation = "clean",
@@ -553,6 +558,21 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     .putString("last_report_text", report)
                     .putLong("last_clean_bytes", deletedBytes)
                     .apply()
+
+                val runReleased = (deletedBytes - beforeDeletedBytes).coerceAtLeast(0L)
+                val runFiles = (deletedFiles - beforeDeletedFiles).coerceAtLeast(0L)
+                val runCleaned = (cleanedCandidates - beforeCleanedCandidates).coerceAtLeast(0)
+                val runElapsed = (SystemClock.elapsedRealtime() - cleanStarted).coerceAtLeast(0L)
+                AppTaskHistoryStore.append(
+                    context = this@ResumableSmartScanActivity,
+                    title = if (remaining > 0) "一键清理（部分完成）" else "一键清理",
+                    result = report,
+                    bytes = runReleased,
+                    files = maxOf(runFiles.toInt(), runCleaned),
+                    elapsedMs = runElapsed,
+                    categories = historyCategoriesForRun(),
+                    cleaned = runReleased > 0L || runCleaned > 0
+                )
 
                 if (remaining <= 0) {
                     withContext(Dispatchers.IO) { runCatching { transactions.finish(cleanPlanId) } }
@@ -1104,6 +1124,28 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("partial", bucket.optInt("partial"))
             .put("failed", bucket.optInt("failed") + result.failed)
             .put("bytes", bucket.optLong("bytes") + result.deletedBytes)
+    }
+
+    private fun historyCategoriesForRun(): List<HistoryCategoryUiItem> {
+        val labels = mapOf(
+            "cache" to "应用缓存",
+            "apk" to "安装包",
+            "empty" to "空文件与空目录",
+            "rules" to "规则垃圾与日志",
+            "fragment" to "残留碎片",
+            "other" to "其他垃圾"
+        )
+        return buildList {
+            val keys = categoryStats.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val bucket = categoryStats.optJSONObject(key) ?: continue
+                val bytes = bucket.optLong("bytes", bucket.optLong("deletedBytes", 0L)).coerceAtLeast(0L)
+                val files = bucket.optLong("cleaned", bucket.optLong("deletedFiles", 0L)).coerceAtLeast(0L)
+                if (bytes <= 0L && files <= 0L) continue
+                add(HistoryCategoryUiItem(labels[key] ?: key, bytes, files))
+            }
+        }.sortedByDescending { it.bytes }
     }
 
     private fun throwableJson(error: Throwable): JSONObject = JSONObject()
