@@ -875,6 +875,182 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .toString()
     }
 
+    private fun scanApkForSmartClean(): SmartApkScanResult {
+        val started = SystemClock.elapsedRealtime()
+        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+            return SmartApkScanResult(
+                items = emptyList(),
+                elapsedMs = 0L,
+                error = "安装包未扫描：需要开启“所有文件访问”"
+            )
+        }
+        val indexed = ApkMediaStoreIndex.query(applicationContext)
+        if (indexed.error != null) {
+            return SmartApkScanResult(
+                items = emptyList(),
+                elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                error = "安装包扫描失败：${indexed.error}"
+            )
+        }
+        val items = indexed.candidates.mapNotNull { candidate ->
+            val stat = runCatching { Os.lstat(candidate.path) }.getOrNull() ?: return@mapNotNull null
+            if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) return@mapNotNull null
+            SmartApkSnapshot(
+                path = candidate.path,
+                name = candidate.name,
+                bytes = stat.st_size.coerceAtLeast(0L),
+                identity = smartApkIdentity(stat)
+            )
+        }
+        return SmartApkScanResult(
+            items = items,
+            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+            error = ""
+        )
+    }
+
+    private fun cleanApkForSmartClean(): SmartApkCleanResult {
+        if (apkSnapshot.isEmpty()) return SmartApkCleanResult.EMPTY
+        val started = SystemClock.elapsedRealtime()
+        val remaining = ArrayList<SmartApkSnapshot>()
+        val deletedPaths = ArrayList<String>()
+        var deleted = 0
+        var deletedBytesNow = 0L
+        var changed = 0
+        var failed = 0
+        apkSnapshot.forEach { item ->
+            val stat = runCatching { Os.lstat(item.path) }.getOrNull()
+            if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
+                changed += 1
+                return@forEach
+            }
+            if (smartApkIdentity(stat) != item.identity) {
+                changed += 1
+                remaining += item
+                return@forEach
+            }
+            val removed = runCatching { Os.remove(item.path); true }.getOrDefault(false)
+            if (removed) {
+                deleted += 1
+                deletedBytesNow += item.bytes
+                deletedPaths += item.path
+            } else {
+                failed += 1
+                remaining += item
+            }
+        }
+        apkSnapshot = remaining
+        apkCount = remaining.size
+        apkBytes = remaining.sumOf { it.bytes }
+        persistApkSnapshot()
+        if (deletedPaths.isNotEmpty()) {
+            MediaScannerConnection.scanFile(applicationContext, deletedPaths.toTypedArray(), null, null)
+        }
+        return SmartApkCleanResult(
+            deleted = deleted,
+            deletedBytes = deletedBytesNow,
+            changed = changed,
+            failed = failed,
+            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+        )
+    }
+
+    private fun smartApkIdentity(stat: android.system.StructStat): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
+                "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
+        } else {
+            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
+        }
+
+    private fun apkSnapshotFile(planId: String = cleanPlanId): File? {
+        if (planId.isBlank()) return null
+        val dir = File(filesDir, "smart-apk-plans").apply { mkdirs() }
+        return File(dir, "$planId.json")
+    }
+
+    private fun persistApkSnapshot() {
+        val target = apkSnapshotFile() ?: return
+        if (apkSnapshot.isEmpty()) {
+            target.delete()
+            return
+        }
+        val payload = JSONObject()
+            .put("createdAt", cleanPlanCreatedAt)
+            .put("items", JSONArray().apply {
+                apkSnapshot.forEach { item ->
+                    put(JSONObject()
+                        .put("path", item.path)
+                        .put("name", item.name)
+                        .put("bytes", item.bytes)
+                        .put("identity", item.identity))
+                }
+            })
+            .toString()
+        val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
+        runCatching {
+            temp.writeText(payload)
+            if (!temp.renameTo(target)) {
+                target.writeText(payload)
+                temp.delete()
+            }
+        }.onFailure { temp.delete() }
+    }
+
+    private fun loadApkSnapshot(planId: String): List<SmartApkSnapshot> {
+        val file = apkSnapshotFile(planId) ?: return emptyList()
+        if (!file.isFile) return emptyList()
+        val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return emptyList()
+        val createdAt = root.optLong("createdAt", 0L)
+        if (createdAt <= 0L || System.currentTimeMillis() - createdAt !in 0..CLEAN_PLAN_TTL_MS) {
+            file.delete()
+            return emptyList()
+        }
+        val array = root.optJSONArray("items") ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val path = item.optString("path").trim()
+                val identity = item.optString("identity").trim()
+                if (path.isBlank() || identity.isBlank()) continue
+                add(SmartApkSnapshot(
+                    path = path,
+                    name = item.optString("name").ifBlank { path.substringAfterLast('/') },
+                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                    identity = identity
+                ))
+            }
+        }
+    }
+
+    private fun deleteApkSnapshot(planId: String) {
+        apkSnapshotFile(planId)?.delete()
+    }
+
+    private fun mergeApkMetrics(result: SmartApkCleanResult) {
+        if (result.processed <= 0) return
+        processedCandidates += result.processed
+        cleanedCandidates += result.deleted
+        changedCandidates += result.changed
+        failedCandidates += result.failed
+        deletedBytes += result.deletedBytes
+        deletedFiles += result.deleted.toLong()
+        cumulativeFailures += result.failed
+        mergeMetricBucket(categoryStats, "apk", result)
+        mergeMetricBucket(riskStats, "low", result)
+    }
+
+    private fun mergeMetricBucket(root: JSONObject, key: String, result: SmartApkCleanResult) {
+        val bucket = root.optJSONObject(key) ?: JSONObject().also { root.put(key, it) }
+        bucket.put("processed", bucket.optInt("processed") + result.processed)
+            .put("cleaned", bucket.optInt("cleaned") + result.deleted)
+            .put("changed", bucket.optInt("changed") + result.changed)
+            .put("protected", bucket.optInt("protected"))
+            .put("partial", bucket.optInt("partial"))
+            .put("failed", bucket.optInt("failed") + result.failed)
+            .put("bytes", bucket.optLong("bytes") + result.deletedBytes)
+    }
+
     private fun throwableJson(error: Throwable): JSONObject = JSONObject()
         .put("error", "binder_failed")
         .put("message", error.message ?: error.javaClass.simpleName)
