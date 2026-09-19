@@ -58,6 +58,23 @@ internal class ModuleTaskController(
                 .toString()
         }
 
+        if (mode.startsWith("apk-")) {
+            val apkPaths = File(RootPaths.MODULE_DIR, "apk-paths.sh")
+            val engineMarker = "# --- BaiZe real-device storage discovery v3 ---"
+            val matched = apkPaths.isFile && runCatching {
+                apkPaths.bufferedReader().use { reader ->
+                    generateSequence { reader.readLine() }.any { it == engineMarker }
+                }
+            }.getOrDefault(false)
+            if (!matched) {
+                return JSONObject()
+                    .put("success", false)
+                    .put("error", "module_engine_mismatch")
+                    .put("message", "App 与 Root 模块清理引擎不匹配，请同时刷入当前测试包中的 Module ZIP 后再测试")
+                    .toString()
+            }
+        }
+
         val stateDir = File(RootPaths.STATE_DIR).apply { mkdirs() }
         File(stateDir, "stop").delete()
         val logDir = File(stateDir, "logs").apply { mkdirs() }

@@ -40,7 +40,18 @@ class WorkbenchVisualReviewTest {
         save("results-light")
     }
 
-    @Test fun resultsDark() { render(ready(), dark = true); save("results-dark") }
+    @Test fun resultsDark() {
+        // Dark-mode visual review does not need the 1,980-row stress fixture; the dedicated
+        // thousandsOfResultsKeepTheCleanupActionInView test covers that contract. Keeping this
+        // screenshot fixture representative avoids a Robolectric/Compose lazy-layout flake.
+        val base = ready()
+        val visibleItems = base.items.take(120)
+        render(base.copy(
+            items = visibleItems,
+            selectedIds = visibleItems.take(96).mapTo(linkedSetOf()) { it.id }
+        ), dark = true)
+        save("results-dark")
+    }
 
     @Test fun reportedFailureRetainsReviewWithoutShowingASecondEmptyState() {
         render(ready().copy(notice = WorkbenchNotice.ERROR,
