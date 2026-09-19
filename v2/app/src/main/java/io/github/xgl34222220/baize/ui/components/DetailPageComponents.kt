@@ -178,7 +178,8 @@ fun DetailResultRow(
     accent: Color = MaterialTheme.colorScheme.primary,
     selected: Boolean? = null,
     selectionEnabled: Boolean = true,
-    onToggle: () -> Unit = {}
+    onToggle: () -> Unit = {},
+    onOpen: (() -> Unit)? = null
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
     val shape = RoundedCornerShape(topStart = if (first) 20.dp else 0.dp, topEnd = if (first) 20.dp else 0.dp,
@@ -221,6 +222,7 @@ fun DetailResultRow(
                 Text(details, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp)
             }
         },
-        confirmButton = { TextButton(onClick = { showDetails = false }) { Text("完成") } }
+        confirmButton = { TextButton(onClick = { showDetails = false }) { Text("完成") } },
+        dismissButton = { if (onOpen != null) TextButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }
     )
 }

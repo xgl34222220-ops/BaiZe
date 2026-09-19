@@ -11,6 +11,8 @@ import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -30,7 +32,8 @@ internal class ForegroundCacheEngine(
         val path: String,
         val bytes: Long,
         val files: Long,
-        val directories: Long
+        val directories: Long,
+        val complete: Boolean = true
     ) {
         fun json(): JSONObject = JSONObject()
             .put("appName", appName)
@@ -41,7 +44,7 @@ internal class ForegroundCacheEngine(
             .put("files", files)
             .put("directories", directories)
             .put("measured", true)
-            .put("complete", true)
+            .put("complete", complete)
     }
 
     data class Snapshot(
@@ -125,17 +128,20 @@ internal class ForegroundCacheEngine(
         )
         val executor = Executors.newFixedThreadPool(workerCount)
         try {
-            val futures = roots.map { seed ->
-                executor.submit(Callable {
+            val completions = ExecutorCompletionService<MeasuredRoot>(executor)
+            roots.forEach { seed ->
+                completions.submit(Callable {
                     MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(seed.file))
                 })
             }
-            futures.forEachIndexed { index, future ->
-                if (cancelled.get()) return@forEachIndexed
-                val measured = runCatching { future.get() }.getOrNull() ?: return@forEachIndexed
+            var completed = 0
+            while (completed < roots.size && !cancelled.get()) {
+                val future = completions.poll(150, TimeUnit.MILLISECONDS) ?: continue
+                completed++
+                val measured = runCatching { future.get() }.getOrNull() ?: continue
                 val seed = measured.seed
                 val stats = measured.stats
-                progress("正在扫描应用缓存", index + 1, roots.size, seed.path)
+                progress("正在扫描应用缓存", completed, roots.size, seed.path)
                 visitedDirs += stats.directories
                 if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L) {
                     items += Item(
@@ -145,7 +151,8 @@ internal class ForegroundCacheEngine(
                         path = seed.path,
                         bytes = stats.bytes,
                         files = stats.files,
-                        directories = stats.directories
+                        directories = stats.directories,
+                        complete = stats.complete
                     )
                     totalBytes += stats.bytes
                     totalFiles += stats.files
@@ -329,7 +336,7 @@ internal class ForegroundCacheEngine(
         var dirs = 0L
         var complete = true
         while (stack.isNotEmpty()) {
-            if (cancelled.get()) return Stats(bytes, files, dirs, false)
+            if (cancelled.get() || Thread.currentThread().isInterrupted) return Stats(bytes, files, dirs, false)
             val file = stack.removeLast()
             val stat = lstat(file) ?: run { complete = false; continue }
             if (OsConstants.S_ISLNK(stat.st_mode)) continue
@@ -358,7 +365,7 @@ internal class ForegroundCacheEngine(
         var dirs = 0L
         var complete = true
         while (stack.isNotEmpty()) {
-            if (cancelled.get()) return Stats(bytes, files, dirs, false)
+            if (cancelled.get() || Thread.currentThread().isInterrupted) return Stats(bytes, files, dirs, false)
             val node = stack.removeLast()
             val file = node.file
             val stat = lstat(file) ?: continue

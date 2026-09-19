@@ -1,7 +1,11 @@
 # 白泽 v2
 
-白泽 v2 是面向 Magisk / KernelSU / APatch 的原生 Android 清理模块。
-App 通过 libsu RootService 调用模块内的 C 扫描引擎，不依赖 WebUI。
+白泽是原生 Android 清理 App，前台扫描、文件管理与清理由 App 自身负责。
+私有缓存和深度规则通过 App 自带的 libsu RootService 执行；共享文件分析使用系统文件索引。
+Magisk / KernelSU / APatch 模块是可选的后台自动化组件，只在需要定时扫描、自动清理和开机调度时安装。
+前台使用不以安装模块为前提；私有缓存与深度清理仍需要 Root，文件分析需要相应存储权限。
+
+本轮功能与竞品参照见 [清理工作台 v5](docs/CLEANER_WORKBENCH_V5.md)。
 
 项目总览与安全边界见[根目录 README](../README.md)，
 版本历史见 [CHANGELOG.md](../CHANGELOG.md)，
