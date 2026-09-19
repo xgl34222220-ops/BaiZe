@@ -33,7 +33,7 @@ private val MaterialShapes = Shapes(
     extraLarge = RoundedCornerShape(32.dp)
 )
 
-/** Active LuoShu Miuix shape hierarchy; Material remains independent. */
+/** Hetu Miuix shape hierarchy; Material remains independently selectable. */
 private val MiuixShapes = Shapes(
     extraSmall = RoundedCornerShape(9.dp),
     small = RoundedCornerShape(13.dp),
@@ -105,7 +105,7 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
             settings.seedArgb == AccentOptions.first().argb && settings.kolorStyle == KolorStyle.SOFT
         val scheme = if (defaultBlue) generatedScheme.copy(
             primary = if (dark) Color(0xFF3B82F6) else Color(0xFF2563EB),
-            onPrimary = Color.White,
+            onPrimary = if (dark) Color(0xFF081B39) else Color.White,
             primaryContainer = if (dark) Color(0xFF1E3A8A) else Color(0xFFDBEAFE),
             onPrimaryContainer = if (dark) Color(0xFFDBEAFE) else Color(0xFF1E40AF),
             secondary = if (dark) Color(0xFF60A5FA) else Color(0xFF2563EB),
