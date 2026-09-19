@@ -3,8 +3,8 @@ package io.github.xgl34222220.baize.ui.appearance
 import androidx.compose.runtime.Immutable
 
 enum class UiStyle(val label: String) {
-    MATERIAL("Material 3"),
-    MIUIX("MIUIx / HyperOS");
+    MATERIAL("经典"),
+    MIUIX("灵动");
 
     companion object {
         fun fromStorage(value: String?): UiStyle =

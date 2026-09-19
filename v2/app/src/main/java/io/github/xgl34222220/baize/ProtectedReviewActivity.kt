@@ -1,5 +1,8 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -36,11 +39,9 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -372,7 +373,7 @@ internal fun ProtectedReviewScreen(
                     onClick = { confirm = true },
                     enabled = state.connected && !state.running && state.selected.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding()
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 )
             }
         }
@@ -392,7 +393,7 @@ internal fun ProtectedReviewScreen(
                             color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 7.dp))
+                    if (state.running) BaiZeProgress(Modifier.fillMaxWidth().padding(top = 7.dp))
                 }
             }
             if (state.status.length > 85) item {
@@ -414,7 +415,7 @@ internal fun ProtectedReviewScreen(
                 )
             }
             if (state.pageCount > 1) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onPrevious, enabled = state.page > 0 && !state.running) {
                         Icon(Icons.Rounded.ChevronLeft, null, Modifier.size(18.dp))
@@ -438,14 +439,14 @@ internal fun ProtectedReviewScreen(
         ProtectedItemDetails(item, onDismiss = { detail = null })
     }
     if (confirm) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { confirm = false },
             title = { Text("清理 ${state.selected.size} 个所选项目？") },
             text = { Text("白名单、系统核心路径、挂载点、符号链接和关键风险仍会保留。高风险项目会在删除前重新校验。") },
             confirmButton = {
-                TextButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
+                BaiZeDialogButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
             },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { confirm = false }) { Text("取消") } }
         )
     }
 }
@@ -462,7 +463,7 @@ private fun ProtectedItemRow(
 ) {
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = "查看完整路径与详情", onClick = onDetails)
             .padding(start = 13.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
@@ -507,10 +508,10 @@ private fun ProtectedItemDetails(item: ProtectedReviewItem, onDismiss: () -> Uni
         if (item.packageName.isNotBlank()) appendLine("应用：${item.packageName}")
         append("完整路径：${item.path}")
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("项目详情", fontSize = 18.sp) },
-        text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp) } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("项目详情", fontSize = 18.sp) },
+        text = { SelectionContainer { Text(text, Modifier, fontSize = 13.sp, lineHeight = 20.sp) } },
+        confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { BaiZeDialogButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
 }
 
 private fun riskLabel(risk: String): String = when (risk) {

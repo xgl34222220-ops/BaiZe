@@ -27,7 +27,8 @@ data class BaiZeColors(
     val info: Color,
     val surfaceBase: Color,
     val surfaceRaised: Color,
-    val surfaceOverlay: Color
+    val surfaceOverlay: Color,
+    val muted: Color
 )
 
 /** 浅色：浅冷灰底、低对比分组卡片。 */
@@ -36,9 +37,10 @@ val LightBaiZeColors = BaiZeColors(
     warning = Color(0xFF956319),
     danger = Color(0xFFD83A3A),
     info = Color(0xFF245FD3),
-    surfaceBase = Color(0xFFF1F4F9),
+    surfaceBase = Color(0xFFF7F8FA),
     surfaceRaised = Color(0xFFFFFFFF),
-    surfaceOverlay = Color(0xFFE8EDF5)
+    surfaceOverlay = Color(0xFFF0F2F6),
+    muted = Color(0xFF8C93A0)
 )
 
 /** 普通深色：避免纯黑压迫感，维持柔和层级。 */
@@ -49,7 +51,8 @@ val DarkBaiZeColors = BaiZeColors(
     info = Color(0xFF8EAFFF),
     surfaceBase = Color(0xFF101319),
     surfaceRaised = Color(0xFF1C222C),
-    surfaceOverlay = Color(0xFF293240)
+    surfaceOverlay = Color(0xFF293240),
+    muted = Color(0xFFA2AAB8)
 )
 
 /** AMOLED：页面纯黑，主体与次级容器保留极轻阶差。 */
@@ -76,8 +79,8 @@ data class BaiZeCorners(
 val DefaultBaiZeCorners = BaiZeCorners(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(28.dp),
     full = RoundedCornerShape(percent = 50)
 )
 
@@ -91,7 +94,7 @@ data class BaiZeSpacing(
     val xxl: Dp = 24.dp,
     val huge: Dp = 32.dp,
     /** 360dp 手机基准的统一页面左右边距。 */
-    val pageHorizontal: Dp = 20.dp
+    val pageHorizontal: Dp = 16.dp
 )
 
 val DefaultBaiZeSpacing = BaiZeSpacing()

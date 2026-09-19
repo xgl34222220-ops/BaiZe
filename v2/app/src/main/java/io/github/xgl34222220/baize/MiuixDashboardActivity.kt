@@ -1,5 +1,9 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import io.github.xgl34222220.baize.root.RootServiceClients
 import android.Manifest
 import android.content.ComponentName
@@ -17,7 +21,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
-import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -87,6 +90,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var snapshotExpiresAtElapsed = 0L
 
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
+    private data class MessageDialog(val title: String, val message: String, val confirm: String,
+        val onConfirm: () -> Unit, val cancel: String = "取消", val extra: String = "", val onExtra: () -> Unit = {})
+    private val messageDialog = androidx.compose.runtime.mutableStateOf<MessageDialog?>(null)
     private var schedulerState = androidx.compose.runtime.mutableStateOf(SchedulerUiState())
 
     private val profileConnection = object : RootService.Connection {
@@ -207,14 +213,17 @@ class MiuixDashboardActivity : ComponentActivity() {
                 scheduler = schedulerState.value,
                 actions = DashboardActions(
                     refresh = { refreshAll() },
-                    clean = { runSmartClean() },
-                    organize = { runOneTapOrganize() },
-                    scan = { openScanReview() },
-                    apkScan = { runApkScan() },
-                    cleanScan = { openScanReview() },
+                    clean = { openForegroundCleaner() },
+                    organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) },
+                    scan = { openForegroundCleaner() },
+                    apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) },
+                    largeFiles = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.LARGE)) },
+                    duplicates = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.DUPLICATES)) },
+                    storageAnalysis = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.ANALYSIS)) },
+                    cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
-                    deep = { confirmDeepClean() },
+                    deep = { openProfile("deep") },
                     corpses = { openProfile("corpses") },
                     audit = { startActivity(Intent(this, CleanCenterActivity::class.java)) },
                     updateScheduler = { schedulerState.value = it },
@@ -230,7 +239,22 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() }
                 ),
-                appearance = appearance
+                appearance = appearance,
+                overlay = {
+                    messageDialog.value?.let { dialog ->
+                        BaiZeDialog(onDismissRequest = { messageDialog.value = null },
+                            title = { Text(dialog.title) }, text = { Column {
+                                androidx.compose.foundation.text.selection.SelectionContainer { Text(dialog.message) }
+                                if (dialog.extra.isNotBlank()) BaiZeDialogButton(onClick = {
+                                    messageDialog.value = null; dialog.onExtra()
+                                }) { Text(dialog.extra) }
+                            } },
+                            confirmButton = { BaiZeDialogButton(onClick = {
+                                messageDialog.value = null; dialog.onConfirm()
+                            }) { Text(dialog.confirm) } },
+                            dismissButton = { BaiZeDialogButton(onClick = { messageDialog.value = null }) { Text(dialog.cancel) } })
+                    }
+                }
             )
         }
         // Both engines may own a task from the previous App process.
@@ -241,14 +265,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
-            if (hasUsableScanSnapshots()) {
-                cleanNativeSnapshots()
-            } else if (rootService == null) {
-                pendingSmartClean = true
-                connectPrimaryService()
-            } else {
-                runSmartClean()
-            }
+            openForegroundCleaner()
         }
     }
 
@@ -312,6 +329,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 delay(3_000L)
             }
         }
+    }
+
+    private fun openForegroundCleaner() {
+        if (dashboardState.value.running) {
+            showTaskBusy("当前已有任务正在运行，请先停止后再开始前台清理")
+            return
+        }
+        startActivity(Intent(this, ResumableSmartScanActivity::class.java))
     }
 
     private fun refreshAll() {
@@ -685,24 +710,28 @@ class MiuixDashboardActivity : ComponentActivity() {
             versionObservationCurrent = true
             ConnectionDiagnostics.observeVersions(this@MiuixDashboardActivity, requireNotNull(observedVersions))
             val root = json.optBoolean("root")
+            val foregroundReady = json.optBoolean("foregroundReady", root && json.optBoolean("appRules"))
             val module = json.optBoolean("module")
-            val cleaner = json.optBoolean("cleaner")
             val scheduler = json.optBoolean("scheduler")
-            val rules = json.optBoolean("deepRules")
-            val ready = root && module && cleaner && scheduler && rules
+            val ready = root && foregroundReady
             val status = when {
-                !root -> "服务已连接，但未取得完整 Root"
-                !module -> "Root 已连接 · 未检测到白泽模块"
-                !cleaner -> "模块已连接 · 清理引擎缺失"
-                !scheduler -> "清理引擎已连接 · 调度器缺失"
-                !rules -> "自动清理可用 · 深度规则库缺失"
-                else -> "Root、完整清理引擎、定时任务与规则库均已就绪"
+                !root -> "前台清理服务未取得完整 Root"
+                !foregroundReady -> "Root 已连接 · App 前台规则库未就绪"
+                module && scheduler -> "前台清理已就绪 · 自动清理模块已启用"
+                module -> "前台清理已就绪 · 自动清理调度器未就绪"
+                else -> "前台清理已就绪 · 未安装自动清理模块"
             }
-            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "模块校验：$status")
+            ConnectionDiagnostics.record(this@MiuixDashboardActivity, "前台清理校验：$status")
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
                 ready = ready,
                 serviceText = if (dashboardState.value.connectionFailed) recoveryFailureText() else status,
+                automationAvailable = module && scheduler,
+                automationText = when {
+                    module && scheduler -> "自动清理模块已启用"
+                    module -> "模块已安装，但后台调度器未就绪"
+                    else -> "未安装自动清理模块"
+                },
                 versionWarning = versionWarning(),
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
@@ -735,11 +764,8 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun confirmClearRawLogs() {
         val service = rootService ?: return toast("Root 服务尚未连接")
-        AlertDialog.Builder(this)
-            .setTitle("清空原始日志？")
-            .setMessage("只删除 /data/adb/baize-v2/logs 中的模块输出，不影响清理历史和累计统计。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("清空") { _, _ ->
+        messageDialog.value = MessageDialog("清空原始日志？",
+            "只删除 /data/adb/baize-v2/logs 中的模块输出，不影响清理历史和累计统计。", "清空", onConfirm = {
                 lifecycleScope.launch {
                     val json = withContext(Dispatchers.IO) {
                         runCatching { JSONObject(service.clearRawLogs()) }.getOrNull()
@@ -750,8 +776,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     }
                     toast(if (success) "原始日志已清空" else "原始日志清空失败")
                 }
-            }
-            .show()
+            })
     }
 
     private fun updateStorage() {
@@ -775,22 +800,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runOneTapOrganize() {
-        if (dashboardState.value.running) {
-            showTaskBusy("当前已有任务正在运行，请等待完成后再归类")
-            return
-        }
-        val service = rootService
-        if (service == null) {
-            pendingModuleTask = "organize"
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 服务，连接后自动开始文件归类"
-            )
-            connectPrimaryService()
-            return
-        }
-        runDetachedOrganizer(service)
+        startActivity(Intent(this, FileOrganizerActivity::class.java))
     }
 
     private fun runDetachedOrganizer(service: IProfileRootService) {
@@ -851,22 +861,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runApkScan() {
-        if (dashboardState.value.running) {
-            showTaskBusy()
-            return
-        }
-        val service = rootService
-        if (service == null) {
-            pendingModuleTask = "apk-scan"
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 服务，连接后自动扫描安装包"
-            )
-            connectPrimaryService()
-            return
-        }
-        runModuleUtilityTask(service, "apk-scan")
+        startActivity(Intent(this, ApkScanActivity::class.java))
     }
 
     private fun runModuleUtilityTask(service: IProfileRootService, mode: String) {
@@ -925,23 +920,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runSmartClean() {
-        if (dashboardState.value.running) {
-            showTaskBusy()
-            return
-        }
-        if (schedulerState.value.notifyOnComplete) requestNotificationPermission()
-        val service = rootService
-        if (service == null) {
-            pendingSmartClean = true
-            dashboardState.value = dashboardState.value.copy(
-                connected = false,
-                ready = false,
-                taskPhase = "正在连接 Root 清理服务，连接成功后继续清理"
-            )
-            connectPrimaryService()
-            return
-        }
-        runModuleClean(service)
+        openForegroundCleaner()
     }
 
     private fun runModuleClean(service: IProfileRootService) {
@@ -1744,14 +1723,20 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun refreshHistory() {
-        val service = rootService ?: return
         lifecycleScope.launch {
-            val json = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.getTaskHistoryPage(0, 30)) }.getOrNull()
-            } ?: return@launch
-            if (!json.optBoolean("success")) return@launch
-            val array = json.optJSONArray("entries")
-            val entries = buildList {
+            val appHistory = withContext(Dispatchers.IO) {
+                AppTaskHistoryStore.read(this@MiuixDashboardActivity)
+            }
+
+            val service = rootService
+            val moduleJson = if (service != null) {
+                withContext(Dispatchers.IO) {
+                    runCatching { JSONObject(service.getTaskHistoryPage(0, 50)) }.getOrNull()
+                }
+            } else null
+
+            val moduleEntries = buildList {
+                val array = moduleJson?.takeIf { it.optBoolean("success") }?.optJSONArray("entries")
                 if (array != null) for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     add(
@@ -1771,15 +1756,31 @@ class MiuixDashboardActivity : ComponentActivity() {
                     )
                 }
             }
+
+            val merged = (appHistory.entries + moduleEntries)
+                .distinctBy { listOf(it.time, it.title, it.trigger, it.result).joinToString("|") }
+                .sortedByDescending { it.time }
+                .take(50)
+
+            val moduleRuns = moduleJson?.optLong("lifetimeRuns", moduleJson.optLong("cleanedRuns", 0L))
+                ?.coerceAtLeast(0L) ?: 0L
+            val moduleReleased = moduleJson?.optLong("lifetimeReleased", moduleJson.optLong("totalReleased", 0L))
+                ?.coerceAtLeast(0L) ?: 0L
+            val moduleFiles = moduleJson?.optLong("lifetimeFiles", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleEmptyFiles = moduleJson?.optLong("lifetimeEmptyFiles", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleEmptyDirs = moduleJson?.optLong("lifetimeEmptyDirs", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleFragments = moduleJson?.optLong("lifetimeFragments", 0L)?.coerceAtLeast(0L) ?: 0L
+            val moduleElapsed = moduleJson?.optLong("lifetimeElapsed", 0L)?.coerceAtLeast(0L) ?: 0L
+
             dashboardState.value = dashboardState.value.copy(
-                history = entries,
-                lifetimeRuns = json.optLong("lifetimeRuns", json.optLong("cleanedRuns", 0L)).coerceAtLeast(0L),
-                lifetimeReleased = json.optLong("lifetimeReleased", json.optLong("totalReleased", 0L)).coerceAtLeast(0L),
-                lifetimeFiles = json.optLong("lifetimeFiles", 0L).coerceAtLeast(0L),
-                lifetimeEmptyFiles = json.optLong("lifetimeEmptyFiles", 0L).coerceAtLeast(0L),
-                lifetimeEmptyDirs = json.optLong("lifetimeEmptyDirs", 0L).coerceAtLeast(0L),
-                lifetimeFragments = json.optLong("lifetimeFragments", 0L).coerceAtLeast(0L),
-                lifetimeElapsed = json.optLong("lifetimeElapsed", 0L).coerceAtLeast(0L)
+                history = merged,
+                lifetimeRuns = moduleRuns + appHistory.lifetimeRuns,
+                lifetimeReleased = moduleReleased + appHistory.lifetimeReleased,
+                lifetimeFiles = moduleFiles + appHistory.lifetimeFiles,
+                lifetimeEmptyFiles = moduleEmptyFiles,
+                lifetimeEmptyDirs = moduleEmptyDirs,
+                lifetimeFragments = moduleFragments,
+                lifetimeElapsed = moduleElapsed + appHistory.lifetimeElapsed
             )
         }
     }
@@ -1833,24 +1834,28 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun confirmClearHistory() {
-        val service = rootService ?: return
-        AlertDialog.Builder(this)
-            .setTitle("清空最近记录？")
-            .setMessage("只删除最近任务摘要；累计清理次数与累计释放空间会继续保留。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("清空") { _, _ ->
+        messageDialog.value = MessageDialog("清空最近记录？",
+            "删除 App 手动清理与自动清理的最近任务摘要；累计清理统计继续保留。", "清空", onConfirm = {
                 lifecycleScope.launch {
-                    val success = withContext(Dispatchers.IO) {
-                        runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
+                    val service = rootService
+                    val moduleSuccess = if (service != null) {
+                        withContext(Dispatchers.IO) {
+                            runCatching { JSONObject(service.clearTaskHistory()).optBoolean("success") }.getOrDefault(false)
+                        }
+                    } else true
+                    withContext(Dispatchers.IO) {
+                        AppTaskHistoryStore.clearRecent(this@MiuixDashboardActivity)
                     }
-                    toast(if (success) "最近记录已清空" else "清空失败")
-                    if (success) {
-                        LastCleanupStore.save(this@MiuixDashboardActivity, emptyList(), emptyList())
-                        dashboardState.value = dashboardState.value.copy(history = emptyList(), recentApps = emptyList(), recentJunk = emptyList())
-                    }
+                    LastCleanupStore.save(this@MiuixDashboardActivity, emptyList(), emptyList())
+                    dashboardState.value = dashboardState.value.copy(
+                        history = emptyList(),
+                        recentApps = emptyList(),
+                        recentJunk = emptyList()
+                    )
+                    toast(if (moduleSuccess) "最近记录已清空" else "App 记录已清空，自动模块记录清理失败")
                     refreshHistory()
                 }
-            }.show()
+            })
     }
 
     private fun diagnosticText(): String =
@@ -1859,17 +1864,13 @@ class MiuixDashboardActivity : ComponentActivity() {
             DiagnosticLabels.crashRecord("App", CrashRecorder.read(this))
 
     private fun showCrashDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("运行诊断")
-            .setMessage(diagnosticText())
-            .setNeutralButton("复制记录") { _, _ ->
+        messageDialog.value = MessageDialog("运行诊断", diagnosticText(), "清除记录",
+            onConfirm = { CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) },
+            cancel = "关闭", extra = "复制记录", onExtra = {
                 val clipboard = getSystemService(android.content.ClipboardManager::class.java)
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("白泽诊断", diagnosticText()))
                 toast("诊断记录已复制")
-            }
-            .setNegativeButton("关闭", null)
-            .setPositiveButton("清除记录") { _, _ -> CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) }
-            .show()
+            })
     }
 
     private fun requestNotificationPermission() {

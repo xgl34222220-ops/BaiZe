@@ -28,7 +28,7 @@ internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
     private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
-    private val ruleDirectory: File = File("/data/adb/modules/baize_v2/config"),
+    private val ruleDirectory: File = AppRuleStore.ensure(context),
     private val ruleRoots: ReviewRuleCatalog.Roots = ReviewRuleCatalog.Roots(),
     private val sharedRootOverride: List<File>? = null
 ) {

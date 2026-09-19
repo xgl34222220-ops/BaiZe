@@ -70,7 +70,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
             ChoiceCard(
                 values = UiStyle.entries,
                 selected = settings.uiStyle,
-                label = { if (it == UiStyle.MIUIX) "洛书 / MIUIX" else it.label },
+                label = { it.label },
                 onSelected = actions.onUiStyle
             )
         }
@@ -123,7 +123,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
                 LuoShuSwitchRow(
                     Icons.Rounded.Layers,
                     "半透明材质",
-                    "让导航栏呈现洛书同款玻璃层次",
+                    "让导航栏呈现通透、柔和的玻璃层次",
                     settings.glassEnabled,
                     actions.onGlassEnabled
                 )
@@ -171,9 +171,9 @@ private fun AppearancePreview(settings: AppearanceSettings, usesMonet: Boolean) 
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(26.dp),
         color = colors.surfaceRaised,
-        shadowElevation = 2.dp
+        shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
@@ -203,7 +203,7 @@ private fun AppearancePreview(settings: AppearanceSettings, usesMonet: Boolean) 
                     color = scheme.onSurfaceVariant
                 )
                 Text(
-                    if (settings.uiStyle == UiStyle.MIUIX) "洛书 / MIUIX" else settings.uiStyle.label,
+                    settings.uiStyle.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.primary
                 )
@@ -268,8 +268,8 @@ private fun ThemeChoices(selected: ThemeMode, onSelected: (ThemeMode) -> Unit) {
                 Row(Modifier.fillMaxWidth().height(68.dp).clip(RoundedCornerShape(13.dp))) {
                     val halves = if (mode == ThemeMode.SYSTEM) listOf(false, true) else listOf(mode == ThemeMode.DARK)
                     halves.forEach { dark ->
-                        val background = if (dark) Color(0xFF1A202A) else Color(0xFFEFF3F9)
-                        val surface = if (dark) Color(0xFF2A3340) else Color.White
+                        val background = if (dark) Color(0xFF121212) else Color(0xFFF4F6F9)
+                        val surface = if (dark) Color(0xFF1E1E1E) else Color.White
                         Column(
                             Modifier.weight(1f).fillMaxSize().background(background).padding(9.dp),
                             verticalArrangement = Arrangement.spacedBy(5.dp)

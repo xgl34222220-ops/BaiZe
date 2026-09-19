@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -58,7 +60,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -375,7 +376,7 @@ internal fun FileOrganizerScreen(
             DetailGlassPanel {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)) {
-                        Icon(Icons.Rounded.FolderCopy, null, Modifier.padding(11.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(BaiZeIcons.Folder, null, Modifier.padding(11.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(if (state.running) "正在整理文件" else if (state.lastTotal > 0) "已整理 ${state.lastTotal} 个文件" else "整理散落文件",
@@ -384,8 +385,9 @@ internal fun FileOrganizerScreen(
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                DetailStatusText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp))
-                if (state.running) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+                if (state.running) BaiZePathText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp), live = true)
+                else DetailStatusText(state.status, Modifier.padding(top = 10.dp, bottom = 14.dp))
+                if (state.running) BaiZeProgress(Modifier.fillMaxWidth().padding(bottom = 12.dp))
                 GlassActionButton(if (state.running) "停止当前任务" else "一键归类",
                     if (state.running) onStop else onOneTap, enabled = state.connected,
                     modifier = Modifier.fillMaxWidth(), secondary = state.running)
@@ -430,7 +432,7 @@ private fun DestinationCard() {
                 row.forEach { (label, icon) ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .8f))
+                        BaiZeIconTile(icon)
                         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -458,34 +460,8 @@ private fun ScheduleCard(
             Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) },
                 modifier = Modifier.semantics { contentDescription = "定时文件归类" })
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            intervals.chunked(4).forEach { rowItems ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowItems.forEach { minutes ->
-                        FilterChip(
-                            selected = schedule.intervalMinutes == minutes,
-                            onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
-                            label = {
-                                Text(
-                                    FileOrganizerWorker.intervalLabel(minutes),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            border = null,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
+        BaiZeIntervalPicker(intervals.toList(), schedule.intervalMinutes, FileOrganizerWorker::intervalLabel,
+            { onChange(schedule.copy(intervalMinutes = it)) })
         HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
         Text("同名文件", fontWeight = FontWeight.Medium, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

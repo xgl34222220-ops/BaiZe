@@ -43,11 +43,11 @@ fun DetailPageHeader(
 ) {
     Column(modifier.fillMaxWidth()
         .then(if (statusBarInset) Modifier.statusBarsPadding() else Modifier)
-        .padding(horizontal = 20.dp).padding(bottom = 12.dp)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalAlignment = Alignment.CenterVertically) {
+        .padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             VideoIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "返回", onBack)
             Text(title, Modifier.weight(1f).padding(horizontal = 12.dp),
-                fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
+                fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface)
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) { actions() }
         }
@@ -58,8 +58,8 @@ fun DetailPageHeader(
 
 @Composable
 fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 18.dp, bottom = 9.dp)) {
-        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+    Column(modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(top = 18.dp, bottom = 9.dp)) {
+        Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface)
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(top = 3.dp),
             fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -68,12 +68,12 @@ fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier
 
 @Composable
 fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = BaiZeTokens.corners.large
+    val shape = RoundedCornerShape(16.dp)
     val surface = BaiZeTokens.colors.surfaceRaised
     val dark = surface.luminance() < .3f
-    Column(modifier.fillMaxWidth().padding(horizontal = 20.dp)
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)
         .glassSurface(color = surface, shape = shape, dark = dark)
-        .padding(20.dp), content = content)
+        .padding(18.dp), content = content)
 }
 
 @Composable
@@ -91,17 +91,18 @@ fun DetailTaskCard(
     onReconnect: () -> Unit,
     scanLabel: String = "开始扫描",
     cleanLabel: String = "清理这些项目",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showAction: Boolean = true
 ) {
     DetailGlassPanel(modifier) {
         Text(metricLabel, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(metric, Modifier.padding(top = 3.dp), fontSize = if (metric.any { it.isDigit() }) 26.sp else 22.sp,
-            lineHeight = 32.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-        DetailStatusText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp))
+        BaiZeMetric(metric, Modifier.padding(top = 3.dp))
+        if (running) BaiZePathText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp), live = true)
+        else DetailStatusText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp))
         if (running) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+            BaiZeProgress(Modifier.padding(bottom = 12.dp))
             GlassActionButton("停止当前任务", onStop, modifier = Modifier.fillMaxWidth(), secondary = true)
-        } else {
+        } else if (showAction) {
             GlassActionButton(if (ready) cleanLabel else scanLabel,
                 if (ready) onClean else onScan,
                 enabled = if (ready) cleanEnabled else scanEnabled,
@@ -134,23 +135,21 @@ fun DetailStatusText(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun DetailEmptyState(title: String, description: String, modifier: Modifier = Modifier, icon: ImageVector = Icons.Rounded.Search) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .075f)) {
-            Icon(icon, null, Modifier.padding(8.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-            Text(description, fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        BaiZeEmptyIllustration()
+        Text(title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface)
+        Text(description, fontSize = 12.sp, lineHeight = 17.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp)
-        .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .78f))) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)
+        .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 52.dp).padding(horizontal = 15.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -175,16 +174,22 @@ fun DetailResultRow(
     icon: ImageVector,
     first: Boolean,
     last: Boolean,
-    accent: Color = MaterialTheme.colorScheme.primary
+    accent: Color = MaterialTheme.colorScheme.primary,
+    selected: Boolean? = null,
+    selectionEnabled: Boolean = true,
+    onToggle: () -> Unit = {},
+    onOpen: (() -> Unit)? = null
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
-        bottomStart = if (last) 24.dp else 0.dp, bottomEnd = if (last) 24.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape)
-        .background(BaiZeTokens.colors.surfaceRaised.copy(alpha = .92f))
+    val shape = RoundedCornerShape(topStart = if (first) 16.dp else 0.dp, topEnd = if (first) 16.dp else 0.dp,
+        bottomStart = if (last) 16.dp else 0.dp, bottomEnd = if (last) 16.dp else 0.dp)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
+        .background(BaiZeTokens.colors.surfaceRaised)
         .clickable(onClickLabel = "查看完整路径与详情") { showDetails = true }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = .08f)) {
+            if (selected != null) Checkbox(checked = selected, onCheckedChange = { onToggle() },
+                enabled = selectionEnabled, modifier = Modifier.size(48.dp))
+            else Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = .08f)) {
                 Icon(icon, null, Modifier.padding(8.dp).size(20.dp), tint = accent)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -198,8 +203,7 @@ fun DetailResultRow(
                 if (summary.isNotBlank()) Text(summary, fontSize = 12.sp, lineHeight = 17.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (path.isNotBlank()) Text(path, Modifier.weight(1f), fontSize = 12.sp, lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (path.isNotBlank()) BaiZePathText(path, Modifier.weight(1f))
                     else Spacer(Modifier.weight(1f))
                     Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
@@ -208,14 +212,15 @@ fun DetailResultRow(
         }
         if (!last) HorizontalDivider(Modifier.padding(start = 61.dp, end = 14.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
     }
-    if (showDetails) AlertDialog(
+    if (showDetails) BaiZeDialog(
         onDismissRequest = { showDetails = false },
         title = { Text(title, fontSize = 18.sp, fontWeight = FontWeight.Medium) },
         text = {
             SelectionContainer {
-                Text(details, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp)
+                Text(details, Modifier, fontSize = 13.sp, lineHeight = 20.sp)
             }
         },
-        confirmButton = { TextButton(onClick = { showDetails = false }) { Text("完成") } }
+        confirmButton = { BaiZeDialogButton(onClick = { showDetails = false }) { Text("完成") } },
+        dismissButton = if (onOpen != null) ({ BaiZeDialogButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }) else null
     )
 }

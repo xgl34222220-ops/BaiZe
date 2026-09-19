@@ -8,6 +8,7 @@ import java.io.IOException
 internal object RootPaths {
     const val MODULE_DIR = "/data/adb/modules/baize_v2"
     const val STATE_DIR = "/data/adb/baize-v2"
+    const val FOREGROUND_STATE_DIR = "$STATE_DIR/app-foreground"
     const val CONFIG_FILE = "$STATE_DIR/config.conf"
     const val WHITELIST_FILE = "$STATE_DIR/whitelist.conf"
     const val WHITELIST_PACKAGES_FILE = "$STATE_DIR/whitelist.packages"

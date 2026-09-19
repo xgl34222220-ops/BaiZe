@@ -1,5 +1,8 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeProgress
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -37,14 +40,12 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -142,7 +143,7 @@ class CacheActivity : ComponentActivity() {
                         onNext = { loadPage(screenState.page + 1) }
                     )
                     if (showCleanConfirm) {
-                        AlertDialog(
+                        BaiZeDialog(
                             onDismissRequest = { showCleanConfirm = false },
                             title = { Text("清理刚才扫描到的缓存？") },
                             text = {
@@ -152,13 +153,13 @@ class CacheActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                TextButton(onClick = {
+                                BaiZeDialogButton(onClick = {
                                     showCleanConfirm = false
                                     quickClean()
                                 }) { Text("立即清理") }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showCleanConfirm = false }) { Text("取消") }
+                                BaiZeDialogButton(onClick = { showCleanConfirm = false }) { Text("取消") }
                             }
                         )
                     }
@@ -656,7 +657,7 @@ internal fun CacheScreen(
         item {
             DetailSectionHeader("缓存明细", if (state.total > 0) "${state.total} 项 · 第 ${state.page + 1}/${state.pages} 页" else "扫描结果会按应用列出")
         }
-        if (state.loadingPage) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) }
+        if (state.loadingPage) item { BaiZeProgress(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
         if (state.items.isEmpty()) {
             item {
                 DetailEmptyState(
@@ -670,7 +671,7 @@ internal fun CacheScreen(
                 CacheCandidateCard(item, first = index == 0, last = index == state.items.lastIndex)
             }
             if (state.pages > 1) item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GlassActionButton("上一页", onPrevious, enabled = !state.running && !state.loadingPage && state.page > 0, modifier = Modifier.weight(1f), secondary = true)
                     GlassActionButton("下一页", onNext, enabled = !state.running && !state.loadingPage && state.page + 1 < state.pages, modifier = Modifier.weight(1f), secondary = true)
                 }

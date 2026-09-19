@@ -31,6 +31,9 @@ android {
         java.srcDir("../third_party/libsu-service/src/main/java")
         aidl.srcDir("../third_party/libsu-service/src/main/aidl")
         assets.srcDir("../third_party/libsu-service/src/main/assets")
+        // Foreground cleaner owns its rule set. The module keeps a separate copy only for
+        // scheduled/background automation.
+        assets.srcDir("../../config")
     }
 
     buildFeatures {

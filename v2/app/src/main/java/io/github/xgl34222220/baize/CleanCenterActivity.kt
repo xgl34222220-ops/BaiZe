@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -170,7 +172,7 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
 
     confirmation?.let { profile ->
         val corpses = profile == "corpses"
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { confirmation = null },
             title = { Text(if (corpses) "扫描卸载残留？" else "开始完整深度扫描？") },
             text = {
@@ -183,12 +185,12 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     confirmation = null
                     actions.onOpenProfile(profile)
                 }) { Text("继续扫描") }
             },
-            dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { confirmation = null }) { Text("取消") } }
         )
     }
 }

@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.miuix
 
+import io.github.xgl34222220.baize.ui.components.baiZeLineIcon
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
@@ -43,7 +45,7 @@ internal fun Modifier.glassSurface(
     dark: Boolean
 ): Modifier = this
     .shadow(
-        elevation = 12.dp,
+        elevation = 4.dp,
         shape = shape,
         clip = false,
         ambientColor = Color(0xFF1E3558).copy(alpha = if (dark) .10f else .055f),
@@ -87,11 +89,12 @@ fun GlassActionButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
-    secondary: Boolean = false
+    secondary: Boolean = false,
+    compact: Boolean = false
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
-    val shape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(percent = 50)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -101,13 +104,13 @@ fun GlassActionButton(
     )
     val base = when {
         !enabled -> BaiZeTokens.colors.surfaceOverlay
-        secondary -> BaiZeTokens.colors.surfaceRaised
-        else -> lerp(scheme.primaryContainer, scheme.primary, if (dark) .14f else .08f)
+        secondary -> BaiZeTokens.colors.surfaceOverlay
+        else -> scheme.primary
     }
     val foreground = when {
         !enabled -> scheme.onSurfaceVariant.copy(alpha = .55f)
-        secondary -> scheme.primary
-        else -> scheme.onPrimaryContainer
+        secondary -> scheme.onSurface
+        else -> scheme.onPrimary
     }
     val upper = if (secondary || !enabled) {
         lerp(base, Color.White, if (dark) .05f else .7f)
@@ -120,9 +123,9 @@ fun GlassActionButton(
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .heightIn(min = 50.dp)
+            .heightIn(min = if (compact) 40.dp else 46.dp)
             .shadow(
-                elevation = if (enabled) 6.dp else 0.dp,
+                elevation = if (enabled) 1.dp else 0.dp,
                 shape = shape,
                 clip = false,
                 ambientColor = scheme.primary.copy(alpha = if (secondary) .03f else .09f),
@@ -145,17 +148,17 @@ fun GlassActionButton(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 20.dp, vertical = 13.dp),
+            .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 9.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {
-        if (icon != null) Icon(icon, null, Modifier.size(20.dp), tint = foreground)
+        if (icon != null) Icon(baiZeLineIcon(icon), null, Modifier.size(20.dp), tint = foreground)
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,
             color = foreground,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = if (compact && LocalDensity.current.fontScale <= 1.2f) 1 else 2,
             overflow = TextOverflow.Ellipsis
         )
     }

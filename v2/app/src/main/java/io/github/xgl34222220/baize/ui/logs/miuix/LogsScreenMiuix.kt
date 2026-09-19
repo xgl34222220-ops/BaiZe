@@ -88,22 +88,22 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
         item { VideoTabs(listOf("任务日志", "原始输出"), selectedTab, { selectedTab = it }) }
         if (selectedTab == 0) {
             item {
-                Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     LogFilter("全部 ${state.logs.size}", !onlyErrors) { onlyErrors = false }
                     LogFilter("异常 ${state.logs.count { it.level == LogLevel.ERROR || it.errors > 0 }}", onlyErrors) { onlyErrors = true }
                 }
             }
             if (visibleLogs.isEmpty()) item {
                 VideoEmptyState(Icons.Rounded.Description, if (onlyErrors) "没有异常任务" else "暂无任务日志",
-                    if (onlyErrors) "当前记录中没有报告错误的任务。" else "执行任务后可在这里查看。", Modifier.padding(horizontal = 20.dp))
+                    if (onlyErrors) "当前记录中没有报告错误的任务。" else "执行任务后可在这里查看。", Modifier.padding(horizontal = 16.dp))
             } else itemsIndexed(visibleLogs, key = { _, item -> item.key }) { _, item -> LogCard(item) }
         } else {
             if (!state.hasRawLog) item {
-                VideoEmptyState(Icons.Rounded.Description, "暂无原始输出", "执行模块任务后可在这里查看。", Modifier.padding(horizontal = 20.dp))
+                VideoEmptyState(Icons.Rounded.Description, "暂无原始输出", "执行模块任务后可在这里查看。", Modifier.padding(horizontal = 16.dp))
             } else {
                 item { VideoSectionTitle(state.rawLogName.ifBlank { "最近任务输出" }, "长按可选择与复制 · 最近 ${minOf(rawLinesToShow, rawLines.size)} / ${rawLines.size} 行") }
                 if (rawLines.size > rawLinesToShow) item {
-                    TextButton(onClick = { rawLinesToShow = (rawLinesToShow + 120).coerceAtMost(rawLines.size) }, modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+                    TextButton(onClick = { rawLinesToShow = (rawLinesToShow + 120).coerceAtMost(rawLines.size) }, modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                         Text("加载更早的 120 行")
                     }
                 }
@@ -116,7 +116,7 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
         }
         item { VideoSectionTitle("诊断与恢复") }
         item {
-            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 0) {
+            VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), contentPadding = 0) {
                 VideoListRow(Icons.Rounded.RestartAlt, "重新连接 Root 服务", "恢复连接并重新读取模块状态", onClick = actions.onReconnect)
                 VideoDivider()
                 VideoListRow(Icons.Rounded.Description, "清理明细", "查看最近任务的分类结果与保护项", onClick = actions.onOpenAudit)
@@ -130,7 +130,7 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
 @Composable
 private fun RuntimeCard(state: LogsUiState) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(), contentPadding = 16) {
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), contentPadding = 16) {
         Text("${state.device} · ${state.android}", fontSize = 15.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             VideoStatusPill(when { state.running -> "执行中"; state.ready && state.connected -> "已就绪"; state.connected -> "准备中"; else -> "待恢复" }, state.ready && state.connected)

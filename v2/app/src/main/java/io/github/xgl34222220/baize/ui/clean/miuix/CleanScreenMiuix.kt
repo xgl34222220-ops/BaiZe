@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.clean.miuix
 
+import io.github.xgl34222220.baize.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -67,6 +68,7 @@ fun CleanScreenMiuix(
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
     var showApkDaysDialog by remember { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     var automationExpanded by rememberSaveable { mutableStateOf(expandedCategory == "__open_plan__") }
 
     LaunchedEffect(expandedCategory) {
@@ -97,7 +99,7 @@ fun CleanScreenMiuix(
     if (showApkDaysDialog) {
         IntValueDialog(
             title = "安装包保留时间",
-            description = "超过保留天数的安装包才会进入自动清理范围；0 天表示允许清理当天发现的安装包。",
+            description = "保留期内的安装包不会自动删除。0 天表示不保留；手动扫描始终显示所有安装包。",
             initialValue = state.apkPackageDays,
             range = 0..365,
             suffix = "天",
@@ -121,17 +123,22 @@ fun CleanScreenMiuix(
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "分类管理与清理", actions.onScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.InstallMobile, "安装包清理", "安装包扫描", actions.onApkScan)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "缓存快速检查", actions.onInstantCache)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "下载与散落文件", actions.onFileOrganizer)
-                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩展扫描范围", actions.onDeepClean)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "残留文件检查", actions.onCorpses)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "规则命中与保护", actions.onAudit)
+                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载与散落文件", actions.onFileOrganizer)
+            }
+        }
+        item(key = "clean-advanced") {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.Rule, "高级工具", if (advancedExpanded) "点击收起" else "缓存专项、规则与保护", { advancedExpanded = !advancedExpanded })
+                if (advancedExpanded) {
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "仅检查应用缓存", actions.onInstantCache)
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "规则命中与保护", actions.onAudit)
+                }
             }
         }
         item(key = "clean-auto-title") {
@@ -209,7 +216,7 @@ private fun AutomaticCleaningHero(
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(26.dp),
         color = colors.surfaceRaised,
         shadowElevation = 2.dp
     ) {
@@ -233,7 +240,7 @@ private fun AutomaticCleaningHero(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Rounded.CleaningServices,
+                        BaiZeIcons.Clean,
                         contentDescription = null,
                         modifier = Modifier.size(22.dp),
                         tint = scheme.primary
@@ -432,30 +439,7 @@ private fun CategoryRow(
                     modifier = Modifier.padding(start = 74.dp, end = 16.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    luoShuIntervalOptions.chunked(4).forEach { rowItems ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowItems.forEach { minutes ->
-                                FilterChip(
-                                    selected = item.intervalMinutes == minutes,
-                                    onClick = { onIntervalChanged(minutes) },
-                                    label = {
-                                        Text(
-                                            formatMinutes(minutes),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            textAlign = TextAlign.Center,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
+                    BaiZeIntervalPicker(luoShuIntervalOptions, item.intervalMinutes, ::formatMinutes, onIntervalChanged)
                 }
             }
         }
@@ -519,22 +503,7 @@ private fun ValueRow(label: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun IconTile(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(42.dp),
-        shape = RoundedCornerShape(13.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
+private fun IconTile(icon: ImageVector) = BaiZeIconTile(icon)
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.APK -> Icons.Rounded.InstallMobile

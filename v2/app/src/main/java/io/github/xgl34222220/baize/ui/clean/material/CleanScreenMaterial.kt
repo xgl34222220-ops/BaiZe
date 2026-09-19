@@ -128,7 +128,7 @@ fun CleanScreenMaterial(
         item {
             Text(
                 if (state.saving) "正在保存设置…" else "修改后自动保存",
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = 16.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -142,7 +142,7 @@ private fun MaterialCleanHeader() {
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 18.dp)
+            .padding(horizontal = 16.dp, vertical = 18.dp)
     ) {
         Text("清理计划", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(4.dp))
@@ -158,7 +158,7 @@ private fun MaterialCleanHeader() {
 private fun MaterialAutomaticSummary(state: CleanUiState, actions: CleanUiActions) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -204,7 +204,7 @@ private fun MaterialAutomaticSummary(state: CleanUiState, actions: CleanUiAction
 
 @Composable
 private fun MaterialSectionHeader(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
@@ -219,7 +219,7 @@ private fun MaterialScheduleModeCard(
 ) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -296,7 +296,7 @@ private fun MaterialTaskPlanCard(
 ) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -412,7 +412,7 @@ private fun MaterialCategoryRow(
 private fun MaterialApkPackageCard(state: CleanUiState, actions: CleanUiActions) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),

@@ -134,7 +134,7 @@ class LuoShuDockTest {
     }
 
     private val actions = DashboardActions(
-        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, cleanScan = {},
+        refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {},
         dismissScan = {}, stop = {}, deep = {}, corpses = {}, audit = {},
         updateScheduler = {}, saveScheduler = {}, schedulerCommand = {}, clearHistory = {},
         clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
