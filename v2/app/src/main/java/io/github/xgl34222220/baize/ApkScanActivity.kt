@@ -398,16 +398,32 @@ class ApkScanActivity : ComponentActivity() {
                 }
             }
 
-            screenState = screenState.copy(
-                running = false,
-                operation = "",
-                cleanReady = false,
-                phase = if (cancelled) result else "$result\n正在重新扫描核对实际剩余文件…",
-                output = json.optString("output").trim().takeLast(6000)
-            )
+            val success = json.optBoolean("success") && !cancelled
+            val elapsedMs = json.optLong("elapsedMs", -1L)
+            screenState = if (success) {
+                screenState.copy(
+                    running = false,
+                    operation = "",
+                    cleanReady = false,
+                    phase = if (elapsedMs >= 0) "$result · ${elapsedMs} ms" else result,
+                    items = emptyList(),
+                    coverage = emptyList(),
+                    totalFiles = 0,
+                    totalBytes = 0,
+                    output = json.optString("output").trim().takeLast(6000)
+                )
+            } else {
+                screenState.copy(
+                    running = false,
+                    operation = "",
+                    cleanReady = false,
+                    phase = if (cancelled) result else "$result\n正在快速复核剩余文件…",
+                    output = json.optString("output").trim().takeLast(6000)
+                )
+            }
 
-            // Verify against the filesystem instead of trusting the command exit code or old snapshot.
-            if (!cancelled) startScan()
+            // Successful RootService deletion is authoritative; media refresh runs asynchronously.
+            if (!success && !cancelled) startScan()
         }
     }
 
