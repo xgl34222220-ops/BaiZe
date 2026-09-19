@@ -18,7 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal class ApkFastSnapshotRepository(
     private val stateDir: File = File(RootPaths.STATE_DIR),
-    private val cancelled: AtomicBoolean = AtomicBoolean(false)
+    private val cancelled: AtomicBoolean = AtomicBoolean(false),
+    private val mediaRefresh: (List<String>) -> Unit = {}
 ) {
     private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
 
@@ -213,6 +214,8 @@ internal class ApkFastSnapshotRepository(
             .put("exitCode", 0)
             .put("cancelled", false)
             .put("elapsedMs", elapsed)
+            .put("snapshotLoadMs", snapshotLoadMs)
+            .put("deleteLoopMs", deleteLoopMs)
             .put("latest", latest)
             .put("otherDetails", details)
             .put("coverage", coverage)
@@ -249,6 +252,7 @@ internal class ApkFastSnapshotRepository(
 
         val targets = readNul(targetBytes)
         val identities = readNul(identityBytes)
+        val snapshotLoadMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
         if (targets.size != identities.size) return failure("snapshot_incomplete", "安装包身份快照不完整，请重新扫描")
         val whitelistPaths = readWhitelist(whitelistFile)
         val details = JSONArray()
@@ -259,6 +263,7 @@ internal class ApkFastSnapshotRepository(
         var errors = 0
         var stopped = false
 
+        val deleteStarted = SystemClock.elapsedRealtime()
         targets.indices.forEach { index ->
             if (cancelled.get()) { stopped = true; return@forEach }
             val path = targets[index]
@@ -266,18 +271,18 @@ internal class ApkFastSnapshotRepository(
             val displayPath = ApkRootPathMapper.publicPath(path)
             if (!isAllowedStoragePath(path) || whitelistConflicts(displayPath, path, whitelistPaths)) {
                 skipped += 1
-                details.put(resultRow("protected", displayPath, 0L, "路径或白名单保护"))
+                if (details.length() < 200) details.put(resultRow("protected", displayPath, 0L, "路径或白名单保护"))
                 return@forEach
             }
             val stat = runCatching { Os.lstat(path) }.getOrNull()
             if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
                 skipped += 1
-                details.put(resultRow("protected", displayPath, 0L, "目标已变化或不存在"))
+                if (details.length() < 200) details.put(resultRow("protected", displayPath, 0L, "目标已变化或不存在"))
                 return@forEach
             }
             if (fastIdentity(stat) != expected) {
                 skipped += 1
-                details.put(resultRow("protected", displayPath, stat.st_size, "扫描后文件已变化"))
+                if (details.length() < 200) details.put(resultRow("protected", displayPath, stat.st_size, "扫描后文件已变化"))
                 return@forEach
             }
             val size = stat.st_size.coerceAtLeast(0L)
@@ -286,14 +291,15 @@ internal class ApkFastSnapshotRepository(
                 deletedFiles += 1
                 deletedBytes += size
                 deletedPaths += displayPath
-                details.put(resultRow("cleaned", displayPath, size, "已删除"))
+                if (details.length() < 200) details.put(resultRow("cleaned", displayPath, size, "已删除"))
             } else {
                 errors += 1
-                details.put(resultRow("failed", displayPath, size, "删除失败"))
+                if (details.length() < 200) details.put(resultRow("failed", displayPath, size, "删除失败"))
             }
         }
 
-        if (deletedPaths.isNotEmpty()) RootMediaScanQueue.enqueue(stateDir, deletedPaths)
+        val deleteLoopMs = (SystemClock.elapsedRealtime() - deleteStarted).coerceAtLeast(0L)
+        if (deletedPaths.isNotEmpty()) mediaRefresh(deletedPaths)
         if (!stopped) {
             stateFile.delete()
             targetsFile.delete()
@@ -338,7 +344,7 @@ internal class ApkFastSnapshotRepository(
             .put("latest", latest)
             .put("otherDetails", details)
             .put("message", result)
-            .put("output", "RootService lstat/unlink；未启动 shell rm/find 子进程")
+            .put("output", "RootService lstat/remove；加载快照 ${snapshotLoadMs}ms · 删除循环 ${deleteLoopMs}ms · 总计 ${elapsed}ms；媒体库刷新已转后台")
             .toString()
     }
 
