@@ -667,10 +667,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
         cleanPlanCreatedAt = createdAt
         cacheSnapshotId = plan.optString("cacheSnapshotId")
         safeSnapshotId = plan.optString("safeSnapshotId")
+        apkSnapshot = loadApkSnapshot(cleanPlanId)
         cacheCount = plan.optInt("cacheCount").coerceAtLeast(0)
         safeCount = plan.optInt("safeCount").coerceAtLeast(0)
+        apkCount = apkSnapshot.size
+        apkBytes = apkSnapshot.sumOf { it.bytes }
         originalCacheCount = plan.optInt("originalCacheCount", cacheCount).coerceAtLeast(cacheCount)
         originalSafeCount = plan.optInt("originalSafeCount", safeCount).coerceAtLeast(safeCount)
+        originalApkCount = plan.optInt("originalApkCount", apkCount).coerceAtLeast(apkCount)
         estimatedBytes = plan.optLong("estimatedBytes", 0L).coerceAtLeast(0L)
         runCount = plan.optInt("runCount", 0).coerceAtLeast(0)
         deletedBytes = plan.optLong("deletedBytes", 0L).coerceAtLeast(0L)
@@ -688,8 +692,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
         riskStats = plan.optJSONObject("riskStats") ?: JSONObject()
         cumulativeFailures = plan.optInt("deleteErrors", plan.optInt("failures", 0)).coerceAtLeast(0)
         resumable = plan.optBoolean("resumable", runCount > 0)
-        val total = cacheCount + safeCount
-        if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank())) {
+        val total = cacheCount + safeCount + apkCount
+        if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank() && apkCount <= 0)) {
             clearLocalPlan()
             return
         }
@@ -716,6 +720,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             riskStats = riskStats.toString(),
             failures = cumulativeFailures,
             cacheSummary = plan.optString("cacheSummary", "剩余 $cacheCount 项"),
+            apkSummary = plan.optString("apkSummary", "剩余 $apkCount 个"),
             safeSummary = plan.optString("safeSummary", "剩余 $safeCount 项")
         )
     }
@@ -751,9 +756,12 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 }
                 cacheCount = cachePage?.takeIf { !it.has("error") }?.optInt("total", 0)?.coerceAtLeast(0) ?: 0
                 safeCount = safePage?.takeIf { !it.has("error") }?.optInt("total", 0)?.coerceAtLeast(0) ?: 0
+                apkSnapshot = loadApkSnapshot(cleanPlanId)
+                apkCount = apkSnapshot.size
+                apkBytes = apkSnapshot.sumOf { it.bytes }
                 if (cacheCount <= 0) cacheSnapshotId = ""
                 if (safeCount <= 0) safeSnapshotId = ""
-                val remaining = cacheCount + safeCount
+                val remaining = cacheCount + safeCount + apkCount
                 resumable = runCount > 0 && remaining > 0
                 if (remaining <= 0) {
                     withContext(Dispatchers.IO) { runCatching { transactions.finish(cleanPlanId) } }
@@ -781,6 +789,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         cleanedCandidates = cleanedCandidates,
                         failures = cumulativeFailures,
                         cacheSummary = "应用缓存剩余 $cacheCount 项",
+                        apkSummary = "安装包剩余 $apkCount 个",
                         safeSummary = "安全项目剩余 $safeCount 项"
                     )
                 }
@@ -809,9 +818,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
         categoryStats = json.optJSONObject("categoryStats") ?: categoryStats
         riskStats = json.optJSONObject("riskStats") ?: riskStats
         cumulativeFailures = json.optInt("deleteErrors", json.optInt("failures", cumulativeFailures)).coerceAtLeast(0)
-        resumable = json.optBoolean("resumable", cacheCount + safeCount > 0 && runCount > 0)
+        resumable = json.optBoolean("resumable", cacheCount + safeCount + apkCount > 0 && runCount > 0)
         screenState = screenState.copy(
-            totalSafe = cacheCount + safeCount,
+            totalSafe = cacheCount + safeCount + apkCount,
             resumable = resumable,
             runCount = runCount,
             deletedBytes = deletedBytes,
@@ -827,13 +836,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
             riskStats = riskStats.toString(),
             failures = cumulativeFailures,
             cacheSummary = "应用缓存剩余 $cacheCount 项",
+            apkSummary = "安装包剩余 $apkCount 个",
             safeSummary = "安全项目剩余 $safeCount 项"
         )
     }
 
     private fun persistCleanPlan() {
-        val total = cacheCount + safeCount
-        if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank())) return
+        val total = cacheCount + safeCount + apkCount
+        if (cleanPlanId.isBlank() || total <= 0 || (cacheSnapshotId.isBlank() && safeSnapshotId.isBlank() && apkCount <= 0)) return
         val plan = JSONObject()
             .put("version", CLEAN_PLAN_VERSION)
             .put("planId", cleanPlanId)
@@ -843,8 +853,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("safeSnapshotId", safeSnapshotId)
             .put("cacheCount", cacheCount)
             .put("safeCount", safeCount)
+            .put("apkCount", apkCount)
+            .put("apkBytes", apkBytes)
             .put("originalCacheCount", originalCacheCount)
             .put("originalSafeCount", originalSafeCount)
+            .put("originalApkCount", originalApkCount)
             .put("estimatedBytes", estimatedBytes)
             .put("runCount", runCount)
             .put("deletedBytes", deletedBytes)
@@ -864,6 +877,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("failures", cumulativeFailures)
             .put("resumable", resumable)
             .put("cacheSummary", screenState.cacheSummary)
+            .put("apkSummary", screenState.apkSummary)
             .put("safeSummary", screenState.safeSummary)
         preferences.edit()
             .putString(CLEAN_PLAN_KEY, plan.toString())
@@ -1075,11 +1089,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
         .put("timedOut", false)
 
     private fun clearLocalPlan() {
+        val oldPlanId = cleanPlanId
         preferences.edit().remove(CLEAN_PLAN_KEY).remove(LEGACY_PLAN_KEY).apply()
+        deleteApkSnapshot(oldPlanId)
         cacheSnapshotId = ""
         safeSnapshotId = ""
+        apkSnapshot = emptyList()
         cacheCount = 0
         safeCount = 0
+        apkCount = 0
+        apkBytes = 0L
         cleanPlanId = ""
         cleanPlanCreatedAt = 0L
         estimatedBytes = 0L
@@ -1089,12 +1108,17 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 
     private fun resetPlanFields() {
+        if (cleanPlanId.isNotBlank()) deleteApkSnapshot(cleanPlanId)
         cacheSnapshotId = ""
         safeSnapshotId = ""
+        apkSnapshot = emptyList()
         cacheCount = 0
         safeCount = 0
+        apkCount = 0
+        apkBytes = 0L
         originalCacheCount = 0
         originalSafeCount = 0
+        originalApkCount = 0
         cleanPlanId = ""
         cleanPlanCreatedAt = 0L
         estimatedBytes = 0L
