@@ -451,17 +451,10 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 val selection = JSONObject().put("__all_safe__", true).toString()
                 val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
 
-                if (apkCount > 0 && apkSnapshot.isNotEmpty()) {
-                    screenState = screenState.copy(phase = "正在快速清理 $apkCount 个安装包")
-                    val apkResult = withContext(Dispatchers.IO) { cleanApkForSmartClean() }
-                    mergeApkMetrics(apkResult)
-                    persistCleanPlan()
-                    screenState = screenState.copy(
-                        totalSafe = cacheCount + safeCount + apkCount,
-                        apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else
-                            "安装包清理完成 · ${apkResult.elapsedMs} ms"
-                    )
-                }
+                val apkJob = if (apkCount > 0 && apkSnapshot.isNotEmpty()) {
+                    screenState = screenState.copy(phase = "正在并行清理安装包与其他垃圾")
+                    async(Dispatchers.IO) { cleanApkForSmartClean() }
+                } else null
 
                 if (cacheSnapshotId.isNotBlank() && cacheCount > 0) {
                     screenState = screenState.copy(phase = "正在清理应用缓存")
@@ -499,6 +492,16 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     if (checkpoint.optBoolean("safeComplete")) safeSnapshotId = ""
                     persistCleanPlan()
                     interrupted = result.has("error") || result.optBoolean("cancelled") || result.optBoolean("timedOut")
+                }
+
+                val apkResult = apkJob?.await() ?: SmartApkCleanResult.EMPTY
+                if (apkResult.processed > 0) {
+                    mergeApkMetrics(apkResult)
+                    persistCleanPlan()
+                    screenState = screenState.copy(
+                        apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else
+                            "安装包清理完成 · ${apkResult.elapsedMs} ms"
+                    )
                 }
 
                 val remaining = cacheCount + safeCount + apkCount
