@@ -11,6 +11,7 @@ import android.media.MediaScannerConnection
 import android.system.Os
 import android.system.OsConstants
 import android.provider.Settings
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
@@ -445,8 +446,12 @@ class ApkScanActivity : ComponentActivity() {
     }
 
     private fun directIdentity(stat: android.system.StructStat): String =
-        "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
-            "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
+                "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
+        } else {
+            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
+        }
 
     private fun parseCoverage(array: JSONArray?): List<ScanCoverageItem> = buildList {
         if (array == null) return@buildList
