@@ -307,7 +307,7 @@ internal fun QuarantineScreen(
             if (state.items.isNotEmpty()) item {
                 GlassActionButton("清理过期项", onClick = onPurgeExpired, secondary = true,
                     enabled = state.connected && !state.loading,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 16.dp))
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp))
             }
             item {
                 DetailExpandableText("隔离与恢复说明", "隔离内容可以在到期前恢复；到期后会永久删除。恢复时若原路径已有内容，会保留现有文件，将隔离内容恢复为带 baize-restored 标记的副本。手动永久删除后无法撤销。")
@@ -348,7 +348,7 @@ private fun QuarantineRow(
     val context = LocalContext.current
     val shape = RoundedCornerShape(topStart = if (first) 18.dp else 0.dp, topEnd = if (first) 18.dp else 0.dp,
         bottomStart = if (last) 18.dp else 0.dp, bottomEnd = if (last) 18.dp else 0.dp)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).clip(shape).background(BaiZeTokens.colors.surfaceRaised)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape).background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = "查看完整路径与详情", onClick = onDetails)
             .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.Top) {

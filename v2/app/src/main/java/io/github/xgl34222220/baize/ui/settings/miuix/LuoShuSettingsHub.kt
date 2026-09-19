@@ -74,8 +74,8 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { LuoShuPageHeader("设置") }
         item {
-            Surface(onClick = { open("service") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp),
-                color = colors.surfaceRaised, shadowElevation = 1.dp) {
+            Surface(onClick = { open("service") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp),
+                color = colors.surfaceRaised, shadowElevation = 0.dp) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = scheme.primary.copy(alpha = .10f)) {
@@ -108,8 +108,6 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
         item {
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.Palette, "外观与主题", "颜色与显示效果", actions.onOpenAppearance)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.History, "清理记录", "结果与任务记录", actions.onOpenAudit)
             }
         }
         item { LuoShuSection("管理与维护") }
@@ -118,10 +116,6 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Shield, "应用白名单", "已保护 ${state.whitelistCount} 个应用", actions.onOpenWhitelist)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存任务", actions.onOpenResumableScan)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "连接与诊断", "服务与异常信息", { open("service") })
             }
         }
         item {
@@ -217,6 +211,8 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
         }
         item {
             LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存任务", actions.onOpenResumableScan)
+                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Refresh, "重新连接服务", "重新连接", actions.onReconnect)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.BugReport, "崩溃与诊断信息", "异常与故障记录", actions.onOpenCrashDiagnostics)

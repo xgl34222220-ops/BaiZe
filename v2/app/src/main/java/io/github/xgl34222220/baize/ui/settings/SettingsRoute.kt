@@ -79,7 +79,7 @@ fun SettingsRoute(
     }
     ProvideVideoSkin(skin) {
         if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
-        else VideoSettingsScreenMiuix(state, actions)
+        else VideoSettingsScreenMiuix(state, actions, onDetailChanged)
     }
 }
 

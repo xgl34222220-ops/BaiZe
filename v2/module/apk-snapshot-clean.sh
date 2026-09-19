@@ -287,8 +287,11 @@ end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 if [ "$code" -eq 9 ]; then
   result="安装包快照清理已停止，已释放 $(human_bytes "$deleted_bytes")"
+elif [ "$errors" -gt 0 ] || [ "$skipped" -gt 0 ]; then
+  code=8
+  result="安装包清理未完全生效：删除 $deleted_files 个，跳过 $skipped 个，失败 $errors 个，释放 $(human_bytes "$deleted_bytes")；将重新扫描核对"
 else
-  result="安装包清理完成：删除 $deleted_files 个，跳过 $skipped 个，失败 $errors 个，释放 $(human_bytes "$deleted_bytes")"
+  result="安装包清理完成：删除 $deleted_files 个，跳过 0 个，失败 0 个，释放 $(human_bytes "$deleted_bytes")"
   rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
 fi
 
@@ -313,4 +316,5 @@ echo "扫描快照: $snapshot_id | 清理: $deleted_files 个 | 跳过: $skipped
 cleanup_lock
 trap - EXIT INT TERM
 [ "$code" -eq 9 ] && exit 9
+[ "$code" -eq 8 ] && exit 8
 exit 0

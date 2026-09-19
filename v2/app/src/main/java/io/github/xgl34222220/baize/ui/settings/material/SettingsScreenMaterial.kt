@@ -79,7 +79,7 @@ fun SettingsScreenMaterial(state: SettingsUiState, actions: SettingsUiActions) {
                 onClick = { actions.onSaveScheduler(state.scheduler) },
                 enabled = !state.scheduler.saving,
                 modifier = Modifier
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .height(52.dp),
                 shape = MaterialTheme.shapes.extraLarge
@@ -96,7 +96,7 @@ private fun MaterialSettingsHeader() {
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 18.dp)
+            .padding(horizontal = 16.dp, vertical = 18.dp)
     ) {
         Text("偏好设置", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(4.dp))
@@ -112,7 +112,7 @@ private fun MaterialSettingsHeader() {
 private fun MaterialAppearanceCard(state: SettingsUiState, actions: SettingsUiActions) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clickable(onClick = actions.onOpenAppearance),
         shape = MaterialTheme.shapes.extraLarge,
@@ -120,7 +120,7 @@ private fun MaterialAppearanceCard(state: SettingsUiState, actions: SettingsUiAc
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
@@ -150,7 +150,7 @@ private fun MaterialAppearanceCard(state: SettingsUiState, actions: SettingsUiAc
 
 @Composable
 private fun MaterialSectionHeader(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
@@ -272,7 +272,7 @@ private fun MaterialNotificationSettings(scheduler: SchedulerUiState, actions: S
 private fun MaterialServiceStatus(state: SettingsUiState) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -318,7 +318,7 @@ private fun MaterialServiceStatus(state: SettingsUiState) {
 private fun MaterialGroup(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),

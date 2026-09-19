@@ -4,7 +4,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SCAN="$ROOT/v2/module/apk-snapshot-scan.sh"
 CONTRACT="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanContract.kt"
 ROUTE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/CleanRoute.kt"
-SCREEN="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/VideoCleanScreenMiuix.kt"
+SCREEN="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ui/clean/miuix/CleanScreenMiuix.kt"
 
 grep -Fq 'CONFIG_DAYS=$(get_uint apk_package_days 30 0 365)' "$SCAN"
 grep -Fq 'manual|app|ui)' "$SCAN"
@@ -29,7 +29,9 @@ grep -Fq 'range = 0..365' "$SCREEN"
 grep -Fq '手动扫描始终显示所有安装包' "$SCREEN"
 grep -Fq '0 天表示不保留' "$SCREEN"
 grep -Fq 'onConfirm = actions.onApkPackageDaysChanged' "$SCREEN"
-grep -Fq 'onEditRetention = { showApkRetentionDialog = true }' "$SCREEN"
+grep -Fq 'ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysDialog = true }' "$SCREEN"
+# Both appearance routes use this same retention editor.
+grep -Fq 'CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)' "${SCREEN%/*}/VideoCleanScreenMiuix.kt"
 
 PATHS="$ROOT/v2/module/apk-paths.sh"
 grep -Fq '_apk_base_real=$(readlink -f "$_apk_base"' "$PATHS"

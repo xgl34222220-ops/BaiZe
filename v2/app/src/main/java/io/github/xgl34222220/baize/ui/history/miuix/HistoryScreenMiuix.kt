@@ -138,9 +138,9 @@ private fun LifetimeHero(state: HistoryUiState) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(26.dp),
         color = colors.surfaceRaised,
-        shadowElevation = 2.dp
+        shadowElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
@@ -555,9 +555,9 @@ private fun RecordCard(record: HistoryUiItem) {
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
             .clickable(enabled = hasDetails) { expanded = !expanded },
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {

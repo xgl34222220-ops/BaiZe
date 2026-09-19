@@ -15,10 +15,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -38,6 +42,7 @@ import kotlin.math.roundToInt
 @Composable
 fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actions: DashboardActions,
     onOpenClean: () -> Unit, onOpenPlan: () -> Unit) {
+    var menuOpen by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
@@ -46,38 +51,56 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") {
             LuoShuPageHeader("白泽") {
-                LuoShuHeaderButton(Icons.Rounded.Refresh, "刷新状态", actions.refresh)
+                Box {
+                    LuoShuHeaderButton(Icons.Rounded.MoreVert, "更多操作", { menuOpen = true })
+                    DropdownMenu(menuOpen, { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("刷新状态") }, onClick = { menuOpen = false; actions.refresh() })
+                        if (!state.running && state.scanCompleted) {
+                            if (state.scanFiles > 0) DropdownMenuItem(text = { Text("重新扫描") }, onClick = { menuOpen = false; actions.scan() })
+                            DropdownMenuItem(text = { Text("收起结果") }, onClick = { menuOpen = false; actions.dismissScan() })
+                        }
+                    }
+                }
             }
         }
         item(key = "space") { SpaceHero(state, actions) }
-        // Keep the real plan reachable in the first regular-size viewport, not behind statistics.
-        item(key = "plan") {
-            LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动清理",
-                    if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "设置时间，让白泽按计划整理",
-                    onOpenPlan)
-            }
-        }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("常用工具")
+                LuoShuSection("整理空间", "按文件类型，快速找到需要处理的内容")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    if (maxWidth.value / LocalDensity.current.fontScale < 240f) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
-                            LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
+                    val tools = listOf(
+                        Triple("安装包", Icons.Rounded.InstallMobile, actions.apkScan),
+                        Triple("大文件", Icons.Rounded.FolderOpen, actions.largeFiles),
+                        Triple("重复文件", Icons.Rounded.ContentCopy, actions.duplicates),
+                        Triple("存储分析", Icons.Rounded.DataUsage, actions.storageAnalysis)
+                    )
+                    val columns = if (maxWidth.value / LocalDensity.current.fontScale < 240f) 1 else 2
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        tools.chunked(columns).forEach { group ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                group.forEach { (label, icon, action) ->
+                                    LuoShuShortcut(label, when (label) {
+                                        "安装包" -> "下载遗留"; "大文件" -> "占用排行"; "重复文件" -> "保留一份"; else -> "空间构成"
+                                    }, icon, action, Modifier.weight(1f))
+                                }
+                            }
                         }
-                    } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                        LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
                     }
                 }
+            }
+        }
+        if (state.automationAvailable) item(key = "plan") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LuoShuSection("自动清理")
                 LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "扩展扫描范围", actions.deep)
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理与自动化", onOpenClean)
+                    LuoShuNavigationRow(
+                        Icons.Rounded.CalendarMonth,
+                        "自动清理模块",
+                        if (state.automationAvailable) {
+                            if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "模块已安装 · 自动任务已暂停"
+                        } else "安装模块后可定时自动清理",
+                        onOpenPlan
+                    )
                 }
             }
         }
@@ -94,11 +117,6 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-        }
-        if (!state.running && state.ready && !state.scanCompleted) item(key = "rule-clean") {
-            TextButton(onClick = actions.clean, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("按现有规则清理")
             }
         }
     }
@@ -165,11 +183,12 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         !state.ready -> actions.reconnect
         else -> actions.scan
     }
-    Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
+    Surface(modifier = Modifier.glassSurface(colors.surfaceRaised, RoundedCornerShape(20.dp), colors.surfaceRaised.luminance() < .3f),
+        shape = RoundedCornerShape(20.dp), color = Color.Transparent) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
             .animateContentSize()
-            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            .padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             val statusColor = when {
                 state.ready && !state.running -> colors.success
                 state.connectionFailed -> scheme.error
@@ -206,32 +225,22 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 Text(description, style = MaterialTheme.typography.bodySmall,
                     color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
             }
-            Button(onClick = action, enabled = state.running || !state.connecting || state.scanCompleted,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primaryContainer,
-                    contentColor = scheme.onPrimaryContainer
-                ),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
-                Icon(when {
+            GlassActionButton(actionLabel, action, Modifier.fillMaxWidth(),
+                enabled = state.running || !state.connecting || state.scanCompleted,
+                icon = when {
                     state.running -> Icons.Rounded.Stop
                     hasResults -> Icons.Rounded.CleaningServices
                     !state.ready && !state.scanCompleted -> Icons.Rounded.Security
                     else -> Icons.Rounded.Search
-                }, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(actionLabel, style = MaterialTheme.typography.labelLarge)
-            }
-            if (!state.running && state.scanCompleted) Column(Modifier.fillMaxWidth()) {
-                if (hasResults) TextButton(actions.scan, Modifier.fillMaxWidth()) { Text("重新扫描") }
-                TextButton(actions.dismissScan, Modifier.fillMaxWidth()) { Text("收起结果") }
-            }
+                })
+
         }
     }
 }
 
 @Composable
 private fun HeroMetricValue(value: String) {
-    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
+    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
     if (match == null) {
         Text(
             value,

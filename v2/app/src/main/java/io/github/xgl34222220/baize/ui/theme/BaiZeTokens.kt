@@ -91,7 +91,7 @@ data class BaiZeSpacing(
     val xxl: Dp = 24.dp,
     val huge: Dp = 32.dp,
     /** 360dp 手机基准的统一页面左右边距。 */
-    val pageHorizontal: Dp = 20.dp
+    val pageHorizontal: Dp = 16.dp
 )
 
 val DefaultBaiZeSpacing = BaiZeSpacing()
