@@ -27,7 +27,8 @@ class BaiZeRootService : RootService() {
         val files: Long,
         val bytes: Long,
         val directories: Long,
-        val path: String
+        val path: String,
+        val complete: Boolean = true
     )
 
     private data class CleanReport(
@@ -258,7 +259,7 @@ class BaiZeRootService : RootService() {
                             .put("files", item.files)
                             .put("directories", item.directories)
                             .put("measured", true)
-                            .put("complete", true)
+                            .put("complete", item.complete)
                     )
                 }
             }
@@ -410,7 +411,8 @@ class BaiZeRootService : RootService() {
         files = item.files,
         bytes = item.bytes,
         directories = item.directories,
-        path = item.path
+        path = item.path,
+        complete = item.complete
     )
 
     private fun setSnapshotState(snapshot: ForegroundCacheEngine.Snapshot) {
@@ -464,6 +466,7 @@ class BaiZeRootService : RootService() {
             appendLine("worker_policy=app-root")
             appendLine("worker_reason=foreground-module-independent")
             appendLine("engine=app-root-foreground-cache-v1")
+            appendLine("incomplete_paths=${JSONArray(snapshot.items.filterNot { it.complete }.map { it.path })}")
         })
     }
 
@@ -486,6 +489,8 @@ class BaiZeRootService : RootService() {
             clearForegroundSnapshot()
             return false
         }
+        val incompleteArray = runCatching { JSONArray(env.optString("incomplete_paths", "[]")) }.getOrNull()
+        val incompletePaths = incompleteArray?.let { array -> (0 until array.length()).map { array.optString(it) }.toSet() }.orEmpty()
         val restoredItems = parseItems(itemsFile).map { item ->
             ForegroundCacheEngine.Item(
                 packageName = item.packageName,
@@ -494,7 +499,8 @@ class BaiZeRootService : RootService() {
                 path = item.path,
                 bytes = item.bytes,
                 files = item.files,
-                directories = item.directories
+                directories = item.directories,
+                complete = incompleteArray != null && item.path !in incompletePaths
             )
         }
         val snapshot = ForegroundCacheEngine.Snapshot(

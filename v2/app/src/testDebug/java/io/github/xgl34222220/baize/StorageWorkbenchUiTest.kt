@@ -51,7 +51,7 @@ class StorageWorkbenchUiTest {
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun largeFileSearchDarkNarrowKeepsFooter() {
         var state by mutableStateOf(StorageToolsUiState(records = records, buckets = storageBuckets(records),
-            query = "海边", status = "大文件扫描完成"))
+            query = "海边", minimumBytes = 100 * StorageToolsViewModel.MIB, status = "大文件扫描完成"))
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.3f)) {

@@ -150,7 +150,20 @@ internal fun StorageToolsScreen(
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                DetailGlassPanel {
+                if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) {
+                    DetailGlassPanel {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(storageCategoryLabel(state.category), style = MaterialTheme.typography.titleMedium)
+                                Text("${visible.size} 个文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(Formatter.formatFileSize(context, visible.sumOf { it.bytes }), fontSize = 24.sp,
+                                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (state.status.startsWith("已删除") || state.status.startsWith("已停止"))
+                            Text(state.status, style = MaterialTheme.typography.bodySmall)
+                    }
+                } else DetailGlassPanel {
                     val bytes = if (state.mode == StorageToolMode.DUPLICATES) state.duplicateGroups.sumOf { it.reclaimableBytes }
                         else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.bytes } else visible.sumOf { it.bytes }
                     Text(if (state.mode == StorageToolMode.DUPLICATES) "可释放空间" else if (state.mode == StorageToolMode.ANALYSIS) "已索引文件占用" else "当前结果占用",
@@ -216,12 +229,24 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
                 FilterChip(state.category == null, { onCategory(null) }, label = { Text("全部") }, enabled = !state.running)
                 state.buckets.forEach { bucket -> FilterChip(state.category == bucket.key, { onCategory(bucket.key) }, label = { Text(bucket.label) }, enabled = !state.running) }
             }
-            if (state.mode == StorageToolMode.LARGE) listOf(10, 100, 500).forEach { mb ->
-                FilterChip(state.minimumBytes == mb * StorageToolsViewModel.MIB, { onThreshold(mb * StorageToolsViewModel.MIB) }, label = { Text("≥ $mb MB") }, enabled = !state.running)
-            }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.mode == StorageToolMode.LARGE) StorageThresholdPicker(state, onThreshold)
             StorageSort.entries.forEach { sort -> FilterChip(state.sort == sort, { onSort(sort) }, label = { Text(sort.label) }, enabled = !state.running) }
+        }
+    }
+}
+
+@Composable
+private fun StorageThresholdPicker(state: StorageToolsUiState, onThreshold: (Long) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(true, { expanded = true }, enabled = !state.running,
+            label = { Text(if (state.minimumBytes > 0) "≥ ${state.minimumBytes / StorageToolsViewModel.MIB} MB" else "全部大小") },
+            trailingIcon = { Icon(Icons.Rounded.ExpandMore, null, Modifier.size(16.dp)) })
+        DropdownMenu(expanded, { expanded = false }) {
+            listOf(10, 100, 500).forEach { mb -> DropdownMenuItem(text = { Text("至少 $mb MB") },
+                onClick = { expanded = false; onThreshold(mb * StorageToolsViewModel.MIB) }) }
         }
     }
 }

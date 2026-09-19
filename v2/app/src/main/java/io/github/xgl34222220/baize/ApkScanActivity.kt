@@ -284,7 +284,6 @@ class ApkScanActivity : ComponentActivity() {
             }
             directSnapshot = snapshots
             val totalBytes = indexed.candidates.sumOf { it.bytes }
-            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val items = withContext(Dispatchers.IO) { indexed.candidates.map { candidate ->
                 if (stopRequested) return@withContext emptyList<ApkScanItem>()
                 ApkScanItem(
@@ -302,6 +301,7 @@ class ApkScanActivity : ComponentActivity() {
                 screenState = screenState.copy(running = false, operation = "", phase = "安装包扫描已停止")
                 return@launch
             }
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val coverage = listOf(
                 ScanCoverageItem(
                     status = "scanned",
@@ -615,7 +615,7 @@ internal fun ApkScanScreen(
         }
         item {
             DetailSectionHeader("安装包明细", if (state.totalFiles > 0) {
-                "${state.totalFiles} 个文件" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else " · 仅删除本次扫描到的文件"
+                "当前 ${state.visibleItems.size} / 共 ${state.totalFiles} 个文件" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else " · 仅删除本次扫描到的文件"
             } else "不会影响已经安装的应用")
         }
         if (state.visibleItems.isEmpty()) {

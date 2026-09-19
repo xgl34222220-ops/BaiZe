@@ -63,13 +63,13 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     val index = StorageMediaRepository.scanIndex(context, if (mode == StorageToolMode.LARGE) 10 * MIB else 1, taskControl, report)
                     val duplicates = if (mode == StorageToolMode.DUPLICATES)
                         StorageMediaRepository.findDuplicates(context, index.records, taskControl, report) else StorageDuplicateResult(emptyList(), 0)
-                    index to duplicates
+                    Triple(index, duplicates, storageBuckets(index.records))
                 }
                 taskControl.check()
                 val index = result.first
                 val duplicates = result.second
                 mutableState.update { current -> current.copy(running = false, records = index.records,
-                    duplicateGroups = duplicates.groups, buckets = storageBuckets(index.records), progress = null,
+                    duplicateGroups = duplicates.groups, buckets = result.third, progress = null,
                     elapsedMs = SystemClock.elapsedRealtime() - started,
                     status = when (mode) {
                         StorageToolMode.LARGE -> "大文件扫描完成"
