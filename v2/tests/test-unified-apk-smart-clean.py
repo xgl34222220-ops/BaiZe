@@ -16,12 +16,14 @@ require("val apkJob = async { scanApkForSmartClean() }" in SMART,
         "smart scan must discover APKs in parallel")
 require("val total = cacheCount + safeCount + apkCount" in SMART,
         "smart scan total must include APK candidates")
-require('ResumeSummaryRow("安装包", state.apkSummary)' in SMART,
-        "smart scan UI must show APK summary")
+require('ResumeSelectableRow(' in SMART and 'title = "安装包"' in SMART and 'state.apkSummary' in SMART,
+        "smart scan UI must show selectable APK results")
 require("async(Dispatchers.IO) { cleanApkForSmartClean() }" in SMART,
         "smart cleanup must delete APKs in parallel")
 require("ApkMediaStoreIndex.deleteIfUnchanged" in SMART,
         "smart cleanup must delete APKs through MediaStore record validation")
+require("screenState.apkSelected" in SMART,
+        "unified smart cleanup must honor APK category selection")
 require("cleanReady = snapshots.isNotEmpty()" in APK,
         "standalone APK results must expose cleanup")
 require("ApkMediaStoreIndex.deleteIfUnchanged" in APK,
