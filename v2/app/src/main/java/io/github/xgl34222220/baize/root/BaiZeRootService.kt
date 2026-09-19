@@ -430,7 +430,7 @@ class BaiZeRootService : RootService() {
         )
     }
 
-    private fun foregroundStateDir(): File = File(STATE_DIR).apply { mkdirs() }
+    private fun foregroundStateDir(): File = File(RootPaths.FOREGROUND_STATE_DIR).apply { mkdirs() }
 
     private fun persistForegroundSnapshot(snapshot: ForegroundCacheEngine.Snapshot) {
         val stateDir = foregroundStateDir()
@@ -533,7 +533,7 @@ class BaiZeRootService : RootService() {
         foregroundSnapshot = null
         clearSnapshotMemory()
         for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv")) {
-            File(STATE_DIR, name).delete()
+            File(RootPaths.FOREGROUND_STATE_DIR, name).delete()
         }
     }
 
