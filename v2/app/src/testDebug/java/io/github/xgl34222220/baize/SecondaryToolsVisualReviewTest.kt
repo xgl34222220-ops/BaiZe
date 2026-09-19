@@ -59,9 +59,9 @@ class SecondaryToolsVisualReviewTest {
     @Test fun resumablePlanReady() {
         var cleanRequests = 0
         render("resumable-plan") {
-            ResumeSmartScreen(planState, {}, {}, { cleanRequests++ }, {}, {})
+            ResumeSmartScreen(planState, {}, {}, { cleanRequests++ }, {}, {}, {})
         }
-        compose.onNodeWithText("清理这 48 项").performClick()
+        compose.onNodeWithText("清理已选 48 项").performClick()
         assertEquals("The plan action must use the already scanned plan", 1, cleanRequests)
     }
 
@@ -72,14 +72,14 @@ class SecondaryToolsVisualReviewTest {
             resumable = true, totalSafe = 12, runCount = 1, phase = "清理已暂停，剩余 12 项可以继续处理。",
             processedCandidates = 36, cleanedCandidates = 34, protectedCandidates = 2,
             deletedBytes = 428L * 1024 * 1024, failures = 2, failedCandidates = 2
-        ), {}, {}, {}, {}, {})
+        ), {}, {}, {}, {}, {}, {})
     }
 
     @Test fun resumableRunning() {
         var stopRequests = 0
         render("resumable-running") {
             ResumeSmartScreen(planState.copy(running = true, operation = "clean", progressCurrent = 16,
-                progressTotal = 48, phase = "正在清理应用缓存…"), {}, {}, {}, { stopRequests++ }, {})
+                progressTotal = 48, phase = "正在清理应用缓存…"), {}, {}, {}, { stopRequests++ }, {}, {})
         }
         compose.onNodeWithText("停止并保存").performClick()
         assertEquals(1, stopRequests)
@@ -105,7 +105,8 @@ class SecondaryToolsVisualReviewTest {
         scanCompleted = true,
         estimatedBytes = 842L * 1024 * 1024,
         cacheSummary = "32 项 · 642 MB",
-        safeSummary = "16 项 · 200 MB · 空项目 4 · 规则 8 · 碎片 4"
+        safeSummary = "16 项 · 200 MB · 空项目 4 · 规则 8 · 碎片 4",
+        cacheSelected = true, apkSelected = true, safeSelected = true
     )
 
     private fun render(name: String, dark: Boolean = false, fontScale: Float = 1f, content: @Composable () -> Unit) {
