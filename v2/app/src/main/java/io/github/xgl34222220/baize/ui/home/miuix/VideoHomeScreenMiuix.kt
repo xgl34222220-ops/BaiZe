@@ -101,14 +101,14 @@ fun VideoHomeScreenMiuix(
                         if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "设置清理时间与保留规则",
                         value = if (scheduler.enabled) "已开启" else "未开启", onClick = onOpenPlan)
                     VideoDivider(start = 20)
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         HomeMetric("累计释放", Formatter.formatFileSize(context, state.lifetimeReleased), Modifier.weight(1f))
                         HomeMetric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f))
                     }
                     if (state.lastTaskTime.isNotBlank()) {
                         Text("上次清理 ${state.lastTaskTime} · 释放 ${Formatter.formatFileSize(context, state.lastReleased)}",
-                            Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+                            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 18.dp),
                             style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                     }
                 }

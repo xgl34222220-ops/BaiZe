@@ -92,7 +92,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
         }
         item { ServiceOverview(state) }
         item {
-            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+            VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                 VideoListRow(Icons.Rounded.DarkMode, "界面与主题", state.appearance.themeMode.label,
                     onClick = actions.onOpenAppearance)
                 VideoDivider()
@@ -102,7 +102,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
         }
         item { VideoSectionTitle("自动任务", "按你的使用习惯运行") }
         item {
-            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+            VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                 SettingsGroup(
                     Icons.Rounded.SettingsSuggest, "清理执行条件",
                     "${conditionSummary(scheduler.screenOffOnly, scheduler.chargingOnly, scheduler.idleOnly)} · 电量 ≥ ${scheduler.minBattery}%",
@@ -149,14 +149,14 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
         item {
             Text(
                 if (scheduler.saving) "正在保存…" else "修改后点右上角“保存”生效",
-                Modifier.padding(horizontal = 20.dp),
+                Modifier.padding(horizontal = 16.dp),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         item { VideoSectionTitle("记录与诊断") }
         item {
-            VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+            VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth()) {
                 VideoListRow(Icons.Rounded.Rule, "清理结果与保护", "查看明细与保留项", onClick = actions.onOpenAudit)
                 VideoDivider()
                 VideoListRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存的扫描任务", onClick = actions.onOpenResumableScan)
@@ -172,7 +172,7 @@ fun VideoSettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions)
 @Composable
 private fun ServiceOverview(state: SettingsUiState) {
     var expanded by rememberSaveable { mutableStateOf(false) }
-    VideoCard(Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+    VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         containerColor = lerp(BaiZeTokens.colors.surfaceRaised, MaterialTheme.colorScheme.primary, .035f)) {
         VideoListRow(Icons.Rounded.Security, "清理服务",
             if (state.scheduler.enabled) "自动计划已开启" else "自动计划已暂停",
@@ -192,7 +192,7 @@ private fun ServiceOverview(state: SettingsUiState) {
             })
         AnimatedVisibility(expanded || (!state.ready && !state.running)) {
             DetailStatusText(listOf(state.serviceText, state.schedulerText).filter { it.isNotBlank() }.distinct().joinToString("\n"),
-                Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp))
+                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 18.dp))
         }
     }
 }

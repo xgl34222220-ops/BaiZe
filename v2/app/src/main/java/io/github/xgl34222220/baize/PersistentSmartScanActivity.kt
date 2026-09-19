@@ -709,8 +709,8 @@ private fun PersistentSmartScreen(
 
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -784,8 +784,8 @@ private fun PersistentSmartScreen(
         item { PlanSummaryCard("安全项目", state.safeSummary) }
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding(),
-                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Text(
@@ -804,8 +804,8 @@ private fun PersistentSmartScreen(
 @Composable
 private fun PlanSummaryCard(title: String, summary: String) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        shape = RoundedCornerShape(24.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {

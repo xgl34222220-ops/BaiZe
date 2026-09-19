@@ -97,7 +97,7 @@ fun HistoryScreenMaterial(state: HistoryUiState, actions: HistoryUiActions) {
                 OutlinedButton(
                     onClick = actions.onReviewProtected,
                     modifier = Modifier
-                        .padding(horizontal = 20.dp)
+                        .padding(horizontal = 16.dp)
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = MaterialTheme.shapes.extraLarge
@@ -117,7 +117,7 @@ private fun MaterialHistoryHeader(actions: HistoryUiActions) {
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 18.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
@@ -144,7 +144,7 @@ private fun MaterialLifetimeSummary(state: HistoryUiState) {
     val context = LocalContext.current
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -194,7 +194,7 @@ private fun MaterialHistoryMetric(label: String, value: String, modifier: Modifi
 
 @Composable
 private fun MaterialSectionHeader(title: String, subtitle: String) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 2.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
@@ -216,7 +216,7 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
     val context = LocalContext.current
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
@@ -260,7 +260,7 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
 @Composable
 private fun MaterialAppResultGroup(apps: List<AppJunkUiItem>) {
     Card(
-        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -361,7 +361,7 @@ private fun MaterialAppResultRow(item: AppJunkUiItem) {
 private fun MaterialJunkResultGroup(items: List<GeneralJunkUiItem>) {
     val context = LocalContext.current
     Card(
-        modifier = Modifier.padding(horizontal = 20.dp).fillMaxWidth(),
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -407,7 +407,7 @@ private fun MaterialJunkResultGroup(items: List<GeneralJunkUiItem>) {
 private fun MaterialRecordGroup(records: List<HistoryUiItem>) {
     Card(
         modifier = Modifier
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),

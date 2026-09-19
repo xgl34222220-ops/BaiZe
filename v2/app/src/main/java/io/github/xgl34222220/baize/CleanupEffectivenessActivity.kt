@@ -266,8 +266,8 @@ private fun CleanupEffectivenessScreen(
     onRefresh: () -> Unit
 ) {
     val report = state.report
-    val horizontal = 20.dp
-    val shape = if (miuix) RoundedCornerShape(24.dp) else MaterialTheme.shapes.extraLarge
+    val horizontal = 16.dp
+    val shape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),

@@ -33,24 +33,24 @@ private val MaterialShapes = Shapes(
     extraLarge = RoundedCornerShape(32.dp)
 )
 
-/** Active LuoShu Miuix shape hierarchy; Material remains independent. */
+/** Hetu Miuix shape hierarchy; Material remains independently selectable. */
 private val MiuixShapes = Shapes(
-    extraSmall = RoundedCornerShape(7.dp),
-    small = RoundedCornerShape(11.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp)
+    extraSmall = RoundedCornerShape(9.dp),
+    small = RoundedCornerShape(13.dp),
+    medium = RoundedCornerShape(17.dp),
+    large = RoundedCornerShape(20.dp),
+    extraLarge = RoundedCornerShape(26.dp)
 )
 
-private val LuoShuMiuixCorners = DefaultBaiZeCorners.copy(
-    small = RoundedCornerShape(11.dp), medium = RoundedCornerShape(18.dp),
-    extraLarge = RoundedCornerShape(30.dp)
+private val HetuCorners = DefaultBaiZeCorners.copy(
+    small = RoundedCornerShape(13.dp), medium = RoundedCornerShape(17.dp),
+    large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(26.dp)
 )
-private val LuoShuMiuixTypeScale = DefaultBaiZeTypeScale.copy(
-    title = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    headline = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
-    body = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 23.sp)
+private val HetuTypeScale = DefaultBaiZeTypeScale.copy(
+    title = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    headline = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold),
+    body = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
 )
 
 private val SharedTypography = Typography(
@@ -69,20 +69,21 @@ private val SharedTypography = Typography(
     labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
 )
 
-// Keep MIUIX typography in lock-step with LuoShu's active theme.
-private val LuoShuMiuixTypography = Typography(
-    displaySmall = TextStyle(fontSize = 34.sp, lineHeight = 39.sp, fontWeight = FontWeight.Bold),
-    headlineLarge = TextStyle(fontSize = 30.sp, lineHeight = 38.sp, fontWeight = FontWeight.Bold),
-    headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold),
-    headlineSmall = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
-    titleLarge = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
-    titleMedium = TextStyle(fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 23.sp),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, letterSpacing = .2.sp)
+// Aligned with Hetu test.78 (063ae365): compact native type hierarchy.
+private val HetuTypography = Typography(
+    displaySmall = TextStyle(fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+    headlineLarge = TextStyle(fontSize = 27.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.35).sp),
+    headlineMedium = TextStyle(fontSize = 23.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.3).sp),
+    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
+    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 11.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium),
+    labelSmall = TextStyle(fontSize = 10.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp),
 )
 
 /** Both appearances resolve surfaces from the selected palette, including Monet and AMOLED. */
@@ -96,40 +97,36 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         withAmoled = amoled,
         style = settings.kolorStyle.toPaletteStyle(),
         shapes = if (settings.uiStyle == UiStyle.MATERIAL) MaterialShapes else MiuixShapes,
-        typography = if (settings.uiStyle == UiStyle.MIUIX) LuoShuMiuixTypography else SharedTypography,
+        typography = if (settings.uiStyle == UiStyle.MIUIX) HetuTypography else SharedTypography,
         animate = true
     ) {
         val generatedScheme = MaterialTheme.colorScheme
-        val defaultBlue = settings.uiStyle == UiStyle.MATERIAL && !settings.monetEnabled &&
+        val defaultBlue = !settings.monetEnabled &&
             settings.seedArgb == AccentOptions.first().argb && settings.kolorStyle == KolorStyle.SOFT
         val scheme = if (defaultBlue) generatedScheme.copy(
-            primary = if (dark) Color(0xFFA9CAFF) else Color(0xFF376BE6),
-            onPrimary = if (dark) Color(0xFF082C63) else Color.White,
-            primaryContainer = if (dark) Color(0xFF1C3656) else Color(0xFFE5EEFF),
-            onPrimaryContainer = if (dark) Color(0xFFDCE9FF) else Color(0xFF163C77),
-            surfaceTint = if (dark) Color(0xFFA9CAFF) else Color(0xFF376BE6),
-            onSurface = if (dark) Color(0xFFE8EDF5) else Color(0xFF202A3B),
-            onSurfaceVariant = if (dark) Color(0xFFADB8CA) else Color(0xFF626F82)
+            primary = if (dark) Color(0xFF3B82F6) else Color(0xFF2563EB),
+            onPrimary = if (dark) Color(0xFF081B39) else Color.White,
+            primaryContainer = if (dark) Color(0xFF1E3A8A) else Color(0xFFDBEAFE),
+            onPrimaryContainer = if (dark) Color(0xFFDBEAFE) else Color(0xFF1E40AF),
+            secondary = if (dark) Color(0xFF60A5FA) else Color(0xFF2563EB),
+            secondaryContainer = if (dark) Color(0xFF172338) else Color(0xFFEDF4FF),
+            onSecondaryContainer = if (dark) Color(0xFFDBEAFE) else Color(0xFF1E40AF),
+            surfaceTint = if (dark) Color(0xFF3B82F6) else Color(0xFF2563EB),
+            background = if (amoled) Color.Black else if (dark) Color(0xFF121212) else Color(0xFFF4F6F9),
+            surface = if (dark) Color(0xFF1E1E1E) else Color.White,
+            onBackground = if (dark) Color(0xFFF8FAFC) else Color(0xFF0F172A),
+            onSurface = if (dark) Color(0xFFF8FAFC) else Color(0xFF0F172A),
+            onSurfaceVariant = if (dark) Color(0xFF94A3B8) else Color(0xFF64748B),
+            outlineVariant = if (dark) Color(0xFF30343B) else Color(0xFFE2E8F0)
         ) else generatedScheme
         val semantic = if (dark) DarkBaiZeColors else LightBaiZeColors
         val colors = if (settings.uiStyle == UiStyle.MIUIX) semantic.copy(
-            surfaceBase = when {
-                amoled -> Color.Black
-                dark -> scheme.surfaceContainerLowest
-                else -> lerp(Color(0xFFF4F6FA), scheme.primaryContainer, .07f)
-            },
-            surfaceRaised = when {
-                amoled -> Color(0xFF111214)
-                dark -> scheme.surfaceContainerLow
-                else -> scheme.surfaceContainerLowest
-            },
-            surfaceOverlay = when {
-                amoled -> Color(0xFF1B1C20)
-                dark -> scheme.surfaceContainerHigh
-                else -> lerp(scheme.surfaceContainerLowest, scheme.primaryContainer, .20f)
-            },
-            success = if (dark) Color(0xFF69D9AD) else Color(0xFF187B58),
-            warning = if (dark) Color(0xFFF3C378) else Color(0xFF956319)
+            surfaceBase = if (amoled) Color.Black else if (dark) Color(0xFF121212) else Color(0xFFF4F6F9),
+            surfaceRaised = if (amoled) Color(0xFF111214) else if (dark) Color(0xFF1E1E1E) else Color.White,
+            surfaceOverlay = if (dark) Color(0xFF24272D) else Color(0xFFF1F5F9),
+            success = if (dark) Color(0xFF34D399) else Color(0xFF059669),
+            warning = if (dark) Color(0xFFFBBF24) else Color(0xFFB45309),
+            danger = if (dark) Color(0xFFF87171) else Color(0xFFEF4444)
         ) else semantic.copy(
             surfaceBase = when {
                 amoled -> Color.Black
@@ -151,11 +148,12 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
             CompositionLocalProvider(
                 LocalContentColor provides scheme.onSurface,
                 LocalBaiZeColors provides colors,
-                LocalBaiZeCorners provides if (settings.uiStyle == UiStyle.MIUIX) LuoShuMiuixCorners else DefaultBaiZeCorners,
+                LocalBaiZeCorners provides if (settings.uiStyle == UiStyle.MIUIX) HetuCorners else DefaultBaiZeCorners,
                 LocalBaiZeSpacing provides DefaultBaiZeSpacing,
-                LocalBaiZeTypeScale provides if (settings.uiStyle == UiStyle.MIUIX) LuoShuMiuixTypeScale else DefaultBaiZeTypeScale,
-                content = content
-            )
+                LocalBaiZeTypeScale provides if (settings.uiStyle == UiStyle.MIUIX) HetuTypeScale else DefaultBaiZeTypeScale,
+            ) {
+                BaiZeSafeViewport(content = content)
+            }
         }
     }
 }

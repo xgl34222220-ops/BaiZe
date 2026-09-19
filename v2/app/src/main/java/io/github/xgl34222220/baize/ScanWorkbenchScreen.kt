@@ -309,7 +309,7 @@ internal fun ScanWorkbenchScreen(
             .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
             .padding(horizontal = 16.dp).padding(top = 12.dp, bottom = inset + 16.dp)) {
             Surface(color = BaiZeTokens.colors.surfaceRaised.copy(alpha = .97f),
-                tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(24.dp)) {
+                tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(20.dp)) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (liveSnapshot && !state.running) IconButton(onClick = actions.onScan,
@@ -437,7 +437,7 @@ private fun HistoricalResultGate(
     val warningAction = lerp(surface, warning, .18f)
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         color = warningSurface
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -513,7 +513,7 @@ private fun WorkbenchSummaryCard(
 ) {
     val color = workbenchStatusColor(state)
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
+        shape = RoundedCornerShape(20.dp), color = BaiZeTokens.colors.surfaceRaised) {
         Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                 .clickable(onClickLabel = "查看任务详情", onClick = onDetails)
@@ -574,11 +574,11 @@ private fun WorkbenchEmptyCard(state: WorkbenchUiState, onDetails: () -> Unit) {
     val color = workbenchStatusColor(state)
     val error = state.notice == WorkbenchNotice.ERROR
     val complete = state.notice == WorkbenchNotice.SUCCESS && !state.running
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 20.dp), shape = RoundedCornerShape(24.dp),
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised) {
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.padding(top = 8.dp, bottom = 20.dp).size(72.dp)
-                .background(color.copy(alpha = .07f), RoundedCornerShape(24.dp)), contentAlignment = Alignment.Center) {
+                .background(color.copy(alpha = .07f), RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
                 Icon(when { state.running -> Icons.Rounded.ManageSearch; error -> Icons.Rounded.ErrorOutline;
                     complete -> Icons.Rounded.CheckCircle; else -> Icons.Rounded.ManageSearch },
                     null, Modifier.size(34.dp), tint = color)
@@ -740,7 +740,7 @@ private fun compactScanPath(path: String): String {
 @Composable
 private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled: Boolean, onExpand: () -> Unit, onSelect: () -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp, bottom = 4.dp),
-        shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised) {
+        shape = RoundedCornerShape(20.dp), color = BaiZeTokens.colors.surfaceRaised) {
         Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "收起应用明细" else "展开应用明细", onClick = onExpand)
             .padding(start = 14.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             val owner = group.items.firstOrNull()?.packageName.orEmpty()

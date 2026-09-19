@@ -216,31 +216,7 @@ private fun AnimatedPageHost(
 
 @Composable
 private fun MiuiXBackdrop(dark: Boolean, amoled: Boolean) {
-    val colors = BaiZeTokens.colors
-    val accent = MaterialTheme.colorScheme.primary
-    // Static, broad color reflections give the glass a backdrop without an animation loop.
-    Box(
-        Modifier.fillMaxSize()
-            .background(if (amoled) Color.Black else colors.surfaceBase)
-            .drawWithCache {
-                val topReflection = Brush.radialGradient(
-                    colors = listOf(accent.copy(alpha = if (dark) .10f else .075f), Color.Transparent),
-                    center = Offset(size.width * .98f, size.height * .015f),
-                    radius = size.width * .94f
-                )
-                val lowerReflection = Brush.radialGradient(
-                    colors = listOf(Color(0xFF54BCBD).copy(alpha = if (dark) .055f else .045f), Color.Transparent),
-                    center = Offset(-size.width * .14f, size.height * .76f),
-                    radius = size.width * 1.08f
-                )
-                onDrawBehind {
-                    if (!amoled) {
-                        drawRect(topReflection)
-                        drawRect(lowerReflection)
-                    }
-                }
-            }
-    )
+    Box(Modifier.fillMaxSize().background(if (amoled) Color.Black else BaiZeTokens.colors.surfaceBase))
 }
 
 @Composable

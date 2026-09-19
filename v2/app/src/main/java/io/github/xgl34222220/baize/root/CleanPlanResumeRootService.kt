@@ -360,7 +360,7 @@ class CleanPlanResumeRootService : RootService() {
     }
 
     private fun readCacheReportDetails(state: JSONObject): Map<String, OutcomeDetail> {
-        val report = File(RootPaths.STATE_DIR, "reports/latest.tsv")
+        val report = File(RootPaths.FOREGROUND_STATE_DIR, "reports/latest.tsv")
         val runStarted = state.optLong("runStartedAt", 0L)
         if (!report.isFile || report.lastModified() + REPORT_CLOCK_SLOP_MS < runStarted) return emptyMap()
         val result = LinkedHashMap<String, OutcomeDetail>()
@@ -511,7 +511,7 @@ class CleanPlanResumeRootService : RootService() {
     private fun backupCacheSnapshot(directory: File) {
         val backup = File(directory, "cache").apply { mkdirs() }
         CACHE_FILES.forEach { name ->
-            val source = File(RootPaths.STATE_DIR, name)
+            val source = File(RootPaths.FOREGROUND_STATE_DIR, name)
             if (source.isFile) atomicCopy(source, File(backup, name.substringAfterLast('/')))
         }
     }
@@ -520,7 +520,7 @@ class CleanPlanResumeRootService : RootService() {
         if (state.optString("cacheSnapshotId").isBlank()) return
         val backup = File(directory, "cache")
         CACHE_FILES.forEach { name ->
-            val target = File(RootPaths.STATE_DIR, name)
+            val target = File(RootPaths.FOREGROUND_STATE_DIR, name)
             val source = File(backup, name.substringAfterLast('/'))
             if (!target.isFile && source.isFile) atomicCopy(source, target)
         }
@@ -546,7 +546,7 @@ class CleanPlanResumeRootService : RootService() {
     }
 
     private fun cacheTerminalPaths(state: JSONObject): Set<String> {
-        val report = File(RootPaths.STATE_DIR, "reports/latest.tsv")
+        val report = File(RootPaths.FOREGROUND_STATE_DIR, "reports/latest.tsv")
         val runStarted = state.optLong("runStartedAt", 0L)
         if (!report.isFile || report.lastModified() + REPORT_CLOCK_SLOP_MS < runStarted) return emptySet()
         val terminal = LinkedHashSet<String>()
@@ -569,9 +569,9 @@ class CleanPlanResumeRootService : RootService() {
     }
 
     private fun filterCacheSnapshot(terminal: Set<String>): Int {
-        val targetFile = File(RootPaths.STATE_DIR, "cache_scan.targets")
-        val itemFile = File(RootPaths.STATE_DIR, "cache_scan.items.tsv")
-        val stateFile = File(RootPaths.STATE_DIR, "cache_scan.env")
+        val targetFile = File(RootPaths.FOREGROUND_STATE_DIR, "cache_scan.targets")
+        val itemFile = File(RootPaths.FOREGROUND_STATE_DIR, "cache_scan.items.tsv")
+        val stateFile = File(RootPaths.FOREGROUND_STATE_DIR, "cache_scan.env")
         if (!targetFile.isFile || !itemFile.isFile || !stateFile.isFile) return 0
 
         if (terminal.isNotEmpty()) {
@@ -665,7 +665,7 @@ class CleanPlanResumeRootService : RootService() {
     }
 
     private fun countCacheCandidates(): Int {
-        val file = File(RootPaths.STATE_DIR, "cache_scan.items.tsv")
+        val file = File(RootPaths.FOREGROUND_STATE_DIR, "cache_scan.items.tsv")
         if (!file.isFile) return 0
         return file.useLines { lines -> lines.drop(1).count { it.isNotBlank() } }
     }
@@ -677,7 +677,7 @@ class CleanPlanResumeRootService : RootService() {
     }
 
     private fun deleteCacheSnapshot() {
-        CACHE_FILES.forEach { File(RootPaths.STATE_DIR, it).delete() }
+        CACHE_FILES.forEach { File(RootPaths.FOREGROUND_STATE_DIR, it).delete() }
     }
 
     private fun safeSnapshotFile(snapshotId: String): File? {
