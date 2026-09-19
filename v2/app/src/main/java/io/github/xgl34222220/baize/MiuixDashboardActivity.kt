@@ -1,5 +1,9 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import io.github.xgl34222220.baize.root.RootServiceClients
 import android.Manifest
 import android.content.ComponentName
@@ -17,7 +21,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
-import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -87,6 +90,9 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var snapshotExpiresAtElapsed = 0L
 
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
+    private data class MessageDialog(val title: String, val message: String, val confirm: String,
+        val onConfirm: () -> Unit, val cancel: String = "取消", val extra: String = "", val onExtra: () -> Unit = {})
+    private val messageDialog = androidx.compose.runtime.mutableStateOf<MessageDialog?>(null)
     private var schedulerState = androidx.compose.runtime.mutableStateOf(SchedulerUiState())
 
     private val profileConnection = object : RootService.Connection {
@@ -233,7 +239,22 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() }
                 ),
-                appearance = appearance
+                appearance = appearance,
+                overlay = {
+                    messageDialog.value?.let { dialog ->
+                        BaiZeDialog(onDismissRequest = { messageDialog.value = null },
+                            title = { Text(dialog.title) }, text = { Column {
+                                androidx.compose.foundation.text.selection.SelectionContainer { Text(dialog.message) }
+                                if (dialog.extra.isNotBlank()) BaiZeDialogButton(onClick = {
+                                    messageDialog.value = null; dialog.onExtra()
+                                }) { Text(dialog.extra) }
+                            } },
+                            confirmButton = { BaiZeDialogButton(onClick = {
+                                messageDialog.value = null; dialog.onConfirm()
+                            }) { Text(dialog.confirm) } },
+                            dismissButton = { BaiZeDialogButton(onClick = { messageDialog.value = null }) { Text(dialog.cancel) } })
+                    }
+                }
             )
         }
         // Both engines may own a task from the previous App process.
@@ -743,11 +764,8 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     private fun confirmClearRawLogs() {
         val service = rootService ?: return toast("Root 服务尚未连接")
-        AlertDialog.Builder(this)
-            .setTitle("清空原始日志？")
-            .setMessage("只删除 /data/adb/baize-v2/logs 中的模块输出，不影响清理历史和累计统计。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("清空") { _, _ ->
+        messageDialog.value = MessageDialog("清空原始日志？",
+            "只删除 /data/adb/baize-v2/logs 中的模块输出，不影响清理历史和累计统计。", "清空", onConfirm = {
                 lifecycleScope.launch {
                     val json = withContext(Dispatchers.IO) {
                         runCatching { JSONObject(service.clearRawLogs()) }.getOrNull()
@@ -758,8 +776,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     }
                     toast(if (success) "原始日志已清空" else "原始日志清空失败")
                 }
-            }
-            .show()
+            })
     }
 
     private fun updateStorage() {
@@ -1817,11 +1834,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun confirmClearHistory() {
-        AlertDialog.Builder(this)
-            .setTitle("清空最近记录？")
-            .setMessage("删除 App 手动清理与自动清理的最近任务摘要；累计清理统计继续保留。")
-            .setNegativeButton("取消", null)
-            .setPositiveButton("清空") { _, _ ->
+        messageDialog.value = MessageDialog("清空最近记录？",
+            "删除 App 手动清理与自动清理的最近任务摘要；累计清理统计继续保留。", "清空", onConfirm = {
                 lifecycleScope.launch {
                     val service = rootService
                     val moduleSuccess = if (service != null) {
@@ -1841,7 +1855,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     toast(if (moduleSuccess) "最近记录已清空" else "App 记录已清空，自动模块记录清理失败")
                     refreshHistory()
                 }
-            }.show()
+            })
     }
 
     private fun diagnosticText(): String =
@@ -1850,17 +1864,13 @@ class MiuixDashboardActivity : ComponentActivity() {
             DiagnosticLabels.crashRecord("App", CrashRecorder.read(this))
 
     private fun showCrashDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("运行诊断")
-            .setMessage(diagnosticText())
-            .setNeutralButton("复制记录") { _, _ ->
+        messageDialog.value = MessageDialog("运行诊断", diagnosticText(), "清除记录",
+            onConfirm = { CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) },
+            cancel = "关闭", extra = "复制记录", onExtra = {
                 val clipboard = getSystemService(android.content.ClipboardManager::class.java)
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("白泽诊断", diagnosticText()))
                 toast("诊断记录已复制")
-            }
-            .setNegativeButton("关闭", null)
-            .setPositiveButton("清除记录") { _, _ -> CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) }
-            .show()
+            })
     }
 
     private fun requestNotificationPermission() {

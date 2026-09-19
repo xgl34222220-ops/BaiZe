@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -152,7 +153,7 @@ class ApkScanActivity : ComponentActivity() {
                         onFilter = { if (!screenState.running) screenState = screenState.copy(filter = it, selected = emptySet()) }
                     )
                     if (showCleanConfirm) {
-                        AlertDialog(
+                        BaiZeDialog(
                             onDismissRequest = { showCleanConfirm = false },
                             title = { Text("清理刚才扫描到的安装包？") },
                             text = {
@@ -162,13 +163,13 @@ class ApkScanActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                TextButton(onClick = {
+                                BaiZeDialogButton(onClick = {
                                     showCleanConfirm = false
                                     cleanSnapshot()
                                 }) { Text("立即清理") }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showCleanConfirm = false }) { Text("取消") }
+                                BaiZeDialogButton(onClick = { showCleanConfirm = false }) { Text("取消") }
                             }
                         )
                     }

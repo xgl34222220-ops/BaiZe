@@ -35,6 +35,9 @@ class WorkbenchVisualReviewTest {
 
     @Test fun thousandsOfResultsKeepTheCleanupActionInView() {
         render(ready())
+        compose.waitUntil(timeoutMillis = 5000) {
+            compose.onAllNodesWithText("示例应用 12").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("清理已选 1800 项").assertIsDisplayed().performClick()
         assertEquals(1, cleanRequests)
         save("results-light")

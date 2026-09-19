@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -59,12 +61,12 @@ class StorageToolsActivity : ComponentActivity() {
                     onToggleAll = model::toggleAll, onStop = model::stop, onQuery = { model.filter(query = it) },
                     onCategory = { model.filter(category = it) }, onSort = { model.filter(sort = it) },
                     onThreshold = { model.filter(minimumBytes = it) }, onOpen = ::openFile)
-                if (showDeleteConfirm) AlertDialog(
+                if (showDeleteConfirm) BaiZeDialog(
                     onDismissRequest = { showDeleteConfirm = false }, title = { Text("删除已选 ${state.selected.size} 个文件？") },
                     text = { Text("共 ${Formatter.formatFileSize(this, state.selectedBytes)}。删除后无法在白泽内恢复，请确认文件不再需要。" +
                         if (state.mode == StorageToolMode.DUPLICATES) "每组至少保留一份，删除前会再次核对内容。" else "") },
-                    confirmButton = { TextButton(onClick = { showDeleteConfirm = false; model.deleteSelected() }) { Text("确认删除") } },
-                    dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") } })
+                    confirmButton = { BaiZeDialogButton(onClick = { showDeleteConfirm = false; model.deleteSelected() }) { Text("确认删除") } },
+                    dismissButton = { BaiZeDialogButton(onClick = { showDeleteConfirm = false }) { Text("取消") } })
             }
         }
     }
@@ -177,10 +179,10 @@ internal fun StorageToolsScreen(
                     if (state.running) {
                         Spacer(Modifier.height(12.dp))
                         val progress = state.progress
-                        if (progress != null && progress.total > 0) LinearProgressIndicator(progress = { (progress.completed.toFloat() / progress.total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                        else LinearProgressIndicator(Modifier.fillMaxWidth())
-                        if (progress != null) Text("${progress.completed}${if (progress.total > 0) " / ${progress.total}" else " 项"} · ${progress.name}",
-                            fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        BaiZeProgress(progress = if (progress != null && progress.total > 0)
+                            (progress.completed.toFloat() / progress.total).coerceIn(0f, 1f) else null)
+                        BaiZePathText(if (progress != null) "${progress.completed}${if (progress.total > 0) " / ${progress.total}" else " 项"} · ${progress.name}" else "正在读取文件…",
+                            Modifier.padding(top = 8.dp), live = true)
                     }
                     if (state.coverage.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))

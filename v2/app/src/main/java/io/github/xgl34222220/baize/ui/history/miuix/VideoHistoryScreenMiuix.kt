@@ -244,20 +244,24 @@ private fun HistoryTimelineRow(record: HistoryUiItem) {
                 Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ChevronRight, null,
                     Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
             }
-            Spacer(Modifier.height(10.dp))
-            Text(record.title, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(5.dp))
-            Text(record.result.ifBlank { "任务已完成" }, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .background(accent.copy(alpha = .045f)).padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${Formatter.formatFileSize(context, record.bytes)} · ${record.files} 项", Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelLarge, color = accent)
-                Text(if (record.cleaned) "已清理" else "已记录", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(record.title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text(record.result.ifBlank { "任务已完成" }, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (expanded) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                }
+                Column(Modifier.widthIn(min = 76.dp, max = 120.dp), horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(Formatter.formatFileSize(context, record.bytes), fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End,
+                        style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
+                    Text("${record.files} 项 · ${if (record.cleaned) "已清理" else "已记录"}",
+                        style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }

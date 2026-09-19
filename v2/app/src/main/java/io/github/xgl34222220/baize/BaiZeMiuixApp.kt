@@ -56,7 +56,8 @@ fun BaiZeMiuixApp(
     scheduler: SchedulerUiState,
     actions: DashboardActions,
     appearance: AppearanceSettings,
-    initialPage: Int = 0
+    initialPage: Int = 0,
+    overlay: @Composable () -> Unit = {}
 ) {
     BaiZeTheme(appearance) {
         CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
@@ -177,6 +178,7 @@ fun BaiZeMiuixApp(
                     }
                 }
             }
+            overlay()
         }
     }
 }

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -108,15 +110,15 @@ internal fun WhitelistManagerScreen(
             }
         }
     }
-    if (showClear) AlertDialog(onDismissRequest = { showClear = false }, title = { Text("取消全部应用保护？") },
+    if (showClear) BaiZeDialog(onDismissRequest = { showClear = false }, title = { Text("取消全部应用保护？") },
         text = { Text("将取消当前选择的 ${state.draft.selected.size} 个应用保护，并立即保存。手动路径保护不变，不会删除任何文件。") },
-        confirmButton = { TextButton({ showClear = false; onClearApps() }, enabled = edit) { Text("取消这些保护") } },
-        dismissButton = { TextButton({ showClear = false }) { Text("返回") } })
-    removal?.let { path -> AlertDialog(onDismissRequest = { removal = null }, title = { Text("移除路径白名单？") },
+        confirmButton = { BaiZeDialogButton({ showClear = false; onClearApps() }, enabled = edit) { Text("取消这些保护") } },
+        dismissButton = { BaiZeDialogButton({ showClear = false }) { Text("返回") } })
+    removal?.let { path -> BaiZeDialog(onDismissRequest = { removal = null }, title = { Text("移除路径白名单？") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SelectionContainer { Text(path) }
             Text("仅移除这条记录。其父目录、子目录及应用保护不会一并取消；文件不变。完成后请重新扫描。")
         } },
-        confirmButton = { TextButton({ removal = null; onRemovePath(path) }, enabled = pathEdit && path in state.paths) { Text("确认移除") } },
-        dismissButton = { TextButton({ removal = null }) { Text("保留") } }) }
+        confirmButton = { BaiZeDialogButton({ removal = null; onRemovePath(path) }, enabled = pathEdit && path in state.paths) { Text("确认移除") } },
+        dismissButton = { BaiZeDialogButton({ removal = null }) { Text("保留") } }) }
 }

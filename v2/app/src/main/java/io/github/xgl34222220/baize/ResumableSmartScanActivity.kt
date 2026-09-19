@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -40,7 +42,6 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
@@ -196,7 +197,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         onToggleAll = ::toggleAllCategories
                     )
                     if (showCleanConfirm) {
-                        AlertDialog(
+                        BaiZeDialog(
                             onDismissRequest = { showCleanConfirm = false },
                             title = {
                                 Text(if (resumable) "确认继续清理？" else "确认执行清理？")
@@ -216,19 +217,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                FilledTonalButton(
-                                    onClick = {
-                                        showCleanConfirm = false
-                                        cleanSnapshots()
-                                    },
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                ) { Text(if (resumable) "继续清理" else "立即清理") }
+                                BaiZeDialogButton(onClick = {
+                                    showCleanConfirm = false
+                                    cleanSnapshots()
+                                }) { Text(if (resumable) "继续清理" else "立即清理") }
                             },
                             dismissButton = {
-                                OutlinedButton(onClick = { showCleanConfirm = false }) { Text("取消") }
+                                BaiZeDialogButton(onClick = { showCleanConfirm = false }) { Text("取消") }
                             }
                         )
                     }

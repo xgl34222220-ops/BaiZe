@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -45,7 +47,6 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.PauseCircleOutline
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -347,27 +348,27 @@ internal fun InstantCacheScreen(
     val allVisibleSelected = visible.isNotEmpty() && visible.all { it.packageName in state.selected }
 
     if (showConfirmation) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { if (!state.running) showConfirmation = false },
             title = { Text("清除 ${state.selected.size} 个应用的缓存？", fontSize = 18.sp) },
             text = { Text("保留账号、设置和应用数据。应用下次启动时可能重新生成缓存。") },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     showConfirmation = false
                     onRun(state.selected)
                 }) { Text("清除缓存") }
             },
-            dismissButton = { TextButton(onClick = { showConfirmation = false }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { showConfirmation = false }) { Text("取消") } }
         )
     }
     if (showHelp) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { showHelp = false },
             title = { Text("即时清缓存", fontSize = 18.sp) },
             text = {
                 Text("通过系统清除所选应用的当前缓存，保留账号、设置和应用数据。单次最多选择 $MAX_VISIBLE_SELECTION 个应用。\n\n部分系统应用可能不允许清除缓存，失败时可以查看任务结果。")
             },
-            confirmButton = { TextButton(onClick = { showHelp = false }) { Text("知道了") } }
+            confirmButton = { BaiZeDialogButton(onClick = { showHelp = false }) { Text("知道了") } }
         )
     }
 

@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -50,7 +52,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -802,18 +803,18 @@ private fun ProfileRoute(
     }
 
     if (confirmClean && state.quickCleanReady) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { confirmClean = false },
             title = { Text(state.cleanButtonText) },
             text = { Text(state.confirmText) },
             confirmButton = {
-                TextButton(onClick = {
+                BaiZeDialogButton(onClick = {
                     confirmClean = false
                     actions.onClean()
                 }) { Text("立即清理") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmClean = false }) { Text("取消") }
+                BaiZeDialogButton(onClick = { confirmClean = false }) { Text("取消") }
             }
         )
     }

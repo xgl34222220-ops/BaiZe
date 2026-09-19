@@ -70,7 +70,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
             ChoiceCard(
                 values = UiStyle.entries,
                 selected = settings.uiStyle,
-                label = { if (it == UiStyle.MIUIX) "河图 / MIUIX" else it.label },
+                label = { it.label },
                 onSelected = actions.onUiStyle
             )
         }
@@ -123,7 +123,7 @@ fun AppearanceScreenMiuix(settings: AppearanceSettings, actions: AppearanceUiAct
                 LuoShuSwitchRow(
                     Icons.Rounded.Layers,
                     "半透明材质",
-                    "让导航栏呈现河图同款玻璃层次",
+                    "让导航栏呈现通透、柔和的玻璃层次",
                     settings.glassEnabled,
                     actions.onGlassEnabled
                 )
@@ -203,7 +203,7 @@ private fun AppearancePreview(settings: AppearanceSettings, usesMonet: Boolean) 
                     color = scheme.onSurfaceVariant
                 )
                 Text(
-                    if (settings.uiStyle == UiStyle.MIUIX) "河图 / MIUIX" else settings.uiStyle.label,
+                    settings.uiStyle.label,
                     style = MaterialTheme.typography.labelSmall,
                     color = scheme.primary
                 )

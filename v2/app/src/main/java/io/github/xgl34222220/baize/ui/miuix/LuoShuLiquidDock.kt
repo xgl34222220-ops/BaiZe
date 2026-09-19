@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.miuix
 
+import io.github.xgl34222220.baize.ui.components.baiZeLineIcon
 // Matched to Hetu test.78: refractive shell with one flat, blue selected tab.
 // Keep BaiZe capability checks and larger-font sizing.
 import android.os.Build
@@ -179,7 +180,7 @@ internal fun LuoShuLiquidDock(
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         val opticalScale = when (index) { 0, 3 -> .94f; 2 -> .96f; else -> 1f }
                         Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
-                            Icon(item.icon, null, Modifier.fillMaxSize().scale(opticalScale), tint = color)
+                            Icon(baiZeLineIcon(item.icon), null, Modifier.fillMaxSize().scale(opticalScale), tint = color)
                         }
                         Spacer(Modifier.height(3.dp))
                         Text(item.title, color = color, fontSize = 12.sp, lineHeight = 17.sp,

@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.clean.miuix
 
+import io.github.xgl34222220.baize.ui.components.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -438,30 +439,7 @@ private fun CategoryRow(
                     modifier = Modifier.padding(start = 74.dp, end = 16.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    luoShuIntervalOptions.chunked(4).forEach { rowItems ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowItems.forEach { minutes ->
-                                FilterChip(
-                                    selected = item.intervalMinutes == minutes,
-                                    onClick = { onIntervalChanged(minutes) },
-                                    label = {
-                                        Text(
-                                            formatMinutes(minutes),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            textAlign = TextAlign.Center,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
+                    BaiZeIntervalPicker(luoShuIntervalOptions, item.intervalMinutes, ::formatMinutes, onIntervalChanged)
                 }
             }
         }
@@ -525,22 +503,7 @@ private fun ValueRow(label: String, value: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun IconTile(icon: ImageVector) {
-    Surface(
-        modifier = Modifier.size(42.dp),
-        shape = RoundedCornerShape(13.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
+private fun IconTile(icon: ImageVector) = BaiZeIconTile(icon)
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.APK -> Icons.Rounded.InstallMobile

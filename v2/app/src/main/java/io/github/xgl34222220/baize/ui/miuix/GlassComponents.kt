@@ -87,11 +87,12 @@ fun GlassActionButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     enabled: Boolean = true,
-    secondary: Boolean = false
+    secondary: Boolean = false,
+    compact: Boolean = false
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < .3f
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(percent = 50)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -101,12 +102,12 @@ fun GlassActionButton(
     )
     val base = when {
         !enabled -> BaiZeTokens.colors.surfaceOverlay
-        secondary -> BaiZeTokens.colors.surfaceRaised
+        secondary -> BaiZeTokens.colors.surfaceOverlay
         else -> scheme.primary
     }
     val foreground = when {
         !enabled -> scheme.onSurfaceVariant.copy(alpha = .55f)
-        secondary -> scheme.primary
+        secondary -> scheme.onSurface
         else -> scheme.onPrimary
     }
     val upper = if (secondary || !enabled) {
@@ -120,7 +121,7 @@ fun GlassActionButton(
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .heightIn(min = 50.dp)
+            .heightIn(min = if (compact) 40.dp else 46.dp)
             .shadow(
                 elevation = if (enabled) 1.dp else 0.dp,
                 shape = shape,
@@ -145,7 +146,7 @@ fun GlassActionButton(
                 role = Role.Button,
                 onClick = onClick
             )
-            .padding(horizontal = 20.dp, vertical = 13.dp),
+            .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 9.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {
@@ -155,7 +156,7 @@ fun GlassActionButton(
             style = MaterialTheme.typography.labelLarge,
             color = foreground,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }

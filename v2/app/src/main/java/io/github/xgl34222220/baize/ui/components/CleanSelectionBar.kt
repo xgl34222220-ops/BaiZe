@@ -8,7 +8,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -33,30 +37,31 @@ internal fun CleanSelectionBar(
         else -> ToggleableState.Off
     }
     Surface(
-        modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(24.dp),
         color = BaiZeTokens.colors.surfaceRaised,
-        shadowElevation = 8.dp
+        shadowElevation = 3.dp
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("已选 $selectedCount 项 · $sizeLabel", Modifier.weight(1f).padding(end = 6.dp)
+                    .semantics { contentDescription = "已选 $selectedCount / $totalCount 项，$sizeLabel" },
+                    fontSize = 12.sp, lineHeight = 17.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(
                     Modifier.triStateToggleable(checkState, enabled = enabled && totalCount > 0,
-                        role = Role.Checkbox, onClick = onToggleAll).heightIn(min = 48.dp).padding(end = 8.dp),
+                        role = Role.Checkbox, onClick = onToggleAll).heightIn(min = 32.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TriStateCheckbox(checkState, onClick = null, enabled = enabled && totalCount > 0)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (allSelected) "取消全选" else selectLabel, style = MaterialTheme.typography.labelLarge)
-                }
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                    Text("已选 $selectedCount / $totalCount 项", style = MaterialTheme.typography.labelLarge)
-                    Text(sizeLabel, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (allSelected) "取消全选" else selectLabel, fontSize = 12.sp, maxLines = 1)
+                    Spacer(Modifier.width(5.dp))
+                    TriStateCheckbox(checkState, onClick = null, enabled = enabled && totalCount > 0,
+                        modifier = Modifier.size(24.dp))
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            GlassActionButton(cleanLabel, onClean, Modifier.fillMaxWidth(), enabled = cleanEnabled && selectedCount > 0)
+            GlassActionButton(cleanLabel, onClean, Modifier.fillMaxWidth(), enabled = cleanEnabled && selectedCount > 0,
+                compact = true)
         }
     }
 }

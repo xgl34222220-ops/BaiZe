@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -36,7 +38,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -438,14 +439,14 @@ internal fun ProtectedReviewScreen(
         ProtectedItemDetails(item, onDismiss = { detail = null })
     }
     if (confirm) {
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { confirm = false },
             title = { Text("清理 ${state.selected.size} 个所选项目？") },
             text = { Text("白名单、系统核心路径、挂载点、符号链接和关键风险仍会保留。高风险项目会在删除前重新校验。") },
             confirmButton = {
-                TextButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
+                BaiZeDialogButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
             },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { confirm = false }) { Text("取消") } }
         )
     }
 }
@@ -507,10 +508,10 @@ private fun ProtectedItemDetails(item: ProtectedReviewItem, onDismiss: () -> Uni
         if (item.packageName.isNotBlank()) appendLine("应用：${item.packageName}")
         append("完整路径：${item.path}")
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("项目详情", fontSize = 18.sp) },
-        text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp) } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("项目详情", fontSize = 18.sp) },
+        text = { SelectionContainer { Text(text, Modifier, fontSize = 13.sp, lineHeight = 20.sp) } },
+        confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { BaiZeDialogButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
 }
 
 private fun riskLabel(risk: String): String = when (risk) {

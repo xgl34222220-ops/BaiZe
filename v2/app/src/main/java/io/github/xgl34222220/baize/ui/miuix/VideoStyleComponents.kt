@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.miuix
 
+import io.github.xgl34222220.baize.ui.components.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -178,7 +179,7 @@ fun VideoCard(
     } else {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
             Surface(modifier = modifier, shape = shape, color = color,
-                contentColor = scheme.onSurface, shadowElevation = 0.dp, tonalElevation = 0.dp) {
+                contentColor = scheme.onSurface, shadowElevation = 2.dp, tonalElevation = 0.dp) {
                 Column(Modifier.padding(contentPadding.dp), content = content)
             }
         }
@@ -189,10 +190,10 @@ fun VideoCard(
 fun VideoLeadingIcon(icon: ImageVector, primary: Boolean = true, modifier: Modifier = Modifier,
     color: Color? = null) {
     val tint = color ?: if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.size(32.dp).clip(RoundedCornerShape(11.dp))
+    Box(modifier.size(40.dp).clip(RoundedCornerShape(11.dp))
         .background(if (primary || color != null) tint.copy(alpha = .08f) else Color.Transparent),
         contentAlignment = Alignment.Center) {
-        Icon(icon, null, Modifier.size(20.dp), tint = tint)
+        Icon(baiZeLineIcon(icon), null, Modifier.size(24.dp), tint = tint)
     }
 }
 
@@ -306,19 +307,12 @@ fun VideoStatusPill(text: String, positive: Boolean = true, modifier: Modifier =
 @Composable
 fun VideoEmptyState(icon: ImageVector, title: String, description: String, modifier: Modifier = Modifier,
     actionLabel: String? = null, onAction: (() -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 24.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-        Box(Modifier.size(38.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = .055f), RoundedCornerShape(12.dp)),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium)
-            if (!actionLabel.isNullOrBlank() && onAction != null) GlassActionButton(actionLabel, onAction,
-                modifier = Modifier.padding(top = 6.dp))
-        }
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        BaiZeEmptyIllustration()
+        Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        if (!actionLabel.isNullOrBlank() && onAction != null) TextButton(onClick = onAction) { Text(actionLabel) }
     }
 }

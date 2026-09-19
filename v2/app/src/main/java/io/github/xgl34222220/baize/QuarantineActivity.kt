@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -37,7 +39,6 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -318,19 +319,19 @@ internal fun QuarantineScreen(
     detail?.let { item -> QuarantineDetails(item, onDismiss = { detail = null }) }
     pending?.let { (action, item) ->
         val restore = action == "restore"
-        AlertDialog(
+        BaiZeDialog(
             onDismissRequest = { pending = null },
             title = { Text(if (restore) "恢复隔离内容？" else "永久删除隔离内容？") },
             text = {
                 Text(if (restore) "将恢复到原路径；若原路径已有内容，会恢复为带 baize-restored 标记的副本。" else "永久删除后无法撤销。只会删除本次选择的隔离内容。")
             },
             confirmButton = {
-                TextButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
+                BaiZeDialogButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
                     Text(if (restore) "确认恢复" else "确认永久删除",
                         color = if (restore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("取消") } }
+            dismissButton = { BaiZeDialogButton(onClick = { pending = null }) { Text("取消") } }
         )
     }
 }
@@ -395,10 +396,10 @@ private fun QuarantineDetails(item: QuarantineItem, onDismiss: () -> Unit) {
         if (item.profile.isNotBlank()) appendLine("来源：${item.profile}")
         append("完整路径：${item.originalPath}")
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("隔离详情", fontSize = 18.sp) },
-        text = { SelectionContainer { Text(text, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp) } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
-        dismissButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("隔离详情", fontSize = 18.sp) },
+        text = { SelectionContainer { Text(text, Modifier, fontSize = 13.sp, lineHeight = 20.sp) } },
+        confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("完成") } },
+        dismissButton = { BaiZeDialogButton(onClick = { clipboard.setText(AnnotatedString(text)); copied = true }) { Text(if (copied) "已复制" else "复制详情") } })
 }
 
 private fun quarantineRiskLabel(risk: String): String = when (risk) {

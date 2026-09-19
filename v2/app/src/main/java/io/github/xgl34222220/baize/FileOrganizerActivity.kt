@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -430,7 +431,7 @@ private fun DestinationCard() {
                 row.forEach { (label, icon) ->
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Icon(icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = .8f))
+                        BaiZeIconTile(icon)
                         Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -458,34 +459,8 @@ private fun ScheduleCard(
             Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) },
                 modifier = Modifier.semantics { contentDescription = "定时文件归类" })
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            intervals.chunked(4).forEach { rowItems ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    rowItems.forEach { minutes ->
-                        FilterChip(
-                            selected = schedule.intervalMinutes == minutes,
-                            onClick = { onChange(schedule.copy(intervalMinutes = minutes)) },
-                            label = {
-                                Text(
-                                    FileOrganizerWorker.intervalLabel(minutes),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = TextAlign.Center,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            border = null,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    repeat(4 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-        }
+        BaiZeIntervalPicker(intervals.toList(), schedule.intervalMinutes, FileOrganizerWorker::intervalLabel,
+            { onChange(schedule.copy(intervalMinutes = it)) })
         HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
         Text("同名文件", fontWeight = FontWeight.Medium, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

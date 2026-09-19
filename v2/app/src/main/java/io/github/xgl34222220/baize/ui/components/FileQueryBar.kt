@@ -28,10 +28,10 @@ internal fun FileQueryBar(query: String, onQuery: (String) -> Unit, enabled: Boo
 
 @Composable
 internal fun FileFilterDialog(onDismiss: () -> Unit, onApply: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("筛选") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp), content = content) },
-        confirmButton = { TextButton(onClick = onApply) { Text("应用") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("筛选") },
+        text = { Column(Modifier, verticalArrangement = Arrangement.spacedBy(8.dp), content = content) },
+        confirmButton = { BaiZeDialogButton(onClick = onApply) { Text("应用") } },
+        dismissButton = { BaiZeDialogButton(onClick = onDismiss) { Text("取消") } })
 }
 
 @OptIn(ExperimentalLayoutApi::class)

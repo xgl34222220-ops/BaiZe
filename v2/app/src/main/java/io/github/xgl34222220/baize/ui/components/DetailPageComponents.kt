@@ -68,7 +68,7 @@ fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier
 
 @Composable
 fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(16.dp)
     val surface = BaiZeTokens.colors.surfaceRaised
     val dark = surface.luminance() < .3f
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)
@@ -96,11 +96,11 @@ fun DetailTaskCard(
 ) {
     DetailGlassPanel(modifier) {
         Text(metricLabel, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(metric, Modifier.padding(top = 3.dp), fontSize = if (metric.any { it.isDigit() }) 26.sp else 22.sp,
-            lineHeight = 32.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-        DetailStatusText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp))
+        BaiZeMetric(metric, Modifier.padding(top = 3.dp))
+        if (running) BaiZePathText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp), live = true)
+        else DetailStatusText(phase, Modifier.padding(top = 6.dp, bottom = 14.dp))
         if (running) {
-            LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp))
+            BaiZeProgress(Modifier.padding(bottom = 12.dp))
             GlassActionButton("停止当前任务", onStop, modifier = Modifier.fillMaxWidth(), secondary = true)
         } else if (showAction) {
             GlassActionButton(if (ready) cleanLabel else scanLabel,
@@ -135,15 +135,13 @@ fun DetailStatusText(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun DetailEmptyState(title: String, description: String, modifier: Modifier = Modifier, icon: ImageVector = Icons.Rounded.Search) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .075f)) {
-            Icon(icon, null, Modifier.padding(8.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-            Text(description, fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        BaiZeEmptyIllustration()
+        Text(title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface)
+        Text(description, fontSize = 12.sp, lineHeight = 17.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -205,8 +203,7 @@ fun DetailResultRow(
                 if (summary.isNotBlank()) Text(summary, fontSize = 12.sp, lineHeight = 17.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (path.isNotBlank()) Text(path, Modifier.weight(1f), fontSize = 12.sp, lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (path.isNotBlank()) BaiZePathText(path, Modifier.weight(1f))
                     else Spacer(Modifier.weight(1f))
                     Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
@@ -215,15 +212,15 @@ fun DetailResultRow(
         }
         if (!last) HorizontalDivider(Modifier.padding(start = 61.dp, end = 14.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
     }
-    if (showDetails) AlertDialog(
+    if (showDetails) BaiZeDialog(
         onDismissRequest = { showDetails = false },
         title = { Text(title, fontSize = 18.sp, fontWeight = FontWeight.Medium) },
         text = {
             SelectionContainer {
-                Text(details, Modifier.verticalScroll(rememberScrollState()), fontSize = 13.sp, lineHeight = 20.sp)
+                Text(details, Modifier, fontSize = 13.sp, lineHeight = 20.sp)
             }
         },
-        confirmButton = { TextButton(onClick = { showDetails = false }) { Text("完成") } },
-        dismissButton = { if (onOpen != null) TextButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }
+        confirmButton = { BaiZeDialogButton(onClick = { showDetails = false }) { Text("完成") } },
+        dismissButton = { if (onOpen != null) BaiZeDialogButton(onClick = { showDetails = false; onOpen() }) { Text("打开文件") } }
     )
 }
