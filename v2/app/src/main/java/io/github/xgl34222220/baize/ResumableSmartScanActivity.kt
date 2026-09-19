@@ -303,8 +303,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
             status = "清理服务已就绪",
             phase = "正在扫描可清理内容…",
             progressCurrent = 0,
-            progressTotal = 2,
+            progressTotal = 3,
             cacheSummary = "正在扫描",
+            apkSummary = "正在扫描",
             safeSummary = "正在扫描"
         )
         startPolling()
@@ -313,15 +314,20 @@ class ResumableSmartScanActivity : ComponentActivity() {
             try {
                 val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
                 val options = optionsJson()
-                val (cacheJson, safeJson) = withContext(Dispatchers.IO) {
+                val scanStarted = SystemClock.elapsedRealtime()
+                val scanBundle = withContext(Dispatchers.IO) {
                     coroutineScope {
                         val cacheJob = async {
                             JSONObject(cache.scanCandidates(JSONArray(whitelist.toList().sorted()).toString()))
                         }
                         val safeJob = async { JSONObject(plans.scanSafe(options)) }
-                        cacheJob.await() to safeJob.await()
+                        val apkJob = async { scanApkForSmartClean() }
+                        Triple(cacheJob.await(), safeJob.await(), apkJob.await())
                     }
                 }
+                val cacheJson = scanBundle.first
+                val safeJson = scanBundle.second
+                val apkResult = scanBundle.third
                 if (cacheJson.optString("error") == "busy" || safeJson.optString("error") == "busy") {
                     screenState = screenState.copy(phase = "当前已有扫描或清理任务正在运行")
                     return@launch
@@ -335,38 +341,53 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 safeCount = if (safeSnapshotId.isBlank()) 0 else (
                     safeJson.optInt("low") + safeJson.optInt("medium")
                 ).coerceAtLeast(0)
+                apkSnapshot = apkResult.items
+                apkCount = apkSnapshot.size
+                apkBytes = apkSnapshot.sumOf { it.bytes }
                 originalCacheCount = cacheCount
                 originalSafeCount = safeCount
+                originalApkCount = apkCount
                 cleanPlanId = UUID.randomUUID().toString()
                 cleanPlanCreatedAt = System.currentTimeMillis()
+                persistApkSnapshot()
 
-                val total = cacheCount + safeCount
+                val total = cacheCount + safeCount + apkCount
                 val cacheBytes = cacheJson.optLong("totalBytes", 0L).coerceAtLeast(0L)
                 val safeBytes = safeJson.optLong("knownBytes", 0L).coerceAtLeast(0L)
-                estimatedBytes = cacheBytes + safeBytes
+                estimatedBytes = cacheBytes + safeBytes + apkBytes
                 val cancelled = cacheJson.optBoolean("cancelled") || safeJson.optBoolean("cancelled")
-                val ready = !cancelled && total > 0 && (cacheSnapshotId.isNotBlank() || safeSnapshotId.isNotBlank())
+                val ready = !cancelled && total > 0 &&
+                    (cacheSnapshotId.isNotBlank() || safeSnapshotId.isNotBlank() || apkCount > 0)
+                val totalElapsed = (SystemClock.elapsedRealtime() - scanStarted).coerceAtLeast(0L)
                 screenState = screenState.copy(
                     running = false,
                     operation = "",
                     phase = if (cancelled) {
                         "扫描已停止"
                     } else {
-                        "扫描完成 · 发现 $total 项可清理内容"
+                        "扫描完成 · 发现 $total 项可清理内容 · ${totalElapsed} ms"
                     },
                     totalSafe = total,
                     cleanReady = ready,
                     scanCompleted = !cancelled,
                     resumable = false,
                     estimatedBytes = estimatedBytes,
-                    progressCurrent = 2,
-                    progressTotal = 2,
+                    progressCurrent = 3,
+                    progressTotal = 3,
                     cacheSummary = if (cacheJson.has("error")) {
                         cacheJson.optString("message", "缓存扫描失败")
                     } else {
                         buildString {
                             append("$cacheCount 项")
                             if (cacheBytes > 0L) append(" · ").append(Formatter.formatFileSize(this@ResumableSmartScanActivity, cacheBytes))
+                        }
+                    },
+                    apkSummary = buildString {
+                        if (apkResult.error.isNotBlank()) append(apkResult.error)
+                        else {
+                            append("$apkCount 个")
+                            if (apkBytes > 0L) append(" · ").append(Formatter.formatFileSize(this@ResumableSmartScanActivity, apkBytes))
+                            append(" · ${apkResult.elapsedMs} ms")
                         }
                     },
                     safeSummary = if (safeJson.has("error")) {
