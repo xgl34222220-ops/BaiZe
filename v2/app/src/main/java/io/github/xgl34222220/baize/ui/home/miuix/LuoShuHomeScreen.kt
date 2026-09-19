@@ -50,34 +50,58 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
             }
         }
         item(key = "space") { SpaceHero(state, actions) }
-        // Keep the real plan reachable in the first regular-size viewport, not behind statistics.
-        item(key = "plan") {
-            LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动清理",
-                    if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "设置时间，让白泽按计划整理",
-                    onOpenPlan)
-            }
-        }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("常用工具")
+                LuoShuSection("专项清理")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    if (maxWidth.value / LocalDensity.current.fontScale < 240f) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
-                            LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
+                    val compact = maxWidth.value / LocalDensity.current.fontScale < 240f
+                    if (compact) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LuoShuShortcut("安装包", "下载后遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.fillMaxWidth())
+                            LuoShuShortcut("大文件", "100 MB 以上", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.fillMaxWidth())
+                            LuoShuShortcut("重复文件", "按内容确认", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.fillMaxWidth())
+                            LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.fillMaxWidth())
+                            LuoShuShortcut("卸载残留", "应用残留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.fillMaxWidth())
+                            LuoShuShortcut("文件归类", "下载与接收文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
                         }
-                    } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        LuoShuShortcut("安装包", "", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
-                        LuoShuShortcut("文件归类", "", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                LuoShuShortcut("安装包", "下载后遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
+                                LuoShuShortcut("大文件", "100 MB 以上", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.weight(1f))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                LuoShuShortcut("重复文件", "按内容确认", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.weight(1f))
+                                LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.weight(1f))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                LuoShuShortcut("卸载残留", "应用残留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.weight(1f))
+                                LuoShuShortcut("文件归类", "下载与接收文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
                 LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "深度清理", "扩展扫描范围", actions.deep)
+                    LuoShuNavigationRow(Icons.Rounded.AutoAwesome, "深度清理", "App 自带规则库 · Root 深度扫描", actions.deep)
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部工具", "清理与自动化", onOpenClean)
+                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部清理工具", "查看全部前台清理能力", onOpenClean)
+                }
+            }
+        }
+        item(key = "plan") {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LuoShuSection("自动清理")
+                LuoShuGroup {
+                    LuoShuNavigationRow(
+                        Icons.Rounded.CalendarMonth,
+                        "自动清理模块",
+                        if (state.automationAvailable) {
+                            if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "模块已安装 · 自动任务已暂停"
+                        } else "可选模块 · 只负责后台定时扫描与清理",
+                        onOpenPlan
+                    )
                 }
             }
         }
@@ -94,11 +118,6 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-        }
-        if (!state.running && state.ready && !state.scanCompleted) item(key = "rule-clean") {
-            TextButton(onClick = actions.clean, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("按现有规则清理")
             }
         }
     }
