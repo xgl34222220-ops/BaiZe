@@ -200,14 +200,14 @@ internal fun LuoShuShortcut(
         color = BaiZeTokens.colors.surfaceRaised,
         shadowElevation = 1.dp
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(shape = RoundedCornerShape(15.dp), color = BaiZeTokens.colors.surfaceOverlay) {
                 Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                     Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold)
                 if (subtitle.isNotBlank()) {
                     Text(
                         subtitle,

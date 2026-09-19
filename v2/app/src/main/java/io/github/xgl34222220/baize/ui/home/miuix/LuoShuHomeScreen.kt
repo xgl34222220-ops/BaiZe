@@ -65,6 +65,19 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                             LuoShuShortcut("卸载残留", "应用残留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.fillMaxWidth())
                             LuoShuShortcut("文件归类", "下载与接收文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.fillMaxWidth())
                         }
+                    } else if (maxWidth.value / LocalDensity.current.fontScale >= 340f) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                LuoShuShortcut("安装包", "下载遗留", Icons.Rounded.InstallMobile, actions.apkScan, Modifier.weight(1f))
+                                LuoShuShortcut("大文件", "占用排行", Icons.Rounded.FolderOpen, actions.largeFiles, Modifier.weight(1f))
+                                LuoShuShortcut("重复文件", "保留一份", Icons.Rounded.ContentCopy, actions.duplicates, Modifier.weight(1f))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                LuoShuShortcut("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis, Modifier.weight(1f))
+                                LuoShuShortcut("卸载残留", "遗留目录", Icons.Rounded.FolderDelete, actions.corpses, Modifier.weight(1f))
+                                LuoShuShortcut("文件归类", "整理文件", Icons.Rounded.FolderCopy, actions.organize, Modifier.weight(1f))
+                            }
+                        }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

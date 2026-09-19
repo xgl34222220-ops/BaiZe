@@ -257,7 +257,7 @@ class ApkScanActivity : ComponentActivity() {
             val started = SystemClock.elapsedRealtime()
             val indexed = withContext(Dispatchers.IO) { ApkMediaStoreIndex.query(applicationContext) }
             if (indexed.error != null) {
-                directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
+                directSnapshot = emptyList()
                 screenState = screenState.copy(
                     running = false,
                     operation = "",
