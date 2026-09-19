@@ -100,7 +100,7 @@ class SecondaryToolsVisualReviewTest {
         connected = true,
         status = "清理服务已就绪",
         phase = "扫描完成 · 发现 48 项可清理内容",
-        totalSafe = 48,
+        totalSafe = 48, cacheCount = 32, safeCount = 16, cacheBytes = 642L * 1024 * 1024, safeBytes = 200L * 1024 * 1024,
         cleanReady = true,
         scanCompleted = true,
         estimatedBytes = 842L * 1024 * 1024,

@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
@@ -40,7 +41,7 @@ internal fun LuoShuPageHeader(
         Text(
             title,
             Modifier.weight(1f),
-            fontSize = if (onBack == null) 26.sp else 22.sp,
+            fontSize = if (onBack == null) 28.sp else 22.sp,
             lineHeight = if (onBack == null) 34.sp else 30.sp,
             fontWeight = if (onBack == null) FontWeight.Bold else FontWeight.SemiBold,
             maxLines = 1,
@@ -89,9 +90,10 @@ internal fun LuoShuSection(title: String, subtitle: String = "") {
 internal fun LuoShuGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised,
-        tonalElevation = 0.dp
+        tonalElevation = 0.dp,
+        shadowElevation = 1.dp
     ) {
         Column(content = content)
     }
@@ -124,8 +126,8 @@ internal fun LuoShuNavigationRow(
                 if (subtitle.isNotBlank()) {
                     Text(
                         subtitle,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -194,7 +196,7 @@ internal fun LuoShuShortcut(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         color = BaiZeTokens.colors.surfaceRaised,
         shadowElevation = 1.dp
     ) {

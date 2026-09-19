@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -52,7 +53,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         item(key = "space") { SpaceHero(state, actions) }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("专项清理")
+                LuoShuSection("整理空间", "按文件类型，快速找到需要处理的内容")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val compact = maxWidth.value / LocalDensity.current.fontScale < 240f
                     if (compact) {
@@ -82,11 +83,11 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                     }
                 }
                 LuoShuGroup {
-                    LuoShuNavigationRow(Icons.Rounded.AutoAwesome, "深度清理", "App 自带规则库 · Root 深度扫描", actions.deep)
+                    LuoShuNavigationRow(Icons.Rounded.AutoAwesome, "深度清理", "查看应用残留与可清理内容", actions.deep)
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Shield, "白名单", "应用与路径保护", actions.whitelist)
                     LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部清理工具", "查看全部前台清理能力", onOpenClean)
+                    LuoShuNavigationRow(Icons.Rounded.Tune, "全部清理工具", "缓存、规则与更多清理选项", onOpenClean)
                 }
             }
         }
@@ -99,7 +100,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         "自动清理模块",
                         if (state.automationAvailable) {
                             if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "模块已安装 · 自动任务已暂停"
-                        } else "可选模块 · 只负责后台定时扫描与清理",
+                        } else "安装模块后可定时自动清理",
                         onOpenPlan
                     )
                 }
@@ -184,11 +185,12 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         !state.ready -> actions.reconnect
         else -> actions.scan
     }
-    Surface(shape = RoundedCornerShape(28.dp), color = colors.surfaceRaised, shadowElevation = 2.dp) {
+    Surface(modifier = Modifier.glassSurface(colors.surfaceRaised, RoundedCornerShape(24.dp), colors.surfaceRaised.luminance() < .3f),
+        shape = RoundedCornerShape(24.dp), color = Color.Transparent) {
         Column(Modifier.fillMaxWidth()
             .background(Brush.linearGradient(listOf(scheme.primaryContainer.copy(alpha = .46f), colors.surfaceRaised)))
             .animateContentSize()
-            .padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            .padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             val statusColor = when {
                 state.ready && !state.running -> colors.success
                 state.connectionFailed -> scheme.error
@@ -225,21 +227,14 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 Text(description, style = MaterialTheme.typography.bodySmall,
                     color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
             }
-            Button(onClick = action, enabled = state.running || !state.connecting || state.scanCompleted,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primaryContainer,
-                    contentColor = scheme.onPrimaryContainer
-                ),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp), shape = RoundedCornerShape(18.dp)) {
-                Icon(when {
+            GlassActionButton(actionLabel, action, Modifier.fillMaxWidth(),
+                enabled = state.running || !state.connecting || state.scanCompleted,
+                icon = when {
                     state.running -> Icons.Rounded.Stop
                     hasResults -> Icons.Rounded.CleaningServices
                     !state.ready && !state.scanCompleted -> Icons.Rounded.Security
                     else -> Icons.Rounded.Search
-                }, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(actionLabel, style = MaterialTheme.typography.labelLarge)
-            }
+                })
             if (!state.running && state.scanCompleted) Column(Modifier.fillMaxWidth()) {
                 if (hasResults) TextButton(actions.scan, Modifier.fillMaxWidth()) { Text("重新扫描") }
                 TextButton(actions.dismissScan, Modifier.fillMaxWidth()) { Text("收起结果") }
@@ -250,7 +245,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
 
 @Composable
 private fun HeroMetricValue(value: String) {
-    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
+    val match = remember(value) { Regex("""^([0-9][0-9.,]*)\s*([A-Za-z]+|项)$""").matchEntire(value.trim()) }
     if (match == null) {
         Text(
             value,

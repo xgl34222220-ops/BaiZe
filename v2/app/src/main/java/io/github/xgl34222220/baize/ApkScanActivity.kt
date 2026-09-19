@@ -39,6 +39,8 @@ import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,6 +97,7 @@ class ApkScanActivity : ComponentActivity() {
     }
     private var screenState by mutableStateOf(ApkScanUiState())
     private var showCleanConfirm by mutableStateOf(false)
+    @Volatile private var stopRequested = false
     private var directSnapshot: List<DirectApkSnapshot> = emptyList()
 
     private val connection = object : ServiceConnection {
@@ -137,7 +140,8 @@ class ApkScanActivity : ComponentActivity() {
                         onScan = ::startScan,
                         onClean = { showCleanConfirm = true },
                         onStop = ::stopTask,
-                        onReconnect = ::connectService
+                        onReconnect = ::connectService,
+                        onToggle = ::toggleItem, onToggleAll = ::toggleAll
                     )
                     if (showCleanConfirm) {
                         AlertDialog(
@@ -145,7 +149,7 @@ class ApkScanActivity : ComponentActivity() {
                             title = { Text("清理刚才扫描到的安装包？") },
                             text = {
                                 Text(
-                                    "只删除当前扫描快照中的 ${screenState.totalFiles} 个安装包，不会重新扫描。" +
+                                    "只删除当前扫描快照中的 ${screenState.selected.size} 个已选安装包，不会重新扫描。" +
                                         "扫描后新增或修改的文件、白名单路径、软链接和异常路径会自动跳过。"
                                 )
                             },
@@ -204,7 +208,10 @@ class ApkScanActivity : ComponentActivity() {
             screenState = screenState.copy(phase = "安装包任务仍在运行，请先停止或等待完成")
             return
         }
+        stopRequested = false
+        directSnapshot = emptyList()
         screenState = screenState.copy(
+            selected = emptySet(),
             running = true,
             operation = "scan",
             phase = "正在读取 Android 系统文件索引…",
@@ -250,7 +257,7 @@ class ApkScanActivity : ComponentActivity() {
             val started = SystemClock.elapsedRealtime()
             val indexed = withContext(Dispatchers.IO) { ApkMediaStoreIndex.query(applicationContext) }
             if (indexed.error != null) {
-                directSnapshot = emptyList()
+                directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
                 screenState = screenState.copy(
                     running = false,
                     operation = "",
@@ -272,13 +279,14 @@ class ApkScanActivity : ComponentActivity() {
             directSnapshot = snapshots
             val totalBytes = indexed.candidates.sumOf { it.bytes }
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-            val items = indexed.candidates.take(500).map { candidate ->
+            val items = indexed.candidates.map { candidate ->
                 ApkScanItem(
                     name = candidate.name,
                     files = 1,
                     bytes = candidate.bytes,
                     errors = 0,
-                    samplePath = candidate.path
+                    samplePath = candidate.path,
+                    uri = candidate.uri
                 )
             }
             val coverage = listOf(
@@ -297,6 +305,7 @@ class ApkScanActivity : ComponentActivity() {
                 phase = if (indexed.candidates.isEmpty()) "快速索引完成：发现 0 个安装包" else
                     "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms",
                 items = items,
+                selected = snapshots.map { it.uri }.toSet(),
                 coverage = coverage,
                 totalFiles = indexed.candidates.size.toLong(),
                 totalBytes = totalBytes,
@@ -306,13 +315,24 @@ class ApkScanActivity : ComponentActivity() {
         }
     }
 
+    private fun toggleItem(uri: String) {
+        if (screenState.running || screenState.items.none { it.uri == uri }) return
+        screenState = screenState.copy(selected = screenState.selected.toMutableSet().apply {
+            if (!add(uri)) remove(uri)
+        })
+    }
+
+    private fun toggleAll() {
+        if (screenState.running || !screenState.cleanReady) return
+        screenState = screenState.copy(selected = if (screenState.allSelected) emptySet()
+            else screenState.items.map { it.uri }.toSet())
+    }
+
     private fun cleanSnapshot() {
         if (screenState.running || !screenState.cleanReady) return
-        val snapshot = directSnapshot
-        if (snapshot.isEmpty()) {
-            screenState = screenState.copy(cleanReady = false, phase = "当前没有可清理的安装包快照，请重新扫描")
-            return
-        }
+        val snapshot = directSnapshot.filter { it.uri in screenState.selected }
+        if (snapshot.isEmpty()) return
+        stopRequested = false
 
         screenState = screenState.copy(
             running = true,
@@ -326,7 +346,9 @@ class ApkScanActivity : ComponentActivity() {
                 var deletedBytes = 0L
                 var skipped = 0
                 var failed = 0
-                snapshot.forEach { item ->
+                val removed = mutableSetOf<String>()
+                for (item in snapshot) {
+                    if (stopRequested) break
                     when (ApkMediaStoreIndex.deleteIfUnchanged(
                         context = applicationContext,
                         uriString = item.uri,
@@ -335,6 +357,7 @@ class ApkScanActivity : ComponentActivity() {
                         expectedModifiedSeconds = item.modifiedSeconds
                     )) {
                         ApkIndexedDeleteResult.DELETED -> {
+                            removed += item.uri
                             deletedFiles += 1
                             deletedBytes += item.bytes
                         }
@@ -342,10 +365,10 @@ class ApkScanActivity : ComponentActivity() {
                         ApkIndexedDeleteResult.FAILED -> failed += 1
                     }
                 }
-                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed)
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, removed)
             }
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-            directSnapshot = emptyList()
+            directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
             val phase = when {
                 result.failed > 0 || result.skipped > 0 ->
                     "清理完成：删除 ${result.deletedFiles} 个，跳过 ${result.skipped} 个，失败 ${result.failed} 个 · ${elapsed} ms"
@@ -355,12 +378,12 @@ class ApkScanActivity : ComponentActivity() {
             screenState = screenState.copy(
                 running = false,
                 operation = "",
-                cleanReady = false,
-                phase = phase,
-                items = emptyList(),
-                coverage = emptyList(),
-                totalFiles = 0,
-                totalBytes = 0,
+                cleanReady = directSnapshot.isNotEmpty(),
+                phase = if (stopRequested) "清理已停止 · 删除 ${result.deletedFiles} 个，其余保留" else phase,
+                items = screenState.items.filterNot { it.uri in result.removed },
+                selected = screenState.selected - result.removed,
+                totalFiles = directSnapshot.size.toLong(),
+                totalBytes = directSnapshot.sumOf { it.bytes },
                 output = "MediaStore URI 直接删除；总耗时 ${elapsed} ms"
             )
         }
@@ -371,6 +394,7 @@ class ApkScanActivity : ComponentActivity() {
             screenState = screenState.copy(phase = "当前没有正在运行的安装包任务")
             return
         }
+        stopRequested = true
         service?.cancelCurrentTask()
         screenState = screenState.copy(phase = "正在安全停止安装包任务…")
     }
@@ -471,7 +495,8 @@ internal data class DirectCleanResult(
     val deletedFiles: Int,
     val deletedBytes: Long,
     val skipped: Int,
-    val failed: Int
+    val failed: Int,
+    val removed: Set<String> = emptySet()
 )
 
 internal data class ApkScanUiState(
@@ -485,8 +510,12 @@ internal data class ApkScanUiState(
     val totalFiles: Long = 0,
     val totalBytes: Long = 0,
     val cleanReady: Boolean = false,
-    val output: String = ""
-)
+    val output: String = "",
+    val selected: Set<String> = emptySet()
+) {
+    val allSelected: Boolean get() = items.isNotEmpty() && items.all { it.uri in selected }
+    val selectedBytes: Long get() = items.filter { it.uri in selected }.sumOf { it.bytes }
+}
 
 internal data class ScanCoverageItem(
     val status: String,
@@ -502,7 +531,8 @@ internal data class ApkScanItem(
     val files: Long,
     val bytes: Long,
     val errors: Long,
-    val samplePath: String
+    val samplePath: String,
+    val uri: String = samplePath
 )
 
 @Composable
@@ -512,26 +542,37 @@ internal fun ApkScanScreen(
     onScan: () -> Unit,
     onClean: () -> Unit,
     onStop: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    onToggle: (String) -> Unit = {},
+    onToggleAll: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) },
+        bottomBar = {
+            if (state.cleanReady && !state.running) CleanSelectionBar(
+                state.selected.size, state.items.size, Formatter.formatFileSize(context, state.selectedBytes),
+                state.allSelected, true, onToggleAll, onClean,
+                cleanLabel = "清理已选 ${state.selected.size} 个安装包")
+        }
+    ) { insets ->
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        modifier = Modifier.fillMaxSize().padding(insets).background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        item { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) }
         item {
             DetailTaskCard(
                 metric = if (state.totalFiles > 0) Formatter.formatFileSize(context, state.totalBytes) else "扫描安装包",
                 metricLabel = if (state.totalFiles > 0) "${state.totalFiles} 个安装文件" else "APK · APKS · XAPK · APKM",
                 phase = state.phase,
                 running = state.running,
-                ready = state.cleanReady,
+                ready = false,
                 scanEnabled = true,
                 cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
-                cleanLabel = "清理 ${state.totalFiles} 个安装包"
+                scanLabel = if (state.cleanReady) "重新扫描" else "开始扫描",
+                cleanLabel = "清理已选 ${state.selected.size} 个安装包"
             )
         }
         item {
@@ -548,7 +589,8 @@ internal fun ApkScanScreen(
                 )
             }
         } else itemsIndexed(state.items, key = { _, item -> "${item.name}|${item.samplePath}" }) { index, item ->
-            ApkResultCard(item, first = index == 0, last = index == state.items.lastIndex)
+            ApkResultCard(item, first = index == 0, last = index == state.items.lastIndex,
+                selected = item.uri in state.selected, enabled = !state.running, onToggle = { onToggle(item.uri) })
         }
         if (state.coverage.isNotEmpty()) {
             item { DetailSectionHeader("扫描范围", "已读取 ${state.coverage.count { it.status == "scanned" || it.status == "partial" }} 个来源") }
@@ -564,18 +606,20 @@ internal fun ApkScanScreen(
             }
         }
         if (state.output.isNotBlank()) item { DetailExpandableText("查看任务详情", state.output) }
-        item { Spacer(Modifier.navigationBarsPadding()) }
+        item { Spacer(Modifier.height(8.dp)) }
+    }
     }
 }
 
 @Composable
-private fun ApkResultCard(item: ApkScanItem, first: Boolean, last: Boolean) {
+private fun ApkResultCard(item: ApkScanItem, first: Boolean, last: Boolean, selected: Boolean, enabled: Boolean, onToggle: () -> Unit) {
     val context = LocalContext.current
     val size = Formatter.formatFileSize(context, item.bytes)
     val summary = "${item.files} 项" + if (item.errors > 0) " · 异常 ${item.errors}" else " · 安装文件"
     DetailResultRow(
         title = item.name, value = size, summary = summary, path = item.samplePath,
         details = listOf("$summary · $size", item.samplePath).filter { it.isNotBlank() }.joinToString("\n\n"),
-        icon = Icons.Rounded.InstallMobile, first = first, last = last
+        icon = Icons.Rounded.InstallMobile, first = first, last = last,
+        selected = selected, selectionEnabled = enabled, onToggle = onToggle
     )
 }

@@ -56,7 +56,7 @@ class DetailVisualReviewTest {
     @Test fun apkResults() {
         var cleanRequests = 0
         render("apk-results") { ApkScanScreen(apkResults, {}, {}, { cleanRequests++ }, {}, {}) }
-        compose.onNodeWithText("清理 121 个安装包").performClick()
+        compose.onNodeWithText("清理已选 2 个安装包").performClick()
         assertEquals("The result action must reuse the existing scan", 1, cleanRequests)
         compose.onNodeWithText("示例应用_4.2.apk").performClick()
         compose.onNodeWithText("完成").assertIsDisplayed().performClick()
@@ -162,7 +162,8 @@ class DetailVisualReviewTest {
 
     private val apkResults = ApkScanUiState(
         connected = true, phase = "扫描完成，安装文件来自 3 个存储来源。", cleanReady = true,
-        totalFiles = 121, totalBytes = 2486L * 1024 * 1024,
+        totalFiles = 2, totalBytes = 234L * 1024 * 1024,
+        selected = setOf("/storage/emulated/0/Download/示例应用_4.2.apk", "/storage/emulated/0/Download/示例工具_1.6.apks"),
         items = listOf(
             ApkScanItem("示例应用_4.2.apk", 1, 148L * 1024 * 1024, 0, "/storage/emulated/0/Download/示例应用_4.2.apk"),
             ApkScanItem("示例工具_1.6.apks", 1, 86L * 1024 * 1024, 0, "/storage/emulated/0/Download/示例工具_1.6.apks")

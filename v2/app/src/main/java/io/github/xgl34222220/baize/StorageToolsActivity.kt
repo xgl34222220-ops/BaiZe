@@ -25,6 +25,9 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,6 +50,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
+import io.github.xgl34222220.baize.ui.components.CleanSelectionBar
+import io.github.xgl34222220.baize.ui.components.DetailResultRow
+import io.github.xgl34222220.baize.ui.components.DetailEmptyState
 import io.github.xgl34222220.baize.ui.components.DetailGlassPanel
 import io.github.xgl34222220.baize.ui.components.DetailPageHeader
 import io.github.xgl34222220.baize.ui.components.DetailSectionHeader
@@ -62,6 +68,7 @@ enum class StorageToolMode { LARGE, DUPLICATES, ANALYSIS }
 class StorageToolsActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private var state by mutableStateOf(StorageToolsUiState())
+    private var showDeleteConfirm by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,8 +86,16 @@ class StorageToolsActivity : ComponentActivity() {
                         onBack = ::finish,
                         onScan = ::scan,
                         onToggle = ::toggle,
-                        onDelete = ::deleteSelected,
+                        onDelete = { showDeleteConfirm = true },
+                        onToggleAll = ::toggleAll,
                         onOpenPermission = ::openAllFilesSettings
+                    )
+                    if (showDeleteConfirm) AlertDialog(
+                        onDismissRequest = { showDeleteConfirm = false },
+                        title = { Text("删除已选 ${state.selected.size} 个文件？") },
+                        text = { Text("共 ${Formatter.formatFileSize(this@StorageToolsActivity, state.selectedBytes)}。删除后无法在白泽内恢复，请确认文件不再需要。") },
+                        confirmButton = { TextButton(onClick = { showDeleteConfirm = false; deleteSelected() }) { Text("确认删除") } },
+                        dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") } }
                     )
                 }
             }
@@ -131,33 +146,41 @@ class StorageToolsActivity : ComponentActivity() {
     }
 
     private fun toggle(key: String) {
-        state = state.copy(selected = state.selected.toMutableSet().apply { if (!add(key)) remove(key) })
+        if (state.running || state.allRecords.none { it.uri == key }) return
+        state = state.toggleSelection(key)
+    }
+
+    private fun toggleAll() {
+        if (state.running) return
+        state = state.toggleAllSelection()
     }
 
     private fun deleteSelected() {
         if (state.running || state.selected.isEmpty()) return
-        val selectedRecords = when (state.mode) {
-            StorageToolMode.LARGE -> state.records.filter { it.uri in state.selected }
-            StorageToolMode.DUPLICATES -> state.duplicateGroups.flatMap { it.records }.filter { it.uri in state.selected }
-            StorageToolMode.ANALYSIS -> emptyList()
-        }
+        val selectedRecords = state.allRecords.filter { it.uri in state.selected }
         if (selectedRecords.isEmpty()) return
         state = state.copy(running = true, status = "正在删除已选择的 ${selectedRecords.size} 个文件…")
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 var deleted = 0
                 var bytes = 0L
+                val removed = mutableSetOf<String>()
                 selectedRecords.forEach { record ->
                     if (StorageMediaRepository.delete(applicationContext, record)) {
                         deleted++
+                        removed += record.uri
                         bytes += record.bytes
                     }
                 }
-                deleted to bytes
+                Triple(deleted, bytes, removed)
             }
-            state = state.copy(running = false, selected = emptySet(),
-                status = "已删除 ${result.first} 个文件，释放 ${Formatter.formatFileSize(this@StorageToolsActivity, result.second)}")
-            scan()
+            state = state.copy(running = false, selected = state.selected - result.third,
+                records = state.records.filterNot { it.uri in result.third },
+                duplicateGroups = state.duplicateGroups.map { group ->
+                    group.copy(records = group.records.filterNot { it.uri in result.third })
+                },
+                status = "已删除 ${result.first} 个文件，释放 ${Formatter.formatFileSize(this@StorageToolsActivity, result.second)}" +
+                    if (result.first < selectedRecords.size) " · ${selectedRecords.size - result.first} 项未删除" else "")
         }
     }
 
@@ -178,16 +201,40 @@ internal data class StorageToolsUiState(
     val duplicateGroups: List<DuplicateFileGroup> = emptyList(),
     val buckets: List<StorageAnalysisBucket> = emptyList(),
     val selected: Set<String> = emptySet(),
-)
+) {
+    val allRecords: List<StorageFileRecord> get() = when (mode) {
+        StorageToolMode.LARGE -> records
+        StorageToolMode.DUPLICATES -> duplicateGroups.flatMap { it.records }
+        StorageToolMode.ANALYSIS -> emptyList()
+    }
+    val recommended: Set<String> get() = when (mode) {
+        StorageToolMode.LARGE -> records.map { it.uri }.toSet()
+        StorageToolMode.DUPLICATES -> duplicateGroups.flatMap { it.records.drop(1) }.map { it.uri }.toSet()
+        StorageToolMode.ANALYSIS -> emptySet()
+    }
+    val allSelected: Boolean get() = recommended.isNotEmpty() && selected.size == recommended.size
+    val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.bytes }
+    fun toggleAllSelection() = copy(selected = if (allSelected) emptySet() else recommended)
+    fun toggleSelection(key: String): StorageToolsUiState {
+        if (key in selected) return copy(selected = selected - key)
+        if (allRecords.none { it.uri == key }) return this
+        if (mode == StorageToolMode.DUPLICATES) {
+            val group = duplicateGroups.firstOrNull { group -> group.records.any { it.uri == key } } ?: return this
+            if (group.records.count { it.uri !in selected } <= 1) return copy(status = "每组需保留一份，可先取消另一份的勾选")
+        }
+        return copy(selected = selected + key)
+    }
+}
 
 @Composable
-private fun StorageToolsScreen(
+internal fun StorageToolsScreen(
     state: StorageToolsUiState,
     onBack: () -> Unit,
     onScan: () -> Unit,
     onToggle: (String) -> Unit,
     onDelete: () -> Unit,
     onOpenPermission: () -> Unit,
+    onToggleAll: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val title = when (state.mode) {
@@ -197,15 +244,24 @@ private fun StorageToolsScreen(
     }
     val subtitle = when (state.mode) {
         StorageToolMode.LARGE -> "找出占用空间最大的文件"
-        StorageToolMode.DUPLICATES -> "按大小、前缀与完整哈希确认重复内容"
+        StorageToolMode.DUPLICATES -> "相同内容归为一组，每组保留一份"
         StorageToolMode.ANALYSIS -> "按文件类型查看空间占用"
     }
+    Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        topBar = { DetailPageHeader(title, subtitle, onBack) },
+        bottomBar = {
+            if (state.allRecords.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
+                state.selected.size, state.allRecords.size, Formatter.formatFileSize(context, state.selectedBytes),
+                state.allSelected, true, onToggleAll, onDelete,
+                cleanLabel = "删除已选 ${state.selected.size} 项",
+                selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选")
+        }
+    ) { insets ->
     LazyColumn(
-        Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
+        Modifier.fillMaxSize().padding(insets).background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item { DetailPageHeader(title, subtitle, onBack) }
         item {
             DetailGlassPanel {
                 Text(state.status, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
@@ -218,11 +274,7 @@ private fun StorageToolsScreen(
                 if (state.permissionRequired) {
                     GlassActionButton("开启所有文件访问", onOpenPermission, Modifier.fillMaxWidth())
                 } else {
-                    GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true)
-                }
-                if (state.selected.isNotEmpty() && state.mode != StorageToolMode.ANALYSIS) {
-                    Spacer(Modifier.height(10.dp))
-                    GlassActionButton("删除已选 ${state.selected.size} 项", onDelete, Modifier.fillMaxWidth(), icon = Icons.Rounded.DeleteSweep)
+                    GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true, enabled = !state.running)
                 }
             }
         }
@@ -230,7 +282,7 @@ private fun StorageToolsScreen(
             StorageToolMode.LARGE -> {
                 item { DetailSectionHeader("大文件", "100 MB 以上") }
                 items(state.records, key = { it.uri }) { record ->
-                    StorageFileRow(record, record.uri in state.selected) { onToggle(record.uri) }
+                    StorageFileRow(record, record.uri in state.selected, !state.running) { onToggle(record.uri) }
                 }
             }
             StorageToolMode.DUPLICATES -> {
@@ -242,7 +294,7 @@ private fun StorageToolsScreen(
                         )
                     }
                     items(group.records, key = { "dup-${group.key}-${it.uri}" }) { record ->
-                        StorageFileRow(record, record.uri in state.selected) { onToggle(record.uri) }
+                        StorageFileRow(record, record.uri in state.selected, !state.running) { onToggle(record.uri) }
                     }
                 }
             }
@@ -251,23 +303,20 @@ private fun StorageToolsScreen(
                 items(state.buckets, key = { it.key }) { bucket -> StorageBucketRow(bucket) }
             }
         }
-        item { Spacer(Modifier.navigationBarsPadding()) }
+        if (!state.running && !state.permissionRequired && state.allRecords.isEmpty() && state.buckets.isEmpty()) {
+            item { DetailEmptyState("暂无可处理文件", "本次扫描未发现符合条件的文件。") }
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+    }
     }
 }
 
 @Composable
-private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, onClick: () -> Unit) {
-    DetailGlassPanel(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clickable(onClick = onClick)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Checkbox(checked = selected, onCheckedChange = { onClick() })
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(record.name, maxLines = 1, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text(record.path, maxLines = 2, fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, record.bytes),
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-        }
-    }
+private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val size = Formatter.formatFileSize(androidx.compose.ui.platform.LocalContext.current, record.bytes)
+    DetailResultRow(title = record.name, value = size, summary = "文件", path = record.path,
+        details = "$size\n\n${record.path}", icon = Icons.Rounded.Description,
+        first = true, last = true, selected = selected, selectionEnabled = enabled, onToggle = onClick)
 }
 
 @Composable
@@ -281,7 +330,7 @@ private fun StorageBucketRow(bucket: StorageAnalysisBucket) {
         "archive" -> Icons.Rounded.FolderZip
         else -> Icons.Rounded.Description
     }
-    DetailGlassPanel(Modifier.padding(horizontal = 20.dp).fillMaxWidth()) {
+    DetailGlassPanel() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .08f)) {
                 Icon(icon, null, Modifier.padding(10.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
