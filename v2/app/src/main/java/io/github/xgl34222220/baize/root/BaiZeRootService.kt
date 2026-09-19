@@ -9,7 +9,6 @@ import com.topjohnwu.superuser.ipc.RootService
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -164,6 +163,8 @@ class BaiZeRootService : RootService() {
     }
 
     private val snapshotState = AtomicReference(SnapshotState.EMPTY)
+    private val foregroundEngine by lazy { ForegroundCacheEngine(this, cancelled) }
+    @Volatile private var foregroundSnapshot: ForegroundCacheEngine.Snapshot? = null
     @Volatile private var items: List<CacheItem> = emptyList()
     @Volatile private var taskStateJson = idleState()
 
@@ -194,16 +195,14 @@ class BaiZeRootService : RootService() {
         }
 
         override fun ping(): String {
-            val ready = restoreSnapshotFromDisk()
+            val ready = restoreForegroundSnapshot()
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
-                .put("engine", "native-c-cache-v43.7-alpha8-organizer")
-                // 按设备 ABI 查找，不再假定 arm64
-                .put("available", RootPaths.nativeEngine("baize_engine") != null)
-                .put("engineAbi", RootPaths.nativeEngine("baize_engine")?.parentFile?.name ?: "")
+                .put("engine", "app-root-foreground-cache-v1")
+                .put("available", Process.myUid() == 0)
+                .put("moduleRequired", false)
                 .also { json ->
-                    // 一次读取原子快照，读取方不会看到半新半旧的字段组合
                     snapshotState.get().putInto(
                         json,
                         ready,
@@ -211,21 +210,19 @@ class BaiZeRootService : RootService() {
                     )
                 }
                 .put("snapshotExpiresInMs", SNAPSHOT_MAX_AGE_MS)
-                .put("taskRunning", moduleTaskAlive())
-                .also { RootVersionInfo.putInto(it) }
+                .put("taskRunning", running.get())
                 .toString()
         }
 
         override fun scanCandidates(whitelistJson: String?): String {
-            if (moduleTaskAlive()) return busy("cache-scan")
             if (!running.compareAndSet(false, true)) return busy("cache-scan")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runNativeScan(whitelistJson.orEmpty(), started)
+                runForegroundScan(whitelistJson.orEmpty(), started)
             } catch (error: Throwable) {
                 JSONObject()
-                    .put("error", "native_cache_scan_failed")
+                    .put("error", "foreground_cache_scan_failed")
                     .put("message", error.message ?: error.javaClass.simpleName)
                     .toString()
             } finally {
@@ -235,7 +232,7 @@ class BaiZeRootService : RootService() {
         }
 
         override fun getResultPage(requestedSnapshotId: String?, offset: Int, limit: Int): String {
-            restoreSnapshotFromDisk()
+            restoreForegroundSnapshot()
             val id = requestedSnapshotId.orEmpty()
             if (!snapshotValid(id)) {
                 return JSONObject()
@@ -278,8 +275,7 @@ class BaiZeRootService : RootService() {
             selectionJson: String?,
             whitelistJson: String?
         ): String {
-            if (moduleTaskAlive()) return busy("cache-clean")
-            if (!restoreSnapshotFromDisk() || !snapshotValid(requestedSnapshotId.orEmpty())) {
+            if (!restoreForegroundSnapshot() || !snapshotValid(requestedSnapshotId.orEmpty())) {
                 return JSONObject()
                     .put("error", "snapshot_expired")
                     .put("message", "缓存扫描快照已失效，不会自动重新扫描")
@@ -298,10 +294,10 @@ class BaiZeRootService : RootService() {
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runSnapshotClean(whitelistJson.orEmpty(), started)
+                runForegroundClean(whitelistJson.orEmpty(), started)
             } catch (error: Throwable) {
                 JSONObject()
-                    .put("error", "cache_snapshot_clean_failed")
+                    .put("error", "foreground_cache_clean_failed")
                     .put("message", error.message ?: error.javaClass.simpleName)
                     .toString()
             } finally {
@@ -310,31 +306,15 @@ class BaiZeRootService : RootService() {
             }
         }
 
-        override fun getTaskState(): String {
-            val alive = moduleTaskAlive()
-            if (alive) {
-                val runningState = readEnv(File(STATE_DIR, "running.env"))
-                if (runningState.length() > 0) {
-                    return runningState
-                        .put("running", true)
-                        .put("cancelRequested", cancelled.get())
-                        .toString()
-                }
-            } else {
-                repairStaleTaskFiles()
-            }
-            return runCatching {
-                JSONObject(taskStateJson)
-                    .put("running", running.get())
-                    .put("cancelRequested", cancelled.get())
-                    .toString()
-            }.getOrDefault(taskStateJson)
-        }
+        override fun getTaskState(): String = runCatching {
+            JSONObject(taskStateJson)
+                .put("running", running.get())
+                .put("cancelRequested", cancelled.get())
+                .toString()
+        }.getOrDefault(taskStateJson)
 
         override fun cancelCurrentTask() {
             cancelled.set(true)
-            File(STATE_DIR).mkdirs()
-            runCatching { File(STATE_DIR, "stop").writeText("1\n") }
         }
     }
 
