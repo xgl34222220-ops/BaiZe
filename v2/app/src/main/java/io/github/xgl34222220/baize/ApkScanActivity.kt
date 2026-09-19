@@ -6,8 +6,11 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
+import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import android.text.format.Formatter
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -92,6 +95,7 @@ class ApkScanActivity : ComponentActivity() {
     }
     private var screenState by mutableStateOf(ApkScanUiState())
     private var showCleanConfirm by mutableStateOf(false)
+    private var directSnapshot: List<DirectApkSnapshot> = emptyList()
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -200,134 +204,165 @@ class ApkScanActivity : ComponentActivity() {
             screenState = screenState.copy(phase = "安装包任务仍在运行，请先停止或等待完成")
             return
         }
-        val root = service
-        if (root == null) {
-            screenState = screenState.copy(phase = "Root 服务尚未连接，正在重新连接…")
-            connectService()
-            return
-        }
-
         screenState = screenState.copy(
             running = true,
             operation = "scan",
-            phase = "正在扫描 APK / APKS / XAPK…",
+            phase = "正在读取 Android 系统文件索引…",
             items = emptyList(),
+            coverage = emptyList(),
             totalFiles = 0,
             totalBytes = 0,
             cleanReady = false,
             output = ""
         )
-        startPolling()
+
         lifecycleScope.launch {
-            val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(root.runModuleTask("apk-scan")) }
-            }
-            pollJob?.cancel()
-            if (response.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    phase = "安装包扫描失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
-                )
-                return@launch
-            }
-
-            val json = response.getOrThrow()
-            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
-                screenState = screenState.copy(
-                    running = false,
-                    phase = json.optString("message", "当前已有其他扫描或清理任务正在运行")
-                )
-                return@launch
-            }
-
-            val latest = json.optJSONObject("latest") ?: JSONObject()
-            val parsedItems = parseItems(json.optJSONArray("otherDetails"))
-            val coverage = parseCoverage(json.optJSONArray("coverage"))
-            val success = json.optBoolean("success")
-            val cancelled = json.optBoolean("cancelled")
-            val totalFiles = latest.optLong("files", parsedItems.sumOf { it.files }).coerceAtLeast(0L)
-            val totalBytes = latest.optLong("bytes", parsedItems.sumOf { it.bytes }).coerceAtLeast(0L)
-            val result = latest.optString("result").ifBlank {
-                when {
-                    cancelled -> "安装包扫描已停止"
-                    success && totalFiles <= 0 -> "没有发现可清理的安装包"
-                    success -> "安装包扫描完成，可清理 ${Formatter.formatFileSize(this@ApkScanActivity, totalBytes)}"
-                    else -> json.optString("message", "安装包扫描失败")
+            if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+                service?.let { root ->
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            RootServiceClients.profileExchange(
+                                root, applicationContext.cacheDir, "ensureAllFilesAccess"
+                            )
+                        }
+                    }
+                    delay(80)
                 }
             }
+
+            if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+                screenState = screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = "需要“所有文件访问”才能读取系统文件索引，已打开授权页面"
+                )
+                runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            val started = SystemClock.elapsedRealtime()
+            val indexed = withContext(Dispatchers.IO) { ApkMediaStoreIndex.query(applicationContext) }
+            if (indexed.error != null) {
+                directSnapshot = emptyList()
+                screenState = screenState.copy(
+                    running = false,
+                    operation = "",
+                    phase = "系统文件索引读取失败：${indexed.error}",
+                    output = indexed.error
+                )
+                return@launch
+            }
+
+            val snapshots = indexed.candidates.map { candidate ->
+                DirectApkSnapshot(
+                    uri = candidate.uri,
+                    path = candidate.path,
+                    name = candidate.name,
+                    bytes = candidate.bytes,
+                    modifiedSeconds = candidate.modifiedSeconds
+                )
+            }
+            directSnapshot = snapshots
+            val totalBytes = indexed.candidates.sumOf { it.bytes }
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            val items = indexed.candidates.take(500).map { candidate ->
+                ApkScanItem(
+                    name = candidate.name,
+                    files = 1,
+                    bytes = candidate.bytes,
+                    errors = 0,
+                    samplePath = candidate.path
+                )
+            }
+            val coverage = listOf(
+                ScanCoverageItem(
+                    status = "scanned",
+                    group = "MediaStore.Files 系统索引",
+                    files = indexed.candidates.size.toLong(),
+                    bytes = totalBytes,
+                    path = "content://media/external/file",
+                    reason = "系统索引 ${indexed.candidates.size} 条 · 可直接清理 ${snapshots.size} 条 · MediaStore URI 删除"
+                )
+            )
             screenState = screenState.copy(
                 running = false,
                 operation = "",
-                phase = result,
-                items = parsedItems,
+                phase = if (indexed.candidates.isEmpty()) "快速索引完成：发现 0 个安装包" else
+                    "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms",
+                items = items,
                 coverage = coverage,
-                totalFiles = totalFiles,
+                totalFiles = indexed.candidates.size.toLong(),
                 totalBytes = totalBytes,
-                cleanReady = success && !cancelled && totalFiles > 0,
-                output = json.optString("output").trim().takeLast(6000)
+                cleanReady = snapshots.isNotEmpty(),
+                output = "MediaStore.Files ${indexed.elapsedMs} ms · 清理快照 ${snapshots.size} 条 · Root 未参与前台扫描"
             )
         }
     }
 
     private fun cleanSnapshot() {
         if (screenState.running || !screenState.cleanReady) return
-        val root = service
-        if (root == null) {
-            screenState = screenState.copy(phase = "Root 服务尚未连接，正在重新连接…")
-            connectService()
+        val snapshot = directSnapshot
+        if (snapshot.isEmpty()) {
+            screenState = screenState.copy(cleanReady = false, phase = "当前没有可清理的安装包快照，请重新扫描")
             return
         }
 
         screenState = screenState.copy(
             running = true,
             operation = "clean",
-            phase = "正在清理刚才扫描到的安装包，不会重新扫描…"
+            phase = "正在快速删除 ${snapshot.size} 个安装包…"
         )
-        startPolling()
         lifecycleScope.launch {
-            val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(root.runModuleTask("apk-clean")) }
-            }
-            pollJob?.cancel()
-            if (response.isFailure) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = "安装包清理失败：${response.exceptionOrNull()?.message ?: "Root 服务异常"}"
-                )
-                return@launch
-            }
-
-            val json = response.getOrThrow()
-            if (json.optString("error") == "busy" || json.optInt("exitCode") == 3) {
-                screenState = screenState.copy(
-                    running = false,
-                    operation = "",
-                    phase = json.optString("message", "当前已有其他扫描或清理任务正在运行")
-                )
-                return@launch
-            }
-
-            val latest = json.optJSONObject("latest") ?: JSONObject()
-            val cancelled = json.optBoolean("cancelled")
-            val result = latest.optString("result").ifBlank {
-                when {
-                    cancelled -> "安装包清理已停止"
-                    json.optBoolean("success") -> "安装包清理命令已完成"
-                    else -> json.optString("message", "安装包清理未完全生效")
+            val started = SystemClock.elapsedRealtime()
+            val result = withContext(Dispatchers.IO) {
+                var deletedFiles = 0
+                var deletedBytes = 0L
+                var skipped = 0
+                var failed = 0
+                snapshot.forEach { item ->
+                    when (ApkMediaStoreIndex.deleteIfUnchanged(
+                        context = applicationContext,
+                        uriString = item.uri,
+                        expectedPath = item.path,
+                        expectedBytes = item.bytes,
+                        expectedModifiedSeconds = item.modifiedSeconds
+                    )) {
+                        ApkIndexedDeleteResult.DELETED -> {
+                            deletedFiles += 1
+                            deletedBytes += item.bytes
+                        }
+                        ApkIndexedDeleteResult.CHANGED -> skipped += 1
+                        ApkIndexedDeleteResult.FAILED -> failed += 1
+                    }
                 }
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed)
             }
-
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            directSnapshot = emptyList()
+            val phase = when {
+                result.failed > 0 || result.skipped > 0 ->
+                    "清理完成：删除 ${result.deletedFiles} 个，跳过 ${result.skipped} 个，失败 ${result.failed} 个 · ${elapsed} ms"
+                else ->
+                    "清理完成：删除 ${result.deletedFiles} 个，释放 ${Formatter.formatFileSize(this@ApkScanActivity, result.deletedBytes)} · ${elapsed} ms"
+            }
             screenState = screenState.copy(
                 running = false,
                 operation = "",
                 cleanReady = false,
-                phase = if (cancelled) result else "$result\n正在重新扫描核对实际剩余文件…",
-                output = json.optString("output").trim().takeLast(6000)
+                phase = phase,
+                items = emptyList(),
+                coverage = emptyList(),
+                totalFiles = 0,
+                totalBytes = 0,
+                output = "MediaStore URI 直接删除；总耗时 ${elapsed} ms"
             )
-
-            // Verify against the filesystem instead of trusting the command exit code or old snapshot.
-            if (!cancelled) startScan()
         }
     }
 
@@ -424,6 +459,21 @@ class ApkScanActivity : ComponentActivity() {
     }.sortedWith(compareByDescending<ApkScanItem> { it.bytes }.thenByDescending { it.files })
 }
 
+internal data class DirectApkSnapshot(
+    val uri: String,
+    val path: String,
+    val name: String,
+    val bytes: Long,
+    val modifiedSeconds: Long
+)
+
+internal data class DirectCleanResult(
+    val deletedFiles: Int,
+    val deletedBytes: Long,
+    val skipped: Int,
+    val failed: Int
+)
+
 internal data class ApkScanUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
@@ -478,8 +528,8 @@ internal fun ApkScanScreen(
                 phase = state.phase,
                 running = state.running,
                 ready = state.cleanReady,
-                scanEnabled = state.connected,
-                cleanEnabled = state.connected,
+                scanEnabled = true,
+                cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
                 cleanLabel = "清理 ${state.totalFiles} 个安装包"
             )
