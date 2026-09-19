@@ -209,12 +209,17 @@ internal fun ScanWorkbenchScreen(
     val editable = lockedReason == null
     val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
         scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描结果已过期，请重新扫描") else state
-    val presentation by produceState(WorkbenchPresentation(), state.items, state.selectedIds,
-        filter, expandedGroups, state.loadingResults) {
+    val activeFilter = filter
+    val activeExpandedGroups = expandedGroups
+    // Capture one presentation during composition. Reading the State delegate inside
+    // LazyColumn's deferred content can change its item count independently of the
+    // composed item provider while asynchronous grouping completes.
+    val presentation = produceState(WorkbenchPresentation(), state.items, state.selectedIds,
+        activeFilter, activeExpandedGroups, state.loadingResults) {
         value = withContext(Dispatchers.Default) {
-            workbenchPresentation(state.items, state.selectedIds, filter, expandedGroups, state.loadingResults)
+            workbenchPresentation(state.items, state.selectedIds, activeFilter, activeExpandedGroups, state.loadingResults)
         }
-    }
+    }.value
     val filters = listOf("all" to "全部", "medium" to "中风险", "high" to "高风险",
         "unselected" to "待处理", "unfinished" to "未完成", "blocked" to "不可选",
         "deep" to "深度规则", "cache" to "应用缓存", "empty" to "空项目",
@@ -275,7 +280,7 @@ internal fun ScanWorkbenchScreen(
                             TextButton(onClick = { showFilters = true },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                                 contentPadding = PaddingValues(horizontal = 10.dp)) {
-                                Text(filters.first { it.first == filter }.second, fontSize = 12.sp)
+                                Text(filters.first { it.first == activeFilter }.second, fontSize = 12.sp)
                                 Spacer(Modifier.width(4.dp))
                                 Icon(Icons.Rounded.Tune, "筛选结果", Modifier.size(17.dp))
                             }
@@ -291,7 +296,7 @@ internal fun ScanWorkbenchScreen(
                 items(presentation.rows, key = { it.key }, contentType = { if (it is WorkbenchRow.Group) "group" else "candidate" }) { row ->
                     when (row) {
                         is WorkbenchRow.Group -> WorkbenchGroupRow(
-                            row.group, row.group.key in expandedGroups, editable,
+                            row.group, row.group.key in activeExpandedGroups, editable,
                             onExpand = { expandedGroups = expandedGroups.toMutableSet().apply {
                                 if (!add(row.group.key)) remove(row.group.key)
                             } }, onSelect = { actions.onToggleGroup(row.group.key) }

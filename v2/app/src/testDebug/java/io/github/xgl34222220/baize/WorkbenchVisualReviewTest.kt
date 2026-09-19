@@ -52,6 +52,28 @@ class WorkbenchVisualReviewTest {
         save("results-light")
     }
 
+    @Test fun replacingLargeResultsKeepsTheListAndCleanupActionConsistent() {
+        val full = ready()
+        render(full.copy(items = full.items.take(1), selectedIds = setOf(full.items.first().id)))
+        for (count in listOf(1980, 1, 1980)) {
+            val items = full.items.take(count)
+            compose.runOnIdle {
+                state = full.copy(items = items, selectedIds = items.take(1800).mapTo(linkedSetOf()) { it.id })
+            }
+            val appCount = minOf(count, 12).toString()
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithText(appCount, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+                    compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用 1"))
+            compose.onNodeWithText("示例应用 1").assertIsDisplayed()
+            compose.onNodeWithText("清理已选 ${minOf(count, 1800)} 项").assertIsDisplayed()
+            compose.onNode(hasScrollAction()).performScrollToIndex(0)
+        }
+        compose.onNodeWithText("清理已选 1800 项").performClick()
+        assertEquals(1, cleanRequests)
+    }
+
     @Test fun resultsDark() {
         // Dark-mode visual review does not need the 1,980-row stress fixture; the dedicated
         // thousandsOfResultsKeepTheCleanupActionInView test covers that contract. Keeping this
