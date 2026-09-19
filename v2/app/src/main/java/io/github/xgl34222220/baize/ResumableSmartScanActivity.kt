@@ -19,6 +19,7 @@ import androidx.activity.viewModels
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -186,7 +188,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         onScan = ::startSmartScan,
                         onClean = { showCleanConfirm = true },
                         onStop = ::stopTask,
-                        onReconnect = ::bindServices
+                        onReconnect = ::bindServices,
+                        onToggleCategory = ::toggleCategory
                     )
                     if (showCleanConfirm) {
                         AlertDialog(
@@ -403,6 +406,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
                             append(" · ${apkResult.elapsedMs} ms")
                         }
                     },
+                    cacheSelected = cacheCount > 0,
+                    apkSelected = apkCount > 0,
+                    safeSelected = safeCount > 0,
                     safeSummary = if (safeJson.has("error")) {
                         safeJson.optString("message", "安全项目扫描失败")
                     } else {
@@ -426,9 +432,21 @@ class ResumableSmartScanActivity : ComponentActivity() {
         }
     }
 
+    private fun toggleCategory(category: SmartCleanCategory) {
+        if (screenState.running || !screenState.scanCompleted) return
+        screenState = when (category) {
+            SmartCleanCategory.CACHE -> screenState.copy(cacheSelected = !screenState.cacheSelected)
+            SmartCleanCategory.APK -> screenState.copy(apkSelected = !screenState.apkSelected)
+            SmartCleanCategory.SAFE -> screenState.copy(safeSelected = !screenState.safeSelected)
+        }
+    }
+
     private fun cleanSnapshots() {
         if (screenState.running) return
-        val totalBefore = cacheCount + safeCount + apkCount
+        val totalBefore =
+            (if (screenState.cacheSelected) cacheCount else 0) +
+            (if (screenState.safeSelected) safeCount else 0) +
+            (if (screenState.apkSelected) apkCount else 0)
         if (!screenState.cleanReady || totalBefore <= 0 || !cleanPlanCurrent()) {
             screenState = screenState.copy(phase = "清理计划已过期、失效或设置已变化，请重新扫描")
             return
@@ -464,12 +482,12 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 val selection = JSONObject().put("__all_safe__", true).toString()
                 val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
 
-                val apkJob = if (apkCount > 0 && apkSnapshot.isNotEmpty()) {
+                val apkJob = if (screenState.apkSelected && apkCount > 0 && apkSnapshot.isNotEmpty()) {
                     screenState = screenState.copy(phase = "正在并行清理安装包与其他垃圾")
                     async(Dispatchers.IO) { cleanApkForSmartClean() }
                 } else null
 
-                if (cacheSnapshotId.isNotBlank() && cacheCount > 0) {
+                if (screenState.cacheSelected && cacheSnapshotId.isNotBlank() && cacheCount > 0) {
                     screenState = screenState.copy(phase = "正在清理应用缓存")
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
@@ -490,7 +508,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     interrupted = result.has("error") || result.optBoolean("cancelled") || result.optBoolean("timedOut")
                 }
 
-                if (!interrupted && safeSnapshotId.isNotBlank() && safeCount > 0) {
+                if (!interrupted && screenState.safeSelected && safeSnapshotId.isNotBlank() && safeCount > 0) {
                     screenState = screenState.copy(phase = "正在清理安全项目")
                     val result = withContext(Dispatchers.IO) {
                         runCatching {
@@ -734,7 +752,10 @@ class ResumableSmartScanActivity : ComponentActivity() {
             failures = cumulativeFailures,
             cacheSummary = plan.optString("cacheSummary", "剩余 $cacheCount 项"),
             apkSummary = plan.optString("apkSummary", "剩余 $apkCount 个"),
-            safeSummary = plan.optString("safeSummary", "剩余 $safeCount 项")
+            safeSummary = plan.optString("safeSummary", "剩余 $safeCount 项"),
+            cacheSelected = cacheCount > 0,
+            apkSelected = apkCount > 0,
+            safeSelected = safeCount > 0
         )
     }
 
@@ -1165,6 +1186,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 }
 
+internal enum class SmartCleanCategory { CACHE, APK, SAFE }
+
 internal data class SmartApkSnapshot(
     val uri: String,
     val path: String,
@@ -1220,8 +1243,21 @@ internal data class ResumeSmartUiState(
     val progressTotal: Int = 0,
     val cacheSummary: String = "等待扫描",
     val apkSummary: String = "等待扫描",
-    val safeSummary: String = "等待扫描"
-)
+    val safeSummary: String = "等待扫描",
+    val cacheSelected: Boolean = false,
+    val apkSelected: Boolean = false,
+    val safeSelected: Boolean = false
+) {
+    val selectedCount: Int
+        get() = (if (cacheSelected) summaryCount(cacheSummary) else 0) +
+            (if (apkSelected) summaryCount(apkSummary) else 0) +
+            (if (safeSelected) summaryCount(safeSummary) else 0)
+
+    companion object {
+        private fun summaryCount(summary: String): Int =
+            Regex("""(\d+)""").find(summary)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+    }
+}
 
 @Composable
 internal fun ResumeSmartScreen(
@@ -1230,7 +1266,8 @@ internal fun ResumeSmartScreen(
     onScan: () -> Unit,
     onClean: () -> Unit,
     onStop: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    onToggleCategory: (SmartCleanCategory) -> Unit
 ) {
     val context = LocalContext.current
     val progress = if (state.progressTotal > 0) {
@@ -1256,7 +1293,7 @@ internal fun ResumeSmartScreen(
         state.cleanReady && state.resumable -> "剩余待清理"
         state.cleanReady -> "可清理项目"
         state.runCount > 0 -> "本次已释放"
-        else -> "断点续清"
+        else -> "一键清理"
     }
     val executionDetails = buildString {
         append("执行 ${state.runCount} 次 · 授权 ${state.totalSafe + state.processedCandidates} 项")
@@ -1274,7 +1311,7 @@ internal fun ResumeSmartScreen(
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item(contentType = "header") {
-            DetailPageHeader("断点续清", "中断后，可从剩余项目继续", onBack)
+            DetailPageHeader("一键清理", "缓存、安装包与规则垃圾一次扫描", onBack)
         }
         item(contentType = "task") {
             DetailGlassPanel(Modifier.animateContentSize()) {
@@ -1300,8 +1337,13 @@ internal fun ResumeSmartScreen(
                     GlassActionButton("停止并保存", onStop, Modifier.fillMaxWidth().padding(top = 12.dp),
                         icon = Icons.Rounded.Stop, secondary = true)
                 } else if (state.cleanReady) {
-                    GlassActionButton(if (state.resumable) "继续清理" else "清理这 ${state.totalSafe} 项",
-                        onClean, Modifier.fillMaxWidth(), icon = Icons.Rounded.DeleteSweep, enabled = state.connected)
+                    GlassActionButton(
+                        if (state.resumable) "继续清理已选项" else "清理已选 ${state.selectedCount} 项",
+                        onClean,
+                        Modifier.fillMaxWidth(),
+                        icon = Icons.Rounded.DeleteSweep,
+                        enabled = state.connected && state.selectedCount > 0
+                    )
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         if (!state.connected) TextButton(onClick = onReconnect) { Text("重新连接", fontSize = 13.sp) }
                         TextButton(onClick = onScan, enabled = state.connected) { Text("重新扫描", fontSize = 13.sp) }
@@ -1317,11 +1359,29 @@ internal fun ResumeSmartScreen(
             item(contentType = "sources-title") { DetailSectionHeader("清理范围") }
             item(contentType = "sources") {
                 DetailGlassPanel {
-                    ResumeSummaryRow("应用缓存", state.cacheSummary)
-                    HorizontalDivider(Modifier.padding(vertical = 11.dp), color = scheme.onSurface.copy(alpha = .055f))
-                    ResumeSummaryRow("安装包", state.apkSummary)
-                    HorizontalDivider(Modifier.padding(vertical = 11.dp), color = scheme.onSurface.copy(alpha = .055f))
-                    ResumeSummaryRow("安全项目", state.safeSummary)
+                    ResumeSelectableRow(
+                        title = "应用缓存",
+                        summary = state.cacheSummary,
+                        checked = state.cacheSelected,
+                        enabled = !state.running,
+                        onClick = { onToggleCategory(SmartCleanCategory.CACHE) }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp), color = scheme.onSurface.copy(alpha = .055f))
+                    ResumeSelectableRow(
+                        title = "安装包",
+                        summary = state.apkSummary,
+                        checked = state.apkSelected,
+                        enabled = !state.running,
+                        onClick = { onToggleCategory(SmartCleanCategory.APK) }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp), color = scheme.onSurface.copy(alpha = .055f))
+                    ResumeSelectableRow(
+                        title = "规则垃圾 / 空项目 / 碎片",
+                        summary = state.safeSummary,
+                        checked = state.safeSelected,
+                        enabled = !state.running,
+                        onClick = { onToggleCategory(SmartCleanCategory.SAFE) }
+                    )
                 }
             }
         }
@@ -1356,6 +1416,34 @@ internal fun ResumeSmartScreen(
             DetailExpandableText("断点续清说明", "扫描后会保存清理计划。任务停止或意外中断时，可继续处理剩余项目，已经完成的项目不会重复清理。\n\n清理前会核对路径、白名单和文件状态。部分完成、失败和未执行的项目会保留；计划失效或设置发生变化时需要重新扫描。")
         }
         item(contentType = "bottom-inset") { Spacer(Modifier.navigationBarsPadding()) }
+    }
+}
+
+@Composable
+private fun ResumeSelectableRow(
+    title: String,
+    summary: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 2.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = if (enabled) ({ onClick() }) else null,
+            enabled = enabled
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(summary, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
