@@ -65,7 +65,7 @@ ui_print "- 已匹配架构：$(dirname "$NATIVE_ENGINE" | sed 's|.*/||')"
 # Stop both the legacy and immutable-manifest pipelines before replacing module files.
 touch "$STATE_DIR/stop" 2>/dev/null
 # Stop old flat-layout workers and the new scripts/ workers before clearing task state.
-for worker in cleaner native-cleaner cache-snapshot-clean cache-transaction cache-lane-worker \
+for worker in cleaner cleaner-compat native-cleaner cache-snapshot-clean cache-transaction cache-lane-worker \
   apk-scanner apk-cleaner profile-cleaner deep-scan-manifest deep-manifest-clean \
   organizer-worker worker-runner task-worker scheduler supervisor; do
   pkill -f "/data/adb/modules/baize_v2/$worker.sh" >/dev/null 2>&1 || true

@@ -45,5 +45,19 @@ class ModuleLayoutTest(unittest.TestCase):
         self.assertEqual(icon, (ROOT / 'v2/app/src/main/res/mipmap-xxxhdpi/ic_baize.webp').read_bytes())
         self.assertEqual(icon, (ROOT / 'branding/baize-app-icon.webp').read_bytes())
 
+    def test_upgrade_stops_flat_and_grouped_compatibility_workers(self):
+        source = (MODULE / 'customize.sh').read_text()
+        block = source[source.index('# Stop old flat-layout workers'):source.index('rm -rf "$STATE_DIR/run.lock"')]
+        with tempfile.TemporaryDirectory() as temp:
+            calls = Path(temp) / 'signals.txt'
+            # Replace process signalling, then execute the installer's actual stop block.
+            stub = 'pkill() { printf "%s\\n" "$2" >> "$TEST_SIGNALS"; };\n'
+            subprocess.run(['sh', '-c', stub + block], check=True,
+                           env={**os.environ, 'TEST_SIGNALS': str(calls)})
+            targets = calls.read_text().splitlines()
+            for name in ('cleaner', 'cleaner-compat', 'task-worker', 'scheduler', 'supervisor'):
+                for directory in ('', 'scripts/'):
+                    self.assertIn(f'/data/adb/modules/baize_v2/{directory}{name}.sh', targets)
+
 if __name__ == '__main__':
     unittest.main()
