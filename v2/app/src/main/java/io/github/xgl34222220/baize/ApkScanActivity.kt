@@ -528,8 +528,8 @@ internal fun ApkScanScreen(
                 phase = state.phase,
                 running = state.running,
                 ready = state.cleanReady,
-                scanEnabled = state.connected,
-                cleanEnabled = state.connected,
+                scanEnabled = true,
+                cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
                 cleanLabel = "清理 ${state.totalFiles} 个安装包"
             )
