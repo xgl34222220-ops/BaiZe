@@ -78,12 +78,12 @@ fun SettingsScreenMiuix(state: SettingsUiState, actions: SettingsUiActions) {
                     .padding(horizontal = 18.dp)
                     .fillMaxWidth()
                     .height(52.dp)
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(16.dp))
                     .clickable(
                         enabled = !state.scheduler.saving,
                         onClick = { actions.onSaveScheduler(state.scheduler) }
                     ),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.primary
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -119,9 +119,9 @@ private fun MiuixAppearancePanel(state: SettingsUiState, actions: SettingsUiActi
         modifier = Modifier
             .padding(horizontal = 18.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = actions.onOpenAppearance),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
     ) {
         Row(

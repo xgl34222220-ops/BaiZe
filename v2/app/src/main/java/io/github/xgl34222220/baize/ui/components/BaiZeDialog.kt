@@ -79,8 +79,8 @@ internal fun BaiZeDialog(
 
 @Composable
 internal fun BaiZeDialogButton(onClick: () -> Unit, modifier: Modifier = Modifier,
-    enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
-    val primary = LocalPrimaryDialogAction.current
+    enabled: Boolean = true, primary: Boolean = LocalPrimaryDialogAction.current,
+    content: @Composable RowScope.() -> Unit) {
     Button(onClick = onClick, modifier = modifier.fillMaxWidth().heightIn(min = 46.dp), enabled = enabled,
         shape = CircleShape, elevation = null, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         colors = ButtonDefaults.buttonColors(

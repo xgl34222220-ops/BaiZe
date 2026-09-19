@@ -358,7 +358,7 @@ private fun AuditScreen(
     var confirmClear by remember { mutableStateOf(false) }
     val miuix = style == UiStyle.MIUIX
     val horizontal = 16.dp
-    val cardShape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
+    val cardShape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     val filtered = remember(state.events, filter) {
         state.events.filter { event ->
             when (filter) {

@@ -108,7 +108,15 @@ class UiVisualReviewTest {
     @Test fun homePlanOpensAutomaticPlan() {
         render("home-plan-entry", 0, automationAvailable = true)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动清理模块"))
-        compose.onNodeWithText("自动清理模块").performScrollTo().performClick()
+        val entry = compose.onNodeWithText("自动清理模块").performScrollTo()
+        val dockTop = compose.onNodeWithTag("luoshu-dock").fetchSemanticsNode().boundsInRoot.top
+        val overlap = entry.fetchSemanticsNode().boundsInRoot.center.y - dockTop + 28f
+        if (overlap > 0f) {
+            compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, overlap) }
+            compose.waitForIdle()
+        }
+        org.junit.Assert.assertTrue(entry.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
+        entry.performClick()
         compose.waitForIdle()
         compose.onNodeWithText("手动工具").assertIsDisplayed()
         compose.onNodeWithText("扫描工作台").assertIsDisplayed()

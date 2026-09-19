@@ -267,7 +267,7 @@ private fun CleanupEffectivenessScreen(
 ) {
     val report = state.report
     val horizontal = 16.dp
-    val shape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
+    val shape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 30.dp),
@@ -361,7 +361,7 @@ private fun EffectivenessHero(report: EffectivenessReport, horizontal: androidx.
 
 @Composable
 private fun ScoreCard(label: String, score: Int, icon: ImageVector, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
+    Card(modifier = modifier, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(21.dp))

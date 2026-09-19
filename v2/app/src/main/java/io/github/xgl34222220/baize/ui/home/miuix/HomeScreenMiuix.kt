@@ -149,9 +149,9 @@ private fun MiuixNextTaskPanel(
         modifier = Modifier
             .padding(horizontal = 18.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.primary.copy(alpha = .10f)
     ) {
         Row(

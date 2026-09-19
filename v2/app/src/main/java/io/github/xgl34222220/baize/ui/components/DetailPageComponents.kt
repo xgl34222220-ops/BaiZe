@@ -181,8 +181,8 @@ fun DetailResultRow(
     onOpen: (() -> Unit)? = null
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(topStart = if (first) 20.dp else 0.dp, topEnd = if (first) 20.dp else 0.dp,
-        bottomStart = if (last) 20.dp else 0.dp, bottomEnd = if (last) 20.dp else 0.dp)
+    val shape = RoundedCornerShape(topStart = if (first) 16.dp else 0.dp, topEnd = if (first) 16.dp else 0.dp,
+        bottomStart = if (last) 16.dp else 0.dp, bottomEnd = if (last) 16.dp else 0.dp)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)
         .clickable(onClickLabel = "查看完整路径与详情") { showDetails = true }) {

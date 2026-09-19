@@ -343,7 +343,7 @@ private fun RuleQualityScreen(
     var stateFilter by remember { mutableStateOf("pending") }
     var typeFilter by remember { mutableStateOf("all") }
     val horizontal = 16.dp
-    val shape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
+    val shape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.reviewQueue.filter { item ->
         val stateMatches = when (stateFilter) {
             "all" -> true

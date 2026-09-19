@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
@@ -156,7 +157,7 @@ fun GlassActionButton(
             style = MaterialTheme.typography.labelLarge,
             color = foreground,
             textAlign = TextAlign.Center,
-            maxLines = 1,
+            maxLines = if (compact && LocalDensity.current.fontScale <= 1.2f) 1 else 2,
             overflow = TextOverflow.Ellipsis
         )
     }

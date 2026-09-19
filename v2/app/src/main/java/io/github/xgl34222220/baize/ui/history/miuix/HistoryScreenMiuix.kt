@@ -555,9 +555,9 @@ private fun RecordCard(record: HistoryUiItem) {
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .clickable(enabled = hasDetails) { expanded = !expanded },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         color = BaiZeTokens.colors.surfaceRaised
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {

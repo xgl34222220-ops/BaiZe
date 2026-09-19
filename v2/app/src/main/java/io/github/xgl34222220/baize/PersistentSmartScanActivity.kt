@@ -712,7 +712,7 @@ private fun PersistentSmartScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -720,7 +720,7 @@ private fun PersistentSmartScreen(
                         Box(
                             modifier = Modifier.size(58.dp).background(
                                 MaterialTheme.colorScheme.primaryContainer,
-                                RoundedCornerShape(20.dp)
+                                RoundedCornerShape(16.dp)
                             ),
                             contentAlignment = Alignment.Center
                         ) {
@@ -784,7 +784,7 @@ private fun PersistentSmartScreen(
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).navigationBarsPadding(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
             ) {
                 Text(
@@ -804,7 +804,7 @@ private fun PersistentSmartScreen(
 private fun PlanSummaryCard(title: String, summary: String) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 17.dp)) {

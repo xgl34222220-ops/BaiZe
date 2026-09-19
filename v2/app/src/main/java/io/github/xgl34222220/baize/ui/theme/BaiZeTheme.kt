@@ -30,21 +30,21 @@ private val MaterialShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 /** Hetu Miuix shape hierarchy; Material remains independently selectable. */
 private val MiuixShapes = Shapes(
     extraSmall = RoundedCornerShape(9.dp),
-    small = RoundedCornerShape(13.dp),
-    medium = RoundedCornerShape(17.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(16.dp),
     extraLarge = RoundedCornerShape(28.dp)
 )
 
 private val HetuCorners = DefaultBaiZeCorners.copy(
-    small = RoundedCornerShape(13.dp), medium = RoundedCornerShape(17.dp),
+    small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp),
     large = RoundedCornerShape(16.dp), extraLarge = RoundedCornerShape(28.dp)
 )
 private val HetuTypeScale = DefaultBaiZeTypeScale.copy(

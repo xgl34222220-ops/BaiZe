@@ -313,7 +313,7 @@ private fun RuleReviewTrendsScreen(
 ) {
     var filter by remember { mutableStateOf("all") }
     val horizontal = 16.dp
-    val shape = if (miuix) RoundedCornerShape(20.dp) else MaterialTheme.shapes.extraLarge
+    val shape = if (miuix) RoundedCornerShape(16.dp) else MaterialTheme.shapes.extraLarge
     val filtered = state.report.items.filter { item ->
         when (filter) {
             "repeated" -> item.repeated
