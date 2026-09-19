@@ -341,7 +341,7 @@ internal class ForegroundCacheEngine(
             val stat = lstat(file) ?: continue
             if (OsConstants.S_ISLNK(stat.st_mode)) continue
             if (node.post) {
-                if (runCatching { Os.rmdir(file.path); true }.getOrDefault(false)) dirs += 1 else complete = false
+                if (runCatching { file.delete() }.getOrDefault(false)) dirs += 1 else complete = false
                 continue
             }
             if (OsConstants.S_ISREG(stat.st_mode)) {
