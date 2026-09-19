@@ -7,13 +7,10 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
 import android.media.MediaScannerConnection
-import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
 import android.text.format.Formatter
-import android.system.Os
-import android.system.OsConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -568,7 +565,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     runCatching { JSONObject(transactions.recover(cleanPlanId)) }.getOrNull()
                 }
                 if (recovered != null && !recovered.has("error")) applyTransaction(recovered)
-                val remaining = cacheCount + safeCount
+                val remaining = cacheCount + safeCount + apkCount
                 resumable = remaining > 0
                 if (remaining > 0) persistCleanPlan()
                 screenState = screenState.copy(
@@ -923,14 +920,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 error = "安装包扫描失败：${indexed.error}"
             )
         }
-        val items = indexed.candidates.mapNotNull { candidate ->
-            val stat = runCatching { Os.lstat(candidate.path) }.getOrNull() ?: return@mapNotNull null
-            if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) return@mapNotNull null
+        val items = indexed.candidates.map { candidate ->
             SmartApkSnapshot(
+                uri = candidate.uri,
                 path = candidate.path,
                 name = candidate.name,
-                bytes = stat.st_size.coerceAtLeast(0L),
-                identity = smartApkIdentity(stat)
+                bytes = candidate.bytes,
+                modifiedSeconds = candidate.modifiedSeconds
             )
         }
         return SmartApkScanResult(
@@ -944,39 +940,36 @@ class ResumableSmartScanActivity : ComponentActivity() {
         if (apkSnapshot.isEmpty()) return SmartApkCleanResult.EMPTY
         val started = SystemClock.elapsedRealtime()
         val remaining = ArrayList<SmartApkSnapshot>()
-        val deletedPaths = ArrayList<String>()
         var deleted = 0
         var deletedBytesNow = 0L
         var changed = 0
         var failed = 0
         apkSnapshot.forEach { item ->
-            val stat = runCatching { Os.lstat(item.path) }.getOrNull()
-            if (stat == null || !OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
-                changed += 1
-                return@forEach
-            }
-            if (smartApkIdentity(stat) != item.identity) {
-                changed += 1
-                remaining += item
-                return@forEach
-            }
-            val removed = runCatching { Os.remove(item.path); true }.getOrDefault(false)
-            if (removed) {
-                deleted += 1
-                deletedBytesNow += item.bytes
-                deletedPaths += item.path
-            } else {
-                failed += 1
-                remaining += item
+            when (ApkMediaStoreIndex.deleteIfUnchanged(
+                context = applicationContext,
+                uriString = item.uri,
+                expectedPath = item.path,
+                expectedBytes = item.bytes,
+                expectedModifiedSeconds = item.modifiedSeconds
+            )) {
+                ApkIndexedDeleteResult.DELETED -> {
+                    deleted += 1
+                    deletedBytesNow += item.bytes
+                }
+                ApkIndexedDeleteResult.CHANGED -> {
+                    changed += 1
+                    remaining += item
+                }
+                ApkIndexedDeleteResult.FAILED -> {
+                    failed += 1
+                    remaining += item
+                }
             }
         }
         apkSnapshot = remaining
         apkCount = remaining.size
         apkBytes = remaining.sumOf { it.bytes }
         persistApkSnapshot()
-        if (deletedPaths.isNotEmpty()) {
-            MediaScannerConnection.scanFile(applicationContext, deletedPaths.toTypedArray(), null, null)
-        }
         return SmartApkCleanResult(
             deleted = deleted,
             deletedBytes = deletedBytesNow,
@@ -985,14 +978,6 @@ class ResumableSmartScanActivity : ComponentActivity() {
             elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
         )
     }
-
-    private fun smartApkIdentity(stat: android.system.StructStat): String =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:" +
-                "${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}:${stat.st_ctim.tv_sec}:${stat.st_ctim.tv_nsec}"
-        } else {
-            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
-        }
 
     private fun apkSnapshotFile(planId: String = cleanPlanId): File? {
         if (planId.isBlank()) return null
@@ -1011,10 +996,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("items", JSONArray().apply {
                 apkSnapshot.forEach { item ->
                     put(JSONObject()
+                        .put("uri", item.uri)
                         .put("path", item.path)
                         .put("name", item.name)
                         .put("bytes", item.bytes)
-                        .put("identity", item.identity))
+                        .put("modifiedSeconds", item.modifiedSeconds))
                 }
             })
             .toString()
@@ -1041,14 +1027,15 @@ class ResumableSmartScanActivity : ComponentActivity() {
         return buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
+                val uri = item.optString("uri").trim()
                 val path = item.optString("path").trim()
-                val identity = item.optString("identity").trim()
-                if (path.isBlank() || identity.isBlank()) continue
+                if (uri.isBlank() || path.isBlank()) continue
                 add(SmartApkSnapshot(
+                    uri = uri,
                     path = path,
                     name = item.optString("name").ifBlank { path.substringAfterLast('/') },
                     bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
-                    identity = identity
+                    modifiedSeconds = item.optLong("modifiedSeconds", 0L).coerceAtLeast(0L)
                 ))
             }
         }
@@ -1162,6 +1149,33 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 }
 
+internal data class SmartApkSnapshot(
+    val uri: String,
+    val path: String,
+    val name: String,
+    val bytes: Long,
+    val modifiedSeconds: Long
+)
+
+internal data class SmartApkScanResult(
+    val items: List<SmartApkSnapshot>,
+    val elapsedMs: Long,
+    val error: String
+)
+
+internal data class SmartApkCleanResult(
+    val deleted: Int,
+    val deletedBytes: Long,
+    val changed: Int,
+    val failed: Int,
+    val elapsedMs: Long
+) {
+    val processed: Int get() = deleted + changed + failed
+    companion object {
+        val EMPTY = SmartApkCleanResult(0, 0L, 0, 0, 0L)
+    }
+}
+
 internal data class ResumeSmartUiState(
     val connected: Boolean = false,
     val running: Boolean = false,
@@ -1189,6 +1203,7 @@ internal data class ResumeSmartUiState(
     val progressCurrent: Int = 0,
     val progressTotal: Int = 0,
     val cacheSummary: String = "等待扫描",
+    val apkSummary: String = "等待扫描",
     val safeSummary: String = "等待扫描"
 )
 
@@ -1288,6 +1303,8 @@ internal fun ResumeSmartScreen(
                 DetailGlassPanel {
                     ResumeSummaryRow("应用缓存", state.cacheSummary)
                     HorizontalDivider(Modifier.padding(vertical = 11.dp), color = scheme.onSurface.copy(alpha = .055f))
+                    ResumeSummaryRow("安装包", state.apkSummary)
+                    HorizontalDivider(Modifier.padding(vertical = 11.dp), color = scheme.onSurface.copy(alpha = .055f))
                     ResumeSummaryRow("安全项目", state.safeSummary)
                 }
             }
@@ -1339,6 +1356,7 @@ private fun formatMetricBuckets(raw: String): String {
     if (root.length() == 0) return "尚无已处理项目"
     val labels = mapOf(
         "cache" to "应用缓存",
+        "apk" to "安装包",
         "empty" to "空项目",
         "rules" to "规则垃圾",
         "fragment" to "残留碎片",
