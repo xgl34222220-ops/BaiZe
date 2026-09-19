@@ -33,27 +33,41 @@ internal class ApkFastSnapshotRepository(
         val maxBytes = readConfigLong(config, "apk_package_max_mb", 4096L).coerceIn(16L, 16384L) * 1024L * 1024L
         val whitelistPaths = readWhitelist(whitelist)
 
-        val accepted = ArrayList<Candidate>(source.length())
+        val accepted = ArrayList<Candidate>(source.length().coerceAtLeast(32))
         val seenObjects = HashSet<String>()
         var rejected = 0
         var protected = 0
-        for (index in 0 until source.length()) {
-            val item = source.optJSONObject(index) ?: run { rejected += 1; continue }
-            val requestedPath = item.optString("path").trim()
-            if (requestedPath.isBlank()) { rejected += 1; continue }
+        var supplemented = 0
+
+        fun acceptPath(requestedPath: String, fromSupplement: Boolean = false) {
+            if (requestedPath.isBlank()) { rejected += 1; return }
             val file = File(requestedPath)
             val extension = file.name.substringAfterLast('.', "").lowercase()
-            if (extension !in extensions || !isAllowedStoragePath(requestedPath)) { rejected += 1; continue }
-            val stat = runCatching { Os.lstat(requestedPath) }.getOrNull() ?: run { rejected += 1; continue }
-            if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) { rejected += 1; continue }
-            if (stat.st_size <= 0L || stat.st_size > maxBytes) { rejected += 1; continue }
+            if (extension !in extensions || !isAllowedStoragePath(requestedPath)) { rejected += 1; return }
+            val stat = runCatching { Os.lstat(requestedPath) }.getOrNull() ?: run { rejected += 1; return }
+            if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) { rejected += 1; return }
+            if (stat.st_size <= 0L || stat.st_size > maxBytes) { rejected += 1; return }
             val canonical = runCatching { file.canonicalPath }.getOrDefault(requestedPath)
-            if (!isAllowedStoragePath(canonical)) { rejected += 1; continue }
-            if (whitelistPaths.any { pathContains(it, canonical) }) { protected += 1; continue }
+            if (!isAllowedStoragePath(canonical)) { rejected += 1; return }
+            if (whitelistPaths.any { pathContains(it, canonical) }) { protected += 1; return }
             val objectKey = "${stat.st_dev}:${stat.st_ino}"
-            if (!seenObjects.add(objectKey)) continue
+            if (!seenObjects.add(objectKey)) return
             val identity = "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}:${stat.st_ctime}"
             accepted += Candidate(canonical, file.name, stat.st_size, identity)
+            if (fromSupplement) supplemented += 1
+        }
+
+        for (index in 0 until source.length()) {
+            val item = source.optJSONObject(index) ?: run { rejected += 1; continue }
+            acceptPath(item.optString("path").trim())
+        }
+
+        // MediaStore should be the normal fast path. Only when it is unexpectedly sparse do a
+        // bounded scan of high-yield download/receive folders; never recurse over all /data/media.
+        if (accepted.size < 10) {
+            quickSupplementPaths().forEach { path ->
+                if (accepted.size < 10_000) acceptPath(path, fromSupplement = true)
+            }
         }
 
         accepted.sortByDescending { it.bytes }
@@ -94,6 +108,7 @@ internal class ApkFastSnapshotRepository(
             appendLine("shared_index_code=0")
             appendLine("raw_candidates=${source.length()}")
             appendLine("brute_force_used=0")
+            appendLine("quick_supplemented=$supplemented")
             appendLine("path_filtered=$rejected")
             appendLine("whitelist_filtered=$protected")
             appendLine("bytes=$totalBytes")
@@ -103,7 +118,7 @@ internal class ApkFastSnapshotRepository(
         RootFileStore.writeAtomic(File(stateDir, "apk_scan.env"), stateText)
 
         val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-        val result = "系统索引完成：发现 ${accepted.size} 个安装包"
+        val result = "快速索引完成：发现 ${accepted.size} 个安装包"
         val latest = JSONObject()
             .put("mode", "apk-scan")
             .put("time", System.currentTimeMillis())
@@ -149,13 +164,13 @@ internal class ApkFastSnapshotRepository(
                 .put("files", accepted.size)
                 .put("bytes", totalBytes)
                 .put("path", "content://media/external/file")
-                .put("reason", "系统索引 ${source.length()} 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected")
+                .put("reason", "系统索引 ${source.length()} 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected")
         )
         RootFileStore.writeAtomic(
             File(stateDir, "apk-coverage.tsv"),
             "status\tgroup\tuser\tvolume\tfiles\tbytes\tpath\treason\n" +
                 "scanned\tMediaStore.Files 系统索引\t-\texternal\t${accepted.size}\t$totalBytes\tcontent://media/external/file\t" +
-                "系统索引 ${source.length()} 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected\n"
+                "系统索引 ${source.length()} 条 · 快速补漏 $supplemented 条 · Root 校验 ${accepted.size} 条 · 过滤 $rejected · 白名单 $protected\n"
         )
 
         val details = JSONArray()
@@ -181,6 +196,42 @@ internal class ApkFastSnapshotRepository(
             .put("message", result)
             .put("output", "MediaStore.Files → Root lstat 校验；未执行全盘递归扫描")
             .toString()
+    }
+
+    private fun quickSupplementPaths(): Sequence<String> = sequence {
+        val userRoots = LinkedHashSet<File>()
+        listOf(File("/data/media"), File("/storage/emulated")).forEach { parent ->
+            parent.listFiles()?.filter { it.isDirectory && it.name.all(Char::isDigit) }?.forEach(userRoots::add)
+        }
+        if (userRoots.isEmpty() && File("/sdcard").isDirectory) userRoots += File("/sdcard")
+        val relativeRoots = listOf(
+            "Download", "Downloads", "Documents", "Bluetooth",
+            "Tencent/QQfile_recv", "Tencent/Timfile_recv",
+            "UCDownloads", "Quark/Download", "BaiduNetdisk", "Telegram"
+        )
+        userRoots.forEach { userRoot ->
+            relativeRoots.forEach { relative ->
+                val base = File(userRoot, relative)
+                if (!base.isDirectory) return@forEach
+                base.walkTopDown().maxDepth(12).forEach { file ->
+                    if (file.isFile && file.name.substringAfterLast('.', "").lowercase() in extensions) {
+                        yield(file.absolutePath)
+                    }
+                }
+            }
+            val mediaRoot = File(userRoot, "Android/media")
+            mediaRoot.listFiles()?.filter(File::isDirectory)?.forEach { appMedia ->
+                appMedia.walkTopDown().maxDepth(8).forEach { file ->
+                    if (file.isFile && file.name.substringAfterLast('.', "").lowercase() in extensions) {
+                        yield(file.absolutePath)
+                    }
+                }
+            }
+        }
+        val localTmp = File("/data/local/tmp")
+        if (localTmp.isDirectory) localTmp.walkTopDown().maxDepth(4).forEach { file ->
+            if (file.isFile && file.name.substringAfterLast('.', "").lowercase() in extensions) yield(file.absolutePath)
+        }
     }
 
     private fun isAllowedStoragePath(path: String): Boolean =
