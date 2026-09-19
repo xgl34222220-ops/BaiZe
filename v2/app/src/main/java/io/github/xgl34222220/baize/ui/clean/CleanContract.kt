@@ -56,6 +56,8 @@ data class CleanUiState(
     val running: Boolean,
     val scanSnapshotReady: Boolean,
     val serviceText: String,
+    val automationAvailable: Boolean,
+    val automationText: String,
     val automaticCleaningEnabled: Boolean,
     val categories: List<CleanCategoryUiItem>,
     val scheduleMode: CleanScheduleMode,
@@ -104,12 +106,16 @@ fun SchedulerUiState.toCleanUiState(
     engineReady: Boolean,
     running: Boolean,
     scanSnapshotReady: Boolean,
-    serviceText: String
+    serviceText: String,
+    automationAvailable: Boolean,
+    automationText: String
 ): CleanUiState = CleanUiState(
     engineReady = engineReady,
     running = running,
     scanSnapshotReady = scanSnapshotReady,
     serviceText = serviceText,
+    automationAvailable = automationAvailable,
+    automationText = automationText,
     automaticCleaningEnabled = enabled,
     categories = listOf(
         CleanCategoryUiItem(
