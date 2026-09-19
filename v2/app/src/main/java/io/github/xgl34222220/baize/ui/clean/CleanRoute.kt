@@ -11,6 +11,8 @@ import io.github.xgl34222220.baize.InstantCacheActivity
 import io.github.xgl34222220.baize.ResumableSmartScanActivity
 import io.github.xgl34222220.baize.ScanWorkbenchActivity
 import io.github.xgl34222220.baize.SchedulerUiState
+import io.github.xgl34222220.baize.StorageToolMode
+import io.github.xgl34222220.baize.StorageToolsActivity
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.miuix.CleanScreenMiuix
 import io.github.xgl34222220.baize.ui.clean.miuix.VideoCleanScreenMiuix
@@ -68,6 +70,9 @@ fun CleanRoute(
         onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
         onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
         onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },
+        onLargeFiles = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.LARGE)) },
+        onDuplicates = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.DUPLICATES)) },
+        onStorageAnalysis = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.ANALYSIS)) },
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
         onAudit = dashboardActions.audit,
