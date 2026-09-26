@@ -66,6 +66,8 @@ class ForegroundCacheEngineTest {
 
     @Test fun directoryRedirectProtectsAlreadyScannedCacheAndFutureDiscovery() {
         val root = folder.newFolder("redirect-data")
+        // External-cache discovery accepts only installed or existing data-directory owners.
+        assertTrue(File(root, "user/0/$pkg").mkdirs())
         val keep = file(root, "media/0/Android/data/$pkg/cache/keep")
         val redirects = File(folder.root, "mounts.json")
         val engine = ForegroundCacheEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(), root, redirects)
