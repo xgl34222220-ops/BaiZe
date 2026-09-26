@@ -123,7 +123,7 @@ internal fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitel
                                 GlassActionButton(if (current.group == "应用专项") "清理此应用缓存" else "开始执行",
                                     { model.action("toolboxRun", current.id) }, Modifier.fillMaxWidth(),
                                     enabled = editable && ready.optBoolean("available"))
-                            } }
+                            } } }
                             item { LuoShuSection("执行设置") }
                             item { TaskSettings(current.id, config, editable, ::editValue, model::save, onWhitelist) }
                             item { LuoShuSection("自动执行") }
@@ -135,9 +135,9 @@ internal fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitel
                             } }
                             if (current.id in setOf("mounter", "process")) item { LuoShuGroup {
                                 if (current.id == "mounter") {
-                                    ActionRow(Icons.Rounded.Undo, "撤销最近一次转移", "按原记录恢复文件位置", editable) { model.action("toolboxRun", "undo") }
-                                    LuoShuGroupDivider()
                                     ActionRow(Icons.Rounded.LinkOff, "解除目录重定向", "保留目标目录中的文件", editable) { model.action("toolboxRun", "unmount") }
+                                    LuoShuGroupDivider()
+                                    ActionRow(Icons.Rounded.Undo, "撤销最近一次归类或转移", "解除重定向后，按原记录恢复文件位置", editable) { model.action("toolboxRun", "undo") }
                                 } else ActionRow(Icons.Rounded.RestartAlt, "恢复进程状态", "解除白泽冻结及回收优先级调整", editable) { model.action("toolboxRun", "thaw") }
                             } }
                             item { LuoShuGroup { LuoShuNavigationRow(Icons.Rounded.History, "查看执行记录", model.message) { navigate("history") } } }
