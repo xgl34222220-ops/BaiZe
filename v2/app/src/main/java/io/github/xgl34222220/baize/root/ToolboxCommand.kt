@@ -5,14 +5,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Argument-vector commands only; output goes to a bounded-on-read file, never a blocking pipe. */
-internal class ToolboxCommand(
+internal open class ToolboxCommand(
     private val cancelled: AtomicBoolean,
     private val logDirectory: File = File(RootPaths.STATE_DIR, "toolbox/commands")
 ) {
     data class Result(val exit: Int, val output: String, val timedOut: Boolean, val cancelled: Boolean) {
         val success get() = exit == 0 && !timedOut && !cancelled
     }
-    fun run(arguments: List<String>, seconds: Long = 20, honourCancel: Boolean = true, outputLimit: Int = 4000): Result {
+    open fun run(arguments: List<String>, seconds: Long = 20, honourCancel: Boolean = true, outputLimit: Int = 4000): Result {
         require(arguments.isNotEmpty() && arguments.none { it.contains('\u0000') })
         if (honourCancel && cancelled.get()) return Result(-1, "已停止", false, true)
         logDirectory.mkdirs()

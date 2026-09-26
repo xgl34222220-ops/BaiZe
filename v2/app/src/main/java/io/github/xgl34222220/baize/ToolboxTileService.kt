@@ -9,7 +9,7 @@ import android.service.quicksettings.TileService
 class ToolboxTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
-        qsTile?.apply { label = "白泽功能控制台"; state = Tile.STATE_ACTIVE; updateTile() }
+        qsTile?.apply { label = "白泽扩展工具"; state = Tile.STATE_ACTIVE; updateTile() }
     }
     // PendingIntent overload exists only on API 34+. The Intent branch is required on API 26–33.
     @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")

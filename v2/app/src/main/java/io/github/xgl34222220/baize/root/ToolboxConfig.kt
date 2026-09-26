@@ -29,6 +29,10 @@ internal object ToolboxCatalog {
         Task("dirty", "F2FS 脏段维护", "按阈值触发限时 GC，结束后恢复内核参数", "系统维护")
     )
     val ids = tasks.map { it.id }.toSet()
+    // These routes already belong to BaiZe's scanner/organizer and its existing scheduler.
+    val existingIds = setOf("scan", "empty", "regular", "app", "system", "guilei")
+    val extensions = tasks.filterNot { it.id in existingIds }
+    val extensionIds = extensions.map { it.id }.toSet()
     fun task(id: String) = tasks.first { it.id == id }
     val appGroups = mapOf(
         "wechat" to setOf("com.tencent.mm"),
@@ -83,14 +87,14 @@ internal class ToolboxConfig(private val directory: File = File(RootPaths.STATE_
             return values
         }
         fun normalize(input: JSONObject): JSONObject {
-            val result = JSONObject().put("schema", 1)
+            val result = JSONObject().put("schema", 2)
             val tasks = JSONObject()
             ToolboxCatalog.tasks.forEach { task ->
                 val raw = input.optJSONObject("tasks")?.optJSONObject(task.id) ?: JSONObject()
                 val time = raw.optString("time", "02:30")
                 require(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]").matches(time)) { "时间格式应为 HH:mm" }
-                tasks.put(task.id, JSONObject().put("enabled", raw.optBoolean("enabled", false))
-                    .put("scheduled", raw.optBoolean("scheduled", false)).put("time", time)
+                tasks.put(task.id, JSONObject().put("enabled", task.id !in ToolboxCatalog.existingIds && raw.optBoolean("enabled", false))
+                    .put("scheduled", task.id !in ToolboxCatalog.existingIds && raw.optBoolean("scheduled", false)).put("time", time)
                     .put("intervalDays", raw.optInt("intervalDays", 1).coerceIn(1, 30)))
             }
             result.put("tasks", tasks)

@@ -117,14 +117,14 @@ internal class ForegroundCacheEngine(
 
     private var redirectedRoots = emptySet<String>()
 
-    fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
+    fun scan(whitelistJson: String, targetPackages: Set<String>? = null, progress: (String, Int, Int, String) -> Unit): Snapshot {
         redirectedRoots = ToolboxRedirect.protectedRoots(redirectFile)
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson)
         val applications = installedApplications()
         val labels = HashMap<String, String>()
         progress("正在发现应用缓存目录", 0, 0, "")
-        val roots = discoverCacheRoots(whitelist, applications.keys)
+        val roots = discoverCacheRoots(whitelist, applications.keys, targetPackages)
         val items = ArrayList<Item>(roots.size)
         var totalBytes = 0L
         var totalFiles = 0L
@@ -300,14 +300,14 @@ internal class ForegroundCacheEngine(
         val stats: Stats
     )
 
-    private fun discoverCacheRoots(whitelist: Set<String>, installed: Set<String>): List<CacheSeed> {
+    private fun discoverCacheRoots(whitelist: Set<String>, installed: Set<String>, targets: Set<String>?): List<CacheSeed> {
         val result = LinkedHashMap<String, CacheSeed>()
         val packages = installed.toMutableSet()
         val seenApps = HashSet<String>()
         val identity = AndroidPathIdentity(null)
 
         fun add(packageName: String, category: String, file: File) {
-            if (cancelled.get() || packageName in whitelist) return
+            if (cancelled.get() || packageName in whitelist || (targets != null && packageName !in targets)) return
             val stat = lstat(file) ?: return
             if (!OsConstants.S_ISDIR(stat.st_mode)) return
             val path = canonical(file)
@@ -316,7 +316,7 @@ internal class ForegroundCacheEngine(
         }
 
         fun scanApp(app: File) {
-            if (cancelled.get() || !PACKAGE_NAME.matches(app.name)) return
+            if (cancelled.get() || !PACKAGE_NAME.matches(app.name) || (targets != null && app.name !in targets)) return
             val stat = lstat(app) ?: return
             if (!OsConstants.S_ISDIR(stat.st_mode)) return
             val pkg = app.name

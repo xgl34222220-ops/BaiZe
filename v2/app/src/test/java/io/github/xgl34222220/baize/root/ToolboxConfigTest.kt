@@ -11,6 +11,17 @@ import java.time.ZoneId
 class ToolboxConfigTest {
     @get:Rule val folder = TemporaryFolder()
     private fun time(value: String) = Instant.parse(value).toEpochMilli()
+    @Test fun upgradingTest3DisablesDuplicateTasksWithoutChangingExtensionPlans() {
+        val before = ToolboxConfig.normalize(JSONObject())
+        ToolboxCatalog.tasks.forEach { before.getJSONObject("tasks").getJSONObject(it.id).put("enabled", true).put("scheduled", true) }
+        val after = ToolboxConfig.normalize(before)
+        ToolboxCatalog.existingIds.forEach { id ->
+            assertFalse(after.getJSONObject("tasks").getJSONObject(id).getBoolean("enabled"))
+            assertFalse(after.getJSONObject("tasks").getJSONObject(id).getBoolean("scheduled"))
+        }
+        ToolboxCatalog.extensionIds.forEach { assertTrue(after.getJSONObject("tasks").getJSONObject(it).getBoolean("scheduled")) }
+        assertEquals(11, ToolboxCatalog.extensions.size)
+    }
     @Test fun defaultsDoNotEnableDestructiveTasksAndSaveRoundTripsSchedules() {
         val store = ToolboxConfig(folder.newFolder())
         val config = store.load()

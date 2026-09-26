@@ -114,8 +114,17 @@ internal fun LuoShuNavigationRow(
     title: String,
     subtitle: String,
     onClick: () -> Unit
+) = LuoShuNavigationRow(icon, title, subtitle, onClick, true)
+
+@Composable
+internal fun LuoShuNavigationRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    enabled: Boolean
 ) {
-    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(), color = Color.Transparent) {
+    Surface(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().alpha(if (enabled) 1f else .45f), color = Color.Transparent) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 72.dp).padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically

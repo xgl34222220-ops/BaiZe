@@ -78,7 +78,7 @@
             </intent-filter>
         </activity>
 
-        <service android:name=".ToolboxTileService" android:label="白泽功能控制台"
+        <service android:name=".ToolboxTileService" android:label="白泽扩展工具"
             android:icon="@mipmap/ic_baize" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE" android:exported="true">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>

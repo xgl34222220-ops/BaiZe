@@ -7,7 +7,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
@@ -26,7 +28,7 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ToolboxVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
-    @Test fun realConsoleRendersAndSwitchesSectionsWithoutRoot() {
+    @Test fun extensionsReuseNavigationAndDoNotDuplicateExistingCleaners() {
         val model = ToolboxViewModel(RuntimeEnvironment.getApplication())
         val appearance = AppearanceSettings(themeMode = ThemeMode.LIGHT, monetEnabled = false, blurEnabled = false)
         compose.setContent {
@@ -34,15 +36,36 @@ class ToolboxVisualReviewTest {
                 BaiZeTheme(appearance) { ToolboxScreen(model, {}, {}, {}, {}, {}, {}) }
             }
         }
-        compose.onNodeWithText("功能控制台").assertIsDisplayed()
-        compose.onNodeWithText("碎片文件清理").assertIsDisplayed()
-        capture("functions")
-        compose.onNodeWithText("独立计划").performClick()
-        compose.onNodeWithText("仅关屏时自动执行").assertIsDisplayed()
-        capture("schedules")
-        compose.onNodeWithText("结果记录").performClick()
-        compose.onNodeWithText("尚无任务结果。提交后的任务会在实际结束后写入记录。").assertIsDisplayed()
+        compose.onNodeWithText("扩展工具").assertIsDisplayed()
+        compose.onNodeWithText("微信专项").assertIsDisplayed()
+        compose.onNodeWithText("空文件与空目录").assertDoesNotExist()
+        compose.onNodeWithText("碎片文件清理").assertDoesNotExist()
+        compose.onNodeWithText("文件归类").assertDoesNotExist()
+        capture("home")
+        compose.onNodeWithText("系统维护").performScrollTo().performClick()
+        compose.onNodeWithText("后台进程管理").performScrollTo().assertIsDisplayed()
+        capture("system")
+        compose.onNodeWithText("后台进程管理").performClick()
+        compose.onNodeWithText("管理应用").performScrollTo().assertIsDisplayed()
+        capture("process")
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithText("维护工具").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithContentDescription("执行记录").performClick()
+        compose.onNodeWithText("暂无执行记录").assertIsDisplayed()
         capture("history")
+    }
+    @Test fun darkAppearanceAndLargerTextUseTheSameComponents() {
+        val model = ToolboxViewModel(RuntimeEnvironment.getApplication())
+        val appearance = AppearanceSettings(themeMode = ThemeMode.DARK, monetEnabled = false, blurEnabled = false)
+        compose.setContent {
+            CompositionLocalProvider(LocalAppearanceSettings provides appearance,
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f, 1.3f)) {
+                BaiZeTheme(appearance) { ToolboxScreen(model, {}, {}, {}, {}, {}, {}) }
+            }
+        }
+        compose.onNodeWithText("微信专项").assertIsDisplayed()
+        capture("dark-large-text")
     }
     private fun capture(name: String) {
         compose.waitForIdle()

@@ -19,9 +19,34 @@ internal class ToolboxMaintenance(
     private val cancelled: AtomicBoolean,
     private val progress: (String) -> Unit,
     private val proc: File = File("/proc"),
-    private val f2fs: File = File("/sys/fs/f2fs")
+    private val f2fs: File = File("/sys/fs/f2fs"),
+    private val command: ToolboxCommand = ToolboxCommand(cancelled),
+    private val data: File = File("/data"),
+    private val state: File = File(RootPaths.STATE_DIR),
+    private val cgroup: File = File("/sys/fs/cgroup"),
+    private val restoreShell: String = "/system/bin/sh"
 ) {
-    private val command = ToolboxCommand(cancelled)
+    fun environment(config: JSONObject): JSONObject {
+        @Suppress("DEPRECATION")
+        val installed = context.packageManager.getInstalledApplications(0)
+        val protected = JSONArray(WhitelistRepository().packagesJson()).let { list ->
+            (0 until list.length()).map { list.getString(it) }.toSet()
+        }
+        val eligible = installed.filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 &&
+            it.uid % 100000 >= 10000 && it.packageName != context.packageName && it.packageName !in protected }
+        val am = File("/system/bin/am").canExecute()
+        val freeze = am && config.optString("processMode") == "freeze" &&
+            command.run(listOf("/system/bin/am", "help"), 5, honourCancel = false, outputLimit = 64000).output.contains("freeze [")
+        return JSONObject().put("installedPackages", JSONArray(installed.map { it.packageName }))
+            .put("eligiblePackages", JSONArray(eligible.map { it.packageName }))
+            .put("processSupported", am).put("freezeSupported", freeze)
+            .put("compileSupported", File("/system/bin/cmd").canExecute())
+            .put("logcatSupported", File("/system/bin/logcat").canExecute())
+            .put("memorySupported", File(proc, "sys/vm/drop_caches").canWrite() && File("/system/bin/sync").canExecute())
+            .put("gcSupported", f2fs.listFiles().orEmpty().any { File(it, "gc_urgent").canWrite() && File(it, "dirty_segments").canRead() })
+            .put("bindSupported", listOf("/system/bin/nsenter", "/system/xbin/nsenter").any { File(it).canExecute() } &&
+                File("/system/bin/mount").canExecute() && File("/proc/1/mountinfo").canRead())
+    }
     fun run(id: String, config: JSONObject): JSONObject = when (id) {
         "logcat" -> commandResult(command.run(listOf("/system/bin/logcat", "-b", "all", "-c")), "系统日志缓冲已清空")
         "memory" -> memory()
@@ -63,6 +88,7 @@ internal class ToolboxMaintenance(
         node.writeText("1\n")
         val after = memoryInfo().optLong("availableKb")
         return ok("已请求回收页缓存；内存变化为观测值，会随系统负载波动")
+            .put("requestedOnly", true)
             .put("memoryBeforeKb", before).put("memoryAfterKb", after).put("memoryDeltaKb", after - before)
     }
     private fun installedThirdParty(): Map<String, ApplicationInfo> {
@@ -116,7 +142,7 @@ internal class ToolboxMaintenance(
                 }
                 val result = command.run(listOf("/system/bin/am", "kill", "--user", "0", pkg))
                 if (!result.success) failed++
-                details.put(commandResult(result, "已向系统提交后台终止请求").put("package", pkg))
+                details.put(commandResult(result, "已向系统提交后台终止请求").put("requestedOnly", true).put("package", pkg))
             } else for (app in active) {
                 if (cancelled.get()) break
                 if (app.score < 900 || processTicks(File(proc, app.pid.toString())) != app.ticks) continue
@@ -137,20 +163,27 @@ internal class ToolboxMaintenance(
                     if ((original.toIntOrNull() ?: -1) < 900) continue
                     rememberProcess(app, "oom", original)
                     node.writeText("1000\n")
-                    details.put(JSONObject().put("success", node.readText().trim() == "1000").put("process", app.name).put("message", "已调整缓存进程回收优先级"))
+                    val observed = node.readText().trim() == "1000"
+                    if (!observed) failed++
+                    details.put(JSONObject().put("success", observed).put("process", app.name)
+                        .put("message", if (observed) "已调整缓存进程回收优先级" else "未观测到回收优先级生效"))
                 }
             }
         }
-        return ok("后台管理完成，失败 $failed 项").put("success", failed == 0).put("failures", failed).put("details", details)
+        val applied = (0 until details.length()).count { details.getJSONObject(it).optBoolean("success") }
+        return ok(if (applied == 0 && failed == 0) "没有符合条件的后台进程" else if (mode == "kill")
+            "已向系统提交 $applied 项终止请求，失败 $failed 项" else "已观测到 $applied 项生效，失败 $failed 项")
+            .put("success", failed == 0).put("failures", failed).put("details", details)
+            .put("applied", applied).put("skipped", applied == 0 && failed == 0).put("requestedOnly", mode == "kill" && applied > 0)
     }
-    private val processRecords get() = File(RootPaths.STATE_DIR, "toolbox/process-state.json")
+    private val processRecords get() = File(state, "toolbox/process-state.json")
     private fun processTicks(dir: File): String = runCatching {
         File(dir, "stat").readText().substringAfterLast(')').trim().split(Regex("\\s+"))[19]
     }.getOrDefault("")
     private fun frozen(app: AppProcess): Boolean = runCatching {
         val group = File(proc, "${app.pid}/cgroup").readLines().firstOrNull { it.startsWith("0::") }?.substringAfter("0::") ?: return@runCatching false
         if (!group.endsWith("/pid_${app.pid}")) return@runCatching false
-        File("/sys/fs/cgroup$group/cgroup.freeze").readText().trim() == "1"
+        File(cgroup, group.trimStart('/') + "/cgroup.freeze").readText().trim() == "1"
     }.getOrDefault(false)
     private fun rememberProcess(app: AppProcess, mode: String, original: String) {
         val records = ToolboxConfig.read(processRecords)
@@ -196,7 +229,8 @@ internal class ToolboxMaintenance(
             val result = command.run(args, 180)
             val success = result.success && !result.output.contains("Failure", true) && !result.output.contains("Error:", true)
             if (!success) failures++
-            details.put(commandResult(result, "编译完成").put("success", success).put("package", pkg))
+            details.put(commandResult(result, "编译完成").put("success", success).put("package", pkg)
+                .put("message", if (success) "编译完成" else result.output.ifBlank { "系统未完成编译" }))
             if (!success && result.output.contains("Unknown", true)) break
         }
         return ok("已处理 ${details.length()} 个应用，编译失败 $failures 个").put("success", failures == 0)
@@ -213,7 +247,7 @@ internal class ToolboxMaintenance(
         try {
             for (pkg in packages) {
                 if (cancelled.get()) break
-                for (parent in listOf(File("/data/user/0/$pkg/databases"), File("/data/user_de/0/$pkg/databases"))) {
+                for (parent in listOf(File(data, "user/0/$pkg/databases"), File(data, "user_de/0/$pkg/databases"))) {
                     if (parent.canonicalPath != parent.absolutePath) continue
                     for (file in parent.listFiles().orEmpty().filter { it.isFile }.take(100)) {
                         if (cancelled.get()) break
@@ -259,7 +293,8 @@ internal class ToolboxMaintenance(
                 }
             }
         } finally { watchdog.shutdownNow() }
-        return ok("优化 $optimized 个数据库，失败 $failures 个").put("success", failures == 0)
+        return ok(if (optimized == 0 && failures == 0) "没有可优化的空闲标准数据库" else "优化 $optimized 个数据库，失败 $failures 个").put("success", failures == 0)
+            .put("skipped", optimized == 0 && failures == 0)
             .put("optimized", optimized).put("compactedBytes", saved).put("failures", failures).put("details", details)
     }
     private fun gc(config: JSONObject): JSONObject {
@@ -269,16 +304,16 @@ internal class ToolboxMaintenance(
         for (dir in nodes) {
             if (cancelled.get()) break
             val before = number(File(dir, "dirty_segments"))
-            if (before < 0) continue
+            if (before < 0) { details.put(JSONObject().put("device", dir.name).put("success", false).put("message", "无法读取脏段数量")); continue }
             val threshold = config.optInt("dirtyThreshold", 1000)
             if (before <= threshold) { details.put(JSONObject().put("device", dir.name).put("skipped", true).put("before", before)); continue }
             val node = File(dir, "gc_urgent")
             val original = node.readText().trim()
             require(original.toIntOrNull() in 0..2) { "无法识别内核 GC 状态" }
             // A separate root shell restores the value even if the Binder process is killed.
-            val backup = File(RootPaths.STATE_DIR, "toolbox/gc-${dir.name}.restore")
+            val backup = File(state, "toolbox/gc-${dir.name}.restore")
             RootFileStore.writeAtomic(backup, original)
-            val guard = ProcessBuilder("/system/bin/sh", "-c",
+            val guard = ProcessBuilder(restoreShell, "-c",
                 "sleep \"\$1\"; if [ -f \"\$3\" ]; then cat \"\$3\" > \"\$2\" && rm -f \"\$3\"; fi",
                 "baize-gc-restore", (config.optInt("gcSeconds", 15) + 5).toString(), node.path, backup.path)
                 .redirectErrorStream(true).redirectOutput(File("/dev/null")).start()
@@ -297,8 +332,10 @@ internal class ToolboxMaintenance(
             details.put(JSONObject().put("device", dir.name).put("before", before)
                 .put("after", number(File(dir, "dirty_segments"))).put("restored", restored))
         }
-        val success = (0 until details.length()).all { details.getJSONObject(it).optBoolean("restored", true) }
-        return ok("F2FS 维护已结束，脏段变化单独记录").put("success", success).put("details", details)
+        val success = (0 until details.length()).all { details.getJSONObject(it).let { it.optBoolean("restored", true) && it.optBoolean("success", true) } }
+        val performed = (0 until details.length()).count { details.getJSONObject(it).has("restored") }
+        return ok(if (success && performed == 0) "脏段未达到阈值，无需维护" else "F2FS 维护已结束，脏段变化单独记录")
+            .put("success", success).put("skipped", success && performed == 0).put("details", details)
     }
     private fun number(file: File) = runCatching { file.readText().trim().toLong() }.getOrDefault(-1)
     private fun commandResult(result: ToolboxCommand.Result, message: String) = JSONObject()

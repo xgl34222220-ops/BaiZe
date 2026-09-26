@@ -81,6 +81,20 @@ class ForegroundCacheEngineTest {
         assertTrue(engine.scan("[]") { _, _, _, _ -> }.items.isEmpty())
     }
 
+    @Test fun appSpecificScanAndCleanLeaveOtherApplicationsUntouched() {
+        val root = folder.newFolder("targeted-data")
+        val target = file(root, "user/0/$pkg/cache/target")
+        val other = file(root, "user/0/com.other.app/cache/keep")
+        val engine = engine(root)
+        val snapshot = engine.scan("[]", targetPackages = setOf(pkg)) { _, _, _, _ -> }
+        assertEquals(listOf(pkg), snapshot.items.map { it.packageName })
+        assertEquals(4L, snapshot.totalBytes)
+        assertEquals(1L, engine.clean(snapshot, "[]") { _, _, _, _ -> }.deletedFiles)
+        assertFalse(target.exists())
+        assertTrue(other.exists())
+        assertTrue(engine.scan("[]", targetPackages = emptySet()) { _, _, _, _ -> }.items.isEmpty())
+    }
+
     @Test fun whitelistSkipsWebViewAtDiscoveryAndProtectsAlreadyScannedCaches() {
         val root = folder.newFolder("data")
         val keep = file(root, "user/0/$pkg/app_webview/Default/Cache/a")

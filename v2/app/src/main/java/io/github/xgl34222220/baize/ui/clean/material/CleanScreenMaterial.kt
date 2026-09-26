@@ -107,7 +107,7 @@ fun CleanScreenMaterial(
         item { MaterialCleanHeader() }
         item {
             Button(onClick = { toolboxContext.startActivity(android.content.Intent(toolboxContext, io.github.xgl34222220.baize.ToolboxActivity::class.java)) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text("功能控制台 · 专项清理与系统维护") }
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text("扩展工具 · 应用专项与系统维护") }
         }
         item { MaterialAutomaticSummary(state, actions) }
         item { MaterialSectionHeader("定时模式", "智能、严格间隔或每日固定时间") }

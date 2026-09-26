@@ -122,10 +122,6 @@ fun CleanScreenMiuix(
         }
         item(key = "clean-manual") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "功能控制台", "专项清理、系统维护与独立计划", {
-                    toolboxContext.startActivity(android.content.Intent(toolboxContext, io.github.xgl34222220.baize.ToolboxActivity::class.java))
-                })
-                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "分类管理与清理", actions.onScan)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩展扫描范围", actions.onDeepClean)
@@ -133,6 +129,10 @@ fun CleanScreenMiuix(
                 LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "残留文件检查", actions.onCorpses)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载与散落文件", actions.onFileOrganizer)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "扩展工具", "应用专项、下载转移与系统维护", {
+                    toolboxContext.startActivity(android.content.Intent(toolboxContext, io.github.xgl34222220.baize.ToolboxActivity::class.java))
+                })
             }
         }
         item(key = "clean-advanced") {
