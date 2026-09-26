@@ -2,7 +2,7 @@ name: BaiZe Paired Functional Test
 
 on:
   push:
-    branches: [fix/apk-scan-engine-sync]
+    branches: [fix/apk-scan-engine-sync, build/paired-functional-guizang-cache-test1]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -78,6 +78,14 @@ jobs:
       - name: Build native engines
         working-directory: v2
         run: sh scripts/build-native.sh
+
+      - name: Verify foreground cache behavior
+        working-directory: v2
+        run: >-
+          gradle --no-daemon :app:testDebugUnitTest
+          --tests 'io.github.xgl34222220.baize.root.CacheCleanQueueTest'
+          --tests 'io.github.xgl34222220.baize.root.CachePathPolicyTest'
+          --tests 'io.github.xgl34222220.baize.root.ForegroundCacheEngineTest'
 
       - name: Build signed App
         working-directory: v2
