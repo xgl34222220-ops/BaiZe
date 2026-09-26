@@ -15,7 +15,7 @@ internal class ToolboxRuleUpdates(private val context: Context) {
             .put("override", ToolboxConfig.read(File(dir, "override.json")))
             .put("rollbackAvailable", File(dir, "deep.rules.previous").isFile)
     }
-    fun update(): JSONObject {
+    fun update(): JSONObject = synchronized(AppRuleStore) {
         val root = AppRuleStore.ensure(context)
         val base = "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/config/"
         val metadata = fetch(base + "rules.meta.env", 16_000).toString(Charsets.UTF_8)
@@ -28,13 +28,14 @@ internal class ToolboxRuleUpdates(private val context: Context) {
         val current = File(root, "deep.rules")
         if (sha(current.readBytes()) == sha(bytes)) return JSONObject().put("success", true).put("message", "已是当前规则，无需更新")
         RootFileStore.writeAtomic(File(root, "deep.rules.previous"), current.readText())
+        RootFileStore.writeAtomic(File(root, "rules.meta.previous"), File(root, "rules.meta.env").readText())
         RootFileStore.writeAtomic(File(root, "deep.rules"), text)
         RootFileStore.writeAtomic(File(root, "override.json"), JSONObject().put("sha256", sha(bytes))
             .put("updatedAt", System.currentTimeMillis()).put("source", base).toString())
         RootFileStore.writeAtomic(File(root, "rules.meta.env"), metadata)
         return JSONObject().put("success", true).put("message", "前台规则已更新，重新扫描即可生效")
     }
-    fun rollback(): JSONObject {
+    fun rollback(): JSONObject = synchronized(AppRuleStore) {
         val root = AppRuleStore.ensure(context)
         val previous = File(root, "deep.rules.previous")
         require(previous.isFile) { "没有可回退的规则版本" }
@@ -42,6 +43,8 @@ internal class ToolboxRuleUpdates(private val context: Context) {
         RootFileStore.writeAtomic(File(root, "deep.rules"), bytes.toString(Charsets.UTF_8))
         RootFileStore.writeAtomic(File(root, "override.json"), JSONObject().put("sha256", sha(bytes))
             .put("updatedAt", System.currentTimeMillis()).put("source", "rollback").toString())
+        val meta = File(root, "rules.meta.previous")
+        if (meta.isFile) { RootFileStore.writeAtomic(File(root, "rules.meta.env"), meta.readText()); meta.delete() }
         previous.delete()
         return JSONObject().put("success", true).put("message", "已回退规则，重新扫描即可生效")
     }

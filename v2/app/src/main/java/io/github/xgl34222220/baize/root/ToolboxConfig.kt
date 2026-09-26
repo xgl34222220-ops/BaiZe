@@ -20,10 +20,10 @@ internal object ToolboxCatalog {
         Task("dy", "短视频专项", "抖音、极速版、快手的缓存与低风险规则", "应用专项"),
         Task("wyy", "网易云音乐专项", "缓存与低风险规则，保留下载音乐", "应用专项"),
         Task("guilei", "文件归类", "按文件类型归类，支持自定义目标与撤销", "文件管理"),
-        Task("mounter", "下载转移", "按来源、文件类型、目标规则转移，支持撤销", "文件管理"),
+        Task("mounter", "下载转移", "按规则转移，可选目录重定向，支持解除与撤销", "文件管理"),
         Task("logcat", "清空系统日志缓冲", "清除 logcat 环形缓冲区", "系统维护"),
         Task("memory", "释放文件缓存内存", "同步写入后回收可重建的页缓存", "系统维护"),
-        Task("process", "后台进程管理", "按内存阈值结束所选应用的后台进程", "系统维护"),
+        Task("process", "后台进程管理", "按阈值结束、冻结或调整所选后台进程", "系统维护"),
         Task("database", "数据库优化", "优化所选应用的空闲 SQLite 数据库，可选 VACUUM", "系统维护"),
         Task("dex2", "应用编译", "调用系统 ART 编译所选应用", "系统维护"),
         Task("dirty", "F2FS 脏段维护", "按阈值触发限时 GC，结束后恢复内核参数", "系统维护")
@@ -95,12 +95,15 @@ internal class ToolboxConfig(private val directory: File = File(RootPaths.STATE_
             }
             result.put("tasks", tasks)
             listOf("statistics" to true, "notifications" to true, "chargingOnly" to false,
-                "screenOffOnly" to true, "vacuum" to false, "forceCompile" to false).forEach { (key, default) ->
+                "screenOffOnly" to true, "skipFrozen" to true, "processContinuous" to false, "bindRedirect" to false, "vacuum" to false, "forceCompile" to false).forEach { (key, default) ->
                 result.put(key, input.optBoolean(key, default))
             }
             for (key in listOf("processPackages", "databasePackages", "compilePackages", "processWhitelist")) {
                 result.put(key, packages(input.optString(key)).sorted().joinToString("\n"))
             }
+            val processMode = input.optString("processMode", "kill")
+            require(processMode in setOf("kill", "freeze", "oom")) { "进程模式应为 kill、freeze 或 oom" }
+            result.put("processMode", processMode).put("pressureIntervalSeconds", input.optInt("pressureIntervalSeconds", 60).coerceIn(30, 3600))
             val filter = input.optString("compilerFilter", "speed-profile")
             require(filter in setOf("verify", "speed-profile", "speed", "everything")) { "编译模式无效" }
             result.put("compilerFilter", filter)
@@ -114,6 +117,7 @@ internal class ToolboxConfig(private val directory: File = File(RootPaths.STATE_
                 ToolboxFileRules.parse(text)
                 result.put(key, text)
             }
+            if (result.optBoolean("bindRedirect")) ToolboxRedirect.directoryRules(result.optString("downloadRules"))
             return result
         }
         /** Local civil days, with a six-hour catch-up window; wall-clock rollback cannot double-run. */

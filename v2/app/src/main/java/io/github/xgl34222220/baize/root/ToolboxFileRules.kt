@@ -5,9 +5,11 @@ import java.io.File
 /** Aurora-style source + glob&&glob + destination, limited to shared-storage files. */
 internal object ToolboxFileRules {
     data class Rule(val source: String, val patterns: List<String>, val destination: String) {
+        private val sourcePattern = glob(source)
+        private val filePatterns = patterns.map(::glob)
         fun accepts(file: File): Boolean = matchesDirectory(file.parentFile?.path.orEmpty()) &&
-            patterns.any { glob(it).matches(file.name) }
-        fun matchesDirectory(path: String): Boolean = glob(source).matches(path) || glob("$source/*").matches(path)
+            filePatterns.any { it.matches(file.name) }
+        fun matchesDirectory(path: String): Boolean = generateSequence(File(path)) { it.parentFile }.take(40).any { sourcePattern.matches(it.path) }
         fun roots(): List<File> {
             var roots = listOf(File("/"))
             for (part in source.removePrefix("/").split('/')) {

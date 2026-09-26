@@ -21,7 +21,7 @@ internal object AppRuleStore {
         "rules.meta.env"
     )
 
-    fun ensure(context: Context): File {
+    @Synchronized fun ensure(context: Context): File {
         val root = File(RootPaths.STATE_DIR, "app-rules").apply { mkdirs() }
         val override = ToolboxRuleUpdates.overrideValid(root)
         files.forEach { name ->

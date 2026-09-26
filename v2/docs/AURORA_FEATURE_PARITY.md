@@ -15,10 +15,10 @@
 | 应用 / 系统缓存 | 按系统/第三方分类；沿用 Test2 去重、WebView、有限并行清理 |
 | 微信 / QQ / TIM / 抖音 / 快手 / 网易云 | 限定包名的缓存与低风险深度规则；不选择高风险聊天记录、下载等数据 |
 | 文件归类 | 复用校验、冲突重命名、撤销；新增 来源+类型+目标 可编辑映射 |
-| MounterMover | 本版实现规则文件转移与撤销；尚未实现跨挂载命名空间的持续 bind 重定向 |
+| MounterMover | 规则转移与撤销、可选整目录 bind 重定向；进入 init 挂载命名空间并核对挂载和 inode；可解除，重启后需手动/计划恢复 |
 | logcat | 系统命令清空缓冲，记录真实返回码和超时 |
 | 内存压制 | sync 后回收页缓存；单独记录 MemAvailable 前后观测，不计入文件删除空间 |
-| 进程压制 | 所选第三方应用、内存阈值、进程保护名单、前台/可感知进程检查；由 ActivityManager 执行后台终止。本版尚无 cgroup 冻结 / OOM 常驻控制 |
+| 进程压制 | 所选第三方应用、内存阈值、保护名单、前台检查；kill / 系统非 sticky 冻结 / OOM 调整；观测 cgroup 冻结状态、保留已冻结进程、持续阈值检查、恢复入口 |
 | 数据库 / SQLite 额外优化 | 所选空闲应用的标准 SQLite，PRAGMA optimize / 可选 VACUUM，跳过加密/未提交日志，超时取消、恢复所有者 |
 | Dex2oat | 调用系统 ART，所选应用、编译模式、强制重新编译，逐应用结果 |
 | F2FS GC | 探测 sysfs、脏段阈值、最长 60 秒、结束恢复 gc_urgent，独立恢复进程覆盖 Root 服务异常退出 |
@@ -29,9 +29,10 @@
 | 状态统计 | 今日/累计实际删除字节与文件；分区、内存、F2FS；失败/不支持如实显示 |
 | 记录与清零 | 最多 100 次结果、界面最近 20 次；次数阈值、手动统计清零与记录清空 |
 | 外观 / 全局搜索 | 接入现有白泽主题与背景设置；控制台按名称、描述、分组搜索 |
-| 通知 | App 收到实际完成结果后发布通知，遵循系统通知权限 |
+| 快捷磁贴 | 系统快捷设置可添加白泽控制台入口 |
+| 通知 | App/后台看门狗收到实际完成结果后发布通知，遵循系统通知权限 |
 
-本次没有声称复现 Aurora 二进制全部隐藏算法、5000+ 远端规则、冻结策略、热更新协议、收费授权或云端规则上传服务。Aurora 的 `DEVICE_ID,2500` 参数是请求超时，不是 2.5 秒统计缓存。`QUEUED_ALL` 表示排队成功，不是清理结束。
+本次没有声称复现 Aurora 二进制全部隐藏算法、5000+ 远端规则、Aurora 私有冻结算法、热更新协议、收费授权或云端规则上传服务。Aurora 的 `DEVICE_ID,2500` 参数是请求超时，不是 2.5 秒统计缓存。`QUEUED_ALL` 表示排队成功，不是清理结束。
 
 ## 验证边界
 
@@ -40,6 +41,8 @@
 F2FS 内核、ART 模式和第三方数据库行为依赖设备，主机测试不能替代 Root 真机验证；不支持时显示原因，不将跳过伪装成成功。不提供未经真机测量的速度提升比例。
 
 平台依据：
+- https://source.android.com/docs/core/perf/cached-apps-freezer
+- https://android.googlesource.com/platform/frameworks/base/+/master/services/core/java/com/android/server/am/ActivityManagerShellCommand.java
 - https://source.android.com/docs/core/runtime/configure/art-service
 - https://sqlite.org/pragma.html
 - https://sqlite.org/wal.html

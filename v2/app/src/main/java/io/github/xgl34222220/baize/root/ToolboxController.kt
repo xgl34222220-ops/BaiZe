@@ -72,7 +72,7 @@ internal class ToolboxController(private val context: Context, private val coord
         val ids = if (request == "all") ToolboxCatalog.tasks.map { it.id }.filter {
             settings.getJSONObject("tasks").getJSONObject(it).optBoolean("enabled")
         } else request.split(',').distinct()
-        require(ids.all { it in ToolboxCatalog.ids || it == "undo" }) { "任务名称无效" }
+        require(ids.all { it in ToolboxCatalog.ids || it in setOf("undo", "thaw", "unmount") }) { "任务名称无效" }
         require(ids.isNotEmpty()) { "请先勾选要加入一键清理的功能" }
         if (coordinator.isBusy() || !pending.compareAndSet(false, true)) return JSONObject().put("success", false).put("message", "已有任务正在运行")
         val id = UUID.randomUUID().toString()
@@ -100,7 +100,7 @@ internal class ToolboxController(private val context: Context, private val coord
         File(RootPaths.STATE_DIR, "stop").delete()
         for ((index, task) in ids.withIndex()) {
             if (coordinator.cancelled.get()) break
-            val title = if (task == "undo") "撤销上次归类 / 转移" else ToolboxCatalog.task(task).title
+            val title = if (task == "undo") "撤销上次归类 / 转移" else if (task == "thaw") "恢复进程状态" else if (task == "unmount") "解除目录重定向" else ToolboxCatalog.task(task).title
             fun progress(path: String) {
                 coordinator.update("toolbox", "$title · ${index + 1}/${ids.size}", index, ids.size, path, started, bytes, files, failures)
             }
@@ -108,11 +108,16 @@ internal class ToolboxController(private val context: Context, private val coord
             if (scheduled) config.markRun(task, System.currentTimeMillis())
             val result = runCatching {
                 when (task) {
+                    "unmount" -> ToolboxRedirect(coordinator.cancelled).remove()
                     "scan", "empty", "regular" -> profileTask(when (task) { "scan" -> "fragments"; "regular" -> "rules"; else -> task }, settings, emptySet(), ::progress)
                     "app", "system", "wechat", "qq", "dy", "wyy" -> cacheTask(task, settings, ::progress)
                     "guilei", "mounter", "undo" -> {
-                        val rules = settings.optString(if (task == "mounter") "downloadRules" else "organizerRules")
+                        var rules = settings.optString(if (task == "mounter") "downloadRules" else "organizerRules")
                         if (task == "mounter") require(rules.isNotBlank()) { "请先填写下载转移规则" }
+                        if (task == "mounter" && settings.optBoolean("bindRedirect")) {
+                            rules = ToolboxRedirect(coordinator.cancelled).unmountedRules(rules)
+                            if (rules.isBlank()) return@runCatching JSONObject().put("success", true).put("message", "目录重定向已生效")
+                        }
                         val engine = FileOrganizerEngine(coordinator.cancelled, rulesText = rules, customOnly = task == "mounter")
                         if (task == "undo") JSONObject(engine.undo { progress(it.path) }) else {
                             val scan = JSONObject(engine.scan { progress(it.path) })
@@ -124,6 +129,10 @@ internal class ToolboxController(private val context: Context, private val coord
                     else -> ToolboxMaintenance(context, coordinator.cancelled, ::progress).run(task, settings)
                 }
             }.getOrElse { JSONObject().put("success", false).put("message", it.message ?: it.javaClass.simpleName) }
+            if (task == "mounter" && settings.optBoolean("bindRedirect") && result.optBoolean("success") && !coordinator.cancelled.get()) {
+                val mount = ToolboxRedirect(coordinator.cancelled).apply(settings.optString("downloadRules"))
+                result.put("redirect", mount).put("success", mount.optBoolean("success")).put("message", mount.optString("message"))
+            }
             if (result.optBoolean("cancelled") || result.optBoolean("timedOut") || result.optInt("failures") > 0) result.put("success", false)
             result.put("task", task).put("title", title)
             if (!result.optBoolean("success")) failures++
@@ -190,7 +199,11 @@ internal class ToolboxController(private val context: Context, private val coord
         }
         val now = System.currentTimeMillis()
         val last = config.lastRuns()
-        val due = ToolboxCatalog.tasks.filter { ToolboxConfig.due(settings.getJSONObject("tasks").getJSONObject(it.id), now, last.optLong(it.id)) }
+        val due = ToolboxCatalog.tasks.filter {
+            ToolboxConfig.due(settings.getJSONObject("tasks").getJSONObject(it.id), now, last.optLong(it.id)) ||
+                (it.id == "process" && settings.optBoolean("processContinuous") && now >= last.optLong(it.id) &&
+                    now - last.optLong(it.id) >= settings.optLong("pressureIntervalSeconds", 60) * 1000)
+        }
         if (due.isNotEmpty()) start(due.joinToString(",") { it.id }, true)
     }
     private fun withLease(block: () -> JSONObject): JSONObject {

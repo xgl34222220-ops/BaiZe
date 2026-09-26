@@ -26,6 +26,7 @@ internal class ToolboxMaintenance(
         "logcat" -> commandResult(command.run(listOf("/system/bin/logcat", "-b", "all", "-c")), "系统日志缓冲已清空")
         "memory" -> memory()
         "process" -> processes(config)
+        "thaw" -> thaw()
         "dex2" -> compile(config)
         "database" -> databases(config)
         "dirty" -> gc(config)
@@ -76,10 +77,14 @@ internal class ToolboxMaintenance(
         val whitelist = JSONArray(WhitelistRepository().packagesJson()).let { array -> (0 until array.length()).map { array.getString(it) }.toSet() }
         return requested.filter { it in allowed && it !in whitelist }.sorted()
     }
-    private fun runningProcesses(): List<Pair<String, Int>> = proc.listFiles()?.asSequence()
+    private data class AppProcess(val name: String, val score: Int, val pid: Int, val ticks: String, val uid: Int) {
+        val first get() = name
+        val second get() = score
+    }
+    private fun runningProcesses(): List<AppProcess> = proc.listFiles()?.asSequence()
         ?.filter { it.name.toIntOrNull() != null }?.mapNotNull { dir -> runCatching {
             val name = File(dir, "cmdline").readText().substringBefore('\u0000')
-            name to File(dir, "oom_score_adj").readText().trim().toInt()
+            AppProcess(name, File(dir, "oom_score_adj").readText().trim().toInt(), dir.name.toInt(), processTicks(dir), File(dir, "status").readLines().first { it.startsWith("Uid:") }.substringAfter(':').trim().split(Regex("\\s+"))[0].toInt())
         }.getOrNull() }?.toList().orEmpty()
     private fun processes(config: JSONObject): JSONObject {
         val targets = selected(config, "processPackages") - ToolboxConfig.packages(config.optString("processWhitelist"))
@@ -89,22 +94,93 @@ internal class ToolboxMaintenance(
         if (total <= 0) return unsupported("无法读取内存使用率")
         val used = (100L - mem.optLong("availableKb") * 100L / total).toInt()
         if (used < config.optInt("memoryThreshold", 80)) return ok("内存占用 $used%，未达到设置的阈值").put("skipped", true)
+        val mode = config.optString("processMode", "kill")
+        if (mode == "freeze") {
+            val help = command.run(listOf("/system/bin/am", "help"), outputLimit = 64000)
+            if (!help.output.contains("freeze [")) return unsupported("当前系统未提供进程冻结命令")
+        }
         val details = JSONArray()
         var failed = 0
         for (pkg in targets) {
             if (cancelled.get()) break
-            val active = runningProcesses().filter { it.first.substringBefore(':') == pkg }
+            val active = runningProcesses().filter { it.first.substringBefore(':') == pkg && it.uid == installedThirdParty()[pkg]?.uid }
             if (active.isEmpty() || active.any { it.second < 400 }) {
                 details.put(JSONObject().put("package", pkg).put("status", "skipped").put("message", "未运行或包含前台/可感知进程"))
                 continue
             }
             progress(pkg)
             // ActivityManager applies its current importance policy again, closing the foreground race.
-            val result = command.run(listOf("/system/bin/am", "kill", "--user", "0", pkg))
-            if (!result.success) failed++
-            details.put(commandResult(result, "已向系统提交后台终止请求").put("package", pkg))
+            if (mode == "kill") {
+                if (config.optBoolean("skipFrozen", true) && active.any { frozen(it) }) {
+                    details.put(JSONObject().put("package", pkg).put("status", "skipped").put("message", "保留已冻结应用")); continue
+                }
+                val result = command.run(listOf("/system/bin/am", "kill", "--user", "0", pkg))
+                if (!result.success) failed++
+                details.put(commandResult(result, "已向系统提交后台终止请求").put("package", pkg))
+            } else for (app in active) {
+                if (cancelled.get()) break
+                if (app.score < 900 || processTicks(File(proc, app.pid.toString())) != app.ticks) continue
+                if (config.optBoolean("skipFrozen", true) && frozen(app)) continue
+                if (mode == "freeze") {
+                    val result = command.run(listOf("/system/bin/am", "freeze", app.pid.toString()))
+                    // System-owned, non-sticky freezing preserves ActivityManager's foreground unfreeze policy.
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+                    while (result.success && !cancelled.get() && !frozen(app) && System.nanoTime() < deadline) Thread.sleep(100)
+                    val observed = result.success && frozen(app)
+                    if (!observed) failed++
+                    if (observed) rememberProcess(app, "freeze", "0")
+                    details.put(commandResult(result, "已请求系统冻结").put("success", observed)
+                        .put("message", if (observed) "已观测到进程冻结" else result.output.ifBlank { "未观测到冻结完成" }).put("process", app.name))
+                } else {
+                    val node = File(proc, "${app.pid}/oom_score_adj")
+                    val original = node.readText().trim()
+                    if ((original.toIntOrNull() ?: -1) < 900) continue
+                    rememberProcess(app, "oom", original)
+                    node.writeText("1000\n")
+                    details.put(JSONObject().put("success", node.readText().trim() == "1000").put("process", app.name).put("message", "已调整缓存进程回收优先级"))
+                }
+            }
         }
         return ok("后台管理完成，失败 $failed 项").put("success", failed == 0).put("failures", failed).put("details", details)
+    }
+    private val processRecords get() = File(RootPaths.STATE_DIR, "toolbox/process-state.json")
+    private fun processTicks(dir: File): String = runCatching {
+        File(dir, "stat").readText().substringAfterLast(')').trim().split(Regex("\\s+"))[19]
+    }.getOrDefault("")
+    private fun frozen(app: AppProcess): Boolean = runCatching {
+        val group = File(proc, "${app.pid}/cgroup").readLines().firstOrNull { it.startsWith("0::") }?.substringAfter("0::") ?: return@runCatching false
+        if (!group.endsWith("/pid_${app.pid}")) return@runCatching false
+        File("/sys/fs/cgroup$group/cgroup.freeze").readText().trim() == "1"
+    }.getOrDefault(false)
+    private fun rememberProcess(app: AppProcess, mode: String, original: String) {
+        val records = ToolboxConfig.read(processRecords)
+        val key = "${app.pid}:${app.ticks}:$mode"
+        if (!records.has(key)) records.put(key, JSONObject().put("pid", app.pid).put("ticks", app.ticks).put("name", app.name).put("mode", mode).put("original", original))
+        RootFileStore.writeAtomic(processRecords, records.toString())
+    }
+    private fun thaw(): JSONObject {
+        val records = ToolboxConfig.read(processRecords)
+        val next = JSONObject()
+        val details = JSONArray()
+        val keys = records.keys().asSequence().toList()
+        for (key in keys) {
+            val row = records.getJSONObject(key)
+            val pid = row.optInt("pid")
+            val dir = File(proc, pid.toString())
+            if (pid <= 1 || processTicks(dir) != row.optString("ticks")) continue
+            val success = runCatching {
+                if (row.optString("mode") == "freeze") command.run(listOf("/system/bin/am", "unfreeze", pid.toString()), honourCancel = false).success
+                else {
+                    val node = File(dir, "oom_score_adj")
+                    if (node.readText().trim() == "1000") node.writeText(row.getString("original") + "\n")
+                    true
+                }
+            }.getOrDefault(false)
+            if (!success) next.put(key, row)
+            details.put(JSONObject().put("process", row.optString("name")).put("success", success))
+        }
+        RootFileStore.writeAtomic(processRecords, next.toString())
+        return ok("已恢复白泽管理的进程，剩余 ${next.length()} 项").put("success", next.length() == 0).put("details", details)
     }
     private fun compile(config: JSONObject): JSONObject {
         val packages = selected(config, "compilePackages")

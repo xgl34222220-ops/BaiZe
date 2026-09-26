@@ -12,7 +12,7 @@ internal class ToolboxCommand(
     data class Result(val exit: Int, val output: String, val timedOut: Boolean, val cancelled: Boolean) {
         val success get() = exit == 0 && !timedOut && !cancelled
     }
-    fun run(arguments: List<String>, seconds: Long = 20, honourCancel: Boolean = true): Result {
+    fun run(arguments: List<String>, seconds: Long = 20, honourCancel: Boolean = true, outputLimit: Int = 4000): Result {
         require(arguments.isNotEmpty() && arguments.none { it.contains('\u0000') })
         if (honourCancel && cancelled.get()) return Result(-1, "已停止", false, true)
         logDirectory.mkdirs()
@@ -33,7 +33,7 @@ internal class ToolboxCommand(
                     break
                 }
             }
-            Result(if (process.isAlive) -1 else process.exitValue(), RootFileStore.tailText(log, 4000).trim(), timeout, stopped)
+            Result(if (process.isAlive) -1 else process.exitValue(), RootFileStore.tailText(log, outputLimit.coerceIn(1000, 64000)).trim(), timeout, stopped)
         } catch (error: Exception) {
             Result(-1, error.message ?: error.javaClass.simpleName, false, cancelled.get())
         } finally {

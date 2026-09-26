@@ -18,6 +18,11 @@ class ToolboxFileRulesTest {
         assertTrue(rule.accepts(File("/data/media/0/Android/data/com.app.store/files/Download/a.apks")))
         assertFalse(ToolboxFileRules.glob("a.zip").matches("aXzip"))
     }
+    @Test fun redirectRejectsFilteredRulesAndCycles() {
+        assertThrows(IllegalArgumentException::class.java) { ToolboxRedirect.directoryRules("/sdcard/Download+*.apk+/sdcard/Out") }
+        assertThrows(IllegalArgumentException::class.java) { ToolboxRedirect.directoryRules("/sdcard/A+/sdcard/B\n/sdcard/B+/sdcard/A") }
+        assertEquals(1, ToolboxRedirect.directoryRules("/sdcard/Download+/sdcard/BaiZe下载").size)
+    }
     @Test fun rejectsTraversalLoopsAndPrivilegedDestinations() {
         for (text in listOf("/sdcard/Download+*.apk+/data/adb/a", "/sdcard/Download/../DCIM+*.jpg+/sdcard/Out", "/sdcard/Download+*.apk+/sdcard/Download/Out", "/sdcard/Download+*.apk+/sdcard/*"))
             assertThrows(text, IllegalArgumentException::class.java) { ToolboxFileRules.parse(text) }

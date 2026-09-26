@@ -169,7 +169,7 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
 }
 
 @Composable
-private fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitelist: () -> Unit, onAppearance: () -> Unit,
+internal fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitelist: () -> Unit, onAppearance: () -> Unit,
                           onExport: () -> Unit, onImport: () -> Unit, onNotification: () -> Unit) {
     val context = LocalContext.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -228,6 +228,8 @@ private fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhiteli
                         }
                     }
                     item { DetailGlassPanel { TextButton(onClick = { model.action("toolboxRun", "undo") }, enabled = enabled) { Text("撤销最近一次归类 / 下载转移") } } }
+                    item { DetailGlassPanel { TextButton(onClick = { model.action("toolboxRun", "thaw") }, enabled = enabled) { Text("恢复白泽冻结 / 调整过的进程") } } }
+                    item { DetailGlassPanel { TextButton(onClick = { model.action("toolboxRun", "unmount") }, enabled = enabled) { Text("解除白泽目录重定向（保留目标文件）") } } }
                     item { DevicePanel(model.snapshot.optJSONObject("device") ?: JSONObject()) }
                 }
                 1 -> {
@@ -246,6 +248,10 @@ private fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhiteli
                 2 -> {
                     item { DetailGlassPanel {
                         Text("运行设置", style = MaterialTheme.typography.titleMedium)
+                        Setting("进程模式（kill / freeze / oom）", "processMode", config, enabled) { edit = it }
+                        Toggle("保留已冻结进程", config.optBoolean("skipFrozen", true), enabled) { model.save { c -> c.put("skipFrozen", it) } }
+                        Toggle("持续按阈值管理后台", config.optBoolean("processContinuous"), enabled) { model.save { c -> c.put("processContinuous", it) } }
+                        Setting("后台检查间隔（30–3600 秒）", "pressureIntervalSeconds", config, enabled) { edit = it }
                         Setting("进程管理应用", "processPackages", config, enabled) { edit = it; model.loadPackages() }
                         Setting("进程保护名单", "processWhitelist", config, enabled) { edit = it; model.loadPackages() }
                         Setting("数据库应用", "databasePackages", config, enabled) { edit = it; model.loadPackages() }
@@ -261,6 +267,8 @@ private fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhiteli
                     item { DetailGlassPanel {
                         Text("文件规则", style = MaterialTheme.typography.titleMedium)
                         TextButton(onClick = { edit = "organizerRules" }, enabled = enabled) { Text("编辑归类规则（来源 + 类型 + 目标）") }
+                        Toggle("转移后启用目录重定向", config.optBoolean("bindRedirect"), enabled) { model.save { c -> c.put("bindRedirect", it) } }
+                        Text("绑定重定向需先填写完整目录规则：来源+目标；重启后由计划或手动再次执行。", style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { edit = "downloadRules" }, enabled = enabled) { Text("编辑下载转移规则") }
                         TextButton(onClick = { edit = "customRules" }, enabled = enabled) { Text("额外清理名单 / 自定义规则") }
                         TextButton(onClick = onWhitelist) { Text("管理应用与路径白名单") }
@@ -350,12 +358,13 @@ private fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhiteli
     var query by remember(key) { mutableStateOf("") }
     val titles = mapOf("processPackages" to "进程管理应用", "processWhitelist" to "进程保护名单", "databasePackages" to "数据库应用", "compilePackages" to "编译应用",
         "memoryThreshold" to "内存占用阈值（10–99%）", "dirtyThreshold" to "F2FS 脏段阈值", "gcSeconds" to "F2FS 运行时限（1–60 秒）", "fragmentDays" to "碎片保留天数",
-        "compilerFilter" to "编译模式", "organizerRules" to "文件归类规则", "downloadRules" to "下载转移规则", "customRules" to "额外清理规则", "counterReset" to "次数清零阈值")
+        "processMode" to "进程模式", "pressureIntervalSeconds" to "后台检查间隔（秒）", "compilerFilter" to "编译模式", "organizerRules" to "文件归类规则", "downloadRules" to "下载转移规则", "customRules" to "额外清理规则", "counterReset" to "次数清零阈值")
     BaiZeDialog(onDismissRequest = dismiss, title = { Text(if (schedule) "${ToolboxCatalog.task(key.substringAfter(':')).title}计划" else titles[key].orEmpty()) },
         text = { LazyColumn(Modifier.heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 if (key in listOf("organizerRules", "downloadRules")) Text("每行一条：来源+*.apk&&*.zip+目标。支持来源目录通配符。例：/sdcard/Download+*.apk+/sdcard/BaiZe归类/安装包。转移后可在功能页撤销。", style = MaterialTheme.typography.bodySmall)
                 if (key == "customRules") Text("每行：目录绝对路径|保留天数。此名单增加清理规则；全局保护名单继续优先。", style = MaterialTheme.typography.bodySmall)
+                if (key == "processMode") Text("kill：系统结束后台进程；freeze：系统冻结缓存进程，前台由系统恢复；oom：调整缓存进程回收优先级。功能页可恢复。", style = MaterialTheme.typography.bodySmall)
                 if (key == "compilerFilter") Text("verify、speed-profile、speed、everything；系统不支持的模式会返回实际错误。", style = MaterialTheme.typography.bodySmall)
                 if (key == "databasePackages") Text("只处理未运行应用的标准 SQLite 数据库；跳过加密数据库和未提交事务。", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value, { value = it }, Modifier.fillMaxWidth(), label = { Text(if (schedule) "时间 HH:mm" else if (packageList) "应用包名（每行一个）" else "设置值") }, minLines = if (packageList || key.endsWith("Rules")) 3 else 1)
