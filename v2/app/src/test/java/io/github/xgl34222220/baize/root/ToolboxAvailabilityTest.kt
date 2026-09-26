@@ -43,4 +43,9 @@ class ToolboxAvailabilityTest {
         assertEquals("不支持", ToolboxAvailability.status(JSONObject().put("unsupported", true)))
         assertEquals("已完成", ToolboxAvailability.status(JSONObject().put("success", true)))
     }
+    @Test fun catalogErrorsAreExplainedWithoutDisablingUnrelatedSystemTools() {
+        val env = JSONObject().put("applicationError", "应用列表读取失败").put("logcatSupported", true)
+        assertEquals("应用列表读取失败", ToolboxAvailability.check("wechat", config(), env).getString("message"))
+        assertTrue(ToolboxAvailability.check("logcat", config(), env).getBoolean("available"))
+    }
 }

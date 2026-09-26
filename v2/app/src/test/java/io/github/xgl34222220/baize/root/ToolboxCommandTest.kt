@@ -30,4 +30,10 @@ class ToolboxCommandTest {
         assertTrue(result.cancelled)
         assertFalse(result.success)
     }
+    @Test fun inaccessibleLogLocationReturnsFailureInsteadOfBreakingTheWholeSnapshot() {
+        val notDirectory = folder.newFile()
+        val result = ToolboxCommand(AtomicBoolean(), notDirectory).run(listOf("/bin/sh", "-c", "exit 0"))
+        assertFalse(result.success)
+        assertTrue(result.output.isNotBlank())
+    }
 }

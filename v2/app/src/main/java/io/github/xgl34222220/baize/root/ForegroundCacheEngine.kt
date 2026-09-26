@@ -80,7 +80,7 @@ internal class ForegroundCacheEngine(
             val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
             val skipped = changedCandidates + protectedCandidates
             return JSONObject()
-                .put("success", !cancelled)
+                .put("success", !cancelled && failedCandidates == 0)
                 .put("mutated", mutated)
                 .put("cancelled", cancelled)
                 .put("elapsedMs", elapsedMs)
@@ -99,6 +99,7 @@ internal class ForegroundCacheEngine(
                 .put("details", details)
                 .put("message", when {
                     cancelled -> "缓存清理已停止"
+                    failedCandidates > 0 -> "缓存清理未全部完成：$failedCandidates 项失败"
                     mutated -> "应用缓存清理完成"
                     skipped > 0 -> "本次缓存已变化或受保护，没有删除文件"
                     else -> "本次未删除任何缓存文件"
@@ -116,6 +117,26 @@ internal class ForegroundCacheEngine(
     private data class Node(val file: File, val post: Boolean)
 
     private var redirectedRoots = emptySet<String>()
+
+    /** Explicit app-wide cache action: discover known roots, then delete/count in one pass.
+     * Manual file-selection flows still use scan() and its review snapshot. */
+    fun cleanPackages(
+        packages: Set<String>, whitelistJson: String, protectedPaths: Set<String>,
+        progress: (String, Int, Int, String) -> Unit
+    ): CleanResult {
+        val started = SystemClock.elapsedRealtime()
+        redirectedRoots = ToolboxRedirect.protectedRoots(redirectFile)
+        val protected = protectedPaths.map(ToolboxFileRules::normalizePath)
+        progress("正在定位所选应用缓存", 0, packages.size, "")
+        val roots = discoverCacheRoots(parseWhitelist(whitelistJson), packages, packages)
+            .filter { root ->
+                val path = ToolboxFileRules.normalizePath(logicalPath(root.path))
+                protected.none { path == it || path.startsWith("$it/") || it.startsWith("$path/") }
+            }
+        val items = roots.map { Item(it.packageName, it.packageName, it.category, it.path, 0, 0, 0, false) }
+        val snapshot = Snapshot(UUID.randomUUID().toString(), System.currentTimeMillis(), items, 0, 0, 0, 0)
+        return clean(snapshot, whitelistJson, progress).copy(elapsedMs = SystemClock.elapsedRealtime() - started)
+    }
 
     fun scan(whitelistJson: String, targetPackages: Set<String>? = null, progress: (String, Int, Int, String) -> Unit): Snapshot {
         redirectedRoots = ToolboxRedirect.protectedRoots(redirectFile)
@@ -350,8 +371,7 @@ internal class ForegroundCacheEngine(
     }
 
     private fun addWebViewCaches(packageName: String, appDir: File, add: (String, String, File) -> Unit) {
-        for (engineName in listOf("app_webview", "app_hws_webview", "app_x5webview")) {
-            val engine = File(appDir, engineName)
+        for (engine in appDir.listFiles().orEmpty().filter { CachePathPolicy.isWebViewEngine(it.name) }) {
             val stack = ArrayDeque<Pair<File, Int>>()
             stack.add(engine to 0)
             while (stack.isNotEmpty()) {

@@ -24,7 +24,7 @@ class BaiZeProfileRootService : RootService() {
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
     private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled, quarantineRepository) }
     private val instantCacheEngine by lazy {
-        InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
+        InstantCacheEngine(this, coordinator.cancelled) { coordinator.publishExternal(it) }
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
     private val apkFastSnapshot by lazy {

@@ -30,6 +30,7 @@ class ForegroundCacheEngineTest {
     @After fun resetFilesystemHooks() {
         HostCacheFilesystem.afterRemove = null
         HostCacheFilesystem.failPath = null
+        HostCacheFilesystem.onStat = null
     }
 
     private fun engine(root: File, cancelled: AtomicBoolean = AtomicBoolean()) =
@@ -93,6 +94,25 @@ class ForegroundCacheEngineTest {
         assertFalse(target.exists())
         assertTrue(other.exists())
         assertTrue(engine.scan("[]", targetPackages = emptySet()) { _, _, _, _ -> }.items.isEmpty())
+    }
+
+    @Test fun appWideCleaningDeletesInOneTraversalAndRetainsProtectedData() {
+        val root = folder.newFolder("one-pass")
+        val cache = file(root, "user/0/$pkg/cache/a")
+        val web = file(root, "user/0/$pkg/app_webview_remote/Default/Cache/a")
+        val cookies = file(root, "user/0/$pkg/app_webview_remote/Default/Cookies")
+        val protected = file(root, "media/0/Android/data/$pkg/cache/keep")
+        val other = file(root, "user/0/com.other.app/cache/keep")
+        val statCalls = java.util.concurrent.atomic.AtomicInteger()
+        HostCacheFilesystem.onStat = { if (it == cache.path || it == web.path) statCalls.incrementAndGet() }
+        val result = engine(root).cleanPackages(setOf(pkg), "[]",
+            setOf("/data/media/0/Android/data/$pkg/cache/keep")) { _, _, _, _ -> }
+        assertEquals(2L, result.deletedFiles); assertEquals(8L, result.deletedBytes)
+        assertEquals("Cache files should not be measured once before being deleted", 2, statCalls.get())
+        assertFalse(cache.exists()); assertFalse(web.exists())
+        assertTrue(cookies.exists()); assertTrue(protected.exists()); assertTrue(other.exists())
+        assertTrue(cache.parentFile!!.isDirectory); assertTrue(web.parentFile!!.isDirectory)
+        assertEquals(0L, engine(root).cleanPackages(emptySet(), "[]", emptySet()) { _, _, _, _ -> }.deletedFiles)
     }
 
     @Test fun whitelistSkipsWebViewAtDiscoveryAndProtectsAlreadyScannedCaches() {
@@ -182,6 +202,7 @@ class ForegroundCacheEngineTest {
         assertEquals(1L, result.deletedDirectories)
         assertEquals(1, result.partialCandidates)
         assertEquals(1, result.failedCandidates)
+        assertFalse(result.json().getBoolean("success"))
         assertEquals(1L, result.remainingItems.single().files)
         assertTrue(keep.exists())
         assertTrue(outsideFile.exists())
@@ -194,10 +215,12 @@ class HostCacheFilesystem : ShadowLinux() {
     companion object {
         @Volatile var afterRemove: (() -> Unit)? = null
         @Volatile var failPath: String? = null
+        @Volatile var onStat: ((String) -> Unit)? = null
     }
 
     @Implementation
     override fun lstat(path: String): StructStat {
+        onStat?.invoke(path)
         if (Files.isSymbolicLink(File(path).toPath())) {
             return StructStat(0, 0, OsConstants.S_IFLNK, 1, 0, 0, 0, 0, 0, 0, 0, 4096, 0)
         }

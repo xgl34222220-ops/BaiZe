@@ -1,13 +1,14 @@
 package io.github.xgl34222220.baize.root
 
+import android.content.Context
 import android.os.SystemClock
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Runs PackageManager cache-only requests without touching BaiZe scan snapshots. */
 internal class InstantCacheEngine(
+    private val context: Context,
     private val cancelled: AtomicBoolean,
     private val onProgress: (JSONObject) -> Unit
 ) {
@@ -39,13 +40,7 @@ internal class InstantCacheEngine(
                 .put("message", "单次最多处理 $MAX_PACKAGES 个应用")
                 .toString()
         }
-        if (!supportsCacheOnly()) {
-            return failure(
-                "cache_only_unsupported",
-                "当前系统 PackageManager 不支持 --cache-only，未执行任何清理"
-            )
-        }
-
+        val cleaner = PackageCacheCleaner(context.packageManager, cancelled)
         val results = JSONArray()
         var succeeded = 0
         var failed = 0
@@ -65,7 +60,7 @@ internal class InstantCacheEngine(
                     .put("currentPath", packageName)
                     .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
             )
-            val result = execute(packageName, userId)
+            val result = cleaner.clear(packageName, userId).put("packageName", packageName)
             results.put(result)
             if (result.optBoolean("success")) succeeded += 1 else failed += 1
             if (result.optBoolean("cancelled")) stopped = true
@@ -94,53 +89,6 @@ internal class InstantCacheEngine(
             .toString()
     }
 
-    private fun supportsCacheOnly(): Boolean = runCatching {
-        val process = ProcessBuilder("/system/bin/cmd", "package", "help")
-            .redirectErrorStream(true)
-            .start()
-        val finished = process.waitFor(5, TimeUnit.SECONDS)
-        if (!finished) process.destroyForcibly()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        finished && output.contains("--cache-only")
-    }.getOrDefault(false)
-
-    private fun execute(packageName: String, userId: Int): JSONObject {
-        val process = ProcessBuilder(
-            "/system/bin/cmd", "package", "clear", "--cache-only",
-            "--user", userId.toString(), packageName
-        ).redirectErrorStream(true).start()
-        val deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS
-        var finished = false
-        var wasCancelled = false
-        while (!finished) {
-            finished = process.waitFor(200, TimeUnit.MILLISECONDS)
-            if (finished) break
-            if (cancelled.get()) {
-                wasCancelled = true
-                process.destroy()
-                if (!process.waitFor(500, TimeUnit.MILLISECONDS)) process.destroyForcibly()
-                break
-            }
-            if (SystemClock.elapsedRealtime() >= deadline) {
-                process.destroy()
-                if (!process.waitFor(500, TimeUnit.MILLISECONDS)) process.destroyForcibly()
-                break
-            }
-        }
-        val output = runCatching {
-            process.inputStream.bufferedReader().use { it.readText().trim().take(1200) }
-        }.getOrDefault("")
-        val exitCode = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
-        val success = finished && exitCode == 0 && !output.contains("Failed", ignoreCase = true)
-        return JSONObject()
-            .put("packageName", packageName)
-            .put("success", success)
-            .put("cancelled", wasCancelled)
-            .put("timeout", !finished && !wasCancelled)
-            .put("exitCode", exitCode)
-            .put("output", output)
-    }
-
     private fun failure(code: String, message: String, packageName: String = ""): String =
         JSONObject()
             .put("success", false)
@@ -151,7 +99,6 @@ internal class InstantCacheEngine(
 
     companion object {
         private const val MAX_PACKAGES = 30
-        private const val TIMEOUT_MS = 15_000L
         private val PACKAGE_NAME = Regex("""^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$""")
         private val BLOCKLIST = setOf(
             "android",

@@ -694,6 +694,7 @@ internal class NativeProfileEngine(
             lines.map { it.trim() }
                 .filter { it.startsWith("/") && !it.startsWith("//") && !it.startsWith("#") }
                 .take(MAX_RULE_LINES)
+                .flatMap { TargetedRulePaths.select(it, options.targetPackages).asSequence() }
                 .toList()
         }
         val listings = RuleExpansionCache()
@@ -708,7 +709,7 @@ internal class NativeProfileEngine(
         }
         for ((pattern, title) in reviewRules()) {
             if (stop(started, DEEP_SCAN_TOTAL_MS)) return
-            for (target in expand(pattern, listings)) {
+            for (selectedPattern in TargetedRulePaths.select(pattern, options.targetPackages)) for (target in expand(selectedPattern, listings)) {
                 if (target.exists() && !isSymlink(target)) {
                     add(out, candidate("deep", "app_diagnostics", title, "medium", target,
                         deleteRoot = target.isFile, note = pattern), options, true)

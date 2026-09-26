@@ -44,7 +44,7 @@ internal fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitel
     var detail by remember { mutableStateOf<JSONObject?>(null) }
     val context = LocalContext.current
     val config = model.snapshot.optJSONObject("config") ?: JSONObject()
-    val editable = model.connected && !model.busy && !model.running
+    val editable = model.connected && model.snapshotReady && !model.busy && !model.running
     val availability = model.snapshot.optJSONObject("availability") ?: JSONObject()
     val task = ToolboxCatalog.extensions.firstOrNull { route == "task:${it.id}" }
     val back = { if (routes.size == 1) onBack() else routes = routes.dropLast(1) }
@@ -71,12 +71,15 @@ internal fun ToolboxScreen(model: ToolboxViewModel, onBack: () -> Unit, onWhitel
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
                         bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 28.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (!model.connected || model.running || model.busy) item {
+                    if (!model.connected || !model.snapshotReady || model.running || model.busy || model.errorMessage.isNotBlank()) item {
                         LuoShuGroup { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            DetailStatusText(if (model.running) model.snapshot.optJSONObject("progress")?.optString("phase").orEmpty() else model.message)
+                            DetailStatusText(if (model.running) model.snapshot.optJSONObject("progress")?.optString("phase").orEmpty()
+                                else model.errorMessage.ifBlank { model.message })
                             if (model.running || model.busy) BaiZeProgress()
                             if (model.running) GlassActionButton("停止当前任务", { model.action("toolboxCancel") }, Modifier.fillMaxWidth(), secondary = true)
                             else if (!model.connected) GlassActionButton("连接 Root", model::bind, Modifier.fillMaxWidth(), secondary = true)
+                            else if (!model.busy && (!model.snapshotReady || model.errorMessage.isNotBlank()))
+                                GlassActionButton("重新读取状态", model::retry, Modifier.fillMaxWidth(), secondary = true)
                         } }
                     }
                     when {

@@ -11,6 +11,8 @@ internal object ToolboxAvailability {
         val installed = strings(environment.optJSONArray("installedPackages"))
         val eligible = strings(environment.optJSONArray("eligiblePackages"))
         val unprotected = installed - strings(environment.optJSONArray("protectedPackages"))
+        if ((id in ToolboxCatalog.appGroups || id in setOf("process", "database", "dex2")) &&
+            environment.optString("applicationError").isNotBlank()) return blocked(environment.getString("applicationError"))
         if (id in ToolboxCatalog.existingIds) return blocked("请在原有扫描工作台或文件归类页面操作")
         ToolboxCatalog.appGroups[id]?.let { group ->
             if (group.none { it in installed }) return blocked("未安装对应应用")

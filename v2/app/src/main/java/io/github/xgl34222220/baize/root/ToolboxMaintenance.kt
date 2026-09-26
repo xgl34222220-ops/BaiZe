@@ -6,6 +6,7 @@ import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.os.CancellationSignal
+import android.os.Binder
 import android.system.Os
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,9 +27,42 @@ internal class ToolboxMaintenance(
     private val cgroup: File = File("/sys/fs/cgroup"),
     private val restoreShell: String = "/system/bin/sh"
 ) {
+    private var applicationSnapshot: List<ApplicationInfo>? = null
+    private var applicationError = ""
+
+    private fun applications(): List<ApplicationInfo> {
+        applicationSnapshot?.let { return it }
+        val direct = runCatching {
+            val identity = Binder.clearCallingIdentity()
+            try {
+                @Suppress("DEPRECATION")
+                context.packageManager.getInstalledApplications(0)
+            } finally { Binder.restoreCallingIdentity(identity) }
+        }
+        if (direct.getOrNull()?.isNotEmpty() == true) return direct.getOrThrow().also { applicationSnapshot = it }
+        val user = (context.applicationInfo.uid / 100000).coerceAtLeast(0)
+        val all = command.run(listOf("/system/bin/cmd", "package", "list", "packages", "-U", "--user", "$user"), 8,
+            honourCancel = false, outputLimit = 256000)
+        val third = command.run(listOf("/system/bin/cmd", "package", "list", "packages", "-3", "--user", "$user"), 8,
+            honourCancel = false, outputLimit = 256000)
+        val thirdParty = if (third.success) third.output.lineSequence().filter { it.startsWith("package:") }
+            .map { it.removePrefix("package:").substringBefore(' ').trim() }.toSet() else emptySet()
+        val entries = if (!all.success) emptyList() else all.output.lineSequence().mapNotNull { line ->
+            val match = Regex("^package:([^ ]+)\\s+uid:(\\d+)$").matchEntire(line.trim()) ?: return@mapNotNull null
+            val pkg = match.groupValues[1]
+            if (!RootValidation.packageName.matches(pkg)) return@mapNotNull null
+            ApplicationInfo().apply {
+                packageName = pkg; uid = match.groupValues[2].toIntOrNull() ?: return@mapNotNull null
+                flags = if (pkg in thirdParty) 0 else ApplicationInfo.FLAG_SYSTEM
+            }
+        }.toList()
+        if (entries.isEmpty()) applicationError = "读取应用列表失败：" +
+            (direct.exceptionOrNull()?.message ?: all.output.ifBlank { "系统未返回应用名单" }).take(300)
+        return entries.also { applicationSnapshot = it }
+    }
+
     fun environment(config: JSONObject): JSONObject {
-        @Suppress("DEPRECATION")
-        val installed = context.packageManager.getInstalledApplications(0)
+        val installed = applications()
         val protected = JSONArray(WhitelistRepository().packagesJson()).let { list ->
             (0 until list.length()).map { list.getString(it) }.toSet()
         }
@@ -38,6 +72,7 @@ internal class ToolboxMaintenance(
         val freeze = am && config.optString("processMode") == "freeze" &&
             command.run(listOf("/system/bin/am", "help"), 5, honourCancel = false, outputLimit = 64000).output.contains("freeze [")
         return JSONObject().put("installedPackages", JSONArray(installed.map { it.packageName }))
+            .put("applicationError", applicationError)
             .put("protectedPackages", JSONArray(protected.toList()))
             .put("eligiblePackages", JSONArray(eligible.map { it.packageName }))
             .put("processSupported", am).put("freezeSupported", freeze)
@@ -94,7 +129,7 @@ internal class ToolboxMaintenance(
     }
     private fun installedThirdParty(): Map<String, ApplicationInfo> {
         @Suppress("DEPRECATION")
-        return context.packageManager.getInstalledApplications(0).filter {
+        return applications().filter {
             it.flags and ApplicationInfo.FLAG_SYSTEM == 0 && it.uid % 100000 >= 10000 && it.packageName != context.packageName
         }.associateBy { it.packageName }
     }

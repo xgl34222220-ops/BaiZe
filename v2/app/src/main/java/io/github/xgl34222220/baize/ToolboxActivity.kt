@@ -95,6 +95,8 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
     var connected by mutableStateOf(false); private set
     var busy by mutableStateOf(false); private set
     var message by mutableStateOf("正在连接 Root 服务…"); private set
+    var errorMessage by mutableStateOf(""); private set
+    var snapshotReady by mutableStateOf(false); private set
     var packages by mutableStateOf<List<Pair<String, String>>>(emptyList()); private set
     private var remote: IProfileRootService? = null
     private var polling: Job? = null
@@ -111,7 +113,7 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
                 while (connected) { refresh(); delay(if (running) 1000 else 5000) }
             }
         }
-        override fun onServiceDisconnected(name: ComponentName?) { connected = false; remote = null; message = "Root 连接已断开，点击重连" }
+        override fun onServiceDisconnected(name: ComponentName?) { connected = false; snapshotReady = false; remote = null; message = "Root 连接已断开，点击重连" }
         override fun onBindingDied(name: ComponentName?) { onServiceDisconnected(name); binding = false }
         override fun onNullBinding(name: ComponentName?) { onServiceDisconnected(name); binding = false }
     }
@@ -129,7 +131,7 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun refresh() {
         runCatching { call("toolboxSnapshot") }.onSuccess {
             if (it.optBoolean("success")) {
-                snapshot = it
+                snapshot = it; snapshotReady = true
                 val result = it.optJSONObject("state")?.optJSONObject("result")
                 if (result != null && result.optString("taskId") != lastResultId) {
                     lastResultId = result.optString("taskId")
@@ -137,8 +139,12 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
                 }
                 ToolboxNotifications.show(context, it)
             }
-            else message = it.optString("message", "读取失败")
-        }.onFailure { message = it.message.orEmpty() }
+            else { snapshotReady = false; errorMessage = it.optString("message", "读取失败"); message = errorMessage }
+        }.onFailure { snapshotReady = false; errorMessage = it.message.orEmpty(); message = errorMessage }
+    }
+    fun retry() {
+        errorMessage = ""
+        if (!connected) bind() else viewModelScope.launch { refresh() }
     }
     fun action(operation: String, argument: String? = null) {
         if (busy || !connected) return
@@ -147,8 +153,9 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val result = call(operation, JSONArray().apply { if (argument != null) put(argument) })
                 message = result.optString("message", if (result.optBoolean("success")) "已完成" else "操作失败")
+                errorMessage = if (result.optBoolean("success")) "" else message
                 refresh()
-            } catch (e: Exception) { message = e.message.orEmpty() }
+            } catch (e: Exception) { message = e.message.orEmpty(); errorMessage = message }
             finally { busy = false }
         }
     }

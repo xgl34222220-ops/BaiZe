@@ -192,14 +192,9 @@ internal class ToolboxController(private val context: Context, private val coord
         val engine = ForegroundCacheEngine(context, coordinator.cancelled)
         val white = whitelist.packagesJson()
         val group = ToolboxCatalog.appGroups.getValue(task)
-        val snapshot = engine.scan(white, targetPackages = group) { _, _, _, path -> progress(path) }
-        val paths = JSONArray(whitelist.pathsJson()).let { array -> (0 until array.length()).map { ToolboxFileRules.normalizePath(array.getString(it)) } }
-        val selected = snapshot.items.filter { item ->
-            item.packageName in group &&
-                paths.none { val path = ToolboxFileRules.normalizePath(item.path); path == it || path.startsWith("$it/") || it.startsWith("$path/") }
-        }
+        val paths = JSONArray(whitelist.pathsJson()).let { array -> (0 until array.length()).map { array.getString(it) }.toSet() }
         if (coordinator.cancelled.get()) return JSONObject().put("success", false).put("cancelled", true)
-        val result = engine.clean(snapshot.copy(items = selected), white) { _, _, _, path -> progress(path) }.json()
+        val result = engine.cleanPackages(group, white, paths) { _, _, _, path -> progress(path) }.json()
         if (!coordinator.cancelled.get()) {
             val deep = profileTask("deep", settings, group, progress)
             result.put("deep", deep).put("success", result.optBoolean("success") && deep.optBoolean("success") && deep.optInt("failures") == 0 && !deep.optBoolean("timedOut"))

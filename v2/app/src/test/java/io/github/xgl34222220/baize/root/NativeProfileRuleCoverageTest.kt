@@ -103,6 +103,29 @@ class NativeProfileRuleCoverageTest {
         assertEquals("sample", outside.readText())
     }
 
+    @Test fun targetedDeepScanExpandsOnlySelectedApplicationRules() {
+        val rules = folder.newFolder("targeted-rules")
+        val storage = folder.newFolder("targeted-storage")
+        val target = file(storage, "Android/data/com.example.app/cache/a")
+        val other = file(storage, "Android/data/com.other.app/cache/keep")
+        File(rules, "deep.rules").writeText(listOf(
+            other.parentFile!!.path, target.parentFile!!.path,
+            "${storage.path}/Android/data/*/cache").joinToString("\n"))
+        val engine = NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(),
+            ruleDirectory = rules, sharedRootOverride = listOf(storage))
+        val options = JSONObject().put("targetPackages", org.json.JSONArray().put("com.example.app"))
+        val expanded = mutableListOf<String>()
+        val result = JSONObject(engine.scan("deep", options.toString()) {
+            if (it.phase == "解析深度规则") { assertEquals(2, it.total); expanded += it.path }
+        })
+        assertTrue(result.toString(), result.getBoolean("success"))
+        assertEquals(1, result.getInt("totalCandidates"))
+        val page = JSONObject(engine.page(result.getString("snapshotId"), 0, 50)).getJSONArray("items")
+        assertEquals(target.parentFile!!.path, page.getJSONObject(0).getString("path"))
+        assertFalse(expanded.any { "com.other.app" in it || "/Android/data/*/" in it })
+        assertTrue(other.exists())
+    }
+
     @Test fun hiddenCatalogIncludesMetadataAndThumbnailsButRetainsRecentRecycleAndLogs() {
         val rules = folder.newFolder("rules")
         File(config(), "hidden.rules").copyTo(File(rules, "hidden.rules"))

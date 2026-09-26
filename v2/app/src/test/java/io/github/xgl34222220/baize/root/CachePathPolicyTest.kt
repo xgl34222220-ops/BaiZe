@@ -9,7 +9,8 @@ class CachePathPolicyTest {
     @Test fun coversMultiUserDeviceEncryptedExternalAndWebViewCaches() {
         for (base in listOf("/data/user/0", "/data/user/10", "/data/user_de/10", "/data/data")) {
             for (suffix in listOf("cache", "code_cache", "app_webview/Cache",
-                "app_webview/Default/Code Cache/js", "app_x5webview/profile/GPUCache")) {
+                "app_webview/Default/Code Cache/js", "app_x5webview/profile/GPUCache",
+                "app_webview_remote/Default/Cache", "app_hws_webview7/GPUCache")) {
                 assertTrue("$base/$pkg/$suffix", CachePathPolicy.allows("$base/$pkg/$suffix", pkg))
             }
         }

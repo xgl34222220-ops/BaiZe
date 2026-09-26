@@ -15,17 +15,19 @@ internal open class ToolboxCommand(
     open fun run(arguments: List<String>, seconds: Long = 20, honourCancel: Boolean = true, outputLimit: Int = 4000): Result {
         require(arguments.isNotEmpty() && arguments.none { it.contains('\u0000') })
         if (honourCancel && cancelled.get()) return Result(-1, "已停止", false, true)
-        logDirectory.mkdirs()
-        val log = File.createTempFile("command-", ".log", logDirectory)
+        var log: File? = null
         var process: Process? = null
         return try {
-            process = ProcessBuilder(arguments).redirectErrorStream(true).redirectOutput(log).start()
+            logDirectory.mkdirs()
+            val output = File.createTempFile("command-", ".log", logDirectory)
+            log = output
+            process = ProcessBuilder(arguments).redirectErrorStream(true).redirectOutput(output).start()
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
             var stopped = false
             var timeout = false
             while (!process.waitFor(100, TimeUnit.MILLISECONDS)) {
                 stopped = honourCancel && cancelled.get()
-                timeout = System.nanoTime() >= deadline || log.length() > 2 * 1024 * 1024
+                timeout = System.nanoTime() >= deadline || output.length() > 2 * 1024 * 1024
                 if (stopped || timeout) {
                     process.destroy()
                     if (!process.waitFor(1, TimeUnit.SECONDS)) process.destroyForcibly()
@@ -33,12 +35,12 @@ internal open class ToolboxCommand(
                     break
                 }
             }
-            Result(if (process.isAlive) -1 else process.exitValue(), RootFileStore.tailText(log, outputLimit.coerceIn(1000, 64000)).trim(), timeout, stopped)
+            Result(if (process.isAlive) -1 else process.exitValue(), RootFileStore.tailText(output, outputLimit.coerceIn(1000, 256000)).trim(), timeout, stopped)
         } catch (error: Exception) {
             Result(-1, error.message ?: error.javaClass.simpleName, false, cancelled.get())
         } finally {
             if (process?.isAlive == true) process.destroyForcibly()
-            log.delete()
+            log?.delete()
         }
     }
 }

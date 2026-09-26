@@ -54,6 +54,22 @@ class ToolboxMaintenanceTest {
         write(proc, "123/cgroup", "0::/uid_10001/pid_123\n")
         write(groups, "uid_10001/pid_123/cgroup.freeze", "0")
     }
+    @Test fun packageManagerFailureUsesTheRootCatalogWithoutDisablingOtherTools() {
+        val context = object : android.content.ContextWrapper(app) {
+            override fun getPackageManager(): android.content.pm.PackageManager = throw SecurityException("package query denied")
+        }
+        commands.respond = { args -> ToolboxCommand.Result(0,
+            if ("-U" in args) "package:$pkg uid:10001\npackage:com.android.example uid:1000\n"
+            else "package:$pkg\n", false, false) }
+        val engine = ToolboxMaintenance(context, cancelled, {}, proc, sys, commands, data, state, groups, "/bin/sh")
+        val environment = engine.environment(settings())
+        assertEquals("", environment.getString("applicationError"))
+        assertEquals(2, environment.getJSONArray("installedPackages").length())
+        assertEquals(pkg, environment.getJSONArray("eligiblePackages").getString(0))
+        assertEquals(2, commands.calls.size)
+        engine.environment(settings())
+        assertEquals("Reuse one application catalog during an execution", 2, commands.calls.size)
+    }
     @Test fun pageCacheRequestWritesInterfaceAfterSyncWithoutClaimingDeletedBytes() {
         val node = write(proc, "sys/vm/drop_caches", "0")
         val result = engine().run("memory", settings())

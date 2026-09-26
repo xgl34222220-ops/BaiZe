@@ -11,6 +11,7 @@
 -keep interface io.github.xgl34222220.baize.root.ICleanPlanResumeService { *; }
 -keep interface io.github.xgl34222220.baize.root.ITaskProgressCallback { *; }
 -keep class * implements android.os.IInterface { *; }
+-keep class android.content.pm.IPackageDataObserver** { *; }
 -keepclassmembers class * extends android.os.Binder {
     public *;
 }
