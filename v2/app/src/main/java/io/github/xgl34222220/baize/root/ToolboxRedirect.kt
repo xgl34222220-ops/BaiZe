@@ -38,6 +38,11 @@ internal class ToolboxRedirect(private val cancelled: AtomicBoolean) {
             if (cancelled.get()) break
             val result = runCatching {
                 val source = File(rule.source); val target = File(rule.destination)
+                val protected = JSONArray(WhitelistRepository().pathsJson())
+                for (i in 0 until protected.length()) {
+                    val path = ToolboxFileRules.normalizePath(protected.getString(i))
+                    require(listOf(rule.source, rule.destination).none { it == path || it.startsWith("$path/") || path.startsWith("$it/") }) { "目录命中保护白名单" }
+                }
                 require(source.isDirectory && target.isDirectory && source.canonicalPath == source.absolutePath && target.canonicalPath == target.absolutePath) { "来源/目标目录不存在或包含链接" }
                 if (mounted(rule.source)) {
                     require(matches(rule.source, rule.destination) && stored.optString(rule.source) == rule.destination) { "来源已有其他挂载，未覆盖" }

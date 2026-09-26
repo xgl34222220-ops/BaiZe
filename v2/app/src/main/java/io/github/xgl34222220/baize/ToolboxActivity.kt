@@ -99,6 +99,7 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
     private var remote: IProfileRootService? = null
     private var polling: Job? = null
     private var binding = false
+    private var lastResultId = ""
     private val context get() = getApplication<Application>()
     val running get() = snapshot.optJSONObject("state")?.optBoolean("running") == true
     private val connection = object : ServiceConnection {
@@ -127,7 +128,15 @@ class ToolboxViewModel(application: Application) : AndroidViewModel(application)
     }
     private suspend fun refresh() {
         runCatching { call("toolboxSnapshot") }.onSuccess {
-            if (it.optBoolean("success")) { snapshot = it; ToolboxNotifications.show(context, it) }
+            if (it.optBoolean("success")) {
+                snapshot = it
+                val result = it.optJSONObject("state")?.optJSONObject("result")
+                if (result != null && result.optString("taskId") != lastResultId) {
+                    lastResultId = result.optString("taskId")
+                    message = result.optString("message", "任务已结束")
+                }
+                ToolboxNotifications.show(context, it)
+            }
             else message = it.optString("message", "读取失败")
         }.onFailure { message = it.message.orEmpty() }
     }

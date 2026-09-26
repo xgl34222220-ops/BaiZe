@@ -107,8 +107,20 @@ class FileOrganizerEngine(
     private var snapshot: Snapshot? = null
 
     private var customRules = emptyList<ToolboxFileRules.Rule>()
+    private var protectedPaths = emptySet<String>()
+    private var protectedPackages = emptySet<String>()
+    private fun loadProtection() {
+        val repository = WhitelistRepository(File(stateDir, "whitelist.conf"), File(stateDir, "whitelist.packages"))
+        val paths = JSONArray(repository.pathsJson())
+        protectedPaths = (0 until paths.length()).map { ToolboxFileRules.normalizePath(paths.getString(it)) }.toSet()
+        val packages = JSONArray(repository.packagesJson())
+        protectedPackages = (0 until packages.length()).map { packages.getString(it) }.toSet()
+    }
+    private fun protected(path: String): Boolean = protectedPaths.any { path == it || path.startsWith("$it/") } ||
+        io.github.xgl34222220.baize.ReviewRiskPolicy.appPackage(path) in protectedPackages
 
     fun scan(progress: (Progress) -> Unit): String {
+        loadProtection()
         customRules = ToolboxFileRules.parse(rulesText ?: ToolboxConfig(File(stateDir, "toolbox")).load().optString("organizerRules"))
         val started = SystemClock.elapsedRealtime()
         val items = LinkedHashMap<String, PlannedMove>()
@@ -193,6 +205,7 @@ class FileOrganizerEngine(
     }
 
     fun apply(snapshotId: String, selectionJson: String, progress: (Progress) -> Unit): String {
+        loadProtection()
         val current = validSnapshot(snapshotId)
             ?: return error("snapshot_expired", "文件归类计划不存在或已过期，请重新执行一键归类")
         val selection = parseSelection(selectionJson)
@@ -697,6 +710,7 @@ class FileOrganizerEngine(
         out: MutableMap<String, PlannedMove>
     ) {
         val path = canonical(file)
+        if (protected(path)) return
         val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: return
         val statFingerprint = fingerprint(sourceStat)
         val custom = customRules.firstOrNull { it.accepts(file) }
@@ -706,7 +720,7 @@ class FileOrganizerEngine(
         val destination = if (custom != null) File(custom.destination, file.name)
             else File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
         if (customRules.any { path == it.destination || path.startsWith("${it.destination}/") }) return
-        if (destination.canonicalPath != destination.absolutePath) return
+        if (destination.canonicalPath != destination.absolutePath || protected(destination.path)) return
         val id = sha256Text("$path\u0000$statFingerprint")
         out.putIfAbsent(
             id,
@@ -759,6 +773,7 @@ class FileOrganizerEngine(
 
     private fun validatePlannedMove(item: PlannedMove, source: File, destination: File): String? {
         val sourcePath = canonical(source)
+        if (protected(sourcePath) || protected(destination.path)) return "白名单保护"
         if (sourcePath != item.source) return "源路径已变化"
         if (!sourcePath.startsWith("${item.sourceRoot}/") && sourcePath != item.sourceRoot) return "源目录已变化"
         if (!source.isFile) return "文件已不存在"

@@ -82,11 +82,16 @@ internal class ToolboxController(private val context: Context, private val coord
                 val result = JSONObject(coordinator.runExclusive("toolbox", "正在执行功能队列", "toolbox_failed") { started ->
                     withLease { execute(ids, settings, scheduled, id, started) }.toString()
                 })
-                if (!result.has("finishedAt")) result.put("finishedAt", System.currentTimeMillis()).put("taskId", id)
+                if (!result.has("finishedAt")) {
+                    result.put("finishedAt", System.currentTimeMillis()).put("taskId", id)
+                    config.record(result, false)
+                }
                 state = JSONObject().put("running", false).put("taskId", id).put("result", result)
             } catch (error: Throwable) {
-                state = JSONObject().put("running", false).put("taskId", id)
-                    .put("result", JSONObject().put("success", false).put("message", error.message.orEmpty()))
+                val result = JSONObject().put("success", false).put("message", error.message.orEmpty())
+                    .put("taskId", id).put("finishedAt", System.currentTimeMillis())
+                runCatching { config.record(result, false) }
+                state = JSONObject().put("running", false).put("taskId", id).put("result", result)
             } finally { pending.set(false) }
         }
         return JSONObject().put("success", true).put("accepted", true).put("taskId", id).put("message", "已提交 ${ids.size} 项任务")
@@ -218,6 +223,7 @@ internal class ToolboxController(private val context: Context, private val coord
             val stat = File("/proc/self/stat").readText().substringAfterLast(')').trim().split(Regex("\\s+"))
             File(lock, "start_ticks").writeText(stat[19] + "\n")
             File(lock, "toolbox_token").writeText(token)
+            File(root, "running.env").delete()
             return block()
         } finally {
             if (runCatching { File(lock, "toolbox_token").readText() == token }.getOrDefault(false)) lock.deleteRecursively()
