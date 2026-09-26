@@ -217,7 +217,7 @@ class BaiZeRootService : RootService() {
         }
 
         override fun scanCandidates(whitelistJson: String?): String {
-            if (!running.compareAndSet(false, true)) return busy("cache-scan")
+            if (moduleTaskAlive() || !running.compareAndSet(false, true)) return busy("cache-scan")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
@@ -292,7 +292,7 @@ class BaiZeRootService : RootService() {
                     .put("message", "没有授权清理当前缓存快照")
                     .toString()
             }
-            if (!running.compareAndSet(false, true)) return busy("cache-clean")
+            if (moduleTaskAlive() || !running.compareAndSet(false, true)) return busy("cache-clean")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {

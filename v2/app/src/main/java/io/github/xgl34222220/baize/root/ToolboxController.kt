@@ -25,6 +25,7 @@ internal class ToolboxController(private val context: Context, private val coord
     @Volatile private var state = JSONObject().put("running", false)
     private val whitelist = WhitelistRepository()
     private val updates = ToolboxRuleUpdates(context)
+    private val ruleDirectory by lazy { AppRuleStore.ensure(context) }
 
     init { timer.scheduleWithFixedDelay({ runCatching { tick() } }, 30, 30, TimeUnit.SECONDS) }
 
@@ -60,7 +61,7 @@ internal class ToolboxController(private val context: Context, private val coord
         val history = config.history()
         val recent = JSONArray()
         for (i in 0 until minOf(history.length(), 20)) recent.put(history.getJSONObject(i))
-        val ruleDir = AppRuleStore.ensure(context)
+        val ruleDir = ruleDirectory
         return JSONObject().put("success", true).put("config", config.load())
             .put("state", JSONObject(state.toString())).put("progress", JSONObject(coordinator.currentState()))
             .put("statistics", config.stats()).put("history", recent).put("device", maintenance.device())

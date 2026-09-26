@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class ForegroundCacheEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
-    private val dataRoot: File = File("/data")
+    private val dataRoot: File = File("/data"),
+    private val redirectFile: File = File(RootPaths.STATE_DIR, "toolbox/mounts.json")
 ) {
     data class Item(
         val packageName: String,
@@ -114,7 +115,10 @@ internal class ForegroundCacheEngine(
 
     private data class Node(val file: File, val post: Boolean)
 
+    private var redirectedRoots = emptySet<String>()
+
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
+        redirectedRoots = ToolboxRedirect.protectedRoots(redirectFile)
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson)
         val applications = installedApplications()
@@ -182,6 +186,7 @@ internal class ForegroundCacheEngine(
         whitelistJson: String,
         progress: (String, Int, Int, String) -> Unit
     ): CleanResult {
+        redirectedRoots = ToolboxRedirect.protectedRoots(redirectFile)
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson)
         var processed = 0
@@ -432,7 +437,7 @@ internal class ForegroundCacheEngine(
     }
 
     private fun knownCachePath(path: String, packageName: String): Boolean =
-        CachePathPolicy.allows(logicalPath(path), packageName)
+        CachePathPolicy.allows(logicalPath(path), packageName) && !ToolboxRedirect.protects(logicalPath(path), redirectedRoots)
 
     private fun installedApplications(): Map<String, ApplicationInfo> = runCatching {
         context.packageManager.getInstalledApplications(0).associateBy { it.packageName }

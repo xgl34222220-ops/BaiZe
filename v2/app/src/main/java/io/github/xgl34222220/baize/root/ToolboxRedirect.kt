@@ -88,6 +88,10 @@ internal class ToolboxRedirect(private val cancelled: AtomicBoolean) {
     }
     private fun error(message: String) = JSONObject().put("success", false).put("message", message)
     companion object {
+        fun protectedRoots(file: File = File(RootPaths.STATE_DIR, "toolbox/mounts.json")): Set<String> =
+            ToolboxConfig.read(file).keys().asSequence().take(100).filter { Regex("/data/media/[0-9]+/.+").matches(it) }.toSet()
+        fun protects(path: String, roots: Set<String>): Boolean = roots.any { path == it || path.startsWith("$it/") || it.startsWith("$path/") }
+
         fun directoryRules(raw: String): List<ToolboxFileRules.Rule> = ToolboxFileRules.parse(raw).also { rules ->
             require(rules.isNotEmpty()) { "请先设置目录规则" }
             require(rules.all { it.patterns == listOf("*") && it.source.none { c -> c in "*?" } }) { "绑定重定向仅支持完整目录：来源+目标，不能按文件后缀过滤" }

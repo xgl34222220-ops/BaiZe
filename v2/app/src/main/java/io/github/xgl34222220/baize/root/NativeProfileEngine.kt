@@ -161,7 +161,10 @@ internal class NativeProfileEngine(
         })
         .toString()
 
+    private var redirectedRoots = emptySet<String>()
+
     fun scan(profile: String, optionsJson: String, progress: (Progress) -> Unit): String {
+        redirectedRoots = ToolboxRedirect.protectedRoots()
         pruneSnapshots()
         val id = profile.trim().lowercase()
         val options = parseOptions(optionsJson)
@@ -308,6 +311,7 @@ internal class NativeProfileEngine(
     }
 
     fun page(snapshotId: String, offset: Int, limit: Int): String {
+        redirectedRoots = ToolboxRedirect.protectedRoots()
         val snapshot = validSnapshot(snapshotId)
             ?: return JSONObject().put("error", "snapshot_expired").put("message", "扫描快照不存在或已过期").put("items", JSONArray()).toString()
         val start = max(0, offset)
@@ -351,6 +355,7 @@ internal class NativeProfileEngine(
         optionsJson: String,
         progress: (Progress) -> Unit
     ): String {
+        redirectedRoots = ToolboxRedirect.protectedRoots()
         val snapshot = validSnapshot(snapshotId)
             ?: return JSONObject().put("error", "snapshot_expired").put("message", "扫描快照不存在或已过期").toString()
         if (snapshot.profile == "deep") {
@@ -1163,6 +1168,8 @@ internal class NativeProfileEngine(
 
     private fun hardProtected(path: String): Boolean {
         val normalized = path.trimEnd('/').ifBlank { "/" }
+        val shared = ToolboxFileRules.normalizePath(normalized)
+        if (redirectedRoots.any { shared == it || shared.startsWith("$it/") }) return true
         if (HARD_EXACT.contains(normalized)) return true
         if (READ_ONLY.any { normalized == it || normalized.startsWith("$it/") }) return true
         return normalized == "/data/adb" || normalized.startsWith("/data/adb/") ||

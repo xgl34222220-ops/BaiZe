@@ -10,7 +10,7 @@ import java.security.MessageDigest
 /** Rule-only updates from BaiZe's own repository, with bounded reads, digest validation and rollback. */
 internal class ToolboxRuleUpdates(private val context: Context) {
     fun state(): JSONObject {
-        val dir = AppRuleStore.ensure(context)
+        val dir = File(RootPaths.STATE_DIR, "app-rules")
         return JSONObject().put("metadata", RootFileStore.readEnv(File(dir, "rules.meta.env")))
             .put("override", ToolboxConfig.read(File(dir, "override.json")))
             .put("rollbackAvailable", File(dir, "deep.rules.previous").isFile)

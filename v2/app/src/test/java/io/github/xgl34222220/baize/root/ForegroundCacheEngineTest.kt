@@ -64,6 +64,21 @@ class ForegroundCacheEngineTest {
         assertEquals("1234", File(root, "user/0/$pkg/files/keep").readText())
     }
 
+    @Test fun directoryRedirectProtectsAlreadyScannedCacheAndFutureDiscovery() {
+        val root = folder.newFolder("redirect-data")
+        val keep = file(root, "media/0/Android/data/$pkg/cache/keep")
+        val redirects = File(folder.root, "mounts.json")
+        val engine = ForegroundCacheEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(), root, redirects)
+        val before = engine.scan("[]") { _, _, _, _ -> }
+        assertEquals(1, before.items.size)
+        redirects.writeText(org.json.JSONObject().put("/data/media/0/Android/data/$pkg/cache", "/data/media/0/Important").toString())
+        val result = engine.clean(before, "[]") { _, _, _, _ -> }
+        assertEquals(1, result.protectedCandidates)
+        assertEquals(0L, result.deletedBytes)
+        assertTrue(keep.exists())
+        assertTrue(engine.scan("[]") { _, _, _, _ -> }.items.isEmpty())
+    }
+
     @Test fun whitelistSkipsWebViewAtDiscoveryAndProtectsAlreadyScannedCaches() {
         val root = folder.newFolder("data")
         val keep = file(root, "user/0/$pkg/app_webview/Default/Cache/a")
