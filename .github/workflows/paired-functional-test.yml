@@ -16,6 +16,8 @@ concurrency:
 
 env:
   BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+  BAIZE_EXPECTED_VERSION: '2.0.0'
+  BAIZE_EXPECTED_VERSION_CODE: '30005'
 
 jobs:
   build-paired-test:
@@ -32,8 +34,10 @@ jobs:
         run: |
           set -euo pipefail
           SHORT_SHA=$(git rev-parse --short=8 HEAD)
-          echo "BAIZE_TEST_LABEL=functional-test+$SHORT_SHA" >> "$GITHUB_ENV"
-          echo "BAIZE_VERSION=$(sed -n 's/^version=//p' module.prop | head -n1)" >> "$GITHUB_ENV"
+          BAIZE_VERSION=$(sed -n 's/^version=//p' module.prop | head -n1)
+          test "$BAIZE_VERSION" = "v$BAIZE_EXPECTED_VERSION"
+          echo "BAIZE_TEST_LABEL=$BAIZE_VERSION-functional-test+$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION=$BAIZE_VERSION" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -79,6 +83,14 @@ jobs:
         working-directory: v2
         run: sh scripts/build-native.sh
 
+      - name: Verify foreground cache behavior
+        working-directory: v2
+        run: >-
+          gradle --no-daemon :app:testDebugUnitTest
+          --tests 'io.github.xgl34222220.baize.root.CacheCleanQueueTest'
+          --tests 'io.github.xgl34222220.baize.root.CachePathPolicyTest'
+          --tests 'io.github.xgl34222220.baize.root.ForegroundCacheEngineTest'
+
       - name: Build signed App
         working-directory: v2
         run: gradle --no-daemon :app:compileReleaseKotlin :app:assembleRelease
@@ -98,7 +110,14 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > "$OUT/signing-certificate.txt"
           APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$OUT/signing-certificate.txt" | tr -d ':[:space:]')
           test "$APK_CERT" = "$BAIZE_CERT_SHA256"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$OUT/apk-version.txt"
+          grep -F "package: name='io.github.xgl34222220.baize' versionCode='$BAIZE_EXPECTED_VERSION_CODE' versionName='$BAIZE_EXPECTED_VERSION' " "$OUT/apk-version.txt"
           unzip -tq "$ZIP"
+          unzip -p "$ZIP" module.prop > "$OUT/module-version.txt"
+          for PROP in module.prop v2/module/module.prop "$OUT/module-version.txt"; do
+            grep -Fx "version=v$BAIZE_EXPECTED_VERSION" "$PROP"
+            grep -Fx "versionCode=$BAIZE_EXPECTED_VERSION_CODE" "$PROP"
+          done
           unzip -p "$ZIP" app/baize.apk > "$RUNNER_TEMP/embedded.apk"
           cmp "$APK" "$RUNNER_TEMP/embedded.apk"
           cp "$APK" "$OUT/BaiZe-$BAIZE_TEST_LABEL.apk"
