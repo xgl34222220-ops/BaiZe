@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Config(sdk = [35], application = Application::class, manifest = Config.NONE)
 class ToolboxMaintenanceTest {
     @get:Rule val folder = TemporaryFolder()
-    private val app get() = RuntimeEnvironment.getApplication<Application>()
+    private val app get() = RuntimeEnvironment.getApplication()
     private val pkg = "com.baizetest.example"
     private lateinit var proc: File
     private lateinit var data: File

@@ -38,6 +38,7 @@ internal class ToolboxMaintenance(
         val freeze = am && config.optString("processMode") == "freeze" &&
             command.run(listOf("/system/bin/am", "help"), 5, honourCancel = false, outputLimit = 64000).output.contains("freeze [")
         return JSONObject().put("installedPackages", JSONArray(installed.map { it.packageName }))
+            .put("protectedPackages", JSONArray(protected.toList()))
             .put("eligiblePackages", JSONArray(eligible.map { it.packageName }))
             .put("processSupported", am).put("freezeSupported", freeze)
             .put("compileSupported", File("/system/bin/cmd").canExecute())

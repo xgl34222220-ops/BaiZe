@@ -11,8 +11,10 @@ class ToolboxAvailabilityTest {
         val environment = JSONObject()
         assertFalse(ToolboxAvailability.check("wechat", config(), environment).getBoolean("available"))
         environment.put("installedPackages", JSONArray().put("com.tencent.mm"))
+        environment.put("protectedPackages", JSONArray().put("com.tencent.mm"))
         assertTrue(ToolboxAvailability.check("wechat", config(), environment).getString("message").contains("保护"))
-        environment.put("eligiblePackages", JSONArray().put("com.tencent.mm"))
+        // A preinstalled/system app can still have disposable caches; only maintenance is third-party-only.
+        environment.put("protectedPackages", JSONArray())
         assertTrue(ToolboxAvailability.check("wechat", config(), environment).getBoolean("available"))
     }
     @Test fun redirectPrerequisiteIsCheckedBeforeAnyFileMovement() {
