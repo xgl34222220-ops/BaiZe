@@ -51,7 +51,7 @@ lock_owner_alive() {
   case "$old_ticks" in ''|*[!0-9]*) old_ticks=0 ;; esac
   [ "$old_ticks" -eq 0 ] || [ "$current_ticks" = "$old_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$old_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_deep_snapshot*) return 0 ;; esac
+  case "$cmdline" in *io.github.xgl34222220.baize*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*baize_engine*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 worker_owner_alive() {

@@ -25,7 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class FileOrganizerEngine(
     private val cancelled: AtomicBoolean,
-    private val stateDir: File = File("/data/adb/baize-v2")
+    private val stateDir: File = File("/data/adb/baize-v2"),
+    private val rulesText: String? = null,
+    private val customOnly: Boolean = false
 ) {
     data class Progress(
         val phase: String,
@@ -104,11 +106,13 @@ class FileOrganizerEngine(
     @Volatile
     private var snapshot: Snapshot? = null
 
+    private var customRules = emptyList<ToolboxFileRules.Rule>()
+
     fun scan(progress: (Progress) -> Unit): String {
-        cancelled.set(false)
+        customRules = ToolboxFileRules.parse(rulesText ?: ToolboxConfig(File(stateDir, "toolbox")).load().optString("organizerRules"))
         val started = SystemClock.elapsedRealtime()
         val items = LinkedHashMap<String, PlannedMove>()
-        val indexed = collectSharedIndex(started, items, progress)
+        val indexed = if (customRules.isEmpty() && !customOnly) collectSharedIndex(started, items, progress) else null
         val sourceCount: Int
         val coverage: JSONArray
         if (indexed != null) {
@@ -530,6 +534,8 @@ class FileOrganizerEngine(
             }
         }
 
+        customRules.flatMap { it.roots() }.forEach { add(it, "自定义规则", SourcePolicy.FULL_DOWNLOAD_TREE) }
+        if (customOnly) return roots.values.toList()
         val mediaRoots = mediaUserRoots()
         mediaRoots.forEach { mediaRoot ->
             add(mediaRoot, "内部存储根目录", SourcePolicy.TOP_LEVEL_ONLY)
@@ -693,9 +699,14 @@ class FileOrganizerEngine(
         val path = canonical(file)
         val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: return
         val statFingerprint = fingerprint(sourceStat)
-        val category = category(file.name)
+        val custom = customRules.firstOrNull { it.accepts(file) }
+        if (customOnly && custom == null) return
+        val category = category(file.name).ifBlank { if (custom != null) "自定义" else "" }
         if (category.isBlank()) return
-        val destination = File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
+        val destination = if (custom != null) File(custom.destination, file.name)
+            else File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
+        if (customRules.any { path == it.destination || path.startsWith("${it.destination}/") }) return
+        if (destination.canonicalPath != destination.absolutePath) return
         val id = sha256Text("$path\u0000$statFingerprint")
         out.putIfAbsent(
             id,
@@ -754,6 +765,7 @@ class FileOrganizerEngine(
         if (isSymlink(source)) return "符号链接受保护"
         if (!allowedOrganizerSource(sourcePath)) return "源文件不再属于允许的归类来源"
         if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
+        if (destination.canonicalPath != destination.absolutePath) return "目标路径包含符号链接"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
         return null
     }
@@ -1046,6 +1058,7 @@ class FileOrganizerEngine(
     }
 
     private fun allowedOrganizerSource(path: String): Boolean {
+        if (customRules.any { it.accepts(File(path)) }) return true
         if (MEDIA_ROOT_FILE.matches(path)) return true
         if (APP_MEDIA_FILE.matches(path)) return true
         if (APP_EXTERNAL_FILES_FILE.matches(path)) return true

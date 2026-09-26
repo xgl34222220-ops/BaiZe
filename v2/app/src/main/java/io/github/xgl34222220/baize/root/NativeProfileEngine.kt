@@ -50,7 +50,8 @@ internal class NativeProfileEngine(
         val allowHighRisk: Boolean,
         val maxAutoRisk: String,
         val highRiskMode: String,
-        val includeReviewRules: Boolean = false
+        val includeReviewRules: Boolean = false,
+        val targetPackages: Set<String> = emptySet()
     )
 
     private data class Candidate(
@@ -758,6 +759,13 @@ internal class NativeProfileEngine(
         if (!path.startsWith("/") || hardProtected(path)) return
         if (!includeHighInScan && (candidate.risk == "high" || candidate.risk == "critical")) return
         val owner = candidate.packageName.ifBlank { ReviewRiskPolicy.appPackage(path) }
+        if (options.targetPackages.isNotEmpty()) {
+            if (owner !in options.targetPackages) return
+            // App-specific one-tap tasks never infer that an unfamiliar data directory is disposable.
+            val segments = path.lowercase().split('/')
+            val disposable = segments.any { it in setOf("cache", "code_cache", ".cache", "caches", "logs", "log", "tmp", "temp", "gpucache", "crashpad") }
+            if (!disposable || candidate.risk in setOf("critical", "high")) return
+        }
         val blocked = when {
             whitelisted(candidate.copy(path = path, packageName = owner), options) -> "白名单保护；移出白名单后重新扫描才可选择"
             candidate.risk == "critical" -> "系统或应用关键数据，不参与清理"
@@ -1026,7 +1034,8 @@ internal class NativeProfileEngine(
             json.optString("highRiskMode", "manual_quarantine").lowercase().let {
                 if (it in setOf("audit", "manual_quarantine", "recommended_quarantine")) it else "manual_quarantine"
             },
-            json.optBoolean("includeReviewRules", false)
+            json.optBoolean("includeReviewRules", false),
+            strings(json.optJSONArray("targetPackages"))
         )
     }
 

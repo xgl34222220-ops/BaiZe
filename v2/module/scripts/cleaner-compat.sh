@@ -67,6 +67,7 @@ pid_is_safesweep() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
+    *io.github.xgl34222220.baize*) return 0 ;;
     *"$MODULE_TAG"*cleaner.sh*|*"$MODULE_TAG"*job-runner.sh*|*"$MODULE_TAG"*webctl.sh*|*apk-scanner.sh*|*apk-scanner.sh*) return 0 ;;
   esac
   return 1

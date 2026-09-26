@@ -143,11 +143,15 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
         CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "扫描完整规则库，按风险查看结果", profile = "deep", dangerous = true)
     )
 
+    val toolboxContext = androidx.compose.ui.platform.LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         item { DetailPageHeader("规则与保护", "", actions.onBack) }
+        item { DetailGlassPanel { TextButton(onClick = {
+            toolboxContext.startActivity(Intent(toolboxContext, ToolboxActivity::class.java))
+        }) { Text("打开功能控制台 · 专项清理与系统维护") } } }
         item { DetailSectionHeader("规则范围") }
         item { CleanCenterGroup(rules, openItem) }
         item { DetailSectionHeader("保护与策略") }

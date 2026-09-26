@@ -64,6 +64,7 @@ fun CleanScreenMiuix(
     expandedCategory: String,
     onExpandedCategoryChanged: (String) -> Unit
 ) {
+    val toolboxContext = androidx.compose.ui.platform.LocalContext.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
@@ -121,6 +122,10 @@ fun CleanScreenMiuix(
         }
         item(key = "clean-manual") {
             LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "功能控制台", "专项清理、系统维护与独立计划", {
+                    toolboxContext.startActivity(android.content.Intent(toolboxContext, io.github.xgl34222220.baize.ToolboxActivity::class.java))
+                })
+                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "分类管理与清理", actions.onScan)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩展扫描范围", actions.onDeepClean)

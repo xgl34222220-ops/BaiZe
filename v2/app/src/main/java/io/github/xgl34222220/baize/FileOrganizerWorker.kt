@@ -55,6 +55,7 @@ class FileOrganizerWorker(appContext: Context, params: WorkerParameters) : Corou
             return Result.retry()
         }
         return try {
+            withContext(Dispatchers.IO) { RootServiceClients.profileExchange(session.service, applicationContext.cacheDir, "toolboxTick") }
             val config = runCatching { JSONObject(session.service.getSchedulerConfig()) }.getOrNull()
             if (config == null) {
                 writeResult(applicationContext, "Root 计划配置读取失败")

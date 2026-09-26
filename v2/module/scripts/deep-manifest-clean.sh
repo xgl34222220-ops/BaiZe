@@ -56,7 +56,7 @@ pid_is_task() {
   [ "$pid" -gt 1 ] 2>/dev/null || return 1
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *deep-manifest-clean.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*baize_deep_snapshot*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;; esac
+  case "$cmdline" in *io.github.xgl34222220.baize*|*deep-manifest-clean.sh*|*cleaner.sh*|*task-worker.sh*|*worker-runner.sh*|*baize_deep_snapshot*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*apk-cleaner.sh*|*one-pass-scan.sh*|*cache-snapshot*|*cache-lane-worker.sh*|*deep-scan-manifest.sh*|*deep-manifest-clean.sh*|*profile-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_deep_snapshot*) return 0 ;; esac
   return 1
 }
 

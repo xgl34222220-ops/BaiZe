@@ -61,7 +61,7 @@ lock_alive() {
   case "$la_ticks" in ''|*[!0-9]*) la_ticks=0 ;; esac
   [ "$la_ticks" -eq 0 ] || [ "$current_ticks" = "$la_ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$la_pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*cache-snapshot-clean.sh*|*native-cleaner.sh*|*baize_engine*) return 0 ;; esac
+  case "$cmdline" in *io.github.xgl34222220.baize*|*organizer-worker.sh*|*worker-runner.sh*|*cleaner.sh*|*task-worker.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*cache-snapshot-clean.sh*|*native-cleaner.sh*|*baize_engine*) return 0 ;; esac
   return 1
 }
 

@@ -5,6 +5,7 @@ import java.io.File
 /** State files describe a task; only a live process with the recorded identity owns it. */
 internal object RuntimeTaskOwnership {
     private val markers = listOf(
+        "io.github.xgl34222220.baize",
         "task-worker.sh", "worker-runner.sh", "organizer-worker.sh", "cache-lane-worker.sh",
         "cleaner.sh", "cleaner-compat.sh", "native-cleaner.sh", "profile-cleaner.sh",
         "cache-snapshot-clean.sh", "cache-transaction.sh", "one-pass-scan.sh", "native-cleaner.sh",

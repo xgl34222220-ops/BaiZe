@@ -323,6 +323,7 @@ internal class ModuleTaskController(
         val totals = RootFileStore.readEnv(File(stateDir, "totals.env"))
         val latest = RootFileStore.readEnv(File(stateDir, "latest.env"))
         val running = RootFileStore.readEnv(File(stateDir, "running.env"))
+        val config = JSONObject(schedulerRepository.configJson())
         return JSONObject()
             .put("moduleInstalled", File(RootPaths.MODULE_DIR, "module.prop").isFile)
             .put("cleanerReady", RootPaths.script("cleaner.sh").isFile)
@@ -333,7 +334,7 @@ internal class ModuleTaskController(
             .put("module", module)
             .put("totals", totals)
             .put("latest", latest)
-            .put("scanPerformance", scanPerformanceJson())
+            .put("scanPerformance", scanPerformanceJson(config))
             .put(
                 "appDetails",
                 if (latest.optString("mode").startsWith("apk-")) JSONArray() else appDetailsJson(
@@ -344,15 +345,14 @@ internal class ModuleTaskController(
             .put("otherDetails", if (latest.optString("mode").startsWith("apk-")) apkDetailsJson(File(stateDir, "reports/latest.tsv")) else otherDetailsJson(File(stateDir, "reports/latest.tsv")))
             .put("coverage", diagnostics.scanCoverage(latest.optString("mode").startsWith("apk-")))
             .put("running", running)
-            .put("config", JSONObject(schedulerRepository.configJson()))
+            .put("config", config)
             .toString()
     }
 
-    private fun scanPerformanceJson(): JSONObject {
+    private fun scanPerformanceJson(config: JSONObject = JSONObject(schedulerRepository.configJson())): JSONObject {
         val stateDir = File(RootPaths.STATE_DIR)
         val cache = RootFileStore.readEnv(File(stateDir, "cache_scan.env"))
         val profile = RootFileStore.readEnv(File(stateDir, "root-worker-profile.env"))
-        val config = JSONObject(schedulerRepository.configJson())
         val requestedMode = config.optInt("scan_root_workers", 0).coerceIn(0, 4)
         val actualWorkers = cache.optInt("root_workers", profile.optInt("last_workers", 1)).coerceIn(1, 4)
         val recommendedWorkers = profile.optInt("recommended_workers", 1).coerceIn(1, 4)

@@ -43,6 +43,7 @@ pid_is_baize_task() {
   [ -r "/proc/$pid/cmdline" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
   case "$cmdline" in
+    *io.github.xgl34222220.baize*) return 0 ;;
     *baize_v2*cleaner.sh*|*baize-v2*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*cache-snapshot-clean.sh*|*apk-cleaner.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*organizer-worker.sh*|*worker-runner.sh*|*task-worker.sh*|*baize_engine*) return 0 ;;
   esac
   return 1

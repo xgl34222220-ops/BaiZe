@@ -90,6 +90,7 @@ jobs:
           --tests 'io.github.xgl34222220.baize.root.CacheCleanQueueTest'
           --tests 'io.github.xgl34222220.baize.root.CachePathPolicyTest'
           --tests 'io.github.xgl34222220.baize.root.ForegroundCacheEngineTest'
+          --tests 'io.github.xgl34222220.baize.root.Toolbox*Test'
 
       - name: Build signed App
         working-directory: v2

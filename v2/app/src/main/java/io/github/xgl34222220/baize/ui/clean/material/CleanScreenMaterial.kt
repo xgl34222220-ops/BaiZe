@@ -72,6 +72,7 @@ fun CleanScreenMaterial(
     expandedCategory: String,
     onExpandedCategoryChanged: (String) -> Unit
 ) {
+    val toolboxContext = androidx.compose.ui.platform.LocalContext.current
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var showDailyTimeDialog by remember { mutableStateOf(false) }
     var showDailyGraceDialog by remember { mutableStateOf(false) }
@@ -104,6 +105,10 @@ fun CleanScreenMaterial(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item { MaterialCleanHeader() }
+        item {
+            Button(onClick = { toolboxContext.startActivity(android.content.Intent(toolboxContext, io.github.xgl34222220.baize.ToolboxActivity::class.java)) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text("功能控制台 · 专项清理与系统维护") }
+        }
         item { MaterialAutomaticSummary(state, actions) }
         item { MaterialSectionHeader("定时模式", "智能、严格间隔或每日固定时间") }
         item {

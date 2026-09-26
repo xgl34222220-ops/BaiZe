@@ -38,7 +38,10 @@ class BaiZeProfileRootService : RootService() {
         super.onCreate()
         RootCrashRecorder.install(this)
         RootMediaScanQueue.onServiceStart(this)
+        toolbox
     }
+
+    private val toolbox by lazy { ToolboxController(this, coordinator) }
 
     private val binder = object : IProfileRootService.Stub() {
         override fun exchangeJson(operation: String?, request: ParcelFileDescriptor?): ParcelFileDescriptor =
@@ -46,7 +49,9 @@ class BaiZeProfileRootService : RootService() {
         override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int =
             JsonFileTransport.serveInto(request, response) { dispatchJson(operation, it) }
 
-        private fun dispatchJson(operation: String?, arguments: JSONArray): String = when (operation) {
+        private fun dispatchJson(operation: String?, arguments: JSONArray): String {
+            if (operation?.startsWith("toolbox") == true) return toolbox.exchange(operation, arguments)
+            return when (operation) {
             "scanProfile" -> {
                 require(arguments.length() == 2)
                 scanProfile(arguments.getString(0), arguments.getString(1))
@@ -134,6 +139,7 @@ class BaiZeProfileRootService : RootService() {
                     }
             }
             else -> throw IllegalArgumentException("不支持的服务请求")
+            }
         }
 
         override fun ping(): String {

@@ -23,7 +23,10 @@ internal object AppRuleStore {
 
     fun ensure(context: Context): File {
         val root = File(RootPaths.STATE_DIR, "app-rules").apply { mkdirs() }
+        val override = ToolboxRuleUpdates.overrideValid(root)
         files.forEach { name ->
+            if (override && name in setOf("deep.rules", "rules.meta.env")) return@forEach
+            if (name == "custom.rules" && File(root, "custom.user").isFile && File(root, name).isFile) return@forEach
             val target = File(root, name)
             val bytes = runCatching { context.assets.open(name).use { it.readBytes() } }.getOrNull() ?: return@forEach
             if (target.isFile && target.length() == bytes.size.toLong() &&

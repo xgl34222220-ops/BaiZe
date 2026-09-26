@@ -186,7 +186,7 @@ scheduler_task_alive() {
   actual=$(proc_start_ticks "$pid"); case "$ticks" in ''|*[!0-9]*) ticks=0 ;; esac
   [ "$ticks" -eq 0 ] || [ "$actual" = "$ticks" ] || return 1
   cmdline=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
-  case "$cmdline" in *task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_engine*) return 0;; esac
+  case "$cmdline" in *io.github.xgl34222220.baize*|*task-worker.sh*|*worker-runner.sh*|*organizer-worker.sh*|*cleaner.sh*|*native-cleaner.sh*|*profile-cleaner.sh*|*apk-scanner.sh*|*apk-scanner.sh*|*apk-cleaner.sh*|*baize_engine*) return 0;; esac
   return 1
 }
 clear_stale_task_markers() {
