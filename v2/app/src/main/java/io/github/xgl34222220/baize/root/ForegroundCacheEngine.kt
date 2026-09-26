@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.root
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
@@ -23,7 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 internal class ForegroundCacheEngine(
     private val context: Context,
-    private val cancelled: AtomicBoolean
+    private val cancelled: AtomicBoolean,
+    private val dataRoot: File = File("/data")
 ) {
     data class Item(
         val packageName: String,
@@ -115,18 +117,16 @@ internal class ForegroundCacheEngine(
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson)
-        val labels = installedLabels()
-        val roots = discoverCacheRoots(whitelist, labels)
+        val applications = installedApplications()
+        val labels = HashMap<String, String>()
+        progress("正在发现应用缓存目录", 0, 0, "")
+        val roots = discoverCacheRoots(whitelist, applications.keys)
         val items = ArrayList<Item>(roots.size)
         var totalBytes = 0L
         var totalFiles = 0L
         var visitedDirs = 0L
 
-        val workerCount = minOf(
-            roots.size.coerceAtLeast(1),
-            (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
-        )
-        val executor = Executors.newFixedThreadPool(workerCount)
+        val executor = Executors.newFixedThreadPool(workerCount(roots.size))
         try {
             val completions = ExecutorCompletionService<MeasuredRoot>(executor)
             roots.forEach { seed ->
@@ -146,7 +146,11 @@ internal class ForegroundCacheEngine(
                 if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L) {
                     items += Item(
                         packageName = seed.packageName,
-                        appName = labels[seed.packageName].orEmpty().ifBlank { seed.packageName },
+                        appName = labels.getOrPut(seed.packageName) {
+                            applications[seed.packageName]?.let { info ->
+                                runCatching { context.packageManager.getApplicationLabel(info).toString() }.getOrNull()
+                            }.orEmpty().ifBlank { seed.packageName }
+                        },
                         category = seed.category,
                         path = seed.path,
                         bytes = stats.bytes,
@@ -192,44 +196,45 @@ internal class ForegroundCacheEngine(
         val details = JSONArray()
         val remaining = ArrayList<Item>()
 
-        snapshot.items.forEachIndexed { index, item ->
-            if (cancelled.get()) return@forEachIndexed
+        val outcomes = arrayOfNulls<CleanOutcome>(snapshot.items.size)
+        val groups = snapshot.items.withIndex().groupBy { it.value.packageName }.values.toList()
+        progress("正在清理应用缓存", 0, snapshot.items.size, "")
+        CacheCleanQueue.run(groups, workerCount(groups.size), cancelled, process = { indexed ->
+            cleanItem(indexed.value, whitelist)
+        }, completed = { indexed, result ->
+            outcomes[indexed.index] = result
             processed += 1
-            progress("正在清理应用缓存", index, snapshot.items.size, item.path)
-            if (item.packageName in whitelist || !knownCachePath(item.path, item.packageName)) {
-                protected += 1
+            progress("正在清理应用缓存", processed, snapshot.items.size, indexed.value.path)
+        })
+
+        // Aggregate on the caller thread, in snapshot order. Unstarted roots remain available.
+        snapshot.items.forEachIndexed { index, item ->
+            val outcome = outcomes[index]
+            if (outcome == null) {
                 remaining += item
-                if (details.length() < MAX_DETAILS) details.put(detail(item, "protected", "白名单或路径保护", 0, 0, 0))
                 return@forEachIndexed
             }
-            val root = File(item.path)
-            val stat = lstat(root)
-            if (stat == null || !OsConstants.S_ISDIR(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) {
-                changed += 1
-                remaining += item
-                if (details.length() < MAX_DETAILS) details.put(detail(item, "changed", "缓存目录已变化", 0, 0, 0))
-                return@forEachIndexed
+            val stats = outcome.stats
+            deletedBytes += stats.bytes
+            deletedFiles += stats.files
+            deletedDirs += stats.directories
+            when (outcome.action) {
+                "protected" -> protected++
+                "changed" -> changed++
+                "partial" -> { partial++; failed++ }
+                "cleaned" -> cleaned++
             }
-            val result = clearChildren(root)
-            deletedBytes += result.bytes
-            deletedFiles += result.files
-            deletedDirs += result.directories
-            when {
-                !result.complete -> {
-                    partial += 1
-                    remaining += item
-                    if (details.length() < MAX_DETAILS) details.put(detail(item, "partial", "部分文件未能删除", result.bytes, result.files, result.directories))
-                }
-                result.files > 0 || result.directories > 0 -> {
-                    cleaned += 1
-                    if (details.length() < MAX_DETAILS) details.put(detail(item, "cleaned", "", result.bytes, result.files, result.directories))
-                }
-                else -> {
-                    changed += 1
-                    if (details.length() < MAX_DETAILS) details.put(detail(item, "changed", "目录已经为空", 0, 0, 0))
-                }
+            if (outcome.keep) {
+                remaining += if (outcome.action == "partial") item.copy(
+                    bytes = (item.bytes - stats.bytes).coerceAtLeast(0L),
+                    files = (item.files - stats.files).coerceAtLeast(0L),
+                    directories = (item.directories - stats.directories).coerceAtLeast(0L),
+                    complete = false
+                ) else item
             }
-            if (!result.complete) failed += 1
+            if (details.length() < MAX_DETAILS) details.put(detail(
+                item, outcome.action, outcome.reason, stats.bytes, stats.files, stats.directories
+            ))
         }
 
         return CleanResult(
@@ -250,6 +255,34 @@ internal class ForegroundCacheEngine(
         )
     }
 
+    private data class CleanOutcome(
+        val action: String,
+        val reason: String,
+        val stats: Stats = Stats(0, 0, 0, true),
+        val keep: Boolean = false
+    )
+
+    private fun cleanItem(item: Item, whitelist: Set<String>): CleanOutcome {
+        if (item.packageName in whitelist || !knownCachePath(item.path, item.packageName)) {
+            return CleanOutcome("protected", "白名单或路径保护", keep = true)
+        }
+        val root = File(item.path)
+        val stat = lstat(root)
+        if (stat == null || !OsConstants.S_ISDIR(stat.st_mode) || canonical(root) != item.path) {
+            return CleanOutcome("changed", "缓存目录已变化", keep = true)
+        }
+        val result = clearChildren(root)
+        return when {
+            !result.complete -> CleanOutcome("partial", "部分文件未能删除", result, keep = true)
+            result.files > 0 || result.directories > 0 -> CleanOutcome("cleaned", "", result)
+            else -> CleanOutcome("changed", "目录已经为空", result)
+        }
+    }
+
+    private fun workerCount(size: Int): Int = minOf(
+        size.coerceAtLeast(1), (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
+    )
+
     private data class CacheSeed(
         val packageName: String,
         val category: String,
@@ -262,68 +295,71 @@ internal class ForegroundCacheEngine(
         val stats: Stats
     )
 
-    private fun discoverCacheRoots(whitelist: Set<String>, labels: Map<String, String>): List<CacheSeed> {
+    private fun discoverCacheRoots(whitelist: Set<String>, installed: Set<String>): List<CacheSeed> {
         val result = LinkedHashMap<String, CacheSeed>()
-        val packageNames = LinkedHashSet<String>()
-        packageNames += labels.keys
-        for (base in listOf(File("/data/user"), File("/data/user_de"))) {
-            base.listFiles()?.filter { it.isDirectory && it.name.all(Char::isDigit) }?.forEach { userDir ->
-                userDir.listFiles()?.filter(File::isDirectory)?.forEach { appDir ->
-                    if (PACKAGE_NAME.matches(appDir.name)) packageNames += appDir.name
-                }
-            }
-        }
-        File("/data/data").listFiles()?.filter(File::isDirectory)?.forEach { appDir ->
-            if (PACKAGE_NAME.matches(appDir.name)) packageNames += appDir.name
-        }
+        val packages = installed.toMutableSet()
+        val seenApps = HashSet<String>()
+        val identity = AndroidPathIdentity(null)
 
         fun add(packageName: String, category: String, file: File) {
-            if (packageName in whitelist || !file.isDirectory || isSymlink(file)) return
+            if (cancelled.get() || packageName in whitelist) return
+            val stat = lstat(file) ?: return
+            if (!OsConstants.S_ISDIR(stat.st_mode)) return
             val path = canonical(file)
             if (!knownCachePath(path, packageName)) return
-            result.putIfAbsent(path, CacheSeed(packageName, category, file, path))
+            result.putIfAbsent(identity.of(logicalPath(path)), CacheSeed(packageName, category, File(path), path))
         }
 
-        val userIds = linkedSetOf<String>()
-        listOf(File("/data/user"), File("/data/user_de"), File("/data/media")).forEach { base ->
-            base.listFiles()?.filter { it.isDirectory && it.name.all(Char::isDigit) }?.forEach { userIds += it.name }
+        fun scanApp(app: File) {
+            if (cancelled.get() || !PACKAGE_NAME.matches(app.name)) return
+            val stat = lstat(app) ?: return
+            if (!OsConstants.S_ISDIR(stat.st_mode)) return
+            val pkg = app.name
+            packages += pkg
+            if (pkg in whitelist || !seenApps.add(identity.of(logicalPath(canonical(app))))) return
+            add(pkg, "应用缓存", File(app, "cache"))
+            add(pkg, "代码缓存", File(app, "code_cache"))
+            addWebViewCaches(pkg, app, ::add)
         }
-        if (userIds.isEmpty()) userIds += "0"
 
-        packageNames.forEach { pkg ->
-            for (user in userIds) {
-                for (base in listOf("/data/user/$user/$pkg", "/data/user_de/$user/$pkg")) {
-                    val app = File(base)
-                    add(pkg, "应用缓存", File(app, "cache"))
-                    add(pkg, "代码缓存", File(app, "code_cache"))
-                    addWebViewCaches(pkg, app, result)
-                }
-                val external = File("/data/media/$user/Android/data/$pkg/cache")
-                add(pkg, "外部缓存", external)
+        // Enumerate existing app/user directories once instead of probing packages × users.
+        for (base in listOf(File(dataRoot, "user"), File(dataRoot, "user_de"))) {
+            for (user in base.listFiles().orEmpty()) {
+                if (cancelled.get()) return result.values.toList()
+                if (!user.name.all(Char::isDigit) || !user.isDirectory || isSymlink(user)) continue
+                for (app in user.listFiles().orEmpty()) scanApp(app)
             }
-            val legacy = File("/data/data/$pkg")
-            add(pkg, "应用缓存", File(legacy, "cache"))
-            add(pkg, "代码缓存", File(legacy, "code_cache"))
-            addWebViewCaches(pkg, legacy, result)
+        }
+        // Legacy owner CE is a bind/symlink alias on many ROMs; retain it as a fallback only.
+        for (app in File(dataRoot, "data").listFiles().orEmpty()) scanApp(app)
+        for (user in File(dataRoot, "media").listFiles().orEmpty()) {
+            if (cancelled.get()) break
+            if (!user.name.all(Char::isDigit) || !user.isDirectory || isSymlink(user)) continue
+            for (app in File(user, "Android/data").listFiles().orEmpty()) {
+                if (cancelled.get()) break
+                if (app.name !in packages || isSymlink(app)) continue
+                add(app.name, "外部缓存", File(app, "cache"))
+            }
         }
         return result.values.toList()
     }
 
-    private fun addWebViewCaches(packageName: String, appDir: File, out: MutableMap<String, CacheSeed>) {
+    private fun addWebViewCaches(packageName: String, appDir: File, add: (String, String, File) -> Unit) {
         for (engineName in listOf("app_webview", "app_hws_webview", "app_x5webview")) {
             val engine = File(appDir, engineName)
-            if (!engine.isDirectory || isSymlink(engine)) continue
             val stack = ArrayDeque<Pair<File, Int>>()
             stack.add(engine to 0)
             while (stack.isNotEmpty()) {
+                if (cancelled.get()) return
                 val (file, depth) = stack.removeLast()
-                if (!file.isDirectory || isSymlink(file) || depth > 3) continue
+                if (depth > 3) continue
+                val stat = lstat(file) ?: continue
+                if (!OsConstants.S_ISDIR(stat.st_mode)) continue
                 if (file != engine && file.name in WEBVIEW_CACHE_NAMES) {
-                    val path = canonical(file)
-                    out.putIfAbsent(path, CacheSeed(packageName, "WebView 缓存", file, path))
+                    add(packageName, "WebView 缓存", file)
                     continue
                 }
-                file.listFiles()?.filter(File::isDirectory)?.forEach { stack.add(it to depth + 1) }
+                if (depth < 3) file.listFiles()?.forEach { stack.add(it to depth + 1) }
             }
         }
     }
@@ -389,24 +425,17 @@ internal class ForegroundCacheEngine(
         return Stats(bytes, files, dirs, complete)
     }
 
-    private fun knownCachePath(path: String, packageName: String): Boolean {
-        if (!PACKAGE_NAME.matches(packageName)) return false
-        val normalized = path.trimEnd('/')
-        val pkg = Regex.escape(packageName)
-        val internal = Regex("""^/data/(?:user|user_de)/\d+/$pkg/(?:cache|code_cache)(?:/.*)?$""")
-        val legacy = Regex("""^/data/data/$pkg/(?:cache|code_cache)(?:/.*)?$""")
-        val external = Regex("""^/data/media/\d+/Android/data/$pkg/cache(?:/.*)?$""")
-        val webview = Regex("""^/data/(?:user|user_de)/\d+/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/.*/(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
-        val legacyWebview = Regex("""^/data/data/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/.*/(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
-        return internal.matches(normalized) || legacy.matches(normalized) || external.matches(normalized) ||
-            webview.matches(normalized) || legacyWebview.matches(normalized)
+    private fun logicalPath(path: String): String = when {
+        path == dataRoot.path -> "/data"
+        path.startsWith("${dataRoot.path}/") -> "/data" + path.removePrefix(dataRoot.path)
+        else -> ""
     }
 
-    private fun installedLabels(): Map<String, String> = runCatching {
-        context.packageManager.getInstalledApplications(0).associate { info ->
-            val label = runCatching { context.packageManager.getApplicationLabel(info).toString() }.getOrDefault(info.packageName)
-            info.packageName to label
-        }
+    private fun knownCachePath(path: String, packageName: String): Boolean =
+        CachePathPolicy.allows(logicalPath(path), packageName)
+
+    private fun installedApplications(): Map<String, ApplicationInfo> = runCatching {
+        context.packageManager.getInstalledApplications(0).associateBy { it.packageName }
     }.getOrDefault(emptyMap())
 
     private fun parseWhitelist(raw: String): Set<String> = runCatching {
@@ -439,8 +468,8 @@ internal class ForegroundCacheEngine(
     private fun lstat(file: File) = runCatching { Os.lstat(file.path) }.getOrNull()
 
     companion object {
-        private val PACKAGE_NAME = Regex("""^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_-]+)+$""")
-        private val WEBVIEW_CACHE_NAMES = setOf("Cache", "Code Cache", "GPUCache", "GPU Cache")
+        private val PACKAGE_NAME = CachePathPolicy.packageName
+        private val WEBVIEW_CACHE_NAMES = CachePathPolicy.webViewCacheNames
         private const val MAX_DETAILS = 200
     }
 }
