@@ -19,6 +19,32 @@ class RuntimeVersionsTest {
         assertEquals("", versions.warning(app))
     }
 
+    @Test fun archivePreviewUpdateKeepsTheVerified30008ModuleWithoutClaimingEqualVersions() {
+        val update = ComponentVersion("2.0.0", 30009L)
+        val old = ComponentVersion("2.0.0", 30008L)
+        assertEquals(VersionComparison.MISMATCH, old.compareWith(update))
+        for (root in listOf(old, update)) {
+            val message = RuntimeVersions(root, old).warning(update)
+            assertTrue(message.contains("已验证兼容"))
+            assertTrue(message.contains("当前模块可继续使用"))
+            assertFalse(message.contains("重启"))
+            assertFalse(message.contains("版本不一致"))
+        }
+    }
+
+    @Test fun compatibilityExceptionDoesNotAcceptOtherOrUnknownEngines() {
+        val update = ComponentVersion("2.0.0", 30009L)
+        for (code in listOf(30007L, 30010L)) {
+            val message = RuntimeVersions(update, ComponentVersion("2.0.0", code)).warning(update)
+            assertTrue(message.contains("版本不一致"))
+            assertFalse(message.contains("当前模块可继续使用"))
+        }
+        val unknown = RuntimeVersions(ComponentVersion("2.0.0", 30008L), ComponentVersion(null, null)).warning(update)
+        assertTrue(unknown.contains("版本未知"))
+        assertFalse(unknown.contains("当前模块可继续使用"))
+        assertTrue(RuntimeVersions(update, ComponentVersion("2.1.0", 30008L)).warning(update).contains("版本不一致"))
+    }
+
     @Test fun normalizesOneVersionPrefixAndWhitespace() {
         listOf("v2.8.2", "V2.8.2", " 2.8.2 ").forEach {
             assertEquals(app, ComponentVersion.parse(it, " 28002 "))

@@ -25,5 +25,13 @@ explicit default icon, rather than borrowing an installed application's icon.
 Regression coverage includes same-package archives with different resources, cancellation,
 resource budgets, LRU eviction, concurrency, lazy rendering, filtered selection, long names,
 dark large text and scrollable details. The debug-only device probe parses this repository's
-own APK twice under an ordinary App UID and saves its actual decoded icon. The Root cleanup
+own APK twice under an ordinary App UID and saves its actual decoded icon. It also prewarms
+installed resources, then parses two generated resource-only APKs with the same package and
+resource IDs but different labels, versions and icon pixels. The Root cleanup
 probe and formal/30006/30007/30008 upgrade checks remain separate verification gates.
+
+App 30009 retains the delivered 30008 Root/AIDL, module scripts, lease and configuration
+schemas. Runtime diagnostics recognize that exact pair as compatible without labelling
+their version numbers equal. Unknown versions still warn. Existing 30008 module users can
+update the APK alone. A newly packaged module carries build 30009 metadata and the new APK,
+but its backend payload remains byte-for-byte equivalent to the delivered 30008 engine.

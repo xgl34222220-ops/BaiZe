@@ -193,6 +193,10 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Build same-package archive resource fixtures
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          python3 .github/scripts/create-apk-artwork-fixtures.py root-probe/app-debug.apk "$RUNNER_TEMP/baize-apk-fixtures"
       - name: Verify Root cleanup then final minified APK installation and UI
         uses: reactivecircus/android-emulator-runner@v2
         with:

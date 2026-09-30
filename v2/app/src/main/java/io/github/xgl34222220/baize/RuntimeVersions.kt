@@ -37,7 +37,15 @@ internal data class RuntimeVersions(
     fun warning(app: ComponentVersion): String {
         val mismatches = mutableListOf<String>()
         val unknown = mutableListOf<String>()
+        val compatible = mutableListOf<String>()
         listOf("Root" to root, "模块" to module).forEach { (label, version) ->
+            // 30009 changes archive previews and UI only. The delivered 30008 Root/AIDL,
+            // scripts, operation lease and config schemas are unchanged; do not generalize
+            // this exception to an unknown older or future engine.
+            if (app == ComponentVersion("2.0.0", 30009L) && version == ComponentVersion("2.0.0", 30008L)) {
+                compatible += "$label ${version.label}"
+                return@forEach
+            }
             when (version.compareWith(app)) {
                 VersionComparison.MISMATCH -> mismatches += "$label ${version.label}"
                 VersionComparison.UNKNOWN -> unknown += label
@@ -50,6 +58,10 @@ internal data class RuntimeVersions(
             }
             if (unknown.isNotEmpty()) {
                 add("${unknown.joinToString("、")}版本未知，无法确认匹配（旧服务或版本字段缺失/无效）；请查看运行诊断，确认已安装配套版本。")
+            }
+            if (compatible.isNotEmpty()) {
+                add("已验证兼容：${compatible.joinToString("、")}。" +
+                    if (mismatches.isEmpty() && unknown.isEmpty()) "本次只需更新 App，当前模块可继续使用。" else "")
             }
         }.joinToString("\n")
     }
