@@ -7,6 +7,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implements
+import org.robolectric.annotation.Implementation
 import java.lang.reflect.InvocationTargetException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -14,6 +16,35 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Config(sdk = [28], application = Application::class)
 class ForegroundCacheSafetyTest {
     private val engine get() = ForegroundCacheEngine(RuntimeEnvironment.getApplication(), AtomicBoolean())
+    @Test fun noPathWhitelistDoesNotRequireFrameworkStorageIdentity() {
+        val protected = ForegroundCacheEngine::class.java.getDeclaredMethod("protectedPath", String::class.java, Set::class.java).apply { isAccessible = true }
+        assertEquals(false, protected.invoke(engine, "/data/user/0/com.example/cache", emptySet<String>()))
+    }
+    @Test fun unresolvedPrimaryAliasesAreDetectableWithoutGuessingAnotherUser() {
+        val unknown = AndroidPathIdentity(null)
+        assertTrue(unknown.unresolvedUserAlias("/sdcard/protected"))
+        assertTrue(unknown.unresolvedUserAlias("/storage/self/primary/protected"))
+        assertFalse(unknown.unresolvedUserAlias("/storage/emulated/10/protected"))
+        assertFalse(AndroidPathIdentity("/data/media/10").unresolvedUserAlias("/sdcard/protected"))
+        assertEquals("/storage/emulated/10/protected", AndroidPathIdentity("/data/media/10").of("/sdcard/protected"))
+    }
+    @Test
+    @Config(shadows = [RejectingStorageEnvironment::class])
+    fun frameworkPackageUidRejectionCannotBreakCachePathProtection() {
+        val protected = ForegroundCacheEngine::class.java.getDeclaredMethod("protectedPath", String::class.java, Set::class.java).apply { isAccessible = true }
+        val worker = engine
+        assertEquals(false, protected.invoke(worker, "/data/user/0/com.example/cache", emptySet<String>()))
+        assertEquals(true, protected.invoke(worker, "/data/data/com.example/cache", setOf("/data/user/0/com.example")))
+        assertEquals(false, protected.invoke(worker, "/data/user/10/com.example/cache", setOf("/data/user/0/com.example")))
+    }
+
+    @Implements(android.os.Environment::class)
+    class RejectingStorageEnvironment {
+        companion object {
+            @JvmStatic @Implementation
+            fun getExternalStorageDirectory(): java.io.File = throw SecurityException("callingPackage does not match UID")
+        }
+    }
     @Test fun corruptWhitelistNeverBecomesAnUnprotectedScan() {
         val parse = ForegroundCacheEngine::class.java.getDeclaredMethod("parseWhitelist", String::class.java).apply { isAccessible = true }
         for (bad in listOf("", "null", "[123]", "[\"../data\"]", "{}")) {

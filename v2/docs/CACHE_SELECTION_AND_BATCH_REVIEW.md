@@ -13,6 +13,10 @@ snapshot; selected paths never come from a new filesystem search.
 Discovery measures the validated canonical path, matching the displayed and cleaned path.
 Android's `/data/user/0` owner alias must not be mistaken for an unsafe ancestor link; arbitrary
 links and paths outside that package's cache boundary remain rejected.
+An empty path whitelist does not query Framework storage APIs. If Android rejects a Root
+process's package/uid attribution, explicit path comparison still works, and unresolved
+user-relative whitelist aliases stay protected instead of disappearing. The optional storage
+identity lookup is bounded to once per scan or cleanup batch.
 
 Both cache and profile cleanup return `remainingSnapshotId`, `remainingCandidates`, and
 `snapshotExpiresInMs`. The profile engine removes this batch's selected candidates and retains

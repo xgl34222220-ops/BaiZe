@@ -26,6 +26,7 @@ internal class ForegroundCacheEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean
 ) {
+    private var protectionIdentity: AndroidPathIdentity? = null
     data class Item(
         val packageName: String,
         val appName: String,
@@ -122,6 +123,7 @@ internal class ForegroundCacheEngine(
 
 
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
+        protectionIdentity = null
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
         val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
@@ -210,6 +212,7 @@ internal class ForegroundCacheEngine(
         whitelistJson: String,
         progress: (String, Int, Int, String) -> Unit
     ): CleanResult {
+        protectionIdentity = null
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
         val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
@@ -423,9 +426,19 @@ internal class ForegroundCacheEngine(
     }
 
     private fun protectedPath(path: String, protected: Set<String>): Boolean {
-        val identity = AndroidPathIdentity(android.os.Environment.getExternalStorageDirectory().absolutePath)
+        if (protected.isEmpty()) return false
+        // An unregistered Root app_process cannot always call Framework volume APIs:
+        // StorageManager may reject its package/uid attribution. Protection must not make
+        // an otherwise valid raw-filesystem scan depend on that optional lookup.
+        val identity = protectionIdentity ?: run {
+            val primary = runCatching { android.os.Environment.getExternalStorageDirectory().canonicalPath }
+                .getOrNull() ?: runCatching { File("/sdcard").canonicalPath }.getOrNull()
+            AndroidPathIdentity(primary).also { protectionIdentity = it }
+        }
         val candidate = identity.of(path)
         return protected.any { raw ->
+            // Unknown user-relative aliases cannot silently become an empty whitelist.
+            if (identity.unresolvedUserAlias(raw)) return@any true
             val keep = identity.of(raw)
             keep == "/" || candidate == keep || candidate.startsWith("$keep/") || keep.startsWith("$candidate/")
         }

@@ -49,6 +49,8 @@ require("ProcessBuilder" not in CACHE_ENGINE and "cleaner.sh" not in CACHE_ENGIN
         "App cache engine must not shell out to module")
 require("measure(File(seed.path))" in CACHE_ENGINE and "measure(seed.file)" not in CACHE_ENGINE,
         "measure the same verified canonical cache path shown and authorized by the App, not Android's owner alias symlink")
+require('if (protected.isEmpty()) return false' in CACHE_ENGINE and 'identity.unresolvedUserAlias(raw)' in CACHE_ENGINE,
+        "Root cache scanning must tolerate unavailable Framework storage identity without ignoring unresolved whitelist aliases")
 require("FOREGROUND_STATE_DIR" in ROOT_SUPPORT and "app-foreground" in ROOT_SUPPORT,
         "foreground snapshot state must be isolated from automation module state")
 require("StorageMediaRepository" in STORAGE and "contentResolver.query" in STORAGE,
