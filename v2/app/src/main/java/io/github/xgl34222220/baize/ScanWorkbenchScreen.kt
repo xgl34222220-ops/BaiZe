@@ -87,7 +87,8 @@ internal data class WorkbenchUiState(
     val highRiskMode: String = CleanupPolicy.BALANCED.highRiskMode,
     val notice: WorkbenchNotice = WorkbenchNotice.INFO,
     val coverageSummary: String = "",
-    val coverageIncomplete: Boolean = false
+    val coverageIncomplete: Boolean = false,
+    val restoringReview: Boolean = false
 ) {
     val connected: Boolean get() = profileConnected && (!cacheRequired || cacheConnected)
 }
@@ -182,9 +183,9 @@ internal fun ScanWorkbenchScreen(
                         DropdownMenu(showMenu, { showMenu = false }) {
                             if (liveSnapshot) DropdownMenuItem(text = { Text("仅选中风险") }, enabled = editable,
                                 onClick = { showMenu = false; actions.onSelectMedium() })
-                            DropdownMenuItem(text = { Text("重新扫描") }, enabled = !state.running && !state.loadingResults,
+                            DropdownMenuItem(text = { Text("重新扫描") }, enabled = !state.restoringReview && !state.running && !state.loadingResults,
                                 onClick = { showMenu = false; actions.onScan() })
-                            DropdownMenuItem(text = { Text("管理白名单") }, enabled = !state.running && !state.loadingResults,
+                            DropdownMenuItem(text = { Text("管理白名单") }, enabled = !state.restoringReview && !state.running && !state.loadingResults,
                                 onClick = { showMenu = false; actions.onManageWhitelist() })
                             DropdownMenuItem(text = { Text("扫描说明") }, onClick = { showMenu = false; showGuide = true })
                         }
@@ -283,10 +284,10 @@ internal fun ScanWorkbenchScreen(
                     color = BaiZeTokens.colors.surfaceRaised.copy(alpha = .97f),
                     tonalElevation = 0.dp, shadowElevation = 8.dp, shape = RoundedCornerShape(16.dp)) {
                     GlassActionButton(
-                        label = when { state.running -> "停止当前任务"; !state.connected -> "重新连接并扫描";
+                        label = when { state.restoringReview -> "正在恢复记录"; state.running -> "停止当前任务"; !state.connected -> "重新连接并扫描";
                             state.items.isNotEmpty() || state.notice == WorkbenchNotice.ERROR -> "重新扫描"; else -> "开始扫描" },
                         onClick = if (state.running) actions.onStop else actions.onScan,
-                        modifier = Modifier.fillMaxWidth().padding(8.dp), secondary = state.running,
+                        modifier = Modifier.fillMaxWidth().padding(8.dp), enabled = !state.restoringReview, secondary = state.running,
                         icon = if (state.running) Icons.Rounded.Stop else Icons.Rounded.Search)
                 }
             }
@@ -376,6 +377,7 @@ private fun workbenchStatusColor(state: WorkbenchUiState) = when {
 }
 
 private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
+    state.restoringReview -> "正在恢复扫描记录"
     state.running -> if (state.loadingResults) "正在读取扫描结果" else "正在处理"
     state.notice == WorkbenchNotice.ERROR -> workbenchErrorSummary(state)
     !state.scanReady && state.items.isNotEmpty() -> reviewRecordTitle(state)
@@ -557,11 +559,11 @@ private fun WorkbenchEmptyCard(state: WorkbenchUiState, onDetails: () -> Unit) {
                     complete -> Icons.Rounded.CheckCircle; else -> Icons.Rounded.ManageSearch },
                     null, Modifier.size(34.dp), tint = color)
             }
-            Text(when { state.running -> "正在查找可清理内容"; error -> workbenchErrorSummary(state);
+            Text(when { state.restoringReview -> "正在恢复扫描记录"; state.running -> "正在查找可清理内容"; error -> workbenchErrorSummary(state);
                 state.coverageIncomplete -> "扫描范围尚未完整覆盖"; complete -> "没有发现可清理项目"; else -> "按应用查看清理内容" },
                 fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-            Text(when { state.running -> if (state.loadingResults) "正在读取应用与文件，已读取的项目会陆续显示。" else "正在检查目录，完成后会按应用列出文件。";
+            Text(when { state.restoringReview -> "上次结果读取完成后，就能继续查看。"; state.running -> if (state.loadingResults) "正在读取应用与文件，已读取的项目会陆续显示。" else "正在检查目录，完成后会按应用列出文件。";
                 error -> "任务信息已保留。查看详情后，可以重新发起扫描。";
                 state.coverageIncomplete -> "已检查的范围内暂无项目；未检查的目录不代表没有可清理内容。";
                 complete -> "当前扫描范围内暂无可清理内容，可以稍后再试。";

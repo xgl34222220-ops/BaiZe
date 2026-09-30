@@ -107,6 +107,10 @@ class BaiZeProfileRootService : RootService() {
             }
             "getScanCoverage" -> { require(arguments.length() == 0); getScanCoverage() }
             "clearPackageCaches" -> { require(arguments.length() == 1); clearPackageCaches(arguments.getString(0)) }
+            "runMaintenanceTool" -> {
+                require(arguments.length() == 2)
+                runMaintenanceTool(arguments.getString(0), arguments.getString(1))
+            }
             "scanFileOrganizer" -> { require(arguments.length() == 0); scanFileOrganizer() }
             "applyFileOrganizer" -> {
                 require(arguments.length() == 2)

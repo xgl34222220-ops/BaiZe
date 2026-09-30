@@ -36,6 +36,21 @@ class OrganizerRecoveryTest {
             assertEquals(4, journal.readLines().size)
         } finally { dir.deleteRecursively() }
     }
+    @Test fun interruptedUndoDoesNotRepeatCompletedMoves() {
+        val dir = Files.createTempDirectory("organizer-undo-recovery").toFile()
+        try {
+            val engine = FileOrganizerEngine(AtomicBoolean(), dir)
+            val journal = File(dir, "test.journal")
+            val write = FileOrganizerEngine::class.java.getDeclaredMethod("appendUndoEntry", File::class.java, JSONObject::class.java).apply { isAccessible = true }
+            val read = FileOrganizerEngine::class.java.getDeclaredMethod("readUndoJson", File::class.java).apply { isAccessible = true }
+            write.invoke(engine, journal, JSONObject().put("source", "a"))
+            write.invoke(engine, journal, JSONObject().put("source", "b"))
+            write.invoke(engine, journal, JSONObject().put("source", "a").put("undone", true))
+            val moves = (read.invoke(engine, journal) as JSONObject).getJSONArray("moves")
+            assertEquals(1, moves.length())
+            assertEquals("b", moves.getJSONObject(0).getString("source"))
+        } finally { dir.deleteRecursively() }
+    }
     @Test fun snapshotIdsCannotEscapeTheirDirectory() {
         val dir = Files.createTempDirectory("organizer-plan").toFile()
         try {

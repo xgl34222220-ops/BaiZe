@@ -26,9 +26,10 @@ internal data class FileOrganizerUiState(
     val items: List<OrganizerPreviewItem> = emptyList(),
     val selectedIds: Set<String> = emptySet(),
     val totalFound: Int = 0,
-    val truncated: Boolean = false
+    val truncated: Boolean = false,
+    val restoringReview: Boolean = false
 ) {
-    fun canEdit(now: Long) = connected && !running && previewReady && snapshotId.isNotBlank() &&
+    fun canEdit(now: Long) = !restoringReview && connected && !running && previewReady && snapshotId.isNotBlank() &&
         now < expiresAtRealtime && items.size == totalFound
 }
 

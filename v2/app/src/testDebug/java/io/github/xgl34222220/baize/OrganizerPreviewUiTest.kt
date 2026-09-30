@@ -41,7 +41,7 @@ class OrganizerPreviewUiTest {
     @Test fun scanAndReviewDoNotMoveUntilTheExplicitConfirmation() {
         render(ready())
         compose.onNodeWithText("归类已选 0 个文件").assertIsNotEnabled()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择文档类别"))
+        compose.onNodeWithTag("organizer-preview-list").performScrollToNode(hasContentDescription("选择文档类别"))
         compose.onNodeWithContentDescription("选择文档类别").performClick()
         compose.onNodeWithText("归类已选 1 个文件").performClick()
         compose.onNodeWithText("确认移动 1 个文件").assertIsDisplayed()
@@ -63,6 +63,13 @@ class OrganizerPreviewUiTest {
         assertEquals(0, moves)
     }
 
+    @Test fun restoringReviewKeepsTheScanActionDisabled() {
+        render(FileOrganizerUiState(restoringReview = true, status = "正在恢复归类记录…"))
+        compose.onNodeWithText("正在恢复记录").assertIsNotEnabled()
+        assertEquals(0, scans)
+        assertEquals(0, moves)
+    }
+
     @Test fun initialActionOnlyRequestsAScan() {
         render(FileOrganizerUiState(connected = true))
         compose.onNodeWithText("扫描可归类文件").performClick()
@@ -73,10 +80,11 @@ class OrganizerPreviewUiTest {
     @Test fun incompletePreviewKeepsFilesReadableButDisablesSelection() {
         render(ready().copy(previewReady = false, totalFound = 10, status = "归类预览读取未完成"))
         compose.onNodeWithText("重新扫描后归类").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择文档类别"))
+        compose.onNodeWithTag("organizer-preview-list").performScrollToNode(hasContentDescription("选择文档类别"))
         compose.onNodeWithContentDescription("选择文档类别").assertIsNotEnabled()
-        compose.onNodeWithText("文档").performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择文件${document.name}"))
+        compose.onNodeWithTag("organizer-category:文档").performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onNodeWithTag("organizer-preview-list").performScrollToNode(hasContentDescription("选择文件${document.name}"))
         compose.onNodeWithContentDescription("选择文件${document.name}").assertIsNotEnabled()
         compose.onNodeWithText(document.name).performClick()
         compose.onNodeWithText("来源：${document.sourceGroup}\n${document.source}").assertIsDisplayed()
@@ -89,9 +97,10 @@ class OrganizerPreviewUiTest {
     fun darkLargeFontKeepsPathsAndMoveActionReachable() {
         render(ready().copy(selectedIds = setOf(document.id), truncated = true), dark = true, fontScale = 1.5f)
         compose.onNodeWithText("归类已选 1 个文件").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("文档"))
-        compose.onNodeWithText("文档").performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择文件${document.name}"))
+        compose.onNodeWithTag("organizer-preview-list").performScrollToNode(hasTestTag("organizer-category:文档"))
+        compose.onNodeWithTag("organizer-category:文档").performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onNodeWithTag("organizer-preview-list").performScrollToNode(hasContentDescription("选择文件${document.name}"))
         compose.onNodeWithText(document.name).assertIsDisplayed()
         save("preview-dark-large-font")
         compose.onNodeWithText("归类已选 1 个文件").performClick()

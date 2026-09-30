@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
@@ -68,10 +69,13 @@ internal fun FileOrganizerScreen(
     val selected = remember(state.items, state.selectedIds) { state.items.filter { it.id in state.selectedIds } }
     val allSelected = state.items.isNotEmpty() && selected.size == state.items.size
     Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = barHeight + 16.dp)) {
+        // Keep the scroll viewport above the action bar, including accessibility scrolling.
+        // Content padding alone still lets scroll-to-node place a hit target behind the bar.
+        LazyColumn(Modifier.fillMaxSize().padding(bottom = barHeight).testTag("organizer-preview-list"),
+            contentPadding = PaddingValues(bottom = 16.dp)) {
             item {
                 DetailPageHeader("文件归类", "先预览，再将文件按类型归位", onBack) {
-                    IconButton(onClick = { showSchedule = true }, enabled = !state.running) {
+                    IconButton(onClick = { showSchedule = true }, enabled = !state.restoringReview && !state.running) {
                         Icon(Icons.Rounded.Schedule, "自动归类设置")
                     }
                 }
@@ -82,6 +86,7 @@ internal fun FileOrganizerScreen(
                         BaiZeIconTile(BaiZeIcons.Folder)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(when {
+                                state.restoringReview -> "正在恢复归类记录"
                                 state.running -> "正在处理文件"
                                 state.items.isNotEmpty() -> if (editable) "归类预览" else "已保留的归类记录"
                                 state.lastTotal > 0 -> "已移动 ${state.lastTotal} 个文件"
@@ -103,7 +108,7 @@ internal fun FileOrganizerScreen(
                             fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.items.isNotEmpty()) TextButton(onClick = onOneTap, enabled = !state.running) { Text("重新扫描文件") }
+                        if (state.items.isNotEmpty()) TextButton(onClick = onOneTap, enabled = !state.restoringReview && !state.running) { Text("重新扫描文件") }
                         if (state.undoAvailable && !state.running) TextButton(onClick = onUndo, enabled = state.connected) {
                             Icon(Icons.Rounded.Restore, null, Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text("撤销上一次归类")
                         }
@@ -122,7 +127,7 @@ internal fun FileOrganizerScreen(
                     item(key = "category:$category") {
                         Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                             shape = RoundedCornerShape(18.dp), color = BaiZeTokens.colors.surfaceRaised) {
-                            Row(Modifier.fillMaxWidth().clickable {
+                            Row(Modifier.fillMaxWidth().testTag("organizer-category:$category").clickable {
                                 expanded = if (category in expanded) expanded - category else expanded + category
                             }.padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 BaiZeIconTile(organizerCategoryIcon(category))
@@ -153,8 +158,8 @@ internal fun FileOrganizerScreen(
                     cleanLabel = "归类已选 ${selected.size} 个文件", selectLabel = "全选文件", cleanEnabled = selected.isNotEmpty())
             } else Surface(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
                 shape = RoundedCornerShape(24.dp), color = BaiZeTokens.colors.surfaceRaised, shadowElevation = 3.dp) {
-                GlassActionButton(if (state.running) "停止当前任务" else if (state.items.isEmpty()) "扫描可归类文件" else "重新扫描后归类",
-                    if (state.running) onStop else onOneTap, Modifier.fillMaxWidth().padding(8.dp), secondary = state.running)
+                GlassActionButton(if (state.restoringReview) "正在恢复记录" else if (state.running) "停止当前任务" else if (state.items.isEmpty()) "扫描可归类文件" else "重新扫描后归类",
+                    if (state.running) onStop else onOneTap, Modifier.fillMaxWidth().padding(8.dp), enabled = !state.restoringReview, secondary = state.running)
             }
         }
     }

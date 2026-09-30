@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Foreground cache engine owned entirely by the App RootService.
@@ -139,12 +140,14 @@ internal class ForegroundCacheEngine(
             (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
         )
         val executor = Executors.newFixedThreadPool(workerCount)
+        val acceptingProgress = AtomicBoolean(true)
+        val completedRoots = AtomicInteger(0)
         try {
             val completions = ExecutorCompletionService<MeasuredRoot>(executor)
             roots.forEach { seed ->
                 completions.submit(Callable {
                     MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(seed.file) { files, bytes ->
-                        progress("正在扫描 ${labels[seed.packageName] ?: seed.packageName} · $files 个文件", 0, roots.size, seed.path)
+                        if (acceptingProgress.get()) progress("正在扫描 ${labels[seed.packageName] ?: seed.packageName} · $files 个文件", completedRoots.get(), roots.size, seed.path)
                     })
                 })
             }
@@ -152,6 +155,7 @@ internal class ForegroundCacheEngine(
             while (completed < roots.size && !cancelled.get() && SystemClock.elapsedRealtime() - started < 90_000L) {
                 val future = completions.poll(150, TimeUnit.MILLISECONDS) ?: continue
                 completed++
+                completedRoots.set(completed)
                 val measured = runCatching { future.get() }.getOrNull()
                 scannedRoots++
                 if (measured == null) { incompleteRoots++; continue }
@@ -179,6 +183,7 @@ internal class ForegroundCacheEngine(
                 }
             }
         } finally {
+            acceptingProgress.set(false)
             executor.shutdownNow()
             executor.awaitTermination(2, TimeUnit.SECONDS)
         }

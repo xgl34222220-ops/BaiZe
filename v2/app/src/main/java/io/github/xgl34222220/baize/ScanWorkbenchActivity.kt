@@ -67,7 +67,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private var scanJob: Job? = null
     private var stopJob: Job? = null
     private val scanGeneration = ScanLoadGeneration()
-    private var screenState by mutableStateOf(WorkbenchUiState())
+    private val reviewHydration = ReviewHydrationGate()
+    private var screenState by mutableStateOf(WorkbenchUiState(restoringReview = true, phase = "正在恢复扫描记录…"))
 
     private val profileConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -150,8 +151,22 @@ class ScanWorkbenchActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@ScanWorkbenchActivity, scanProfile) }
-            if (saved != null) restoreReview(saved)
+            var loaded = false
+            try {
+                val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@ScanWorkbenchActivity, scanProfile, strict = true) }
+                if (saved != null) restoreReview(saved)
+                loaded = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // Avoid an automatic replacement after an unreadable record.
+                restoredReview = true
+                screenState = screenState.copy(notice = WorkbenchNotice.ERROR,
+                    phase = "扫描记录读取失败，请重新扫描", resultText = error.message.orEmpty())
+            } finally {
+                reviewHydration.finish(loaded)
+                screenState = screenState.copy(restoringReview = false)
+            }
             connectServices()
         }
     }
@@ -170,6 +185,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun connectServices() {
+        if (reviewHydration.loading) return
         if (!restoredReview || screenState.notice != WorkbenchNotice.ERROR) {
             screenState = screenState.copy(notice = WorkbenchNotice.INFO, phase = "正在连接双 Root 快照引擎…")
         }
@@ -190,6 +206,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun maybeStartScan() {
+        if (reviewHydration.loading) return
         if (profileService == null || (scanProfile == "safe" && cacheService == null)) return
         if (restoredReview) {
             if (screenState.notice != WorkbenchNotice.ERROR) {
@@ -205,6 +222,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }
 
     private fun runScan() {
+        if (reviewHydration.loading) return
         if (screenState.running || stopJob?.isActive == true) return
         val profile = profileService
         val cache = cacheService
@@ -212,6 +230,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
             connectServices()
             return
         }
+        if (!reviewHydration.beginReplacement()) return
         restoredReview = false
         val generation = scanGeneration.start()
         cacheSnapshotId = ""
@@ -845,6 +864,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     }.getOrNull() ?: packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() } }
 
     private fun saveReview() {
+        if (!reviewHydration.canPersist) return
         val state = screenState
         val cacheId = cacheSnapshotId
         val profileId = profileSnapshotId

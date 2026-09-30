@@ -35,7 +35,8 @@ class FileOrganizerActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private var service: IProfileRootService? = null
     private var bound = false
-    private var state by mutableStateOf(FileOrganizerUiState())
+    private val reviewHydration = ReviewHydrationGate()
+    private var state by mutableStateOf(FileOrganizerUiState(restoringReview = true, status = "正在恢复归类记录…"))
     private var schedule by mutableStateOf(FileOrganizerScheduleSettings())
     private var scheduleSavedText by mutableStateOf("")
     private var scanJob: Job? = null
@@ -45,8 +46,14 @@ class FileOrganizerActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             bound = true
-            state = state.copy(connected = true, status = if (state.items.isEmpty()) "文件归类服务已就绪" else state.status)
+            state = state.copy(connected = true, status = if (state.items.isEmpty() && reviewHydration.canPersist) "文件归类服务已就绪" else state.status)
             loadRootSchedule()
+        }
+
+        override fun onNullBinding(name: ComponentName?) {
+            runCatching { RootService.unbind(this) }
+            onServiceDisconnected(name)
+            state = state.copy(status = "Root 服务启动失败，请检查授权后重试")
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -92,8 +99,24 @@ class FileOrganizerActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@FileOrganizerActivity, "organizer") }
-            if (saved != null) state = restoreOrganizerReview(saved, System.currentTimeMillis(), SystemClock.elapsedRealtime())
+            var loaded = false
+            try {
+                val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@FileOrganizerActivity, "organizer", strict = true) }
+                if (saved != null) {
+                    val restored = withContext(Dispatchers.Default) {
+                        restoreOrganizerReview(saved, System.currentTimeMillis(), SystemClock.elapsedRealtime())
+                    }
+                    state = restored.copy(restoringReview = true)
+                }
+                loaded = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                state = state.copy(previewReady = false, status = "归类记录读取失败，请重新扫描：${error.message.orEmpty()}")
+            } finally {
+                reviewHydration.finish(loaded)
+                state = state.copy(restoringReview = false)
+            }
             bindService()
         }
     }
@@ -117,7 +140,8 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 
     private fun bindService() {
-        if (state.items.isEmpty()) state = state.copy(status = "正在连接 Root 文件归类服务…")
+        if (reviewHydration.loading || bound) return
+        if (state.items.isEmpty() && reviewHydration.canPersist) state = state.copy(status = "正在连接 Root 文件归类服务…")
         runCatching {
             RootService.bind(
                 Intent(this, BaiZeProfileRootService::class.java)
@@ -171,8 +195,9 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 
     private fun oneTapOrganize() {
+        if (reviewHydration.loading || state.running) return
         val root = service ?: run { bindService(); return }
-        if (state.running) return
+        if (!reviewHydration.beginReplacement()) return
         val generation = scanGeneration.start()
         state = state.copy(running = true, previewReady = false, snapshotId = "", items = emptyList(),
             selectedIds = emptySet(), totalFound = 0, truncated = false,
@@ -296,6 +321,7 @@ class FileOrganizerActivity : ComponentActivity() {
     }
 
     private fun saveReview() {
+        if (!reviewHydration.canPersist) return
         val snapshot = state
         val wallTime = System.currentTimeMillis()
         val realtime = SystemClock.elapsedRealtime()

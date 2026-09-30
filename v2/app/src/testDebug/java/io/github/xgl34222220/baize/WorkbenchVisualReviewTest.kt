@@ -141,6 +141,12 @@ class WorkbenchVisualReviewTest {
         assertEquals(0, cleanRequests)
     }
 
+    @Test fun restoringReviewDoesNotOfferAnEarlyReplacementScan() {
+        render(WorkbenchUiState(restoringReview = true, phase = "正在恢复扫描记录…"))
+        compose.onNodeWithText("正在恢复记录").assertIsNotEnabled()
+        assertEquals(0, scanRequests)
+    }
+
     @Test fun initialScanHasOnePrimaryAction() {
         render(WorkbenchUiState(profileConnected = true, cacheConnected = true))
         compose.onNodeWithText("开始扫描").assertIsDisplayed()

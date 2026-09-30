@@ -256,7 +256,7 @@ class FileOrganizerEngine(
                 destination.parentFile?.mkdirs()
                 if (canonical(destination) != destination.absolutePath) {
                     false
-                } else if (!moveVerified(source, destination) { prepared ->
+                } else if (!moveVerified(source, destination, item.fingerprint) { prepared ->
                     moveRecord.put("destinationFingerprint", fingerprint(prepared))
                     persistUndoRecord(journalFile, moves)
                 }) {
@@ -788,11 +788,11 @@ class FileOrganizerEngine(
     }
 
     /** Atomic no-clobber publication; rename() is deliberately not used because it overwrites. */
-    private fun moveVerified(source: File, destination: File, prepared: (File) -> Unit = {}): Boolean {
+    private fun moveVerified(source: File, destination: File, expectedIdentity: String = fingerprint(source), prepared: (File) -> Unit = {}): Boolean {
         if (cancelled.get() || destination.exists() || isSymlink(source)) return false
         if (canonical(source) != source.absolutePath || canonical(destination) != destination.absolutePath) return false
-        val expected = fingerprint(source)
-        if (expected.isBlank()) return false
+        val expected = expectedIdentity
+        if (expected.isBlank() || fingerprint(source) != expected) return false
         return try {
             // link fails atomically if the destination exists. Raw /data/media on ext4/f2fs
             // supports hard links; filesystems without links use verified exclusive copying.
@@ -1238,7 +1238,11 @@ class FileOrganizerEngine(
     }.getOrDefault("")
 
     private fun fingerprint(stat: android.system.StructStat): String =
-        "${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            "v1:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtim.tv_sec}:${stat.st_mtim.tv_nsec}"
+        } else {
+            "v0:${stat.st_dev}:${stat.st_ino}:${stat.st_size}:${stat.st_mtime}"
+        }
 
     private fun isSymlink(file: File): Boolean = runCatching {
         OsConstants.S_ISLNK(Os.lstat(file.path).st_mode)

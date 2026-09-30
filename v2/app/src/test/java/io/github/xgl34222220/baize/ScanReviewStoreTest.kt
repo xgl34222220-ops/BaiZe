@@ -24,6 +24,17 @@ class ScanReviewStoreTest {
         assertEquals("com.example.app", loaded.getString("packageName"))
     }
 
+    @Test fun corruptedReviewIsReportedWithoutErasingItsBytes() {
+        val context = RuntimeEnvironment.getApplication()
+        val file = java.io.File(context.filesDir, "scan-review-corrupt.json")
+        file.writeText("{not-json")
+        var failed = false
+        try { ScanReviewStore.read(context, "corrupt", strict = true) } catch (expected: Exception) { failed = true }
+        assertTrue(failed)
+        assertEquals("{not-json", file.readText())
+        assertEquals(null, ScanReviewStore.read(context, "never-created", strict = true))
+    }
+
     @Test fun incompletePagePreviewRetainsSnapshotIdentityWithoutCleanupPermission() {
         val context = RuntimeEnvironment.getApplication()
         ScanReviewStore.save(context, "incremental") {
