@@ -1,15 +1,15 @@
 package io.github.xgl34222220.baize
 
 import android.app.Application
+import androidx.activity.ComponentActivity
 import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
@@ -24,11 +24,11 @@ import org.robolectric.annotation.LooperMode
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = Application::class)
+@Config(sdk = [35], application = Application::class, qualifiers = "zh-rCN-w393dp-h852dp-mdpi")
 @LooperMode(LooperMode.Mode.PAUSED)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class BatchCleanupUiTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val low = item("low", "低风险样例", "low")
     private val high = item("high", "高风险样例", "high")
 
@@ -106,7 +106,15 @@ class BatchCleanupUiTest {
     }
 
     private fun screenshot(name: String) {
-        val image = compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap()
+        compose.waitForIdle()
+        val image = compose.runOnIdle {
+            val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            val view = dialog?.takeIf { it.isShowing }?.window?.decorView
+            if (view != null && view.width > 0 && view.height > 0) {
+                Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                    .also { view.draw(android.graphics.Canvas(it)) }
+            } else captureActivityContent(compose.activity)
+        }
         val output = File("build/reports/batch-cleanup-ui", "$name.png")
         output.parentFile!!.mkdirs()
         output.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
