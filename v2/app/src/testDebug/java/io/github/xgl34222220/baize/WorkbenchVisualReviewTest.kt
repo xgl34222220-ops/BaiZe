@@ -17,6 +17,7 @@ import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,10 +66,10 @@ class WorkbenchVisualReviewTest {
                 compose.onAllNodesWithText(appCount, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
                     compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty()
             }
-            compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用 1"))
+            compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("示例应用 1"))
             compose.onNodeWithText("示例应用 1").assertIsDisplayed()
             compose.onNodeWithText("清理已选 ${minOf(count, 1800)} 项").assertIsDisplayed()
-            compose.onNode(hasScrollAction()).performScrollToIndex(0)
+            compose.onNodeWithTag("scan-workbench-list").performScrollToIndex(0)
         }
         compose.onNodeWithText("清理已选 1800 项").performClick()
         assertEquals(1, cleanRequests)
@@ -116,14 +117,23 @@ class WorkbenchVisualReviewTest {
         // Wait for asynchronous grouping, then scroll the LazyColumn to the target.
         // Offscreen rows are not required to be present in the semantics tree.
         compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用"))
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("示例应用"))
         compose.onNodeWithText("示例应用").performClick()
         compose.waitUntil(5_000) {
-            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
+            runCatching { compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
         }
-        compose.onNodeWithContentDescription("选择诊断日志").assertIsEnabled().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择离线资源"))
-        compose.onNodeWithContentDescription("选择离线资源").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("选择诊断日志").assertIsDisplayed().assertIsEnabled().performClick()
+        save("medium-selected")
+        compose.runOnIdle { assertEquals(setOf("medium"), state.selectedIds) }
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择离线资源"))
+        compose.onNodeWithContentDescription("选择离线资源").assertIsDisplayed().assertIsEnabled().performClick()
+        save("high-selected-before-confirmation")
+        compose.runOnIdle { assertEquals(setOf("medium", "high"), state.selectedIds) }
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        val viewport = compose.onNodeWithTag("scan-workbench-list").fetchSemanticsNode().boundsInRoot
+        val action = compose.onNodeWithText("清理已选 2 项").fetchSemanticsNode().boundsInRoot
+        assertTrue("Scrolling results must not overlap the fixed cleanup action", viewport.bottom <= action.top)
         compose.onNodeWithText("清理已选 2 项").assertIsDisplayed().performClick()
         assertEquals(0, cleanRequests)
         compose.onNodeWithText("确认清理高风险项目").assertIsDisplayed()
@@ -183,10 +193,10 @@ class WorkbenchVisualReviewTest {
         render(ready().copy(scanReady = false, notice = WorkbenchNotice.WARNING, items = listOf(single),
             selectedIds = setOf(single.id)), dark = true)
         compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("历史应用"))
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("历史应用"))
         compose.onNodeWithText("历史应用").performClick()
         compose.waitUntil(5_000) {
-            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择上次扫描日志")) }.isSuccess
+            runCatching { compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择上次扫描日志")) }.isSuccess
         }
         compose.onNodeWithContentDescription("选择上次扫描日志").assertIsNotEnabled()
         compose.onNodeWithText("上次扫描日志").assertIsDisplayed()

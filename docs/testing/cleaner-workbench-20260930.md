@@ -1,6 +1,6 @@
 # 清理 / 归类工作台测试候选
 
-基线：`main` 的 `2fe7af869b9ead4385e7f68a8fbfc45849b85623`。这是独立测试分支，不是正式发布或 OTA。
+基线：`main` 的 `2fe7af869b9ead4385e7f68a8fbfc45849b85623`。这是独立测试分支，不是正式发布或 OTA。内部测试构建号为 30006，显示版本仍为 2.0.0；后续正式构建号必须至少为 30007，以保留清晰的升级链。
 
 ## 有界验收范围
 
@@ -20,6 +20,8 @@
 - `ForegroundCacheSafetyTest`：严格白名单、受保护路径别名与父目录、直接 WebView 缓存路径、取消保留候选。
 - `OrganizerRecoveryTest`：逐项日志恢复及半行写入、快照目录逃逸拒绝。
 - `OrganizerReviewTest` / `OrganizerPreviewUiTest` / 工作台视觉测试：预览选择、历史锁定、完整覆盖说明。
+- Android 16 模拟器按实际 RootService 的 uid=0 运行同一生产遍历类：13 个真实文件系统断言通过，10,000 文件测量 113ms（模拟器合成负载，不代表真机）。普通 shell 缺少 /data 读取权限时按设计关闭操作；没有为测试放宽权限边界。
+- 最终签名 APK 另做 Android 16 安装、从正式 2.0.0 覆盖升级并保留数据、四个页签、无模块归类页面、重开与后台恢复验证。
 - 原基线本地核心回归 57 通过；4 项因宿主无 sudo 失败、4 项缺 busybox 跳过。需要 CI 在完整环境补跑，不能将本地此轮表述为完整通过。
 - CI 工作流 `.github/workflows/cleaner-workbench-test.yml` 提供最终真实测试结果、截图与签名产物。
 

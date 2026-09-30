@@ -59,10 +59,10 @@ class WorkbenchRefactorUiTest {
         assertEquals(1, scans)
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("测试应用"))
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("测试应用"))
         compose.onNodeWithText("测试应用").performClick()
         compose.waitUntil(5_000) {
-            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择low")) }.isSuccess
+            runCatching { compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择low")) }.isSuccess
         }
         compose.onNodeWithContentDescription("选择low").assertIsNotEnabled()
         compose.onNodeWithText("清理已选 0 项").assertDoesNotExist()

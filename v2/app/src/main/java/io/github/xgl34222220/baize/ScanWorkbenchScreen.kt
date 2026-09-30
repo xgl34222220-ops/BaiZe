@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -171,9 +172,11 @@ internal fun ScanWorkbenchScreen(
 
     Box(Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase)) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            // A scroll-to-item must not place its checkbox underneath the fixed action bar.
+            Modifier.fillMaxSize().padding(bottom = if (historicalSnapshot) 0.dp else bottomBarHeight)
+                .testTag("scan-workbench-list"),
             contentPadding = PaddingValues(
-                bottom = if (historicalSnapshot) inset + 24.dp else bottomBarHeight + 16.dp
+                bottom = if (historicalSnapshot) inset + 24.dp else 16.dp
             )
         ) {
             item {
