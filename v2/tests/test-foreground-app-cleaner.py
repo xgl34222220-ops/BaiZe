@@ -41,9 +41,9 @@ require('modulePurpose", "background-automation"' in PROFILE,
 require("openForegroundCleaner()" in DASH, "dashboard must have App foreground cleaner entry")
 require('scan = { openForegroundCleaner() }' in DASH, "home scan must open App cleaner")
 require('clean = { openForegroundCleaner() }' in DASH, "home clean must open App cleaner")
-require('apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) }' in DASH,
+require('apkScan = { CleanerNavigation.open(this, Intent(this, ApkScanActivity::class.java)) }' in DASH,
         "APK tool must be App-owned")
-require('organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) }' in DASH,
+require('organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java)) }' in DASH,
         "organizer tool must be App-owned")
 require("ProcessBuilder" not in CACHE_ENGINE and "cleaner.sh" not in CACHE_ENGINE,
         "App cache engine must not shell out to module")

@@ -223,7 +223,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 reviewHydration.finish(loaded)
                 screenState = screenState.copy(restoringReview = false)
             }
-            connectServices()
+            // Historical/completed reviews are readable without starting Root or prompting again.
+            // Only a live snapshot or an explicit rescan needs a service connection.
+            if (!restoredReview || screenState.scanReady) connectServices()
         }
     }
 
@@ -241,7 +243,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
 
     private fun connectServices() {
         if (closed || reviewHydration.loading) return
-        if (!restoredReview) {
+        if (!restoredReview || scanRequested) {
             screenState = screenState.copy(notice = WorkbenchNotice.INFO, phase = "正在连接双 Root 快照引擎…")
         }
         if (!profileBound) {

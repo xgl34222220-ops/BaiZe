@@ -18,13 +18,14 @@ grep -Eq 'VideoHomeScreenMiuix\(state, scheduler, actions, onOpenClean([,)])' "$
 # Rebuilt architecture: foreground actions belong to the App, never to module shell tasks.
 grep -Fq 'clean = { openForegroundCleaner() }' "$DASH"
 grep -Fq 'scan = { openForegroundCleaner() }' "$DASH"
-grep -Fq 'organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) }' "$DASH"
-grep -Fq 'apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) }' "$DASH"
+grep -Fq 'organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java)) }' "$DASH"
+grep -Fq 'apkScan = { CleanerNavigation.open(this, Intent(this, ApkScanActivity::class.java)) }' "$DASH"
 grep -Fq 'deep = { openProfile("deep") }' "$DASH"
 
-# The clean page must open the App-owned resumable cleaner.
-grep -Fq 'import io.github.xgl34222220.baize.ResumableSmartScanActivity' "$CLEAN"
-grep -Fq 'onScan = { context.startActivity(Intent(context, ResumableSmartScanActivity::class.java)) }' "$CLEAN"
+# Every primary scan action uses the same App-owned workbench, with duplicate-launch gating.
+grep -Fq 'onScan = dashboardActions.scan' "$CLEAN"
+grep -Fq 'CleanerNavigation.scan(this)' "$DASH"
+! grep -Fq 'onScan = { context.startActivity' "$CLEAN"
 
 # Legacy module runners may remain for automatic/background compatibility, but none may be wired
 # directly to the main foreground action map.
