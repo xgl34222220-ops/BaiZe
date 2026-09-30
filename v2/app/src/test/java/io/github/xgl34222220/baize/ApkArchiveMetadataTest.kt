@@ -36,6 +36,12 @@ import java.util.zip.ZipOutputStream
 class ApkArchiveMetadataTest {
     @get:Rule val folder = TemporaryFolder()
 
+    @Test
+    @Config(sdk = [26])
+    fun android26KeepsAtomicCloseOnExecWithoutAccessingTheNewerSdkField() {
+        assertEquals(0x80000, ApkArchiveMetadata.closeOnExecFlag())
+    }
+
     @Test fun samePackageArchivesUseTheirOwnNameVersionAndIcon() {
         val first = fixture("first.apk")
         val second = fixture("second.apk")

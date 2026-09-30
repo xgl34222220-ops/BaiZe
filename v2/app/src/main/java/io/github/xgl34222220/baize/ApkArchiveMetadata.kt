@@ -35,6 +35,11 @@ internal data class ApkArchiveInfo(val appName: String = "", val packageName: St
     val failureReason: ApkArchiveFailure? = null)
 
 internal object ApkArchiveMetadata {
+    // Linux/bionic has supported this atomic open flag since before Android 8; only the
+    // public OsConstants field was added in API 27. Keep it atomic on our API 26 minimum.
+    // https://android.googlesource.com/platform/bionic/+/6861c6f/libc/include/fcntl.h
+    private const val ANDROID_26_O_CLOEXEC = 0x80000
+    internal fun closeOnExecFlag(): Int = if (Build.VERSION.SDK_INT >= 27) OsConstants.O_CLOEXEC else ANDROID_26_O_CLOEXEC
     /**
      * A cooperative three-second budget, not a hard timeout: Android's synchronous parser cannot
      * be interrupted safely. Cancellation is checked between calls, then descriptors/resources
@@ -95,7 +100,7 @@ internal object ApkArchiveMetadata {
         modified: Long): ParcelFileDescriptor {
         try {
             // O_NONBLOCK prevents a replaced FIFO from hanging before its regular-file check.
-            val fd = Os.open(path, OsConstants.O_RDONLY or OsConstants.O_CLOEXEC or
+            val fd = Os.open(path, OsConstants.O_RDONLY or closeOnExecFlag() or
                 OsConstants.O_NOFOLLOW or OsConstants.O_NONBLOCK, 0)
             return try {
                 verifySnapshot(Os.fstat(fd), bytes, modified)
@@ -118,10 +123,13 @@ internal object ApkArchiveMetadata {
     private fun verifyIndexedSource(context: Context, uri: Uri, path: String, bytes: Long, modified: Long) {
         val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED)
         val matches = context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            cursor.moveToFirst() && (0..2).all { cursor.getColumnIndex(projection[it]) >= 0 } &&
-                cursor.getString(cursor.getColumnIndex(projection[0])) == path &&
-                ApkArchivePolicy.snapshotMatches(cursor.getLong(cursor.getColumnIndex(projection[1])),
-                    cursor.getLong(cursor.getColumnIndex(projection[2])), bytes, modified)
+            if (!cursor.moveToFirst()) return@use false
+            val pathColumn = cursor.getColumnIndex(projection[0])
+            val sizeColumn = cursor.getColumnIndex(projection[1])
+            val modifiedColumn = cursor.getColumnIndex(projection[2])
+            if (pathColumn < 0 || sizeColumn < 0 || modifiedColumn < 0) return@use false
+            cursor.getString(pathColumn) == path && ApkArchivePolicy.snapshotMatches(
+                cursor.getLong(sizeColumn), cursor.getLong(modifiedColumn), bytes, modified)
         } ?: false
         if (!matches) throw ApkArchiveReadException(ApkArchiveFailure.FILE_CHANGED)
     }
@@ -201,12 +209,12 @@ internal object ApkArchiveMetadata {
     private fun usePreviewDensity(resources: Resources) {
         val metrics = DisplayMetrics().apply {
             setTo(resources.displayMetrics)
-            densityDpi = DisplayMetrics.DENSITY_DEFAULT
+            densityDpi = DisplayMetrics.DENSITY_MEDIUM
             density = 1f
             scaledDensity = 1f
         }
         resources.updateConfiguration(Configuration(resources.configuration).apply {
-            densityDpi = DisplayMetrics.DENSITY_DEFAULT
+            densityDpi = DisplayMetrics.DENSITY_MEDIUM
         }, metrics)
     }
 
