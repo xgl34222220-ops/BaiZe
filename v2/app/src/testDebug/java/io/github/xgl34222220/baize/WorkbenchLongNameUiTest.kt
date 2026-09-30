@@ -67,7 +67,7 @@ class WorkbenchLongNameUiTest {
             Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888).also { view.draw(Canvas(it)) }
         }
         File("build/reports/ui-screenshots/workbench-long-name-dark-large-font.png").apply {
-            parentFile.mkdirs()
+            parentFile!!.mkdirs()
             outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNode(hasText("完成") and hasAnyAncestor(isDialog())).assertIsDisplayed()

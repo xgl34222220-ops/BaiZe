@@ -333,7 +333,9 @@ internal fun ScanWorkbenchScreen(
         listOf(visibleState.phase, if (historicalSnapshot) REVIEW_HISTORY_HINT else "", state.resultText, state.currentPath)
         .filter { it.isNotBlank() }.distinct().joinToString("\n\n")) { showReport = false }
     inspected?.let { item ->
-        BaiZeDialog(onDismissRequest = { inspected = null }, title = { Text(item.title, fontSize = 18.sp) },
+        BaiZeDialog(onDismissRequest = { inspected = null }, title = {
+            Text(item.title, fontSize = 18.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        },
             text = { Column(Modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 RiskBadge(item.risk)
                 SelectionContainer { Text(listOf(item.groupTitle, item.outcome.ifBlank { item.reason }, item.path)
