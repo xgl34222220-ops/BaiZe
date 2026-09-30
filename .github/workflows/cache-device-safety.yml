@@ -21,7 +21,7 @@ jobs:
         run: |
           sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
           mkdir -p /tmp/secure-test/classes
-          javac --release 17 -d /tmp/secure-test/classes v2/app/src/main/java/io/github/xgl34222220/baize/root/SecureCacheTree.java v2/tests/SecureCacheTreeTest.java
+          javac --release 17 -d /tmp/secure-test/classes v2/app/src/main/java/io/github/xgl34222220/baize/root/SecureCacheTree.java v2/tests/SecureCacheTreeTest.java v2/tests/SecureCacheTreeDeviceMain.java
           jar cf /tmp/secure-test/test.jar -C /tmp/secure-test/classes .
           "$ANDROID_HOME/build-tools/36.0.0/d8" --min-api 26 --lib "$ANDROID_HOME/platforms/android-36/android.jar" --output /tmp/secure-test/test-dex.zip /tmp/secure-test/test.jar
       - name: Enable KVM
@@ -39,11 +39,14 @@ jobs:
           script: |
             adb shell mkdir -p /data/local/tmp/baize-safety
             adb push /tmp/secure-test/test-dex.zip /data/local/tmp/baize-safety/test.jar
-            adb shell 'CLASSPATH=/data/local/tmp/baize-safety/test.jar app_process -Djava.io.tmpdir=/data/local/tmp/baize-safety /system/bin SecureCacheTreeTest' | tee /tmp/secure-test/device-test.log
+            adb shell chmod 444 /data/local/tmp/baize-safety/test.jar
+            adb logcat -c
+            adb shell 'CLASSPATH=/data/local/tmp/baize-safety/test.jar app_process -Djava.io.tmpdir=/data/local/tmp/baize-safety /system/bin SecureCacheTreeDeviceMain' 2>&1 | tee /tmp/secure-test/device-test.log
+            adb logcat -d -b crash > /tmp/secure-test/device-crash.log
             grep -q '13 assertions passed' /tmp/secure-test/device-test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: BaiZe-Android-Cache-Safety
-          path: /tmp/secure-test/device-test.log
+          path: /tmp/secure-test/device-*.log
           if-no-files-found: warn
