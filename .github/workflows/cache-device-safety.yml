@@ -1,0 +1,49 @@
+name: BaiZe Android Cache Safety
+on:
+  push:
+    branches: [codex/baize-device-safety-20260930]
+permissions:
+  contents: read
+jobs:
+  device-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Compile the production traversal and real-filesystem test to DEX
+        run: |
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          mkdir -p /tmp/secure-test/classes
+          javac --release 17 -d /tmp/secure-test/classes v2/app/src/main/java/io/github/xgl34222220/baize/root/SecureCacheTree.java v2/tests/SecureCacheTreeTest.java
+          jar cf /tmp/secure-test/test.jar -C /tmp/secure-test/classes .
+          "$ANDROID_HOME/build-tools/36.0.0/d8" --min-api 26 --lib "$ANDROID_HOME/platforms/android-36/android.jar" --output /tmp/secure-test/test-dex.zip /tmp/secure-test/test.jar
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify secure traversal on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb shell mkdir -p /data/local/tmp/baize-safety
+            adb push /tmp/secure-test/test-dex.zip /data/local/tmp/baize-safety/test.jar
+            adb shell 'CLASSPATH=/data/local/tmp/baize-safety/test.jar app_process -Djava.io.tmpdir=/data/local/tmp/baize-safety /system/bin SecureCacheTreeTest' | tee /tmp/secure-test/device-test.log
+            grep -q '13 assertions passed' /tmp/secure-test/device-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Android-Cache-Safety
+          path: /tmp/secure-test/device-test.log
+          if-no-files-found: warn
