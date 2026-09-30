@@ -35,6 +35,8 @@ public class SecureCacheTreeTest {
             check(!measure(alias).complete, "root symlink rejected");
             Files.createDirectory(personal.resolve("nested"));
             check(!measure(alias.resolve("nested")).complete, "ancestor symlink rejected");
+            SecureCacheTree.Result resolvedAlias = measure(alias.resolve("nested").toRealPath());
+            check(resolvedAlias.complete && !resolvedAlias.identity.isEmpty(), "verified canonical owner alias remains measurable");
             Path many = Files.createDirectory(temp.resolve("many"));
             for (int i=0;i<10000;i++) Files.write(many.resolve("f"+i), new byte[1]);
             long start = System.nanoTime(); scan = measure(many);

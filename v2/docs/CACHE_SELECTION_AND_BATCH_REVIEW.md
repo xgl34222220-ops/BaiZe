@@ -10,6 +10,9 @@ The workbench now sends the original App snapshot ID and explicit candidate path
 unknown paths and non-Boolean selections, and cleans only the selected server-owned candidates.
 Existing explicit `__all_safe__` callers remain supported. Unselected roots remain in the App
 snapshot; selected paths never come from a new filesystem search.
+Discovery measures the validated canonical path, matching the displayed and cleaned path.
+Android's `/data/user/0` owner alias must not be mistaken for an unsafe ancestor link; arbitrary
+links and paths outside that package's cache boundary remain rejected.
 
 Both cache and profile cleanup return `remainingSnapshotId`, `remainingCandidates`, and
 `snapshotExpiresInMs`. The profile engine removes this batch's selected candidates and retains
@@ -29,6 +32,9 @@ leases. Detached module children inherit the descriptor until they finish. This 
 exclusion requires the matching module; old module versions do not participate in this gate.
 The unchanged legacy per-lane locks still prevent incompatible scheduled workers overlapping.
 The lock inode is never removed, and a lost App process closes its helper's stdin and lease.
+Android's mksh requires explicit descriptor inheritance for flock providers and detached
+runners. Both the operation gate and stale-lock recovery guards now carry those descriptors
+explicitly. A broken provider or bad descriptor is reported as a tool error, not a busy task.
 See the [Linux flock semantics](https://man7.org/linux/man-pages/man2/flock.2.html).
 
 Bundled rule updates are staged as complete immutable generations. Asset-read, staging, or

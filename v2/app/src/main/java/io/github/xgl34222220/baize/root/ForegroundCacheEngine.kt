@@ -146,7 +146,10 @@ internal class ForegroundCacheEngine(
             val completions = ExecutorCompletionService<MeasuredRoot>(executor)
             roots.forEach { seed ->
                 completions.submit(Callable {
-                    MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(seed.file) { files, bytes ->
+                    // /data/user/0 can be Android's owner alias symlink. The canonical path
+                    // was checked against this package's cache boundary during discovery;
+                    // measure exactly the same path that is shown and later authorized.
+                    MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(File(seed.path)) { files, bytes ->
                         if (acceptingProgress.get()) progress("正在扫描 ${labels[seed.packageName] ?: seed.packageName} · $files 个文件", completedRoots.get(), roots.size, seed.path)
                     })
                 })

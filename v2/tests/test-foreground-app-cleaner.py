@@ -47,6 +47,8 @@ require('organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerAct
         "organizer tool must be App-owned")
 require("ProcessBuilder" not in CACHE_ENGINE and "cleaner.sh" not in CACHE_ENGINE,
         "App cache engine must not shell out to module")
+require("measure(File(seed.path))" in CACHE_ENGINE and "measure(seed.file)" not in CACHE_ENGINE,
+        "measure the same verified canonical cache path shown and authorized by the App, not Android's owner alias symlink")
 require("FOREGROUND_STATE_DIR" in ROOT_SUPPORT and "app-foreground" in ROOT_SUPPORT,
         "foreground snapshot state must be isolated from automation module state")
 require("StorageMediaRepository" in STORAGE and "contentResolver.query" in STORAGE,
@@ -57,4 +59,3 @@ require('自动清理模块' in HOME,
         "home must label automation as an optional module capability")
 
 print("foreground App cleaner architecture contract passed")
-

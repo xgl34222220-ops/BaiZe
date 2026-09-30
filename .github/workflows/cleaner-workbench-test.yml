@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
           sudo apt-get update
-          sudo apt-get install -y busybox-static toybox
+          sudo apt-get install -y busybox-static toybox mksh
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -186,7 +186,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify final minified APK installation and native UI
+      - name: Verify Root cleanup then final minified APK installation and UI
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
@@ -194,8 +194,12 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30008 baseline-30006/*.apk baseline-30007/*.apk
+            adb root
+            adb wait-for-device
+            adb install root-probe/app-debug.apk
             bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
+            adb uninstall io.github.xgl34222220.baize
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30008 baseline-30006/*.apk baseline-30007/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:

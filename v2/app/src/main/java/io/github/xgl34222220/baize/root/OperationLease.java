@@ -34,7 +34,8 @@ final class OperationLease implements AutoCloseable {
                 return new OperationLease(process);
             }
             if ("BUSY".equals(response.get())) return null;
-            throw new IOException("Cannot establish task ownership");
+            String detail = response.get();
+            throw new IOException("无法建立任务互斥：" + (detail == null ? "互斥工具未返回结果" : detail));
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new IOException("Task ownership interrupted", error);
