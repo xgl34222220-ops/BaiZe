@@ -179,6 +179,13 @@ jobs:
           run-id: 36752722567
           github-token: ${{ github.token }}
           path: baseline-30007
+      - name: Download exact delivered 30008 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+bd6a70e5-Paired-Test
+          run-id: 36776344960
+          github-token: ${{ github.token }}
+          path: baseline-30008
       - name: Prepare verified upgrade baseline and emulator
         run: |
           curl --fail --location --retry 3 'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v2.0.0/BaiZe-v2.0.0.apk' -o "$RUNNER_TEMP/baize-baseline.apk"
@@ -198,8 +205,9 @@ jobs:
             adb wait-for-device
             adb install root-probe/app-debug.apk
             bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
+            bash .github/scripts/probe-apk-artwork.sh
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30008 baseline-30006/*.apk baseline-30007/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30009 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -207,5 +215,6 @@ jobs:
           path: |
             ${{ runner.temp }}/baize-apk-startup/
             ${{ runner.temp }}/baize-root-cache-probe/
+            ${{ runner.temp }}/baize-apk-artwork-probe/
           if-no-files-found: warn
           retention-days: 7

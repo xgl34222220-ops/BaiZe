@@ -65,10 +65,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,6 +85,9 @@ import io.github.xgl34222220.baize.root.ITaskProgressCallback
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -92,6 +98,7 @@ import org.json.JSONObject
 
 class ApkScanActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
+    private val apkPreviewViewModel: ApkPreviewViewModel by viewModels()
     private var service: IProfileRootService? = null
     private var serviceBound = false
     private var pollJob: Job? = null
@@ -150,7 +157,8 @@ class ApkScanActivity : ComponentActivity() {
                         onReconnect = ::connectService,
                         onToggle = ::toggleItem, onToggleAll = ::toggleAll,
                         onQuery = { if (!screenState.running) screenState = screenState.copy(query = it, selected = emptySet()) },
-                        onFilter = { if (!screenState.running) screenState = screenState.copy(filter = it, selected = emptySet()) }
+                        onFilter = { if (!screenState.running) screenState = screenState.copy(filter = it, selected = emptySet()) },
+                        loadArchive = ::loadArchivePreview
                     )
                     if (showCleanConfirm) {
                         BaiZeDialog(
@@ -218,6 +226,7 @@ class ApkScanActivity : ComponentActivity() {
             return
         }
         stopRequested = false
+        apkPreviewViewModel.invalidate()
         directSnapshot = emptyList()
         screenState = screenState.copy(
             selected = emptySet(),
@@ -287,8 +296,8 @@ class ApkScanActivity : ComponentActivity() {
             }
             directSnapshot = snapshots
             val totalBytes = indexed.candidates.sumOf { it.bytes }
-            val items = withContext(Dispatchers.IO) { indexed.candidates.map { candidate ->
-                if (stopRequested) return@withContext emptyList<ApkScanItem>()
+            // Publish indexed files immediately; only visible rows decode archive resources.
+            val items = indexed.candidates.map { candidate ->
                 ApkScanItem(
                     name = candidate.name,
                     files = 1,
@@ -296,9 +305,9 @@ class ApkScanActivity : ComponentActivity() {
                     errors = 0,
                     samplePath = candidate.path,
                     uri = candidate.uri,
-                    archive = ApkArchiveMetadata.inspect(applicationContext, candidate.path)
+                    modifiedSeconds = candidate.modifiedSeconds
                 )
-            } }
+            }
             if (stopRequested) {
                 directSnapshot = emptyList()
                 screenState = screenState.copy(running = false, operation = "", phase = "安装包扫描已停止")
@@ -332,10 +341,25 @@ class ApkScanActivity : ComponentActivity() {
     }
 
     private fun toggleItem(uri: String) {
-        if (screenState.running || screenState.visibleItems.none { it.uri == uri }) return
+        if (screenState.running || screenState.selectableVisibleItems.none { it.uri == uri }) return
         screenState = screenState.copy(selected = screenState.selected.toMutableSet().apply {
             if (!add(uri)) remove(uri)
         })
+    }
+
+    private suspend fun loadArchivePreview(item: ApkScanItem): ApkArchiveInfo {
+        val result = try { apkPreviewViewModel.load(item) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { ApkArchiveInfo(parseStatus = ApkArchiveParseStatus.FAILED) }
+        currentCoroutineContext().ensureActive()
+        // Artwork stays in the bounded cache and visible compositions, not every scan row.
+        val metadata = result.copy(iconBitmap = null)
+        val current = screenState.items.firstOrNull { it.previewKey == item.previewKey } ?: return result
+        if (current.archive == metadata) return result
+        screenState = screenState.copy(items = screenState.items.map { current ->
+            if (current.previewKey == item.previewKey) current.copy(archive = metadata) else current
+        })
+        return result
     }
 
     private fun toggleAll() {
@@ -531,13 +555,16 @@ internal data class ApkScanUiState(
     val filter: ApkInstallStatus? = null
 ) {
     val visibleItems: List<ApkScanItem> get() = items.filter { item ->
-        (filter == null || item.archive.status == filter) && (query.isBlank() ||
-            listOf(item.name, item.samplePath, item.archive.appName, item.archive.packageName).any { it.contains(query.trim(), true) })
+        matchesCriteria(item) || (item.archive.awaitingInspection && (filter != null || query.isNotBlank()))
     }
-    val allSelected: Boolean get() = visibleItems.isNotEmpty() && visibleItems.all { it.uri in selected }
+    fun matchesCriteria(item: ApkScanItem): Boolean =
+        (filter == null || (!item.archive.awaitingInspection && item.archive.status == filter)) && (query.isBlank() ||
+            listOf(item.name, item.samplePath, item.archive.appName, item.archive.packageName).any { it.contains(query.trim(), true) })
+    val selectableVisibleItems: List<ApkScanItem> get() = visibleItems.filter(::matchesCriteria)
+    val allSelected: Boolean get() = selectableVisibleItems.isNotEmpty() && selectableVisibleItems.all { it.uri in selected }
     fun toggleAllSelection(): ApkScanUiState {
         if (running) return this
-        val visible = visibleItems.map { it.uri }.toSet()
+        val visible = selectableVisibleItems.map { it.uri }.toSet()
         return copy(selected = if (allSelected) selected - visible else selected + visible)
     }
     val selectedBytes: Long get() = items.filter { it.uri in selected }.sumOf { it.bytes }
@@ -559,7 +586,8 @@ internal data class ApkScanItem(
     val errors: Long,
     val samplePath: String,
     val uri: String = samplePath,
-    val archive: ApkArchiveInfo = ApkArchiveInfo()
+    val archive: ApkArchiveInfo = ApkArchiveInfo(),
+    val modifiedSeconds: Long = 0L
 )
 
 @Composable
@@ -573,10 +601,13 @@ internal fun ApkScanScreen(
     onToggle: (String) -> Unit = {},
     onToggleAll: () -> Unit = {},
     onQuery: (String) -> Unit = {},
-    onFilter: (ApkInstallStatus?) -> Unit = {}
+    onFilter: (ApkInstallStatus?) -> Unit = {},
+    loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null
 ) {
     val context = LocalContext.current
     var showFilters by rememberSaveable { mutableStateOf(false) }
+    val loader by rememberUpdatedState(loadArchive)
+    val visible = state.visibleItems
     if (showFilters) {
         var filter by remember { mutableStateOf(state.filter) }
         FileFilterDialog({ showFilters = false }, {
@@ -591,13 +622,14 @@ internal fun ApkScanScreen(
         } },
         bottomBar = {
             if (state.cleanReady && !state.running) CleanSelectionBar(
-                state.selected.size, state.visibleItems.size, Formatter.formatFileSize(context, state.selectedBytes),
+                state.selected.size, state.selectableVisibleItems.size, Formatter.formatFileSize(context, state.selectedBytes),
                 state.allSelected, true, onToggleAll, onClean,
                 cleanLabel = "清理已选 ${state.selected.size} 个安装包")
         }
     ) { insets ->
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(insets).background(BaiZeTokens.colors.surfaceBase),
+        modifier = Modifier.fillMaxSize().padding(insets).background(BaiZeTokens.colors.surfaceBase)
+            .testTag("apk-results-list"),
         contentPadding = PaddingValues(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
@@ -621,10 +653,14 @@ internal fun ApkScanScreen(
         }
         item {
             DetailSectionHeader("安装包明细", if (state.totalFiles > 0) {
-                "当前 ${state.visibleItems.size} / 共 ${state.totalFiles} 个文件" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else " · 仅删除本次扫描到的文件"
+                "当前 ${visible.size} / 共 ${state.totalFiles} 个文件" + if (state.totalFiles > state.items.size) " · 展示前 ${state.items.size} 项" else " · 勾选清理，点按查看详情"
             } else "不会影响已经安装的应用")
         }
-        if (state.visibleItems.isEmpty()) {
+        if ((state.filter != null || state.query.isNotBlank()) && visible.any { it.archive.awaitingInspection }) item {
+            Text("正在核对可见安装包的应用信息，待识别项暂不可按此筛选勾选", Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (visible.isEmpty()) {
             item {
                 DetailEmptyState(
                     title = when { state.items.isNotEmpty() -> "没有符合筛选条件的安装包"; state.running -> "正在查找安装包"; state.coverage.isNotEmpty() -> "没有发现安装包"; else -> "还没有扫描结果" },
@@ -632,9 +668,13 @@ internal fun ApkScanScreen(
                     icon = Icons.Rounded.InstallMobile
                 )
             }
-        } else itemsIndexed(state.visibleItems, key = { _, item -> "${item.name}|${item.samplePath}" }) { index, item ->
-            ApkResultCard(item, first = index == 0, last = index == state.visibleItems.lastIndex,
-                selected = item.uri in state.selected, enabled = !state.running, onToggle = { onToggle(item.uri) })
+        } else itemsIndexed(visible, key = { _, item -> item.previewKey }) { _, item ->
+            val archive = if (loader == null) item.archive else produceState(item.archive, item.previewKey) {
+                value = requireNotNull(loader).invoke(item)
+            }.value
+            ApkArchiveResultCard(item.copy(archive = archive),
+                selected = item.uri in state.selected, enabled = !state.running && state.matchesCriteria(item),
+                onToggle = { onToggle(item.uri) })
         }
         if (state.coverage.isNotEmpty() || state.output.isNotBlank()) item {
             DetailExpandableText("扫描详情", state.coverage.joinToString("\n\n") {
@@ -644,20 +684,4 @@ internal fun ApkScanScreen(
         item { Spacer(Modifier.height(8.dp)) }
     }
     }
-}
-
-@Composable
-private fun ApkResultCard(item: ApkScanItem, first: Boolean, last: Boolean, selected: Boolean, enabled: Boolean, onToggle: () -> Unit) {
-    val context = LocalContext.current
-    val size = Formatter.formatFileSize(context, item.bytes)
-    val summary = listOf(item.archive.status.label, item.archive.appName, item.archive.version).filter { it.isNotBlank() }.joinToString(" · ") +
-        if (item.errors > 0) " · 异常 ${item.errors}" else ""
-    DetailResultRow(
-        title = item.name, value = size, summary = summary, path = item.samplePath,
-        details = listOf("$summary · $size", item.archive.packageName,
-            item.archive.installedVersion.takeIf { it.isNotBlank() }?.let { "已装版本：$it" }.orEmpty(),
-            "版本状态仅比较版本号，不代表签名兼容；删除安装包不会卸载应用。", item.samplePath).filter { it.isNotBlank() }.joinToString("\n\n"),
-        icon = Icons.Rounded.InstallMobile, first = first, last = last,
-        selected = selected, selectionEnabled = enabled, onToggle = onToggle
-    )
 }

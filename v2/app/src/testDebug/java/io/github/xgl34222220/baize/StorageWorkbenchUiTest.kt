@@ -77,9 +77,9 @@ class StorageWorkbenchUiTest {
             ApkScanScreen(state, {}, {}, {}, {}, {}, onToggleAll = { state = state.toggleAllSelection() },
                 onFilter = { state = state.copy(filter = it, selected = emptySet()) })
         } }
-        compose.onNodeWithText("低于已装版本").assertDoesNotExist()
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
         compose.onNodeWithContentDescription("筛选安装包").performScrollTo().performClick()
-        compose.onNodeWithText("低于已装版本").performClick()
+        compose.onNode(hasText("低于已装版本") and hasAnyAncestor(isDialog())).performClick()
         compose.onNodeWithText("应用").performClick()
         compose.onNodeWithText("全选").performClick()
         assertEquals(setOf(old.uri), state.selected)
