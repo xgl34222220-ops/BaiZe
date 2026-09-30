@@ -22,24 +22,8 @@ internal object AppRuleStore {
     )
 
     fun ensure(context: Context): File {
-        val root = File(RootPaths.STATE_DIR, "app-rules").apply { mkdirs() }
-        files.forEach { name ->
-            val target = File(root, name)
-            val bytes = runCatching { context.assets.open(name).use { it.readBytes() } }.getOrNull() ?: return@forEach
-            if (target.isFile && target.length() == bytes.size.toLong() &&
-                runCatching { target.readBytes().contentEquals(bytes) }.getOrDefault(false)
-            ) return@forEach
-            val temp = File(root, ".$name.${System.nanoTime()}.tmp")
-            runCatching {
-                temp.writeBytes(bytes)
-                if (!temp.renameTo(target)) {
-                    temp.copyTo(target, overwrite = true)
-                    temp.delete()
-                }
-                target.setReadable(true, true)
-                target.setWritable(true, true)
-            }.onFailure { temp.delete() }
+        return RuleBundleStore.install(File(RootPaths.STATE_DIR, "app-rules"), files) { name ->
+            context.assets.open(name).use { it.readBytes() }
         }
-        return root
     }
 }

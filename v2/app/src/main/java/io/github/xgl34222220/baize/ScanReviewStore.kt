@@ -5,14 +5,16 @@ import android.util.AtomicFile
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /** Serial disk access keeps a returning screen behind its last saved review. */
 internal object ScanReviewStore {
     private val disk = Executors.newSingleThreadExecutor()
 
-    fun save(context: Context, key: String, record: () -> JSONObject) {
+    /** The result completes only after the replacement is committed (or writing fails). */
+    fun save(context: Context, key: String, record: () -> JSONObject): Future<Boolean> {
         val directory = context.applicationContext.filesDir
-        disk.execute {
+        return disk.submit<Boolean> {
             val file = AtomicFile(File(directory, "scan-review-$key.json"))
             var stream: java.io.FileOutputStream? = null
             try {
@@ -20,9 +22,11 @@ internal object ScanReviewStore {
                 stream = file.startWrite()
                 stream.write(data)
                 file.finishWrite(stream)
+                true
             } catch (error: Exception) {
                 file.failWrite(stream)
                 android.util.Log.w("ScanReview", "无法保存扫描记录", error)
+                false
             }
         }
     }

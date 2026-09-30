@@ -15,9 +15,11 @@ apk = Path(sys.argv[1]).resolve()
 baseline = Path(os.environ["BAIZE_BASELINE_APK"])
 expected = sys.argv[2]
 previous = Path(sys.argv[3]).resolve()
+previous_30007 = Path(sys.argv[4]).resolve()
 assert hashlib.sha256(baseline.read_bytes()).hexdigest() == "01949f5a8f5e87e70bf2cc18e475f38bce28cdcd835ad731d0d9ea6565f97c80"
 if hashlib.sha256(previous.read_bytes()).hexdigest() != "5c327020842f2e8f71d8549d06fc7bbd6a6468638bb4e28e8cbcc9f31f4b97c0":
     raise AssertionError("30006 baseline must be the exact delivered APK")
+assert hashlib.sha256(previous_30007.read_bytes()).hexdigest() == "5f2f846b151d1e832f4c00f25d1502c36edecf974558c906b9289c9e7fa45dda"
 
 
 def tap(text, name, repeats=1):
@@ -131,6 +133,16 @@ try:
     tap("文件归类", "organizer-no-module")
     expect_top("FileOrganizerActivity", "organizer-no-module")
     m.adb("uninstall", m.APP)
+    m.adb("install", str(previous_30007), timeout=120)
+    m.launch("baseline-30007")
+    mark = marker("preserve-30007-data")
+    m.adb("push", str(seed), target)
+    m.adb("shell", f"uid=$(stat -c %u /data/user/0/{m.APP}); chown $uid:$uid {target}; restorecon {target}")
+    installed_candidate()
+    assert m.adb("shell", "cat", mark) == "preserve-30007-data"
+    assert json.loads(m.adb("shell", "cat", target))["selected"] == ["upgrade-fixture"]
+    m.launch("candidate-from-30007")
+    m.adb("uninstall", m.APP)
     m.adb("install", str(apk), timeout=120)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS", check=False)
     m.launch("candidate-fresh-install")
@@ -141,6 +153,7 @@ try:
     m.save_text("passed.json", json.dumps({"versionCode": int(expected), "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "android_api": m.adb("shell", "getprop", "ro.build.version.sdk"), "official_upgrade_preserved_data": True,
         "30006_upgrade_preserved_review_and_selection": True, "fresh_install": True, "four_navigation_tabs": True,
+        "30007_upgrade_preserved_review_and_selection": True,
         "baseline_scan_stack": old_scan_stack, "candidate_scan_stack": new_scan_stack,
         "baseline_deep_stack": old_deep_stack, "candidate_deep_stack": new_deep_stack,
         "repeated_tap_single_page": True, "single_back_to_origin": True, "background_foreground": True,

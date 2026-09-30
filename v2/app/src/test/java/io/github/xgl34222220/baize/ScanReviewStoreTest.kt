@@ -24,6 +24,13 @@ class ScanReviewStoreTest {
         assertEquals("com.example.app", loaded.getString("packageName"))
     }
 
+    @Test fun failedSaveReportsFailureAndKeepsThePreviousReview() {
+        val context = RuntimeEnvironment.getApplication()
+        assertTrue(ScanReviewStore.save(context, "write-failure") { JSONObject().put("phase", "previous") }.get())
+        assertFalse(ScanReviewStore.save(context, "write-failure") { error("synthetic serialization failure") }.get())
+        assertEquals("previous", ScanReviewStore.read(context, "write-failure")!!.getString("phase"))
+    }
+
     @Test fun corruptedReviewIsReportedWithoutErasingItsBytes() {
         val context = RuntimeEnvironment.getApplication()
         val file = java.io.File(context.filesDir, "scan-review-corrupt.json")

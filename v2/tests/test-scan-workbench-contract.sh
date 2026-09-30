@@ -20,12 +20,16 @@ grep -q 'verifyHash(manifestFile' "$SELECTION"
 grep -q 'selection_parent_snapshot' "$SELECTION"
 grep -q 'path == root || path.startsWith("$root/")' "$SELECTION"
 
-# Cleaning must consume the selected immutable snapshot and never invoke a scan from the clean path.
-grep -q 'prepareCacheSelection(cacheSnapshotId' "$WORKBENCH"
-grep -q 'cache.cleanSelected' "$WORKBENCH"
+# Cleaning must use the foreground service's immutable snapshot and exact selected paths.
+# The module's separate snapshot repository cannot authorize an App foreground scan.
+grep -Fq 'val reviewedCacheSnapshot = cacheSnapshotId' "$WORKBENCH"
+grep -Fq 'cacheItems.forEach { selection.put(it.path, true) }' "$WORKBENCH"
+grep -Fq 'cache.cleanSelected(reviewedCacheSnapshot, selection.toString(), packageWhitelist)' "$WORKBENCH"
 grep -q 'profile.cleanProfileSelected' "$WORKBENCH"
 CLEAN_SECTION=$(sed -n '/fun cleanSelection()/,/fun quarantineItem/p' "$WORKBENCH")
 test -n "$CLEAN_SECTION"
+! printf '%s\n' "$CLEAN_SECTION" | grep -q 'prepareCacheSelection'
+! printf '%s\n' "$CLEAN_SECTION" | grep -q '__all_safe__'
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanCandidates'
 ! printf '%s\n' "$CLEAN_SECTION" | grep -q 'scanProfile'
 

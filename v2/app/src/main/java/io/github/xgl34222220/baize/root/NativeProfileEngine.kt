@@ -9,6 +9,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.UUID
@@ -70,7 +73,8 @@ internal class NativeProfileEngine(
         var complete: Boolean = false,
         val note: String = "",
         val blockedReason: String = "",
-        val retentionDays: Int = 0
+        val retentionDays: Int = 0,
+        val identity: String = ""
     ) {
         fun json(): JSONObject = JSONObject()
             .put("id", id)
@@ -411,7 +415,9 @@ internal class NativeProfileEngine(
             details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else "仍有受保护或未删除项目", actualBytes, actualFiles, actualDirs))
         }
 
-        snapshots.remove(snapshotId)
+        val selectedIds = selected.mapTo(hashSetOf()) { it.id }
+        snapshot.candidates.removeAll { it.id in selectedIds }
+        if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
         val timedOut = SystemClock.elapsedRealtime() >= deadline
         val wasCancelled = cancelled.get()
         progress(Progress(if (wasCancelled) "清理已停止" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
@@ -429,6 +435,9 @@ internal class NativeProfileEngine(
             .put("timedOut", timedOut)
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .put("details", details)
+            .put("remainingSnapshotId", if (snapshot.candidates.isEmpty()) "" else snapshot.id)
+            .put("remainingCandidates", snapshot.candidates.size)
+            .put("snapshotExpiresInMs", (SNAPSHOT_TTL_MS - (System.currentTimeMillis() - snapshot.createdAt)).coerceAtLeast(0L))
             .toString()
     }
 
@@ -501,7 +510,9 @@ internal class NativeProfileEngine(
                 .put("action", if (result.success) "quarantined" else "failed")
         )
     }
-    snapshots.remove(snapshotId)
+    val selectedIds = selected.mapTo(hashSetOf()) { it.id }
+    snapshot.candidates.removeAll { it.id in selectedIds }
+    if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
     val wasCancelled = cancelled.get()
     val timedOut = SystemClock.elapsedRealtime() >= deadline
     progress(Progress(if (wasCancelled) "隔离已停止" else "隔离完成", selected.size, selected.size, bytes = quarantinedBytes, files = quarantinedFiles, failures = failures))
@@ -519,6 +530,9 @@ internal class NativeProfileEngine(
         .put("elapsedMs", SystemClock.elapsedRealtime() - started)
         .put("message", "已隔离 $quarantined 个高风险项目，可在隔离区恢复")
         .put("details", details)
+        .put("remainingSnapshotId", if (snapshot.candidates.isEmpty()) "" else snapshot.id)
+        .put("remainingCandidates", snapshot.candidates.size)
+        .put("snapshotExpiresInMs", (SNAPSHOT_TTL_MS - (System.currentTimeMillis() - snapshot.createdAt)).coerceAtLeast(0L))
         .toString()
 }
 
@@ -763,7 +777,8 @@ internal class NativeProfileEngine(
             candidate.risk == "critical" -> "系统或应用关键数据，不参与清理"
             else -> ""
         }
-        val item = candidate.copy(id = "${candidate.profile}:$path", path = path, packageName = owner, blockedReason = blocked)
+        val item = candidate.copy(id = "${candidate.profile}:$path", path = path, packageName = owner,
+            blockedReason = blocked, identity = targetIdentity(File(path)))
         val target = File(path)
         if (!item.measured && target.isFile) {
             item.bytes = target.length()
@@ -787,6 +802,7 @@ internal class NativeProfileEngine(
         if (candidate.risk == "high" && !options.allowHighRisk) return "高风险清理未启用"
         if (candidate.profile == "corpses" && installedPackages().containsKey(candidate.packageName)) return "应用已重新安装"
         if (!stillMatches(candidate, target, options)) return "目标不再符合扫描条件"
+        if (candidate.identity.isBlank() || targetIdentity(target) != candidate.identity) return "目标已变化，请重新扫描此项目"
         return null
     }
 
@@ -1066,7 +1082,7 @@ internal class NativeProfileEngine(
     ): Candidate {
         val path = scanEntry?.path ?: canonical(file)
         return Candidate("$profile:$path", profile, category, label, risk, path, packageName, appName, deleteRoot,
-            note = note, retentionDays = retentionDays.coerceIn(0, 365))
+            note = note, retentionDays = retentionDays.coerceIn(0, 365), identity = targetIdentity(file))
     }
 
     private fun profile(id: String, title: String, subtitle: String, risk: String): JSONObject = JSONObject()
@@ -1255,12 +1271,18 @@ internal class NativeProfileEngine(
 
     private fun validSnapshot(id: String): Snapshot? {
         val snapshot = snapshots[id] ?: return null
-        if (System.currentTimeMillis() - snapshot.createdAt > SNAPSHOT_TTL_MS) {
+        if (System.currentTimeMillis() - snapshot.createdAt !in 0L..SNAPSHOT_TTL_MS) {
             snapshots.remove(id)
             return null
         }
         return snapshot
     }
+
+    private fun targetIdentity(file: File): String = runCatching {
+        val attrs = Files.readAttributes(file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        val key = attrs.fileKey()?.toString().orEmpty()
+        if (key.isBlank()) "" else if (attrs.isRegularFile) "$key:${attrs.size()}:${attrs.lastModifiedTime()}" else key
+    }.getOrDefault("")
 
     private fun pruneSnapshots() {
         val now = System.currentTimeMillis()

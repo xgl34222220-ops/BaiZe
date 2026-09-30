@@ -20,7 +20,8 @@ grep -Fq 'String purgeQuarantineItem(String id);' "$AIDL"
 
 # UI authorizes only a candidate ID from the current profile snapshot. It never sends a new path.
 grep -Fq 'item.id.removePrefix("profile:")' "$WORKBENCH"
-grep -Fq 'service.quarantineProfileSelected(profileSnapshotId' "$WORKBENCH"
+grep -Fq 'val reviewedSnapshot = profileSnapshotId' "$WORKBENCH"
+grep -Fq 'service.quarantineProfileSelected(reviewedSnapshot' "$WORKBENCH"
 ! grep -Fq 'quarantineProfileSelected(item.path' "$WORKBENCH"
 
 # The engine must resolve the candidate from an unexpired server-side snapshot and only accept high risk.

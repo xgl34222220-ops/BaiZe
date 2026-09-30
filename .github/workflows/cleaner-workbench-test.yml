@@ -75,7 +75,14 @@ jobs:
 
       - name: Test Android logic and render UI
         working-directory: v2
-        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug
+        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+
+      - name: Upload debug-only Root flow probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-Root-Flow-Probe
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
 
       - name: Build native engines
         working-directory: v2
@@ -125,6 +132,8 @@ jobs:
           name: BaiZe-Workbench-Verification
           path: |
             v2/app/build/reports/ui-screenshots/
+            v2/app/build/reports/batch-cleanup-ui/
+            v2/app/app/build/reports/batch-cleanup-ui/
             v2/app/build/test-results/testDebugUnitTest/
             v2/app/build/reports/lint-results-debug.html
           if-no-files-found: warn
@@ -152,6 +161,10 @@ jobs:
           pattern: BaiZe-*-Paired-Test
           merge-multiple: true
           path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-Root-Flow-Probe
+          path: root-probe
       - name: Download exact 30006 test baseline
         uses: actions/download-artifact@v4
         with:
@@ -159,6 +172,13 @@ jobs:
           run-id: 36744532279
           github-token: ${{ github.token }}
           path: baseline-30006
+      - name: Download exact 30007 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+0150dfdf-Paired-Test
+          run-id: 36752722567
+          github-token: ${{ github.token }}
+          path: baseline-30007
       - name: Prepare verified upgrade baseline and emulator
         run: |
           curl --fail --location --retry 3 'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v2.0.0/BaiZe-v2.0.0.apk' -o "$RUNNER_TEMP/baize-baseline.apk"
@@ -173,11 +193,15 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30007 baseline-30006/*.apk
+          script: |
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30008 baseline-30006/*.apk baseline-30007/*.apk
+            bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: BaiZe-APK-Installation-Smoke
-          path: ${{ runner.temp }}/baize-apk-startup/
+          path: |
+            ${{ runner.temp }}/baize-apk-startup/
+            ${{ runner.temp }}/baize-root-cache-probe/
           if-no-files-found: warn
           retention-days: 7

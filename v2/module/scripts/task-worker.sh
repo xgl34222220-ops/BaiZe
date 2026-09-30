@@ -22,6 +22,12 @@ case "$TASK_ID" in ''|*[!a-zA-Z0-9_.-]*|.*) echo "任务编号无效" >&2; exit 
 case "$MODE" in clean|scan|apk-auto|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
+# Lock the root state even for the isolated cache lane. Descriptor 8 is inherited
+# by the detached runner and its children, so launcher exit cannot unlock a live task.
+OPERATION_LOCK="$MODDIR/config/operation-lock.sh"
+[ -f "$OPERATION_LOCK" ] || { echo "任务互斥组件缺失，请更新完整模块" >&2; exit 5; }
+. "$OPERATION_LOCK"
+baize_acquire_operation_lock "${BAIZE_ROOT_STATE_DIR:-$STATE_DIR}" shared || { echo "已有前台清理任务运行" >&2; exit 3; }
 # A persistent kernel-lock inode serializes stale-lock recovery. Never unlink this
 # guard: two contenders must not recover the same old pathname over a new owner.
 recovery_lock() {

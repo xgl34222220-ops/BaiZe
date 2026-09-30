@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 /** Binder facade; repositories own validation and task coordination. */
 class BaiZeProfileRootService : RootService() {
-    private val coordinator = TaskCoordinator()
+    private val coordinator = TaskCoordinator(acquireLease = { shared -> RootOperationLease.acquire(this, shared) })
     private val schedulerRepository = SchedulerRepository()
     private val diagnostics = DiagnosticRepository()
     private val historyRepository = HistoryRepository()

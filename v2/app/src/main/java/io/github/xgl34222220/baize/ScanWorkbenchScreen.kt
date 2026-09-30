@@ -148,11 +148,11 @@ internal fun ScanWorkbenchScreen(
             value = SystemClock.elapsedRealtime()
         }
     }
-    val liveSnapshot = state.scanReady && !state.cleanupCompleted && now < state.expiresAtRealtime
+    val liveSnapshot = state.scanReady && now < state.expiresAtRealtime
     val historicalSnapshot = state.items.isNotEmpty() && !liveSnapshot && !state.running && !state.loadingResults && !state.cleanupCompleted
-    val lockedReason = if (state.cleanupCompleted) "清理记录已保留；重新扫描后可继续选择" else reviewSelectionBlockReason(state, now)
+    val lockedReason = if (state.cleanupCompleted && !liveSnapshot) "清理记录已保留；重新扫描后可继续选择" else reviewSelectionBlockReason(state, now)
     val editable = lockedReason == null
-    val visibleState = if (state.scanReady && !liveSnapshot && !state.running && !state.cleanupCompleted) state.copy(
+    val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
         scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描结果已过期，请重新扫描") else state
     val activeFilter = filter
     val activeExpandedGroups = expandedGroupKeys.toSet()
@@ -224,13 +224,13 @@ internal fun ScanWorkbenchScreen(
                 }
             }
             if (state.items.isNotEmpty()) {
-                if (!state.running && !historicalSnapshot && !state.cleanupCompleted) item {
+                if (!state.running && !historicalSnapshot && (!state.cleanupCompleted || liveSnapshot)) item {
                     WorkbenchCategories(presentation.categories, activeFilter) { filter = if (filter == it) "all" else it }
                 }
                 item {
                     Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp, bottom = 4.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (state.cleanupCompleted) "本次处理记录" else "应用与文件", Modifier.weight(1f), style = BaiZeTokens.type.title)
+                            Text(if (state.cleanupCompleted && liveSnapshot) "剩余项目与处理记录" else if (state.cleanupCompleted) "本次处理记录" else "应用与文件", Modifier.weight(1f), style = BaiZeTokens.type.title)
                             TextButton(onClick = { showFilters = true },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
                                 contentPadding = PaddingValues(horizontal = 10.dp)) {
@@ -273,7 +273,7 @@ internal fun ScanWorkbenchScreen(
                 items(presentation.rows, key = { it.key }, contentType = { if (it is WorkbenchRow.Group) "group" else "candidate" }) { row ->
                     when (row) {
                         is WorkbenchRow.Group -> WorkbenchGroupRow(
-                            row.group, row.group.key in activeExpandedGroups, editable, historicalSnapshot || state.cleanupCompleted,
+                            row.group, row.group.key in activeExpandedGroups, editable, historicalSnapshot || (state.cleanupCompleted && !liveSnapshot),
                             onExpand = { expandedGroupKeys = if (row.group.key in activeExpandedGroups)
                                 expandedGroupKeys - row.group.key else expandedGroupKeys + row.group.key }, onSelect = {
                                 val visibleIds = reviewRiskSelection(row.group.items, setOf("low", "medium"))
@@ -401,6 +401,7 @@ private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
     state.notice == WorkbenchNotice.ERROR -> workbenchErrorSummary(state)
     !state.scanReady && state.items.isNotEmpty() -> reviewRecordTitle(state)
     state.notice == WorkbenchNotice.WARNING -> state.phase.ifBlank { "扫描未完成，请查看原因" }
+    state.cleanupCompleted && state.scanReady -> "可继续选择剩余项目"
     state.scanReady -> "扫描完成"
     state.notice == WorkbenchNotice.SUCCESS -> "任务已完成"
     !state.connected -> "等待清理服务连接"
@@ -421,8 +422,8 @@ private fun workbenchPageTitle(profile: String) = when (profile) {
 @Composable
 private fun WorkbenchStages(state: WorkbenchUiState, liveSnapshot: Boolean) {
     val active = when {
-        state.cleanupCompleted -> 2
         liveSnapshot || (state.running && state.operation in setOf("clean", "protect")) -> 1
+        state.cleanupCompleted -> 2
         else -> 0
     }
     val labels = listOf(if (state.running && state.operation == "scan") "扫描中" else "扫描",
@@ -490,7 +491,9 @@ private fun WorkbenchCompletionCard(state: WorkbenchUiState, onDetails: () -> Un
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (state.notice == WorkbenchNotice.SUCCESS) BaiZeSuccessMark()
                 else Icon(Icons.Rounded.Info, null, Modifier.size(20.dp), tint = BaiZeTokens.colors.warning)
-                Text(if (state.notice == WorkbenchNotice.SUCCESS) "清理完成" else "本次清理已结束",
+                Text(if (state.notice == WorkbenchNotice.SUCCESS) {
+                    if (state.scanReady) "本批清理完成" else "清理完成"
+                } else "本次清理已结束",
                     fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
             Column {

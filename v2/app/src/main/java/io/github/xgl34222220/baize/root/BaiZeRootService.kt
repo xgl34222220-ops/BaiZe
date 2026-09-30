@@ -221,7 +221,8 @@ class BaiZeRootService : RootService() {
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runForegroundScan(whitelistJson.orEmpty(), started)
+                val lease = RootOperationLease.acquire(this@BaiZeRootService, shared = true) ?: return busy("cache-scan")
+                lease.use { runForegroundScan(whitelistJson.orEmpty(), started) }
             } catch (error: Throwable) {
                 JSONObject()
                     .put("error", "foreground_cache_scan_failed")
@@ -278,26 +279,19 @@ class BaiZeRootService : RootService() {
             selectionJson: String?,
             whitelistJson: String?
         ): String {
-            if (!restoreForegroundSnapshot() || !snapshotValid(requestedSnapshotId.orEmpty())) {
-                return JSONObject()
-                    .put("error", "snapshot_expired")
-                    .put("message", "缓存扫描快照已失效，不会自动重新扫描")
-                    .toString()
-            }
-            val allSafe = runCatching {
-                JSONObject(selectionJson.orEmpty()).optBoolean("__all_safe__", false)
-            }.getOrDefault(false)
-            if (!allSafe) {
-                return JSONObject()
-                    .put("error", "selection_required")
-                    .put("message", "没有授权清理当前缓存快照")
-                    .toString()
-            }
             if (!running.compareAndSet(false, true)) return busy("cache-clean")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runForegroundClean(whitelistJson.orEmpty(), started)
+                val lease = RootOperationLease.acquire(this@BaiZeRootService, shared = false) ?: return busy("cache-clean")
+                lease.use {
+                    if (!restoreForegroundSnapshot() || !snapshotValid(requestedSnapshotId.orEmpty())) {
+                        return JSONObject().put("success", false).put("error", "snapshot_expired")
+                            .put("message", "缓存扫描快照已失效，不会自动重新扫描").toString()
+                    }
+                    val selected = selectForegroundCacheSnapshot(requireNotNull(foregroundSnapshot), selectionJson.orEmpty())
+                    runForegroundClean(whitelistJson.orEmpty(), started, selected)
+                }
             } catch (error: Throwable) {
                 JSONObject()
                     .put("error", "foreground_cache_clean_failed")
@@ -366,7 +360,7 @@ class BaiZeRootService : RootService() {
             .toString()
     }
 
-    private fun runForegroundClean(whitelistJson: String, started: Long): String {
+    private fun runForegroundClean(whitelistJson: String, started: Long, selected: ForegroundCacheEngine.Snapshot): String {
         val snapshot = foregroundSnapshot ?: return JSONObject()
             .put("error", "snapshot_expired")
             .put("message", "缓存扫描快照已失效，请重新扫描")
@@ -378,7 +372,7 @@ class BaiZeRootService : RootService() {
             .put("phase", "正在清理应用缓存")
             .put("elapsedMs", 0L)
             .toString()
-        val result = foregroundEngine.clean(snapshot, whitelistJson) { phase, current, total, path ->
+        val result = foregroundEngine.clean(selected, whitelistJson) { phase, current, total, path ->
             taskStateJson = JSONObject()
                 .put("running", true)
                 .put("operation", "foreground-cache-clean")
@@ -391,16 +385,18 @@ class BaiZeRootService : RootService() {
                 .toString()
         }
         writeForegroundCleanReport(result)
-        if (result.remainingItems.isEmpty() && !result.cancelled) {
+        val selectedPaths = selected.items.mapTo(hashSetOf()) { it.path }
+        val remainingItems = snapshot.items.filterNot { it.path in selectedPaths } + result.remainingItems
+        if (remainingItems.isEmpty() && !result.cancelled) {
             clearForegroundSnapshot()
         } else {
             val remaining = ForegroundCacheEngine.Snapshot(
                 id = snapshot.id,
                 createdAt = snapshot.createdAt,
-                items = result.remainingItems,
-                totalBytes = result.remainingItems.sumOf { it.bytes },
-                totalFiles = result.remainingItems.sumOf { it.files },
-                visitedDirs = result.remainingItems.sumOf { it.directories },
+                items = remainingItems,
+                totalBytes = remainingItems.sumOf { it.bytes },
+                totalFiles = remainingItems.sumOf { it.files },
+                visitedDirs = remainingItems.sumOf { it.directories },
                 elapsedMs = snapshot.elapsedMs
             )
             foregroundSnapshot = remaining
@@ -408,7 +404,11 @@ class BaiZeRootService : RootService() {
             setSnapshotState(remaining)
             persistForegroundSnapshot(remaining)
         }
-        return result.json().put("output", "App RootService 直接清理；未调用模块脚本").toString()
+        return result.json().put("output", "App RootService 直接清理；未调用模块脚本")
+            .put("remainingSnapshotId", if (remainingItems.isEmpty()) "" else snapshot.id)
+            .put("remainingCandidates", remainingItems.size)
+            .put("snapshotExpiresInMs", (SNAPSHOT_MAX_AGE_MS - (System.currentTimeMillis() - snapshot.createdAt)).coerceAtLeast(0L))
+            .toString()
     }
 
     private fun cacheItem(item: ForegroundCacheEngine.Item): CacheItem = CacheItem(

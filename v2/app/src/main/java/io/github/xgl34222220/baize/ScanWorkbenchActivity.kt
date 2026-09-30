@@ -56,6 +56,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ScanWorkbenchActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -150,6 +151,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     private var cleanupPolicy = CleanupPolicy.BALANCED
     private var pollJob: Job? = null
     private var scanJob: Job? = null
+    private var mutationJob: Job? = null
+    private var mutationStopRequest: AtomicBoolean? = null
     private var stopJob: Job? = null
     private val scanGeneration = ScanLoadGeneration()
     private val reviewHydration = ReviewHydrationGate()
@@ -174,6 +177,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
             operationEpoch++
             invalidateScanLoad()
             scanJob?.cancel()
+            mutationJob?.cancel()
             profileService = null
             profileBound = false
             screenState = screenState.copy(profileConnected = false, running = false,
@@ -199,6 +203,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
             operationEpoch++
             invalidateScanLoad()
             scanJob?.cancel()
+            mutationJob?.cancel()
             cacheService = null
             cacheBound = false
             screenState = screenState.copy(cacheConnected = false, running = false,
@@ -240,6 +245,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         operationEpoch++
         scanGeneration.invalidate()
         scanJob?.cancel()
+        mutationJob?.cancel()
         pollJob?.cancel()
         // Activity recreation retains this session. Only a finished ViewModel releases bindings.
         if (screenState.running) invalidateScanLoad()
@@ -547,22 +553,30 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
             return
         }
         val epoch = ++operationEpoch
+        val stopRequested = AtomicBoolean().also { mutationStopRequest = it }
+        val reviewedCacheSnapshot = cacheSnapshotId
+        val reviewedProfileSnapshot = profileSnapshotId
+        val reviewedExpiresAt = snapshotExpiresAtRealtime
         val reviewedItems = screenState.items
         val reviewedSelection = selected.mapTo(linkedSetOf()) { it.id }
         val cacheItems = selected.filter { it.source == "cache" }
         val profileItems = selected.filter { it.source == "profile" }
         screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
+            cleanupCompleted = false, cleanedBytes = 0L, cleanedFiles = 0L,
             phase = "正在校验并清理 ${selected.size} 个已勾选项目…", progressCurrent = 0L,
             progressTotal = selected.size.toLong(), currentPath = "")
         startPolling()
-        saveReview()
+        val pendingReview = saveReview()
         val attempt = CleanupAttempt()
-        lifecycleScope.launch {
+        mutationJob = lifecycleScope.launch {
             val response = runCatching {
                 withContext(Dispatchers.IO) {
+                    check(pendingReview?.get() == true) { "无法保存清理前记录，请重试" }
+                    currentCoroutineContext().ensureActive()
                     val packageWhitelist = profile.getWhitelistPackages()
                     val options = JSONObject(optionsJson(profile))
                         .put("allowHighRisk", profileItems.any { it.risk == "high" }).toString()
+                    ensureMutationCanStart(stopRequested)
                     var bytes = 0L
                     var files = 0L
                     var failures = 0
@@ -573,18 +587,17 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     val outcomes = HashMap<String, String>()
                     val actualApps = ArrayList<AppJunkUiItem>()
                     val actualJunk = ArrayList<GeneralJunkUiItem>()
+                    var remainingCache = RemainingReview(if (cacheItems.isEmpty()) reviewedCacheSnapshot else "", reviewedExpiresAt)
+                    var remainingProfile = RemainingReview(if (profileItems.isEmpty()) reviewedProfileSnapshot else "", reviewedExpiresAt)
                     if (cacheItems.isNotEmpty()) {
                         val cache = requireNotNull(cache)
                         val selection = JSONObject()
                         cacheItems.forEach { selection.put(it.path, true) }
-                        val prepared = JSONObject(attempt.authorize {
-                            profile.prepareCacheSelection(cacheSnapshotId, selection.toString())
-                        })
-                        if (!prepared.optBoolean("success")) error(prepared.optString("message", prepared.optString("error", "无法裁剪缓存快照")))
-                        val selectedSnapshotId = prepared.optString("snapshotId")
+                        ensureMutationCanStart(stopRequested)
                         val cacheResult = JSONObject(attempt.mutate {
-                            cache.cleanSelected(selectedSnapshotId, JSONObject().put("__all_safe__", true).toString(), packageWhitelist)
+                            cache.cleanSelected(reviewedCacheSnapshot, selection.toString(), packageWhitelist)
                         })
+                        remainingCache = remainingReview(cacheResult, reviewedExpiresAt)
                         val cacheDeletedBytes = cacheResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
                         val cacheDeletedFiles = cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         val cacheCleanedCandidates = cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
@@ -650,12 +663,15 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             }
                         }
                     }
+                    if (stopRequested.get()) { cancelled = true; incomplete = true }
                     if (!cancelled && profileItems.isNotEmpty()) {
                         val selection = JSONObject()
                         profileItems.forEach { selection.put(it.id.removePrefix("profile:"), true) }
+                        ensureMutationCanStart(stopRequested)
                         val profileResult = JSONObject(attempt.mutate {
-                            profile.cleanProfileSelected(profileSnapshotId, selection.toString(), options)
+                            profile.cleanProfileSelected(reviewedProfileSnapshot, selection.toString(), options)
                         })
+                        remainingProfile = remainingReview(profileResult, reviewedExpiresAt)
                         bytes += profileResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
                         files += profileResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         failures += profileResult.optInt("failures", if (profileResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
@@ -689,6 +705,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             }
                         }
                     }
+                    currentCoroutineContext().ensureActive()
                     runCatching {
                         profile.recordNativeTask(JSONObject().put("mode", "workbench-clean")
                             .put("success", !incomplete && failures == 0 && !cancelled)
@@ -701,27 +718,45 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                                 AppJunkCategoryUiItem(it.category, it.files, it.bytes, it.errors, "")
                             })
                     }
-                    LastCleanupStore.save(this@ScanWorkbenchSession, groupedApps, actualJunk)
-                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete)
+                    CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete,
+                        groupedApps, actualJunk, remainingCache, remainingProfile)
                 }
             }
             if (closed || epoch != operationEpoch) return@launch
             pollJob?.cancel()
             response.onSuccess { result ->
-                cacheSnapshotId = ""
-                profileSnapshotId = ""
-                snapshotExpiresAtRealtime = 0L
-                screenState = screenState.copy(running = false, scanReady = false, operation = "idle",
+                // Publish history with the accepted review, never from an obsolete IO reply.
+                LastCleanupStore.save(this@ScanWorkbenchSession, result.apps, result.junk)
+                val now = SystemClock.elapsedRealtime()
+                val cacheRemaining = result.cacheRemaining.takeIf { it.id.isNotBlank() && it.expiresAt > now }
+                val profileRemaining = result.profileRemaining.takeIf { it.id.isNotBlank() && it.expiresAt > now }
+                cacheSnapshotId = cacheRemaining?.id.orEmpty()
+                profileSnapshotId = profileRemaining?.id.orEmpty()
+                val updatedItems = reviewedItems.map { item ->
+                    if (item.id in reviewedSelection) item.copy(selectable = false,
+                        outcome = result.outcomes[item.id] ?: "未完成或未返回结果；重新扫描后可重试")
+                    else item.copy(selectable = item.selectable && when (item.source) {
+                        "cache" -> cacheRemaining != null
+                        "profile" -> profileRemaining != null
+                        else -> false
+                    }, outcome = item.outcome.ifBlank { "未勾选，保留" })
+                }
+                val canContinue = updatedItems.any { it.selectable }
+                snapshotExpiresAtRealtime = if (canContinue) listOfNotNull(cacheRemaining?.expiresAt, profileRemaining?.expiresAt).minOrNull() ?: 0L else 0L
+                screenState = screenState.copy(running = false, scanReady = canContinue, operation = "idle",
                     cleanupCompleted = true, cleanedBytes = result.bytes, cleanedFiles = result.files,
-                    items = reviewedItems.map { item -> item.copy(outcome =
-                        if (item.id in reviewedSelection) result.outcomes[item.id] ?: "未完成或未返回结果" else "未勾选，保留") },
-                    selectedIds = if (result.incomplete) reviewedSelection.filterTo(linkedSetOf()) { itWasNotCleaned(it, result.outcomes) } else emptySet(),
-                    notice = if (result.incomplete) WorkbenchNotice.WARNING else WorkbenchNotice.SUCCESS, expiresAtRealtime = 0L,
-                    phase = if (result.cancelled) "清理已停止，结果与未完成勾选已保留"
-                        else if (result.incomplete) "部分项目未完成，重新扫描后可继续清理" else "已完成所选项目清理",
+                    items = updatedItems, selectedIds = emptySet(),
+                    notice = if (result.incomplete) WorkbenchNotice.WARNING else WorkbenchNotice.SUCCESS, expiresAtRealtime = snapshotExpiresAtRealtime,
+                    phase = when {
+                        canContinue && result.incomplete -> "本批处理已结束；未选项目可继续选择，未完成项需重新扫描"
+                        canContinue -> "本批已清理；剩余项目可继续勾选，高风险需再次确认"
+                        result.cancelled -> "清理已停止，结果已保留，请重新扫描后继续"
+                        result.incomplete -> "部分项目未完成，重新扫描后可继续清理"
+                        else -> "已完成所选项目清理"
+                    },
                     resultText = "释放 ${formatBytes(result.bytes)} · 文件 ${result.files} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}")
             }.onFailure { error ->
-                val canRetry = !attempt.snapshotTouched && !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime &&
+                val canRetry = !stopRequested.get() && !attempt.snapshotTouched && !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime &&
                     profileService != null && (cacheItems.isEmpty() || cacheService != null)
                 if (!canRetry) {
                     cacheSnapshotId = ""
@@ -731,7 +766,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 screenState = screenState.copy(running = false, operation = "idle", scanReady = canRetry, notice = WorkbenchNotice.ERROR,
                     expiresAtRealtime = snapshotExpiresAtRealtime,
                     // Never replay deletion after a lost response. Keep the exact user review.
-                    phase = if (attempt.cleanupSubmitted) "清理结果未确认，列表与勾选已保留" else "清理未完成，列表与勾选已保留",
+                    phase = if (stopRequested.get()) "清理已停止，列表与勾选已保留"
+                        else if (attempt.cleanupSubmitted) "清理结果未确认，列表与勾选已保留" else "清理未完成，列表与勾选已保留",
                     resultText = (if (canRetry) "请求尚未执行，可重试。" else "请重新扫描后再清理，避免重复执行。") +
                         "\n" + (error.message ?: error.javaClass.simpleName))
             }
@@ -747,16 +783,22 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         }
         val service = profileService ?: return
         val epoch = ++operationEpoch
+        val stopRequested = AtomicBoolean().also { mutationStopRequest = it }
+        val reviewedSnapshot = profileSnapshotId
         screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
             phase = "正在把 ${item.title} 移入隔离区…", currentPath = item.path)
         startPolling()
+        val pendingReview = saveReview()
         val attempt = CleanupAttempt()
-        lifecycleScope.launch {
+        mutationJob = lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
+                    check(pendingReview?.get() == true) { "无法保存隔离前记录，请重试" }
+                    currentCoroutineContext().ensureActive()
                     val selection = JSONObject().put(item.id.removePrefix("profile:"), true)
                     val options = optionsJson(service)
-                    JSONObject(attempt.mutate { service.quarantineProfileSelected(profileSnapshotId, selection.toString(), options) })
+                    ensureMutationCanStart(stopRequested)
+                    JSONObject(attempt.mutate { service.quarantineProfileSelected(reviewedSnapshot, selection.toString(), options) })
                 }
             }
             if (closed || epoch != operationEpoch) return@launch
@@ -774,30 +816,31 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     Toast.makeText(this@ScanWorkbenchSession, "已移入隔离区，可随时恢复", Toast.LENGTH_SHORT).show()
                     saveReview()
                 } else {
-                    if (attempt.cleanupSubmitted) {
+                    if (attempt.cleanupSubmitted || stopRequested.get()) {
                         cacheSnapshotId = ""
                         profileSnapshotId = ""
                         snapshotExpiresAtRealtime = 0L
                     }
-                    screenState = screenState.copy(running = false,
+                    screenState = screenState.copy(running = false, operation = "idle",
                         notice = if (json.optBoolean("cancelled") || json.optBoolean("success")) WorkbenchNotice.WARNING else WorkbenchNotice.ERROR,
-                        scanReady = !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime,
+                        scanReady = !stopRequested.get() && !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime,
                         expiresAtRealtime = snapshotExpiresAtRealtime,
                         phase = json.optString("message", json.optString("error", "隔离未完成")),
                         resultText = if (attempt.cleanupSubmitted) "列表与勾选已保留，请重新扫描后继续。" else "请求尚未执行。")
                     saveReview()
                 }
             }.onFailure {
-                if (attempt.cleanupSubmitted) {
+                if (attempt.cleanupSubmitted || stopRequested.get()) {
                     cacheSnapshotId = ""
                     profileSnapshotId = ""
                     snapshotExpiresAtRealtime = 0L
                 }
-                screenState = screenState.copy(running = false, notice = WorkbenchNotice.ERROR,
-                    scanReady = !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime,
-                    expiresAtRealtime = snapshotExpiresAtRealtime, phase = "隔离结果未确认，列表与勾选已保留",
+                screenState = screenState.copy(running = false, operation = "idle", notice = WorkbenchNotice.ERROR,
+                    scanReady = !stopRequested.get() && !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime,
+                    expiresAtRealtime = snapshotExpiresAtRealtime,
+                    phase = if (stopRequested.get()) "隔离已停止，列表与勾选已保留" else "隔离结果未确认，列表与勾选已保留",
                     resultText = "${it.message ?: it.javaClass.simpleName}" +
-                        if (attempt.cleanupSubmitted) "\n请重新扫描后继续，避免重复执行。" else "\n请求尚未执行，可重试。")
+                        if (attempt.cleanupSubmitted || stopRequested.get()) "\n请重新扫描后继续，避免重复执行。" else "\n请求尚未执行，可重试。")
                 saveReview()
             }
         }
@@ -896,6 +939,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         val profile = profileService
         val cache = cacheService
         val stoppingScan = scanJob?.isActive == true
+        if (!stoppingScan) mutationStopRequest?.set(true)
         if (stoppingScan) { invalidateScanLoad(); scanJob?.cancel() }
         val stoppingGeneration = if (stoppingScan) scanGeneration.start() else null
         screenState = screenState.copy(notice = WorkbenchNotice.INFO, phase = "正在安全停止当前任务…")
@@ -911,6 +955,10 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 saveReview()
             }
         }
+    }
+    private suspend fun ensureMutationCanStart(stopRequested: AtomicBoolean) {
+        currentCoroutineContext().ensureActive()
+        check(!stopRequested.get()) { "当前任务已停止，未继续执行" }
     }
     private fun startPolling() {
         pollJob?.cancel()
@@ -952,14 +1000,14 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
     }.getOrNull() ?: packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() } }
 
-    fun saveReview() {
-        if (!reviewHydration.canPersist) return
+    fun saveReview(): java.util.concurrent.Future<Boolean>? {
+        if (!reviewHydration.canPersist) return null
         val state = screenState
         val cacheId = cacheSnapshotId
         val profileId = profileSnapshotId
         val policyId = cleanupPolicy.id
         val expires = System.currentTimeMillis() + (snapshotExpiresAtRealtime - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
-        ScanReviewStore.save(this, scanProfile) {
+        return ScanReviewStore.save(this, scanProfile) {
             JSONObject().put("cacheSnapshotId", cacheId).put("profileSnapshotId", profileId)
                 .put("expiresAt", expires).put("scanReady", state.scanReady && !state.running && !state.loadingResults)
                 .put("loadingResults", state.loadingResults).put("phase", state.phase)
@@ -1025,7 +1073,16 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
 }
 
 private data class CleanAggregate(val bytes: Long, val files: Long, val failures: Int, val candidates: Int,
-    val messages: List<String>, val outcomes: Map<String, String>, val cancelled: Boolean, val incomplete: Boolean)
+    val messages: List<String>, val outcomes: Map<String, String>, val cancelled: Boolean, val incomplete: Boolean,
+    val apps: List<AppJunkUiItem>, val junk: List<GeneralJunkUiItem>,
+    val cacheRemaining: RemainingReview, val profileRemaining: RemainingReview)
+private data class RemainingReview(val id: String, val expiresAt: Long)
+private fun remainingReview(response: JSONObject, previousExpiry: Long): RemainingReview {
+    val remainingId = response.optString("remainingSnapshotId")
+    val remainingMs = response.optLong("snapshotExpiresInMs", 0L).coerceIn(0L, 30L * 60L * 1_000L)
+    if (remainingId.isBlank() || response.optInt("remainingCandidates") <= 0 || remainingMs <= 0L) return RemainingReview("", 0L)
+    return RemainingReview(remainingId, minOf(previousExpiry, SystemClock.elapsedRealtime() + remainingMs))
+}
 private fun categoryLabel(category: String): String = when (category) {
     "empty_file" -> "空文件"
     "empty_dir" -> "空目录"
@@ -1044,5 +1101,3 @@ private fun riskReason(risk: String, label: String, policy: CleanupPolicy): Stri
     }
     else -> "$label · 关键风险项目，只展示不自动清理"
 }
-private fun itWasNotCleaned(id: String, outcomes: Map<String, String>): Boolean =
-    outcomes[id] !in setOf("已清理", "已按所选缓存执行清理")
