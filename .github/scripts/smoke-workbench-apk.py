@@ -161,6 +161,29 @@ try:
     m.tap_label("清理", "fresh-clean-tab")
     tap("扫描工作台", "fresh-workbench")
     expect_top("ScanWorkbenchActivity", "fresh-workbench", single_workbench=True)
+    back("fresh-workbench-back")
+    # Only this repository's release APK is introduced into the disposable emulator.
+    # The ordinary App process must read/render its real archive icon after minification.
+    fixture_name = "BaiZe-preview-fixture.apk"
+    fixture_path = f"/sdcard/Download/{fixture_name}"
+    m.adb("push", str(apk), fixture_path)
+    m.adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", f"file://{fixture_path}")
+    m.adb("shell", "appops", "set", m.APP, "MANAGE_EXTERNAL_STORAGE", "allow")
+    m.adb("shell", "am", "start", "-W", "-n", f"{m.APP}/.ApkScanActivity")
+    time.sleep(2)
+    expect_top("ApkScanActivity", "apk-artwork-entry")
+    tap("开始扫描", "apk-artwork-scan")
+    artwork_seen = False
+    for attempt in range(15):
+        tree = m.ui(f"apk-artwork-await-{attempt}")
+        labels = "\n".join(n.attrib.get("text", "") for n in tree.iter("node"))
+        descriptions = "\n".join(n.attrib.get("content-desc", "") for n in tree.iter("node"))
+        if fixture_name in labels and "白泽" in labels and "版本 2.0.0" in labels and "来自安装包的应用图标" in descriptions:
+            artwork_seen = True
+            break
+        time.sleep(1)
+    assert artwork_seen, "The release APK must show its own archived label, version and decoded icon"
+    m.capture("apk-artwork-final-release")
     m.alive()
     m.save_text("passed.json", json.dumps({"versionCode": int(expected), "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "android_api": m.adb("shell", "getprop", "ro.build.version.sdk"), "official_upgrade_preserved_data": True,
@@ -171,6 +194,7 @@ try:
         "baseline_deep_stack": old_deep_stack, "candidate_deep_stack": new_deep_stack,
         "repeated_tap_single_page": True, "single_back_to_origin": True, "background_foreground": True,
         "organizer_without_module": True, "no_app_crash_or_anr": True,
+        "release_apk_archive_icon_label_version": True,
         "limit": "Emulator navigation and installation; actual root-manager cleaning remains unverified"}, ensure_ascii=False, indent=2))
     print((m.OUT / "passed.json").read_text())
 except Exception:

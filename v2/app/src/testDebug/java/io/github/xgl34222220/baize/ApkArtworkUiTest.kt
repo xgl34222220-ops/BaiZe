@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import io.github.xgl34222220.baize.ui.appearance.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -64,6 +65,38 @@ class ApkArtworkUiTest {
         render { ApkScanScreen(state, {}, {}, {}, {}, {}, loadArchive = { reads++; parsed() }) }
         compose.waitUntil(5_000) { reads > 0 }
         assertTrue("Offscreen archives must not be decoded eagerly: $reads", reads < 30)
+    }
+
+    @Test fun emptyMetadataCacheCanAdvanceAVersionFilterWithoutSelectingUnknownArchives() {
+        val release = CompletableDeferred<Unit>()
+        var state by mutableStateOf(ready(listOf(item(1), item(2))))
+        render { ApkScanScreen(state, {}, {}, { cleanCalls++ }, {}, {},
+            onFilter = { state = state.copy(filter = it, selected = emptySet()) },
+            onToggleAll = { state = state.toggleAllSelection() },
+            loadArchive = { candidate ->
+                release.await()
+                val result = parsed().copy(status = if (candidate.uri == item(2).uri) ApkInstallStatus.OLDER else ApkInstallStatus.NEWER)
+                state = state.copy(items = state.items.map {
+                    if (it.previewKey == candidate.previewKey) it.copy(archive = result.copy(iconBitmap = null)) else it
+                })
+                result
+            }) }
+        compose.onNodeWithContentDescription("筛选安装包").performScrollTo().performClick()
+        compose.onNode(hasText("低于已装版本") and hasAnyAncestor(isDialog())).performClick()
+        compose.onNodeWithText("应用").performClick()
+        compose.onNodeWithText("全选").assertIsNotEnabled()
+        compose.runOnIdle {
+            assertEquals(2, state.visibleItems.size)
+            assertTrue(state.selected.isEmpty())
+            release.complete(Unit)
+        }
+        compose.waitUntil(5_000) { state.items.none { it.archive.awaitingInspection } }
+        compose.onNodeWithText("全选").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(setOf(item(2).uri), state.selected)
+            assertEquals(listOf(item(2).uri), state.visibleItems.map { it.uri })
+        }
+        assertEquals(0, cleanCalls)
     }
 
     @Test
