@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.ui.clean
 
 import android.content.Intent
+import io.github.xgl34222220.baize.CleanerNavigation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import io.github.xgl34222220.baize.ApkScanActivity
@@ -68,7 +69,7 @@ fun CleanRoute(
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = dashboardActions.scan,
         onApkScan = dashboardActions.apkScan,
-        onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
+        onInstantCache = { CleanerNavigation.openFrom(context, Intent(context, InstantCacheActivity::class.java)) },
         onFileOrganizer = dashboardActions.organize,
         onLargeFiles = dashboardActions.largeFiles,
         onDuplicates = dashboardActions.duplicates,

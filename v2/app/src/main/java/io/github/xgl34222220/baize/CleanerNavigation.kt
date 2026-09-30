@@ -1,6 +1,8 @@
 package io.github.xgl34222220.baize
 
 import android.content.Intent
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -12,6 +14,22 @@ internal object CleanerNavigation {
     fun normalizedProfile(profile: String): String = profile.takeIf {
         it in setOf("safe", "cache", "deep", "rules", "empty", "fragments", "corpses")
     } ?: "safe"
+
+    fun consumeLegacyRequest(intent: Intent): Boolean {
+        val requested = intent.getBooleanExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN, false)
+        intent.removeExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN)
+        return requested
+    }
+
+    fun openFrom(context: Context, intent: Intent): Boolean {
+        var current = context
+        while (current is ContextWrapper && current !is ComponentActivity) {
+            val base = current.baseContext
+            if (base === current) return false
+            current = base
+        }
+        return (current as? ComponentActivity)?.let { open(it, intent) } ?: false
+    }
 
     fun scan(source: ComponentActivity, profile: String = "safe"): Boolean = open(source,
         Intent(source, ScanWorkbenchActivity::class.java)

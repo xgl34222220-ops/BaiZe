@@ -61,7 +61,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val scanViewModel: ScanWorkbenchViewModel by viewModels()
     internal val session get() = scanViewModel.session
-    private var confirmStop by mutableStateOf(false)
+    private var confirmStop by mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,18 +95,20 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         onManageWhitelist = { if (session.prepareWhitelist()) CleanerNavigation.open(this, Intent(this, WhitelistActivity::class.java)) },
                         onToggleVisibleItems = session::toggleItems
                     ))
-                    if (confirmStop && session.screenState.running) BaiZeDialog(
-                        onDismissRequest = { confirmStop = false }, title = { Text("任务仍在进行") },
+                    if (shouldConfirmStop()) BaiZeDialog(
+                        onDismissRequest = { confirmStop = null }, title = { Text("任务仍在进行") },
                         text = { Text("留在这里查看进度，或先停止任务。已扫描和已处理的记录会保留。") },
-                        confirmButton = { BaiZeDialogButton({ confirmStop = false; session.stopTask() }) { Text("停止任务") } },
-                        dismissButton = { BaiZeDialogButton({ confirmStop = false }) { Text("继续等待") } })
+                        confirmButton = { BaiZeDialogButton({ confirmStop = null; session.stopTask() }) { Text("停止任务") } },
+                        dismissButton = { BaiZeDialogButton({ confirmStop = null }) { Text("继续等待") } })
                 }
             }
         }
     }
 
+    internal fun shouldConfirmStop(): Boolean = confirmStop == session.operationToken && session.screenState.running
+
     private fun requestBack() {
-        if (session.screenState.running) confirmStop = true else finish()
+        if (session.screenState.running) confirmStop = session.operationToken else finish()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -130,6 +132,8 @@ internal class ScanWorkbenchViewModel(application: Application) : AndroidViewMod
 internal class ScanWorkbenchSession(application: Application, private val lifecycleScope: CoroutineScope) : ContextWrapper(application) {
     private var initialized = false
     private var closed = false
+    private var operationEpoch = 0L
+    val operationToken: Long get() = operationEpoch
     private val needsCache get() = scanProfile in setOf("safe", "cache")
     private var profileService: IProfileRootService? = null
     private var cacheService: IBaiZeRootService? = null
@@ -167,13 +171,14 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             if (closed) return
+            operationEpoch++
             invalidateScanLoad()
             scanJob?.cancel()
-            saveReview()
             profileService = null
             profileBound = false
             screenState = screenState.copy(profileConnected = false, running = false,
-                notice = WorkbenchNotice.ERROR, phase = "Root 详情引擎连接已断开")
+                notice = WorkbenchNotice.ERROR, phase = "Root 详情引擎连接已断开，任务结果未确认")
+            saveReview()
         }
     }
     private val cacheConnection = object : ServiceConnection {
@@ -191,13 +196,14 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             if (closed) return
+            operationEpoch++
             invalidateScanLoad()
             scanJob?.cancel()
-            saveReview()
             cacheService = null
             cacheBound = false
             screenState = screenState.copy(cacheConnected = false, running = false,
-                notice = WorkbenchNotice.ERROR, phase = "Root 缓存引擎连接已断开")
+                notice = WorkbenchNotice.ERROR, phase = "Root 缓存引擎连接已断开，任务结果未确认")
+            saveReview()
         }
     }
 
@@ -231,6 +237,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
 
     fun close() {
         closed = true
+        operationEpoch++
         scanGeneration.invalidate()
         scanJob?.cancel()
         pollJob?.cancel()
@@ -286,7 +293,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
 
     fun runScan() {
-        if (reviewHydration.loading) return
+        if (closed || reviewHydration.loading) return
         if (screenState.running || stopJob?.isActive == true) return
         val profile = profileService
         val cache = cacheService
@@ -296,6 +303,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
             return
         }
         if (!reviewHydration.beginReplacement()) return
+        autoScanStarted = true
+        scanRequested = false
+        operationEpoch++
         restoredReview = false
         val generation = scanGeneration.start()
         cacheSnapshotId = ""
@@ -524,7 +534,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
 
     fun cleanSelection() {
-        if (screenState.running || screenState.loadingResults || stopJob?.isActive == true) return
+        if (closed || screenState.running || screenState.loadingResults || stopJob?.isActive == true) return
         if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
             screenState = screenState.copy(scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描快照已过期，请重新扫描")
             return
@@ -536,6 +546,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
             screenState = screenState.copy(notice = WorkbenchNotice.WARNING, phase = "请至少勾选一个安全项目")
             return
         }
+        val epoch = ++operationEpoch
+        val reviewedItems = screenState.items
+        val reviewedSelection = selected.mapTo(linkedSetOf()) { it.id }
         val cacheItems = selected.filter { it.source == "cache" }
         val profileItems = selected.filter { it.source == "profile" }
         screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
@@ -692,6 +705,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete)
                 }
             }
+            if (closed || epoch != operationEpoch) return@launch
             pollJob?.cancel()
             response.onSuccess { result ->
                 cacheSnapshotId = ""
@@ -699,9 +713,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 snapshotExpiresAtRealtime = 0L
                 screenState = screenState.copy(running = false, scanReady = false, operation = "idle",
                     cleanupCompleted = true, cleanedBytes = result.bytes, cleanedFiles = result.files,
-                    items = screenState.items.map { item -> item.copy(outcome =
-                        if (item.id in screenState.selectedIds) result.outcomes[item.id] ?: "未完成或未返回结果" else "未勾选，保留") },
-                    selectedIds = if (result.incomplete) screenState.selectedIds.filterTo(linkedSetOf()) { itWasNotCleaned(it, result.outcomes) } else emptySet(),
+                    items = reviewedItems.map { item -> item.copy(outcome =
+                        if (item.id in reviewedSelection) result.outcomes[item.id] ?: "未完成或未返回结果" else "未勾选，保留") },
+                    selectedIds = if (result.incomplete) reviewedSelection.filterTo(linkedSetOf()) { itWasNotCleaned(it, result.outcomes) } else emptySet(),
                     notice = if (result.incomplete) WorkbenchNotice.WARNING else WorkbenchNotice.SUCCESS, expiresAtRealtime = 0L,
                     phase = if (result.cancelled) "清理已停止，结果与未完成勾选已保留"
                         else if (result.incomplete) "部分项目未完成，重新扫描后可继续清理" else "已完成所选项目清理",
@@ -726,12 +740,13 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
 
     fun quarantineItem(item: WorkbenchItem) {
-        if (screenState.running || screenState.loadingResults || stopJob?.isActive == true || item !in screenState.items || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
+        if (closed || screenState.running || screenState.loadingResults || stopJob?.isActive == true || item !in screenState.items || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
         if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
             screenState = screenState.copy(scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描快照已过期，请重新扫描")
             return
         }
         val service = profileService ?: return
+        val epoch = ++operationEpoch
         screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
             phase = "正在把 ${item.title} 移入隔离区…", currentPath = item.path)
         startPolling()
@@ -744,6 +759,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     JSONObject(attempt.mutate { service.quarantineProfileSelected(profileSnapshotId, selection.toString(), options) })
                 }
             }
+            if (closed || epoch != operationEpoch) return@launch
             pollJob?.cancel()
             result.onSuccess { json ->
                 if (json.optBoolean("success") && json.optInt("quarantinedCandidates") > 0) {
@@ -788,8 +804,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
 
     fun protectItem(item: WorkbenchItem) {
-        if (screenState.running || item !in screenState.items) return
+        if (closed || screenState.running || item !in screenState.items) return
         val service = profileService ?: return
+        val epoch = ++operationEpoch
         screenState = screenState.copy(running = true, operation = "protect", notice = WorkbenchNotice.INFO,
             phase = "正在把 ${item.groupTitle} 加入保护白名单…")
         lifecycleScope.launch {
@@ -804,6 +821,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     } else JSONObject(service.addWhitelistPath(item.path))
                 }
             }
+            if (closed || epoch != operationEpoch) return@launch
             result.onSuccess { json ->
                 if (json.optBoolean("success")) {
                     cacheSnapshotId = ""

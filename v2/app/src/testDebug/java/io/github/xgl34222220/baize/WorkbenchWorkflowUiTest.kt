@@ -80,6 +80,14 @@ class WorkbenchWorkflowUiTest {
         save("restored-review")
     }
 
+    @Test fun addingProtectionDoesNotPretendToStartAnotherScan() {
+        render(ready().copy(running = true, operation = "protect", notice = WorkbenchNotice.INFO,
+            phase = "正在把浏览器加入保护白名单…"))
+        compose.onNodeWithText("保护中").assertIsDisplayed()
+        compose.onNodeWithText("扫描中").assertDoesNotExist()
+        assertEquals(0, scans)
+    }
+
     @Test fun completedCleanupShowsMeasuredBytesAndKeepsTheReportOnThisPage() {
         render(ready().copy(scanReady = false, cleanupCompleted = true, cleanedBytes = 4_096, cleanedFiles = 1,
             phase = "已清理 1 个文件，其他项目已保留", items = listOf(cache.copy(outcome = "已清理"), rule)))

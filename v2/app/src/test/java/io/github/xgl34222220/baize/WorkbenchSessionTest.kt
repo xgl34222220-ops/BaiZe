@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class WorkbenchSessionTest {
-    private val app get() = RuntimeEnvironment.getApplication<Application>()
+    private val app get() = RuntimeEnvironment.getApplication()
 
     @Test fun repeatedScanAndCleanKeepOneSnapshotAndNeverStartAnotherPage() = withSession { session, dispatcher ->
         val scans = AtomicInteger()
@@ -65,6 +65,7 @@ class WorkbenchSessionTest {
             releaseScan.countDown()
             await(dispatcher) { session.screenState.scanReady }
             assertEquals(1, scans.get())
+            assertTrue(field<Boolean>(session, "autoScanStarted"))
             assertEquals(setOf("profile:sample"), session.screenState.selectedIds)
             session.cleanSelection(); session.cleanSelection()
             await(dispatcher) { cleanEntered.count == 0L }
@@ -83,6 +84,39 @@ class WorkbenchSessionTest {
             assertTrue(saved.getBoolean("cleanupCompleted"))
             assertEquals(512L, saved.getLong("cleanedBytes"))
         } finally { releaseScan.countDown(); releaseClean.countDown() }
+    }
+
+    @Test fun lateCleanupReplyCannotReplaceAReviewAfterDisconnection() = withSession { session, dispatcher ->
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val item = WorkbenchItem("profile:old", "profile", "rules", "", "", "rule_trash", "old", "旧记录",
+            "old.log", "low", "/synthetic/old.log", 512, 1, 0, "仅测试", true)
+        val service = Proxy.newProxyInstance(IProfileRootService::class.java.classLoader,
+            arrayOf(IProfileRootService::class.java)) { _, method, _ -> when(method.name) {
+                "getWhitelistPackages", "getWhitelistPaths" -> "[]"
+                "cleanProfileSelected" -> {
+                    entered.countDown(); check(release.await(5, TimeUnit.SECONDS))
+                    """{"success":true,"deletedBytes":512,"deletedFiles":1,"cleanedCandidates":1}"""
+                }
+                else -> "{}"
+            } } as IProfileRootService
+        set(session, "profileService", service)
+        set(session, "profileSnapshotId", "old-snapshot")
+        set(session, "snapshotExpiresAtRealtime", SystemClock.elapsedRealtime() + 100_000L)
+        field<ReviewHydrationGate>(session, "reviewHydration").finish(true)
+        state(session, WorkbenchUiState(profileConnected = true, cacheRequired = false, scanReady = true,
+            expiresAtRealtime = SystemClock.elapsedRealtime() + 100_000L, items = listOf(item), selectedIds = setOf(item.id)))
+        try {
+            session.cleanSelection()
+            await(dispatcher) { entered.count == 0L }
+            field<android.content.ServiceConnection>(session, "profileConnection").onServiceDisconnected(null)
+            state(session, session.screenState.copy(phase = "较新的扫描记录", items = listOf(item.copy(id = "profile:new"))))
+            release.countDown()
+            await(dispatcher) { field<CoroutineScope>(session, "lifecycleScope").coroutineContext[Job]!!.children.none { it.isActive } }
+            assertEquals("较新的扫描记录", session.screenState.phase)
+            assertEquals("profile:new", session.screenState.items.single().id)
+            assertFalse(session.screenState.cleanupCompleted)
+        } finally { release.countDown() }
     }
 
     @Test fun emptyCompletedScanRestoresWithoutAutomaticRescan() = withSession { session, dispatcher ->

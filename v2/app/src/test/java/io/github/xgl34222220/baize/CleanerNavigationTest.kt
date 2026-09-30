@@ -42,6 +42,13 @@ class CleanerNavigationTest {
         controller.destroy()
     }
 
+    @Test fun legacyRequestCannotReopenAPageAfterRecreationOrDelayedConnection() {
+        val intent = Intent().putExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN, true)
+        assertTrue(CleanerNavigation.consumeLegacyRequest(intent))
+        assertFalse(intent.hasExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN))
+        assertFalse(CleanerNavigation.consumeLegacyRequest(intent))
+    }
+
     @Test fun unknownProfilesCannotStartUnboundedNewModes() {
         assertEquals("safe", CleanerNavigation.normalizedProfile("all-delete"))
         for (profile in listOf("safe", "cache", "deep", "rules", "empty", "fragments", "corpses"))

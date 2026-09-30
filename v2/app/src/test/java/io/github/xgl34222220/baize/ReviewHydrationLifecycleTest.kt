@@ -54,6 +54,13 @@ class ReviewHydrationLifecycleTest {
         val back = ScanWorkbenchActivity::class.java.getDeclaredMethod("requestBack").apply { isAccessible = true }
         back.invoke(activity)
         assertFalse(activity.isFinishing)
+        assertTrue(activity.shouldConfirmStop())
+        state.value = state.value.copy(running = false)
+        assertFalse(activity.shouldConfirmStop())
+        ScanWorkbenchSession::class.java.getDeclaredField("operationEpoch").apply { isAccessible = true }
+            .setLong(activity.session, activity.session.operationToken + 1)
+        state.value = state.value.copy(running = true)
+        assertFalse("A new task must not resurrect the previous Back dialog", activity.shouldConfirmStop())
         state.value = state.value.copy(running = false)
         back.invoke(activity)
         assertTrue(activity.isFinishing)

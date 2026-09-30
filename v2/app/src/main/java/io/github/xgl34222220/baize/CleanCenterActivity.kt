@@ -75,8 +75,8 @@ class CleanCenterActivity : ComponentActivity() {
                             onBack = ::finish,
                             onQuickClean = { CleanerNavigation.scan(this) },
                             onOpenCache = { CleanerNavigation.scan(this, "cache") },
-                            onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
-                            onOpenQuarantine = { startActivity(Intent(this, QuarantineActivity::class.java)) },
+                            onOpenPolicy = { CleanerNavigation.open(this, Intent(this, CleanupPolicyActivity::class.java)) },
+                            onOpenQuarantine = { CleanerNavigation.open(this, Intent(this, QuarantineActivity::class.java)) },
                             onOpenProfile = ::openProfile
                         )
                     )

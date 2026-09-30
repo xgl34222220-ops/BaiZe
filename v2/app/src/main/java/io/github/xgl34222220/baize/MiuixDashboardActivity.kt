@@ -198,7 +198,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         observedVersions = ConnectionDiagnostics.lastVersions(this)
         markVersionsStale()
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        pendingSmartClean = intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)
+        // Legacy launch requests are navigation, not a service callback command.
+        // Consume once so recreation or two service connections cannot reopen the cleaner.
+        val openRequested = CleanerNavigation.consumeLegacyRequest(intent)
+        pendingSmartClean = false
         updateStorage()
         FileOrganizerWorker.ensureWatchdog(this)
         dashboardState.value = dashboardState.value.copy(
@@ -259,12 +262,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
         // Both engines may own a task from the previous App process.
         connectServices()
+        if (openRequested) openForegroundCleaner()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_RUN_SMART_CLEAN, false)) {
+        if (CleanerNavigation.consumeLegacyRequest(intent)) {
+            pendingSmartClean = false
             openForegroundCleaner()
         }
     }

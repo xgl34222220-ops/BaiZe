@@ -420,9 +420,15 @@ private fun workbenchPageTitle(profile: String) = when (profile) {
 
 @Composable
 private fun WorkbenchStages(state: WorkbenchUiState, liveSnapshot: Boolean) {
-    val active = when { state.cleanupCompleted -> 2; liveSnapshot || state.operation == "clean" -> 1; else -> 0 }
-    val labels = listOf(if (state.running && state.operation != "clean") "扫描中" else "扫描",
-        if (state.running && state.operation == "clean") "清理中" else "选择", "完成")
+    val active = when {
+        state.cleanupCompleted -> 2
+        liveSnapshot || (state.running && state.operation in setOf("clean", "protect")) -> 1
+        else -> 0
+    }
+    val labels = listOf(if (state.running && state.operation == "scan") "扫描中" else "扫描",
+        when { state.running && state.operation == "clean" -> "清理中"
+            state.running && state.operation == "protect" -> "保护中"
+            else -> "选择" }, "完成")
     Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 14.dp).testTag("workbench-stages"),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         labels.forEachIndexed { index, label ->
