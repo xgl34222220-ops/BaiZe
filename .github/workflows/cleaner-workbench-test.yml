@@ -18,6 +18,7 @@ env:
 
 jobs:
   build-paired-test:
+    if: ${{ !contains(github.event.head_commit.message, '[device-validation-only]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -145,10 +146,19 @@ jobs:
 
   apk-installation-smoke:
     needs: build-paired-test
+    if: ${{ always() && !cancelled() && (needs.build-paired-test.result == 'success' || contains(github.event.head_commit.message, '[device-validation-only]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact production source before reusing a verified build
+        if: contains(github.event.head_commit.message, '[device-validation-only]')
+        run: |
+          git diff --exit-code 23a3de1b3fa293ccceff61ffab814f80acc5456b HEAD -- . \
+            ':(exclude).github/scripts/smoke-workbench-apk.py' \
+            ':(exclude).github/workflows/cleaner-workbench-test.yml'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -161,10 +171,18 @@ jobs:
           pattern: BaiZe-*-Paired-Test
           merge-multiple: true
           path: candidate
+          run-id: ${{ contains(github.event.head_commit.message, '[device-validation-only]') && 36787354759 || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: BaiZe-Root-Flow-Probe
           path: root-probe
+          run-id: ${{ contains(github.event.head_commit.message, '[device-validation-only]') && 36787354759 || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify the reused signed APK bytes
+        if: contains(github.event.head_commit.message, '[device-validation-only]')
+        run: |
+          test "$(sha256sum candidate/*.apk | awk '{print $1}')" = '2bf86de59a6b1273aa7d6e28b67412b71155c8a630b434a5caafdfed8207c07b'
       - name: Download exact 30006 test baseline
         uses: actions/download-artifact@v4
         with:

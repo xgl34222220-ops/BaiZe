@@ -173,12 +173,19 @@ try:
     time.sleep(2)
     expect_top("ApkScanActivity", "apk-artwork-entry")
     tap("开始扫描", "apk-artwork-scan")
+    # The emulator can use English resources even though the review UI is Chinese.
+    # Reuse the independently verified archive label, never guess it from the filename.
+    artwork_probe = json.loads((Path(os.environ["RUNNER_TEMP"]) / "baize-apk-artwork-probe/result.json").read_text())
+    expected_archive_label = artwork_probe["archiveLabel"]
+    assert artwork_probe["passed"] and expected_archive_label
+    expected_archive_version = re.search(r"versionName=([^\r\n]+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1).strip()
     artwork_seen = False
     for attempt in range(15):
         tree = m.ui(f"apk-artwork-await-{attempt}")
         labels = "\n".join(n.attrib.get("text", "") for n in tree.iter("node"))
         descriptions = "\n".join(n.attrib.get("content-desc", "") for n in tree.iter("node"))
-        if fixture_name in labels and "白泽" in labels and "版本 2.0.0" in labels and "来自安装包的应用图标" in descriptions:
+        label_lines = {line for node in tree.iter("node") for line in node.attrib.get("text", "").splitlines()}
+        if fixture_name in labels and expected_archive_label in label_lines and f"版本 {expected_archive_version}" in labels and "来自安装包的应用图标" in descriptions:
             artwork_seen = True
             break
         time.sleep(1)
