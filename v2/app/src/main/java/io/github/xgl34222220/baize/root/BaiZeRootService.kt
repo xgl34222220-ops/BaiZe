@@ -355,6 +355,11 @@ class BaiZeRootService : RootService() {
             .put("totalFiles", snapshot.totalFiles)
             .put("totalBytes", snapshot.totalBytes)
             .put("visitedDirs", snapshot.visitedDirs)
+            .put("complete", snapshot.incompleteRoots == 0 && snapshot.scannedRoots == snapshot.totalRoots && !cancelled.get())
+            .put("totalRoots", snapshot.totalRoots)
+            .put("scannedRoots", snapshot.scannedRoots)
+            .put("incompleteRoots", snapshot.incompleteRoots)
+            .put("firstResultMs", snapshot.firstResultMs)
             .put("whitelisted", 0)
             .put("engine", "app-root-foreground-cache-v1")
             .toString()
@@ -423,7 +428,7 @@ class BaiZeRootService : RootService() {
                 files = snapshot.totalFiles,
                 bytes = snapshot.totalBytes,
                 visitedDirs = snapshot.visitedDirs,
-                firstResultMs = snapshot.elapsedMs,
+                firstResultMs = snapshot.firstResultMs,
                 engineElapsedMs = snapshot.elapsedMs,
                 itemsPerSecond = if (snapshot.elapsedMs > 0L) snapshot.items.size * 1000L / snapshot.elapsedMs else snapshot.items.size.toLong(),
                 workerPolicy = "app-root",
@@ -461,7 +466,11 @@ class BaiZeRootService : RootService() {
             appendLine("files=${snapshot.totalFiles}")
             appendLine("bytes=${snapshot.totalBytes}")
             appendLine("visited_dirs=${snapshot.visitedDirs}")
-            appendLine("first_result_ms=${snapshot.elapsedMs}")
+            appendLine("first_result_ms=${snapshot.firstResultMs}")
+            appendLine("total_roots=${snapshot.totalRoots}")
+            appendLine("scanned_roots=${snapshot.scannedRoots}")
+            appendLine("incomplete_roots=${snapshot.incompleteRoots}")
+            appendLine("root_identities=${JSONObject().apply { snapshot.items.forEach { put(it.path, it.identity) } }}")
             appendLine("engine_elapsed_ms=${snapshot.elapsedMs}")
             appendLine("worker_policy=app-root")
             appendLine("worker_reason=foreground-module-independent")
@@ -491,6 +500,7 @@ class BaiZeRootService : RootService() {
         }
         val incompleteArray = runCatching { JSONArray(env.optString("incomplete_paths", "[]")) }.getOrNull()
         val incompletePaths = incompleteArray?.let { array -> (0 until array.length()).map { array.optString(it) }.toSet() }.orEmpty()
+        val identities = runCatching { JSONObject(env.optString("root_identities", "{}")) }.getOrDefault(JSONObject())
         val restoredItems = parseItems(itemsFile).map { item ->
             ForegroundCacheEngine.Item(
                 packageName = item.packageName,
@@ -500,7 +510,8 @@ class BaiZeRootService : RootService() {
                 bytes = item.bytes,
                 files = item.files,
                 directories = item.directories,
-                complete = incompleteArray != null && item.path !in incompletePaths
+                complete = incompleteArray != null && item.path !in incompletePaths,
+                identity = identities.optString(item.path)
             )
         }
         val snapshot = ForegroundCacheEngine.Snapshot(
@@ -510,7 +521,11 @@ class BaiZeRootService : RootService() {
             totalBytes = restoredItems.sumOf { it.bytes },
             totalFiles = restoredItems.sumOf { it.files },
             visitedDirs = env.optLong("visited_dirs", restoredItems.sumOf { it.directories }),
-            elapsedMs = env.optLong("engine_elapsed_ms", 0L)
+            elapsedMs = env.optLong("engine_elapsed_ms", 0L),
+            totalRoots = env.optInt("total_roots", restoredItems.size),
+            scannedRoots = env.optInt("scanned_roots", restoredItems.size),
+            incompleteRoots = env.optInt("incomplete_roots", incompletePaths.size),
+            firstResultMs = env.optLong("first_result_ms", 0L)
         )
         foregroundSnapshot = snapshot
         synchronized(resultLock) { items = snapshot.items.map(::cacheItem) }

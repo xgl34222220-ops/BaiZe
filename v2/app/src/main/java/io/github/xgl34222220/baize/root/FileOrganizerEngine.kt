@@ -13,6 +13,8 @@ import java.io.FileOutputStream
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.UUID
+import java.nio.file.Files
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -200,6 +202,7 @@ class FileOrganizerEngine(
         if (selected.isEmpty()) return error("empty_selection", "没有需要归类的文件")
 
         val moves = JSONArray()
+        val journalFile = newUndoFile()
         val details = JSONArray()
         var detailTruncated = false
         var moved = 0
@@ -235,14 +238,35 @@ class FileOrganizerEngine(
             }
             if (resolution.collisionAction == "renamed") renamed += 1
 
+            // Write intent before the first filesystem mutation. A killed RootService leaves a
+            // recoverable record, even if it dies immediately after an atomic same-volume move.
+            val moveRecord = JSONObject()
+                .put("source", item.source)
+                .put("destination", destination.path)
+                .put("destinationFingerprint", item.fingerprint)
+                .put("sourceFingerprint", item.fingerprint)
+                .put("sourceUid", item.sourceUid)
+                .put("sourceGid", item.sourceGid)
+                .put("sourceMode", item.sourceMode)
+                .put("collisionAction", resolution.collisionAction)
+                .put("pending", true)
+            moves.put(moveRecord)
+            persistUndoRecord(journalFile, moves) // Failure stops BEFORE moving the file.
             val result = runCatching {
                 destination.parentFile?.mkdirs()
-                if (!moveVerified(source, destination)) {
+                if (canonical(destination) != destination.absolutePath) {
+                    false
+                } else if (!moveVerified(source, destination) { prepared ->
+                    moveRecord.put("destinationFingerprint", fingerprint(prepared))
+                    persistUndoRecord(journalFile, moves)
+                }) {
                     false
                 } else if (!normalizeSharedOwnership(destination)) {
-                    moveVerified(destination, source)
+                    if (moveVerified(destination, source)) restoreOriginalMetadata(source, moveRecord)
                     false
                 } else {
+                    moveRecord.put("pending", false).put("destinationFingerprint", fingerprint(destination))
+                    persistUndoRecord(journalFile, moves)
                     notifyMediaStore(item.source, destination.path)
                     true
                 }
@@ -250,16 +274,6 @@ class FileOrganizerEngine(
             if (result.getOrDefault(false)) {
                 moved += 1
                 bytes += item.bytes
-                moves.put(
-                    JSONObject()
-                        .put("source", item.source)
-                        .put("destination", destination.path)
-                        .put("destinationFingerprint", fingerprint(destination))
-                        .put("sourceUid", item.sourceUid)
-                        .put("sourceGid", item.sourceGid)
-                        .put("sourceMode", item.sourceMode)
-                        .put("collisionAction", resolution.collisionAction)
-                )
             } else {
                 failed += 1
                 appendDetail(item, "failed", result.exceptionOrNull()?.message ?: "移动失败")
@@ -267,7 +281,9 @@ class FileOrganizerEngine(
         }
 
         if (moves.length() > 0) {
-            persistUndo(moves)
+            persistUndoRecord(journalFile, moves)
+            refreshLegacyUndoPointer()
+            pruneFiles(undoDir(), configInt("organizer_undo_retention", DEFAULT_UNDO_RETENTION).coerceIn(1, 20))
             File(stateDir, "index/meta.env").delete()
         }
         snapshot = null
@@ -325,9 +341,14 @@ class FileOrganizerEngine(
             val destination = File(destinationPath)
             progress(Progress("正在撤销文件归类", moves.length() - index, moves.length(), displayPath(destination.path)))
 
+            // An intent can survive a failure that happened before any mutation. It needs no undo.
+            if (move.optBoolean("pending") && !destination.exists() &&
+                fingerprint(source) == move.optString("sourceFingerprint") && source.isFile) continue
             val expected = move.optString("destinationFingerprint")
             val reason = when {
-                source.exists() -> "原位置已存在同名文件"
+                source.exists() -> "原位置已存在同名文件，保留两份以免覆盖"
+                expected.isBlank() -> "撤销记录缺少文件身份，请人工检查"
+                canonical(source) != source.absolutePath || canonical(destination) != destination.absolutePath -> "路径或父目录已变化"
                 !destination.isFile -> "归类后的文件已不存在"
                 isSymlink(destination) -> "符号链接不允许撤销"
                 expected.isNotBlank() && fingerprint(destination) != expected -> "归类后的文件已发生变化"
@@ -371,7 +392,9 @@ class FileOrganizerEngine(
             record.file.delete()
             if (record.legacy) undoFile().delete()
         } else {
-            persistUndoRecord(record.file, remaining)
+            val compact = if (record.file.extension == "journal") File(record.file.parentFile, record.file.nameWithoutExtension + ".json") else record.file
+            persistUndoRecord(compact, remaining)
+            if (compact != record.file) record.file.delete()
         }
         refreshLegacyUndoPointer()
         if (restored > 0) File(stateDir, "index/meta.env").delete()
@@ -758,28 +781,38 @@ class FileOrganizerEngine(
         return null
     }
 
-    private fun moveVerified(source: File, destination: File): Boolean {
-        if (destination.exists()) return false
+    /** Atomic no-clobber publication; rename() is deliberately not used because it overwrites. */
+    private fun moveVerified(source: File, destination: File, prepared: (File) -> Unit = {}): Boolean {
+        if (cancelled.get() || destination.exists() || isSymlink(source)) return false
+        if (canonical(source) != source.absolutePath || canonical(destination) != destination.absolutePath) return false
+        val expected = fingerprint(source)
+        if (expected.isBlank()) return false
         return try {
-            Os.rename(source.path, destination.path)
+            // link fails atomically if the destination exists. Raw /data/media on ext4/f2fs
+            // supports hard links; filesystems without links use verified exclusive copying.
+            Os.link(source.path, destination.path)
+            if (fingerprint(source) != expected || fingerprint(destination) != expected) return false
+            prepared(destination)
+            if (!source.delete()) return false
             true
         } catch (error: ErrnoException) {
-            if (error.errno != OsConstants.EXDEV) throw error
-            copyAcrossFilesystems(source, destination)
+            if (error.errno == OsConstants.EEXIST) return false
+            if (error.errno !in setOf(OsConstants.EXDEV, OsConstants.EPERM, OsConstants.EOPNOTSUPP)) throw error
+            copyAcrossFilesystems(source, destination, expected, prepared)
         }
     }
 
-    private fun copyAcrossFilesystems(source: File, destination: File): Boolean {
+    private fun copyAcrossFilesystems(source: File, destination: File, expected: String, prepared: (File) -> Unit): Boolean {
         val parent = destination.parentFile ?: return false
-        parent.mkdirs()
-        val temp = File(parent, ".${destination.name}.baize-${UUID.randomUUID()}.tmp")
-        if (temp.exists()) temp.delete()
+        if (!parent.isDirectory || canonical(parent) != parent.absolutePath) return false
+        val temp = File.createTempFile(".baize-organizer-", ".tmp", parent)
         try {
             val sourceDigest = MessageDigest.getInstance("SHA-256")
             FileInputStream(source).use { input ->
                 FileOutputStream(temp).use { output ->
                     val buffer = ByteArray(1024 * 1024)
                     while (true) {
+                        if (cancelled.get() || Thread.currentThread().isInterrupted) return false
                         val read = input.read(buffer)
                         if (read <= 0) break
                         sourceDigest.update(buffer, 0, read)
@@ -788,29 +821,36 @@ class FileOrganizerEngine(
                     output.fd.sync()
                 }
             }
-            if (source.length() != temp.length()) return false
+            if (fingerprint(source) != expected || source.length() != temp.length()) return false
             val copiedDigest = sha256(temp)
             val originalDigest = sourceDigest.digest().joinToString("") { "%02x".format(it) }
-            if (originalDigest != copiedDigest) return false
-            if (destination.exists()) return false
-            Os.rename(temp.path, destination.path)
-            if (!source.delete()) {
-                destination.delete()
-                return false
+            if (originalDigest != copiedDigest || cancelled.get()) return false
+            try {
+                Os.link(temp.path, destination.path)
+            } catch (error: ErrnoException) {
+                if (error.errno == OsConstants.EEXIST) return false
+                if (error.errno !in setOf(OsConstants.EPERM, OsConstants.EOPNOTSUPP)) throw error
+                // No REPLACE_EXISTING: a concurrent destination is never overwritten.
+                Files.copy(temp.toPath(), destination.toPath())
             }
-            return true
+            // Persist the final inode before removing the source. On an interruption with two
+            // copies, undo preserves both rather than guessing which version the user wants.
+            prepared(destination)
+            if (cancelled.get() || fingerprint(source) != expected || sha256(destination) != originalDigest) return false
+            return source.delete()
         } finally {
-            if (temp.exists()) temp.delete()
+            temp.delete()
         }
     }
 
     private fun validSnapshot(id: String): Snapshot? {
+        if (!Regex("^[a-fA-F0-9-]{36}$").matches(id)) return null
         var current = snapshot
         if (current == null || current.id != id) {
             current = readSnapshot(id)
             snapshot = current
         }
-        if (current == null || current.id != id || System.currentTimeMillis() - current.createdAt > SNAPSHOT_TTL_MS) {
+        if (current == null || current.id != id || System.currentTimeMillis() - current.createdAt !in 0..SNAPSHOT_TTL_MS) {
             snapshot = null
             deleteSnapshot(id)
             return null
@@ -910,28 +950,42 @@ class FileOrganizerEngine(
 
     private fun snapshotDir() = File(stateDir, "snapshots/file-organizer")
 
-    private fun persistUndo(moves: JSONArray) {
-        stateDir.mkdirs()
-        val directory = undoDir().apply { mkdirs() }
-        val file = File(directory, "%013d-%s.json".format(System.currentTimeMillis(), UUID.randomUUID().toString().take(8)))
-        val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
-        RootFileStore.writeAtomic(file, json.toString())
-        RootFileStore.writeAtomic(undoFile(), json.toString())
-        pruneFiles(directory, configInt("organizer_undo_retention", DEFAULT_UNDO_RETENTION).coerceIn(1, 20))
-    }
+    private fun newUndoFile(): File = File(undoDir().apply { mkdirs() },
+        "%013d-%s.journal".format(System.currentTimeMillis(), UUID.randomUUID().toString().take(8)))
 
     private fun persistUndoRecord(file: File, moves: JSONArray) {
-        val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
-        RootFileStore.writeAtomic(file, json.toString())
-        RootFileStore.writeAtomic(undoFile(), json.toString())
+        if (file.extension == "journal") {
+            // Append only the changed move: O(n) total writes, instead of rewriting an O(n)
+            // batch for every file. A partial last line after process death is ignored on read.
+            val last = moves.optJSONObject(moves.length() - 1) ?: return
+            FileOutputStream(file, true).use { output ->
+                output.write((last.toString() + "\n").toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+        } else {
+            val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
+            RootFileStore.writeAtomic(file, json.toString())
+            RootFileStore.writeAtomic(undoFile(), json.toString())
+        }
     }
+
+    private fun readUndoJson(file: File): JSONObject? = runCatching {
+        if (file.extension != "journal") return@runCatching JSONObject(file.readText())
+        val latest = linkedMapOf<String, JSONObject>()
+        file.useLines { lines -> lines.forEach { line ->
+            val record = runCatching { JSONObject(line) }.getOrNull() ?: return@forEach
+            val source = record.optString("source")
+            if (source.isNotBlank()) latest[source] = record
+        } }
+        JSONObject().put("createdAt", file.lastModified()).put("moves", JSONArray(latest.values.toList()))
+    }.getOrNull()
 
     private fun readUndoRecord(): UndoRecord? {
         val newest = undoDir().listFiles()
-            ?.filter { it.isFile && it.extension == "json" }
+            ?.filter { it.isFile && it.extension in setOf("json", "journal") }
             ?.maxByOrNull { it.name }
         if (newest != null) {
-            val json = runCatching { JSONObject(newest.readText()) }.getOrNull()
+            val json = readUndoJson(newest)
             if (json != null) return UndoRecord(newest, json)
         }
         val legacy = undoFile()
@@ -941,13 +995,13 @@ class FileOrganizerEngine(
 
     private fun refreshLegacyUndoPointer() {
         val newest = undoDir().listFiles()
-            ?.filter { it.isFile && it.extension == "json" }
+            ?.filter { it.isFile && it.extension in setOf("json", "journal") }
             ?.maxByOrNull { it.name }
         if (newest == null) undoFile().delete()
-        else runCatching { RootFileStore.writeAtomic(undoFile(), newest.readText()) }
+        else readUndoJson(newest)?.let { RootFileStore.writeAtomic(undoFile(), it.toString()) }
     }
 
-    private fun undoRecordCount(): Int = undoDir().listFiles()?.count { it.isFile && it.extension == "json" }
+    private fun undoRecordCount(): Int = undoDir().listFiles()?.count { it.isFile && it.extension in setOf("json", "journal") }
         ?: if (undoFile().isFile) 1 else 0
 
     private fun undoDir() = File(stateDir, "organizer-undo")
@@ -1192,6 +1246,7 @@ class FileOrganizerEngine(
         FileInputStream(file).use { input ->
             val buffer = ByteArray(1024 * 1024)
             while (true) {
+                if (cancelled.get() || Thread.currentThread().isInterrupted) throw IOException("文件校验已停止")
                 val read = input.read(buffer)
                 if (read <= 0) break
                 digest.update(buffer, 0, read)

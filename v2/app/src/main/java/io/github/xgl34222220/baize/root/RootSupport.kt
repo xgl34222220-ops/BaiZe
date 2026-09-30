@@ -57,7 +57,10 @@ internal object RootFileStore {
         file.parentFile?.mkdirs()
         val temporary = File.createTempFile("${file.name}.tmp.", null, file.absoluteFile.parentFile)
         try {
-            temporary.writeText(text)
+            java.io.FileOutputStream(temporary).use { output ->
+                output.write(text.toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
             replaceFile(temporary, file, worldReadable)
         } finally {
             temporary.delete()

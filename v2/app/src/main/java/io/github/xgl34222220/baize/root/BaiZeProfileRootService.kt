@@ -208,7 +208,14 @@ class BaiZeProfileRootService : RootService() {
                 quarantineRepository.purgeExpired()
             }
         }
-        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String = diagnostics.runMaintenanceTool(tool, optionsJson)
+        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String {
+            if (tool == "organizer_page") {
+                if (coordinator.isBusy()) return coordinator.busy("organizer-page")
+                val options = runCatching { JSONObject(optionsJson.orEmpty()) }.getOrDefault(JSONObject())
+                return organizerController.page(options.optString("snapshotId"), options.optInt("offset"), options.optInt("limit", 100))
+            }
+            return diagnostics.runMaintenanceTool(tool, optionsJson)
+        }
         override fun runModuleTask(mode: String?): String {
             val normalized = mode.orEmpty().trim().lowercase()
             if (normalized.startsWith("scheduler-")) return schedulerRepository.control(normalized)

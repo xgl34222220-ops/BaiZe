@@ -11,6 +11,8 @@ internal class OrganizerController(
 
     fun scan(onProgress: (FileOrganizerEngine.Progress) -> Unit): String = engine.scan(onProgress)
 
+    fun page(snapshotId: String, offset: Int, limit: Int): String = engine.page(snapshotId, offset, limit)
+
     fun apply(
         snapshotId: String,
         selectionJson: String,
