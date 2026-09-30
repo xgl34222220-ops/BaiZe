@@ -57,6 +57,7 @@ echo "已打包 ABI：$packed_abis"
 
 # One permissions policy replaces repeated per-script chmod lists.
 chmod 0755 "$STAGE"/*.sh "$STAGE/scripts"/*.sh
+chmod 0755 "$STAGE/config/operation-lock.sh"
 chmod 0644 "$STAGE/scripts/abi-resolve.sh" "$STAGE/module.prop" "$STAGE/skip_mount"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
