@@ -330,6 +330,7 @@ class FileOrganizerEngine(
                 break
             }
             val move = moves.optJSONObject(index) ?: continue
+            if (move.optBoolean("undone")) continue
             val sourcePath = pathValue(move, "source")
             val destinationPath = pathValue(move, "destination")
             if (sourcePath.isBlank() || destinationPath.isBlank()) {
@@ -342,7 +343,7 @@ class FileOrganizerEngine(
             progress(Progress("正在撤销文件归类", moves.length() - index, moves.length(), displayPath(destination.path)))
 
             // An intent can survive a failure that happened before any mutation. It needs no undo.
-            if (move.optBoolean("pending") && !destination.exists() &&
+            if (!destination.exists() &&
                 fingerprint(source) == move.optString("sourceFingerprint") && source.isFile) continue
             val expected = move.optString("destinationFingerprint")
             val reason = when {
@@ -381,7 +382,12 @@ class FileOrganizerEngine(
                     true
                 }
             }.getOrDefault(false)
-            if (ok) restored += 1 else {
+            if (ok) {
+                restored += 1
+                move.put("undone", true)
+                if (record.file.extension == "journal") appendUndoEntry(record.file, move)
+                else persistUndoRecord(record.file, moves)
+            } else {
                 failed += 1
                 remaining.put(move)
                 appendDetail(JSONObject().put("destination", displayPath(destination.path)).put("action", "failed").put("reason", "恢复失败"))
@@ -958,14 +964,18 @@ class FileOrganizerEngine(
             // Append only the changed move: O(n) total writes, instead of rewriting an O(n)
             // batch for every file. A partial last line after process death is ignored on read.
             val last = moves.optJSONObject(moves.length() - 1) ?: return
-            FileOutputStream(file, true).use { output ->
-                output.write((last.toString() + "\n").toByteArray(Charsets.UTF_8))
-                output.fd.sync()
-            }
+            appendUndoEntry(file, last)
         } else {
             val json = JSONObject().put("createdAt", System.currentTimeMillis()).put("moves", moves)
             RootFileStore.writeAtomic(file, json.toString())
             RootFileStore.writeAtomic(undoFile(), json.toString())
+        }
+    }
+
+    private fun appendUndoEntry(file: File, record: JSONObject) {
+        FileOutputStream(file, true).use { output ->
+            output.write((record.toString() + "\n").toByteArray(Charsets.UTF_8))
+            output.fd.sync()
         }
     }
 
@@ -977,7 +987,7 @@ class FileOrganizerEngine(
             val source = record.optString("source")
             if (source.isNotBlank()) latest[source] = record
         } }
-        JSONObject().put("createdAt", file.lastModified()).put("moves", JSONArray(latest.values.toList()))
+        JSONObject().put("createdAt", file.lastModified()).put("moves", JSONArray(latest.values.filterNot { it.optBoolean("undone") }))
     }.getOrNull()
 
     private fun readUndoRecord(): UndoRecord? {

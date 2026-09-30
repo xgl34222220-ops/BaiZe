@@ -4,7 +4,6 @@ import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import android.os.SystemClock
 import android.text.format.Formatter
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -86,7 +85,9 @@ internal data class WorkbenchUiState(
     val policyTitle: String = CleanupPolicy.BALANCED.title,
     val policyKey: String = CleanupPolicy.BALANCED.key,
     val highRiskMode: String = CleanupPolicy.BALANCED.highRiskMode,
-    val notice: WorkbenchNotice = WorkbenchNotice.INFO
+    val notice: WorkbenchNotice = WorkbenchNotice.INFO,
+    val coverageSummary: String = "",
+    val coverageIncomplete: Boolean = false
 ) {
     val connected: Boolean get() = profileConnected && (!cacheRequired || cacheConnected)
 }
@@ -104,78 +105,9 @@ internal data class WorkbenchActions(
     val onQuarantine: (WorkbenchItem) -> Unit,
     val onSelectMedium: () -> Unit = {},
     val onManageWhitelist: () -> Unit = {},
-    val onResumeSavedScan: () -> Unit = {}
+    val onResumeSavedScan: () -> Unit = {},
+    val onToggleVisibleItems: ((Set<String>) -> Unit)? = null
 )
-
-private data class WorkbenchGroup(
-    val key: String,
-    val title: String,
-    val items: List<WorkbenchItem>,
-    val bytes: Long,
-    val selectedCount: Int,
-    val selectableCount: Int,
-    val bulkSelectedCount: Int
-)
-
-private sealed interface WorkbenchRow {
-    val key: String
-    data class Group(val group: WorkbenchGroup) : WorkbenchRow {
-        override val key: String = "group:${group.key}"
-    }
-    data class Candidate(val item: WorkbenchItem) : WorkbenchRow {
-        override val key: String = "item:${item.id}"
-    }
-}
-
-private data class WorkbenchPresentation(
-    val groups: List<WorkbenchGroup> = emptyList(),
-    val rows: List<WorkbenchRow> = emptyList(),
-    val selectedBytes: Long = 0L,
-    val selectableCount: Int = 0,
-    val appCount: Int = 0,
-    val profileCount: Int = 0,
-    val protectedCount: Int = 0
-)
-
-private fun workbenchPresentation(
-    items: List<WorkbenchItem>, selectedIds: Set<String>, filter: String,
-    expandedGroups: Set<String>, loading: Boolean
-): WorkbenchPresentation {
-    val filtered = items.filter { item ->
-        when (filter) {
-            "medium" -> item.risk == "medium"
-            "high" -> item.risk == "high"
-            "unfinished" -> item.outcome.isNotBlank() && item.outcome != "未勾选，保留" &&
-                item.outcome !in setOf("已清理", "已按所选缓存执行清理")
-            "unselected" -> item.id !in selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
-            "blocked" -> !item.selectable
-            "deep" -> item.profile == "deep"
-            "cache" -> item.source == "cache"
-            "empty" -> item.profile == "empty" || item.category.startsWith("empty")
-            "rules" -> item.profile == "rules" || item.category.contains("rule") || item.category.contains("trash")
-            "fragments" -> item.profile == "fragments" || item.category.contains("fragment")
-            else -> true
-        }
-    }
-    val groups = filtered.groupBy { it.groupKey }.map { (key, entries) ->
-        WorkbenchGroup(key, entries.first().groupTitle, entries,
-            entries.sumOf { it.bytes.coerceAtLeast(0L) },
-            entries.count { it.id in selectedIds },
-            entries.count { it.selectable && (it.risk == "low" || it.risk == "medium") },
-            entries.count { it.selectable && it.id in selectedIds && it.risk in setOf("low", "medium") })
-    }.let { if (loading) it else it.sortedByDescending { group -> group.bytes } }
-    val rows = buildList<WorkbenchRow> {
-        groups.forEach { group ->
-            add(WorkbenchRow.Group(group))
-            if (group.key in expandedGroups) group.items.forEach { add(WorkbenchRow.Candidate(it)) }
-        }
-    }
-    return WorkbenchPresentation(groups, rows,
-        items.sumOf { if (it.id in selectedIds) it.bytes.coerceAtLeast(0L) else 0L },
-        items.count { it.selectable },
-        items.asSequence().map { it.packageName }.filter { it.isNotBlank() }.distinct().count(),
-        items.count { it.source == "profile" }, items.count { !it.selectable })
-}
 
 /** Task outcome, selection and the list have separate roles; connection is never success. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -190,6 +122,7 @@ internal fun ScanWorkbenchScreen(
     var showMenu by rememberSaveable { mutableStateOf(false) }
     var bottomBarHeight by remember { mutableStateOf(88.dp) }
     var filter by rememberSaveable { mutableStateOf("all") }
+    var query by rememberSaveable { mutableStateOf("") }
     var expandedGroups by remember { mutableStateOf(emptySet<String>()) }
     var showFilters by rememberSaveable { mutableStateOf(false) }
     var showGuide by rememberSaveable { mutableStateOf(false) }
@@ -204,7 +137,7 @@ internal fun ScanWorkbenchScreen(
         }
     }
     val liveSnapshot = state.scanReady && now < state.expiresAtRealtime
-    val historicalSnapshot = state.items.isNotEmpty() && !liveSnapshot && !state.running
+    val historicalSnapshot = state.items.isNotEmpty() && !liveSnapshot && !state.running && !state.loadingResults
     val lockedReason = reviewSelectionBlockReason(state, now)
     val editable = lockedReason == null
     val visibleState = if (state.scanReady && !liveSnapshot && !state.running) state.copy(
@@ -215,12 +148,12 @@ internal fun ScanWorkbenchScreen(
     // LazyColumn's deferred content can change its item count independently of the
     // composed item provider while asynchronous grouping completes.
     val presentation = produceState(WorkbenchPresentation(), state.items, state.selectedIds,
-        activeFilter, activeExpandedGroups, state.loadingResults) {
+        activeFilter, activeExpandedGroups, state.loadingResults, query) {
         value = withContext(Dispatchers.Default) {
-            workbenchPresentation(state.items, state.selectedIds, activeFilter, activeExpandedGroups, state.loadingResults)
+            workbenchPresentation(state.items, state.selectedIds, activeFilter, activeExpandedGroups, state.loadingResults, query)
         }
     }.value
-    val filters = listOf("all" to "全部", "medium" to "中风险", "high" to "高风险",
+    val filters = listOf("all" to "全部", "selected" to "已选", "low" to "低风险", "medium" to "中风险", "high" to "高风险",
         "unselected" to "待处理", "unfinished" to "未完成", "blocked" to "不可选",
         "deep" to "深度规则", "cache" to "应用缓存", "empty" to "空项目",
         "rules" to "规则垃圾", "fragments" to "残留碎片")
@@ -264,6 +197,7 @@ internal fun ScanWorkbenchScreen(
                 item {
                     HistoricalResultGate(
                         state = visibleState,
+                        onDetails = { showReport = true },
                         onResume = actions.onResumeSavedScan,
                         onRescan = actions.onScan
                     )
@@ -273,6 +207,8 @@ internal fun ScanWorkbenchScreen(
                     WorkbenchSummaryCard(visibleState, presentation, selected.size, selectedHigh.size,
                         selected.any { it.bytes < 0L }, onDetails = { showReport = true })
                 }
+            }
+            if (state.items.isNotEmpty()) {
                 item {
                     Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp, bottom = 4.dp)) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -285,9 +221,31 @@ internal fun ScanWorkbenchScreen(
                                 Icon(Icons.Rounded.Tune, "筛选结果", Modifier.size(17.dp))
                             }
                         }
-                        Text(lockedReason ?: "批量选择作用于全部扫描结果；高风险请展开后逐项选择。",
+                        Text(lockedReason ?: "底部全选作用于全部结果；应用复选框只选择当前筛选项目，高风险请逐项选择。",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
+                        TextField(query, { query = it }, Modifier.fillMaxWidth().padding(top = 12.dp),
+                            singleLine = true, placeholder = { Text("搜索应用、文件或路径", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(20.dp)) },
+                            trailingIcon = if (query.isNotEmpty()) {{ IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Rounded.Close, "清除搜索", Modifier.size(18.dp))
+                            } }} else null,
+                            shape = RoundedCornerShape(18.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = BaiZeTokens.colors.surfaceRaised,
+                                unfocusedContainerColor = BaiZeTokens.colors.surfaceRaised,
+                                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent))
+                        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            filters.take(5).forEach { (id, label) ->
+                                FilterChip(activeFilter == id, { filter = id }, label = { Text(label, fontSize = 12.sp) },
+                                    border = null, shape = RoundedCornerShape(12.dp))
+                            }
+                        }
+                        Text("显示 ${presentation.visibleCount} / ${state.items.size} 项" +
+                            if (presentation.hiddenSelectedCount > 0 && !historicalSnapshot)
+                                " · 其他筛选下已选 ${presentation.hiddenSelectedCount} 项" else "",
+                            Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (presentation.rows.isEmpty()) item {
@@ -299,7 +257,10 @@ internal fun ScanWorkbenchScreen(
                             row.group, row.group.key in activeExpandedGroups, editable,
                             onExpand = { expandedGroups = expandedGroups.toMutableSet().apply {
                                 if (!add(row.group.key)) remove(row.group.key)
-                            } }, onSelect = { actions.onToggleGroup(row.group.key) }
+                            } }, onSelect = {
+                                val visibleIds = reviewRiskSelection(row.group.items, setOf("low", "medium"))
+                                actions.onToggleVisibleItems?.invoke(visibleIds) ?: actions.onToggleGroup(row.group.key)
+                            }
                         )
                         is WorkbenchRow.Candidate -> WorkbenchCandidateRow(
                             row.item, row.item.id in state.selectedIds, editable, lockedReason,
@@ -426,11 +387,13 @@ private fun workbenchStatusTitle(state: WorkbenchUiState) = when {
     else -> "清理服务已就绪"
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HistoricalResultGate(
     state: WorkbenchUiState,
     onResume: () -> Unit,
-    onRescan: () -> Unit
+    onRescan: () -> Unit,
+    onDetails: () -> Unit
 ) {
     val warning = BaiZeTokens.colors.warning
     val surface = BaiZeTokens.colors.surfaceRaised
@@ -468,35 +431,29 @@ private fun HistoricalResultGate(
                     )
                 }
             }
+            WorkbenchCoverage(state)
             Text(
                 REVIEW_HISTORY_HINT,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = onResume,
-                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = warningAction,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("继续上次扫描")
+            FilledTonalButton(
+                onClick = onRescan,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = warningAction,
+                    contentColor = MaterialTheme.colorScheme.onSurface)
+            ) {
+                Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("重新完整扫描")
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDetails, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("查看任务详情")
                 }
-                OutlinedButton(
-                    onClick = onRescan,
-                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
-                    border = BorderStroke(1.dp, warning.copy(alpha = .45f))
-                ) {
-                    Icon(Icons.Rounded.Refresh, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("重新完整扫描")
+                TextButton(onClick = onResume, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("持续扫描模式")
                 }
             }
         }
@@ -528,15 +485,18 @@ private fun WorkbenchSummaryCard(
                 Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(20.dp))
-            Text(if (state.scanReady) "已选项目 · 预计释放" else "上次扫描缓存",
+            Text(when { state.scanReady -> "已选项目 · 预计释放"; state.running -> "已发现项目 · 已统计容量"; else -> "上次扫描缓存" },
                 style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BaiZeMetric(if (state.scanReady) Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
-                else "需重新扫描", Modifier.padding(top = 3.dp))
+            BaiZeMetric(when {
+                state.scanReady -> Formatter.formatFileSize(LocalContext.current, presentation.selectedBytes)
+                state.running -> Formatter.formatFileSize(LocalContext.current, state.items.sumOf { it.bytes.coerceAtLeast(0L) })
+                else -> "需重新扫描"
+            }, Modifier.padding(top = 3.dp))
             Row(Modifier.fillMaxWidth().padding(top = 18.dp).clip(RoundedCornerShape(16.dp))
                 .background(BaiZeTokens.colors.surfaceBase).padding(vertical = 12.dp)) {
                 WorkbenchStat("${presentation.appCount}", "应用", Modifier.weight(1f))
                 WorkbenchStat(if (state.scanReady) "$selectedCount" else "${state.items.size}",
-                    if (state.scanReady) "已选项目" else "历史项目", Modifier.weight(1f))
+                    when { state.scanReady -> "已选项目"; state.running -> "已发现项目"; else -> "历史项目" }, Modifier.weight(1f))
                 WorkbenchStat("${presentation.protectedCount}", "不可选", Modifier.weight(1f))
             }
             when {
@@ -547,8 +507,21 @@ private fun WorkbenchSummaryCard(
                 !state.scanReady && !state.running -> Text(REVIEW_HISTORY_HINT, Modifier.padding(top = 12.dp),
                     fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            WorkbenchCoverage(state)
             if (state.running) WorkbenchProgress(state)
         }
+    }
+}
+
+@Composable
+private fun WorkbenchCoverage(state: WorkbenchUiState) {
+    if (state.coverageSummary.isBlank()) return
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Top) {
+        Icon(if (state.coverageIncomplete) Icons.Rounded.Info else Icons.Rounded.FolderOpen, null,
+            Modifier.size(17.dp), tint = if (state.coverageIncomplete) BaiZeTokens.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(state.coverageSummary, fontSize = 12.sp, lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -585,15 +558,17 @@ private fun WorkbenchEmptyCard(state: WorkbenchUiState, onDetails: () -> Unit) {
                     null, Modifier.size(34.dp), tint = color)
             }
             Text(when { state.running -> "正在查找可清理内容"; error -> workbenchErrorSummary(state);
-                complete -> "没有发现可清理项目"; else -> "按应用查看清理内容" },
+                state.coverageIncomplete -> "扫描范围尚未完整覆盖"; complete -> "没有发现可清理项目"; else -> "按应用查看清理内容" },
                 fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-            Text(when { state.running -> "找到的应用与文件会陆续显示。";
+            Text(when { state.running -> if (state.loadingResults) "正在读取应用与文件，已读取的项目会陆续显示。" else "正在检查目录，完成后会按应用列出文件。";
                 error -> "任务信息已保留。查看详情后，可以重新发起扫描。";
+                state.coverageIncomplete -> "已检查的范围内暂无项目；未检查的目录不代表没有可清理内容。";
                 complete -> "当前扫描范围内暂无可清理内容，可以稍后再试。";
                 else -> "展开应用，核对文件，再选择需要清理的内容。" },
                 Modifier.padding(top = 10.dp), fontSize = 13.sp, lineHeight = 21.sp,
                 textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            WorkbenchCoverage(state)
             if (state.running) WorkbenchProgress(state)
             else {
                 Spacer(Modifier.height(24.dp))
@@ -773,6 +748,7 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enabled: Boolean, lockedReason: String?, onToggle: () -> Unit, onDetails: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 4.dp)
@@ -783,7 +759,7 @@ private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enable
         Column(Modifier.weight(1f).clickable(onClickLabel = "查看文件明细", onClick = onDetails).padding(top = 7.dp, bottom = 5.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(item.title, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 RiskBadge(item.risk)
                 Text(if (item.bytes < 0L) "大小待统计" else Formatter.formatFileSize(LocalContext.current, item.bytes),
                     fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

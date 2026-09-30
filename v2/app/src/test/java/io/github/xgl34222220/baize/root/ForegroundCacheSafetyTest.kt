@@ -32,6 +32,12 @@ class ForegroundCacheSafetyTest {
             assertEquals(path, false, known.invoke(engine, path, "com.example"))
         }
     }
+    @Test fun pathProtectionCoversAliasesAndSelectedParents() {
+        val protected = ForegroundCacheEngine::class.java.getDeclaredMethod("protectedPath", String::class.java, Set::class.java).apply { isAccessible = true }
+        assertEquals(true, protected.invoke(engine, "/data/media/10/Android/data/com.example/cache", setOf("/storage/emulated/10/Android/data/com.example/cache/keep.txt")))
+        assertEquals(true, protected.invoke(engine, "/data/data/com.example/cache", setOf("/data/user/0/com.example")))
+        assertEquals(false, protected.invoke(engine, "/data/user/10/com.example/cache", setOf("/data/user/0/com.example")))
+    }
     @Test fun cancelledCleanupRetainsEveryUnprocessedCandidate() {
         val cancelled = AtomicBoolean(true)
         val worker = ForegroundCacheEngine(RuntimeEnvironment.getApplication(), cancelled)

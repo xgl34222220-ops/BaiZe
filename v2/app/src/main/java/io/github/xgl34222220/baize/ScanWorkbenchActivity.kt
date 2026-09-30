@@ -143,7 +143,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
                         onClear = ::clearSelection, onProtect = ::protectItem,
                         onQuarantine = ::quarantineItem, onSelectMedium = ::selectAllMedium,
                         onManageWhitelist = ::openWhitelist,
-                        onResumeSavedScan = ::openResumableScan
+                        onResumeSavedScan = ::openResumableScan,
+                        onToggleVisibleItems = ::toggleItems
                     ))
                 }
             }
@@ -193,7 +194,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         if (restoredReview) {
             if (screenState.notice != WorkbenchNotice.ERROR) {
                 screenState = screenState.copy(
-                    notice = if (screenState.scanReady) WorkbenchNotice.INFO else WorkbenchNotice.WARNING,
+                    notice = if (screenState.scanReady && !screenState.coverageIncomplete) WorkbenchNotice.INFO else WorkbenchNotice.WARNING,
                     phase = if (screenState.scanReady) "已恢复上次扫描，可继续选择" else "已恢复上次结果，重新扫描后可清理")
             }
             return
@@ -219,7 +220,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
         screenState = screenState.copy(running = true, loadingResults = false, scanReady = false,
             notice = WorkbenchNotice.INFO, phase = "正在并行扫描应用缓存与安全项目…",
             progressCurrent = 0L, progressTotal = 0L, currentPath = "",
-            items = emptyList(), selectedIds = emptySet(), resultText = "", expiresAtRealtime = 0L)
+            items = emptyList(), selectedIds = emptySet(), resultText = "", expiresAtRealtime = 0L,
+            coverageSummary = "", coverageIncomplete = false)
         // Persist invalidation before any result page, including across rotation.
         saveReview()
         startPolling()
@@ -268,12 +270,13 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     else Long.MAX_VALUE,
                     if (profileOk) profileCompletedAt + profileJson.optLong("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
                         .coerceIn(0L, SNAPSHOT_TTL_MS) else Long.MAX_VALUE)
-                val partial = profileJson.optBoolean("partial") || !profileOk || (scanProfile == "safe" && !cacheOk)
+                val coverage = workbenchScanCoverage(cacheJson.takeIf { scanProfile == "safe" }, profileJson, cacheOk, profileOk)
+                val partial = coverage.incomplete
                 val warning = if (partial) "本轮扫描未覆盖全部范围；仅展示有效快照中的项目。" else ""
                 screenState = screenState.copy(loadingResults = true, notice = WorkbenchNotice.INFO, phase = "扫描结束，正在读取结果…",
                     progressCurrent = 0L, progressTotal = 0L, currentPath = "",
                     policyTitle = policy.title, policyKey = policy.key, highRiskMode = policy.highRiskMode,
-                    expiresAtRealtime = snapshotExpiresAtRealtime,
+                    expiresAtRealtime = snapshotExpiresAtRealtime, coverageSummary = coverage.summary, coverageIncomplete = partial,
                     resultText = warning + "读取期间仅供预览，全部读取完成后才可选择和清理。")
                 val results = ProgressiveScanResults<WorkbenchItem>({ it.id }) {
                     it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium")
@@ -376,7 +379,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 val category = item.optString("categoryLabel").ifBlank { "应用缓存" }
                 val path = item.optString("path").trim()
                 if (packageName.isBlank() || path.isBlank()) continue
-                val appName = applicationLabel(packageName)
+                val appName = item.optString("appName").trim().ifBlank { applicationLabel(packageName) }
                 result += WorkbenchItem(id = "cache:${stableId("$packageName\u0000$category\u0000$path")}",
                     source = "cache", profile = "cache", packageName = packageName, appName = appName,
                     category = category, groupKey = "app:$packageName", groupTitle = appName,
@@ -761,6 +764,15 @@ class ScanWorkbenchActivity : ComponentActivity() {
         group.forEach { if (shouldSelect) selected += it.id else selected -= it.id }
         screenState = screenState.copy(selectedIds = selected)
     }
+    private fun toggleItems(ids: Set<String>) {
+        if (!selectionIsEditable()) return
+        val eligible = screenState.items.filter { it.id in ids && it.selectable && it.risk in setOf("low", "medium") }
+            .mapTo(linkedSetOf()) { it.id }
+        if (eligible.isEmpty()) return
+        val selected = screenState.selectedIds.toMutableSet()
+        if (selected.containsAll(eligible)) selected.removeAll(eligible) else selected.addAll(eligible)
+        screenState = screenState.copy(selectedIds = selected)
+    }
     private fun selectAllSafe() = selectRisks(setOf("low", "medium"))
     private fun selectAllMedium() = selectRisks(setOf("medium"))
     private fun selectRisks(risks: Set<String>) {
@@ -843,6 +855,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 .put("expiresAt", expires).put("scanReady", state.scanReady && !state.running && !state.loadingResults)
                 .put("loadingResults", state.loadingResults).put("phase", state.phase)
                 .put("resultText", state.resultText).put("notice", state.notice.name)
+                .put("coverageSummary", state.coverageSummary).put("coverageIncomplete", state.coverageIncomplete)
                 .put("policyId", policyId).put("selected", JSONArray(state.selectedIds.toList()))
                 .put("items", JSONArray().apply { state.items.forEach { item -> put(JSONObject()
                     .put("id", item.id).put("source", item.source).put("profile", item.profile)
@@ -882,6 +895,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 else if (remaining > 0L) saved.optString("phase") else "上次结果已保留；重新扫描后可继续清理",
             notice = if (incomplete || remaining <= 0L) WorkbenchNotice.WARNING else
                 runCatching { WorkbenchNotice.valueOf(saved.optString("notice", "INFO")) }.getOrDefault(WorkbenchNotice.INFO),
+            coverageSummary = saved.optString("coverageSummary"), coverageIncomplete = saved.optBoolean("coverageIncomplete"),
             resultText = saved.optString("resultText"), policyTitle = cleanupPolicy.title,
             policyKey = cleanupPolicy.key, highRiskMode = cleanupPolicy.highRiskMode)
     }

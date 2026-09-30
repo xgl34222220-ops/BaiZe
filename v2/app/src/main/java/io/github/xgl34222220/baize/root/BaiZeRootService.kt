@@ -247,11 +247,12 @@ class BaiZeRootService : RootService() {
             val snapshot = synchronized(resultLock) { items }
             val end = (safeOffset + safeLimit).coerceAtMost(snapshot.size)
             val array = JSONArray()
+            val labels = foregroundSnapshot?.items?.associate { it.path to it.appName }.orEmpty()
             if (safeOffset < end) {
                 snapshot.subList(safeOffset, end).forEach { item ->
                     array.put(
                         JSONObject()
-                            .put("appName", item.packageName)
+                            .put("appName", labels[item.path] ?: item.packageName)
                             .put("packageName", item.packageName)
                             .put("categoryLabel", item.category.substringBeforeLast(':'))
                             .put("path", item.path)
@@ -471,6 +472,7 @@ class BaiZeRootService : RootService() {
             appendLine("scanned_roots=${snapshot.scannedRoots}")
             appendLine("incomplete_roots=${snapshot.incompleteRoots}")
             appendLine("root_identities=${JSONObject().apply { snapshot.items.forEach { put(it.path, it.identity) } }}")
+            appendLine("app_labels=${JSONObject().apply { snapshot.items.forEach { put(it.packageName, it.appName) } }}")
             appendLine("engine_elapsed_ms=${snapshot.elapsedMs}")
             appendLine("worker_policy=app-root")
             appendLine("worker_reason=foreground-module-independent")
@@ -501,10 +503,11 @@ class BaiZeRootService : RootService() {
         val incompleteArray = runCatching { JSONArray(env.optString("incomplete_paths", "[]")) }.getOrNull()
         val incompletePaths = incompleteArray?.let { array -> (0 until array.length()).map { array.optString(it) }.toSet() }.orEmpty()
         val identities = runCatching { JSONObject(env.optString("root_identities", "{}")) }.getOrDefault(JSONObject())
+        val appLabels = runCatching { JSONObject(env.optString("app_labels", "{}")) }.getOrDefault(JSONObject())
         val restoredItems = parseItems(itemsFile).map { item ->
             ForegroundCacheEngine.Item(
                 packageName = item.packageName,
-                appName = item.packageName,
+                appName = appLabels.optString(item.packageName, item.packageName),
                 category = item.category,
                 path = item.path,
                 bytes = item.bytes,

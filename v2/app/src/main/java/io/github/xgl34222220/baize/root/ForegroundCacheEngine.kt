@@ -122,9 +122,10 @@ internal class ForegroundCacheEngine(
 
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
         val started = SystemClock.elapsedRealtime()
-        val whitelist = parseWhitelist(whitelistJson)
+        val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
+        val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
         val labels = installedLabels()
-        val roots = discoverCacheRoots(whitelist, labels)
+        val roots = discoverCacheRoots(whitelist, labels).filterNot { protectedPath(it.path, protectedPaths) }
         val items = ArrayList<Item>(roots.size)
         var totalBytes = 0L
         var totalFiles = 0L
@@ -148,7 +149,7 @@ internal class ForegroundCacheEngine(
                 })
             }
             var completed = 0
-            while (completed < roots.size && !cancelled.get()) {
+            while (completed < roots.size && !cancelled.get() && SystemClock.elapsedRealtime() - started < 90_000L) {
                 val future = completions.poll(150, TimeUnit.MILLISECONDS) ?: continue
                 completed++
                 val measured = runCatching { future.get() }.getOrNull()
@@ -202,7 +203,8 @@ internal class ForegroundCacheEngine(
         progress: (String, Int, Int, String) -> Unit
     ): CleanResult {
         val started = SystemClock.elapsedRealtime()
-        val whitelist = parseWhitelist(whitelistJson)
+        val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
+        val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
         var processed = 0
         var cleaned = 0
         var changed = 0
@@ -219,7 +221,7 @@ internal class ForegroundCacheEngine(
             if (cancelled.get()) { remaining += item; return@forEachIndexed }
             processed += 1
             progress("正在清理应用缓存", index, snapshot.items.size, item.path)
-            if (item.packageName in whitelist || !knownCachePath(item.path, item.packageName)) {
+            if (item.packageName in whitelist || protectedPath(item.path, protectedPaths) || !knownCachePath(item.path, item.packageName)) {
                 protected += 1
                 remaining += item
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "protected", "白名单或路径保护", 0, 0, 0))
@@ -345,7 +347,7 @@ internal class ForegroundCacheEngine(
             if (!engine.isDirectory || isSymlink(engine)) continue
             val stack = ArrayDeque<Pair<File, Int>>()
             stack.add(engine to 0)
-            while (stack.isNotEmpty()) {
+            while (stack.isNotEmpty() && !cancelled.get()) {
                 val (file, depth) = stack.removeLast()
                 if (!file.isDirectory || isSymlink(file) || depth > 3) continue
                 if (file != engine && file.name in WEBVIEW_CACHE_NAMES) {
@@ -400,6 +402,24 @@ internal class ForegroundCacheEngine(
                 require(PACKAGE_NAME.matches(value.trim())) { "白名单包名无效，已停止操作" }
                 add(value.trim())
             }
+        }
+    }
+
+    private fun parseProtectedPaths(raw: String): Set<String> {
+        val array = JSONArray(raw)
+        return buildSet { for (index in 0 until array.length()) {
+            val path = array.getString(index)
+            require(path.startsWith("/")) { "路径白名单无效，已停止操作" }
+            add(path)
+        } }
+    }
+
+    private fun protectedPath(path: String, protected: Set<String>): Boolean {
+        val identity = AndroidPathIdentity(android.os.Environment.getExternalStorageDirectory().absolutePath)
+        val candidate = identity.of(path)
+        return protected.any { raw ->
+            val keep = identity.of(raw)
+            keep == "/" || candidate == keep || candidate.startsWith("$keep/") || keep.startsWith("$candidate/")
         }
     }
 

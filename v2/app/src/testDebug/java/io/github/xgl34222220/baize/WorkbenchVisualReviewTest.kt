@@ -162,6 +162,31 @@ class WorkbenchVisualReviewTest {
         save("empty-failure-narrow-large-font")
     }
 
+    @Test fun partialCoverageDoesNotClaimThatTheDeviceIsClean() {
+        render(WorkbenchUiState(profileConnected = true, cacheConnected = true, notice = WorkbenchNotice.WARNING,
+            phase = "本轮扫描未覆盖全部范围", coverageIncomplete = true,
+            coverageSummary = "缓存目录 4 / 6 已检查 · 2 处未完成"))
+        compose.onNodeWithText("扫描范围尚未完整覆盖").assertIsDisplayed()
+        compose.onNodeWithText("没有发现可清理项目").assertDoesNotExist()
+        compose.onNodeWithText("缓存目录 4 / 6 已检查 · 2 处未完成").assertIsDisplayed()
+        save("coverage-incomplete")
+    }
+
+    @Test fun historicalResultsCanStillBeExpandedInDarkMode() {
+        val single = item(1).copy(groupTitle = "历史应用", title = "上次扫描日志")
+        render(ready().copy(scanReady = false, notice = WorkbenchNotice.WARNING, items = listOf(single),
+            selectedIds = setOf(single.id)), dark = true)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("历史应用"))
+        compose.onNodeWithText("历史应用").performClick()
+        compose.waitUntil(5_000) {
+            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择上次扫描日志")) }.isSuccess
+        }
+        compose.onNodeWithContentDescription("选择上次扫描日志").assertIsNotEnabled()
+        compose.onNodeWithText("上次扫描日志").assertIsDisplayed()
+        save("history-readable-dark")
+    }
+
     private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f) {
         state = initial
         val appearance = AppearanceSettings(monetEnabled = false, themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT,

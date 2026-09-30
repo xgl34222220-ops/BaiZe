@@ -48,16 +48,24 @@ class WorkbenchRefactorUiTest {
         }
         compose.waitForIdle()
     }
-    @Test fun historyStateOnlyOffersResumeOrFullRescan() {
+    @Test fun historyStatePreservesReadableFilesButLocksSelection() {
         render(history = true)
         compose.onNodeWithText("历史记录 · 需重新扫描").assertIsDisplayed()
         compose.onNodeWithText("上次扫描结果仅作为历史缓存").assertIsDisplayed()
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
-        compose.onNodeWithText("继续上次扫描").performClick()
+        compose.onNodeWithText("持续扫描模式").performClick()
         assertEquals(1, resumes)
         compose.onNodeWithText("重新完整扫描").performClick()
         assertEquals(1, scans)
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("测试应用"))
+        compose.onNodeWithText("测试应用").performClick()
+        compose.waitUntil(5_000) {
+            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择low")) }.isSuccess
+        }
+        compose.onNodeWithContentDescription("选择low").assertIsNotEnabled()
+        compose.onNodeWithText("清理已选 0 项").assertDoesNotExist()
     }
     @Test fun mediumSelectionExcludesBlockedAndHigh() {
         render()
