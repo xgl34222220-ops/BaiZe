@@ -37,6 +37,9 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
+            adb root
+            adb wait-for-device
+            adb shell id
             adb shell mkdir -p /data/local/tmp/baize-safety
             adb push /tmp/secure-test/test-dex.zip /data/local/tmp/baize-safety/test.jar
             adb shell chmod 444 /data/local/tmp/baize-safety/test.jar
