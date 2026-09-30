@@ -214,27 +214,27 @@ class MiuixDashboardActivity : ComponentActivity() {
                 actions = DashboardActions(
                     refresh = { refreshAll() },
                     clean = { openForegroundCleaner() },
-                    organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) },
+                    organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java)) },
                     scan = { openForegroundCleaner() },
-                    apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) },
-                    largeFiles = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.LARGE)) },
-                    duplicates = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.DUPLICATES)) },
-                    storageAnalysis = { startActivity(StorageToolsActivity.intent(this, StorageToolMode.ANALYSIS)) },
+                    apkScan = { CleanerNavigation.open(this, Intent(this, ApkScanActivity::class.java)) },
+                    largeFiles = { CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.LARGE)) },
+                    duplicates = { CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.DUPLICATES)) },
+                    storageAnalysis = { CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.ANALYSIS)) },
                     cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
                     deep = { openProfile("deep") },
                     corpses = { openProfile("corpses") },
-                    audit = { startActivity(Intent(this, CleanCenterActivity::class.java)) },
+                    audit = { CleanerNavigation.open(this, Intent(this, CleanCenterActivity::class.java)) },
                     updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
                     schedulerCommand = { controlScheduler(it) },
                     clearHistory = { confirmClearHistory() },
                     clearRawLog = { confirmClearRawLogs() },
-                    reviewProtected = { startActivity(Intent(this, ProtectedReviewActivity::class.java)) },
-                    whitelist = { startActivity(Intent(this, WhitelistActivity::class.java)) },
-                    resumableScan = { startActivity(Intent(this, ResumableSmartScanActivity::class.java)) },
-                    theme = { startActivity(Intent(this, ThemeSettingsActivity::class.java)) },
+                    reviewProtected = { CleanerNavigation.open(this, Intent(this, ProtectedReviewActivity::class.java)) },
+                    whitelist = { CleanerNavigation.open(this, Intent(this, WhitelistActivity::class.java)) },
+                    resumableScan = { CleanerNavigation.open(this, Intent(this, ResumableSmartScanActivity::class.java)) },
+                    theme = { CleanerNavigation.open(this, Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() }
@@ -336,7 +336,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             showTaskBusy("当前已有任务正在运行，请先停止后再开始前台清理")
             return
         }
-        startActivity(Intent(this, ResumableSmartScanActivity::class.java))
+        CleanerNavigation.scan(this)
     }
 
     private fun refreshAll() {
@@ -800,7 +800,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runOneTapOrganize() {
-        startActivity(Intent(this, FileOrganizerActivity::class.java))
+        CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java))
     }
 
     private fun runDetachedOrganizer(service: IProfileRootService) {
@@ -861,7 +861,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun runApkScan() {
-        startActivity(Intent(this, ApkScanActivity::class.java))
+        CleanerNavigation.open(this, Intent(this, ApkScanActivity::class.java))
     }
 
     private fun runModuleUtilityTask(service: IProfileRootService, mode: String) {
@@ -1824,13 +1824,13 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun openScanReview(profile: String = "safe") {
-        startActivity(Intent(this, ScanWorkbenchActivity::class.java).putExtra(ScanWorkbenchActivity.EXTRA_PROFILE, profile))
+        CleanerNavigation.scan(this, profile)
     }
 
     private fun confirmDeepClean() = openScanReview("deep")
 
     private fun openProfile(profile: String) {
-        startActivity(Intent(this, ProfileActivity::class.java).putExtra(ProfileActivity.EXTRA_PROFILE, profile))
+        CleanerNavigation.scan(this, profile)
     }
 
     private fun confirmClearHistory() {

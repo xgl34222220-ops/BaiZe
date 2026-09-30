@@ -211,7 +211,7 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
         }
         item {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存任务", actions.onOpenResumableScan)
+                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "旧版任务恢复", "恢复升级前保存的清理计划", actions.onOpenResumableScan)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Refresh, "重新连接服务", "重新连接", actions.onReconnect)
                 LuoShuGroupDivider()

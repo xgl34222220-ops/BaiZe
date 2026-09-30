@@ -27,6 +27,18 @@ class WorkbenchPresentationTest {
         assertEquals(0, workbenchPresentation(items, emptySet(), "low", emptySet(), false, "Download").visibleCount)
     }
 
+    @Test fun categoryOverviewCountsEveryCandidateExactlyOnce() {
+        val items = listOf(item("cache", "low").copy(source = "cache", category = "rule_trash"),
+            item("rules", "medium").copy(category = "rule_trash"),
+            item("empty", "low").copy(category = "empty_dir", bytes = -1),
+            item("orphan", "high").copy(profile = "corpses"))
+        val view = workbenchPresentation(items, emptySet(), "all", emptySet(), false)
+        assertEquals(items.size, view.categories.sumOf { it.count })
+        assertEquals(setOf("cache", "rules", "empty", "corpses"), view.categories.map { it.id }.toSet())
+        assertTrue(view.categories.single { it.id == "empty" }.hasUnknownSize)
+        assertEquals(1, workbenchPresentation(items, emptySet(), "rules", emptySet(), false).visibleCount)
+    }
+
     @Test fun partialCoverageCannotBecomeACleanDeviceClaim() {
         val cache = JSONObject().put("complete", false).put("totalRoots", 6).put("scannedRoots", 4).put("incompleteRoots", 2)
         val result = workbenchScanCoverage(cache, JSONObject(), true, true)

@@ -51,10 +51,10 @@ class WorkbenchRefactorUiTest {
     @Test fun historyStatePreservesReadableFilesButLocksSelection() {
         render(history = true)
         compose.onNodeWithText("历史记录 · 需重新扫描").assertIsDisplayed()
-        compose.onNodeWithText("上次扫描结果仅作为历史缓存").assertIsDisplayed()
+        compose.onNodeWithText("上次结果已保留").assertIsDisplayed()
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()
-        compose.onNodeWithText("持续扫描模式").performClick()
-        assertEquals(1, resumes)
+        compose.onNodeWithText("持续扫描模式").assertDoesNotExist()
+        assertEquals(0, resumes)
         compose.onNodeWithText("重新完整扫描").performClick()
         assertEquals(1, scans)
         compose.onNodeWithText("全选低、中风险").assertDoesNotExist()

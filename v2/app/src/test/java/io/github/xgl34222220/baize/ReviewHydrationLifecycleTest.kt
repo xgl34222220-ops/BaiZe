@@ -39,8 +39,9 @@ class ReviewHydrationLifecycleTest {
         try {
             val controller = Robolectric.buildActivity(type).create()
             // Even a callback already queued before composition disables the button is gated.
-            type.getDeclaredMethod(scanMethod).apply { isAccessible = true }.invoke(controller.get())
-            assertFalse(type.getDeclaredField(boundField).apply { isAccessible = true }.getBoolean(controller.get()))
+            val target = if (controller.get() is ScanWorkbenchActivity) (controller.get() as ScanWorkbenchActivity).session else controller.get()
+            target.javaClass.getDeclaredMethod(scanMethod).apply { isAccessible = true }.invoke(target)
+            assertFalse(target.javaClass.getDeclaredField(boundField).apply { isAccessible = true }.getBoolean(target))
             controller.stop().destroy()
         } finally {
             release.countDown()

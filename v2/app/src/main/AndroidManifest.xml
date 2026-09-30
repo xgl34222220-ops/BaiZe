@@ -34,7 +34,7 @@
             android:name=".ProfileActivity"
             android:exported="false" />
         <activity android:name=".CacheActivity" android:exported="false" />
-        <activity android:name=".ScanWorkbenchActivity" android:exported="false" />
+        <activity android:name=".ScanWorkbenchActivity" android:exported="false" android:launchMode="singleTop" />
 
         <!--
             断点续清与持久化清理计划。

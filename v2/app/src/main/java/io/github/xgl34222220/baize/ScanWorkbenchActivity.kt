@@ -1,6 +1,14 @@
 package io.github.xgl34222220.baize
 
 import io.github.xgl34222220.baize.root.RootServiceClients
+import android.app.Application
+import android.content.ContextWrapper
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import io.github.xgl34222220.baize.ui.components.BaiZeDialog
+import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
+import androidx.compose.material3.Text
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -32,6 +40,7 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,74 +59,13 @@ import java.security.MessageDigest
 
 class ScanWorkbenchActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
-    private var profileService: IProfileRootService? = null
-    private var cacheService: IBaiZeRootService? = null
-    private var profileBound = false
-    private var cacheBound = false
-    private var autoScanStarted = false
-    private var restoredReview = false
-    private val scanProfile get() = intent.getStringExtra(EXTRA_PROFILE)
-        ?.takeIf { it in setOf("safe", "deep", "rules", "empty", "fragments", "corpses") } ?: "safe"
-    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private var cacheSnapshotId = ""
-    private var profileSnapshotId = ""
-    private var snapshotExpiresAtRealtime = 0L
-    private var cleanupPolicy = CleanupPolicy.BALANCED
-    private var pollJob: Job? = null
-    private var scanJob: Job? = null
-    private var stopJob: Job? = null
-    private val scanGeneration = ScanLoadGeneration()
-    private val reviewHydration = ReviewHydrationGate()
-    private var screenState by mutableStateOf(WorkbenchUiState(restoringReview = true, phase = "正在恢复扫描记录…"))
-
-    private val profileConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            profileService = RootServiceClients.profile(binder, applicationContext.cacheDir)
-            profileBound = true
-            screenState = screenState.copy(profileConnected = true)
-            maybeStartScan()
-        }
-        override fun onNullBinding(name: ComponentName?) {
-            RootService.unbind(this)
-            onServiceDisconnected(name)
-            screenState = screenState.copy(notice = WorkbenchNotice.ERROR, phase = "Root 启动失败，请检查授权后重试")
-        }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            invalidateScanLoad()
-            scanJob?.cancel()
-            saveReview()
-            profileService = null
-            profileBound = false
-            screenState = screenState.copy(profileConnected = false, running = false,
-                notice = WorkbenchNotice.ERROR, phase = "Root 详情引擎连接已断开")
-        }
-    }
-    private val cacheConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
-            cacheBound = true
-            screenState = screenState.copy(cacheConnected = true)
-            maybeStartScan()
-        }
-        override fun onNullBinding(name: ComponentName?) {
-            RootService.unbind(this)
-            onServiceDisconnected(name)
-            screenState = screenState.copy(notice = WorkbenchNotice.ERROR, phase = "Root 启动失败，请检查授权后重试")
-        }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            invalidateScanLoad()
-            scanJob?.cancel()
-            saveReview()
-            cacheService = null
-            cacheBound = false
-            screenState = screenState.copy(cacheConnected = false, running = false,
-                notice = WorkbenchNotice.ERROR, phase = "Root 缓存引擎连接已断开")
-        }
-    }
+    private val scanViewModel: ScanWorkbenchViewModel by viewModels()
+    internal val session get() = scanViewModel.session
+    private var confirmStop by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        screenState = screenState.copy(cacheRequired = scanProfile == "safe")
+        session.initialize(intent.getStringExtra(EXTRA_PROFILE).orEmpty())
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -137,23 +85,131 @@ class ScanWorkbenchActivity : ComponentActivity() {
             }
             BaiZeTheme(appearance) {
                 CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-                    ScanWorkbenchScreen(appearance, screenState, WorkbenchActions(
-                        onBack = ::finish, onScan = ::runScan, onStop = ::stopTask,
-                        onClean = ::cleanSelection, onToggleItem = ::toggleItem,
-                        onToggleGroup = ::toggleGroup, onSelectAll = ::selectAllSafe,
-                        onClear = ::clearSelection, onProtect = ::protectItem,
-                        onQuarantine = ::quarantineItem, onSelectMedium = ::selectAllMedium,
-                        onManageWhitelist = ::openWhitelist,
-                        onResumeSavedScan = ::openResumableScan,
-                        onToggleVisibleItems = ::toggleItems
+                    BackHandler { requestBack() }
+                    ScanWorkbenchScreen(appearance, session.screenState, WorkbenchActions(
+                        onBack = ::requestBack, onScan = session::runScan, onStop = session::stopTask,
+                        onClean = session::cleanSelection, onToggleItem = session::toggleItem,
+                        onToggleGroup = session::toggleGroup, onSelectAll = session::selectAllSafe,
+                        onClear = session::clearSelection, onProtect = session::protectItem,
+                        onQuarantine = session::quarantineItem, onSelectMedium = session::selectAllMedium,
+                        onManageWhitelist = { if (session.prepareWhitelist()) CleanerNavigation.open(this, Intent(this, WhitelistActivity::class.java)) },
+                        onToggleVisibleItems = session::toggleItems
                     ))
+                    if (confirmStop && session.screenState.running) BaiZeDialog(
+                        onDismissRequest = { confirmStop = false }, title = { Text("任务仍在进行") },
+                        text = { Text("留在这里查看进度，或先停止任务。已扫描和已处理的记录会保留。") },
+                        confirmButton = { BaiZeDialogButton({ confirmStop = false; session.stopTask() }) { Text("停止任务") } },
+                        dismissButton = { BaiZeDialogButton({ confirmStop = false }) { Text("继续等待") } })
                 }
             }
         }
+    }
+
+    private fun requestBack() {
+        if (session.screenState.running) confirmStop = true else finish()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // SINGLE_TOP intents are navigation, never a command to restart discovery.
+    }
+
+    override fun onStop() {
+        session.saveReview()
+        super.onStop()
+    }
+
+    companion object { const val EXTRA_PROFILE = "review_profile" }
+}
+
+internal class ScanWorkbenchViewModel(application: Application) : AndroidViewModel(application) {
+    val session = ScanWorkbenchSession(application, viewModelScope)
+    override fun onCleared() { session.close() }
+}
+
+internal class ScanWorkbenchSession(application: Application, private val lifecycleScope: CoroutineScope) : ContextWrapper(application) {
+    private var initialized = false
+    private var closed = false
+    private val needsCache get() = scanProfile in setOf("safe", "cache")
+    private var profileService: IProfileRootService? = null
+    private var cacheService: IBaiZeRootService? = null
+    private var profileBound = false
+    private var cacheBound = false
+    private var autoScanStarted = false
+    private var restoredReview = false
+    private var scanRequested = false
+    private var scanProfile = "safe"
+    private val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private var cacheSnapshotId = ""
+    private var profileSnapshotId = ""
+    private var snapshotExpiresAtRealtime = 0L
+    private var cleanupPolicy = CleanupPolicy.BALANCED
+    private var pollJob: Job? = null
+    private var scanJob: Job? = null
+    private var stopJob: Job? = null
+    private val scanGeneration = ScanLoadGeneration()
+    private val reviewHydration = ReviewHydrationGate()
+    var screenState by mutableStateOf(WorkbenchUiState(restoringReview = true, phase = "正在恢复扫描记录…"))
+        private set
+
+    private val profileConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (closed) return
+            profileService = RootServiceClients.profile(binder, applicationContext.cacheDir)
+            profileBound = true
+            screenState = screenState.copy(profileConnected = true)
+            maybeStartScan()
+        }
+        override fun onNullBinding(name: ComponentName?) {
+            RootService.unbind(this)
+            onServiceDisconnected(name)
+            screenState = screenState.copy(notice = WorkbenchNotice.ERROR, phase = "Root 启动失败，请检查授权后重试")
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            if (closed) return
+            invalidateScanLoad()
+            scanJob?.cancel()
+            saveReview()
+            profileService = null
+            profileBound = false
+            screenState = screenState.copy(profileConnected = false, running = false,
+                notice = WorkbenchNotice.ERROR, phase = "Root 详情引擎连接已断开")
+        }
+    }
+    private val cacheConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (closed) return
+            cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
+            cacheBound = true
+            screenState = screenState.copy(cacheConnected = true)
+            maybeStartScan()
+        }
+        override fun onNullBinding(name: ComponentName?) {
+            RootService.unbind(this)
+            onServiceDisconnected(name)
+            screenState = screenState.copy(notice = WorkbenchNotice.ERROR, phase = "Root 启动失败，请检查授权后重试")
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            if (closed) return
+            invalidateScanLoad()
+            scanJob?.cancel()
+            saveReview()
+            cacheService = null
+            cacheBound = false
+            screenState = screenState.copy(cacheConnected = false, running = false,
+                notice = WorkbenchNotice.ERROR, phase = "Root 缓存引擎连接已断开")
+        }
+    }
+
+    fun initialize(profile: String) {
+        if (initialized) return
+        initialized = true
+        scanProfile = CleanerNavigation.normalizedProfile(profile)
+        screenState = screenState.copy(cacheRequired = needsCache, scanProfile = scanProfile)
         lifecycleScope.launch {
             var loaded = false
             try {
-                val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@ScanWorkbenchActivity, scanProfile, strict = true) }
+                val saved = withContext(Dispatchers.IO) { ScanReviewStore.read(this@ScanWorkbenchSession, scanProfile, strict = true) }
                 if (saved != null) restoreReview(saved)
                 loaded = true
             } catch (cancelled: CancellationException) {
@@ -171,22 +227,21 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    override fun onStop() {
-        saveReview()
-        super.onStop()
-    }
-    override fun onDestroy() {
+    fun close() {
+        closed = true
         scanGeneration.invalidate()
         scanJob?.cancel()
         pollJob?.cancel()
+        // Activity recreation retains this session. Only a finished ViewModel releases bindings.
+        if (screenState.running) invalidateScanLoad()
+        saveReview()
         if (profileBound) runCatching { RootService.unbind(profileConnection) }
         if (cacheBound) runCatching { RootService.unbind(cacheConnection) }
-        super.onDestroy()
     }
 
     private fun connectServices() {
-        if (reviewHydration.loading) return
-        if (!restoredReview || screenState.notice != WorkbenchNotice.ERROR) {
+        if (closed || reviewHydration.loading) return
+        if (!restoredReview) {
             screenState = screenState.copy(notice = WorkbenchNotice.INFO, phase = "正在连接双 Root 快照引擎…")
         }
         if (!profileBound) {
@@ -196,7 +251,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     .addCategory(RootService.CATEGORY_DAEMON_MODE), profileConnection)
             }.onFailure { profileBound = false; screenState = screenState.copy(notice = WorkbenchNotice.ERROR, phase = "详情引擎启动失败：${it.message.orEmpty()}") }
         }
-        if (scanProfile == "safe" && !cacheBound) {
+        if (needsCache && !cacheBound) {
             cacheBound = true
             runCatching {
                 RootService.bind(Intent(this, BaiZeRootService::class.java)
@@ -207,8 +262,15 @@ class ScanWorkbenchActivity : ComponentActivity() {
 
     private fun maybeStartScan() {
         if (reviewHydration.loading) return
-        if (profileService == null || (scanProfile == "safe" && cacheService == null)) return
+        if (profileService == null || (needsCache && cacheService == null)) return
+        if (scanRequested) {
+            scanRequested = false
+            autoScanStarted = true
+            runScan()
+            return
+        }
         if (restoredReview) {
+            if (screenState.cleanupCompleted) return
             if (screenState.notice != WorkbenchNotice.ERROR) {
                 screenState = screenState.copy(
                     notice = if (screenState.scanReady && !screenState.coverageIncomplete) WorkbenchNotice.INFO else WorkbenchNotice.WARNING,
@@ -218,15 +280,16 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
         if (autoScanStarted) return
         autoScanStarted = true
-        lifecycleScope.launch { delay(180L); runScan() }
+        runScan()
     }
 
-    private fun runScan() {
+    fun runScan() {
         if (reviewHydration.loading) return
         if (screenState.running || stopJob?.isActive == true) return
         val profile = profileService
         val cache = cacheService
-        if (profile == null || (scanProfile == "safe" && cache == null)) {
+        if (profile == null || (needsCache && cache == null)) {
+            scanRequested = true
             connectServices()
             return
         }
@@ -236,8 +299,13 @@ class ScanWorkbenchActivity : ComponentActivity() {
         cacheSnapshotId = ""
         profileSnapshotId = ""
         snapshotExpiresAtRealtime = 0L
-        screenState = screenState.copy(running = true, loadingResults = false, scanReady = false,
-            notice = WorkbenchNotice.INFO, phase = "正在并行扫描应用缓存与安全项目…",
+        screenState = screenState.copy(running = true, loadingResults = false, scanReady = false, operation = "scan",
+            cleanupCompleted = false, cleanedBytes = 0L, cleanedFiles = 0L,
+            notice = WorkbenchNotice.INFO, phase = when (scanProfile) {
+                "safe" -> "正在扫描应用缓存与安全项目…"
+                "cache" -> "正在扫描应用缓存…"
+                else -> "正在扫描所选规则范围…"
+            },
             progressCurrent = 0L, progressTotal = 0L, currentPath = "",
             items = emptyList(), selectedIds = emptySet(), resultText = "", expiresAtRealtime = 0L,
             coverageSummary = "", coverageIncomplete = false)
@@ -256,12 +324,12 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 val (cacheResult, profileResult) = withContext(Dispatchers.IO) {
                     coroutineScope {
                         val cacheJob = async {
-                            val json = if (scanProfile != "safe") JSONObject().put("snapshotId", "")
+                            val json = if (!needsCache) JSONObject().put("snapshotId", "")
                                 else JSONObject(requireNotNull(cache).scanCandidates(packageWhitelist))
                             json to SystemClock.elapsedRealtime()
                         }
                         val profileJob = async {
-                            JSONObject(profile.scanProfile(scanProfile, options)) to SystemClock.elapsedRealtime()
+                            (if (scanProfile == "cache") JSONObject() else JSONObject(profile.scanProfile(scanProfile, options))) to SystemClock.elapsedRealtime()
                         }
                         cacheJob.await() to profileJob.await()
                     }
@@ -274,7 +342,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     it.optString("error") == "busy" || it.optInt("exitCode") == 3
                 }
                 if (busy != null) error(busy.optString("message", "已有扫描或清理任务正在运行"))
-                val cacheOk = scanProfile == "safe" && !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
+                val cacheOk = needsCache && !cacheJson.has("error") && !cacheJson.optBoolean("cancelled")
                     && cacheJson.optString("snapshotId").isNotBlank()
                 val profileOk = profileJson.optBoolean("success") && !profileJson.optBoolean("cancelled")
                     && profileJson.optString("snapshotId").isNotBlank()
@@ -289,7 +357,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     else Long.MAX_VALUE,
                     if (profileOk) profileCompletedAt + profileJson.optLong("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
                         .coerceIn(0L, SNAPSHOT_TTL_MS) else Long.MAX_VALUE)
-                val coverage = workbenchScanCoverage(cacheJson.takeIf { scanProfile == "safe" }, profileJson, cacheOk, profileOk)
+                val coverage = workbenchScanCoverage(cacheJson.takeIf { needsCache }, profileJson, cacheOk, profileOk, profileRequired = scanProfile != "cache")
                 val partial = coverage.incomplete
                 val warning = if (partial) "本轮扫描未覆盖全部范围；仅展示有效快照中的项目。" else ""
                 screenState = screenState.copy(loadingResults = true, notice = WorkbenchNotice.INFO, phase = "扫描结束，正在读取结果…",
@@ -338,7 +406,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 }
                 if (!scanGeneration.accepts(generation)) return@launch
                 val expired = SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime
-                screenState = screenState.copy(running = false, loadingResults = false,
+                screenState = screenState.copy(running = false, operation = "idle", loadingResults = false,
                     scanReady = review.items.isNotEmpty() && !expired,
                     notice = if (expired || partial) WorkbenchNotice.WARNING else WorkbenchNotice.SUCCESS,
                     phase = when {
@@ -453,7 +521,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun cleanSelection() {
+    fun cleanSelection() {
         if (screenState.running || screenState.loadingResults || stopJob?.isActive == true) return
         if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
             screenState = screenState.copy(scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描快照已过期，请重新扫描")
@@ -468,7 +536,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
         val cacheItems = selected.filter { it.source == "cache" }
         val profileItems = selected.filter { it.source == "profile" }
-        screenState = screenState.copy(running = true, notice = WorkbenchNotice.INFO,
+        screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
             phase = "正在校验并清理 ${selected.size} 个已勾选项目…", progressCurrent = 0L,
             progressTotal = selected.size.toLong(), currentPath = "")
         startPolling()
@@ -618,7 +686,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                                 AppJunkCategoryUiItem(it.category, it.files, it.bytes, it.errors, "")
                             })
                     }
-                    LastCleanupStore.save(this@ScanWorkbenchActivity, groupedApps, actualJunk)
+                    LastCleanupStore.save(this@ScanWorkbenchSession, groupedApps, actualJunk)
                     CleanAggregate(bytes, files, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete)
                 }
             }
@@ -627,7 +695,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
                 cacheSnapshotId = ""
                 profileSnapshotId = ""
                 snapshotExpiresAtRealtime = 0L
-                screenState = screenState.copy(running = false, scanReady = false,
+                screenState = screenState.copy(running = false, scanReady = false, operation = "idle",
+                    cleanupCompleted = true, cleanedBytes = result.bytes, cleanedFiles = result.files,
                     items = screenState.items.map { item -> item.copy(outcome =
                         if (item.id in screenState.selectedIds) result.outcomes[item.id] ?: "未完成或未返回结果" else "未勾选，保留") },
                     selectedIds = if (result.incomplete) screenState.selectedIds.filterTo(linkedSetOf()) { itWasNotCleaned(it, result.outcomes) } else emptySet(),
@@ -643,7 +712,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     profileSnapshotId = ""
                     snapshotExpiresAtRealtime = 0L
                 }
-                screenState = screenState.copy(running = false, scanReady = canRetry, notice = WorkbenchNotice.ERROR,
+                screenState = screenState.copy(running = false, operation = "idle", scanReady = canRetry, notice = WorkbenchNotice.ERROR,
                     expiresAtRealtime = snapshotExpiresAtRealtime,
                     // Never replay deletion after a lost response. Keep the exact user review.
                     phase = if (attempt.cleanupSubmitted) "清理结果未确认，列表与勾选已保留" else "清理未完成，列表与勾选已保留",
@@ -654,14 +723,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun quarantineItem(item: WorkbenchItem) {
+    fun quarantineItem(item: WorkbenchItem) {
         if (screenState.running || screenState.loadingResults || stopJob?.isActive == true || item !in screenState.items || item.source != "profile" || item.risk != "high" || !cleanupPolicy.canQuarantineHighRisk) return
         if (!screenState.scanReady || SystemClock.elapsedRealtime() >= snapshotExpiresAtRealtime) {
             screenState = screenState.copy(scanReady = false, notice = WorkbenchNotice.WARNING, phase = "扫描快照已过期，请重新扫描")
             return
         }
         val service = profileService ?: return
-        screenState = screenState.copy(running = true, notice = WorkbenchNotice.INFO,
+        screenState = screenState.copy(running = true, operation = "clean", notice = WorkbenchNotice.INFO,
             phase = "正在把 ${item.title} 移入隔离区…", currentPath = item.path)
         startPolling()
         val attempt = CleanupAttempt()
@@ -679,12 +748,13 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     cacheSnapshotId = ""
                     profileSnapshotId = ""
                     snapshotExpiresAtRealtime = 0L
-                    screenState = screenState.copy(running = false, scanReady = false, items = emptyList(), selectedIds = emptySet(),
+                    screenState = screenState.copy(running = false, operation = "idle", scanReady = false, expiresAtRealtime = 0L,
+                        items = screenState.items.map { if (it.id == item.id) it.copy(outcome = "已移入隔离区，可恢复", selectable = false) else it },
+                        selectedIds = screenState.selectedIds - item.id,
                         notice = WorkbenchNotice.SUCCESS, phase = json.optString("message", "高风险项目已移入隔离区"),
                         resultText = "已隔离 ${json.optInt("quarantinedCandidates")} 项 · ${formatBytes(json.optLong("quarantinedBytes"))}")
-                    Toast.makeText(this@ScanWorkbenchActivity, "已移入隔离区，可随时恢复", Toast.LENGTH_SHORT).show()
-                    delay(180L)
-                    runScan()
+                    Toast.makeText(this@ScanWorkbenchSession, "已移入隔离区，可随时恢复", Toast.LENGTH_SHORT).show()
+                    saveReview()
                 } else {
                     if (attempt.cleanupSubmitted) {
                         cacheSnapshotId = ""
@@ -715,10 +785,11 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
 
-    private fun protectItem(item: WorkbenchItem) {
+    fun protectItem(item: WorkbenchItem) {
         if (screenState.running || item !in screenState.items) return
         val service = profileService ?: return
-        screenState = screenState.copy(notice = WorkbenchNotice.INFO, phase = "正在把 ${item.groupTitle} 加入保护白名单…")
+        screenState = screenState.copy(running = true, operation = "protect", notice = WorkbenchNotice.INFO,
+            phase = "正在把 ${item.groupTitle} 加入保护白名单…")
         lifecycleScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
@@ -736,30 +807,28 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     cacheSnapshotId = ""
                     profileSnapshotId = ""
                     snapshotExpiresAtRealtime = 0L
-                    screenState = screenState.copy(scanReady = false, items = emptyList(), selectedIds = emptySet(),
-                        notice = WorkbenchNotice.SUCCESS, phase = "已加入白名单，正在重新生成安全快照…")
-                    Toast.makeText(this@ScanWorkbenchActivity, json.optString("message", "已加入白名单"), Toast.LENGTH_SHORT).show()
-                    delay(180L)
-                    runScan()
-                } else screenState = screenState.copy(notice = WorkbenchNotice.ERROR,
+                    screenState = screenState.copy(running = false, operation = "idle", scanReady = false, expiresAtRealtime = 0L,
+                        items = screenState.items.map { existing ->
+                            if ((item.packageName.isNotBlank() && existing.packageName == item.packageName) || existing.path == item.path)
+                                existing.copy(selectable = false, outcome = "已加入白名单，保留") else existing
+                        },
+                        notice = WorkbenchNotice.SUCCESS, phase = "已加入白名单，列表已保留；重新扫描后可继续清理")
+                    Toast.makeText(this@ScanWorkbenchSession, json.optString("message", "已加入白名单"), Toast.LENGTH_SHORT).show()
+                    saveReview()
+                } else screenState = screenState.copy(running = false, operation = "idle", notice = WorkbenchNotice.ERROR,
                     phase = "白名单保存失败：${json.optString("message", json.optString("error"))}")
-            }.onFailure { screenState = screenState.copy(notice = WorkbenchNotice.ERROR,
+            }.onFailure { screenState = screenState.copy(running = false, operation = "idle", notice = WorkbenchNotice.ERROR,
                 phase = "白名单保存失败：${it.message ?: it.javaClass.simpleName}") }
         }
     }
 
-    private fun openResumableScan() {
-        if (screenState.running || screenState.loadingResults) return
-        startActivity(Intent(this, ResumableSmartScanActivity::class.java))
-    }
-
-    private fun openWhitelist() {
-        if (screenState.running || screenState.loadingResults) return
+    fun prepareWhitelist(): Boolean {
+        if (screenState.running || screenState.loadingResults) return false
         invalidateScanLoad()
         screenState = screenState.copy(notice = WorkbenchNotice.INFO,
             phase = "白名单管理后请重新扫描，旧记录不会直接用于删除")
         saveReview()
-        startActivity(Intent(this, WhitelistActivity::class.java))
+        return true
     }
 
     private fun selectionIsEditable(): Boolean {
@@ -767,14 +836,14 @@ class ScanWorkbenchActivity : ComponentActivity() {
         if (reason != null && !screenState.running) screenState = screenState.copy(phase = reason)
         return reason == null
     }
-    private fun toggleItem(id: String) {
+    fun toggleItem(id: String) {
         val item = screenState.items.firstOrNull { it.id == id } ?: return
         if (!item.selectable || item.risk == "critical" || !selectionIsEditable()) return
         val selected = screenState.selectedIds.toMutableSet()
         if (!selected.add(id)) selected.remove(id)
         screenState = screenState.copy(selectedIds = selected)
     }
-    private fun toggleGroup(groupKey: String) {
+    fun toggleGroup(groupKey: String) {
         if (!selectionIsEditable()) return
         val group = screenState.items.filter { it.groupKey == groupKey && it.selectable && it.risk in setOf("low", "medium") }
         if (group.isEmpty()) return
@@ -783,7 +852,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         group.forEach { if (shouldSelect) selected += it.id else selected -= it.id }
         screenState = screenState.copy(selectedIds = selected)
     }
-    private fun toggleItems(ids: Set<String>) {
+    fun toggleItems(ids: Set<String>) {
         if (!selectionIsEditable()) return
         val eligible = screenState.items.filter { it.id in ids && it.selectable && it.risk in setOf("low", "medium") }
             .mapTo(linkedSetOf()) { it.id }
@@ -792,18 +861,18 @@ class ScanWorkbenchActivity : ComponentActivity() {
         if (selected.containsAll(eligible)) selected.removeAll(eligible) else selected.addAll(eligible)
         screenState = screenState.copy(selectedIds = selected)
     }
-    private fun selectAllSafe() = selectRisks(setOf("low", "medium"))
-    private fun selectAllMedium() = selectRisks(setOf("medium"))
+    fun selectAllSafe() = selectRisks(setOf("low", "medium"))
+    fun selectAllMedium() = selectRisks(setOf("medium"))
     private fun selectRisks(risks: Set<String>) {
         if (!selectionIsEditable()) return
         screenState = screenState.copy(selectedIds = reviewRiskSelection(screenState.items, risks))
     }
-    private fun clearSelection() {
+    fun clearSelection() {
         if (selectionIsEditable()) screenState = screenState.copy(selectedIds = emptySet())
     }
 
-    private fun stopTask() {
-        if (stopJob?.isActive == true) return
+    fun stopTask() {
+        if (!screenState.running || stopJob?.isActive == true) return
         val profile = profileService
         val cache = cacheService
         val stoppingScan = scanJob?.isActive == true
@@ -841,10 +910,10 @@ class ScanWorkbenchActivity : ComponentActivity() {
         }
     }
     private fun optionsJson(service: IProfileRootService, suppliedConfig: JSONObject? = null): String {
-        val config = suppliedConfig ?: runCatching { JSONObject(service.getSchedulerConfig()) }.getOrDefault(JSONObject())
+        val config = suppliedConfig ?: JSONObject(service.getSchedulerConfig())
         val policy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
-        val paths = runCatching { JSONArray(service.getWhitelistPaths()) }.getOrDefault(JSONArray())
-        val packages = runCatching { JSONArray(service.getWhitelistPackages()) }.getOrDefault(JSONArray())
+        val paths = JSONArray(service.getWhitelistPaths())
+        val packages = JSONArray(service.getWhitelistPackages())
         val maxMb = config.optInt("max_file_mb", 256).coerceIn(16, 16_384)
         return JSONObject().put("whitelistPackages", packages).put("whitelistPaths", paths)
             .put("maxFileBytes", maxMb * 1_024L * 1_024L)
@@ -863,7 +932,7 @@ class ScanWorkbenchActivity : ComponentActivity() {
         packageManager.getApplicationLabel(info).toString().takeIf { it.isNotBlank() }
     }.getOrNull() ?: packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() } }
 
-    private fun saveReview() {
+    fun saveReview() {
         if (!reviewHydration.canPersist) return
         val state = screenState
         val cacheId = cacheSnapshotId
@@ -874,6 +943,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
             JSONObject().put("cacheSnapshotId", cacheId).put("profileSnapshotId", profileId)
                 .put("expiresAt", expires).put("scanReady", state.scanReady && !state.running && !state.loadingResults)
                 .put("loadingResults", state.loadingResults).put("phase", state.phase)
+                .put("operation", state.operation).put("running", state.running)
+                .put("cleanupCompleted", state.cleanupCompleted).put("cleanedBytes", state.cleanedBytes).put("cleanedFiles", state.cleanedFiles)
                 .put("resultText", state.resultText).put("notice", state.notice.name)
                 .put("coverageSummary", state.coverageSummary).put("coverageIncomplete", state.coverageIncomplete)
                 .put("policyId", policyId).put("selected", JSONArray(state.selectedIds.toList()))
@@ -898,7 +969,6 @@ class ScanWorkbenchActivity : ComponentActivity() {
                     item.optBoolean("selectable"), item.optString("outcome"))
             } }
         }
-        if (items.isEmpty()) return
         restoredReview = true
         cacheSnapshotId = saved.optString("cacheSnapshotId")
         profileSnapshotId = saved.optString("profileSnapshotId")
@@ -907,13 +977,17 @@ class ScanWorkbenchActivity : ComponentActivity() {
         cleanupPolicy = CleanupPolicy.fromId(saved.optInt("policyId", CleanupPolicy.BALANCED.id))
         val selected = saved.optJSONArray("selected") ?: JSONArray()
         val selectedIds = withContext(Dispatchers.Default) { (0 until selected.length()).map { selected.optString(it) }.toSet() }
-        val incomplete = saved.optBoolean("loadingResults")
+        val incomplete = saved.optBoolean("loadingResults") || saved.optBoolean("running")
         screenState = screenState.copy(items = items, selectedIds = selectedIds,
+            cleanupCompleted = saved.optBoolean("cleanupCompleted") && !incomplete,
+            cleanedBytes = saved.optLong("cleanedBytes", 0L).coerceAtLeast(0L),
+            cleanedFiles = saved.optLong("cleanedFiles", 0L).coerceAtLeast(0L), operation = "idle",
             scanReady = saved.optBoolean("scanReady") && !incomplete && remaining > 0L,
             expiresAtRealtime = snapshotExpiresAtRealtime,
-            phase = if (incomplete) "上次结果读取未完成；已加载项目仅供查看，请重新扫描"
+            phase = if (incomplete) "上次任务已中断或结果未确认；保留记录，请重新扫描"
+                else if (saved.optBoolean("cleanupCompleted")) saved.optString("phase")
                 else if (remaining > 0L) saved.optString("phase") else "上次结果已保留；重新扫描后可继续清理",
-            notice = if (incomplete || remaining <= 0L) WorkbenchNotice.WARNING else
+            notice = if (incomplete || (remaining <= 0L && !saved.optBoolean("cleanupCompleted"))) WorkbenchNotice.WARNING else
                 runCatching { WorkbenchNotice.valueOf(saved.optString("notice", "INFO")) }.getOrDefault(WorkbenchNotice.INFO),
             coverageSummary = saved.optString("coverageSummary"), coverageIncomplete = saved.optBoolean("coverageIncomplete"),
             resultText = saved.optString("resultText"), policyTitle = cleanupPolicy.title,

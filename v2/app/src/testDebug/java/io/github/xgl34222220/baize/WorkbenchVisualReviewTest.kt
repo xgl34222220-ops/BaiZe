@@ -242,7 +242,14 @@ class WorkbenchVisualReviewTest {
     private fun save(name: String) {
         compose.waitForIdle()
         val output = File("build/reports/ui-screenshots/workbench-$name.png").apply { parentFile.mkdirs() }
-        val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
+        val bitmap = compose.runOnIdle {
+            val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            val view = dialog?.takeIf { it.isShowing }?.window?.decorView
+            if (view != null && view.width > 0 && view.height > 0) {
+                android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    .also { view.draw(android.graphics.Canvas(it)) }
+            } else captureActivityContent(compose.activity)
+        }
         output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

@@ -148,49 +148,8 @@ class ProfileActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (profile !in SUPPORTED_PROFILES) {
-            finish()
-            return
-        }
-
-        screenState = initialState(profile)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-
-        setContent {
-            val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
-            val systemDark = isSystemInDarkTheme()
-            val dark = when (appearance.themeMode) {
-                ThemeMode.SYSTEM -> systemDark
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-            }
-            SideEffect {
-                WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
-                }
-            }
-            BaiZeTheme(appearance) {
-                CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-                    ProfileRoute(
-                        appearance = appearance,
-                        state = screenState,
-                        actions = ProfileUiActions(
-                            onBack = ::finish,
-                            onScan = ::scan,
-                            onStop = ::stopTask,
-                            onClean = ::quickClean,
-                            onPrevious = { loadPage(page - 1) },
-                            onNext = { loadPage(page + 1) },
-                            onReview = ::openItemReview
-                        )
-                    )
-                }
-            }
-        }
-        connect()
+        if (profile in SUPPORTED_PROFILES) CleanerNavigation.scan(this, profile)
+        finish()
     }
 
     override fun onResume() {
