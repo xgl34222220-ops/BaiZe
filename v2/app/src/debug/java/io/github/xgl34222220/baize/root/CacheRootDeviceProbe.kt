@@ -180,11 +180,44 @@ object CacheRootDeviceProbe {
             markStage("high-risk-clean")
             val highResult = JSONObject(engine.clean(profileToken, JSONObject().put(highItem.getString("id"), true).toString(), "{\"allowHighRisk\":true}") {})
             check(highResult.getLong("deletedBytes") == 256L && !high.resolve("review.bin").exists()) { highResult.toString() }
+            markStage("corpse-package-inventory-safety")
+            val corpseRoot = File(first, "synthetic-corpse-guard").apply { mkdir() }
+            val keptCorpse = File(corpseRoot, "Android/data/io.baize.synthetic.gone/keep.txt").apply {
+                parentFile.mkdirs(); writeText("synthetic ownership must be verified")
+            }
+            val verifiedInventory = InstalledPackageInventory.fromEntries(listOf("android" to 1000, "installed.synthetic" to 10123))
+            var unavailable = false
+            var corpseUser = 0
+            val corpseEngine = NativeProfileEngine(context, java.util.concurrent.atomic.AtomicBoolean(),
+                ruleDirectory = rules, sharedRootOverride = listOf(corpseRoot),
+                packageInventory = { if (unavailable) error("synthetic inventory loss") else verifiedInventory },
+                corpseStorageUser = { corpseUser })
+            val corpseScan = JSONObject(corpseEngine.scan("corpses", "{}") {})
+            check(corpseScan.getInt("totalCandidates") == 1)
+            val corpseToken = corpseScan.getString("snapshotId")
+            val corpseItem = JSONObject(corpseEngine.page(corpseToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+            val corpseSelection = JSONObject().put(corpseItem.getString("id"), true).toString()
+            unavailable = true
+            check(JSONObject(corpseEngine.scan("corpses", "{}") {}).getString("error") == "package_inventory_unavailable")
+            check(JSONObject(corpseEngine.clean(corpseToken, corpseSelection, "{\"allowHighRisk\":true}") {}).getString("error") == "package_inventory_unavailable")
+            check(JSONObject(corpseEngine.quarantine(corpseToken, corpseSelection, "{}") {}).getString("error") == "package_inventory_unavailable")
+            check(JSONObject(corpseEngine.page(corpseToken, 0, 20)).getJSONArray("items").length() == 1)
+            unavailable = false
+            corpseUser = 10
+            check(JSONObject(corpseEngine.scan("corpses", "{}") {}).getString("error") == "package_inventory_unavailable")
+            check(JSONObject(corpseEngine.clean(corpseToken, corpseSelection, "{\"allowHighRisk\":true}") {}).getString("error") == "package_inventory_unavailable")
+            check(keptCorpse.readText() == "synthetic ownership must be verified")
+            check(runCatching { InstalledPackageInventory.fromEntries(emptyList()) }.isFailure)
+            val realInventory = runCatching { InstalledPackageInventory.read(context) }.getOrNull()
             println(JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", android.os.Build.VERSION.SDK_INT)
                 .put("formerWorkbenchError", former.optString("error")).put("scanThenSelectedClean", true)
                 .put("fdTransport", true).put("unselectedPreserved", true).put("unknownPathRejected", true)
                 .put("localBinderDescriptorCopies", true).put("crossUidBinderValidated", false)
                 .put("apkProtectionFdSnapshot", true)
+                .put("corpseUnknownInventoryPreserved", true).put("corpseCrossUserRejected", true)
+                .put("corpseEmptyInventoryRejected", true).put("corpseReviewRetained", true)
+                .put("actualRootPackageInventoryReadable", realInventory != null)
+                .put("actualRootPackageInventoryUser", realInventory?.userId ?: -1)
                 .put("serviceRecreationSelectedClean", true).put("deletedBytes", 12288)
                 .put("lowThenHighSameSnapshot", true).put("profileDeletedBytes", 384).toString())
         } finally {

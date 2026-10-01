@@ -1,7 +1,6 @@
 package io.github.xgl34222220.baize.root
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Environment
 import android.os.SystemClock
 import io.github.xgl34222220.baize.ReviewRiskPolicy
@@ -33,7 +32,9 @@ internal class NativeProfileEngine(
     private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
     private val ruleDirectory: File = AppRuleStore.ensure(context),
     private val ruleRoots: ReviewRuleCatalog.Roots = ReviewRuleCatalog.Roots(),
-    private val sharedRootOverride: List<File>? = null
+    private val sharedRootOverride: List<File>? = null,
+    private val packageInventory: () -> InstalledPackageInventory = { InstalledPackageInventory.read(context) },
+    private val corpseStorageUser: (String) -> Int? = InstalledPackageInventory::storageUser
 ) {
     data class Progress(
         val phase: String,
@@ -179,7 +180,8 @@ internal class NativeProfileEngine(
             "rules" -> scanRules(options, candidates, progress, started)
             "fragments" -> scanFragments(options, candidates, progress, started)
             "deep" -> scanDeep(options, candidates, progress, started)
-            "corpses" -> scanCorpses(options, candidates, progress, started)
+            "corpses" -> try { scanCorpses(options, candidates, progress, started) }
+                catch (error: PackageInventoryUnavailable) { return inventoryFailure(error) }
             else -> return JSONObject().put("error", "unsupported_profile").put("profile", id).toString()
         }
 
@@ -375,6 +377,8 @@ internal class NativeProfileEngine(
             return JSONObject().put("error", "empty_selection").put("message", "没有明确勾选任何项目").toString()
         }
 
+        corpsePreflight(selected)?.let { return it }
+
         val started = SystemClock.elapsedRealtime()
         val deadline = started + CLEAN_TOTAL_MS
         val mounts = mountPoints()
@@ -386,11 +390,19 @@ internal class NativeProfileEngine(
         var failures = 0
         var cleaned = 0
         var skipped = 0
+        val completedCorpses = hashSetOf<String>()
+        var inventoryStopped = false
 
         for ((index, candidate) in selected.withIndex()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
             progress(Progress("正在清理${candidate.label}", index, selected.size, candidate.path, deletedBytes, deletedFiles, failures))
-            val reason = validate(candidate, options, mounts)
+            val reason = try { validate(candidate, options, mounts) } catch (error: PackageInventoryUnavailable) {
+                failures += 1
+                skipped += selected.size - index
+                inventoryStopped = true
+                details.put(detail(candidate, "protected", error.message.orEmpty(), 0L, 0L, 0L))
+                break
+            }
             if (reason != null) {
                 skipped += 1
                 details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
@@ -411,16 +423,17 @@ internal class NativeProfileEngine(
             failures += result.failures
 
             val complete = result.complete && if (candidate.deleteRoot) !target.exists() else isEmptyDirectory(target)
+            if (candidate.profile == "corpses" && complete) completedCorpses += candidate.id
             if (complete || actualBytes > 0L || actualFiles > 0L || actualDirs > 0L) cleaned += 1 else skipped += 1
             details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else "仍有受保护或未删除项目", actualBytes, actualFiles, actualDirs))
         }
 
-        val selectedIds = selected.mapTo(hashSetOf()) { it.id }
+        val selectedIds = selected.filter { it.profile != "corpses" || it.id in completedCorpses }.mapTo(hashSetOf()) { it.id }
         snapshot.candidates.removeAll { it.id in selectedIds }
         if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
         val timedOut = SystemClock.elapsedRealtime() >= deadline
         val wasCancelled = cancelled.get()
-        progress(Progress(if (wasCancelled) "清理已停止" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
+        progress(Progress(if (inventoryStopped) "安装状态无法核对，清理已停止" else if (wasCancelled) "清理已停止" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
         return JSONObject()
             .put("success", true)
             .put("profile", snapshot.profile)
@@ -433,6 +446,7 @@ internal class NativeProfileEngine(
             .put("deletedDirectories", deletedDirectories)
             .put("cancelled", wasCancelled)
             .put("timedOut", timedOut)
+            .put("inventoryUnavailable", inventoryStopped)
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .put("details", details)
             .put("remainingSnapshotId", if (snapshot.candidates.isEmpty()) "" else snapshot.id)
@@ -467,6 +481,8 @@ internal class NativeProfileEngine(
         return JSONObject().put("error", "empty_selection").put("message", "没有明确选择高风险隔离项目").toString()
     }
 
+    corpsePreflight(selected)?.let { return it }
+
     val options = parseOptions(optionsJson).copy(allowHighRisk = true)
     val mounts = mountPoints()
     val details = JSONArray()
@@ -475,12 +491,19 @@ internal class NativeProfileEngine(
     var quarantinedFiles = 0L
     var quarantinedDirectories = 0L
     var failures = 0
+    val completedCorpses = hashSetOf<String>()
+    var inventoryStopped = false
     val started = SystemClock.elapsedRealtime()
     val deadline = started + CLEAN_TOTAL_MS
     for ((index, candidate) in selected.withIndex()) {
         if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
         progress(Progress("正在隔离${candidate.label}", index, selected.size, candidate.path, quarantinedBytes, quarantinedFiles, failures))
-        val reason = validate(candidate, options, mounts)
+        val reason = try { validate(candidate, options, mounts) } catch (error: PackageInventoryUnavailable) {
+            failures += 1
+            inventoryStopped = true
+            details.put(detail(candidate, "protected", error.message.orEmpty(), 0L, 0L, 0L))
+            break
+        }
         if (reason != null) {
             failures += 1
             details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
@@ -496,6 +519,7 @@ internal class NativeProfileEngine(
             risk = candidate.risk
         )
         if (result.success) {
+            if (candidate.profile == "corpses") completedCorpses += candidate.id
             quarantined += 1
             quarantinedBytes += result.bytes
             quarantinedFiles += result.files
@@ -510,12 +534,12 @@ internal class NativeProfileEngine(
                 .put("action", if (result.success) "quarantined" else "failed")
         )
     }
-    val selectedIds = selected.mapTo(hashSetOf()) { it.id }
+    val selectedIds = selected.filter { it.profile != "corpses" || it.id in completedCorpses }.mapTo(hashSetOf()) { it.id }
     snapshot.candidates.removeAll { it.id in selectedIds }
     if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
     val wasCancelled = cancelled.get()
     val timedOut = SystemClock.elapsedRealtime() >= deadline
-    progress(Progress(if (wasCancelled) "隔离已停止" else "隔离完成", selected.size, selected.size, bytes = quarantinedBytes, files = quarantinedFiles, failures = failures))
+    progress(Progress(if (inventoryStopped) "安装状态无法核对，隔离已停止" else if (wasCancelled) "隔离已停止" else "隔离完成", selected.size, selected.size, bytes = quarantinedBytes, files = quarantinedFiles, failures = failures))
     return JSONObject()
         .put("success", true)
         .put("profile", snapshot.profile)
@@ -527,8 +551,9 @@ internal class NativeProfileEngine(
         .put("failures", failures)
         .put("cancelled", wasCancelled)
         .put("timedOut", timedOut)
+        .put("inventoryUnavailable", inventoryStopped)
         .put("elapsedMs", SystemClock.elapsedRealtime() - started)
-        .put("message", "已隔离 $quarantined 个高风险项目，可在隔离区恢复")
+        .put("message", if (inventoryStopped) "应用安装状态无法核对，已停止；本次已隔离 $quarantined 个项目。" else "已隔离 $quarantined 个高风险项目，可在隔离区恢复")
         .put("details", details)
         .put("remainingSnapshotId", if (snapshot.candidates.isEmpty()) "" else snapshot.id)
         .put("remainingCandidates", snapshot.candidates.size)
@@ -731,21 +756,22 @@ internal class NativeProfileEngine(
         progress: (Progress) -> Unit,
         started: Long
     ) {
-        val installed = installedPackages()
+        val installed = readPackageInventory()
         val roots = ArrayList<File>()
         for (storage in storageRoots()) {
             roots.add(File(storage, "Android/data"))
             roots.add(File(storage, "Android/obb"))
         }
         val existing = roots.filter { it.isDirectory && !isSymlink(it) }
+        existing.forEach { installed.requireUser(corpseStorageUser(canonical(it))) }
         for ((index, root) in existing.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描卸载残留", index, existing.size, root.path))
-            val children = root.listFiles() ?: emptyArray()
+            val children = root.listFiles() ?: throw PackageInventoryUnavailable("卸载残留目录无法读取，本次扫描已停止，文件保持不变。")
             for (child in children) {
                 if (cancelled.get()) return
                 val packageName = child.name
-                if (!child.isDirectory || isSymlink(child) || !packageName(packageName) || installed.containsKey(packageName)) continue
+                if (!child.isDirectory || isSymlink(child) || !packageName(packageName) || packageName in installed.packages) continue
                 val item = candidate(
                     "corpses",
                     "uninstalled_leftover",
@@ -800,7 +826,11 @@ internal class NativeProfileEngine(
         if (whitelisted(candidate, options)) return "白名单保护"
         if (candidate.risk == "critical") return "关键风险只允许审计"
         if (candidate.risk == "high" && !options.allowHighRisk) return "高风险清理未启用"
-        if (candidate.profile == "corpses" && installedPackages().containsKey(candidate.packageName)) return "应用已重新安装"
+        if (candidate.profile == "corpses") {
+            val inventory = readPackageInventory()
+            inventory.requireUser(corpseStorageUser(path))
+            if (candidate.packageName in inventory.packages) return "应用已重新安装"
+        }
         if (!stillMatches(candidate, target, options)) return "目标不再符合扫描条件"
         if (candidate.identity.isBlank() || targetIdentity(target) != candidate.identity) return "目标已变化，请重新扫描此项目"
         return null
@@ -815,7 +845,7 @@ internal class NativeProfileEngine(
             "fragments" -> target.isFile &&
                 target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
                 fragmentNameMatches(target.name)
-            "corpses" -> corpsePath(canonical(target)) && !installedPackages().containsKey(candidate.packageName)
+            "corpses" -> corpsePath(canonical(target))
             "rules", "deep" -> ruleMutationAllowed(canonical(target), candidate.deleteRoot, target.isDirectory)
             else -> false
         }
@@ -1141,12 +1171,26 @@ internal class NativeProfileEngine(
 
     private fun deepRules(): File? = rulesDirectory()?.resolve("deep.rules")?.takeIf { it.isFile }
 
-    private fun installedPackages(): Map<String, String> = runCatching {
-        @Suppress("DEPRECATION")
-        context.packageManager.getInstalledApplications(PackageManager.GET_META_DATA).associate { info ->
-            info.packageName to context.packageManager.getApplicationLabel(info).toString().ifBlank { info.packageName }
+    private fun readPackageInventory(): InstalledPackageInventory = try {
+        packageInventory().also { inventory ->
+            if (inventory.userId < 0 || "android" !in inventory.packages) throw PackageInventoryUnavailable("应用安装清单不完整，已停止卸载残留处理。")
         }
-    }.getOrDefault(emptyMap())
+    } catch (error: PackageInventoryUnavailable) { throw error
+    } catch (_: Exception) { throw PackageInventoryUnavailable("应用安装清单读取失败，已停止卸载残留处理。") }
+
+    private fun corpsePreflight(selected: List<Candidate>): String? {
+        val corpses = selected.filter { it.profile == "corpses" }
+        if (corpses.isEmpty()) return null
+        return try {
+            val inventory = readPackageInventory()
+            corpses.forEach { inventory.requireUser(corpseStorageUser(it.path)) }
+            null
+        } catch (error: PackageInventoryUnavailable) { inventoryFailure(error) }
+    }
+
+    private fun inventoryFailure(error: PackageInventoryUnavailable): String = JSONObject()
+        .put("success", false).put("error", "package_inventory_unavailable")
+        .put("message", error.message).toString()
 
     private fun risk(path: String): String {
         val value = path.lowercase()
