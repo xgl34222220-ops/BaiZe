@@ -1998,7 +1998,9 @@ static bool seen_append(const SeenSet *s, const char *path, const SeenKey *added
     if (ok && fflush(f) != 0) ok = false;
     if (!ok) {
         clearerr(f);
-        (void)ftruncate(fileno(f), start);
+        if (ftruncate(fileno(f), start) != 0) {
+            fprintf(stderr, "Cannot roll back the incomplete index journal: %s\n", strerror(errno));
+        }
     }
     if (fclose(f) != 0) ok = false;
     return ok;
