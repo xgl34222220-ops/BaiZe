@@ -447,6 +447,7 @@ internal class NativeProfileEngine(
             .put("cancelled", wasCancelled)
             .put("timedOut", timedOut)
             .put("inventoryUnavailable", inventoryStopped)
+            .apply { if (inventoryStopped) put("message", "应用安装状态无法核对，清理已停止；未确认的项目继续保留。") }
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .put("details", details)
             .put("remainingSnapshotId", if (snapshot.candidates.isEmpty()) "" else snapshot.id)

@@ -99,6 +99,7 @@ class InstalledPackageInventorySafetyTest {
         inventory = { if (++reads == 1) known else error("lost after preflight") }
         val result = JSONObject(engine.clean(token, selected, "{\"allowHighRisk\":true}") {})
         assertTrue(result.getBoolean("inventoryUnavailable"))
+        assertTrue(result.getString("message").contains("清理已停止"))
         assertEquals(0L, result.getLong("deletedBytes"))
         assertEquals(1, result.getInt("remainingCandidates"))
         assertEquals(token, result.getString("remainingSnapshotId"))
