@@ -61,8 +61,13 @@ public final class FrozenReviewTree {
         if(a.isSymbolicLink() || (!a.isRegularFile() && !a.isDirectory()) || a.fileKey()==null)
             throw new IOException("special_or_unidentified_file");
         String key = a.fileKey().toString();
-        Object changed = Files.getAttribute(path, "unix:ctime", LinkOption.NOFOLLOW_LINKS);
-        String stamp = key + ":" + a.size() + ":" + a.lastModifiedTime() + ":" + changed;
+        String stamp;
+        if ("Dalvik".equals(System.getProperty("java.vm.name"))) {
+            stamp = AndroidReviewStamp.read(path.toString());
+        } else {
+            Object changed = Files.getAttribute(path, "unix:ctime", LinkOption.NOFOLLOW_LINKS);
+            stamp = key + ":" + a.size() + ":" + a.lastModifiedTime() + ":" + changed;
+        }
         return new Entry(path.toString(), key, stamp, a.isDirectory(), a.isRegularFile()?a.size():0L);
     }
     public static Snapshot capture(Path requested, AtomicBoolean cancelled, long budgetMs) {
@@ -136,7 +141,10 @@ public final class FrozenReviewTree {
                     result.retained("changed_after_review",false); continue;
                 }
                 BasicFileAttributes last=parent.getFileAttributeView(path.getFileName(),BasicFileAttributeView.class,LinkOption.NOFOLLOW_LINKS).readAttributes();
+                Entry lastIdentity=read(path);
                 if(last.fileKey()==null || !last.fileKey().toString().equals(expected.key) || last.isSymbolicLink() ||
+                   !lastIdentity.key.equals(expected.key) || lastIdentity.directory!=expected.directory ||
+                   (!expected.directory && !lastIdentity.stamp.equals(expected.stamp)) ||
                    (!expected.directory && (last.size()!=expected.bytes || !last.lastModifiedTime().equals(relative.lastModifiedTime())))) {
                     result.retained("changed_after_review",false); continue;
                 }

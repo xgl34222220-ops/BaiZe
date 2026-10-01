@@ -247,9 +247,15 @@ object CacheRootDeviceProbe {
             val rewriteTree = FrozenReviewTree.capture(rewritten.toPath(), java.util.concurrent.atomic.AtomicBoolean(), 5_000)
             check(rewriteTree.complete) { rewriteTree.reason }
             val originalTime = rewritten.lastModified()
+            val rewriteBefore = io.github.xgl34222220.baize.ApkFileReadDiagnostics.stat(rewritten.path)
             rewritten.writeBytes(ByteArray(128) { 9 }); check(rewritten.setLastModified(originalTime))
+            val rewriteAfter = io.github.xgl34222220.baize.ApkFileReadDiagnostics.stat(rewritten.path)
             val rewriteClean = FrozenReviewTree.delete(rewriteTree, true, 1024, java.util.concurrent.atomic.AtomicBoolean(), 5_000) { _, _ -> true }
-            check(rewriteClean.files == 0L && rewritten.readBytes().all { it == 9.toByte() })
+            check(rewriteClean.files == 0L && rewritten.readBytes().all { it == 9.toByte() }) {
+                JSONObject().put("originalManifest", FrozenReviewTree.toJson(rewriteTree))
+                    .put("before", rewriteBefore).put("after", rewriteAfter)
+                    .put("deletedFiles", rewriteClean.files).put("reason", rewriteClean.reason).toString()
+            }
             markStage("persisted-frozen-plan-service-recreation")
             val persistedRoot = File(first, "persisted-review").apply { check(mkdir()) }
             val persistedOld = File(persistedRoot, "reviewed.bin").apply { writeBytes(ByteArray(65)) }

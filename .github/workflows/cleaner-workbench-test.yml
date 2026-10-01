@@ -294,10 +294,7 @@ jobs:
             adb root
             adb wait-for-device
             adb install root-probe/app-debug.apk
-            bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
-            bash .github/scripts/probe-apk-artwork.sh
-            bash .github/scripts/probe-indexed-cleanup.sh
-            bash .github/scripts/probe-apk-permissions.sh root-probe/app-debug.apk
+            bash .github/scripts/probe-cleanup-entrypoints.sh root-probe/app-debug.apk
             adb uninstall io.github.xgl34222220.baize
             python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30016 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk baseline-30015/*.apk
       - uses: actions/upload-artifact@v4
