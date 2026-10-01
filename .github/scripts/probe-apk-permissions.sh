@@ -41,11 +41,25 @@ stage restarted
 # Delete only the run-owned backing file, leaving its earlier MediaStore record for inspection.
 adb shell rm -f "/data/media/0/Download/$NAMESPACE/fixture.apk"
 stage stale
+# The same command arguments used by RootMediaScanCommand, for this single run-owned file.
+# First observe the raw path currently emitted by Root cleanup; then the public MediaStore path.
+if adb shell timeout 15 /system/bin/content call --user 0 --uri content://media --method scan_file --arg "/data/media/0/Download/$NAMESPACE/fixture.apk" > "$OUT/raw-refresh.txt" 2>&1; then
+  echo 0 > "$OUT/raw-refresh-exit.txt"
+else
+  echo "$?" > "$OUT/raw-refresh-exit.txt"
+fi
+stage raw_refreshed
+if adb shell timeout 15 /system/bin/content call --user 0 --uri content://media --method scan_file --arg "$FIXTURE" > "$OUT/public-refresh.txt" 2>&1; then
+  echo 0 > "$OUT/public-refresh-exit.txt"
+else
+  echo "$?" > "$OUT/public-refresh-exit.txt"
+fi
+stage public_refreshed
 adb logcat -d > "$OUT/logcat.txt"
 python3 - "$OUT" <<'PY'
 import json, pathlib, sys
 out=pathlib.Path(sys.argv[1]); stages={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
-for name in ('denied','granted','revoked','restored','restarted','stale'):
+for name in ('denied','granted','revoked','restored','restarted','stale','raw_refreshed','public_refreshed'):
     assert stages[name].get('completed') and stages[name]['uid'] >= 10000 and stages[name]['api'] == 36, stages[name]
 print(json.dumps(stages,ensure_ascii=False,indent=2))
 (out/'summary.json').write_text(json.dumps(stages,ensure_ascii=False,indent=2))
