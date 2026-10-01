@@ -108,8 +108,10 @@ class ApkIndexAndRecreationRegressionTest {
         try {
             val before = controller.get()
             before.call("startScan")
-            await { provider.entered.count == 0L }
-            assertTrue(before.state().running)
+            // Do not drain Compose's main-loop idling while intentionally holding a provider
+            // call open: that waits for background work and consumes this fixture's timeout.
+            assertTrue("Index did not start on IO", provider.entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertTrue("Scan ended before interruption: ${before.state().phase}; ${before.state().output}; provider=${provider.queryThread}", before.state().running)
             val phase = before.state().phase
             val connection = before.session.javaClass.getDeclaredField("connection")
                 .apply { isAccessible = true }.get(before.session) as com.topjohnwu.superuser.ipc.RootService.Connection
@@ -149,6 +151,7 @@ class SyntheticApkIndexProvider : ContentProvider() {
     var blockCollection = false
     val entered = java.util.concurrent.CountDownLatch(1)
     val release = java.util.concurrent.CountDownLatch(1)
+    @Volatile var queryThread = ""
     var returnNull = false
     var rowCount = 0
     var queries = 0
@@ -158,6 +161,7 @@ class SyntheticApkIndexProvider : ContentProvider() {
         queries++
         val collection = uri.pathSegments.size == 2
         if (collection && blockCollection) {
+            queryThread = Thread.currentThread().name
             entered.countDown()
             check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
         }
