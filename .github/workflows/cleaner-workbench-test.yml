@@ -51,7 +51,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android and native toolchains
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -64,7 +64,7 @@ jobs:
           gradle-version: '9.5.0'
 
       - name: Prepare formal signing certificate
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         env:
           BAIZE_KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
           BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
@@ -73,7 +73,7 @@ jobs:
         run: python3 .github/scripts/prepare-formal-signing.py
 
       - name: Verify shell and full cleaner regression
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,15 +88,18 @@ jobs:
         working-directory: v2
         env:
           APK_REGRESSION_ONLY: ${{ contains(github.event.head_commit.message, '[apk-regression-only]') }}
+          APK_FOCUSED_CHECK: ${{ contains(github.event.head_commit.message, '[apk-focused-check]') }}
         run: |
           if [ "$APK_REGRESSION_ONLY" = "true" ]; then
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests io.github.xgl34222220.baize.ApkIndexAndRecreationRegressionTest
+          elif [ "$APK_FOCUSED_CHECK" = "true" ]; then
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*'
           else
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
           fi
 
       - name: Upload debug-only Root flow probe
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-Root-Flow-Probe
@@ -104,22 +107,22 @@ jobs:
           retention-days: 3
 
       - name: Build native engines
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         working-directory: v2
         run: sh scripts/build-native.sh
 
       - name: Build signed App
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         working-directory: v2
         run: ./gradlew --no-daemon --max-workers=2 :app:compileReleaseKotlin :app:assembleRelease
 
       - name: Package matching Magisk module
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         working-directory: v2
         run: sh scripts/package-module.sh
 
       - name: Verify paired artifacts
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -140,7 +143,7 @@ jobs:
           sha256sum -c SHA256SUMS.txt
 
       - name: Upload paired test bundle
-        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-${{ env.BAIZE_TEST_LABEL }}-Paired-Test
@@ -168,7 +171,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
 
   apk-installation-smoke:
-    if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
     needs: build-paired-test
     runs-on: ubuntu-latest
     timeout-minutes: 20

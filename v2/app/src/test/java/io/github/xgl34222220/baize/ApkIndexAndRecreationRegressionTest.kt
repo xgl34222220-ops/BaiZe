@@ -42,6 +42,30 @@ class ApkIndexAndRecreationRegressionTest {
         assertFalse("A null provider cursor must not become a successful zero-result scan", result.error.isNullOrBlank())
     }
 
+    @Test fun genuinelyEmptyIndexRemainsACompleteSuccessfulScan() {
+        val result = ApkMediaStoreIndex.query(RuntimeEnvironment.getApplication())
+        assertNull(result.error)
+        assertTrue(result.candidates.isEmpty())
+        assertFalse(result.truncated)
+        assertFalse(result.cancelled)
+    }
+
+    @Test fun exactlyTenThousandRowsDoNotFalselyClaimMoreFilesWereSkipped() {
+        provider.rowCount = 10_000
+        val result = ApkMediaStoreIndex.query(RuntimeEnvironment.getApplication())
+        assertNull(result.error)
+        assertEquals(10_000, result.candidates.size)
+        assertFalse(result.truncated)
+    }
+
+    @Test fun cancellationBeforeProviderQueryCannotPublishAnEmptySuccess() {
+        val signal = android.os.CancellationSignal().apply { cancel() }
+        val result = ApkMediaStoreIndex.query(RuntimeEnvironment.getApplication(), signal)
+        assertTrue(result.cancelled)
+        assertTrue(result.candidates.isEmpty())
+        assertEquals(0, provider.collectionQueries)
+    }
+
     @Test fun tenThousandRowLimitIsDisclosedToThePersonReviewingResults() {
         provider.rowCount = 10_001
         val controller = Robolectric.buildActivity(ApkScanActivity::class.java).setup()
@@ -66,14 +90,14 @@ class ApkIndexAndRecreationRegressionTest {
             before.javaClass.getDeclaredMethod("toggleItem", String::class.java)
                 .apply { isAccessible = true }.invoke(before, uri)
             assertEquals(setOf(uri), before.state().selected)
-            val queries = provider.queries
+            val queries = provider.collectionQueries
             controller.recreate()
             val after = controller.get()
             await { !after.state().running }
             assertEquals("Rotation must retain the review, not silently return to an empty screen", 2, after.state().items.size)
             assertEquals(setOf(uri), after.state().selected)
             assertTrue(after.state().cleanReady)
-            assertEquals("Restoring a review must not discover a different set of files", queries, provider.queries)
+            assertEquals("Restoring a review must not discover a different set of files", queries, provider.collectionQueries)
         } finally { controller.pause().stop().destroy() }
     }
 
@@ -94,13 +118,17 @@ class SyntheticApkIndexProvider : ContentProvider() {
     var returnNull = false
     var rowCount = 0
     var queries = 0
+    var collectionQueries = 0
     override fun onCreate() = true
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
         queries++
+        val collection = uri.pathSegments.size == 2
+        if (collection) collectionQueries++
         if (returnNull) return null
         val columns = requireNotNull(projection)
         return MatrixCursor(columns).apply {
-            for (id in 1..rowCount) addRow(columns.map { column -> when (column) {
+            val ids = if (collection) 1..rowCount else uri.lastPathSegment?.toIntOrNull()?.let { it..it } ?: IntRange.EMPTY
+            for (id in ids) addRow(columns.map { column -> when (column) {
                 MediaStore.Files.FileColumns._ID -> id.toLong()
                 MediaStore.MediaColumns.DISPLAY_NAME -> "synthetic-$id.apk"
                 MediaStore.MediaColumns.SIZE -> 128L

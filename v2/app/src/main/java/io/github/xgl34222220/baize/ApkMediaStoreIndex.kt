@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize
 import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
@@ -20,7 +22,9 @@ internal data class IndexedApkCandidate(
 internal data class ApkMediaStoreResult(
     val candidates: List<IndexedApkCandidate>,
     val elapsedMs: Long,
-    val error: String? = null
+    val error: String? = null,
+    val truncated: Boolean = false,
+    val cancelled: Boolean = false
 )
 
 internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED }
@@ -33,7 +37,7 @@ internal object ApkMediaStoreIndex {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     @Suppress("DEPRECATION")
-    fun query(context: Context): ApkMediaStoreResult {
+    fun query(context: Context, cancellationSignal: CancellationSignal = CancellationSignal()): ApkMediaStoreResult {
         val started = SystemClock.elapsedRealtime()
         if (!hasAllFilesAccess()) {
             return ApkMediaStoreResult(
@@ -70,21 +74,26 @@ internal object ApkMediaStoreIndex {
         }.toTypedArray()
 
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
+        var truncated = false
+        var cancelled = false
         val error = runCatching {
+            cancellationSignal.throwIfCanceled()
             context.contentResolver.query(
                 collectionUri,
                 projection,
                 selection,
                 args,
-                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
-            )?.use { cursor ->
+                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+                cancellationSignal
+            ).let { it ?: kotlin.error("系统文件索引暂不可用，请稍后重试") }.use { cursor ->
                 val idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
                 val nameColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeColumn = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
                 val dataColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val modifiedColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                while (cursor.moveToNext() && byPath.size < 10_000) {
-                    if (idColumn < 0 || dataColumn < 0) continue
+                check(idColumn >= 0 && dataColumn >= 0 && sizeColumn >= 0 && modifiedColumn >= 0) { "系统文件索引缺少必要字段" }
+                while (cursor.moveToNext()) {
+                    cancellationSignal.throwIfCanceled()
                     val id = cursor.getLong(idColumn)
                     val path = cursor.getString(dataColumn)?.trim().orEmpty()
                     val name = if (nameColumn >= 0) cursor.getString(nameColumn)?.trim().orEmpty() else ""
@@ -95,6 +104,7 @@ internal object ApkMediaStoreIndex {
                         path.startsWith("/vendor/") || path.startsWith("/product/")) continue
                     val bytes = if (sizeColumn >= 0) cursor.getLong(sizeColumn).coerceAtLeast(0L) else 0L
                     val modified = if (modifiedColumn >= 0) cursor.getLong(modifiedColumn).coerceAtLeast(0L) else 0L
+                    if (path !in byPath && byPath.size >= 10_000) { truncated = true; break }
                     byPath[path] = IndexedApkCandidate(
                         id = id,
                         uri = ContentUris.withAppendedId(collectionUri, id).toString(),
@@ -105,12 +115,18 @@ internal object ApkMediaStoreIndex {
                     )
                 }
             }
-        }.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message.orEmpty()}" }
+        }.exceptionOrNull()?.let {
+            if (it is OperationCanceledException) { cancelled = true; null }
+            else "${it::class.java.simpleName}: ${it.message.orEmpty()}"
+        }
+        if (cancellationSignal.isCanceled) cancelled = true
 
         return ApkMediaStoreResult(
-            candidates = byPath.values.toList(),
+            candidates = if (cancelled || error != null) emptyList() else byPath.values.toList(),
             elapsedMs = SystemClock.elapsedRealtime() - started,
-            error = error
+            error = error,
+            truncated = truncated && !cancelled && error == null,
+            cancelled = cancelled
         )
     }
 
