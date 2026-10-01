@@ -430,6 +430,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                             append("$apkCount 个")
                             if (apkBytes > 0L) append(" · ").append(Formatter.formatFileSize(this@ResumableSmartScanActivity, apkBytes))
                             append(" · ${apkResult.elapsedMs} ms")
+                            if (apkResult.confirmedMissingRecords > 0) append(" · 已排除 ${apkResult.confirmedMissingRecords} 条旧记录")
                         }
                     },
                     cacheSelected = cacheCount > 0,
@@ -1060,7 +1061,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 error = "安装包未扫描：需要开启“所有文件访问”"
             )
         }
-        val indexed = ApkMediaStoreIndex.query(applicationContext)
+        val indexed = ApkIndexPresenceReview.query(applicationContext, remote = apkProtectionService)
         if (indexed.error != null) {
             return SmartApkScanResult(
                 items = emptyList(),
@@ -1081,7 +1082,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
         return SmartApkScanResult(
             items = items,
             elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
-            error = if (indexed.truncated) "安装包索引达到 1 万项上限；结果不完整，可处理后重新扫描" else ""
+            error = if (indexed.truncated) "安装包索引达到 1 万项上限；结果不完整，可处理后重新扫描"
+                else if (indexed.missingCheckIncomplete) "部分安装包存在状态未核对，已保留未确认项" else "",
+            confirmedMissingRecords = indexed.confirmedMissingRecords
         )
     }
 
@@ -1351,7 +1354,8 @@ internal data class SmartApkSnapshot(
 internal data class SmartApkScanResult(
     val items: List<SmartApkSnapshot>,
     val elapsedMs: Long,
-    val error: String
+    val error: String,
+    val confirmedMissingRecords: Int = 0
 )
 
 internal data class SmartApkCleanResult(

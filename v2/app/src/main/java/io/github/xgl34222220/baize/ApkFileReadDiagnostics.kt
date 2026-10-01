@@ -33,7 +33,8 @@ internal object ApkFileReadDiagnostics {
 
     @Suppress("DEPRECATION")
     fun collect(context: Context, uriString: String, path: String, remote: IProfileRootService?,
-        scanIdentity: ApkFileIdentity? = null): String {
+        scanIdentity: ApkFileIdentity? = null, cancellation: android.os.CancellationSignal? = null): String {
+        cancellation?.throwIfCanceled()
         val report = JSONObject().put("diagnosticVersion", 1).put("appVersionCode", BuildConfig.VERSION_CODE)
             .put("androidApi", Build.VERSION.SDK_INT).put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("appUid", Process.myUid()).put("allFilesAccess", ApkMediaStoreIndex.hasAllFilesAccess())
@@ -48,7 +49,7 @@ internal object ApkFileReadDiagnostics {
             val uri = Uri.parse(uriString)
             try {
                 val fields = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED)
-                val row = context.contentResolver.query(uri, fields, null, null, null)?.use { cursor ->
+                val row = context.contentResolver.query(uri, fields, null, null, null, cancellation)?.use { cursor ->
                     if (!cursor.moveToFirst()) JSONObject().put("exists", false) else JSONObject().put("exists", true)
                         .put("path", cursor.getString(cursor.getColumnIndexOrThrow(fields[0])))
                         .put("bytes", cursor.getLong(cursor.getColumnIndexOrThrow(fields[1])))
@@ -56,11 +57,13 @@ internal object ApkFileReadDiagnostics {
                 }
                 report.put("index", row ?: JSONObject().put("available", false))
             } catch (error: Exception) { report.put("index", failure(error)) }
-            try { context.contentResolver.openFileDescriptor(uri, "r")?.use {
+            cancellation?.throwIfCanceled()
+            try { context.contentResolver.openFileDescriptor(uri, "r", cancellation)?.use {
                 report.put("mediaStoreFd", stat(Os.fstat(it.fileDescriptor)))
             } ?: report.put("mediaStoreFd", JSONObject().put("ok", false).put("error", "null_descriptor"))
             } catch (error: Exception) { report.put("mediaStoreFd", failure(error)) }
         }
+        cancellation?.throwIfCanceled()
         if (remote == null) report.put("root", JSONObject().put("connected", false))
         else try {
             val ping = remote.ping()

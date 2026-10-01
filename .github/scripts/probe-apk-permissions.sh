@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP=io.github.xgl34222220.baize
+APK=${1:-v2/app/build/outputs/apk/debug/app-debug.apk}
+ROOT_PROBE="/data/local/tmp/baize-permission-root-evidence-${GITHUB_RUN_ID}.apk"
 OUT="${RUNNER_TEMP}/baize-apk-permission-probe"
 NAMESPACE="baize-apk-permission-probe-${GITHUB_RUN_ID}"
 FIXTURE="/storage/emulated/0/Download/$NAMESPACE/fixture.apk"
 mkdir -p "$OUT"
 adb root
 adb wait-for-device
-adb install -r v2/app/build/outputs/apk/debug/app-debug.apk
+adb install -r "$APK"
+adb push "$APK" "$ROOT_PROBE"
 adb shell mkdir -p "/sdcard/Download/$NAMESPACE"
-adb push v2/app/build/outputs/apk/debug/app-debug.apk "/sdcard/Download/$NAMESPACE/fixture.apk"
+adb push "$APK" "/sdcard/Download/$NAMESPACE/fixture.apk"
 adb shell timeout 20 /system/bin/content call --user 0 --uri content://media --method scan_file --arg "$FIXTURE" > "$OUT/initial-refresh.txt" 2>&1
 adb logcat -d > "$OUT/setup-logcat.txt"
 for _ in $(seq 1 20); do
@@ -23,7 +26,21 @@ adb shell am force-stop "$APP"
 adb shell appops set "$APP" MANAGE_EXTERNAL_STORAGE deny
 stage() {
   local phase=$1
-  adb shell am start -W -n "$APP/.ApkPermissionDeviceProbeActivity" --es phase "$phase" --es path "$FIXTURE"
+  local root_evidence=""
+  if [ "$phase" = stale ] || [ "$phase" = raw_refreshed ]; then
+    adb shell "CLASSPATH='$ROOT_PROBE' app_process / io.github.xgl34222220.baize.root.ApkMissingIndexDeviceEvidence '$FIXTURE'" > "$OUT/$phase-root-evidence.log"
+    root_evidence=$(python3 - "$OUT/$phase-root-evidence.log" <<'PYROOT'
+import base64,json,pathlib,sys
+records=[]
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    try: records.append(json.loads(line))
+    except ValueError: pass
+record=next(x for x in reversed(records) if x.get('evidenceVersion')==1)
+print(base64.b64encode(json.dumps(record).encode()).decode())
+PYROOT
+)
+  fi
+  adb shell am start -W -n "$APP/.ApkPermissionDeviceProbeActivity" --es phase "$phase" --es path "$FIXTURE" --es root_evidence "$root_evidence"
   for _ in $(seq 1 30); do
     if adb shell test -f "/data/user/0/$APP/files/apk-permission-probe/$phase.json"; then break; fi
     sleep 1
@@ -62,9 +79,14 @@ import json, pathlib, sys
 out=pathlib.Path(sys.argv[1]); stages={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
 for name in ('denied','granted','revoked','restored','restarted','stale','raw_refreshed','public_refreshed'):
     assert stages[name].get('completed') and stages[name]['uid'] >= 10000 and stages[name]['api'] == 36, stages[name]
+for name in ('stale', 'raw_refreshed'):
+    assert stages[name]['reviewConfirmedMissing'] == 1 and stages[name]['reviewCandidateCount'] == 0, stages[name]
+    assert stages[name]['indexRowsAfterReview'] == 1, stages[name]
+assert stages['public_refreshed']['indexRows'] == 0, stages['public_refreshed']
 print(json.dumps(stages,ensure_ascii=False,indent=2))
 (out/'summary.json').write_text(json.dumps(stages,ensure_ascii=False,indent=2))
 PY
 # The only external-storage fixture is this run's newly-created repository APK copy.
 adb shell rm -f "$FIXTURE"
 adb shell rmdir "/sdcard/Download/$NAMESPACE"
+adb shell rm -f "$ROOT_PROBE"

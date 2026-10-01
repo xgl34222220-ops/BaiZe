@@ -23,6 +23,7 @@ previous_30010 = Path(sys.argv[7]).resolve()
 previous_30011 = Path(sys.argv[8]).resolve()
 previous_30012 = Path(sys.argv[9]).resolve()
 previous_30013 = Path(sys.argv[10]).resolve()
+previous_30014 = Path(sys.argv[11]).resolve()
 assert hashlib.sha256(baseline.read_bytes()).hexdigest() == "01949f5a8f5e87e70bf2cc18e475f38bce28cdcd835ad731d0d9ea6565f97c80"
 if hashlib.sha256(previous.read_bytes()).hexdigest() != "5c327020842f2e8f71d8549d06fc7bbd6a6468638bb4e28e8cbcc9f31f4b97c0":
     raise AssertionError("30006 baseline must be the exact delivered APK")
@@ -39,6 +40,7 @@ assert hashlib.sha256(previous_30012.read_bytes()).hexdigest() == "3b998e4837a8b
 
 
 assert hashlib.sha256(previous_30013.read_bytes()).hexdigest() == "b2d3d4c506e043a43e41159005f095ffd241b067742b5c3d38f781d48f7512e0"
+assert hashlib.sha256(previous_30014.read_bytes()).hexdigest() == "c13af975fb3097de5233a1a0e8b322e1971b98ca13544add6be0252c80481cb5"
 
 
 def tap(text, name, repeats=1):
@@ -246,6 +248,16 @@ try:
     assert json.loads(m.adb("shell", "cat", target))["selected"] == ["upgrade-fixture"]
     m.launch("candidate-from-30013")
     m.adb("uninstall", m.APP)
+    m.adb("install", str(previous_30014), timeout=120)
+    m.launch("baseline-30014")
+    mark = marker("preserve-30014-data")
+    m.adb("push", str(seed), target)
+    m.adb("shell", f"uid=$(stat -c %u /data/user/0/{m.APP}); chown $uid:$uid {target}; restorecon {target}")
+    installed_candidate()
+    assert m.adb("shell", "cat", mark) == "preserve-30014-data"
+    assert json.loads(m.adb("shell", "cat", target))["selected"] == ["upgrade-fixture"]
+    m.launch("candidate-from-30014")
+    m.adb("uninstall", m.APP)
     m.adb("install", str(apk), timeout=120)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS", check=False)
     m.launch("candidate-fresh-install")
@@ -324,6 +336,7 @@ try:
         "30011_upgrade_preserved_review_and_selection": True,
         "30012_upgrade_preserved_review_and_selection": True,
         "30013_upgrade_preserved_review_and_selection": True,
+        "30014_upgrade_preserved_review_and_selection": True,
         "old_compatible_banner_reproduced_and_removed": True, "historical_versions_available_in_settings": True,
         "baseline_scan_stack": old_scan_stack, "candidate_scan_stack": new_scan_stack,
         "baseline_deep_stack": old_deep_stack, "candidate_deep_stack": new_deep_stack,

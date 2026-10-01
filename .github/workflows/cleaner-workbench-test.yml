@@ -263,6 +263,14 @@ jobs:
           run-id: 36869392062
           github-token: ${{ github.token }}
           path: baseline-30013
+      - name: Download exact delivered 30014 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 36884249108
+          name: BaiZe-cleaner-workbench-test+c9e26e8a-Paired-Test
+          path: baseline-30014
+
       - name: Build same-package archive resource fixtures
         run: |
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
@@ -281,8 +289,9 @@ jobs:
             bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
             bash .github/scripts/probe-apk-artwork.sh
             bash .github/scripts/probe-apk-deletion.sh
+            bash .github/scripts/probe-apk-permissions.sh root-probe/app-debug.apk
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30014 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30015 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -292,5 +301,6 @@ jobs:
             ${{ runner.temp }}/baize-root-cache-probe/
             ${{ runner.temp }}/baize-apk-artwork-probe/
             ${{ runner.temp }}/baize-apk-deletion-probe/
+            ${{ runner.temp }}/baize-apk-permission-probe/
           if-no-files-found: warn
           retention-days: 7

@@ -168,6 +168,30 @@ object CacheRootDeviceProbe {
                 org.json.JSONArray().put(evidencePath.replace("/emulated/0/", "/emulated/10/"))))
             check(!otherUser.getBoolean("success") && otherUser.getString("reason") == "outside_current_user_storage")
             check(evidenceFile.length() == 128L) { "Identity diagnostics must not mutate the APK" }
+            markStage("media-refresh-public-path")
+            val retainedMediaFile = File(evidenceFixture, "retained.apk").apply { writeBytes(ByteArray(64) { 8 }) }
+            val retainedMediaPath = retainedMediaFile.path.replaceFirst("/data/media/0/", "/storage/emulated/0/")
+            fun indexed(path: String): Boolean {
+                check(path.startsWith("/storage/emulated/0/Download/baize-file-evidence-") && '\'' !in path)
+                val output = File.createTempFile("media-query-", ".log", transport)
+                val process = ProcessBuilder("/system/bin/content", "query", "--user", "0", "--uri", "content://media/external/file",
+                    "--projection", "_id:_data", "--where", "_data='$path'").redirectErrorStream(true).redirectOutput(output).start()
+                try {
+                    check(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) { "Synthetic index query timed out" }
+                    val text = output.readText()
+                    check(process.exitValue() == 0 && ("Row:" in text || "No result found." in text)) { text }
+                    return "Row:" in text
+                } finally { if (process.isAlive) process.destroyForcibly(); output.delete() }
+            }
+            check(RootMediaScanCommand.scan(evidencePath, transport) && RootMediaScanCommand.scan(retainedMediaPath, transport))
+            check(indexed(evidencePath) && indexed(retainedMediaPath)) { "Owned APK fixtures were not indexed" }
+            android.system.Os.remove(evidenceFile.path)
+            check(indexed(evidencePath)) { "Fixture must actually reproduce a stale index before refresh" }
+            check(RootMediaScanCommand.scan(evidenceFile.path, transport)) { "Raw path refresh failed" }
+            check(!indexed(evidencePath) && indexed(retainedMediaPath) && retainedMediaFile.length() == 64L) {
+                "Refresh must remove only the deleted file's old index entry"
+            }
+
             check(JSONObject(profileDelegate.addWhitelistPath(protectedFixture)).getBoolean("success"))
             try {
                 val protection = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "getApkProtection"))
@@ -258,6 +282,7 @@ object CacheRootDeviceProbe {
                 .put("fdTransport", true).put("unselectedPreserved", true).put("unknownPathRejected", true)
                 .put("localBinderDescriptorCopies", true).put("crossUidBinderValidated", false)
                 .put("apkProtectionFdSnapshot", true)
+                .put("rawPathMediaRefreshRemovesOnlyDeletedIndex", true)
                 .put("apkReadOnlyEvidenceMatchesRootStat", true).put("apkEvidenceOtherUserRejected", true)
                 .put("corpseUnknownInventoryPreserved", true).put("corpseCrossUserRejected", true)
                 .put("corpseEmptyInventoryRejected", true).put("corpseReviewRetained", true)

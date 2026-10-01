@@ -25,7 +25,9 @@ internal data class ApkMediaStoreResult(
     val elapsedMs: Long,
     val error: String? = null,
     val truncated: Boolean = false,
-    val cancelled: Boolean = false
+    val cancelled: Boolean = false,
+    val confirmedMissingRecords: Int = 0,
+    val missingCheckIncomplete: Boolean = false
 )
 
 internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED, PROTECTED, PROTECTION_UNAVAILABLE, UNVERIFIED, INVALID, CANCELLED }

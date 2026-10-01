@@ -56,6 +56,23 @@ class ApkArtworkUiTest {
         save("apk-single-file-diagnostic-dark-large-font")
     }
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun confirmedMissingIndexProducesAZeroByteReviewWithoutACleanupAction() {
+        val state = ApkScanUiState(totalFiles = 0, totalBytes = 0, confirmedMissingRecords = 1,
+            phase = "当前 0 个安装包 · 已排除 1 条不存在的旧记录",
+            coverage = listOf(ScanCoverageItem("scanned", "系统索引", 0, 0, "content://media/external/file", "已核对")))
+        var scans = 0
+        render(dark = true, fontScale = 1.5f) { ApkScanScreen(state, {}, { scans++ }, { cleanCalls++ }, {}, {}) }
+        compose.onNodeWithText("0 个安装文件").assertIsDisplayed()
+        compose.onNodeWithText("已确认 1 条旧记录对应的文件不存在，已从结果和容量中排除；没有删除文件。").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("清理已选", substring = true).assertCountEquals(0)
+        assertEquals(0L, state.selectedBytes)
+        save("apk-missing-index-empty-dark-large-font")
+        compose.onNodeWithText("重新扫描").performScrollTo().assertIsDisplayed().performClick()
+        assertEquals(1, scans); assertEquals(0, cleanCalls)
+    }
+
     @Test fun archiveArtworkNamesAndVersionsAreVisibleAndDetailsDoNotSelectOrDelete() {
         val first = item(1).copy(archive = parsed())
         val failed = item(2).copy(archive = ApkArchiveInfo(parseStatus = ApkArchiveParseStatus.FAILED,

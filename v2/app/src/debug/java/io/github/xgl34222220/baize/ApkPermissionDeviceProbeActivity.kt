@@ -64,6 +64,24 @@ class ApkPermissionDeviceProbeActivity : ComponentActivity() {
                             } catch (error: Exception) { result.put("providerFdReadable", false).put("providerFdError", error.javaClass.simpleName) }
                             val preview = ApkArchiveMetadata.inspect(applicationContext, uri.toString(), path, bytes, modified)
                             result.put("previewStatus", preview.parseStatus.name).put("previewFailure", preview.failureReason?.name ?: "")
+                            val encodedRoot = request.getStringExtra("root_evidence").orEmpty()
+                            if (encodedRoot.isNotEmpty()) {
+                                check(encodedRoot.length <= 32_768)
+                                val rootEvidence = JSONObject(String(android.util.Base64.decode(encodedRoot, android.util.Base64.DEFAULT), Charsets.UTF_8))
+                                val report = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, uri.toString(), path, null, identity))
+                                report.put("root", JSONObject().put("connected", true).put("uid", 0).put("fileEvidenceSupported", true).put("file", rootEvidence))
+                                val candidate = IndexedApkCandidate(cursor.getLong(0), uri.toString(), path, "fixture.apk", bytes, modified, identity)
+                                val reviewed = ApkIndexPresenceReview.review(ApkMediaStoreResult(listOf(candidate), 0), android.os.CancellationSignal(),
+                                    inspect = { report }, appUid = Process.myUid())
+                                result.put("reviewConfirmedMissing", reviewed.confirmedMissingRecords)
+                                    .put("reviewCandidateCount", reviewed.candidates.size)
+                                    .put("reviewInput", report)
+                                    .put("rootEvidenceTransport", "read-only debug Root process; cross-UID Binder remains untested")
+                                contentResolver.query(collection, arrayOf(MediaStore.MediaColumns._ID), "_data = ?", arrayOf(path), null)?.use {
+                                    result.put("indexRowsAfterReview", it.count)
+                                }
+                            }
+
                         }
                     } ?: result.put("indexRows", JSONObject.NULL)
                 } catch (error: Exception) { result.put("indexError", error.javaClass.simpleName) }

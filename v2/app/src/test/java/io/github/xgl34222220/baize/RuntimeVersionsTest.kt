@@ -8,8 +8,8 @@ class RuntimeVersionsTest {
     private val app = ComponentVersion.parse("2.8.2", 28002)
 
     @Test fun readDiagnosticsUpdateAcceptsUnchangedSchedulingModules() {
-        val update = ComponentVersion("2.0.0", 30014L)
-        for (code in 30008L..30013L) {
+        val update = ComponentVersion("2.0.0", 30015L)
+        for (code in 30008L..30014L) {
             val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
             assertEquals("", versions.warning(update))
             assertTrue(versions.compatibilityNote(update).contains("当前模块可继续使用"))

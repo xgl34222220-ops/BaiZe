@@ -297,7 +297,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             cleanReady = false,
             output = "",
             scanFailed = false,
-            coverageIncomplete = false
+            coverageIncomplete = false,
+            confirmedMissingRecords = 0
         )
 
         lifecycleScope.launch {
@@ -330,7 +331,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             }
 
             val started = SystemClock.elapsedRealtime()
-            val indexed = withContext(Dispatchers.IO) { ApkMediaStoreIndex.query(applicationContext, cancellation) }
+            val indexed = withContext(Dispatchers.IO) { ApkIndexPresenceReview.query(applicationContext, cancellation, service) }
             if (closed) return@launch
             scanCancellation = null
             if (indexed.cancelled || stopRequested) {
@@ -387,13 +388,15 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val coverage = listOf(
                 ScanCoverageItem(
-                    status = if (indexed.truncated) "partial" else "scanned",
+                    status = if (indexed.truncated || indexed.missingCheckIncomplete) "partial" else "scanned",
                     group = "MediaStore.Files 系统索引",
                     files = indexed.candidates.size.toLong(),
                     bytes = totalBytes,
                     path = "content://media/external/file",
                     reason = "系统索引 ${indexed.candidates.size} 条 · 当前快照 ${snapshots.size} 条。" +
-                        if (indexed.truncated) "达到 1 万项上限，结果不完整；处理已选后重新扫描可继续查看。" else "已读完本次系统索引。"
+                        (if (indexed.truncated) "达到 1 万项上限，结果不完整；处理已选后重新扫描可继续查看。" else "已读完本次系统索引。") +
+                        (if (indexed.confirmedMissingRecords > 0) "已排除 ${indexed.confirmedMissingRecords} 条文件已不存在的旧记录，未删除文件，也不计入容量。" else "") +
+                        (if (indexed.missingCheckIncomplete) "部分文件存在状态尚未核对，已保留这些项目。" else "")
                 )
             )
             screenState = screenState.copy(
@@ -401,6 +404,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 operation = "",
                 phase = when {
                     indexed.truncated -> "已读取前 ${indexed.candidates.size} 个安装包 · 达到本次上限"
+                    indexed.confirmedMissingRecords > 0 -> "当前 ${indexed.candidates.size} 个安装包 · 已排除 ${indexed.confirmedMissingRecords} 条不存在的旧记录"
                     indexed.candidates.isEmpty() -> "快速索引完成：未发现安装包"
                     else -> "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms"
                 },
@@ -410,7 +414,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 totalFiles = indexed.candidates.size.toLong(),
                 totalBytes = totalBytes,
                 cleanReady = snapshots.isNotEmpty(),
-                coverageIncomplete = indexed.truncated,
+                coverageIncomplete = indexed.truncated || indexed.missingCheckIncomplete,
+                confirmedMissingRecords = indexed.confirmedMissingRecords,
                 localModeAvailable = protection is ApkProtectionState.Unknown && !ApkProtectionStore.rootWasUsed(applicationContext),
                 protectionNeedsAction = protection is ApkProtectionState.Unknown,
                 protectionMessage = when (protection) {
@@ -590,7 +595,8 @@ internal data class ApkScanUiState(
     val coverageIncomplete: Boolean = false,
     val localModeAvailable: Boolean = false,
     val protectionMessage: String = "",
-    val protectionNeedsAction: Boolean = false
+    val protectionNeedsAction: Boolean = false,
+    val confirmedMissingRecords: Int = 0
 ) {
     val visibleItems: List<ApkScanItem> get() = items.filter { item ->
         matchesCriteria(item) || (item.archive.awaitingInspection && (filter != null || query.isNotBlank()))
@@ -650,6 +656,7 @@ internal fun ApkScanScreen(
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val loader by rememberUpdatedState(loadArchive)
     val visible = state.visibleItems
+    val completedScan = state.coverage.isNotEmpty() && !state.running && !state.scanFailed
     if (showFilters) {
         var filter by remember { mutableStateOf(state.filter) }
         FileFilterDialog({ showFilters = false }, {
@@ -677,15 +684,15 @@ internal fun ApkScanScreen(
     ) {
         item {
             DetailTaskCard(
-                metric = if (state.totalFiles > 0) Formatter.formatFileSize(context, state.totalBytes) else "扫描安装包",
-                metricLabel = if (state.totalFiles > 0) "${state.totalFiles} 个安装文件" else "APK · APKS · XAPK · APKM",
+                metric = if (state.totalFiles > 0 || completedScan) Formatter.formatFileSize(context, state.totalBytes) else "扫描安装包",
+                metricLabel = if (state.totalFiles > 0 || completedScan) "${state.totalFiles} 个安装文件" else "APK · APKS · XAPK · APKM",
                 phase = state.phase,
                 running = state.running,
                 ready = false,
                 scanEnabled = true,
                 cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
-                scanLabel = if (state.cleanReady) "重新扫描" else "开始扫描",
+                scanLabel = if (state.cleanReady || completedScan) "重新扫描" else "开始扫描",
                 cleanLabel = "清理已选 ${state.selected.size} 个安装包",
                 showAction = !state.cleanReady
             )
@@ -716,7 +723,7 @@ internal fun ApkScanScreen(
             item {
                 DetailEmptyState(
                     title = when { state.scanFailed -> "扫描未完成"; state.items.isNotEmpty() -> "没有符合筛选条件的安装包"; state.running -> "正在查找安装包"; state.coverage.isNotEmpty() -> "没有发现安装包"; else -> "还没有扫描结果" },
-                    description = when { state.scanFailed -> "文件索引暂不可用，这不代表存储中没有安装包。请检查权限后重试。"; state.running -> "正在读取系统文件索引。"; else -> "完成扫描后，文件名称、位置和大小会显示在这里。" },
+                    description = when { state.scanFailed -> "文件索引暂不可用，这不代表存储中没有安装包。请检查权限后重试。"; state.running -> "正在读取系统文件索引。"; state.confirmedMissingRecords > 0 -> "已确认 ${state.confirmedMissingRecords} 条旧记录对应的文件不存在，已从结果和容量中排除；没有删除文件。"; completedScan -> "当前结果没有安装包，可在扫描详情查看本次扫描范围。"; else -> "完成扫描后，文件名称、位置和大小会显示在这里。" },
                     icon = Icons.Rounded.InstallMobile
                 )
             }
