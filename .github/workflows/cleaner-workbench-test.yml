@@ -94,7 +94,7 @@ jobs:
           if [ "$APK_REGRESSION_ONLY" = "true" ]; then
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests io.github.xgl34222220.baize.ApkIndexAndRecreationRegressionTest
           elif [ "$APK_FOCUSED_CHECK" = "true" ]; then
-            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*'
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*' --tests 'io.github.xgl34222220.baize.Whitelist*' --tests 'io.github.xgl34222220.baize.root.Whitelist*' --tests 'io.github.xgl34222220.baize.UiVisualReviewTest'
           else
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
           fi

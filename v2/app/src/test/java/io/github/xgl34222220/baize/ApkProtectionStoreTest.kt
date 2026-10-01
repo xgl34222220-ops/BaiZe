@@ -2,6 +2,8 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import io.github.xgl34222220.baize.root.WhitelistRepository
 import org.json.JSONArray
 import org.json.JSONObject
@@ -82,6 +84,34 @@ class ApkProtectionStoreTest {
             .putStringSet("path_whitelist", setOf("/storage/emulated/10/Legacy")).commit()
         val state = ApkProtectionStore.refresh(context, source(response()))
         assertEquals(setOf("/storage/emulated/10/Legacy"), state.rules?.paths)
+    }
+    @Test fun explicitLegacyRemovalIsVisibleToTheNextCleanupProtectionRead() {
+        val path = "/storage/emulated/0/Download"
+        context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE).edit()
+            .putStringSet("path_whitelist", setOf(path, "$path/Keep")).commit()
+        assertTrue(path in ApkProtectionStore.refresh(context, source(response())).rules!!.paths)
+        ApkProtectionStore.removeLegacyRules(context, paths = setOf(path))
+        assertEquals(setOf("$path/Keep"), ApkProtectionStore.refresh(context, source(response())).rules!!.paths)
+    }
+    @Test fun failedLegacyCommitRestoresInMemoryProtectionAndReportsFailure() {
+        val original = setOf("/storage/emulated/0/Download", "/storage/emulated/0/Documents")
+        val real = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
+        real.edit().putStringSet("path_whitelist", original).commit()
+        val wrapped = object : ContextWrapper(context) {
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+                if (name != "baize_v2") return super.getSharedPreferences(name, mode)
+                return object : SharedPreferences by real {
+                    override fun edit(): SharedPreferences.Editor {
+                        val delegate = real.edit()
+                        return object : SharedPreferences.Editor by delegate {
+                            override fun commit(): Boolean { delegate.commit(); return false }
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(runCatching { ApkProtectionStore.removeLegacyRules(wrapped, paths = setOf(original.first())) }.isFailure)
+        assertEquals(original, ApkProtectionStore.legacyRules(context).paths)
     }
     @Test fun localModeRefusesMalformedProtectionRecords() {
         context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE).edit()

@@ -185,8 +185,8 @@ class UiVisualReviewTest {
         var whitelist = 0
         render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, whitelist = { whitelist++ }))
         compose.onNodeWithText("外观与主题").performScrollTo().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("应用白名单"))
-        compose.onNodeWithText("应用白名单").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("保护名单"))
+        compose.onNodeWithText("保护名单").performScrollTo().performClick()
         assertEquals(1, appearance)
         assertEquals(1, whitelist)
     }

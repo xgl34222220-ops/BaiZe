@@ -92,21 +92,42 @@ internal object ApkProtectionStore {
         }
     }.getOrNull()
 
-    private fun legacyLocalRules(context: Context): ApkProtectionRules {
+    @Synchronized fun legacyRules(context: Context): ApkProtectionRules {
         val prefs = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
         return parse(JSONArray(prefs.getStringSet("package_whitelist", emptySet()).orEmpty().toList()).toString(),
             JSONArray(prefs.getStringSet("path_whitelist", emptySet()).orEmpty().toList()).toString())
     }
 
+    /** Remove only explicitly selected legacy records. Never replace them with the Root snapshot. */
+    @Synchronized fun removeLegacyRules(context: Context, packages: Set<String> = emptySet(), paths: Set<String> = emptySet()) {
+        val before = legacyRules(context)
+        val next = ApkProtectionRules(before.packages - packages, before.paths - paths)
+        if (next == before) return
+        val prefs = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
+        if (!prefs.edit().putStringSet("package_whitelist", next.packages).putStringSet("path_whitelist", next.paths).commit()) {
+            // SharedPreferences can update its in-memory map before reporting a disk failure.
+            prefs.edit().putStringSet("package_whitelist", before.packages).putStringSet("path_whitelist", before.paths).commit()
+            error("旧版保护保存失败，未确认移除，请刷新核对")
+        }
+    }
+
+    fun readRoot(source: ApkProtectionSource): ApkProtectionRules {
+        val response = JSONObject(source.snapshot())
+        val uid = response.opt("uid")
+        check(response.opt("root") == true && (uid == 0 || uid == 0L)) { "Root 保护服务未就绪" }
+        check(response.optInt("version") == 1) { "Root 保护服务需要重新加载，请重连或重启手机后再试" }
+        return parse(response.getJSONArray("packages").toString(), response.getJSONArray("paths").toString())
+    }
+
     /** Explicit opt-in for a standalone user; never silently downgrade a historical Root user. */
     @Synchronized fun enableLocalOnly(context: Context): Boolean {
         if (rootWasUsed(context)) return false
-        legacyLocalRules(context) // Refuse unreadable local rules before changing the mode.
+        legacyRules(context) // Refuse unreadable local rules before changing the mode.
         return preferences(context).edit().putBoolean("localOnly", true).commit()
     }
 
     fun fallback(context: Context): ApkProtectionState = runCatching {
-        val local = legacyLocalRules(context)
+        val local = legacyRules(context)
         if (!rootWasUsed(context) && preferences(context).getBoolean("localOnly", false)) {
             ApkProtectionState.LocalOnly(local)
         } else {
@@ -120,13 +141,9 @@ internal object ApkProtectionStore {
         if (source == null) return fallback
         return try {
             markRootUsed(context)
-            val response = JSONObject(source.snapshot())
-            val uid = response.opt("uid")
-            check(response.opt("root") == true && (uid == 0 || uid == 0L)) { "Root 保护服务未就绪" }
-            check(response.optInt("version") == 1) { "Root 保护服务需要重新加载，请重连或重启手机后再试" }
-            val rules = parse(response.getJSONArray("packages").toString(), response.getJSONArray("paths").toString())
+            val rules = readRoot(source)
             rememberRoot(context, rules)
-            ApkProtectionState.KnownRoot(rules.plus(legacyLocalRules(context)))
+            ApkProtectionState.KnownRoot(rules.plus(legacyRules(context)))
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             ApkProtectionState.Unknown("无法核对保护名单，已保留所选文件。${error.message.orEmpty().take(160)}", cached(context))

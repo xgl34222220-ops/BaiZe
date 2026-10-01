@@ -115,7 +115,7 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Shield, "应用白名单", "已保护 ${state.whitelistCount} 个应用", actions.onOpenWhitelist)
+                LuoShuNavigationRow(Icons.Rounded.Shield, "保护名单", "应用与文件路径保护", actions.onOpenWhitelist)
             }
         }
         item {
