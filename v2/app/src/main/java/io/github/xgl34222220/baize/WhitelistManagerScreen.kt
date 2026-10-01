@@ -57,7 +57,9 @@ internal fun WhitelistManagerScreen(
         state.apps.filter { (!protectedOnly || it.packageName in state.draft.selected) &&
             (it.label.contains(query, true) || it.packageName.contains(query, true)) }
     }
-    val visiblePaths = remember(state.paths, query) { state.paths.filter { it.contains(query, true) } }
+    val visiblePaths = remember(state.paths, state.pathAliases, query) { state.paths.filter { path ->
+        path.contains(query, true) || state.pathAliases[path].orEmpty().any { it.contains(query, true) }
+    } }
     Surface(Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
         Column {
             DetailPageHeader("保护名单", "", leave) {

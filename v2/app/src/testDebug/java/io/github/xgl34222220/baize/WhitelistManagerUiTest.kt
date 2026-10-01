@@ -141,6 +141,7 @@ class WhitelistManagerUiTest {
             legacyPaths = setOf("/storage/emulated/0/Download"), rootPaths = setOf("/storage/emulated/0/Download"),
             pathAliases = mapOf("/storage/emulated/0/Download" to listOf("/sdcard/Download", "/data/media/0/Download"))) }
         compose.onNodeWithText("路径保护").performClick()
+        compose.onNodeWithText("搜索保护路径").performTextInput("/sdcard/Download")
         compose.onNodeWithText("清理服务与旧版设置中的同一路径").assertIsDisplayed()
         compose.onNodeWithText("移除此路径保护").performClick()
         compose.onNodeWithText("/sdcard/Download\n/data/media/0/Download").performScrollTo().assertIsDisplayed()
