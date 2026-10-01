@@ -119,6 +119,12 @@ class ApkProtectionStoreTest {
         File(folder.root, "whitelist.conf").writeText("# BEGIN BAIZE APP WHITELIST\n/storage/emulated/10/Keep\n")
         assertTrue(runCatching { repository().apkProtectionJson() }.isFailure)
     }
+    @Test fun malformedGeneratedSectionCannotTurnAProtectedPathIntoKnownEmpty() {
+        for (path in listOf("/storage/emulated/10/Keep", "/data/media/10/Android/data/keep.app/../private")) {
+            File(folder.root, "whitelist.conf").writeText("# BEGIN BAIZE APP WHITELIST\n$path\n# END BAIZE APP WHITELIST\n")
+            assertTrue(path, runCatching { repository().apkProtectionJson() }.isFailure)
+        }
+    }
     @Test fun rootSnapshotReadsBothRuleKindsAndSurvivesRepositoryRecreation() {
         val repo = repository()
         repo.savePackages("[\"keep.app\"]")

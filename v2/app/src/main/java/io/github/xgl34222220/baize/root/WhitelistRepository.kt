@@ -139,9 +139,14 @@ internal class WhitelistRepository(
             when (line) {
                 APP_WHITELIST_BEGIN -> { check(!generatedSection) { "保护名单分区损坏" }; generatedSection = true }
                 APP_WHITELIST_END -> { check(generatedSection) { "保护名单分区损坏" }; generatedSection = false }
-                else -> if (!generatedSection && line.startsWith("/") && (managed || !isGeneratedAppPath(line))) {
-                    result += requireNotNull(normalizeManualPath(line)) { "路径保护名单损坏" }
-                } else if (line.isNotBlank() && !line.startsWith('#') && !line.startsWith('/')) {
+                else -> if (line.startsWith('/')) {
+                    val path = requireNotNull(normalizeManualPath(line)) { "路径保护名单损坏" }
+                    if (generatedSection) {
+                        check(isGeneratedAppPath(path)) { "自动保护分区包含未知路径，请在白名单页核对" }
+                    } else if (managed || !isGeneratedAppPath(path)) {
+                        result += path
+                    }
+                } else if (line.isNotBlank() && !line.startsWith('#')) {
                     error("路径保护名单损坏")
                 }
             }
