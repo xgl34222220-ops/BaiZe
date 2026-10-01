@@ -118,11 +118,20 @@ class ApkIndexAndRecreationRegressionTest {
             connection.onServiceDisconnected(null)
             assertEquals(phase, before.state().phase)
             assertTrue(before.state().running)
+            var cancelledDuringRotation = false
+            // ActivityController.recreate() also drains the main loop. Inject the user's
+            // cancellation at its real pause event, before that test-only idle synchronization.
+            before.lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE && !cancelledDuringRotation) {
+                    cancelledDuringRotation = before.state().running
+                    before.session.stopTask()
+                    provider.release.countDown()
+                }
+            })
             controller.recreate()
             val after = controller.get()
-            assertTrue(after.state().running)
-            after.session.stopTask()
-            provider.release.countDown()
+            assertTrue("Cancellation must reach a running query during Activity rotation", cancelledDuringRotation)
+            assertSame("The operation owner must survive rotation", before.session, after.session)
             await { !after.state().running }
             assertTrue(after.state().items.isEmpty())
             assertFalse(after.state().cleanReady)
