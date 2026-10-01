@@ -223,6 +223,62 @@ object CacheRootDeviceProbe {
             markStage("high-risk-clean")
             val highResult = JSONObject(engine.clean(profileToken, JSONObject().put(highItem.getString("id"), true).toString(), "{\"allowHighRisk\":true}") {})
             check(highResult.getLong("deletedBytes") == 256L && !high.resolve("review.bin").exists()) { highResult.toString() }
+            markStage("profile-frozen-file-manifest")
+            val frozenRoot = File(first, "frozen-review").apply { check(mkdir()) }
+            val reviewed = File(frozenRoot, "nested/old.bin").apply { parentFile.mkdirs(); writeBytes(ByteArray(96)) }
+            File(rules, "deep.rules").writeText("${frozenRoot.canonicalPath}\n")
+            val frozenEngine = NativeProfileEngine(context, java.util.concurrent.atomic.AtomicBoolean(), ruleDirectory = rules)
+            val frozenScan = JSONObject(frozenEngine.scan("deep", "{}") {})
+            val frozenToken = frozenScan.getString("snapshotId")
+            val frozenItem = JSONObject(frozenEngine.page(frozenToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+            check(frozenItem.optString("blockedReason").isBlank()) { frozenItem.toString() }
+            val savedTree = frozenEngine.persistentItems(frozenToken)!!.getJSONObject(0).getJSONObject("frozenTree")
+            val added = File(frozenRoot, "nested/added-after-review.bin").apply { writeBytes(ByteArray(97)); setLastModified(1_500_000_000_000L) }
+            val frozenSelected = JSONObject().put(frozenItem.getString("id"), true).toString()
+            val frozenClean = JSONObject(frozenEngine.clean(frozenToken, frozenSelected, "{}") {})
+            check(!reviewed.exists() && added.length() == 97L && frozenClean.getLong("deletedFiles") == 1L &&
+                frozenClean.getInt("remainingCandidates") == 1) { frozenClean.toString() }
+            val retried = JSONObject(frozenEngine.clean(frozenToken, frozenSelected, "{}") {})
+            check(retried.getLong("deletedFiles") == 0L && added.length() == 97L) { retried.toString() }
+            val restoredTree = FrozenReviewTree.fromJson(savedTree)
+            val restoredClean = FrozenReviewTree.delete(restoredTree, false, 1024, java.util.concurrent.atomic.AtomicBoolean(), 5_000) { _, _ -> true }
+            check(restoredClean.files == 0L && added.length() == 97L)
+            val rewritten = File(first, "rewrite-mtime.bin").apply { writeBytes(ByteArray(128)) }
+            val rewriteTree = FrozenReviewTree.capture(rewritten.toPath(), java.util.concurrent.atomic.AtomicBoolean(), 5_000)
+            check(rewriteTree.complete) { rewriteTree.reason }
+            val originalTime = rewritten.lastModified()
+            rewritten.writeBytes(ByteArray(128) { 9 }); check(rewritten.setLastModified(originalTime))
+            val rewriteClean = FrozenReviewTree.delete(rewriteTree, true, 1024, java.util.concurrent.atomic.AtomicBoolean(), 5_000) { _, _ -> true }
+            check(rewriteClean.files == 0L && rewritten.readBytes().all { it == 9.toByte() })
+            markStage("persisted-frozen-plan-service-recreation")
+            val persistedRoot = File(first, "persisted-review").apply { check(mkdir()) }
+            val persistedOld = File(persistedRoot, "reviewed.bin").apply { writeBytes(ByteArray(65)) }
+            val persistedRules = File(first, "persisted-rules").apply { check(mkdir()) }
+            File(persistedRules, "custom.rules").writeText("${persistedRoot.canonicalPath}|0\n")
+            fun persistentService(testEngine: NativeProfileEngine? = null): IPersistentCleanPlanService {
+                val service = PersistentCleanPlanRootService()
+                ContextWrapper::class.java.getDeclaredField("mBase").apply { isAccessible = true }.set(service, context)
+                if (testEngine != null) PersistentCleanPlanRootService::class.java.getDeclaredField("engine\$delegate")
+                    .apply { isAccessible = true }.set(service, lazyOf(testEngine))
+                return IPersistentCleanPlanService.Stub.asInterface(service.onBind(Intent()))
+            }
+            val planningService = persistentService(NativeProfileEngine(context, java.util.concurrent.atomic.AtomicBoolean(),
+                ruleDirectory = persistedRules, sharedRootOverride = emptyList()))
+            val persistentScan = JSONObject(planningService.scanSafe("{}"))
+            check(persistentScan.optBoolean("persisted")) { persistentScan.toString() }
+            val persistentToken = persistentScan.getString("snapshotId")
+            val ownedPlan = File(RootPaths.STATE_DIR, "profile-snapshots/$persistentToken.json")
+            try {
+                val persistentItem = JSONObject(planningService.getPage(persistentToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+                val unreviewed = File(persistedRoot, "after-restart.bin").apply { writeBytes(ByteArray(66)); setLastModified(1_500_000_000_000L) }
+                val restoredService = persistentService()
+                val visibleRestored = JSONObject(restoredService.getPage(persistentToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+                check(!visibleRestored.has("frozenTree"))
+                val restoredResult = JSONObject(restoredService.cleanSafe(persistentToken,
+                    JSONObject().put(persistentItem.getString("id"), true).toString(), "{}"))
+                check(restoredResult.optBoolean("persistedFallback") && restoredResult.getLong("deletedFiles") == 1L &&
+                    !persistedOld.exists() && unreviewed.length() == 66L && restoredResult.getInt("remainingCandidates") == 1) { restoredResult.toString() }
+            } finally { ownedPlan.delete() }
             markStage("corpse-package-inventory-safety")
             val corpseRoot = File(first, "synthetic-corpse-guard").apply { mkdir() }
             val keptCorpse = File(corpseRoot, "Android/data/io.baize.synthetic.gone/keep.txt").apply {
@@ -291,6 +347,9 @@ object CacheRootDeviceProbe {
                 .put("emptyBoundarySelectedClean", true).put("emptyDirectoryCountSeparateFromFiles", true)
                 .put("emptyChangedContentPreserved", true).put("emptyUnreviewedParentsPreserved", true)
                 .put("emptyPlaceholderAndSymlinkPreserved", true).put("emptyParentsRequireNewPreview", true)
+                .put("profileFrozenManifestRejectsNewBackdatedContent", true)
+                .put("profilePartialReviewAndRetryRetained", true).put("persistedFrozenManifestPreservesScope", true)
+                .put("profileRestoredMtimeRewritePreserved", true).put("persistedServiceRecreationKeepsOriginalFileScope", true)
                 .put("serviceRecreationSelectedClean", true).put("deletedBytes", 12288)
                 .put("lowThenHighSameSnapshot", true).put("profileDeletedBytes", 384).toString())
         } finally {

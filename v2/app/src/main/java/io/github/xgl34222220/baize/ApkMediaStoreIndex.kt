@@ -157,7 +157,8 @@ internal object ApkMediaStoreIndex {
         protection: () -> ApkProtectionState,
         isCancelled: () -> Boolean = { false },
         guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context),
-        onFailure: (Throwable) -> Unit = {}
+        onFailure: (Throwable) -> Unit = {},
+        onMutationResult: (Int, Boolean) -> Unit = { _, _ -> }
     ): ApkIndexedDeleteResult {
         if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
         val currentProtection = try { protection() } catch (_: Exception) {
@@ -191,9 +192,11 @@ internal object ApkMediaStoreIndex {
             guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
                 expectedIdentity, currentProtection)?.let { return it }
             val selection = "${MediaStore.MediaColumns.DATA} = ? AND ${MediaStore.MediaColumns.SIZE} = ? AND ${MediaStore.MediaColumns.DATE_MODIFIED} = ?"
-            if (context.contentResolver.delete(itemUri, selection,
-                    arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString())) > 0 &&
-                guard.deletionConfirmed(expectedPath)) ApkIndexedDeleteResult.DELETED
+            val rows = context.contentResolver.delete(itemUri, selection,
+                arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString()))
+            val missing = rows > 0 && guard.deletionConfirmed(expectedPath)
+            onMutationResult(rows, missing)
+            if (missing) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
         }.onFailure(onFailure).getOrDefault(ApkIndexedDeleteResult.FAILED)
     }

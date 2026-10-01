@@ -82,7 +82,7 @@ internal object RootMediaScanQueue {
         handler.postDelayed({ startupExecutor.execute { flush(context) } }, 1_000L)
     }
 
-    private data class Claim(val inflight: File, val paths: List<String>, val token: Long)
+    private data class Claim(val inflight: File, val paths: List<String>, val token: Long, val lease: MediaQueueLease)
 
     fun flush(
         context: Context,
@@ -92,7 +92,9 @@ internal object RootMediaScanQueue {
         val claim = synchronized(monitor) {
             if (activeToken != 0L) return@synchronized null
             if (SystemClock.elapsedRealtime() < retryAfterRealtime) return@synchronized null
-
+            val lease = runCatching { MediaQueueLease.acquire(stateDir) }.getOrNull() ?: return@synchronized null
+            var claimed = false
+            try {
             val queueLock = acquireQueueLock(stateDir) ?: return@synchronized null
             val inflight = try {
                 if (!recoverSpoolsLocked(stateDir)) return@synchronized null
@@ -113,15 +115,17 @@ internal object RootMediaScanQueue {
 
             val token = nextToken++
             activeToken = token
-            Claim(inflight, paths, token)
+            claimed = true
+            Claim(inflight, paths, token, lease)
+            } finally { if (!claimed) lease.close() }
         } ?: return 0
 
-        submit(context, stateDir, claim.inflight, claim.paths, claim.token, scanPath)
+        submit(context, stateDir, claim.inflight, claim.paths, claim.token, claim.lease, scanPath)
         return claim.paths.size
     }
 
     private fun submit(
-        context: Context, stateDir: File, inflight: File, paths: List<String>, token: Long,
+        context: Context, stateDir: File, inflight: File, paths: List<String>, token: Long, lease: MediaQueueLease,
         scanPath: (String, File) -> Boolean
     ) {
         // Do not acquire a ContentProvider from the unregistered Root app_process.
@@ -133,7 +137,7 @@ internal object RootMediaScanQueue {
                 android.util.Log.w("BaiZeMedia", "Media refresh retained for retry", error)
                 false
             }
-            finishSubmission(context, stateDir, inflight, token, success)
+            try { finishSubmission(context, stateDir, inflight, token, success) } finally { lease.close() }
         }
     }
 

@@ -52,8 +52,11 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 val target = candidate(selected)
                 val modified = candidate(changed)
                 val safe = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), emptySet()))
+                var lastMutation = JSONObject()
                 fun remove(item: IndexedApkCandidate, protection: ApkProtectionState) = ApkMediaStoreIndex.deleteIfUnchanged(
-                    applicationContext, item.uri, item.path, item.bytes, item.modifiedSeconds, item.identity, { protection })
+                    applicationContext, item.uri, item.path, item.bytes, item.modifiedSeconds, item.identity, { protection },
+                    onFailure = { lastMutation.put("error", it.javaClass.name).put("message", it.message.orEmpty()) },
+                    onMutationResult = { rows, missing -> lastMutation.put("providerRows", rows).put("physicalAbsenceConfirmed", missing) })
                 stage = "protection-rejection"
                 check(remove(target, ApkProtectionState.Unknown("disconnected", safe.rules)) == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE)
                 check(selected.isFile && kept.isFile)
@@ -90,7 +93,14 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 check(remove(legacyTarget, ApkProtectionState.KnownRoot(before.effective)) == ApkIndexedDeleteResult.PROTECTED)
                 check(legacyProtected.isFile)
                 val after = manager.removePath(legacyProtected.path)
-                check(remove(legacyTarget, ApkProtectionState.KnownRoot(after.effective)) == ApkIndexedDeleteResult.DELETED)
+                lastMutation = JSONObject()
+                val beforeLegacy = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, legacyTarget.uri, legacyTarget.path, null, legacyTarget.identity))
+                val legacyResult = remove(legacyTarget, ApkProtectionState.KnownRoot(after.effective))
+                val afterLegacy = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, legacyTarget.uri, legacyTarget.path, null, legacyTarget.identity))
+                val legacyEvidence = JSONObject().put("outcome", legacyResult.name).put("mutation", lastMutation)
+                    .put("before", beforeLegacy).put("after", afterLegacy)
+                File(output, "legacy-delete-evidence.json").writeText(legacyEvidence.toString(2))
+                check(legacyResult == ApkIndexedDeleteResult.DELETED) { legacyEvidence.toString() }
                 check(!legacyProtected.exists() && kept.isFile && changed.isFile)
                 JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
                     .put("physicalIdentityCaptured", true).put("conditionalMediaStoreDelete", true)

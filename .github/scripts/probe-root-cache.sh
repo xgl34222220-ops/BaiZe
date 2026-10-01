@@ -36,6 +36,10 @@ for field in ('scanThenSelectedClean', 'fdTransport', 'localBinderDescriptorCopi
     assert result.get(field) is True, (field, result)
 for field in ('apkReadOnlyEvidenceMatchesRootStat', 'apkEvidenceOtherUserRejected', 'rawPathMediaRefreshRemovesOnlyDeletedIndex'):
     assert result.get(field) is True, (field, result)
+for field in ('profileFrozenManifestRejectsNewBackdatedContent', 'profilePartialReviewAndRetryRetained',
+              'persistedFrozenManifestPreservesScope', 'profileRestoredMtimeRewritePreserved',
+              'persistedServiceRecreationKeepsOriginalFileScope'):
+    assert result.get(field) is True, (field, result)
 assert result.get('crossUidBinderValidated') is False and result.get('profileDeletedBytes') == 384, result
 pathlib.Path(sys.argv[2]).write_text(json.dumps(result, ensure_ascii=False, indent=2))
 PY

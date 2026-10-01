@@ -43,7 +43,8 @@ internal class NativeProfileEngine(
         val path: String = "",
         val bytes: Long = 0L,
         val files: Long = 0L,
-        val failures: Int = 0
+        val failures: Int = 0,
+        val reason: String = ""
     )
 
     private data class Options(
@@ -76,7 +77,8 @@ internal class NativeProfileEngine(
         val note: String = "",
         val blockedReason: String = "",
         val retentionDays: Int = 0,
-        val identity: String = ""
+        val identity: String = "",
+        val frozenTree: FrozenReviewTree.Snapshot? = null
     ) {
         fun json(): JSONObject = JSONObject()
             .put("id", id)
@@ -113,7 +115,8 @@ internal class NativeProfileEngine(
         val files: Long,
         val directories: Long,
         val complete: Boolean,
-        val failures: Int = 0
+        val failures: Int = 0,
+        val reason: String = ""
     )
 
     private data class Node(val file: File, val depth: Int, val post: Boolean = false)
@@ -205,7 +208,21 @@ internal class NativeProfileEngine(
         }
 
         val snapshotId = UUID.randomUUID().toString()
-        val list = candidates.values.toMutableList()
+        var frozenEntries = 0
+        val freezeDeadline = started + if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS
+        val list = candidates.values.map { item ->
+            if (item.blockedReason.isNotBlank()) item else {
+                val remaining = freezeDeadline - SystemClock.elapsedRealtime()
+                val tree = if (remaining > 0 && frozenEntries < 100_000) FrozenReviewTree.capture(File(item.path).toPath(), cancelled,
+                    min(remaining, 20_000L), 100_000 - frozenEntries) else null
+                frozenEntries += tree?.count() ?: 0
+                if (tree?.complete == true) item.copy(frozenTree = tree, bytes = tree.bytes, files = tree.files,
+                    directories = tree.directories, measured = true, complete = true)
+                else item.copy(blockedReason = "逐文件身份快照未完成，未授权删除；请缩小范围后重扫", complete = false)
+            }
+        }.toMutableList()
+        if (cancelled.get()) return JSONObject().put("cancelled", true).put("profile", id)
+            .put("totalCandidates", list.size).put("elapsedMs", SystemClock.elapsedRealtime() - started).toString()
         snapshots[snapshotId] = Snapshot(snapshotId, id, System.currentTimeMillis(), ruleSha, options, list)
         progress(Progress("${label(id)}扫描完成", list.size, list.size))
         return JSONObject()
@@ -216,7 +233,7 @@ internal class NativeProfileEngine(
             .put("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
             .put("ruleSha", ruleSha)
             .put("totalCandidates", list.size)
-            .put("partial", options.coverage.incomplete || list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
+            .put("partial", options.coverage.incomplete || list.any { !it.complete && it.blockedReason.startsWith("逐文件") } || list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
             .put("unreadableDirectories", options.coverage.unreadableDirectories)
             .put("depthLimitedDirectories", options.coverage.depthLimitedDirectories)
             .put("storageUnavailable", options.coverage.storageUnavailable)
@@ -235,6 +252,12 @@ internal class NativeProfileEngine(
             .put("highRiskMode", options.highRiskMode)
             .put("elapsedMs", SystemClock.elapsedRealtime() - started)
             .toString()
+    }
+
+    /** Root-private persistence includes original entries; UI pages omit large manifests. */
+    fun persistentItems(snapshotId: String): JSONArray? = validSnapshot(snapshotId)?.candidates?.let { items ->
+        JSONArray().apply { items.forEach { item -> put(item.json().put("identity", item.identity)
+            .put("frozenTree", item.frozenTree?.let(FrozenReviewTree::toJson) ?: JSONObject.NULL)) } }
     }
 
     /**
@@ -403,7 +426,7 @@ internal class NativeProfileEngine(
         var failures = 0
         var cleaned = 0
         var skipped = 0
-        val completedCorpses = hashSetOf<String>()
+        val completedCandidates = hashSetOf<String>()
         var inventoryStopped = false
 
         for ((index, candidate) in selected.withIndex()) {
@@ -418,7 +441,9 @@ internal class NativeProfileEngine(
             }
             if (reason != null) {
                 skipped += 1
-                details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
+                val missing = reason == "目标已不存在" && definitelyMissing(File(candidate.path))
+                if (missing) completedCandidates += candidate.id
+                details.put(detail(candidate, if (missing) "missing" else "protected", if (missing) "扫描后已不存在，未计入本次释放空间" else reason, 0L, 0L, 0L))
                 continue
             }
 
@@ -436,19 +461,19 @@ internal class NativeProfileEngine(
             failures += result.failures
 
             val complete = result.complete && if (candidate.deleteRoot) !target.exists() else isEmptyDirectory(target)
-            if (candidate.profile == "corpses" && complete) completedCorpses += candidate.id
+            if (complete) completedCandidates += candidate.id
             if (complete || actualBytes > 0L || actualFiles > 0L || actualDirs > 0L) cleaned += 1 else skipped += 1
-            details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else "仍有受保护或未删除项目", actualBytes, actualFiles, actualDirs))
+            details.put(detail(candidate, if (complete) "cleaned" else "partial", if (complete) "" else result.reason.ifBlank { "仍有受保护、变化或未删除项目" }, actualBytes, actualFiles, actualDirs))
         }
 
-        val selectedIds = selected.filter { it.profile != "corpses" || it.id in completedCorpses }.mapTo(hashSetOf()) { it.id }
-        snapshot.candidates.removeAll { it.id in selectedIds }
+        snapshot.candidates.removeAll { it.id in completedCandidates }
         if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
         val timedOut = SystemClock.elapsedRealtime() >= deadline
         val wasCancelled = cancelled.get()
-        progress(Progress(if (inventoryStopped) "安装状态无法核对，清理已停止" else if (wasCancelled) "清理已停止" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
+        progress(Progress(if (inventoryStopped) "安装状态无法核对，清理已停止" else if (wasCancelled) "清理已停止"
+            else if (failures > 0 || timedOut) "清理未完成" else if (completedCandidates.size < selected.size) "清理结束，部分项目已保留" else "清理完成", selected.size, selected.size, bytes = deletedBytes, files = deletedFiles, failures = failures))
         return JSONObject()
-            .put("success", true)
+            .put("success", failures == 0 && !wasCancelled && !timedOut && !inventoryStopped)
             .put("profile", snapshot.profile)
             .put("selected", selected.size)
             .put("cleanedCandidates", cleaned)
@@ -505,7 +530,7 @@ internal class NativeProfileEngine(
     var quarantinedFiles = 0L
     var quarantinedDirectories = 0L
     var failures = 0
-    val completedCorpses = hashSetOf<String>()
+    val completedCandidates = hashSetOf<String>()
     var inventoryStopped = false
     val started = SystemClock.elapsedRealtime()
     val deadline = started + CLEAN_TOTAL_MS
@@ -523,6 +548,11 @@ internal class NativeProfileEngine(
             details.put(detail(candidate, "protected", reason, 0L, 0L, 0L))
             continue
         }
+        if (!FrozenReviewTree.unchanged(candidate.frozenTree, cancelled, ITEM_CLEAN_MS)) {
+            failures += 1
+            details.put(detail(candidate, "protected", "目录内容在扫描后变化，未执行整体隔离，请重新扫描", 0L, 0L, 0L))
+            continue
+        }
         val result = quarantineRepository.quarantine(
             snapshotId = snapshotId,
             candidateId = candidate.id,
@@ -533,7 +563,7 @@ internal class NativeProfileEngine(
             risk = candidate.risk
         )
         if (result.success) {
-            if (candidate.profile == "corpses") completedCorpses += candidate.id
+            completedCandidates += candidate.id
             quarantined += 1
             quarantinedBytes += result.bytes
             quarantinedFiles += result.files
@@ -548,8 +578,7 @@ internal class NativeProfileEngine(
                 .put("action", if (result.success) "quarantined" else "failed")
         )
     }
-    val selectedIds = selected.filter { it.profile != "corpses" || it.id in completedCorpses }.mapTo(hashSetOf()) { it.id }
-    snapshot.candidates.removeAll { it.id in selectedIds }
+    snapshot.candidates.removeAll { it.id in completedCandidates }
     if (snapshot.candidates.isEmpty()) snapshots.remove(snapshotId)
     val wasCancelled = cancelled.get()
     val timedOut = SystemClock.elapsedRealtime() >= deadline
@@ -845,6 +874,8 @@ internal class NativeProfileEngine(
             inventory.requireUser(corpseStorageUser(path))
             if (candidate.packageName in inventory.packages) return "应用已重新安装"
         }
+        if (candidate.blockedReason.isNotBlank()) return candidate.blockedReason
+        if (candidate.frozenTree?.complete != true) return "逐文件身份快照不可用，请重新扫描"
         if (!stillMatches(candidate, target, options)) return "目标不再符合扫描条件"
         if (candidate.identity.isBlank() || targetIdentity(target) != candidate.identity) return "目标已变化，请重新扫描此项目"
         return null
@@ -873,61 +904,27 @@ internal class NativeProfileEngine(
         deadline: Long,
         hiddenPolicy: List<ReviewRuleCatalog.Hidden>
     ): Stats {
-        fun retained(file: File): Boolean = placeholder(file.name) || !ReviewRuleCatalog.oldEnough(
-            file, maxOf(candidate.retentionDays, ReviewRuleCatalog.hiddenMatch(file, hiddenPolicy)?.days ?: 0))
-        if (target.isFile) {
-            if (retained(target) || target.length() > maxFileBytes) return Stats(0L, 0L, 0L, true)
-            val size = target.length()
-            val ok = runCatching { target.delete() }.getOrDefault(false)
-            return Stats(if (ok) size else 0L, if (ok) 1L else 0L, 0L, true, if (ok) 0 else 1)
+        val result = FrozenReviewTree.delete(candidate.frozenTree, candidate.deleteRoot, maxFileBytes, cancelled,
+            (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1L)) { path, directory ->
+                val file = File(path)
+                !placeholder(file.name) && (path == candidate.path || path !in mounts) &&
+                    (directory || ReviewRuleCatalog.oldEnough(file,
+                        maxOf(candidate.retentionDays, ReviewRuleCatalog.hiddenMatch(file, hiddenPolicy)?.days ?: 0)))
+            }
+        val indexed = result.deletedPaths.filter { it.startsWith("/storage/") || it.startsWith("/data/media/") || it.startsWith("/mnt/media_rw/") }
+        if (indexed.isNotEmpty()) RootMediaScanQueue.enqueueAsync(context, indexed)
+        val reason = when (result.reason) {
+            "changed_after_review" -> "扫描后的文件已变化，原文件清单继续保留，请重新扫描"
+            "new_or_protected_contents" -> "目录有新增或受保护内容；新增文件未参与本次删除"
+            "original_snapshot_unavailable" -> "逐文件身份快照不可用，已停止删除，请重新扫描"
+            "stopped" -> "清理已停止，未处理文件继续保留"
+            "protected" -> "保留期限、文件大小或路径保护"
+            "unreadable_or_delete_failed" -> "文件无法读取或系统删除失败，原清单继续保留"
+            "storage_parent_unavailable" -> "存储目录无法核对，未把不可访问误计为文件已不存在"
+            "result_recording_failed" -> "实际处理记录保存失败，已停止后续删除"
+            else -> ""
         }
-        if (candidate.category == "empty_dir") {
-            val ok = runCatching { target.delete() }.getOrDefault(false)
-            return Stats(0L, 0L, if (ok) 1L else 0L, true, if (ok) 0 else 1)
-        }
-
-        val stack = ArrayDeque<Node>()
-        stack.add(Node(target, 0, false))
-        var bytes = 0L
-        var files = 0L
-        var directories = 0L
-        var failures = 0
-        var complete = true
-        while (stack.isNotEmpty()) {
-            if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) {
-                complete = false
-                break
-            }
-            val node = stack.removeLast()
-            val file = node.file
-            if (node.post) {
-                if ((file != target || candidate.deleteRoot) && runCatching { file.delete() }.getOrDefault(false)) directories += 1L
-                continue
-            }
-            if (!file.exists() || isSymlink(file)) continue
-            val path = canonical(file)
-            if (file != target && mounts.contains(path)) continue
-            if (file.isFile) {
-                if (retained(file)) continue
-                val size = file.length()
-                if (size > maxFileBytes) continue
-                if (runCatching { file.delete() }.getOrDefault(false)) {
-                    bytes += size
-                    files += 1L
-                } else failures += 1
-                continue
-            }
-            if (file.isDirectory) {
-                stack.add(Node(file, node.depth, true))
-                val children = file.listFiles()
-                if (children == null) {
-                    failures += 1
-                } else {
-                    for (child in children) stack.add(Node(child, node.depth + 1, false))
-                }
-            }
-        }
-        return Stats(bytes, files, directories, complete, failures)
+        return Stats(result.bytes, result.files, result.directories, result.complete, result.failures, reason)
     }
 
     private fun measure(root: File, deadline: Long): Stats {
@@ -1366,6 +1363,10 @@ internal class NativeProfileEngine(
         val key = attrs.fileKey()?.toString().orEmpty()
         if (key.isBlank()) "" else if (attrs.isRegularFile) "$key:${attrs.size()}:${attrs.lastModifiedTime()}" else key
     }.getOrDefault("")
+
+    private fun definitelyMissing(file: File): Boolean = try {
+        Files.readAttributes(file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS); false
+    } catch (_: java.nio.file.NoSuchFileException) { true } catch (_: Exception) { false }
 
     private fun pruneSnapshots() {
         val now = System.currentTimeMillis()
