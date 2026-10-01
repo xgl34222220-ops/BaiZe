@@ -38,15 +38,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: |
-            adb root
-            adb wait-for-device
-            adb install v2/app/build/outputs/apk/debug/app-debug.apk
-            status=0
-            bash .github/scripts/probe-root-cache.sh v2/app/build/outputs/apk/debug/app-debug.apk || status=1
-            bash .github/scripts/probe-indexed-cleanup.sh || status=1
-            bash .github/scripts/probe-apk-permissions.sh v2/app/build/outputs/apk/debug/app-debug.apk || status=1
-            exit "$status"
+          script: bash .github/scripts/probe-indexed-outcomes.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -56,4 +48,5 @@ jobs:
             ${{ runner.temp }}/baize-apk-deletion-probe/
             ${{ runner.temp }}/baize-storage-deletion-probe/
             ${{ runner.temp }}/baize-root-cache-probe/
+            ${{ runner.temp }}/baize-indexed-repeated/
           retention-days: 7
