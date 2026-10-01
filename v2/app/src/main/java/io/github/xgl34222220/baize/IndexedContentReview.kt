@@ -66,10 +66,11 @@ internal object IndexedContentReview {
             check(SystemClock.elapsedRealtime() <= deadline) { "内容核对超时，请减少所选文件后重试" }
         }
         checkActive()
-        val fd = Os.open(identity.canonicalPath, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or OsConstants.O_CLOEXEC, 0)
-        // FileInputStream owns the descriptor once constructed, including all exceptional exits.
-        val input = try { FileInputStream(fd) } catch (error: Throwable) { Os.close(fd); throw error }
-        return input.use {
+        val fd = Os.open(identity.canonicalPath, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or
+            OsConstants.O_CLOEXEC or OsConstants.O_NONBLOCK, 0)
+        // Android's FileInputStream(FileDescriptor) borrows the descriptor. This method
+        // remains its owner and closes it even when hashing is cancelled or throws.
+        try { return FileInputStream(fd).use {
             check(sameFile(identity, Os.fstat(fd))) { "打开的文件身份不一致" }
             val digest = MessageDigest.getInstance("SHA-256")
             val buffer = ByteArray(64 * 1024)
@@ -85,7 +86,7 @@ internal object IndexedContentReview {
             checkActive()
             check(bytes == identity.bytes && sameFile(identity, Os.fstat(fd))) { "核对期间文件已变化" }
             digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 255) }
-        }
+        } } finally { if (fd.valid()) Os.close(fd) }
     }
 
     private fun sameFile(identity: ApkFileIdentity, stat: StructStat): Boolean =

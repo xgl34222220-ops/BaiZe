@@ -74,6 +74,19 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 // Observe the shared-storage timestamp model independently from /data/user.
                 // Never invoke deletion in this diagnostic; any collision remains explicit evidence.
                 val guard = ApkDeletionGuard.forContext(applicationContext)
+                fun ownedDescriptors() = File("/proc/self/fd").listFiles().orEmpty().mapNotNull {
+                    runCatching { android.system.Os.readlink(it.path) }.getOrNull()?.takeIf { target -> target.contains(root.name) }
+                }
+                // Count only descriptors for this UUID fixture, excluding unrelated UI/Binder work.
+                check(ownedDescriptors().isEmpty()) { "Initial content review retained fixture descriptors: ${ownedDescriptors()}" }
+                repeat(20) {
+                    val identity = checkNotNull(guard.capture(tickFixture.path))
+                    IndexedContentReview.capture(identity, guard)
+                    var checks = 0
+                    check(runCatching { IndexedContentReview.capture(identity, guard, { ++checks >= 3 }) }
+                        .exceptionOrNull() is java.util.concurrent.CancellationException)
+                    check(ownedDescriptors().isEmpty()) { "Completed/cancelled review retained a descriptor" }
+                }
                 var sharedStorageTimestampCollision = false
                 var sharedStorageCollisionContentPreserved = false
                 val descriptorsBefore = File("/proc/self/fd").list()?.size ?: error("Cannot observe own descriptors")
@@ -94,11 +107,13 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 File(output, "shared-storage-time-evidence.json").writeText(JSONObject()
                     .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
                     .put("sharedStorageCollisionContentPreserved", sharedStorageCollisionContentPreserved)
+                    .put("completedAndCancelledContentReviewDescriptorsClosed", true)
                     .put("openDescriptorsBefore", descriptorsBefore)
                     .put("openDescriptorsAfter", File("/proc/self/fd").list()?.size)
+                    .put("ownedOpenDescriptorsAfter", JSONArray(ownedDescriptors()))
                     .put("api", Build.VERSION.SDK_INT).put("uid", Process.myUid()).toString(2))
                 stage = "delete-every-indexed-category"
-                check((File("/proc/self/fd").list()?.size ?: Int.MAX_VALUE) <= descriptorsBefore + 4) { "Content review leaked descriptors" }
+                check(ownedDescriptors().isEmpty()) { "Content review leaked fixture descriptors: ${ownedDescriptors()}" }
                 val categories = JSONArray()
                 for (file in selected) {
                     val item = record(file)
