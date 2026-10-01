@@ -24,7 +24,9 @@ class RuntimeVersionsTest {
         val old = ComponentVersion("2.0.0", 30008L)
         assertEquals(VersionComparison.MISMATCH, old.compareWith(update))
         for (root in listOf(old, update)) {
-            val message = RuntimeVersions(root, old).warning(update)
+            val versions = RuntimeVersions(root, old)
+            assertEquals("", versions.warning(update))
+            val message = versions.compatibilityNote(update)
             assertTrue(message.contains("已验证兼容"))
             assertTrue(message.contains("当前模块可继续使用"))
             assertFalse(message.contains("重启"))
@@ -43,6 +45,33 @@ class RuntimeVersionsTest {
         assertTrue(unknown.contains("版本未知"))
         assertFalse(unknown.contains("当前模块可继续使用"))
         assertTrue(RuntimeVersions(update, ComponentVersion("2.1.0", 30008L)).warning(update).contains("版本不一致"))
+    }
+
+    @Test fun normalCompatibilityAndCachedVersionsOnlyAppearInDetails() {
+        val update = ComponentVersion("2.0.0", 30010L)
+        for (code in listOf(30008L, 30009L)) {
+            val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
+            for (current in listOf(false, true)) {
+                val visible = versions.presentation(update, current)
+                assertEquals("", visible.warning)
+                assertTrue(visible.details.contains("已验证兼容"))
+                assertTrue(visible.details.contains(code.toString()))
+                assertEquals(!current, visible.details.contains("历史版本缓存"))
+            }
+        }
+        val mismatched = RuntimeVersions(update, ComponentVersion("2.0.0", 30007L))
+        assertEquals("", mismatched.presentation(update, false).warning)
+        assertTrue(mismatched.presentation(update, true).warning.contains("版本不一致"))
+    }
+
+    @Test fun missingOptionalModuleIsNotAnEngineFailureButUnreportedModuleStillNeedsVerification() {
+        val noModule = RuntimeVersions.fromPing(ping().put("module", false)
+            .put("moduleVersionName", JSONObject.NULL).put("moduleVersionCode", JSONObject.NULL))
+        assertEquals("", noModule.warning(app))
+        assertTrue(noModule.presentation(app, true).details.contains("未安装自动清理模块"))
+        assertEquals(noModule, RuntimeVersions.fromPing(noModule.toJson()))
+        assertTrue(RuntimeVersions(app, ComponentVersion(null, null)).warning(app).contains("版本未知"))
+        assertTrue(RuntimeVersions(ComponentVersion(null, null), app, moduleInstalled = false).warning(app).contains("Root版本未知"))
     }
 
     @Test fun normalizesOneVersionPrefixAndWhitespace() {

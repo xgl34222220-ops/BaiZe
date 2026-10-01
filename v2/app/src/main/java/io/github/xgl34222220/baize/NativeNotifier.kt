@@ -43,7 +43,7 @@ object NativeNotifier {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_TASKS)
-            .setSmallIcon(R.drawable.ic_baize)
+            .setSmallIcon(R.drawable.ic_baize_notification)
             .setContentTitle(title)
             .setContentText(summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(details))

@@ -80,16 +80,6 @@ fun BaiZeMiuixApp(
             }
 
             Column(Modifier.fillMaxSize()) {
-                if (state.versionWarning.isNotBlank()) {
-                    Text(
-                        text = state.versionWarning,
-                        modifier = Modifier.fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.errorContainer)
-                            .statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontSize = 12.sp
-                    )
-                }
                 Box(Modifier.weight(1f)) {
                     when (appearance.uiStyle) {
                         UiStyle.MATERIAL -> Box(
@@ -280,5 +270,6 @@ private fun DashboardUiState.forLogsPage(): DashboardUiState = DashboardUiState(
 private fun DashboardUiState.forSettingsPage(): DashboardUiState = DashboardUiState(
     connecting = connecting, connectionFailed = connectionFailed,
     connected = connected, ready = ready, running = running, serviceText = serviceText,
-    taskPhase = taskPhase, whitelistCount = whitelistCount, scanPerformance = scanPerformance
+    taskPhase = taskPhase, whitelistCount = whitelistCount, scanPerformance = scanPerformance,
+    versionWarning = versionWarning, versionDetails = versionDetails
 )

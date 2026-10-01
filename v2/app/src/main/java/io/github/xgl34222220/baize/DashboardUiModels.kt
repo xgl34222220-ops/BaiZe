@@ -30,6 +30,7 @@ data class DashboardUiState(
     val automationAvailable: Boolean = false,
     val automationText: String = "未安装自动清理模块",
     val versionWarning: String = "",
+    val versionDetails: String = "",
     val taskPhase: String = "等待下一次清理",
     val taskOperation: String = "",
     val taskProgressCurrent: Long = 0L,
@@ -75,8 +76,8 @@ data class DashboardUiState(
         get() = when {
             running -> "执行中"
             connectionFailed -> "连接失败"
-            ready -> "已就绪"
             connecting -> "连接中"
+            ready -> "已就绪"
             connected -> "未就绪"
             else -> "未连接"
         }

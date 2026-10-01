@@ -74,6 +74,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var cacheRequested = false
     private var releasingConnections = false
     private var lastBindingFailure: String? = null
+    private var lastValidationFailure: String? = null
     private var observedVersions: RuntimeVersions? = null
     private var versionObservationCurrent = false
     private var taskCallbackRegistered = false
@@ -89,7 +90,7 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var safeSnapshotCount = 0
     private var snapshotExpiresAtElapsed = 0L
 
-    private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState())
+    private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState(connecting = true))
     private data class MessageDialog(val title: String, val message: String, val confirm: String,
         val onConfirm: () -> Unit, val cancel: String = "取消", val extra: String = "", val onExtra: () -> Unit = {})
     private val messageDialog = androidx.compose.runtime.mutableStateOf<MessageDialog?>(null)
@@ -102,6 +103,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 onNullBinding(name)
                 return
             }
+            if (profileBound && rootService?.asBinder() === binder) return
             rootService = RootServiceClients.profile(binder, applicationContext.cacheDir)
             profileBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务已连接")
@@ -133,6 +135,7 @@ class MiuixDashboardActivity : ComponentActivity() {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             if (releasingConnections || isDestroyed) return
+            if (rootService == null && !profileBound) return
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务${RootConnectionMessages.DISCONNECTED}")
             markVersionsStale()
             rootService = null
@@ -153,6 +156,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 onNullBinding(name)
                 return
             }
+            if (cacheBound && cacheService?.asBinder() === binder) return
             cacheService = RootServiceClients.cache(binder, applicationContext.cacheDir)
             cacheBound = true
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务已连接")
@@ -182,6 +186,7 @@ class MiuixDashboardActivity : ComponentActivity() {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             if (releasingConnections || isDestroyed) return
+            if (cacheService == null && !cacheBound) return
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "缓存服务${RootConnectionMessages.DISCONNECTED}")
             cacheService = null
             cacheBound = false
@@ -378,7 +383,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     dashboardState.value = dashboardState.value.copy(
                         connected = rootService != null,
                         ready = rootService != null && dashboardState.value.ready,
-                        serviceText = if (connectionRecovery.exhausted) recoveryFailureText()
+                        serviceText = if (connectionRecovery.exhausted || lastValidationFailure != null) recoveryFailureText()
                             else if (dashboardState.value.ready) dashboardState.value.serviceText
                             else "暂时无法读取后台任务状态，稍后重试",
                         taskPhase = if (dashboardState.value.running) {
@@ -448,7 +453,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     dashboardState.value = dashboardState.value.copy(
                         connected = rootService != null,
                         ready = rootService != null && dashboardState.value.ready,
-                        serviceText = if (connectionRecovery.exhausted) recoveryFailureText()
+                        serviceText = if (connectionRecovery.exhausted || lastValidationFailure != null) recoveryFailureText()
                             else "暂时无法读取后台任务进度…",
                         taskPhase = "后台任务仍由 Root 执行，正在重新连接进度…"
                     )
@@ -486,6 +491,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             return
         }
         if (serviceRecoveryJob?.isActive == true || rootService != null || profileBound) return
+        lastValidationFailure = null
         dashboardState.value = dashboardState.value.copy(
             connected = false,
             connecting = true,
@@ -532,17 +538,19 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
-    private fun recoveryFailureText(): String = lastBindingFailure ?: RootConnectionMessages.RECOVERY_EXHAUSTED
+    private fun recoveryFailureText(): String = lastBindingFailure ?: lastValidationFailure ?: RootConnectionMessages.RECOVERY_EXHAUSTED
 
-    private fun versionWarning(): String {
-        val versions = observedVersions ?: return ""
-        val warning = versions.warning(ComponentVersion.parse(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE))
-        return if (versionObservationCurrent) warning else "版本尚未在本次连接验证（已有信息仅为历史缓存）。\n$warning"
+    private fun versionPresentation(): RuntimeVersionPresentation {
+        val app = ComponentVersion.parse(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+        return observedVersions?.presentation(app, versionObservationCurrent)
+            ?: RuntimeVersionPresentation("", "App ${app.label}\n正在等待本次 Root / 模块版本信息")
     }
 
     private fun markVersionsStale() {
         versionObservationCurrent = false
-        dashboardState.value = dashboardState.value.copy(versionWarning = versionWarning())
+        val presentation = versionPresentation()
+        dashboardState.value = dashboardState.value.copy(
+            versionWarning = presentation.warning, versionDetails = presentation.details)
     }
 
     private fun failBinding(primary: Boolean, reason: RootService.BindingFailure, detail: String = "") {
@@ -594,29 +602,31 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     private fun reconnectService() {
+        if (dashboardState.value.connecting) return
         releaseConnections()
         connectionRecovery.reset()
         lastBindingFailure = null
+        lastValidationFailure = null
         dashboardState.value = dashboardState.value.copy(
             connected = false,
             ready = false,
             serviceText = "正在重新连接 Root 清理服务…"
         )
         connectRequestedServices()
-        toast("正在重新连接 Root 清理服务")
     }
 
     private fun updateConnectionState() {
         val primaryConnected = rootService != null
         val scanReady = dashboardState.value.scanCompleted && hasUsableScanSnapshots()
+        val failed = connectionRecovery.exhausted || lastValidationFailure != null
         dashboardState.value = dashboardState.value.copy(
             connected = primaryConnected,
-            connectionFailed = connectionRecovery.exhausted,
-            connecting = !connectionRecovery.exhausted &&
+            connectionFailed = failed,
+            connecting = !failed &&
                 ((profileBound && rootService == null) || (cacheBound && cacheService == null)),
             ready = if (primaryConnected) dashboardState.value.ready else false,
             serviceText = when {
-                connectionRecovery.exhausted -> recoveryFailureText()
+                failed -> recoveryFailureText()
                 primaryConnected && dashboardState.value.ready -> dashboardState.value.serviceText
                 primaryConnected -> "Root 清理服务已连接，正在校验模块组件…"
                 scanReady -> "扫描快照已就绪，清理时会自动恢复 Root 服务"
@@ -678,6 +688,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             )
             return
         }
+        dashboardState.value = dashboardState.value.copy(connecting = true, connectionFailed = false)
         ConnectionDiagnostics.record(this, "将在 ${retryDelay / 1_000} 秒后尝试恢复连接")
         serviceRecoveryJob = lifecycleScope.launch {
             delay(retryDelay)
@@ -705,9 +716,10 @@ class MiuixDashboardActivity : ComponentActivity() {
             if (json == null) {
                 markVersionsStale()
                 ConnectionDiagnostics.record(this@MiuixDashboardActivity, "主服务状态读取失败")
+                lastValidationFailure = "Root 已连接，但读取服务状态失败；可在诊断页查看连接记录"
                 dashboardState.value = dashboardState.value.copy(
-                    ready = false,
-                    serviceText = "Root 已连接，但读取服务状态失败；可在诊断页查看连接记录"
+                    ready = false, connecting = false, connectionFailed = true,
+                    serviceText = recoveryFailureText()
                 )
                 return@launch
             }
@@ -726,18 +738,23 @@ class MiuixDashboardActivity : ComponentActivity() {
                 module -> "前台清理已就绪 · 自动清理调度器未就绪"
                 else -> "前台清理已就绪 · 未安装自动清理模块"
             }
+            lastValidationFailure = status.takeIf { !ready }
+            val presentation = versionPresentation()
             ConnectionDiagnostics.record(this@MiuixDashboardActivity, "前台清理校验：$status")
             dashboardState.value = dashboardState.value.copy(
                 connected = true,
                 ready = ready,
-                serviceText = if (dashboardState.value.connectionFailed) recoveryFailureText() else status,
+                connectionFailed = connectionRecovery.exhausted || !ready,
+                connecting = !connectionRecovery.exhausted && ready && cacheRequested && cacheService == null,
+                serviceText = if (connectionRecovery.exhausted || !ready) recoveryFailureText() else status,
                 automationAvailable = module && scheduler,
                 automationText = when {
                     module && scheduler -> "自动清理模块已启用"
                     module -> "模块已安装，但后台调度器未就绪"
                     else -> "未安装自动清理模块"
                 },
-                versionWarning = versionWarning(),
+                versionWarning = presentation.warning,
+                versionDetails = presentation.details,
                 device = Build.MODEL,
                 android = "Android ${Build.VERSION.RELEASE}"
             )
@@ -1157,7 +1174,6 @@ class MiuixDashboardActivity : ComponentActivity() {
                 taskPhase = "等待引擎重连后继续按扫描结果清理"
             )
             connectServices()
-            toast("扫描快照仍有效，正在重连缺失引擎")
             return
         }
 

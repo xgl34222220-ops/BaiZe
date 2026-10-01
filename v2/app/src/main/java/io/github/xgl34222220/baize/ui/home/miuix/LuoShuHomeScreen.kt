@@ -153,22 +153,24 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         hasResults -> "发现 ${state.scanFiles} 个可清理文件" + if (state.scanErrors > 0) " · ${state.scanErrors} 处未完成" else ""
         state.scanCompleted && state.scanErrors > 0 -> "${state.scanErrors} 处扫描异常，请查看记录后重试"
         state.scanCompleted -> "本次扫描未发现可清理文件"
-        !state.ready -> state.serviceText
+        state.connectionFailed -> state.serviceText
         state.storageTotal > 0 -> "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}"
         else -> "扫描缓存、安装包与应用残留"
     }
     val status = when {
         state.running -> "任务进行中"
         state.connectionFailed -> "连接异常"
-        state.ready -> "服务已就绪"
         state.connecting -> "正在连接"
+        state.versionWarning.isNotBlank() -> "版本需检查"
+        state.ready -> "服务已就绪"
         else -> "等待连接"
     }
     val actionLabel = when {
         state.running -> "停止当前任务"
         hasResults -> "清理扫描结果"
         state.scanCompleted -> "重新扫描"
-        state.connecting -> "正在连接…"
+        state.connectionFailed -> "重试连接"
+        state.connecting -> "开始扫描"
         !state.ready -> "连接 Root 服务"
         else -> "开始扫描"
     }
@@ -176,7 +178,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         state.running -> actions.stop
         hasResults -> actions.cleanScan
         state.scanCompleted -> actions.scan
-        !state.ready -> actions.reconnect
+        state.connectionFailed || !state.ready -> actions.reconnect
         else -> actions.scan
     }
     Surface(modifier = Modifier.glassSurface(colors.surfaceRaised, RoundedCornerShape(16.dp), colors.surfaceRaised.luminance() < .3f),
@@ -186,8 +188,9 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
 
             .padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             val statusColor = when {
-                state.ready && !state.running -> colors.success
                 state.connectionFailed -> scheme.error
+                state.connecting -> scheme.onSurfaceVariant
+                state.ready && !state.running && state.versionWarning.isBlank() -> colors.success
                 else -> colors.warning
             }
             Surface(
@@ -220,12 +223,15 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                 else Text(description, style = MaterialTheme.typography.bodySmall,
                     color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
             }
+            if (state.versionWarning.isNotBlank()) {
+                DetailExpandableText("版本信息需要检查", state.versionWarning)
+            }
             GlassActionButton(actionLabel, action, Modifier.fillMaxWidth(),
                 enabled = state.running || !state.connecting || state.scanCompleted,
                 icon = when {
                     state.running -> Icons.Rounded.Stop
                     hasResults -> Icons.Rounded.CleaningServices
-                    !state.ready && !state.scanCompleted -> Icons.Rounded.Security
+                    (state.connectionFailed || !state.ready) && !state.scanCompleted -> Icons.Rounded.Security
                     else -> Icons.Rounded.Search
                 })
 

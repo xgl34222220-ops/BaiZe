@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 7/108 inset on every side keeps the complete creature in the safe zone.
+     Fractions also preserve the geometry during archive/density-independent rendering.
+     The opaque emerald artwork extends beyond the system mask, so its rectangular
+     boundary is never a visible launcher frame. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_baize_art"
+    android:insetLeft="6.481481%"
+    android:insetTop="6.481481%"
+    android:insetRight="6.481481%"
+    android:insetBottom="6.481481%" />

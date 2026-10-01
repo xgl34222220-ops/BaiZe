@@ -15,6 +15,9 @@ data class SettingsUiState(
     val running: Boolean,
     val serviceText: String,
     val schedulerText: String,
+    val versionDetails: String = "",
+    val connecting: Boolean = false,
+    val connectionFailed: Boolean = false,
     val connectionLabel: String = if (running) "执行中" else if (ready) "已就绪" else if (connected) "未就绪" else "未连接"
 ) {
     val appearanceSummary: String
@@ -30,7 +33,7 @@ data class SettingsUiState(
         }.joinToString(" · ")
 
     val serviceHealthy: Boolean
-        get() = connected && ready && !running
+        get() = connected && ready && !running && !connectionFailed
 }
 
 data class SettingsUiActions(
@@ -58,5 +61,8 @@ fun DashboardUiState.toSettingsUiState(
     running = running,
     serviceText = serviceText,
     schedulerText = schedulerText,
-    connectionLabel = connectionLabel
+    connectionLabel = connectionLabel,
+    connecting = connecting,
+    connectionFailed = connectionFailed,
+    versionDetails = versionDetails
 )

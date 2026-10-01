@@ -32,17 +32,45 @@ internal enum class VersionComparison { MATCH, MISMATCH, UNKNOWN }
 internal data class RuntimeVersions(
     val root: ComponentVersion,
     val module: ComponentVersion,
-    val moduleName: String? = null
+    val moduleName: String? = null,
+    val moduleInstalled: Boolean? = null
 ) {
-    fun warning(app: ComponentVersion): String {
+    /** Successful compatibility is information, never a warning or a global banner. */
+    fun warning(app: ComponentVersion): String = assessment(app).first
+
+    fun compatibilityNote(app: ComponentVersion): String = assessment(app).second
+
+    fun presentation(app: ComponentVersion, current: Boolean): RuntimeVersionPresentation {
+        val (warning, compatible) = assessment(app)
+        return RuntimeVersionPresentation(
+            // A cached observation cannot describe the engine that is starting now.
+            warning = if (current) warning else "",
+            details = buildList {
+                add("App ${app.label}")
+                add(DiagnosticLabels.versionObservation(current))
+                add("Root ${root.label}")
+                add(if (moduleInstalled == false) "未安装自动清理模块" else "模块 ${module.label}")
+                if (warning.isNotBlank()) add(warning)
+                if (compatible.isNotBlank()) add(compatible)
+            }.joinToString("\n")
+        )
+    }
+
+    private fun assessment(app: ComponentVersion): Pair<String, String> {
         val mismatches = mutableListOf<String>()
         val unknown = mutableListOf<String>()
         val compatible = mutableListOf<String>()
-        listOf("Root" to root, "模块" to module).forEach { (label, version) ->
-            // 30009 changes archive previews and UI only. The delivered 30008 Root/AIDL,
-            // scripts, operation lease and config schemas are unchanged; do not generalize
-            // this exception to an unknown older or future engine.
-            if (app == ComponentVersion("2.0.0", 30009L) && version == ComponentVersion("2.0.0", 30008L)) {
+        val components = listOf("Root" to root) +
+            if (moduleInstalled == false) emptyList() else listOf("模块" to module)
+        components.forEach { (label, version) ->
+            // These App-only preview/presentation releases keep the delivered 30008
+            // Root protocol, native engines, scripts and configuration schemas.
+            val compatibleCodes = when (app) {
+                ComponentVersion("2.0.0", 30009L) -> setOf(30008L)
+                ComponentVersion("2.0.0", 30010L) -> setOf(30008L, 30009L)
+                else -> emptySet()
+            }
+            if (version.name == "2.0.0" && version.code in compatibleCodes) {
                 compatible += "$label ${version.label}"
                 return@forEach
             }
@@ -52,18 +80,19 @@ internal data class RuntimeVersions(
                 VersionComparison.MATCH -> Unit
             }
         }
-        return buildList {
+        val warning = buildList {
             if (mismatches.isNotEmpty()) {
                 add("版本不一致：App ${app.label}；${mismatches.joinToString("、")}。任务结束后更新配套 App/模块并重启设备。")
             }
             if (unknown.isNotEmpty()) {
                 add("${unknown.joinToString("、")}版本未知，无法确认匹配（旧服务或版本字段缺失/无效）；请查看运行诊断，确认已安装配套版本。")
             }
-            if (compatible.isNotEmpty()) {
-                add("已验证兼容：${compatible.joinToString("、")}。" +
-                    if (mismatches.isEmpty() && unknown.isEmpty()) "本次只需更新 App，当前模块可继续使用。" else "")
-            }
         }.joinToString("\n")
+        val note = if (compatible.isEmpty()) "" else "已验证兼容：${compatible.joinToString("、")}。" +
+            if (warning.isEmpty()) {
+                if (moduleInstalled == false) "当前 Root 组件可继续使用。" else "本次只需更新 App，当前模块可继续使用。"
+            } else ""
+        return warning to note
     }
 
     fun toJson(): JSONObject = JSONObject()
@@ -72,15 +101,19 @@ internal data class RuntimeVersions(
         .put("moduleVersionName", module.name ?: JSONObject.NULL)
         .put("moduleVersionCode", module.code ?: JSONObject.NULL)
         .put("moduleName", moduleName ?: JSONObject.NULL)
+        .put("module", moduleInstalled ?: JSONObject.NULL)
 
     companion object {
         fun fromPing(json: JSONObject): RuntimeVersions = RuntimeVersions(
             ComponentVersion.parse(json.opt("rootVersionName"), json.opt("rootVersionCode")),
             ComponentVersion.parse(json.opt("moduleVersionName"), json.opt("moduleVersionCode")),
-            (json.opt("moduleName") as? String)?.trim()?.take(128)?.takeIf { it.isNotBlank() }
+            (json.opt("moduleName") as? String)?.trim()?.take(128)?.takeIf { it.isNotBlank() },
+            json.opt("module") as? Boolean
         )
     }
 }
+
+internal data class RuntimeVersionPresentation(val warning: String, val details: String)
 
 internal object DiagnosticLabels {
     fun versionObservation(current: Boolean): String = if (current) {
