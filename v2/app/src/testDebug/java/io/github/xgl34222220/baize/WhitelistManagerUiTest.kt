@@ -36,7 +36,8 @@ class WhitelistManagerUiTest {
         state = WhitelistUiState(connected = connected, packagesLoaded = true, pathsLoaded = true,
             apps = listOf(WhitelistApp("one.app", "测试应用")),
             paths = listOf("/storage/emulated/0/Documents/Important"),
-            draft = WhitelistDraft(setOf("one.app"), setOf("one.app")))
+            draft = WhitelistDraft(setOf("one.app"), setOf("one.app")),
+            message = if (connected) "已保护 1 个应用、1 个路径。修改后请重新扫描核对。" else "Root 服务已断开，原保护继续保留。")
         val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false,
             themeMode = if (large) ThemeMode.DARK else ThemeMode.LIGHT)
         restoration.setContent {

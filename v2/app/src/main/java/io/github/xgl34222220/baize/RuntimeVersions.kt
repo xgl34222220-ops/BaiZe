@@ -69,6 +69,7 @@ internal data class RuntimeVersions(
                 ComponentVersion("2.0.0", 30009L) -> setOf(30008L)
                 ComponentVersion("2.0.0", 30010L) -> setOf(30008L, 30009L)
                 ComponentVersion("2.0.0", 30011L) -> if (label == "模块") setOf(30008L, 30009L, 30010L) else emptySet()
+                ComponentVersion("2.0.0", 30012L) -> if (label == "模块") setOf(30008L, 30009L, 30010L, 30011L) else emptySet()
                 else -> emptySet()
             }
             if (version.name == "2.0.0" && version.code in compatibleCodes) {

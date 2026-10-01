@@ -23,6 +23,8 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val output = File(filesDir, "apk-deletion-probe").apply { mkdirs() }
             var fixtureRoot: File? = null
+            val legacyPreferences = getSharedPreferences("baize_v2", MODE_PRIVATE)
+            val originalLegacyPaths = legacyPreferences.getStringSet("path_whitelist", null)?.toSet()
             val result = try {
                 check(Process.myUid() >= 10_000 && ApkMediaStoreIndex.hasAllFilesAccess())
                 @Suppress("DEPRECATION")
@@ -34,7 +36,8 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 val selected = own.copyTo(File(root, "selected.apk"))
                 val kept = own.copyTo(File(root, "unselected.apk"))
                 val changed = own.copyTo(File(root, "changed.apk"))
-                val paths = arrayOf(selected.path, kept.path, changed.path)
+                val legacyProtected = own.copyTo(File(root, "legacy-protected.apk"))
+                val paths = arrayOf(selected.path, kept.path, changed.path, legacyProtected.path)
                 val latch = CountDownLatch(paths.size)
                 MediaScannerConnection.scanFile(applicationContext, paths,
                     Array(paths.size) { "application/vnd.android.package-archive" }) { _, _ -> latch.countDown() }
@@ -60,15 +63,34 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 val deleted = remove(target, safe)
                 check(deleted == ApkIndexedDeleteResult.DELETED) { "Conditional MediaStore delete returned $deleted" }
                 check(!selected.exists() && kept.isFile && changed.isFile)
+                // Exercise real App preferences and MediaProvider after explicitly removing one legacy rule.
+                check(legacyPreferences.edit().putStringSet("path_whitelist", originalLegacyPaths.orEmpty() + legacyProtected.path).commit())
+                val emptyRules = ApkProtectionRules(emptySet(), emptySet())
+                val manager = WhitelistManagerRepository(applicationContext, object : WhitelistProtectionAccess {
+                    override fun read() = emptyRules
+                    override fun updatePackages(added: Set<String>, removed: Set<String>) = error("No Root rule mutation expected")
+                    override fun addPath(path: String) = error("No Root rule mutation expected")
+                    override fun removePath(path: String) = error("No Root rule mutation expected")
+                }, Environment.getExternalStorageDirectory().canonicalPath)
+                val legacyTarget = candidate(legacyProtected)
+                val before = manager.read()
+                check(before.pathEntries.any { it.path == legacyProtected.path && it.localRecords.isNotEmpty() })
+                check(remove(legacyTarget, ApkProtectionState.KnownRoot(before.effective)) == ApkIndexedDeleteResult.PROTECTED)
+                check(legacyProtected.isFile)
+                val after = manager.removePath(legacyProtected.path)
+                check(remove(legacyTarget, ApkProtectionState.KnownRoot(after.effective)) == ApkIndexedDeleteResult.DELETED)
+                check(!legacyProtected.exists() && kept.isFile && changed.isFile)
                 JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
                     .put("physicalIdentityCaptured", true).put("conditionalMediaStoreDelete", true)
                     .put("unknownProtectionPreserved", true).put("freshPathProtectionPreserved", true)
                     .put("replacedFilePreserved", true).put("unselectedPreserved", true)
-                    .put("input", "three copies of this repository's debug APK")
+                    .put("legacyProtectionVisibleRemovableAndCleanable", true)
+                    .put("input", "four copies of this repository's debug APK")
                     .put("protectionSource", "explicit synthetic rule states; Root transport tested separately")
             } catch (error: Exception) {
                 JSONObject().put("passed", false).put("error", error.javaClass.name).put("message", error.message.orEmpty())
             } finally {
+                legacyPreferences.edit().putStringSet("path_whitelist", originalLegacyPaths).commit()
                 // This UUID namespace was created above by this probe; it contains no pre-existing files.
                 fixtureRoot?.deleteRecursively()
             }

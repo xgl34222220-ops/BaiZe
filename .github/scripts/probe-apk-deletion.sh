@@ -18,6 +18,7 @@ import json, sys
 r = json.load(open(sys.argv[1]))
 assert r.get('passed') is True and r.get('uid', 0) >= 10000, r
 for key in ('physicalIdentityCaptured', 'conditionalMediaStoreDelete', 'unknownProtectionPreserved',
-            'freshPathProtectionPreserved', 'replacedFilePreserved', 'unselectedPreserved'):
+            'freshPathProtectionPreserved', 'replacedFilePreserved', 'unselectedPreserved',
+            'legacyProtectionVisibleRemovableAndCleanable'):
     assert r.get(key) is True, (key, r)
 PY

@@ -130,7 +130,7 @@ class WhitelistActivity : ComponentActivity() {
                 .addCategory(RootService.CATEGORY_DAEMON_MODE), connection)
         }.onFailure {
             bindingRequested = false
-            state = state.copy(connected = false, message = "Root 连接失败：${it.message}。请确认模块已安装并授权。")
+            state = state.copy(connected = false, message = "Root 连接失败：${it.message}。请在 Root 管理器中授权白泽，再点刷新重试。")
         }
     }
 

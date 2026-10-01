@@ -7,6 +7,16 @@ import org.junit.Test
 class RuntimeVersionsTest {
     private val app = ComponentVersion.parse("2.8.2", 28002)
 
+    @Test fun protectionManagerUpdateAcceptsUnchangedSchedulingModules() {
+        val update = ComponentVersion("2.0.0", 30012L)
+        for (code in 30008L..30011L) {
+            val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
+            assertEquals("", versions.warning(update))
+            assertTrue(versions.compatibilityNote(update).contains("当前模块可继续使用"))
+        }
+        assertTrue(RuntimeVersions(update, ComponentVersion("2.0.0", 30007L)).warning(update).isNotBlank())
+    }
+
     @Test fun guardedApkUpdateKeepsOldSchedulingModuleButRequiresCurrentAppRootService() {
         val update = ComponentVersion("2.0.0", 30011L)
         for (code in listOf(30008L, 30009L, 30010L)) {

@@ -32,6 +32,7 @@ class WhitelistManagerRepositoryTest {
         var failWrite = false
         var ignoreWrites = false
         var writes = 0
+        var failAtWrite = -1
         override fun read(): ApkProtectionRules { check(!failRead) { "synthetic read failure" }; return rules }
         override fun updatePackages(added: Set<String>, removed: Set<String>) {
             writes++; check(!failWrite) { "synthetic write failure" }
@@ -42,7 +43,7 @@ class WhitelistManagerRepositoryTest {
             if (!ignoreWrites) rules = rules.copy(paths = rules.paths + path)
         }
         override fun removePath(path: String) {
-            writes++; check(!failWrite) { "synthetic write failure" }
+            writes++; check(!failWrite && writes != failAtWrite) { "synthetic write failure" }
             if (!ignoreWrites) rules = rules.copy(paths = rules.paths - path)
         }
     }
@@ -89,6 +90,14 @@ class WhitelistManagerRepositoryTest {
         local(setOf(download)); remote.ignoreWrites = true
         assertTrue(runCatching { repo().removePath(download) }.isFailure)
         assertEquals(setOf(download), ApkProtectionStore.legacyRules(context).paths)
+    }
+    @Test fun partialAliasRemovalKeepsOtherSourceAndUnrelatedRules() {
+        remote.rules = empty.copy(paths = linkedSetOf(download, "/data/media/0/Download", "$download/Keep"))
+        local(setOf("/sdcard/Download")); remote.failAtWrite = 2
+        assertTrue(runCatching { repo().removePath(download) }.isFailure)
+        assertEquals(setOf("/data/media/0/Download", "$download/Keep"), remote.rules.paths)
+        assertEquals(setOf("/sdcard/Download"), ApkProtectionStore.legacyRules(context).paths)
+        assertEquals(2, repo().read().pathEntries.size)
     }
     @Test fun unreadableRootCannotAuthorizeLegacyRemovalOrPathAddition() {
         local(setOf(download)); remote.failRead = true

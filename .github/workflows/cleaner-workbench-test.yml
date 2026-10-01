@@ -242,6 +242,13 @@ jobs:
           run-id: 36829014947
           github-token: ${{ github.token }}
           path: baseline-30010
+      - name: Download exact delivered 30011 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+ae2a293f-Paired-Test
+          run-id: 36844329946
+          github-token: ${{ github.token }}
+          path: baseline-30011
       - name: Build same-package archive resource fixtures
         run: |
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
@@ -261,7 +268,7 @@ jobs:
             bash .github/scripts/probe-apk-artwork.sh
             bash .github/scripts/probe-apk-deletion.sh
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30011 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30012 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
