@@ -104,6 +104,10 @@ class ApkProtectionStoreTest {
                     override fun edit(): SharedPreferences.Editor {
                         val delegate = real.edit()
                         return object : SharedPreferences.Editor by delegate {
+                            override fun putStringSet(key: String, values: Set<String>?): SharedPreferences.Editor {
+                                delegate.putStringSet(key, values)
+                                return this
+                            }
                             override fun commit(): Boolean { delegate.commit(); return false }
                         }
                     }
