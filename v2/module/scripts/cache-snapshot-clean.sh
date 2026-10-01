@@ -193,17 +193,23 @@ skipped=$(summary_number skipped)
 errors=$(summary_number errors)
 protected_items=$(summary_number protected_items)
 protected_bytes=$(summary_number protected_bytes)
-action_count() {
-  action=$1
-  awk -F '\t' -v action="$action" 'NR>1 && $1==action { count++ } END { print count+0 }' "$REPORT_FILE" 2>/dev/null
-}
-authorized_candidates=$(awk -F '\t' 'NR>1 && NF>=6 { count++ } END { print count+0 }' "$CACHE_SCAN_ITEMS" 2>/dev/null)
-cleaned_candidates=$(action_count cleaned)
-changed_candidates=$(action_count skipped)
-protected_candidates=$(action_count protected)
-partial_candidates=$(action_count partial)
-failed_candidates=$(action_count failed)
-processed_candidates=$((cleaned_candidates + changed_candidates + protected_candidates + partial_candidates + failed_candidates))
+# The native result groups raw manifest paths by cache root, the same candidate
+# unit used during scanning. Display TSV contains per-file, sanitized paths.
+authorized_candidates=$(summary_number authorized_candidates)
+processed_candidates=$(summary_number processed_candidates)
+cleaned_candidates=$(summary_number cleaned_candidates)
+changed_candidates=$(summary_number changed_candidates)
+missing_candidates=$(summary_number missing_candidates)
+protected_candidates=$(summary_number protected_candidates)
+partial_candidates=$(summary_number partial_candidates)
+failed_candidates=$(summary_number failed_candidates)
+changed_files=$(summary_number changed_files)
+missing_files=$(summary_number missing_files)
+if [ "$code" -eq 0 ]; then
+  if [ "$(summary_value outcome_schema)" != cache-root-outcomes-v1 ]; then code=71
+  elif [ "$errors" -gt 0 ]; then code=8
+  fi
+fi
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 
@@ -214,6 +220,9 @@ case "$code" in
     ;;
   9)
     result="缓存不可变快照清理已停止，已清理 $(human_bytes "$deleted_bytes")"
+    ;;
+  8)
+    result="缓存不可变快照清理未完成，失败 $errors 个文件，已清理 $(human_bytes "$deleted_bytes")；原快照已保留"
     ;;
   *)
     result="缓存不可变快照清理失败（代码 $code），已清理 $(human_bytes "$deleted_bytes")"
@@ -230,10 +239,13 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "processed_candidates=$processed_candidates"
   echo "cleaned_candidates=$cleaned_candidates"
   echo "changed_candidates=$changed_candidates"
+  echo "missing_candidates=$missing_candidates"
   echo "protected_candidates=$protected_candidates"
   echo "partial_candidates=$partial_candidates"
   echo "failed_candidates=$failed_candidates"
-  echo "skipped_candidates=$((changed_candidates + protected_candidates))"
+  echo "skipped_candidates=$((changed_candidates + missing_candidates + protected_candidates))"
+  echo "changed_files=$changed_files"
+  echo "missing_files=$missing_files"
   echo "files=$deleted_files"
   echo "regular_files=$deleted_files"
   echo "empty_files=0"
@@ -256,6 +268,7 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "category_cache_candidates=$authorized_candidates"
   echo "category_cache_cleaned=$cleaned_candidates"
   echo "category_cache_changed=$changed_candidates"
+  echo "category_cache_missing=$missing_candidates"
   echo "category_cache_protected=$protected_candidates"
   echo "category_cache_partial=$partial_candidates"
   echo "category_cache_failed=$failed_candidates"

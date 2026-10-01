@@ -504,6 +504,12 @@ static int open_parent_nofollow(const char *path, char *buffer, const char **nam
         if (strcmp(part, ".") == 0 || strcmp(part, "..") == 0) { close(fd); errno = EINVAL; return -1; }
         int next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
         int error = errno;
+        if (next < 0 && (error == ENOTDIR || error == ELOOP)) {
+            struct stat entry;
+            /* Linux may return ENOTDIR for O_NOFOLLOW on a symlink. Confirm the
+             * symlink before classifying it as protection instead of an I/O failure. */
+            if (fstatat(fd, part, &entry, AT_SYMLINK_NOFOLLOW) == 0 && S_ISLNK(entry.st_mode)) error = ELOOP;
+        }
         close(fd);
         fd = next;
         errno = error;
@@ -713,6 +719,9 @@ static int clean_manifest(void) {
     ino_t mutation_inos[128];
     size_t mutation_count = 0U;
     int result = 0;
+    /* A retryable attempt is not a terminal journal outcome: leave its record
+     * before the cursor, while sealing all successfully processed predecessors. */
+    uint64_t attempt_errors = 0U;
     while ((read_code = read_record(manifest, &record)) == 1) {
         if (stop_requested()) { result = 9; break; }
         if (current == batch_end) {
@@ -749,22 +758,43 @@ static int clean_manifest(void) {
             summary.skipped++;
             report_row(report, "protected", valid_risk(risk) ? risk : "high", 0U, path);
         } else if (parent_fd < 0) {
-            summary.skipped++;
-            if (parent_error == ENOENT && current < replay_end) {
-                summary.uncertain++;
-                summary.uncertain_bytes += size;
+            if (parent_error == ENOENT) {
+                summary.skipped++;
+                if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                report_row(report, "missing", risk, 0U, path);
+            } else if (parent_error == ELOOP) {
+                summary.skipped++;
+                report_row(report, "protected", risk, 0U, path);
+            } else {
+                attempt_errors++; result = 8;
+                report_row(report, "failed", risk, 0U, path);
             }
-            report_row(report, parent_error == ENOENT ? "missing" : "protected", risk, 0U, path);
         } else if (strcmp(kind, "file") == 0) {
             struct stat first;
             struct stat second;
             if (fstatat(parent_fd, name, &first, AT_SYMLINK_NOFOLLOW) != 0) {
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
+            } else if (!file_metadata_matches(&first, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
                 summary.skipped++;
-                if (errno == ENOENT && current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
-                report_row(report, "missing", risk, 0U, path);
-            } else if (!file_metadata_matches(&first, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec) ||
-                       fstatat(parent_fd, name, &second, AT_SYMLINK_NOFOLLOW) != 0 ||
-                       !file_metadata_matches(&second, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
+                if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                report_row(report, "changed", risk, size, path);
+            } else if (fstatat(parent_fd, name, &second, AT_SYMLINK_NOFOLLOW) != 0) {
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
+            } else if (!file_metadata_matches(&second, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
                 summary.skipped++;
                 if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                 report_row(report, "changed", risk, size, path);
@@ -774,15 +804,20 @@ static int clean_manifest(void) {
                 summary.bytes += size;
                 report_row(report, "cleaned", risk, size, path);
             } else {
-                summary.errors++;
+                attempt_errors++; result = 8;
                 report_row(report, "failed", risk, size, path);
             }
         } else {
             struct stat status;
             if (fstatat(parent_fd, name, &status, AT_SYMLINK_NOFOLLOW) != 0) {
-                summary.skipped++;
-                if (errno == ENOENT && current < replay_end) summary.uncertain++;
-                report_row(report, "missing", risk, 0U, path);
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) summary.uncertain++;
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
             } else if (!S_ISDIR(status.st_mode) || S_ISLNK(status.st_mode) ||
                        (uint64_t)status.st_dev != device || (uint64_t)status.st_ino != inode) {
                 summary.skipped++;
@@ -796,7 +831,7 @@ static int clean_manifest(void) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
             } else {
-                summary.errors++;
+                attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
         }
@@ -818,6 +853,7 @@ static int clean_manifest(void) {
             }
         }
         if (parent_fd >= 0) close(parent_fd);
+        if (result == 8) break;
         current++;
         summary.processed++;
         if (journal_outcome(journal, &summary) != 0 || fflush(report) != 0) result = 71;
@@ -829,7 +865,7 @@ static int clean_manifest(void) {
     }
     if (read_code < 0) result = 7;
     if (sync_mutations(mutation_fds, &mutation_count) != 0) result = 71;
-    if ((result == 0 || result == 9 || result == 7) && seal_checkpoint(journal, current) != 0) result = 71;
+    if ((result == 0 || result == 9 || result == 7 || result == 8) && seal_checkpoint(journal, current) != 0) result = 71;
     if (checkpoint(journal) != 0) result = 71;
     if (fclose(journal) != 0) result = 71;
     free_record(&record);
@@ -844,15 +880,16 @@ static int clean_manifest(void) {
             "\nerrors=%" PRIu64 "\nremaining=%" PRIu64 "\ncursor=%" PRIu64
             "\nengine=%s\n",
             total, summary.processed - initial.processed, summary.files, summary.dirs, summary.bytes,
-            summary.skipped, summary.errors, remaining, current, ENGINE_VERSION);
+            summary.skipped, summary.errors + attempt_errors, remaining, current, ENGINE_VERSION);
     fprintf(summary_file, "recovered_unsealed_records=%" PRIu64 "\nrecovery_requires_audit=%d\n",
             recovered_unsealed, g_recovery_requires_audit);
     fprintf(summary_file, "accounting=cumulative-journal-v1\nuncertain_records=%" PRIu64
             "\nuncertain_bytes=%" PRIu64 "\nrun_files=%" PRIu64 "\nrun_dirs=%" PRIu64
             "\nrun_bytes=%" PRIu64 "\nrun_errors=%" PRIu64 "\ncheckpoint_records=%" PRIu64 "\n",
             summary.uncertain, summary.uncertain_bytes, summary.files - initial.files,
-            summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors,
+            summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors + attempt_errors,
             g_options.checkpoint_records);
+    fprintf(summary_file, "pending_errors=%" PRIu64 "\n", attempt_errors);
     if (ferror(summary_file)) result = 71;
     if (fclose(summary_file) != 0) result = 71;
     return result;

@@ -12,7 +12,12 @@ internal class ApkFileEvidenceRepository(private val ownAppUid: () -> Int,
     private val capture: (String, String) -> io.github.xgl34222220.baize.ApkFileIdentity? = { root, path ->
         ApkDeletionGuard(setOf(root), root).capture(path)
     }) {
-    fun read(requestedPath: String, callerUid: Int): String {
+    fun read(requestedPath: String, callerUid: Int): String = readScoped(requestedPath, callerUid, true)
+
+    /** Same caller/user/parent safeguards; metadata only for an explicitly indexed shared file. */
+    fun readIndexedFile(requestedPath: String, callerUid: Int): String = readScoped(requestedPath, callerUid, false)
+
+    private fun readScoped(requestedPath: String, callerUid: Int, archiveOnly: Boolean): String {
         val owner = ownAppUid()
         val caller = if (callerUid == 0) owner else callerUid
         fun rejected(reason: String) = JSONObject().put("success", false).put("reason", reason).toString()
@@ -20,7 +25,7 @@ internal class ApkFileEvidenceRepository(private val ownAppUid: () -> Int,
         val user = caller / 100_000
         val publicRoot = "/storage/emulated/$user"
         if (!ApkDeletionGuard.validPath(requestedPath) || !requestedPath.startsWith("$publicRoot/") ||
-            requestedPath.substringAfterLast('.').lowercase() !in setOf("apk", "apks", "xapk", "apkm", "aab")) return rejected("outside_current_user_storage")
+            (archiveOnly && requestedPath.substringAfterLast('.').lowercase() !in setOf("apk", "apks", "xapk", "apkm", "aab"))) return rejected("outside_current_user_storage")
         val backingRoot = "/data/media/$user"
         val backing = backingRoot + requestedPath.removePrefix(publicRoot)
         // This guard rejects links in every component below the trusted storage root.

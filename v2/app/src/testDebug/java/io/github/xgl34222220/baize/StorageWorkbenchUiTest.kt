@@ -28,7 +28,7 @@ class StorageWorkbenchUiTest {
         StorageFileRecord(1, "uri1", "/storage/emulated/0/DCIM/Camera/海边日落.mp4", "海边日落.mp4", 1_840_000_000, 1773000000, "video/mp4"),
         StorageFileRecord(2, "uri2", "/storage/emulated/0/Download/旅行照片.zip", "旅行照片.zip", 420_000_000, 1772000000, "application/zip"),
         StorageFileRecord(3, "uri3", "/storage/emulated/0/Android/media/com.example.chat/视频.mp4", "视频.mp4", 230_000_000, 1771000000, "video/mp4", "聊天应用"),
-        StorageFileRecord(4, "uri4", "/storage/emulated/0/Pictures/壁纸.jpg", "壁纸.jpg", 12_000_000, 1770000000, "image/jpeg"))
+        StorageFileRecord(4, "uri4", "/storage/emulated/0/Pictures/壁纸.jpg", "壁纸.jpg", 12_000_000, 1770000000, "image/jpeg")).map { it.withVerifiedStorageIdentity() }
 
     @Test fun analysisCategoryOpensSelectableFiles() {
         var state by mutableStateOf(StorageToolsUiState(mode = StorageToolMode.ANALYSIS, records = records,
@@ -85,6 +85,33 @@ class StorageWorkbenchUiTest {
         assertEquals(setOf(old.uri), state.selected)
         compose.onNodeWithText("地图_1.0.apk").performScrollTo()
         save("v6-apk-version-filter")
+    }
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun retainedArchiveShowsReasonAndHasOneScrollableDiagnosticDialog() {
+        val record = records[1].copy(name = "合成测试_很长的压缩包名称_".repeat(10) + ".zip", identity = null)
+        val outcome = StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, "当前路径未找到文件；请查看读取诊断核对旧索引")
+        var details by mutableStateOf(false)
+        val state = StorageToolsUiState(mode = StorageToolMode.ANALYSIS, records = listOf(record),
+            category = "archive", buckets = storageBuckets(listOf(record)), outcomes = mapOf(record.uri to outcome),
+            status = "未删除文件 · 1 项保留", coverage = "未核对的文件不能勾选，不计入可处理容量。")
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 1.5f)) {
+                BaiZeTheme(AppearanceSettings(themeMode = ThemeMode.DARK)) {
+                    StorageToolsScreen(state, {}, {}, {}, {}, {}, onOpen = { details = true })
+                    if (details) StorageFileDialog(record, outcome, false, "synthetic diagnostic", { details = false }, {}, {}, {})
+                }
+            }
+        }
+        compose.onNodeWithText("未删除文件 · 1 项保留").assertIsDisplayed()
+        compose.onAllNodes(isToggleable()).assertAll(isNotEnabled())
+        save("storage-retained-reason-dark-large-test-data")
+        compose.onNodeWithText(record.name).performScrollTo().performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(1)
+        compose.onNodeWithText("复制读取诊断").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("关闭").assertIsDisplayed()
+        save("storage-diagnostic-dialog-long-name-test-data")
     }
     @Test fun filterChangesWaitForApplyAndCancelPreservesSelection() {
         var state by mutableStateOf(StorageToolsUiState(records = records, buckets = storageBuckets(records),

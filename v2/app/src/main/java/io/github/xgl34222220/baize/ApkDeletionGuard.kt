@@ -33,9 +33,13 @@ internal interface ApkFileAccess {
     fun canonical(path: String): String
     fun isDirectoryWithoutLink(path: String): Boolean
     fun identity(path: String): ApkFileIdentity?
+    /** A failed read is not evidence of deletion. Only ENOENT qualifies. */
+    fun definitelyMissing(path: String): Boolean = false
 }
 
 private object AndroidApkFileAccess : ApkFileAccess {
+    override fun definitelyMissing(path: String): Boolean = try { Os.lstat(path); false }
+        catch (error: android.system.ErrnoException) { error.errno == OsConstants.ENOENT }
     override fun canonical(path: String): String = File(path).canonicalPath
     override fun isDirectoryWithoutLink(path: String): Boolean = Os.lstat(path).let {
         OsConstants.S_ISDIR(it.st_mode) && !OsConstants.S_ISLNK(it.st_mode)
@@ -56,6 +60,7 @@ internal class ApkDeletionGuard(
     private val primaryStorageRoot: String?,
     private val files: ApkFileAccess = AndroidApkFileAccess
 ) {
+    fun deletionConfirmed(path: String): Boolean = runCatching { files.definitelyMissing(path) }.getOrDefault(false)
     private val aliases = AndroidPathIdentity(primaryStorageRoot)
     private val publicVolumeRoots = roots.filter {
         it.matches(Regex("/storage/[A-Za-z0-9-]+")) && it !in setOf("/storage/emulated", "/storage/self")

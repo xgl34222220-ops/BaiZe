@@ -45,6 +45,20 @@ class ApkFileEvidenceRepositoryTest {
         assertTrue(result.getBoolean("success"))
         assertEquals(0, result.getInt("requesterUid"))
     }
+    @Test fun indexedFileEvidenceAcceptsEachSharedFileCategoryWithTheSameCallerAndUserBoundary() {
+        val reads = mutableListOf<String>(); val repo = repository(reads = reads)
+        for (extension in listOf("zip", "pdf", "jpg", "mp4", "flac", "apk", "bin")) {
+            val target = path.replace("sample.apk", "synthetic.$extension")
+            assertTrue(JSONObject(repo.readIndexedFile(target, own)).getBoolean("success"))
+        }
+        reads.clear()
+        for (target in listOf("/data/media/0/Download/one.zip", "/data/user/0/example/private.zip",
+            "/storage/emulated/10/Download/one.zip", "/storage/emulated/0/Download/../one.zip")) {
+            assertFalse(JSONObject(repo.readIndexedFile(target, own)).getBoolean("success"))
+        }
+        assertFalse(JSONObject(repo.readIndexedFile(path.replace(".apk", ".zip"), own + 1)).getBoolean("success"))
+        assertTrue(reads.isEmpty())
+    }
 
     @Test fun statPermissionFailureRemainsUnavailableWithErrnoEvidence() {
         val repo = ApkFileEvidenceRepository({ own }, stat = { JSONObject().put("ok", false).put("errno", 13) },

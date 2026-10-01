@@ -156,7 +156,8 @@ internal object ApkMediaStoreIndex {
         expectedIdentity: ApkFileIdentity?,
         protection: () -> ApkProtectionState,
         isCancelled: () -> Boolean = { false },
-        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)
+        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context),
+        onFailure: (Throwable) -> Unit = {}
     ): ApkIndexedDeleteResult {
         if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
         val currentProtection = try { protection() } catch (_: Exception) {
@@ -179,7 +180,7 @@ internal object ApkMediaStoreIndex {
                 val modified = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)).coerceAtLeast(0L)
                 Triple(path, bytes, modified)
             }
-        }.getOrNull() ?: return ApkIndexedDeleteResult.CHANGED
+        }.onFailure(onFailure).getOrNull() ?: return ApkIndexedDeleteResult.CHANGED
         if (current.first != expectedPath || current.second != expectedBytes ||
             current.third != expectedModifiedSeconds
         ) return ApkIndexedDeleteResult.CHANGED
@@ -191,8 +192,9 @@ internal object ApkMediaStoreIndex {
                 expectedIdentity, currentProtection)?.let { return it }
             val selection = "${MediaStore.MediaColumns.DATA} = ? AND ${MediaStore.MediaColumns.SIZE} = ? AND ${MediaStore.MediaColumns.DATE_MODIFIED} = ?"
             if (context.contentResolver.delete(itemUri, selection,
-                    arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString())) > 0) ApkIndexedDeleteResult.DELETED
+                    arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString())) > 0 &&
+                guard.deletionConfirmed(expectedPath)) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
-        }.getOrDefault(ApkIndexedDeleteResult.FAILED)
+        }.onFailure(onFailure).getOrDefault(ApkIndexedDeleteResult.FAILED)
     }
 }

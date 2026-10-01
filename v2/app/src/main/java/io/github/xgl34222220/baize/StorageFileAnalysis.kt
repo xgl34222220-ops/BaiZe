@@ -33,7 +33,7 @@ internal fun storageCategoryLabel(key: String): String = when (key) {
 
 internal fun storageBuckets(files: List<StorageFileRecord>): List<StorageAnalysisBucket> =
     files.groupBy(::storageCategory).map { (key, records) ->
-        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf { it.bytes })
+        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf { it.verifiedBytes })
     }.sortedByDescending { it.bytes }
 
 /** Only Android's package-owned directory convention establishes an app association. */

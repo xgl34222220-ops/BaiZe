@@ -158,6 +158,8 @@ total_dirs=$(uint_value "$(summary_value "$SUMMARY_FILE" dirs)" 0)
 total_bytes=$(uint_value "$(summary_value "$SUMMARY_FILE" bytes)" 0)
 total_skipped=$(uint_value "$(summary_value "$SUMMARY_FILE" skipped)" 0)
 total_errors=$(uint_value "$(summary_value "$SUMMARY_FILE" errors)" 0)
+run_errors=$(uint_value "$(summary_value "$SUMMARY_FILE" run_errors)" 0)
+if [ "$code" -eq 0 ] && { [ "$remaining" -gt 0 ] || [ "$run_errors" -gt 0 ]; }; then code=8; fi
 
 if [ "$code" -eq 9 ]; then
   stopped=1
@@ -166,6 +168,9 @@ elif [ "$code" -eq 0 ]; then
   stopped=0
   remaining=0
   result="深度不可变快照清理完成，累计释放 $(human_bytes "$total_bytes")"
+elif [ "$code" -eq 8 ]; then
+  stopped=0
+  result="深度不可变快照清理未完成，本次失败 $run_errors 项，进度保留在 ${cursor}/${records}；可重试原快照"
 else
   stopped=0
   result="深度不可变快照清理失败，代码 $code，进度保留在 ${cursor}/${records}"
@@ -191,6 +196,7 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "bytes=$total_bytes"
   echo "skipped=$total_skipped"
   echo "errors=$total_errors"
+  echo "run_errors=$run_errors"
   echo "protected_items=$total_skipped"
   echo "deep_manifest_records=$records"
   echo "deep_manifest_cursor=$cursor"

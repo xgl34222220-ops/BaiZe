@@ -95,7 +95,7 @@ class BulkSelectionTest {
     }
 
     private fun record(id: Long) = StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/文档$id.pdf",
-        "文档$id.pdf", 100, 1, "application/pdf")
+        "文档$id.pdf", 100, 1, "application/pdf").withVerifiedStorageIdentity()
     private fun save(name: String) {
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }

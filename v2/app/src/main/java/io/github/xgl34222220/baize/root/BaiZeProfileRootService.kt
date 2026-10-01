@@ -132,6 +132,11 @@ class BaiZeProfileRootService : RootService() {
                 JSONObject(apkFileEvidence.read(arguments.getString(0), android.os.Binder.getCallingUid()))
                     .put("uid", Process.myUid()).put("root", Process.myUid() == 0).toString()
             }
+            "getIndexedFileEvidence" -> {
+                require(arguments.length() == 1)
+                JSONObject(apkFileEvidence.readIndexedFile(arguments.getString(0), android.os.Binder.getCallingUid()))
+                    .put("uid", Process.myUid()).put("root", Process.myUid() == 0).toString()
+            }
             // Only edit whitelist configuration records, never the target files.
             // Reuse the App-owned FD channel; preserve existing AIDL transaction IDs.
             "removeWhitelistPath" -> {
@@ -159,6 +164,7 @@ class BaiZeProfileRootService : RootService() {
                 .put("root", Process.myUid() == 0)
                 .put("apkProtectionVersion", 1)
                 .put("apkFileEvidenceVersion", 1)
+                .put("indexedFileEvidenceVersion", 1)
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)

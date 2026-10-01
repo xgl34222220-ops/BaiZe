@@ -7,7 +7,7 @@ import java.util.concurrent.CancellationException
 
 class StorageWorkbenchTest {
     private fun record(id: Long, size: Long = 10, name: String = "文件$id.pdf", modified: Long = id) =
-        StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/$name", name, size, modified, "application/pdf")
+        StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/$name", name, size, modified, "application/pdf").withVerifiedStorageIdentity()
 
     @Test fun samePrefixDifferentTailIsNotDuplicate() {
         val a = ByteArray(70_000) { 1 }; val b = a.clone().also { it[it.lastIndex] = 2 }
@@ -67,6 +67,15 @@ class StorageWorkbenchTest {
         assertNull(storageOwnerPackage("/storage/emulated/0/Download/com.example.app.mp4"))
         assertFalse(StorageMediaRepository.safeSharedFile("/storage/emulated/0/../../data/file"))
     }
+    @Test fun unknownRecordsStayAvailableForDiagnosisButCannotEnterSelectionOrCapacity() {
+        val known = record(1)
+        val unknown = record(2).copy(identity = null)
+        val state = StorageToolsUiState(records = listOf(known, unknown))
+        assertEquals(2, state.visibleRecords.size)
+        assertEquals(setOf(known.uri), state.toggleAllSelection().selected)
+        assertTrue(state.toggleSelection(unknown.uri).selected.isEmpty())
+        assertEquals(known.bytes, storageBuckets(state.records).sumOf { it.bytes })
+    }
     @Test fun apkFilterSelectsOnlyMatchingVersionStatus() {
         val older = ApkScanItem("old.apk", 1, 50, 0, "/old.apk", archive = ApkArchiveInfo(status = ApkInstallStatus.OLDER))
         val current = older.copy(name = "new.apk", uri = "/new.apk", archive = ApkArchiveInfo(status = ApkInstallStatus.INSTALLED))
@@ -77,3 +86,6 @@ class StorageWorkbenchTest {
         assertEquals(ApkInstallStatus.NOT_INSTALLED, ApkArchiveMetadata.compareVersions(3, null))
     }
 }
+
+internal fun StorageFileRecord.withVerifiedStorageIdentity() = copy(identity = ApkFileIdentity(path, 1, id,
+    bytes, modifiedSeconds, modifiedSeconds, 0, 0))

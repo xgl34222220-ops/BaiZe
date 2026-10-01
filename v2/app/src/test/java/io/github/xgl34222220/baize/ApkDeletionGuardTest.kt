@@ -33,6 +33,7 @@ class ApkDeletionGuardTest {
         access = FakeApkFiles(stamp)
         guard = ApkDeletionGuard(setOf("/storage/emulated/10", "/storage/ABCD-1234", "/sdcard"), "/storage/emulated/10", access)
         provider = RecordingApkDeleteProvider(path)
+        provider.onDelete = { access.missing = true; access.stamp = null }
         provider.attachInfo(RuntimeEnvironment.getApplication(), ProviderInfo().apply { authority = "media" })
         ShadowContentResolver.registerProviderInternal("media", provider)
     }
@@ -47,6 +48,20 @@ class ApkDeletionGuardTest {
         assertEquals(1, provider.deletes)
         assertArrayEquals(arrayOf(path, "100", "30"), provider.deleteArgs)
         assertTrue(provider.selection.orEmpty().contains(MediaStore.MediaColumns.DATE_MODIFIED))
+    }
+    @Test fun deletingOnlyAnIndexRowCannotBeReportedAsDeletingTheFile() {
+        provider.onDelete = {}
+        assertEquals(ApkIndexedDeleteResult.FAILED, delete())
+        assertEquals(1, provider.deletes)
+        assertEquals(stamp, access.stamp)
+    }
+    @Test fun inaccessiblePathAfterProviderDeleteIsNotConfirmedAbsence() {
+        provider.onDelete = { access.stamp = null; access.missing = false }
+        assertEquals(ApkIndexedDeleteResult.FAILED, delete())
+    }
+    @Test fun replacementAppearingAfterProviderMutationIsNotReportedAsFreedSpace() {
+        provider.onDelete = { access.stamp = stamp.copy(inode = 500); access.missing = false }
+        assertEquals(ApkIndexedDeleteResult.FAILED, delete())
     }
     @Test fun freshProtectionAddedAfterScanStopsMutation() {
         assertEquals(ApkIndexedDeleteResult.PROTECTED, delete(ApkProtectionState.KnownRoot(
@@ -163,6 +178,8 @@ class ApkDeletionGuardTest {
 }
 
 private class FakeApkFiles(var stamp: ApkFileIdentity?) : ApkFileAccess {
+    var missing = false
+    override fun definitelyMissing(path: String) = missing
     var canonicalOverride: String? = null
     var linkedParent = false
     override fun canonical(path: String): String = if (path.endsWith(".apk")) canonicalOverride ?: path else path
@@ -177,6 +194,7 @@ private class RecordingApkDeleteProvider(val path: String) : ContentProvider() {
     var selection: String? = null
     var deleteArgs: Array<out String>? = null
     var onQuery: () -> Unit = {}
+    var onDelete: () -> Unit = {}
     override fun onCreate() = true
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor {
         queries++; onQuery()
@@ -184,7 +202,7 @@ private class RecordingApkDeleteProvider(val path: String) : ContentProvider() {
             .apply { addRow(arrayOf<Any>(path, bytes, 30L)) }
     }
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int {
-        deletes++; this.selection = selection; deleteArgs = selectionArgs; return 1
+        deletes++; this.selection = selection; deleteArgs = selectionArgs; onDelete(); return 1
     }
     override fun getType(uri: Uri) = "application/vnd.android.package-archive"
     override fun insert(uri: Uri, values: ContentValues?): Uri? = error("No real mutation")

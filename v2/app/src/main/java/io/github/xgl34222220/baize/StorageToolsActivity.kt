@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
@@ -56,11 +58,22 @@ class StorageToolsActivity : ComponentActivity() {
             val appearance by appearanceViewModel.settings.collectAsState()
             val state by model.state.collectAsState()
             var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
+            var detailUri by rememberSaveable { mutableStateOf<String?>(null) }
+            val detail = state.allRecords.firstOrNull { it.uri == detailUri }
             BaiZeTheme(appearance) {
                 StorageToolsScreen(state, ::finish, model::scan, model::toggle, { showDeleteConfirm = true }, ::openAllFilesSettings,
                     onToggleAll = model::toggleAll, onStop = model::stop, onQuery = { model.filter(query = it) },
                     onCategory = { model.filter(category = it) }, onSort = { model.filter(sort = it) },
-                    onThreshold = { model.filter(minimumBytes = it) }, onOpen = ::openFile)
+                    onThreshold = { model.filter(minimumBytes = it) }, onOpen = { detailUri = it.uri },
+                    onReconnect = model::connect, onLocalMode = model::enableLocalMode)
+                if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
+                    state.diagnosticBusy && state.diagnosticUri == detail.uri,
+                    state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
+                    onDismiss = { detailUri = null }, onOpen = { openFile(detail) },
+                    onDiagnose = { model.diagnose(detail) }, onCopy = {
+                        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("白泽单文件读取诊断", it))
+                        Toast.makeText(this, "已复制当前文件的读取诊断", Toast.LENGTH_SHORT).show()
+                    })
                 if (showDeleteConfirm) BaiZeDialog(
                     onDismissRequest = { showDeleteConfirm = false }, title = { Text("删除已选 ${state.selected.size} 个文件？") },
                     text = { Text("共 ${Formatter.formatFileSize(this, state.selectedBytes)}。删除后无法在白泽内恢复，请确认文件不再需要。" +
@@ -92,7 +105,10 @@ internal data class StorageToolsUiState(
     val records: List<StorageFileRecord> = emptyList(), val duplicateGroups: List<DuplicateFileGroup> = emptyList(),
     val buckets: List<StorageAnalysisBucket> = emptyList(), val selected: Set<String> = emptySet(),
     val query: String = "", val category: String? = null, val sort: StorageSort = StorageSort.SIZE,
-    val minimumBytes: Long = 0, val coverage: String = "", val progress: StorageScanProgress? = null, val failed: Boolean = false
+    val minimumBytes: Long = 0, val coverage: String = "", val progress: StorageScanProgress? = null, val failed: Boolean = false,
+    val outcomes: Map<String, StorageDeleteOutcome> = emptyMap(),
+    val protectionMessage: String = "", val localModeAvailable: Boolean = false,
+    val diagnosticBusy: Boolean = false, val diagnosticUri: String = "", val diagnostic: String = ""
 ) {
     val allRecords: List<StorageFileRecord> get() = if (mode == StorageToolMode.DUPLICATES) duplicateGroups.flatMap { it.records } else records
     // Keep each duplicate group intact: filtering must not hide its retained copy.
@@ -112,9 +128,9 @@ internal data class StorageToolsUiState(
     val recommended: Set<String> get() = if (mode == StorageToolMode.DUPLICATES) visibleGroups.flatMap { group ->
         val keeper = group.records.firstOrNull { it.uri !in selected } ?: group.records.firstOrNull()
         group.records.filter { it.uri != keeper?.uri }
-    }.map { it.uri }.toSet() else visibleRecords.map { it.uri }.toSet()
+    }.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet() else visibleRecords.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet()
     val allSelected: Boolean get() = recommended.isNotEmpty() && selected.containsAll(recommended)
-    val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.bytes }
+    val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.verifiedBytes }
     fun toggleAllSelection(): StorageToolsUiState {
         if (running) return this
         val visible = visibleRecords.map { it.uri }.toSet()
@@ -123,7 +139,7 @@ internal data class StorageToolsUiState(
     fun toggleSelection(key: String): StorageToolsUiState {
         if (running) return this
         if (key in selected) return copy(selected = selected - key)
-        if (visibleRecords.none { it.uri == key }) return this
+        if (visibleRecords.none { it.uri == key && it.verifiedBytes > 0 }) return this
         if (mode == StorageToolMode.DUPLICATES) {
             val group = duplicateGroups.firstOrNull { it.records.any { r -> r.uri == key } } ?: return this
             if (group.records.count { it.uri !in selected } <= 1) return copy(status = "每组需保留一份，可先取消另一份的勾选")
@@ -137,7 +153,8 @@ internal fun StorageToolsScreen(
     state: StorageToolsUiState, onBack: () -> Unit, onScan: () -> Unit, onToggle: (String) -> Unit,
     onDelete: () -> Unit, onOpenPermission: () -> Unit, onToggleAll: () -> Unit = {}, onStop: () -> Unit = {},
     onQuery: (String) -> Unit = {}, onCategory: (String?) -> Unit = {}, onSort: (StorageSort) -> Unit = {},
-    onThreshold: (Long) -> Unit = {}, onOpen: (StorageFileRecord) -> Unit = {}
+    onThreshold: (Long) -> Unit = {}, onOpen: (StorageFileRecord) -> Unit = {},
+    onReconnect: () -> Unit = {}, onLocalMode: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
@@ -151,7 +168,8 @@ internal fun StorageToolsScreen(
             }
         } },
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
-            state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected, true, onToggleAll, onDelete,
+            state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected,
+            state.recommended.isNotEmpty(), onToggleAll, onDelete,
             cleanLabel = "删除已选 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -163,15 +181,17 @@ internal fun StorageToolsScreen(
                                 Text(storageCategoryLabel(state.category), style = MaterialTheme.typography.titleMedium)
                                 Text("${visible.size} 个文件", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            BaiZeMetric(Formatter.formatFileSize(context, visible.sumOf { it.bytes }), Modifier.widthIn(max = 168.dp))
+                            BaiZeMetric(Formatter.formatFileSize(context, visible.sumOf { it.verifiedBytes }), Modifier.widthIn(max = 168.dp))
                         }
-                        if (state.status.startsWith("已删除") || state.status.startsWith("已停止"))
+                        if (state.outcomes.isNotEmpty() || state.status.startsWith("已停止"))
                             Text(state.status, style = MaterialTheme.typography.bodySmall)
+                        if (state.coverage.isNotBlank()) Text(state.coverage, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else DetailGlassPanel {
                     val bytes = if (state.mode == StorageToolMode.DUPLICATES) state.duplicateGroups.sumOf { it.reclaimableBytes }
-                        else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.bytes } else visible.sumOf { it.bytes }
-                    Text(if (state.mode == StorageToolMode.DUPLICATES) "可释放空间" else if (state.mode == StorageToolMode.ANALYSIS) "已索引文件占用" else "当前结果占用",
+                        else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
+                    Text(if (state.mode == StorageToolMode.DUPLICATES) "可释放空间" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BaiZeMetric(Formatter.formatFileSize(context, bytes))
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -194,6 +214,13 @@ internal fun StorageToolsScreen(
                         state.allRecords.isEmpty() -> GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true) }
                 }
             }
+            if (state.protectionMessage.isNotBlank() && !state.running) item {
+                DetailGlassPanel {
+                    Text(state.protectionMessage, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onReconnect) { Text("连接保护服务") }
+                    if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅使用本地保护规则") }
+                }
+            }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null) {
                 item { StorageComposition(state.buckets) }
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
@@ -209,10 +236,10 @@ internal fun StorageToolsScreen(
                     item(key = "group-${group.key}-${group.bytesEach}") { DetailSectionHeader("重复组 ${index + 1}", "${group.records.size} 个 · 最多释放 ${Formatter.formatFileSize(context, group.reclaimableBytes)}") }
                     items(group.records, key = { "dup-${it.uri}" }) { record ->
                         val keeper = record.uri !in state.selected && group.records.count { it.uri !in state.selected } == 1
-                        StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) })
+                        StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri])
                     }
                 }
-            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }) }
+            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri]) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 item { DetailEmptyState(if (state.failed) "扫描未完成" else "没有符合条件的文件", if (state.failed) "请检查权限并重新扫描。" else "可调整筛选条件，或重新扫描。") }
             }
@@ -250,12 +277,32 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
 }
 
 @Composable
-private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled: Boolean, keeper: Boolean, onClick: () -> Unit, onOpen: () -> Unit) {
+private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled: Boolean, keeper: Boolean, onClick: () -> Unit, onOpen: () -> Unit,
+    outcome: StorageDeleteOutcome? = null) {
     val size = Formatter.formatFileSize(LocalContext.current, record.bytes)
     val date = if (record.modifiedSeconds > 0) android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", record.modifiedSeconds * 1000).toString() else "时间未知"
-    val summary = "${if (keeper) "保留副本 · " else ""}${storageSource(record)} · $date"
+    val reason = outcome?.reason ?: if (record.verifiedBytes == 0L) "待核对 · 文件身份未取得，不可勾选" else ""
+    val summary = if (reason.isNotBlank()) reason else "${if (keeper) "保留副本 · " else ""}${storageSource(record)} · $date"
     DetailResultRow(record.name, size, summary, record.path, "$size · ${storageCategoryLabel(storageCategory(record))}\n$summary\n\n${record.path}",
-        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled, onToggle = onClick, onOpen = onOpen)
+        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && record.verifiedBytes > 0, onToggle = onClick, onDetails = onOpen)
+}
+
+@Composable
+internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDeleteOutcome?, diagnosticBusy: Boolean,
+    diagnostic: String, onDismiss: () -> Unit, onOpen: () -> Unit, onDiagnose: () -> Unit, onCopy: (String) -> Unit) {
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("文件详情") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(record.name, style = MaterialTheme.typography.titleMedium)
+            Text("${Formatter.formatFileSize(LocalContext.current, record.bytes)} · ${storageCategoryLabel(storageCategory(record))}")
+            Text(outcome?.reason ?: if (record.verifiedBytes > 0) "扫描时已核对文件身份，删除前会再次验证" else "文件身份尚未核对，未计入可处理容量")
+            androidx.compose.foundation.text.selection.SelectionContainer { Text(record.path, style = MaterialTheme.typography.bodySmall) }
+            Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
+            TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
+                Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
+            }
+        }
+    }, confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("关闭") } })
 }
 
 private fun storageIcon(key: String): ImageVector = when (key) { "image" -> Icons.Rounded.Image; "video" -> Icons.Rounded.Movie

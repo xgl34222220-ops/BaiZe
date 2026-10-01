@@ -33,7 +33,8 @@ internal object ApkFileReadDiagnostics {
 
     @Suppress("DEPRECATION")
     fun collect(context: Context, uriString: String, path: String, remote: IProfileRootService?,
-        scanIdentity: ApkFileIdentity? = null, cancellation: android.os.CancellationSignal? = null): String {
+        scanIdentity: ApkFileIdentity? = null, cancellation: android.os.CancellationSignal? = null,
+        indexedFile: Boolean = false): String {
         cancellation?.throwIfCanceled()
         val report = JSONObject().put("diagnosticVersion", 1).put("appVersionCode", BuildConfig.VERSION_CODE)
             .put("androidApi", Build.VERSION.SDK_INT).put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
@@ -68,12 +69,14 @@ internal object ApkFileReadDiagnostics {
         else try {
             val ping = remote.ping()
             val version = JSONObject(ping)
+            val supported = if (indexedFile) version.optInt("uid", -1) == 0 && version.optBoolean("root") &&
+                version.optInt("indexedFileEvidenceVersion") == 1 else ApkRootFileEvidence.supported(ping)
             val root = JSONObject().put("connected", true).put("uid", version.optInt("uid", -1))
                 .put("rootVersionCode", version.optLong("rootVersionCode", -1L))
                 .put("moduleVersionCode", version.opt("moduleVersionCode") ?: JSONObject.NULL)
-                .put("fileEvidenceSupported", ApkRootFileEvidence.supported(ping))
-            if (ApkRootFileEvidence.supported(ping)) root.put("file", JSONObject(RootServiceClients.profileExchange(
-                remote, context.cacheDir, "getApkFileEvidence", JSONArray().put(path))))
+                .put("fileEvidenceSupported", supported)
+            if (supported) root.put("file", JSONObject(RootServiceClients.profileExchange(
+                remote, context.cacheDir, if (indexedFile) "getIndexedFileEvidence" else "getApkFileEvidence", JSONArray().put(path))))
             else root.put("note", "当前清理服务不支持文件身份诊断，请重新连接服务后重扫")
             report.put("root", root)
         } catch (error: Exception) { report.put("root", failure(error).put("connected", false)) }

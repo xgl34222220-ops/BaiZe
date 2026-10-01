@@ -3,6 +3,7 @@
     <application>
         <activity android:name=".ApkArchiveDeviceProbeActivity" android:exported="false" />
         <activity android:name=".ApkDeletionDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".StorageDeletionDeviceProbeActivity" android:exported="false" />
         <activity android:name=".ApkPermissionDeviceProbeActivity" android:exported="false" android:launchMode="singleTop" />
     </application>
 </manifest>

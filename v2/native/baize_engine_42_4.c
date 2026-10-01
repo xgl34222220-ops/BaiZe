@@ -1108,7 +1108,7 @@ static bool safe_relative_tail(const char *tail) {
     return true;
 }
 
-static bool cache_path_matches_package(const Options *o, const char *path, const char *pkg) {
+static bool cache_path_matches_package(const Options *o, const char *path, const char *pkg, size_t *root_length) {
     if (!path || !pkg || !safe_package(pkg)) return false;
     const char *cursor = NULL;
     size_t data_length = strlen(o->data_root);
@@ -1135,7 +1135,9 @@ static bool cache_path_matches_package(const Options *o, const char *path, const
     if (!next_segment(&cursor, segment, sizeof(segment)) || strcmp(segment, pkg) != 0) return false;
     if (!next_segment(&cursor, segment, sizeof(segment)) ||
         (strcmp(segment, "cache") != 0 && strcmp(segment, "code_cache") != 0)) return false;
-    return safe_relative_tail(cursor);
+    if (!safe_relative_tail(cursor)) return false;
+    if (root_length) *root_length = (size_t)(cursor - path) - 1U;
+    return true;
 }
 typedef struct {
     char *field[10];
@@ -1165,6 +1167,71 @@ static bool stat_matches_manifest(const struct stat *st, uint64_t dev, uint64_t 
            (uint64_t)st->st_ctim.tv_sec == ctime_sec &&
            (uint64_t)st->st_ctim.tv_nsec == ctime_nsec;
 }
+
+typedef struct {
+    char *root;
+    uint64_t authorized, cleaned, changed, missing, protected, failed;
+} CacheOutcome;
+typedef struct { CacheOutcome *items; size_t count, capacity; } CacheOutcomes;
+
+/* Keep candidates in the scan's cache-root unit. Report TSV paths are sanitized
+ * for display and must never be used to reconstruct identities or group keys. */
+static CacheOutcome *cache_outcome(const Options *o, CacheOutcomes *outcomes, const ManifestRecord *record) {
+    const char *path = record->field[9];
+    size_t length = strlen(path);
+    (void)cache_path_matches_package(o, path, record->field[0], &length);
+    for (size_t i = outcomes->count; i > 0U; --i) {
+        CacheOutcome *item = &outcomes->items[i - 1U];
+        if (strlen(item->root) == length && memcmp(item->root, path, length) == 0) return item;
+    }
+    if (outcomes->count == outcomes->capacity) {
+        size_t capacity = outcomes->capacity ? outcomes->capacity * 2U : 32U;
+        CacheOutcome *items = realloc(outcomes->items, capacity * sizeof(*items));
+        if (!items) die("out of memory");
+        outcomes->items = items;
+        outcomes->capacity = capacity;
+    }
+    CacheOutcome *item = &outcomes->items[outcomes->count++];
+    memset(item, 0, sizeof(*item));
+    item->root = strndup(path, length);
+    if (!item->root) die("out of memory");
+    return item;
+}
+
+static void free_cache_outcomes(CacheOutcomes *outcomes) {
+    for (size_t i = 0; i < outcomes->count; ++i) free(outcomes->items[i].root);
+    free(outcomes->items);
+}
+
+static int write_cache_outcomes(const Options *o, const CacheOutcomes *outcomes) {
+    uint64_t processed = 0U, cleaned = 0U, changed = 0U, missing = 0U, protected = 0U, partial = 0U, failed = 0U;
+    uint64_t changed_files = 0U, missing_files = 0U;
+    for (size_t i = 0; i < outcomes->count; ++i) {
+        const CacheOutcome *item = &outcomes->items[i];
+        uint64_t done = item->cleaned + item->changed + item->missing + item->protected + item->failed;
+        changed_files += item->changed;
+        missing_files += item->missing;
+        if (done == 0U) continue;
+        processed++;
+        if (done < item->authorized || (item->cleaned && item->cleaned != item->authorized)) partial++;
+        else if (item->cleaned == item->authorized) cleaned++;
+        else if (item->failed) failed++;
+        else if (item->changed) changed++;
+        else if (item->protected) protected++;
+        else missing++;
+    }
+    FILE *file = fopen(o->summary_path, "a");
+    if (!file) return 71;
+    fprintf(file, "outcome_schema=cache-root-outcomes-v1\nauthorized_candidates=%zu\nprocessed_candidates=%" PRIu64
+            "\ncleaned_candidates=%" PRIu64 "\nchanged_candidates=%" PRIu64 "\nmissing_candidates=%" PRIu64
+            "\nprotected_candidates=%" PRIu64 "\npartial_candidates=%" PRIu64 "\nfailed_candidates=%" PRIu64
+            "\nchanged_files=%" PRIu64 "\nmissing_files=%" PRIu64 "\n",
+            outcomes->count, processed, cleaned, changed, missing, protected, partial, failed, changed_files, missing_files);
+    int result = ferror(file) ? 71 : 0;
+    if (fclose(file) != 0) result = 71;
+    return result;
+}
+
 static int clean_cache_snapshot(const Options *o) {
     if (!o->manifest_path || !o->report_path || !o->summary_path) die("missing cache clean paths");
     load_lines(o->whitelist_path, &g_whitelist, true);
@@ -1177,11 +1244,16 @@ static int clean_cache_snapshot(const Options *o) {
         return 71;
     }
     ManifestRecord record = {0};
+    CacheOutcomes outcomes = {0};
     uint64_t total = 0;
     int read_code;
-    while ((read_code = manifest_record_read(manifest, &record)) == 1) total++;
+    while ((read_code = manifest_record_read(manifest, &record)) == 1) {
+        total++;
+        cache_outcome(o, &outcomes, &record)->authorized++;
+    }
     if (read_code < 0) {
         manifest_record_free(&record);
+        free_cache_outcomes(&outcomes);
         fclose(manifest);
         fclose(report);
         return 7;
@@ -1196,6 +1268,7 @@ static int clean_cache_snapshot(const Options *o) {
         const char *category = record.field[1];
         const char *path = record.field[9];
         if (stop_requested(o)) { result = 9; break; }
+        CacheOutcome *outcome = cache_outcome(o, &outcomes, &record);
         if (current == 1U || current % 128U == 0U || current == total) {
             atomic_progress(o, "cache-clean", "C 原生校验并消费不可变缓存快照", current, total, path);
         }
@@ -1209,10 +1282,11 @@ static int clean_cache_snapshot(const Options *o) {
             parse_u64_value(record.field[7], &ctime_sec) &&
             parse_u64_value(record.field[8], &ctime_nsec);
         if (!metadata_ok || size > o->max_file_bytes ||
-            !cache_path_matches_package(o, path, pkg) ||
+            !cache_path_matches_package(o, path, pkg, NULL) ||
             package_whitelisted(pkg) || whitelist_conflict(path)) {
             totals.skipped++;
             totals.protected_items++;
+            outcome->protected++;
             report_row(report, "protected", "low", category, 1, 0, path);
             continue;
         }
@@ -1220,26 +1294,43 @@ static int clean_cache_snapshot(const Options *o) {
         struct stat second_stat;
         totals.visited_files++;
         if (lstat(path, &first_stat) != 0) {
-            totals.skipped++;
-            report_row(report, "missing", "low", category, 1, 0, path);
+            if (errno == ENOENT) {
+                totals.skipped++; outcome->missing++;
+                report_row(report, "missing", "low", category, 1, 0, path);
+            } else {
+                totals.errors++; outcome->failed++; result = 8;
+                report_row(report, "failed", "low", category, 1, 0, path);
+            }
             continue;
         }
         if (!stat_matches_manifest(&first_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
             totals.skipped++;
             totals.protected_items++;
             totals.protected_bytes += size;
+            outcome->changed++;
             report_row(report, "changed", "low", category, 1, size, path);
             continue;
         }
-        if (lstat(path, &second_stat) != 0 ||
-            !stat_matches_manifest(&second_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
+        if (lstat(path, &second_stat) != 0) {
+            if (errno == ENOENT) {
+                totals.skipped++; outcome->missing++;
+                report_row(report, "missing", "low", category, 1, 0, path);
+            } else {
+                totals.errors++; outcome->failed++; result = 8;
+                report_row(report, "failed", "low", category, 1, 0, path);
+            }
+            continue;
+        }
+        if (!stat_matches_manifest(&second_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
             totals.skipped++;
             totals.protected_items++;
             totals.protected_bytes += size;
+            outcome->changed++;
             report_row(report, "changed", "low", category, 1, size, path);
             continue;
         }
         if (unlink(path) == 0) {
+            outcome->cleaned++;
             totals.files++;
             totals.bytes += size;
             totals.candidates++;
@@ -1247,6 +1338,8 @@ static int clean_cache_snapshot(const Options *o) {
             report_row(report, "cleaned", "low", category, 1, size, path);
         } else {
             totals.errors++;
+            outcome->failed++;
+            result = 8;
             report_row(report, "failed", "low", category, 1, size, path);
         }
     }
@@ -1256,6 +1349,8 @@ static int clean_cache_snapshot(const Options *o) {
     fclose(report);
     totals.targets = total;
     write_summary(o, &totals);
+    if (write_cache_outcomes(o, &outcomes) != 0) result = 71;
+    free_cache_outcomes(&outcomes);
     return result;
 }
 
