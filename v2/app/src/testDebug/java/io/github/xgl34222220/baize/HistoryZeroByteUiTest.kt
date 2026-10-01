@@ -10,6 +10,8 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.history.miuix.HistoryScreenMiuix
+import io.github.xgl34222220.baize.ui.history.miuix.VideoHistoryScreenMiuix
+import io.github.xgl34222220.baize.ui.history.material.HistoryScreenMaterial
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -23,6 +25,33 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HistoryZeroByteUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test fun directoryOnlyMiuixHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(0)
+    @Test fun directoryOnlyMaterialHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(1)
+    @Test fun directoryOnlyVideoHistoryDoesNotTurnDirectoriesIntoFiles() = directoryHistory(2)
+    @Test fun zeroByteFilesAndDirectoriesKeepSeparateActualHistoryCounts() = directoryHistory(0, files = 2)
+
+    private fun directoryHistory(style: Int, files: Int = 0) {
+        val state = HistoryUiState("空目录清理完成", "2026-10-01 12:00:00", 1, 0, 0, 0, 3, 0, 1,
+            emptyList(), emptyList(), emptyList(), listOf(HistoryUiItem("空目录清理", "2026-10-01 12:00:00",
+                "手动", "空目录清理完成", 0, files, 3, 0, true)))
+        val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false)
+        val actions = HistoryUiActions(onRefresh = {}, onClearHistory = {}, onReviewProtected = {})
+        compose.setContent {
+            BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
+                when (style) {
+                    0 -> HistoryScreenMiuix(state, actions)
+                    1 -> HistoryScreenMaterial(state, actions)
+                    else -> VideoHistoryScreenMiuix(state, actions)
+                }
+            } }
+        }
+        compose.onAllNodesWithText("$files 个文件 · 3 个目录", substring = true).onFirst().assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("空目录清理"))
+        compose.onAllNodesWithText("$files 个文件 · 3 个目录").onLast().assertIsDisplayed()
+        compose.onAllNodesWithText("未发现可清理内容").assertCountEquals(0)
+        compose.onAllNodesWithText("暂无最近结果").assertCountEquals(0)
+    }
 
     @Test fun zeroByteAppIsCollapsedEvenWhenItHasFiles() {
         val state = HistoryUiState(

@@ -238,7 +238,7 @@ internal class AuditRepository(
         )
         val bytes = number(result, latest, "deletedBytes", "quarantinedBytes", "bytes").coerceAtLeast(0L)
         val files = number(result, latest, "deletedFiles", "quarantinedFiles", "files", "regular_files").coerceAtLeast(0L)
-        val directories = number(result, latest, "deletedDirectories", "quarantinedDirectories", "directories", "empty_dirs").coerceAtLeast(0L)
+        val directories = number(result, latest, "deletedDirectories", "quarantinedDirectories", "directories", "empty_dirs", "emptyDirs").coerceAtLeast(0L)
         val selected = number(result, latest, "selected", "selectedCandidates", "totalCandidates").coerceAtLeast(0L)
         val processed = number(result, latest, "cleanedCandidates", "quarantinedCandidates", "purged", "processed").coerceAtLeast(0L)
         val skipped = number(result, latest, "skippedCandidates", "skipped").coerceAtLeast(0L)

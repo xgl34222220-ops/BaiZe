@@ -23,11 +23,18 @@ data class HistoryUiState(
     val protectedItems: List<ProtectedUiItem>,
     val records: List<HistoryUiItem>
 ) {
+    val currentDirectoryCount: Int
+        get() = records.firstOrNull()?.takeIf { it.result == latestResult }?.emptyDirs?.coerceAtLeast(0) ?: 0
+
     val hasCurrentResult: Boolean
-        get() = recentApps.any { it.bytes > 0L } || recentJunk.any { it.bytes > 0L }
+        get() = currentDirectoryCount > 0 || recentApps.any { it.bytes > 0L } || recentJunk.any { it.bytes > 0L }
+
+    val currentCountDescription: String
+        get() = if (currentDirectoryCount > 0) "$currentItemCount 个文件 · $currentDirectoryCount 个目录" else "处理 $currentItemCount 项"
 
     val currentItemCount: Long
-        get() = recentApps.filter { it.bytes > 0L }.sumOf { it.files } +
+        get() = if (currentDirectoryCount > 0) records.first().files.coerceAtLeast(0).toLong()
+        else recentApps.filter { it.bytes > 0L }.sumOf { it.files } +
             recentJunk.filter { it.bytes > 0L }.sumOf { it.files }
 
     val currentBytes: Long

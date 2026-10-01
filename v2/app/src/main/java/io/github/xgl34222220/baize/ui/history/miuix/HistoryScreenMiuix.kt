@@ -253,7 +253,7 @@ private fun CurrentResultGroup(state: HistoryUiState) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (state.hasCurrentResult) "处理 ${state.currentItemCount} 项" else "任务执行后会在这里显示结果",
+                    if (state.hasCurrentResult) state.currentCountDescription else "任务执行后会在这里显示结果",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -540,6 +540,7 @@ private fun RecordCard(record: HistoryUiItem) {
         .joinToString(" · ")
     val summary = sanitizeText(
         when {
+            record.emptyDirs > 0 -> "${record.files.coerceAtLeast(0)} 个文件 · ${record.emptyDirs} 个目录"
             visibleApps.isNotEmpty() -> "涉及 ${visibleApps.size} 个应用 · ${record.files} 项"
             visibleCategories.isNotEmpty() -> visibleCategories.take(2).joinToString(" · ") { it.name }
             record.bytes == 0L && record.files == 0 -> "未发现可清理内容"

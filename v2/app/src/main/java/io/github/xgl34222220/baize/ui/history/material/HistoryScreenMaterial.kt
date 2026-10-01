@@ -245,7 +245,7 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
             Spacer(Modifier.height(10.dp))
             Text(
                 if (state.hasCurrentResult) {
-                    "处理 ${state.currentItemCount} 项 · ${state.lastTaskTime.ifBlank { "时间未记录" }}"
+                    "${state.currentCountDescription} · ${state.lastTaskTime.ifBlank { "时间未记录" }}"
                 } else {
                     "自动任务执行后会在这里显示结果"
                 },
@@ -439,6 +439,7 @@ private fun MaterialRecordRow(record: HistoryUiItem) {
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
     val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
     val summary = when {
+        record.emptyDirs > 0 -> "${record.files.coerceAtLeast(0)} 个文件 · ${record.emptyDirs} 个目录"
         record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
         record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
         record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
