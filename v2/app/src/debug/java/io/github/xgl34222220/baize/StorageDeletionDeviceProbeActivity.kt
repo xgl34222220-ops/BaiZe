@@ -31,8 +31,9 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val root = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                     "baize-storage-delete-probe-${UUID.randomUUID()}")
                 check(!root.exists() && root.mkdirs()); owned = root
-                fun create(name: String): File {
+                fun create(name: String, fixedTimestamp: Boolean = false): File {
                     val file = File(root, name).apply { writeBytes(ByteArray(4096) { (it % 251).toByte() }) }
+                    if (fixedTimestamp) check(file.setLastModified(1_500_000_000_000L))
                     val values = ContentValues().apply {
                         put(MediaStore.MediaColumns.DATA, file.path)
                         put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -50,6 +51,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val protected = create("protected.zip")
                 val changed = create("changed.zip")
                 val stale = create("stale.zip")
+                val tickFixture = create("same-tick-observation.zip", fixedTimestamp = true)
                 stage = "capture-real-storage-identities"
                 val before = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(root.path + "/") }
                 fun record(file: File) = before.single { it.path == file.path }.also { check(it.identity != null) }
@@ -67,6 +69,18 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val replacement = File(root, "replacement.tmp").apply { writeBytes(ByteArray(4096) { 9 }); setLastModified(old.modifiedSeconds * 1000) }
                 check(replacement.renameTo(changed))
                 check(StorageMediaRepository.delete(applicationContext, old, { safe }).result == ApkIndexedDeleteResult.CHANGED)
+                // Observe the shared-storage timestamp model independently from /data/user.
+                // Never invoke deletion in this diagnostic; any collision remains explicit evidence.
+                val guard = ApkDeletionGuard.forContext(applicationContext)
+                var sharedStorageTimestampCollision = false
+                for (iteration in 0 until 200) {
+                    val original = checkNotNull(guard.capture(tickFixture.path))
+                    tickFixture.writeBytes(ByteArray(4096) { if (iteration % 2 == 0) 19 else 37 })
+                    check(tickFixture.setLastModified(1_500_000_000_000L))
+                    if (guard.capture(tickFixture.path) == original) {
+                        sharedStorageTimestampCollision = true; break
+                    }
+                }
                 stage = "delete-every-indexed-category"
                 val categories = JSONArray()
                 for (file in selected) {
@@ -82,13 +96,13 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 stage = "stale-row-does-not-become-selectable-capacity"
                 check(stale.delete())
                 val after = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(root.path + "/") }
-                val ghost = after.single { it.path == stale.path }
-                check(ghost.identity == null && ghost.verifiedBytes == 0L)
-                val diagnostic = ApkFileReadDiagnostics.collect(applicationContext, ghost.uri, ghost.path, null, ghost.identity, indexedFile = true)
+                val ghost = after.singleOrNull { it.path == stale.path }
+                check(ghost == null || (ghost.identity == null && ghost.verifiedBytes == 0L))
+                val originalStale = record(stale)
+                val diagnostic = ApkFileReadDiagnostics.collect(applicationContext, originalStale.uri, originalStale.path, null, originalStale.identity, indexedFile = true)
                 File(output, "stale-zip-diagnostic.json").writeText(diagnostic)
                 val parsed = JSONObject(diagnostic)
                 check(parsed.getJSONObject("appPathStat").optInt("errno") == 2)
-                check(parsed.getJSONObject("index").getBoolean("exists"))
                 check(!parsed.getJSONObject("mediaStoreFd").getBoolean("ok"))
                 stage = "duplicate-keeps-one-real-copy"
                 val duplicateA = create("duplicate-a.zip")
@@ -104,6 +118,8 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                     .put("changedSameSizeAndMtimePreserved", changed.isFile)
                     .put("unknownProtectionAndProtectedFilePreserved", protected.isFile)
                     .put("unselectedPreserved", kept.isFile).put("staleIndexNotSelectableOrCounted", true)
+                    .put("platformAlreadyRefreshedDeletedIndex", ghost == null)
+                    .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
                     .put("duplicateContentRecheckedAndOneCopyPreserved", true)
                     .put("input", "run-owned synthetic indexed files; no user files")
             } catch (error: Exception) {

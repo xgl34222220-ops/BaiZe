@@ -113,7 +113,7 @@ class WorkbenchSessionTest {
         val cache = Proxy.newProxyInstance(IBaiZeRootService::class.java.classLoader,
             arrayOf(IBaiZeRootService::class.java)) { _, method, args -> when (method.name) {
                 "scanCandidates" -> """{"snapshotId":"foreground-cache","snapshotExpiresInMs":1800000}"""
-                "getResultPage" -> """{"snapshotId":"foreground-cache","offset":0,"total":2,"items":[{"packageName":"com.example.fixture","categoryLabel":"应用缓存","path":"/synthetic/selected","bytes":512,"files":1},{"packageName":"com.example.fixture","categoryLabel":"应用缓存","path":"/synthetic/retained","bytes":1024,"files":1}]}"""
+                "getResultPage" -> """{"snapshotId":"foreground-cache","offset":0,"total":3,"items":[{"packageName":"com.example.fixture","categoryLabel":"应用缓存","path":"/synthetic/selected","bytes":512,"files":1,"complete":true},{"packageName":"com.example.fixture","categoryLabel":"应用缓存","path":"/synthetic/retained","bytes":1024,"files":1,"complete":true},{"packageName":"com.example.fixture","categoryLabel":"应用缓存","path":"/synthetic/incomplete","bytes":4096,"files":2,"complete":false}]}"""
                 "cleanSelected" -> {
                     cleanups.incrementAndGet()
                     submittedSnapshot.set(args!![0] as String)
@@ -129,7 +129,13 @@ class WorkbenchSessionTest {
         state(session, WorkbenchUiState(profileConnected = true, cacheConnected = true, scanProfile = "cache"))
         session.runScan()
         await(dispatcher) { session.screenState.scanReady }
-        assertEquals(2, session.screenState.items.size)
+        assertEquals(3, session.screenState.items.size)
+        val incomplete = session.screenState.items.single { it.path == "/synthetic/incomplete" }
+        assertFalse(incomplete.selectable)
+        assertEquals(0L, incomplete.bytes)
+        assertTrue(incomplete.reason.contains("不计入可释放容量"))
+        session.toggleItem(incomplete.id)
+        assertFalse(incomplete.id in session.screenState.selectedIds)
         session.clearSelection()
         session.toggleItem(session.screenState.items.single { it.path == "/synthetic/selected" }.id)
         session.cleanSelection()

@@ -110,8 +110,9 @@ internal object ApkMediaStoreIndex {
                 while (cursor.moveToNext()) {
                     cancellationSignal.throwIfCanceled()
                     val id = cursor.getLong(idColumn)
-                    val path = cursor.getString(dataColumn)?.trim().orEmpty()
-                    val name = if (nameColumn >= 0) cursor.getString(nameColumn)?.trim().orEmpty() else ""
+                    // DATA is a file identity. Whitespace is legal inside a filename.
+                    val path = cursor.getString(dataColumn).orEmpty()
+                    val name = if (nameColumn >= 0) cursor.getString(nameColumn).orEmpty() else ""
                     val safeName = name.ifBlank { path.substringAfterLast('/') }
                     val extension = safeName.substringAfterLast('.', "").lowercase()
                     if (path.isBlank() || extension !in extensions) continue

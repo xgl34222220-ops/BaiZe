@@ -27,6 +27,7 @@ internal class ForegroundCacheEngine(
     private val cancelled: AtomicBoolean
 ) {
     private var protectionIdentity: AndroidPathIdentity? = null
+    private var manifestBudget = AtomicInteger(100_000)
     data class Item(
         val packageName: String,
         val appName: String,
@@ -37,7 +38,8 @@ internal class ForegroundCacheEngine(
         val directories: Long,
         val complete: Boolean = true,
         val identity: String = "",
-        val incompleteReason: String = ""
+        val incompleteReason: String = "",
+        val frozenTree: FrozenReviewTree.Snapshot? = null
     ) {
         fun json(): JSONObject = JSONObject()
             .put("appName", appName)
@@ -105,6 +107,7 @@ internal class ForegroundCacheEngine(
                 .put("details", details)
                 .put("message", when {
                     cancelled -> "缓存清理已停止"
+                    partialCandidates > 0 || failedCandidates > 0 -> "缓存部分处理完成，未确认或已变化的内容已保留"
                     mutated -> "应用缓存清理完成"
                     skipped > 0 -> "本次缓存已变化或受保护，没有删除文件"
                     else -> "本次未删除任何缓存文件"
@@ -118,12 +121,14 @@ internal class ForegroundCacheEngine(
         val directories: Long,
         val complete: Boolean,
         val identity: String = "",
-        val reason: String = ""
+        val reason: String = "",
+        val frozenTree: FrozenReviewTree.Snapshot? = null
     )
 
 
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
         protectionIdentity = null
+        manifestBudget = AtomicInteger(100_000)
         val started = SystemClock.elapsedRealtime()
         val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
         val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
@@ -181,7 +186,8 @@ internal class ForegroundCacheEngine(
                         directories = stats.directories,
                         complete = stats.complete,
                         identity = stats.identity,
-                        incompleteReason = stats.reason
+                        incompleteReason = stats.reason,
+                        frozenTree = stats.frozenTree
                     )
                     totalBytes += stats.bytes
                     totalFiles += stats.files
@@ -246,7 +252,7 @@ internal class ForegroundCacheEngine(
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "changed", "缓存目录已变化", 0, 0, 0))
                 return@forEachIndexed
             }
-            val result = clearChildren(root, item.identity) { files, bytes ->
+            val result = clearChildren(root, item.frozenTree) { files, bytes ->
                 progress("正在清理 ${item.appName} · $files 个文件", index, snapshot.items.size, item.path)
             }
             deletedBytes += result.bytes
@@ -373,14 +379,26 @@ internal class ForegroundCacheEngine(
     }
 
     private fun measure(root: File, progress: (Long, Long) -> Unit = { _, _ -> }): Stats =
-        SecureCacheTree.measure(root.toPath(), cancelled, 15_000L, 1_000_000L, progress).let {
-            Stats(it.bytes, it.files, it.directories, it.complete, it.identity, it.reason)
+        FrozenReviewTree.capture(root.toPath(), cancelled, 15_000L, 100_000, progress, manifestBudget).let {
+            Stats(it.bytes, it.files, (it.directories - 1).coerceAtLeast(0), it.complete,
+                "original-file-manifest-v2", it.reason, it)
         }
 
-    private fun clearChildren(root: File, identity: String, progress: (Long, Long) -> Unit): Stats =
-        SecureCacheTree.clear(root.toPath(), identity, cancelled, progress).let {
-            Stats(it.bytes, it.files, it.directories, it.complete, it.identity, it.reason)
+    private fun clearChildren(root: File, tree: FrozenReviewTree.Snapshot?, progress: (Long, Long) -> Unit): Stats {
+        if (tree?.root != root.path) return Stats(0, 0, 0, false, reason = "原始逐文件快照缺失，请重新扫描")
+        var files = 0L; var bytes = 0L
+        val result = FrozenReviewTree.delete(tree, false, Long.MAX_VALUE, cancelled, 60_000L, { _, _ -> true },
+            { path, directory, size ->
+                if (!directory) {
+                    files++; bytes += size
+                    if (path.startsWith("/data/media/") || path.startsWith("/storage/")) RootMediaScanQueue.enqueueAsync(context, listOf(path))
+                }
+                progress(files, bytes)
+            })
+        return result.let {
+            Stats(it.bytes, it.files, it.directories, it.complete, reason = it.reason, frozenTree = tree)
         }
+    }
 
     private fun knownCachePath(path: String, packageName: String): Boolean {
         if (!PACKAGE_NAME.matches(packageName)) return false

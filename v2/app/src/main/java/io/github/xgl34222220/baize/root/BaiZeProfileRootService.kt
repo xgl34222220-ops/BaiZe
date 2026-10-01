@@ -28,12 +28,11 @@ class BaiZeProfileRootService : RootService() {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
-    private val apkFastSnapshot by lazy {
-        ApkFastSnapshotRepository(
-            cancelled = coordinator.cancelled,
-            mediaRefresh = { paths -> RootMediaScanQueue.enqueueAsync(this, paths) }
-        )
-    }
+
+    private fun legacyApkSnapshotNotice(): String = JSONObject()
+        .put("success", false).put("error", "legacy_snapshot_unsupported")
+        .put("message", "旧版安装包直删计划已停用；请在新版安装包页面重新核对并选择文件")
+        .toString()
 
     override fun onCreate() {
         super.onCreate()
@@ -79,23 +78,11 @@ class BaiZeProfileRootService : RootService() {
             }
             "prepareApkFastSnapshot" -> {
                 require(arguments.length() == 1)
-                if (coordinator.isBusy()) coordinator.busy("apk-fast-scan") else
-                    coordinator.runExclusive(
-                        operation = "apk-fast-scan",
-                        phase = "正在校验系统文件索引",
-                        failureCode = "apk_fast_snapshot_failed"
-                    ) { apkFastSnapshot.prepare(arguments.getString(0)) }
+                legacyApkSnapshotNotice()
             }
             "cleanApkFastSnapshot" -> {
                 require(arguments.length() == 0)
-                if (coordinator.isBusy()) coordinator.busy("apk-fast-clean") else
-                    coordinator.runExclusive(
-                        operation = "apk-fast-clean",
-                        phase = "正在快速清理安装包",
-                        failureCode = "apk_fast_clean_failed"
-                    ) {
-                        apkFastSnapshot.clean()
-                    }
+                legacyApkSnapshotNotice()
             }
             "getTaskHistory" -> { require(arguments.length() == 1); getTaskHistory(arguments.getInt(0)) }
             "getTaskHistoryPage" -> {

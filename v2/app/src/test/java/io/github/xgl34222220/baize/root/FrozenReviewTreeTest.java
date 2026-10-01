@@ -22,6 +22,15 @@ public class FrozenReviewTreeTest {
         Files.write(changed,"new".getBytes());Files.setLastModifiedTime(changed,time);FrozenReviewTree.Result r=clean(s,false);
         assertEquals(0,r.files);assertTrue(Files.exists(changed));assertFalse(r.complete);
     }
+    @Test public void equalMetadataWithinOneTimestampTickStillRequiresOriginalContents() throws Exception {
+        Path root=root();Path changed=file(root,"one.bin","old");FrozenReviewTree.Snapshot before=capture(changed);
+        Files.write(changed,"new".getBytes());FrozenReviewTree.Snapshot after=capture(changed);
+        org.json.JSONObject proof=FrozenReviewTree.toJson(before);
+        proof.getJSONArray("entries").getJSONObject(0).put("stamp",after.entries.get(0).stamp);
+        FrozenReviewTree.Result r=clean(FrozenReviewTree.fromJson(proof),true);
+        assertEquals(0,r.files);assertEquals("new",new String(Files.readAllBytes(changed)));
+        assertEquals("contents_changed_after_review",r.reason);
+    }
     @Test public void parentReplacementAndSymlinksNeverReachOutsideFiles() throws Exception {
         Path root=root();file(root,"nested/one.bin","old");FrozenReviewTree.Snapshot s=capture(root);Path outside=root();Path keep=file(outside,"one.bin","outside");
         Files.move(root.resolve("nested"),root.resolve("moved"));Files.createSymbolicLink(root.resolve("nested"),outside);FrozenReviewTree.Result r=clean(s,false);

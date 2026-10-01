@@ -16,6 +16,8 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include "cleanup_media_output.h"
+#include "baize_content_fingerprint.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -37,7 +39,7 @@ typedef struct {
     const char *package_whitelist_path, *rules_path, *report_path, *targets_path;
     const char *items_path, *manifest_path, *summary_path, *progress_path, *stop_path;
     const char *corpse_report_path, *corpse_targets_path, *corpse_summary_path;
-    const char *risk_overrides_path;
+    const char *risk_overrides_path, *deleted_nul_path;
     /* index-files 模式：共享存储索引 */
     const char *index_list_path, *index_seen_path, *index_records_path;
     const char *index_roots_path, *index_coverage_path;
@@ -520,6 +522,7 @@ static void parse_options(int argc, char **argv, Options *o) {
         else if (strcmp(a, "--targets") == 0) o->targets_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--items") == 0) o->items_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--manifest") == 0) o->manifest_path = arg_value(argc, argv, &i);
+        else if (strcmp(a, "--deleted-nul") == 0) o->deleted_nul_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--summary") == 0) o->summary_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--progress") == 0) o->progress_path = arg_value(argc, argv, &i);
         else if (strcmp(a, "--stop") == 0) o->stop_path = arg_value(argc, argv, &i);
@@ -597,6 +600,12 @@ static int scan_corpses(const Options *o) {
                 t.visited_files += st.visited_files;
                 t.visited_dirs += st.visited_dirs;
                 uint64_t item_count = st.files ? st.files : 1;
+                if (!strcmp(sub[si], "media")) {
+                    t.protected_items += item_count;
+                    t.protected_bytes += st.bytes;
+                    report_row(rep, "protected", "high", "个人媒体未确认", item_count, st.bytes, path);
+                    continue;
+                }
                 if (st.oversized || st.mount_conflict) {
                     t.protected_items += item_count;
                     t.protected_bytes += st.bytes;
@@ -672,6 +681,16 @@ static bool write_nul_u64(FILE *file, uint64_t value) {
     snprintf(text, sizeof(text), "%" PRIu64, value);
     return write_nul_field(file, text);
 }
+static int clean_parent_fd(const char *path, char **storage, const char **name);
+typedef struct { const Options *options; uint64_t deadline; } ContentBudget;
+static int content_hash_abort(void *opaque) {
+    ContentBudget *budget = opaque;
+    if (stop_requested(budget->options)) return 9;
+    uint64_t now = monotonic_ms();
+    if (now >= budget->deadline || (budget->options->global_budget_ms &&
+        now >= g_started_ms + budget->options->global_budget_ms)) return 124;
+    return 0;
+}
 static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o, int days,
                               FILE *manifest, const char *pkg, const char *category,
                               Stats *stats, bool may_contain_whitelist, unsigned depth) {
@@ -699,6 +718,15 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
             stats->protected_bytes += size;
             return 0;
         }
+        char *parent_storage = NULL;
+        const char *name = NULL;
+        int parent = clean_parent_fd(path, &parent_storage, &name), content = -1;
+        char digest[65]; ContentBudget budget = {o, monotonic_ms() + 15000U};
+        int hash_code = parent < 0 ? 8 : baize_hash_at(parent, name, &st, digest, &content, content_hash_abort, &budget);
+        if (content >= 0) close(content);
+        if (parent >= 0) close(parent);
+        free(parent_storage);
+        if (hash_code) { stats->incomplete = true; stats->timed_out = hash_code == 124; return hash_code; }
         stats->files++;
         stats->bytes += size;
         if (!write_nul_field(manifest, pkg) || !write_nul_field(manifest, category) ||
@@ -709,7 +737,7 @@ static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o
             !write_nul_u64(manifest, (uint64_t)st.st_mtim.tv_nsec) ||
             !write_nul_u64(manifest, (uint64_t)st.st_ctim.tv_sec) ||
             !write_nul_u64(manifest, (uint64_t)st.st_ctim.tv_nsec) ||
-            !write_nul_field(manifest, path)) {
+            !write_nul_field(manifest, path) || !write_nul_field(manifest, digest)) {
             stats->incomplete = true;
             return -1;
         }
@@ -1021,6 +1049,18 @@ static int scan_external_one_pass(const Options *o) {
                     if (installed_index_contains(user_entry->d_name, entry->d_name, &cache_totals)) continue;
                     char path[PATH_MAX];
                     if (!path_join(path, sizeof(path), secondary_root, entry->d_name)) continue;
+                    if (!strcmp(secondary[si], "media")) {
+                        if (!is_dir_nofollow(path)) { corpse_totals.skipped++; continue; }
+                        Stats personal;
+                        int code = stat_tree(path, o, 0, &personal);
+                        if (code == 9) { closedir(entries); closedir(users); goto stopped; }
+                        if (code < 0 || personal.incomplete) corpse_totals.errors++;
+                        uint64_t items = personal.files ? personal.files : 1U;
+                        corpse_totals.protected_items += items;
+                        corpse_totals.protected_bytes += personal.bytes;
+                        report_row(corpse_report, "protected", "high", "个人媒体未确认", items, personal.bytes, path);
+                        continue;
+                    }
                     char category[64];
                     snprintf(category, sizeof(category), "卸载残留:%s", secondary[si]);
                     int code = corpse_candidate(o, corpse_report, corpse_targets, &corpse_totals,
@@ -1140,20 +1180,20 @@ static bool cache_path_matches_package(const Options *o, const char *path, const
     return true;
 }
 typedef struct {
-    char *field[10];
-    size_t capacity[10];
+    char *field[11];
+    size_t capacity[11];
 } ManifestRecord;
 static void manifest_record_free(ManifestRecord *record) {
-    for (size_t i = 0; i < 10U; i++) free(record->field[i]);
+    for (size_t i = 0; i < 11U; i++) free(record->field[i]);
     memset(record, 0, sizeof(*record));
 }
 static int manifest_record_read(FILE *file, ManifestRecord *record) {
     int first = read_nul_field(file, &record->field[0], &record->capacity[0]);
     if (first <= 0) return first;
-    for (size_t i = 1; i < 10U; i++) {
+    for (size_t i = 1; i < 11U; i++) {
         if (read_nul_field(file, &record->field[i], &record->capacity[i]) != 1) return -1;
     }
-    return 1;
+    return baize_sha256_hex_valid(record->field[10]) ? 1 : -1;
 }
 static bool stat_matches_manifest(const struct stat *st, uint64_t dev, uint64_t ino, uint64_t size,
                                   uint64_t mtime_sec, uint64_t mtime_nsec,
@@ -1232,6 +1272,26 @@ static int write_cache_outcomes(const Options *o, const CacheOutcomes *outcomes)
     return result;
 }
 
+
+/* Keep all path ancestors anchored; lstat on a full path follows ancestor symlinks. */
+static int clean_parent_fd(const char *path, char **storage, const char **name) {
+    if (!path || path[0] != '/' || strlen(path) >= PATH_MAX) { errno = EINVAL; return -1; }
+    *storage = strdup(path);
+    if (!*storage) return -1;
+    int parent = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (parent < 0) { free(*storage); *storage = NULL; return -1; }
+    char *part = *storage + 1, *slash;
+    while ((slash = strchr(part, '/')) != NULL) {
+        *slash = '\0';
+        if (!*part || !strcmp(part, ".") || !strcmp(part, "..")) { close(parent); free(*storage); *storage = NULL; errno = EINVAL; return -1; }
+        int child = openat(parent, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (child < 0) { int saved = errno; close(parent); free(*storage); *storage = NULL; errno = saved; return -1; }
+        close(parent); parent = child; part = slash + 1;
+    }
+    if (!*part || !strcmp(part, ".") || !strcmp(part, "..")) { close(parent); free(*storage); *storage = NULL; errno = EINVAL; return -1; }
+    *name = part; return parent;
+}
+
 static int clean_cache_snapshot(const Options *o) {
     if (!o->manifest_path || !o->report_path || !o->summary_path) die("missing cache clean paths");
     load_lines(o->whitelist_path, &g_whitelist, true);
@@ -1257,6 +1317,10 @@ static int clean_cache_snapshot(const Options *o) {
         fclose(manifest);
         fclose(report);
         return 7;
+    }
+    FILE *deleted = o->deleted_nul_path ? open_media_output(o->deleted_nul_path) : NULL;
+    if (o->deleted_nul_path && !deleted) {
+        manifest_record_free(&record); free_cache_outcomes(&outcomes); fclose(manifest); fclose(report); return 71;
     }
     rewind(manifest);
     Totals totals = {0};
@@ -1290,10 +1354,26 @@ static int clean_cache_snapshot(const Options *o) {
             report_row(report, "protected", "low", category, 1, 0, path);
             continue;
         }
+        char *parent_storage = NULL;
+        const char *name = NULL;
+        int parent_fd = clean_parent_fd(path, &parent_storage, &name);
+        if (parent_fd < 0) {
+            if (errno == ENOENT) {
+                totals.skipped++; outcome->missing++;
+                report_row(report, "missing", "low", category, 1, 0, path);
+            } else if (errno == ELOOP || errno == ENOTDIR || errno == EINVAL) {
+                totals.skipped++; totals.protected_items++; outcome->changed++;
+                report_row(report, "changed", "low", category, 1, size, path);
+            } else {
+                totals.errors++; outcome->failed++; result = 8;
+                report_row(report, "failed", "low", category, 1, 0, path);
+            }
+            continue;
+        }
         struct stat first_stat;
         struct stat second_stat;
         totals.visited_files++;
-        if (lstat(path, &first_stat) != 0) {
+        if (fstatat(parent_fd, name, &first_stat, AT_SYMLINK_NOFOLLOW) != 0) {
             if (errno == ENOENT) {
                 totals.skipped++; outcome->missing++;
                 report_row(report, "missing", "low", category, 1, 0, path);
@@ -1301,6 +1381,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.errors++; outcome->failed++; result = 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
+            close(parent_fd); free(parent_storage);
             continue;
         }
         if (!stat_matches_manifest(&first_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
@@ -1309,9 +1390,26 @@ static int clean_cache_snapshot(const Options *o) {
             totals.protected_bytes += size;
             outcome->changed++;
             report_row(report, "changed", "low", category, 1, size, path);
+            close(parent_fd); free(parent_storage);
             continue;
         }
-        if (lstat(path, &second_stat) != 0) {
+        int content_fd = -1; char digest[65];
+        ContentBudget budget = {o, monotonic_ms() + 15000U};
+        int hash_code = baize_hash_at(parent_fd, name, &first_stat, digest, &content_fd, content_hash_abort, &budget);
+        if (hash_code || strcmp(digest, record.field[10])) {
+            if (hash_code == 0 || hash_code == 7) {
+                totals.skipped++; totals.protected_items++; outcome->changed++;
+                report_row(report, "changed", "low", category, 1, size, path);
+            } else {
+                totals.errors++; outcome->failed++; result = hash_code == 9 ? 9 : 8;
+                report_row(report, "failed", "low", category, 1, 0, path);
+            }
+            if (content_fd >= 0) close(content_fd);
+            close(parent_fd); free(parent_storage);
+            if (hash_code == 9 || hash_code == 124) break;
+            continue;
+        }
+        if (fstatat(parent_fd, name, &second_stat, AT_SYMLINK_NOFOLLOW) != 0) {
             if (errno == ENOENT) {
                 totals.skipped++; outcome->missing++;
                 report_row(report, "missing", "low", category, 1, 0, path);
@@ -1319,6 +1417,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.errors++; outcome->failed++; result = 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
+            close(content_fd); close(parent_fd); free(parent_storage);
             continue;
         }
         if (!stat_matches_manifest(&second_stat, dev, ino, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
@@ -1327,23 +1426,29 @@ static int clean_cache_snapshot(const Options *o) {
             totals.protected_bytes += size;
             outcome->changed++;
             report_row(report, "changed", "low", category, 1, size, path);
+            close(content_fd); close(parent_fd); free(parent_storage);
             continue;
         }
-        if (unlink(path) == 0) {
+        if (unlinkat(parent_fd, name, 0) == 0) {
             outcome->cleaned++;
             totals.files++;
             totals.bytes += size;
             totals.candidates++;
             mark_first_result(&totals);
             report_row(report, "cleaned", "low", category, 1, size, path);
+            if (deleted && fwrite(path, 1, strlen(path) + 1U, deleted) != strlen(path) + 1U) {
+                result = 71; close(content_fd); close(parent_fd); free(parent_storage); break;
+            }
         } else {
             totals.errors++;
             outcome->failed++;
             result = 8;
             report_row(report, "failed", "low", category, 1, size, path);
         }
+        close(content_fd); close(parent_fd); free(parent_storage);
     }
     if (read_code < 0) result = 7;
+    if (deleted && fclose(deleted) != 0) result = 71;
     manifest_record_free(&record);
     fclose(manifest);
     fclose(report);
@@ -2580,7 +2685,112 @@ static int scan_deep(const Options *o) {
     return result;
 }
 
+/* Consume the original apk-scanner stat identity, never snapshot again during clean. */
+static bool apk_stat_time(const char *text, struct timespec *value, const char **end) {
+    int year, month, day, hour, minute, second, zh, zm, consumed = 0;
+    long nanos; char sign;
+    if (sscanf(text, "%d-%d-%d %d:%d:%d.%9ld %c%2d%2d%n", &year, &month, &day,
+               &hour, &minute, &second, &nanos, &sign, &zh, &zm, &consumed) != 10 ||
+        consumed <= 0 || (sign != '+' && sign != '-') || nanos < 0 || nanos > 999999999L ||
+        month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 ||
+        minute < 0 || minute > 59 || second < 0 || second > 60 || zh < 0 || zh > 23 || zm < 0 || zm > 59) return false;
+    const char *fraction = strchr(text, '.');
+    if (!fraction || strspn(fraction + 1, "0123456789") != 9U) return false;
+    struct tm tm = {0};
+    tm.tm_year = year - 1900; tm.tm_mon = month - 1; tm.tm_mday = day;
+    tm.tm_hour = hour; tm.tm_min = minute; tm.tm_sec = second;
+    value->tv_sec = timegm(&tm) - (sign == '+' ? 1 : -1) * (zh * 3600 + zm * 60);
+    value->tv_nsec = nanos; *end = text + consumed;
+    return true;
+}
+static bool apk_stat_matches(const struct stat *st, uint64_t dev, uint64_t ino, uint64_t size,
+                             struct timespec mt, struct timespec ct) {
+    return S_ISREG(st->st_mode) && (uint64_t)st->st_dev == dev && (uint64_t)st->st_ino == ino &&
+        st->st_size >= 0 && (uint64_t)st->st_size == size && st->st_mtim.tv_sec == mt.tv_sec &&
+        st->st_mtim.tv_nsec == mt.tv_nsec && st->st_ctim.tv_sec == ct.tv_sec && st->st_ctim.tv_nsec == ct.tv_nsec;
+}
+typedef struct { uint64_t dev, ino, size; struct timespec mt, ct; const char *digest; } ApkIdentity;
+static bool parse_apk_identity(const char *text, bool require_digest, ApkIdentity *out) {
+    int consumed = 0;
+    if (sscanf(text, "%" SCNu64 ":%" SCNu64 ":%" SCNu64 ":%n", &out->dev, &out->ino, &out->size, &consumed) != 3 || consumed <= 0) return false;
+    const char *next = text + consumed;
+    if (!apk_stat_time(next, &out->mt, &next) || *next++ != ':' || !apk_stat_time(next, &out->ct, &next)) return false;
+    out->digest = NULL;
+    if (!require_digest) return *next == '\0';
+    if (strncmp(next, "|sha256=", 8U)) return false;
+    out->digest = next + 8U;
+    return baize_sha256_hex_valid(out->digest);
+}
+static int unlink_apk_snapshot_item(int argc, char **argv) {
+    if (argc != 5 && argc != 6) return 11;
+    ApkIdentity identity;
+    if (!parse_apk_identity(argv[3], true, &identity)) return 11;
+    char *storage = NULL; const char *name = NULL;
+    int parent = clean_parent_fd(argv[2], &storage, &name);
+    if (parent < 0) return errno == ENOENT ? 10 : (errno == ELOOP || errno == ENOTDIR || errno == EINVAL ? 11 : 12);
+    struct stat first, second;
+    if (fstatat(parent, name, &first, AT_SYMLINK_NOFOLLOW)) { int result = errno == ENOENT ? 10 : 12; close(parent); free(storage); return result; }
+    if (!apk_stat_matches(&first, identity.dev, identity.ino, identity.size, identity.mt, identity.ct)) { close(parent); free(storage); return 11; }
+    FILE *deleted = open_media_output(argv[4]);
+    if (!deleted) { close(parent); free(storage); return 12; }
+    Options hash_options = {0}; hash_options.stop_path = argc == 6 ? argv[5] : NULL; hash_options.global_budget_ms = 180000U;
+    ContentBudget budget = {&hash_options, monotonic_ms() + 15000U};
+    int content = -1; char digest[65];
+    int code = baize_hash_at(parent, name, &first, digest, &content, content_hash_abort, &budget);
+    int result;
+    if (code) result = code == 7 ? 11 : code == 9 || code == 124 ? code : 12;
+    else if (strcmp(digest, identity.digest)) result = 11;
+    else if (fstatat(parent, name, &second, AT_SYMLINK_NOFOLLOW)) result = errno == ENOENT ? 10 : 12;
+    else if (!apk_stat_matches(&second, identity.dev, identity.ino, identity.size, identity.mt, identity.ct)) result = 11;
+    else if (unlinkat(parent, name, 0)) result = errno == ENOENT ? 10 : 12;
+    else result = fwrite(argv[2], 1, strlen(argv[2]) + 1U, deleted) == strlen(argv[2]) + 1U ? 0 : 70;
+    if (content >= 0) close(content);
+    if (fclose(deleted) && result == 0) result = 70;
+    close(parent); free(storage); return result;
+}
+/* Hash all selected APKs in one process, against the original scanner metadata.
+ * On any unreadable/changed/timed-out file no new review snapshot is published. */
+static int hash_apk_snapshot(int argc, char **argv) {
+    if (argc != 7) return 7;
+    uint64_t max_bytes;
+    if (!parse_u64_value(argv[6], &max_bytes)) return 7;
+    FILE *targets = fopen(argv[2], "rb"), *identities = fopen(argv[3], "rb");
+    int output_fd = open(argv[4], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    FILE *out = output_fd < 0 ? NULL : fdopen(output_fd, "wb");
+    if (!targets || !identities || !out) {
+        if (targets) fclose(targets);
+        if (identities) fclose(identities);
+        if (out) fclose(out); else if (output_fd >= 0) close(output_fd);
+        return 71;
+    }
+    char *path = NULL, *text = NULL; size_t pc = 0, tc = 0; int result = 0, read_code;
+    Options hash_options = {0}; hash_options.stop_path = argv[5]; hash_options.global_budget_ms = 180000U;
+    while ((read_code = read_nul_field(targets, &path, &pc)) == 1) {
+        if (read_nul_field(identities, &text, &tc) != 1) { result = 7; break; }
+        ApkIdentity identity;
+        if (!parse_apk_identity(text, false, &identity) || identity.size > max_bytes) { result = 7; break; }
+        char *storage = NULL; const char *name = NULL; int parent = clean_parent_fd(path, &storage, &name), content = -1;
+        struct stat first; char digest[65];
+        ContentBudget budget = {&hash_options, monotonic_ms() + 15000U};
+        if (parent < 0 || fstatat(parent, name, &first, AT_SYMLINK_NOFOLLOW)) result = 8;
+        else if (!apk_stat_matches(&first, identity.dev, identity.ino, identity.size, identity.mt, identity.ct)) result = 7;
+        else result = baize_hash_at(parent, name, &first, digest, &content, content_hash_abort, &budget);
+        if (content >= 0) close(content);
+        if (parent >= 0) close(parent);
+        free(storage);
+        if (result) break;
+        if (fprintf(out, "%s|sha256=%s", text, digest) < 0 || fputc(0, out) == EOF) { result = 71; break; }
+    }
+    if (!result && (read_code < 0 || read_nul_field(identities, &text, &tc) != 0)) result = 7;
+    free(path); free(text); fclose(targets); fclose(identities);
+    if (fclose(out) && !result) result = 71;
+    return result;
+}
+
 int main(int argc, char **argv) {
+    g_started = time(NULL); g_started_ms = monotonic_ms();
+    if (argc > 1 && !strcmp(argv[1], "unlink-apk-snapshot-item")) return unlink_apk_snapshot_item(argc, argv);
+    if (argc > 1 && !strcmp(argv[1], "hash-apk-snapshot")) return hash_apk_snapshot(argc, argv);
     if (argc < 2) die("usage: baize_engine <scan-corpses|scan-cache|scan-external-one-pass|clean-cache-snapshot|scan-deep|scan-storage-index|index-files> [options]");
     g_started = time(NULL);
     g_started_ms = monotonic_ms();

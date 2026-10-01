@@ -445,6 +445,12 @@ class BaiZeRootService : RootService() {
         val itemsFile = File(stateDir, "cache_scan.items.tsv")
         val targetsFile = File(stateDir, "cache_scan.targets")
         val envFile = File(stateDir, "cache_scan.env")
+        val frozenFile = File(stateDir, "cache_scan.frozen.json")
+        val frozen = JSONObject().put("snapshotId", snapshot.id).put("items", JSONObject().apply {
+            snapshot.items.forEach { item -> put(item.path, item.frozenTree?.let(FrozenReviewTree::toJson) ?: JSONObject.NULL) }
+        }).toString()
+        check(frozen.toByteArray().size <= 64 * 1024 * 1024) { "缓存逐文件快照超过保存上限，请缩小扫描范围" }
+        atomicWrite(frozenFile, frozen)
         val itemsText = buildString {
             append("package\tcategory\tfiles\tbytes\tdirectories\tpath\n")
             snapshot.items.forEach { item ->
@@ -488,13 +494,23 @@ class BaiZeRootService : RootService() {
         val envFile = File(stateDir, "cache_scan.env")
         val itemsFile = File(stateDir, "cache_scan.items.tsv")
         val targetsFile = File(stateDir, "cache_scan.targets")
-        if (!envFile.isFile || !itemsFile.isFile || !targetsFile.isFile) {
+        val frozenFile = File(stateDir, "cache_scan.frozen.json")
+        if (!envFile.isFile || !itemsFile.isFile || !targetsFile.isFile || !frozenFile.isFile || frozenFile.length() > 64L * 1024 * 1024) {
             clearSnapshotMemory()
             foregroundSnapshot = null
             return false
         }
         val env = readEnv(envFile)
         val id = env.optString("snapshot_id").trim()
+        val frozen = runCatching { JSONObject(frozenFile.readText()) }.getOrNull() ?: run {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
+        if (frozen.optString("snapshotId") != id) {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
+        val frozenItems = frozen.optJSONObject("items") ?: run {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
         val createdAt = env.optLong("epoch", 0L) * 1000L
         if (id.isBlank() || createdAt <= 0L || System.currentTimeMillis() - createdAt !in 0..SNAPSHOT_MAX_AGE_MS) {
             clearForegroundSnapshot()
@@ -505,6 +521,7 @@ class BaiZeRootService : RootService() {
         val identities = runCatching { JSONObject(env.optString("root_identities", "{}")) }.getOrDefault(JSONObject())
         val appLabels = runCatching { JSONObject(env.optString("app_labels", "{}")) }.getOrDefault(JSONObject())
         val restoredItems = parseItems(itemsFile).map { item ->
+            val tree = FrozenReviewTree.fromJson(frozenItems.optJSONObject(item.path))?.takeIf { it.root == item.path }
             ForegroundCacheEngine.Item(
                 packageName = item.packageName,
                 appName = appLabels.optString(item.packageName, item.packageName),
@@ -513,8 +530,10 @@ class BaiZeRootService : RootService() {
                 bytes = item.bytes,
                 files = item.files,
                 directories = item.directories,
-                complete = incompleteArray != null && item.path !in incompletePaths,
-                identity = identities.optString(item.path)
+                complete = incompleteArray != null && item.path !in incompletePaths && tree != null,
+                identity = identities.optString(item.path),
+                incompleteReason = if (tree == null) "原始逐文件快照缺失，请重新扫描" else "",
+                frozenTree = tree
             )
         }
         val snapshot = ForegroundCacheEngine.Snapshot(
@@ -556,21 +575,13 @@ class BaiZeRootService : RootService() {
     private fun clearForegroundSnapshot() {
         foregroundSnapshot = null
         clearSnapshotMemory()
-        for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv")) {
+        for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv", "cache_scan.frozen.json")) {
             File(RootPaths.FOREGROUND_STATE_DIR, name).delete()
         }
     }
 
     private fun atomicWrite(target: File, content: String) {
-        target.parentFile?.mkdirs()
-        val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
-        temp.writeText(content)
-        if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-            temp.delete()
-        }
-        target.setReadable(true, true)
-        target.setWritable(true, true)
+        RootFileStore.writeAtomic(target, content)
     }
 
     private fun runNativeScan(whitelistJson: String, started: Long): String {

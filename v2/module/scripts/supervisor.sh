@@ -66,6 +66,13 @@ signal_child() { [ -n "${child:-}" ] && kill -USR1 "$child" 2>/dev/null || true;
 stop_all() { touch "$STOP"; [ -n "${heartbeat_pid:-}" ] && kill "$heartbeat_pid" 2>/dev/null || true; [ -n "${child:-}" ] && kill "$child" 2>/dev/null || true; exit 0; }
 trap stop_all INT TERM
 trap signal_child USR1 HUP
+media_worker_pid=
+run_cleanup_media() {
+  [ -d "$STATE_DIR/cleanup-media" ] && [ -f "$SCRIPTDIR/cleanup-media-worker.sh" ] || return 0
+  if [ -n "$media_worker_pid" ] && kill -0 "$media_worker_pid" 2>/dev/null; then return 0; fi
+  BAIZE_MODULE_DIR="$MODDIR" BAIZE_ROOT_STATE_DIR="$STATE_DIR" sh "$SCRIPTDIR/cleanup-media-worker.sh" \
+    >>"$STATE_DIR/logs/cleanup-media.log" 2>&1 & media_worker_pid=$!
+}
 run_autopilot() {
   force=${1:-0}
   [ -f "$AUTOPILOT" ] || return 0
@@ -92,6 +99,7 @@ queue_dispatch_stalled() {
 while [ ! -f "$STOP" ]; do
   [ -f "$SCHEDULER" ] || { write_state failed 127 scheduler_missing; sleep 60; continue; }
   run_autopilot 1
+  run_cleanup_media
   write_state starting 0 launching_scheduler
   BAIZE_SUPERVISOR_INSTANCE="$INSTANCE_ID" sh "$SCHEDULER" >>"$STATE_DIR/logs/supervisor-scheduler.log" 2>&1 & child=$!
   write_state running 0 scheduler_running
@@ -99,6 +107,7 @@ while [ ! -f "$STOP" ]; do
     sleep "$HEARTBEAT_SECONDS" & heartbeat_pid=$!; wait "$heartbeat_pid" 2>/dev/null || true; heartbeat_pid=
     if kill -0 "$child" 2>/dev/null; then
       run_autopilot 0
+      run_cleanup_media
       backoff=1
       if queue_dispatch_stalled; then
         if [ "$RESCUE_AGE" -ge "$QUEUE_RESTART_AFTER_SECONDS" ]; then write_state recovering 0 "scheduler_queue_stalled_${RESCUE_AGE}s"; kill "$child" 2>/dev/null || true

@@ -167,6 +167,15 @@ class PersistentCleanPlanRootService : RootService() {
                 .put("message", "当前已有扫描或清理任务正在运行")
                 .toString()
         }
+        val lease = try {
+            RootOperationLease.acquire(this, shared = operation.endsWith("-scan")) ?: return JSONObject()
+                .put("success", false).put("error", "busy")
+                .put("message", "已有扫描、清理或归类任务正在运行").toString().also { running.set(false) }
+        } catch (error: Exception) {
+            running.set(false)
+            return JSONObject().put("success", false).put("error", "operation_lock_unavailable")
+                .put("message", error.message ?: "无法确认清理互斥状态").toString()
+        }
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
         publish(operation, initialPhase, 0, 0, "", started)
@@ -178,6 +187,7 @@ class PersistentCleanPlanRootService : RootService() {
                 .put("message", error.message ?: error.javaClass.simpleName)
                 .toString()
         } finally {
+            runCatching { lease.close() }
             running.set(false)
             stateJson = idleState()
         }

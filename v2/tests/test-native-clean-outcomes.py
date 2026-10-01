@@ -21,11 +21,46 @@ SHIM = r'''
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
+#include <stdio.h>
+#include <time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 static unsigned calls;
+static int read_has_expired;
+int clock_gettime(clockid_t clock, struct timespec *value) {
+    int (*real)(clockid_t,struct timespec*)=dlsym(RTLD_NEXT,"clock_gettime");int rc=real(clock,value);
+    if(!rc && clock==CLOCK_MONOTONIC && read_has_expired)value->tv_sec+=20;
+    return rc;
+}
+static int frozen_name(const char *path) {
+    const char *name = getenv("TEST_FROZEN_NAME");
+    const char *base = strrchr(path, '/'); base = base ? base + 1 : path;
+    return name && !strcmp(name, base);
+}
+static int fd_frozen(int fd) {
+    char name[64], path[4096]; snprintf(name,sizeof(name),"/proc/self/fd/%d",fd);
+    ssize_t n=readlink(name,path,sizeof(path)-1); if(n<0)return 0;path[n]=0;return frozen_name(path);
+}
+static void freeze(struct stat *st) {
+    st->st_ctim.tv_sec=strtoll(getenv("TEST_FROZEN_CTIME_SEC"),0,10);
+    st->st_ctim.tv_nsec=strtol(getenv("TEST_FROZEN_CTIME_NSEC"),0,10);
+}
+int fstat(int fd,struct stat *st) {
+    int (*real)(int,struct stat*)=dlsym(RTLD_NEXT,"fstat");int rc=real(fd,st);
+    if(!rc&&fd_frozen(fd))freeze(st);return rc;
+}
+ssize_t read(int fd,void *buffer,size_t count) {
+    ssize_t (*real)(int,void*,size_t)=dlsym(RTLD_NEXT,"read");
+    ssize_t n=real(fd,buffer,count);
+    if(n>0&&fd_frozen(fd)&&getenv("TEST_EXPIRE_AFTER_READ"))read_has_expired=1;
+    if(n>0&&fd_frozen(fd)&&getenv("TEST_CONTENT_READ_LOG")){
+        int log=open(getenv("TEST_CONTENT_READ_LOG"),O_WRONLY|O_CREAT|O_APPEND,0600);
+        if(log>=0){write(log,"R",1);close(log);}
+    }
+    return n;
+}
 static int fault(const char *op, const char *path) {
     const char *wanted = getenv("TEST_FAULT_OP");
     const char *name = getenv("TEST_FAULT_NAME");
@@ -38,11 +73,11 @@ static int fault(const char *op, const char *path) {
 }
 int lstat(const char *path, struct stat *st) {
     int (*real)(const char *, struct stat *) = dlsym(RTLD_NEXT, "lstat");
-    return fault("lstat", path) ? -1 : real(path, st);
+    int rc=fault("lstat", path) ? -1 : real(path, st); if(!rc&&frozen_name(path))freeze(st); return rc;
 }
 int fstatat(int fd, const char *path, struct stat *st, int flags) {
     int (*real)(int, const char *, struct stat *, int) = dlsym(RTLD_NEXT, "fstatat");
-    return fault("fstatat", path) ? -1 : real(fd, path, st, flags);
+    int rc=fault("fstatat", path) ? -1 : real(fd, path, st, flags); if(!rc&&frozen_name(path))freeze(st); return rc;
 }
 int unlink(const char *path) {
     int (*real)(const char *) = dlsym(RTLD_NEXT, "unlink");
@@ -144,7 +179,7 @@ class NativeCleanOutcomes(unittest.TestCase):
         result = self.run_command(args)
         self.assertEqual(0, result.returncode, result.stderr)
         values = {'epoch': int(time.time()), 'snapshot_id': 'synthetic-cache',
-                  'manifest_format': 'nul-v2', 'manifest_items': len(files), 'files': len(files),
+                  'manifest_format': 'nul-v3-sha256', 'manifest_items': len(files), 'files': len(files),
                   'bytes': len(files) * 7, 'max_file_bytes': 1048576,
                   'whitelist_sha': sha(self.whitelist), 'package_whitelist_sha': sha(self.packages)}
         for key, suffix in (('targets_sha', '.targets'), ('items_sha', '.items.tsv'), ('manifest_sha', '.manifest0')):
@@ -189,12 +224,218 @@ class NativeCleanOutcomes(unittest.TestCase):
                  '--report', self.state / 'clean.tsv', '--summary', self.state / 'clean.env'])
         return self.run_command(args, fault)
 
+    def test_personal_android_media_is_protected_in_both_corpse_scanners(self):
+        personal = self.media / '0/Android/media/com.removed.app/export.zip'
+        personal.parent.mkdir(parents=True)
+        personal.write_bytes(b'user export')
+        orphan = self.media / '0/Android/obb/com.removed.app/old.obb'
+        orphan.parent.mkdir(parents=True)
+        orphan.write_bytes(b'obb')
+        installed = self.tmp / 'installed'
+        installed.mkdir()
+        (installed / '0.txt').write_text('android\ncom.installed.app\n')
+        common = ['--data-root', self.data, '--media-root', self.media,
+                  '--installed-root', installed, '--whitelist', self.whitelist,
+                  '--package-whitelist', self.packages]
+        for mode in ('scan-corpses', 'scan-external-one-pass'):
+            with self.subTest(mode=mode):
+                args = [self.engine, mode] + common + ['--report', self.state / 'scan.tsv',
+                        '--targets', self.state / 'scan.targets', '--summary', self.state / 'scan.env']
+                if mode == 'scan-external-one-pass':
+                    args += ['--items', self.state / 'scan.items', '--manifest', self.state / 'scan.manifest0',
+                             '--corpse-report', self.state / 'corpse.tsv', '--corpse-targets', self.state / 'corpse.targets',
+                             '--corpse-summary', self.state / 'corpse.env']
+                result = self.run_command(args)
+                self.assertEqual(0, result.returncode, result.stderr)
+                prefix = 'corpse' if mode == 'scan-external-one-pass' else 'scan'
+                self.assertEqual([str(orphan.parent)], (self.state / (prefix + '.targets')).read_text().splitlines())
+                summary = env_file(self.state / (prefix + '.env'))
+                self.assertEqual('3', summary['bytes'])
+                self.assertIn('个人媒体未确认', (self.state / (prefix + '.tsv')).read_text())
+                self.assertEqual(b'user export', personal.read_bytes())
+
+    def pin_old_ctime(self, path, before):
+        self.env.update(LD_PRELOAD=str(self.shim), TEST_FROZEN_NAME=path.name,
+                        TEST_FROZEN_CTIME_SEC=str(before.st_ctime_ns // 1000000000),
+                        TEST_FROZEN_CTIME_NSEC=str(before.st_ctime_ns % 1000000000),
+                        TEST_CONTENT_READ_LOG=str(self.state / 'content-read'))
+
+    def test_cache_digest_blocks_changed_bytes_with_all_original_metadata(self):
+        _, files = self.cache_fixture()
+        path = files['fault.bin']; before = path.stat()
+        path.write_bytes(b'changed')
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.pin_old_ctime(path, before)
+        result = self.cache_clean()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(b'changed', path.read_bytes())
+        self.assertIn('changed\t', (self.state / 'clean.tsv').read_text())
+        self.assertTrue((self.state / 'content-read').read_bytes(), 'content must actually be hashed after matching metadata')
+        self.assertEqual('0', env_file(self.state / 'clean.env')['files'])
+
+    def test_deep_digest_blocks_changed_bytes_with_all_original_metadata(self):
+        _, path = self.deep_fixture(); before = path.stat()
+        path.write_bytes(b'changed')
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.pin_old_ctime(path, before)
+        result = self.deep_clean()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(b'changed', path.read_bytes())
+        self.assertIn('changed\t', (self.state / 'clean.tsv').read_text())
+        self.assertTrue((self.state / 'content-read').read_bytes())
+        self.assertEqual('0', env_file(self.state / 'clean.env')['files'])
+
+    def test_apk_digest_blocks_changed_bytes_with_all_original_metadata(self):
+        path = self.tmp / 'owned.apk'; path.write_bytes(b'payload')
+        before = path.stat()
+        identity = subprocess.check_output(['stat', '-c', '%d:%i:%s:%y:%z', str(path)], text=True).strip()
+        targets, identities, hashed = [self.state / name for name in ('apk.targets', 'apk.identities', 'apk.hashed')]
+        targets.write_bytes(os.fsencode(path) + b'\0'); identities.write_bytes(identity.encode() + b'\0')
+        result = self.run_command([self.engine, 'hash-apk-snapshot', targets, identities, hashed, self.state / 'stop', 1048576])
+        self.assertEqual(0, result.returncode, result.stderr)
+        original = hashed.read_bytes().split(b'\0')[0].decode()
+        self.assertIn('|sha256=' + hashlib.sha256(b'payload').hexdigest(), original)
+        path.write_bytes(b'changed'); os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.pin_old_ctime(path, before)
+        result = self.run_command([self.engine, 'unlink-apk-snapshot-item', path, original, self.state / 'apk.deleted'])
+        self.assertEqual(11, result.returncode, result.stderr)
+        self.assertEqual(b'changed', path.read_bytes())
+        self.assertEqual(b'', (self.state / 'apk.deleted').read_bytes())
+        self.assertTrue((self.state / 'content-read').read_bytes())
+        # A legacy identity must not get a hash retrofitted during clean.
+        result = self.run_command([self.engine, 'unlink-apk-snapshot-item', path, identity, self.state / 'old.deleted'])
+        self.assertEqual(11, result.returncode, result.stderr)
+        self.assertTrue(path.exists())
+
+    def test_apk_hash_cancellation_does_not_authorize_or_delete_content(self):
+        path = self.tmp / 'owned.apk'; path.write_bytes(b'payload')
+        identity = subprocess.check_output(['stat', '-c', '%d:%i:%s:%y:%z', str(path)], text=True).strip()
+        targets, identities, hashed = [self.state / name for name in ('apk.targets', 'apk.identities', 'apk.hashed')]
+        targets.write_bytes(os.fsencode(path) + b'\0'); identities.write_bytes(identity.encode() + b'\0')
+        (self.state / 'stop').touch()
+        result = self.run_command([self.engine, 'hash-apk-snapshot', targets, identities, hashed, self.state / 'stop', 1048576])
+        self.assertEqual(9, result.returncode, result.stderr)
+        self.assertEqual(b'', hashed.read_bytes())
+        self.assertEqual(b'payload', path.read_bytes())
+
+    def test_hash_budget_expiry_preserves_cache_and_deep_original_records(self):
+        for mode in ('cache', 'deep'):
+            with self.subTest(mode=mode):
+                if mode == 'cache':
+                    _, files = self.cache_fixture(); path = files['fault.bin']
+                else:
+                    _, path = self.deep_fixture()
+                before = path.stat(); self.pin_old_ctime(path, before)
+                self.env['TEST_EXPIRE_AFTER_READ'] = '1'
+                result = self.cache_clean() if mode == 'cache' else self.deep_clean()
+                self.assertEqual(8, result.returncode, result.stdout + result.stderr)
+                self.assertTrue(path.exists())
+                summary = env_file(self.state / 'clean.env')
+                self.assertEqual('0', summary['files'])
+                if mode == 'deep': self.assertEqual('0', summary['cursor'])
+                self.env.pop('TEST_EXPIRE_AFTER_READ')
+                for key in ('LD_PRELOAD','TEST_FROZEN_NAME','TEST_FROZEN_CTIME_SEC','TEST_FROZEN_CTIME_NSEC','TEST_CONTENT_READ_LOG'):
+                    self.env.pop(key, None)
+
+    def test_deep_discovery_roots_remain_distinct_from_hashed_review_manifest(self):
+        root, path = self.deep_fixture()
+        status = root.stat()
+        # This is the native scanner's 11-field discovery wire format; it is
+        # never consumed by clean. Build must add original file content hashes.
+        root_fields = ['dir', 'low', str(root), str(status.st_dev), str(status.st_ino), str(status.st_size),
+                       str(status.st_mtime_ns // 1000000000), str(status.st_mtime_ns % 1000000000),
+                       str(status.st_ctime_ns // 1000000000), str(status.st_ctime_ns % 1000000000), str(root)]
+        roots = self.state / 'roots.nul'
+        roots.write_bytes(b'8000\0' + b'0\0' + b'\0'.join(x.encode() for x in root_fields) + b'\0')
+        result = self.run_command([self.deep, 'build', '--targets', self.state / 'deep_scan.targets',
+                                  '--roots', roots, '--manifest', self.state / 'hashed.manifest', '--summary', self.state / 'build.env'])
+        self.assertEqual(0, result.returncode, result.stderr)
+        fields = (self.state / 'hashed.manifest').read_bytes().split(b'\0')[:-1]
+        self.assertEqual(0, len(fields) % 12)
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest().encode(), fields[11])
+        self.assertEqual(b'-', fields[23])
+
+    def test_old_cache_manifest_without_digest_is_rejected_before_deletion(self):
+        _, files = self.cache_fixture()
+        manifest = self.state / 'cache_scan.manifest0'
+        fields = manifest.read_bytes().split(b'\0')[:-1]
+        manifest.write_bytes(b'\0'.join(fields[:10]) + b'\0')
+        result = self.cache_clean()
+        self.assertEqual(7, result.returncode, result.stderr)
+        self.assertTrue(files['fault.bin'].exists())
+
+    def test_old_deep_manifest_without_digest_is_rejected_before_deletion(self):
+        _, path = self.deep_fixture()
+        manifest = self.state / 'deep_scan.manifest0'
+        fields = manifest.read_bytes().split(b'\0')[:-1]
+        old = [field for i, field in enumerate(fields) if i % 12 != 11]
+        manifest.write_bytes(b'\0'.join(old) + b'\0')
+        result = self.deep_clean()
+        self.assertEqual(7, result.returncode, result.stderr)
+        self.assertTrue(path.exists())
+
+    def test_cache_parent_symlink_cannot_redirect_snapshot_deletion(self):
+        root, files = self.cache_fixture()
+        outside = self.tmp / 'outside-owned'
+        root.rename(outside)
+        root.symlink_to(outside, target_is_directory=True)
+        result = self.cache_clean()
+        self.assertTrue((outside / 'fault.bin').exists(), 'snapshot delete followed replaced ancestor symlink')
+        self.assertEqual('0', env_file(self.state / 'clean.env')['files'])
+
+    def test_missing_cache_whitelist_is_not_recreated_empty(self):
+        _, files = self.cache_fixture()
+        self.whitelist.unlink()
+        result = self.cache_clean(wrapper=True)
+        self.assertEqual(7, result.returncode, result.stdout + result.stderr)
+        self.assertTrue(files['fault.bin'].exists())
+        self.assertFalse(self.whitelist.exists())
+
+    def test_missing_cache_package_whitelist_is_not_recreated_empty(self):
+        _, files = self.cache_fixture()
+        self.packages.unlink()
+        result = self.cache_clean(wrapper=True)
+        self.assertEqual(7, result.returncode, result.stdout + result.stderr)
+        self.assertTrue(files['fault.bin'].exists())
+        self.assertFalse(self.packages.exists())
+
+    def test_missing_deep_whitelist_is_not_recreated_empty(self):
+        _, path = self.deep_fixture()
+        self.whitelist.unlink()
+        result = self.deep_clean(wrapper=True)
+        self.assertEqual(7, result.returncode, result.stdout + result.stderr)
+        self.assertTrue(path.exists())
+        self.assertFalse(self.whitelist.exists())
+
+    def test_cache_persistent_nul_contains_only_actual_unlinks(self):
+        weird = "space ' quote\n尾部\n.bin"
+        _, files = self.cache_fixture((weird, 'failed.bin', 'missing.bin', 'changed.bin'))
+        files['missing.bin'].unlink()
+        files['changed.bin'].write_bytes(b'changed after original review')
+        result = self.cache_clean(('unlinkat', 'failed.bin', errno.EIO), wrapper=True)
+        self.assertEqual(8, result.returncode, result.stdout + result.stderr)
+        streams = list((self.state / 'cleanup-media').glob('pending-*/paths.nul'))
+        self.assertEqual(1, len(streams))
+        self.assertEqual(os.fsencode(files[weird]) + b'\0', streams[0].read_bytes())
+        self.assertTrue(Path(str(streams[0]) + '.writer-ready').exists())
+        self.assertTrue(files['failed.bin'].exists() and files['changed.bin'].exists())
+        self.assertEqual('1', env_file(self.state / 'latest.env')['files'])
+
+    def test_deep_persistent_nul_contains_actual_files_and_removed_directories(self):
+        root, path = self.deep_fixture(("space ' quote\n.bin",))
+        result = self.deep_clean(wrapper=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        stream = next((self.state / 'cleanup-media').glob('pending-*/paths.nul'))
+        self.assertEqual({os.fsencode(path), os.fsencode(root)}, set(stream.read_bytes().split(b'\0')) - {b''})
+        self.assertFalse(path.exists())
+        self.assertEqual('1', env_file(self.state / 'latest.env')['files'])
+
     def test_cache_unknown_stat_errors_are_not_missing(self):
         _, files = self.cache_fixture()
         for number in (errno.EACCES, errno.EIO, errno.ENOTDIR):
             for after in (1, 2):
                 with self.subTest(number=number, after=after):
-                    result = self.cache_clean(('lstat', 'fault.bin', number, after))
+                    result = self.cache_clean(('fstatat', 'fault.bin', number, after))
                     self.assertEqual(8, result.returncode, result.stdout + result.stderr)
                     self.assertNotIn('missing\t', (self.state / 'clean.tsv').read_text())
                     self.assertEqual('1', env_file(self.state / 'clean.env')['errors'])
@@ -211,7 +452,7 @@ class NativeCleanOutcomes(unittest.TestCase):
 
     def test_cache_wrapper_failure_retains_snapshot_and_retry_scope(self):
         root, files = self.cache_fixture(('fault.bin', 'unchanged.bin'))
-        result = self.cache_clean(('unlink', 'fault.bin', errno.EACCES), wrapper=True)
+        result = self.cache_clean(('unlinkat', 'fault.bin', errno.EACCES), wrapper=True)
         self.assertEqual(8, result.returncode, result.stdout + result.stderr)
         self.assertTrue((self.state / 'cache_scan.manifest0').exists())
         self.assertTrue((self.state / 'cache_scan.env').exists())
@@ -304,7 +545,7 @@ class NativeCleanOutcomes(unittest.TestCase):
     def test_deep_failure_after_success_commits_only_successful_prefix(self):
         root, _ = self.deep_fixture(('one.bin', 'two.bin'))
         fields = (self.state / 'deep_scan.manifest0').read_bytes().split(b'\0')[:-1]
-        paths = [Path(os.fsdecode(fields[i + 10])) for i in range(0, len(fields), 11)
+        paths = [Path(os.fsdecode(fields[i + 10])) for i in range(0, len(fields), 12)
                  if fields[i] == b'file']
         self.assertEqual(2, len(paths))
         result = self.deep_clean(('unlinkat', paths[1].name, errno.EIO))

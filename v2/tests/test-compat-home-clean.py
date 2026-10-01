@@ -126,6 +126,7 @@ filter_processed_list "$STATE_DIR/list"
         module, state, data = [self.tmp / x for x in ('module', 'state', 'data')]
         module.mkdir(); state.mkdir(); data.mkdir()
         shutil.copytree(ROOT / 'config', module / 'config')
+        shutil.copy(ROOT / 'v2/module/scripts/cleanup-media-queue.sh', module / 'cleanup-media-queue.sh')
         shutil.copy(ROOT / 'v2/module/scripts/cleaner.sh', module / 'cleaner.sh')
         shutil.copy(ROOT / 'v2/module/scripts/apk-paths.sh', module / 'apk-paths.sh')
         compat = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), SOURCE)
@@ -192,19 +193,21 @@ filter_processed_list "$STATE_DIR/list"
         env = {**os.environ, 'BAIZE_STATE_DIR': str(state), 'BAIZE_SHELL': shutil.which('bash')}
         return module, state, data, deleted, protected, env
 
-    def test_all_enabled_categories_native_and_shell_preserve_protection_and_history(self):
-        summaries = []
+    def test_all_enabled_categories_require_helper_and_preserve_protection_and_history(self):
         for native in [False, True]:
             with self.subTest(native=native):
                 self.tmp = Path(tempfile.mkdtemp(dir=self.base))
                 module, state, data, deleted, protected, env = self.fixture(native)
+                # ctime cannot be backdated: let newly created fixture objects
+                # cross the same conservative collection fence as real data.
+                time.sleep(2.05)
                 result = run(['bash', str(module / 'cleaner.sh'), 'clean', 'app'], env=env)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0 if native else 8, result.stdout + result.stderr)
                 for name in deleted:
-                    self.assertFalse((data / name).exists(), name + '\n' + result.stderr)
+                    self.assertEqual((data / name).exists(), not native, name + '\n' + result.stderr)
                 for name in protected:
                     self.assertTrue((data / name).exists(), name)
-                self.assertFalse((data / 'media/0/EmptyDirectory').exists())
+                self.assertEqual((data / 'media/0/EmptyDirectory').exists(), not native)
                 self.assertFalse((state / 'run.lock').exists())
                 self.assertFalse((state / 'running.env').exists())
                 self.assertEqual(len((state / 'history.tsv').read_text().splitlines()), 1)
@@ -213,9 +216,16 @@ filter_processed_list "$STATE_DIR/list"
                 self.assertIn('com.example.app', (state / 'reports/apps-latest.tsv').read_text())
                 self.assertEqual((self.tmp / 'helper.calls').exists(), native)
                 fields = dict(line.split('=', 1) for line in (state / 'latest.env').read_text().splitlines() if '=' in line)
-                summaries.append({k: fields[k] for k in ('files', 'regular_files', 'empty_files',
-                    'empty_dirs', 'hidden_items', 'fragment_files', 'bytes', 'skipped', 'errors')})
-        self.assertEqual(summaries[0], summaries[1])
+                if native:
+                    self.assertGreater(int(fields['files']), 0)
+                    self.assertGreater(int(fields['bytes']), 0)
+                    self.assertEqual(fields['errors'], '0')
+                else:
+                    for key in ('files', 'regular_files', 'empty_files', 'empty_dirs',
+                                'hidden_items', 'fragment_files', 'bytes'):
+                        self.assertEqual(fields[key], '0', key)
+                    self.assertGreater(int(fields['errors']), 0)
+                    self.assertIn('未完成', fields['result'])
 
     def test_disabled_categories_do_not_delete(self):
         flags = {k: 0 for k in ('clean_empty_files', 'clean_empty_dirs', 'clean_root_shells',

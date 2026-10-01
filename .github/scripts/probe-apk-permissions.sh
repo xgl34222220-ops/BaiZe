@@ -81,10 +81,13 @@ import json, pathlib, sys
 out=pathlib.Path(sys.argv[1]); stages={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
 for name in ('denied','granted','revoked','restored','restarted','stale','raw_refreshed','public_refreshed'):
     assert stages[name].get('completed') and stages[name]['uid'] >= 10000 and stages[name]['api'] == 36, stages[name]
-# The first stale row must exist and be excluded from review without a URI mutation.
+# AOSP may refresh the row asynchronously; both legitimate platform states must
+# keep the absent file out of the review. If retained, review itself must not delete it.
 r=stages['stale']
-assert r['indexRows'] == 1 and r['reviewConfirmedMissing'] == 1 and r['reviewCandidateCount'] == 0, r
-assert r['indexRowsAfterReview'] == 1, r
+assert r['indexRows'] in (0, 1) and r['identityCaptured'] is False, r
+if r['indexRows'] == 1:
+    assert r['reviewConfirmedMissing'] == 1 and r['reviewCandidateCount'] == 0, r
+    assert r['indexRowsAfterReview'] == 1, r
 # Later platform refreshes may already have removed that row. Recheck filtering only if it remains.
 r=stages['raw_refreshed']
 assert r['indexRows'] in (0, 1), r

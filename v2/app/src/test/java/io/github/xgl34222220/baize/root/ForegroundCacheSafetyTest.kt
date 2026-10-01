@@ -16,6 +16,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 @Config(sdk = [28], application = Application::class)
 class ForegroundCacheSafetyTest {
     private val engine get() = ForegroundCacheEngine(RuntimeEnvironment.getApplication(), AtomicBoolean())
+    @Test fun originalCacheContentsRemainTheBoundaryAfterCaptureAndRestore() {
+        val directory = kotlin.io.path.createTempDirectory("baize-foreground-manifest-").toFile()
+        try {
+            val worker = engine
+            val old = java.io.File(directory, "reviewed.bin").apply { writeText("old") }
+            val progress: (Long, Long) -> Unit = { _, _ -> }
+            val measure = ForegroundCacheEngine::class.java.getDeclaredMethod("measure", java.io.File::class.java, Function2::class.java).apply { isAccessible = true }
+            val stats = measure.invoke(worker, directory, progress)
+            val tree = stats.javaClass.getDeclaredField("frozenTree").apply { isAccessible = true }.get(stats) as FrozenReviewTree.Snapshot
+            val restored = FrozenReviewTree.fromJson(FrozenReviewTree.toJson(tree))
+            val added = java.io.File(directory, "after-review.bin").apply { writeText("keep"); setLastModified(1000) }
+            val clear = ForegroundCacheEngine::class.java.getDeclaredMethod("clearChildren", java.io.File::class.java,
+                FrozenReviewTree.Snapshot::class.java, Function2::class.java).apply { isAccessible = true }
+            val result = clear.invoke(worker, directory, restored, progress)
+            assertEquals(1L, result.javaClass.getDeclaredField("files").apply { isAccessible = true }.getLong(result))
+            assertFalse(old.exists()); assertEquals("keep", added.readText())
+            val repeated = clear.invoke(worker, directory, restored, progress)
+            assertEquals(0L, repeated.javaClass.getDeclaredField("files").apply { isAccessible = true }.getLong(repeated))
+            assertEquals("keep", added.readText())
+        } finally { directory.deleteRecursively() }
+    }
     @Test fun noPathWhitelistDoesNotRequireFrameworkStorageIdentity() {
         val protected = ForegroundCacheEngine::class.java.getDeclaredMethod("protectedPath", String::class.java, Set::class.java).apply { isAccessible = true }
         assertEquals(false, protected.invoke(engine, "/data/user/0/com.example/cache", emptySet<String>()))

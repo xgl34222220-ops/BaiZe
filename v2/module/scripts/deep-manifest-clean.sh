@@ -8,6 +8,10 @@ SCRIPTDIR="$MODDIR"
 [ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# Capture a task's refresh identity once and keep records outside temporary lanes.
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+baize_cleanup_media_init
 CONFIG="$STATE_DIR/config.conf"
 WHITELIST="$STATE_DIR/whitelist.conf"
 DEEP_RULES=${BAIZE_DEEP_RULES:-$MODDIR/config/deep.rules}
@@ -43,7 +47,7 @@ fi
 SNAPSHOT_ENGINE=$(baize_require_engine "$MODDIR" baize_deep_snapshot "${BAIZE_DEEP_SNAPSHOT_ENGINE:-}" 2>/dev/null || true)
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
-[ -f "$WHITELIST" ] || : >"$WHITELIST"
+[ -f "$WHITELIST" ] && [ -r "$WHITELIST" ] || { echo "白名单缺失或不可读，未开始删除" >&2; exit 7; }
 
 state_value() { sed -n "s/^$1=//p" "$STATE_FILE" 2>/dev/null | tail -n 1; }
 summary_value() { summary_file=$1; summary_key=$2; sed -n "s/^$summary_key=//p" "$summary_file" 2>/dev/null | tail -n 1; }
@@ -125,16 +129,20 @@ SUMMARY_FILE="$LOCK_DIR/deep-clean-summary.env"
 LOG_FILE="$LOG_DIR/$STAMP-deep-clean.log"
 START_EPOCH=$(date +%s)
 
+baize_cleanup_media_begin || { echo "无法保存删除后媒体刷新记录，未开始删除" >&2; exit 71; }
 "$SNAPSHOT_ENGINE" clean \
   --manifest "$MANIFEST_FILE" \
   --cursor "$CURSOR_FILE" \
   --report "$REPORT_FILE" \
-  --summary "$SUMMARY_FILE" \
+  --summary "$SUMMARY_FILE" --deleted-nul "$BAIZE_CLEANUP_DELETED_NUL" \
   --whitelist "$WHITELIST" \
   --progress "$RUNNING_FILE" \
   --stop "$STOP_FILE" \
   --max-file-bytes "$max_file_bytes"
 code=$?
+baize_cleanup_media_publish || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+[ "$code" -ne 71 ] || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+baize_cleanup_media_kick
 rm -f "$STATE_DIR/index/meta.env"
 
 if [ "$(summary_value "$SUMMARY_FILE" accounting)" != "cumulative-journal-v1" ]; then
@@ -183,11 +191,13 @@ if [ "$uncertain" -gt 0 ]; then
   result="$result；中断窗口有 $uncertain 条记录去向不确定（最多 $(human_bytes "$uncertain_bytes")），未计入释放量"
 fi
 
+if [ "$BAIZE_CLEANUP_MEDIA_UNCONFIRMED" = 1 ]; then result="$result；媒体索引刷新未确认"; else result="$result；媒体索引已排队核对"; fi
 END_EPOCH=$(date +%s)
 elapsed=$((END_EPOCH - START_EPOCH))
 latest_tmp="$STATE_DIR/latest.env.tmp.$$"
 {
   echo "mode=deep-clean"
+  echo "media_refresh_unconfirmed=$BAIZE_CLEANUP_MEDIA_UNCONFIRMED"
   echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
   echo "schema=clean-result-v2"
   echo "files=$total_files"
@@ -208,7 +218,7 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "deep_recovery_requires_audit=$recovery_audit"
   echo "deep_accounting=cumulative-journal-v1"
   echo "elapsed=$elapsed"
-  echo "engine=deep-manifest-v1"
+  echo "engine=deep-manifest-sha256-v2"
   echo "result=$result"
 } >"$latest_tmp" && mv -f "$latest_tmp" "$STATE_DIR/latest.env" || exit 71
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv" 2>/dev/null || true

@@ -127,13 +127,19 @@ object CacheRootDeviceProbe {
             check(result.optBoolean("success") && result.optLong("deletedBytes") == 4096L && result.optLong("deletedFiles") == 1L) { result.toString() }
             check(!selectedFile.exists() && unselectedFile.length() == 8192L && personalFile.readText() == "preserve-personal")
             check(firstCache.isDirectory) { "Cache root must survive contents cleaning" }
+            val cacheAdded = File(secondCache, "after-review.tmp").apply {
+                writeBytes(ByteArray(77) { 5 }); check(setLastModified(1_500_000_000_000L))
+            }
             markStage("service-recreation")
             root = service()
             val restored = JSONObject(root.getResultPage(token, 0, 100)).getJSONArray("items")
             check((0 until restored.length()).any { restored.getJSONObject(it).optString("path") == secondPath })
             markStage("remaining-cache-clean")
             val afterRestart = JSONObject(root.cleanSelected(token, JSONObject().put(secondPath, true).toString(), "[]"))
-            check(afterRestart.optBoolean("success") && afterRestart.optLong("deletedBytes") == 8192L && !unselectedFile.exists()) { afterRestart.toString() }
+            check(!afterRestart.optBoolean("success") && afterRestart.optLong("deletedBytes") == 8192L && !unselectedFile.exists() &&
+                cacheAdded.length() == 77L && afterRestart.optInt("remainingCandidates") >= 1) { afterRestart.toString() }
+            val repeatedCache = JSONObject(root.cleanSelected(token, JSONObject().put(secondPath, true).toString(), "[]"))
+            check(repeatedCache.optLong("deletedFiles") == 0L && cacheAdded.length() == 77L) { repeatedCache.toString() }
             check(personalFile.readText() == "preserve-personal")
             markStage("apk-protection-fd-snapshot")
             val profileService = BaiZeProfileRootService()
@@ -151,6 +157,12 @@ object CacheRootDeviceProbe {
                 }
             }
             val protectedFixture = first.canonicalPath
+            val retiredPrepare = JSONObject(RootServiceClients.profileExchange(profileTransport, transport,
+                "prepareApkFastSnapshot", org.json.JSONArray().put("[]")))
+            val retiredClean = JSONObject(RootServiceClients.profileExchange(profileTransport, transport,
+                "cleanApkFastSnapshot", org.json.JSONArray()))
+            check(retiredPrepare.optString("error") == "legacy_snapshot_unsupported" &&
+                retiredClean.optString("error") == "legacy_snapshot_unsupported" && personalFile.readText() == "preserve-personal")
             markStage("apk-file-evidence-current-user")
             check(!evidenceFixture.exists() && evidenceFixture.mkdirs())
             evidenceFixtureOwned = true
@@ -280,6 +292,11 @@ object CacheRootDeviceProbe {
                 val restoredService = persistentService()
                 val visibleRestored = JSONObject(restoredService.getPage(persistentToken, 0, 20)).getJSONArray("items").getJSONObject(0)
                 check(!visibleRestored.has("frozenTree"))
+                checkNotNull(RootOperationLease.acquire(context, shared = true)).use {
+                    val busy = JSONObject(restoredService.cleanSafe(persistentToken,
+                        JSONObject().put(persistentItem.getString("id"), true).toString(), "{}"))
+                    check(busy.optString("error") == "busy" && persistedOld.length() == 65L && unreviewed.length() == 66L) { busy.toString() }
+                }
                 val restoredResult = JSONObject(restoredService.cleanSafe(persistentToken,
                     JSONObject().put(persistentItem.getString("id"), true).toString(), "{}"))
                 check(restoredResult.optBoolean("persistedFallback") && restoredResult.getLong("deletedFiles") == 1L &&
@@ -356,6 +373,7 @@ object CacheRootDeviceProbe {
                 .put("profileFrozenManifestRejectsNewBackdatedContent", true)
                 .put("profilePartialReviewAndRetryRetained", true).put("persistedFrozenManifestPreservesScope", true)
                 .put("profileRestoredMtimeRewritePreserved", true).put("persistedServiceRecreationKeepsOriginalFileScope", true)
+                .put("foregroundCacheRestartPreservesAddedContents", true)
                 .put("serviceRecreationSelectedClean", true).put("deletedBytes", 12288)
                 .put("lowThenHighSameSnapshot", true).put("profileDeletedBytes", 384).toString())
         } finally {

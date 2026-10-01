@@ -50,6 +50,14 @@ class ApkIndexAndRecreationRegressionTest {
         assertFalse(result.cancelled)
     }
 
+    @Test fun indexedPathIsPreservedExactlyInsteadOfPointingAtAWhitespaceStrippedNeighbor() {
+        provider.rowCount = 1
+        provider.pathOverride = "/storage/emulated/0/Download/synthetic.apk "
+        val result = ApkMediaStoreIndex.query(RuntimeEnvironment.getApplication())
+        assertNull(result.error)
+        assertEquals(provider.pathOverride, result.candidates.single().path)
+    }
+
     @Test fun exactlyTenThousandRowsDoNotFalselyClaimMoreFilesWereSkipped() {
         provider.rowCount = 10_000
         val result = ApkMediaStoreIndex.query(RuntimeEnvironment.getApplication())
@@ -157,6 +165,7 @@ class ApkIndexAndRecreationRegressionTest {
 }
 
 class SyntheticApkIndexProvider : ContentProvider() {
+    var pathOverride: String? = null
     var blockCollection = false
     val entered = java.util.concurrent.CountDownLatch(1)
     val release = java.util.concurrent.CountDownLatch(1)
@@ -183,7 +192,7 @@ class SyntheticApkIndexProvider : ContentProvider() {
                 MediaStore.Files.FileColumns._ID -> id.toLong()
                 MediaStore.MediaColumns.DISPLAY_NAME -> "synthetic-$id.apk"
                 MediaStore.MediaColumns.SIZE -> 128L
-                MediaStore.MediaColumns.DATA -> "/storage/emulated/0/Download/synthetic-$id.apk"
+                MediaStore.MediaColumns.DATA -> pathOverride ?: "/storage/emulated/0/Download/synthetic-$id.apk"
                 MediaStore.MediaColumns.DATE_MODIFIED -> 1_700_000_000L
                 MediaStore.MediaColumns.MIME_TYPE -> "application/vnd.android.package-archive"
                 else -> null

@@ -485,14 +485,17 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 val path = item.optString("path").trim()
                 if (packageName.isBlank() || path.isBlank()) continue
                 val appName = item.optString("appName").trim().ifBlank { applicationLabel(packageName) }
+                val verified = item.optBoolean("complete", false)
                 result += WorkbenchItem(id = "cache:${stableId("$packageName\u0000$category\u0000$path")}",
                     source = "cache", profile = "cache", packageName = packageName, appName = appName,
                     category = category, groupKey = "app:$packageName", groupTitle = appName,
                     title = category, risk = "low", path = path,
-                    bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                    bytes = if (verified) item.optLong("bytes", 0L).coerceAtLeast(0L) else 0L,
                     files = item.optLong("files", 0L).coerceAtLeast(0L),
                     directories = item.optLong("directories", 0L).coerceAtLeast(0L),
-                    reason = "应用缓存快照命中 · 只删除扫描时记录的文件", selectable = true)
+                    reason = if (verified) "应用缓存快照命中 · 只删除扫描时记录的文件"
+                        else "读取或内容核对未完成，已保留且不计入可释放容量；请稍后重新扫描",
+                    selectable = verified)
             }
             onPage(result, cursor)
         }

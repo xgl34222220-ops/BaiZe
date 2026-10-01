@@ -11,6 +11,10 @@ SCRIPTDIR="$MODDIR"
 MODE=${1:-apk-clean}
 TRIGGER=${2:-manual}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# Capture a task's refresh identity once and keep records outside temporary lanes.
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+baize_cleanup_media_init
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 WHITELIST="$STATE_DIR/whitelist.conf"
 STATE_FILE="$STATE_DIR/apk_scan.env"
@@ -25,7 +29,7 @@ HISTORY_FILE="$STATE_DIR/history.tsv"
 
 [ "$MODE" = "apk-clean" ] || { echo "不支持的安装包快照模式：$MODE" >&2; exit 2; }
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
-[ -f "$WHITELIST" ] || : >"$WHITELIST"
+[ -f "$WHITELIST" ] && [ -r "$WHITELIST" ] || { echo "白名单缺失或不可读，未开始删除" >&2; exit 7; }
 
 file_sha() {
   file=$1
@@ -169,6 +173,7 @@ write_latest() {
   files=$1 bytes=$2 errors=$3 skipped=$4 elapsed=$5 result=$6
   {
     echo "mode=apk-clean"
+    echo "media_refresh_unconfirmed=$BAIZE_CLEANUP_MEDIA_UNCONFIRMED"
     echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
     echo "files=$files"
     echo "regular_files=$files"
@@ -220,6 +225,7 @@ if [ "$epoch" -le 0 ] || [ "$age" -lt 0 ] || [ "$age" -gt 1800 ] || [ -z "$snaps
   echo "安装包扫描快照已过期，不会自动重新扫描"
   exit 6
 fi
+[ "$(state_value identity_format)" = stat-sha256-v1 ] || { echo "安装包快照缺少原内容指纹，请重新扫描" >&2; exit 7; }
 [ "$(file_sha "$TARGETS_FILE")" = "$expected_targets_sha" ] || { echo "安装包目标快照校验失败，不会自动重新扫描"; exit 7; }
 [ -s "$IDENTITIES_FILE" ] && [ "$(file_sha "$IDENTITIES_FILE")" = "$expected_identities_sha" ] || { echo "安装包身份快照缺失或已变化，请重新扫描"; exit 7; }
 [ "$(file_sha "$WHITELIST")" = "$expected_whitelist_sha" ] || { echo "白名单已变化，请重新扫描"; exit 7; }
@@ -232,6 +238,13 @@ case "$total" in ''|*[!0-9]*) total=0 ;; esac
 
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
 set_phase "正在校验安装包扫描快照" 0 "$total" ""
+APK_DELETE_ENGINE=${BAIZE_NATIVE_ENGINE:-}
+if [ -z "$APK_DELETE_ENGINE" ] && [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
+  APK_DELETE_ENGINE=$(baize_require_engine "$MODDIR" baize_engine "" 2>/dev/null) || APK_DELETE_ENGINE=
+fi
+[ -n "$APK_DELETE_ENGINE" ] && [ -x "$APK_DELETE_ENGINE" ] || { echo "安装包身份删除器缺失，未开始删除" >&2; exit 8; }
+baize_cleanup_media_begin || { echo "无法保存删除后媒体刷新记录，未开始删除" >&2; exit 71; }
 current=0
 deleted_files=0
 deleted_bytes=0
@@ -262,7 +275,7 @@ while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
     continue
   fi
   current_identity=$(stat -c '%d:%i:%s:%y:%z' "$target" 2>/dev/null) || current_identity=
-  if [ -z "$current_identity" ] || [ "$current_identity" != "$expected_identity" ]; then
+  if [ -z "$current_identity" ] || [ "$current_identity" != "${expected_identity%%|sha256=*}" ]; then
     skipped=$((skipped + 1))
     printf 'protected\tlow\t扫描后已修改\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
     continue
@@ -274,16 +287,40 @@ while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
     continue
   fi
 
-  rm -f -- "$target" 2>/dev/null
-  if [ ! -e "$target" ]; then
-    deleted_files=$((deleted_files + 1))
-    deleted_bytes=$((deleted_bytes + size))
-    printf 'cleaned\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
-  else
-    errors=$((errors + 1))
-    printf 'failed\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
-  fi
+  delete_code=0
+  "$APK_DELETE_ENGINE" unlink-apk-snapshot-item "$target" "$expected_identity" "$BAIZE_CLEANUP_DELETED_NUL" "$STOP_FILE" || delete_code=$?
+  case "$delete_code" in
+    0|70)
+      deleted_files=$((deleted_files + 1))
+      deleted_bytes=$((deleted_bytes + size))
+      printf 'cleaned\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
+      if [ "$delete_code" -eq 70 ]; then
+        BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+        errors=$((errors + 1))
+        break
+      fi
+      ;;
+    9)
+      code=9
+      break
+      ;;
+    10)
+      skipped=$((skipped + 1))
+      printf 'missing\tlow\t目标已不存在\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
+      ;;
+    11)
+      skipped=$((skipped + 1))
+      printf 'changed\tlow\t扫描后已变化\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"
+      ;;
+    *)
+      errors=$((errors + 1))
+      printf 'failed\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
+      ;;
+  esac
 done <"$TARGETS_FILE" 3<"$IDENTITIES_FILE"
+
+baize_cleanup_media_publish || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+baize_cleanup_media_kick
 
 [ "$deleted_files" -eq 0 ] || rm -f "$STATE_DIR/index/meta.env"
 
@@ -299,6 +336,7 @@ else
   rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"
 fi
 
+if [ "$BAIZE_CLEANUP_MEDIA_UNCONFIRMED" = 1 ]; then result="$result；媒体索引刷新未确认"; else result="$result；媒体索引已排队核对"; fi
 write_latest "$deleted_files" "$deleted_bytes" "$errors" "$skipped" "$elapsed" "$result"
 cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
 {

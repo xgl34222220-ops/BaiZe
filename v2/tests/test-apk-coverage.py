@@ -11,6 +11,17 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 
 class PackageCoverage(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = tempfile.TemporaryDirectory(prefix='baize-apk-engine-')
+        cls.engine = Path(cls.build.name) / 'baize_engine'
+        subprocess.run(['cc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation',
+                        str(ROOT / 'v2/native/baize_engine_42_4.c'), '-o', str(cls.engine)], check=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.build.cleanup()
+
     def setUp(self):
         self.work = tempfile.TemporaryDirectory(prefix='baize-apk-')
         self.root = Path(self.work.name)
@@ -25,13 +36,14 @@ class PackageCoverage(unittest.TestCase):
         self.public.mkdir()
         self.sd = self.root / 'sd'
         self.sd.mkdir()
-        for name in ('apk-scanner.sh', 'apk-cleaner.sh', 'apk-paths.sh', 'whitelist-match.sh'):
+        for name in ('apk-scanner.sh', 'apk-cleaner.sh', 'apk-paths.sh', 'whitelist-match.sh', 'cleanup-media-queue.sh'):
             shutil.copy(ROOT / 'v2/module/scripts' / name, self.module / name)
         (self.state / 'config.conf').write_text('apk_package_days=30\napk_package_max_mb=4096\n')
         (self.state / 'whitelist.conf').touch()
         self.env = dict(
             os.environ,
             BAIZE_STATE_DIR=str(self.state),
+            BAIZE_NATIVE_ENGINE=str(self.engine),
             BAIZE_MEDIA_ROOT=str(self.media),
             BAIZE_DATA_ROOT=str(self.data),
             BAIZE_PUBLIC_MEDIA_ROOT=str(self.public),
@@ -92,6 +104,18 @@ class PackageCoverage(unittest.TestCase):
             set((self.state / 'apk_scan.targets').read_bytes().split(b'\0')) - {b''},
             {os.fsencode(public_apk)}
         )
+
+    def test_platform_style_storage_root_alias_is_canonical_before_snapshot(self):
+        canonical = self.root / 'canonical-volume/10'
+        canonical.mkdir(parents=True)
+        package = canonical / 'alias.apk'
+        package.write_bytes(b'owned alias package')
+        (self.public / '10').symlink_to(canonical, target_is_directory=True)
+        self.env['BAIZE_MEDIA_ROOT'] = str(self.root / 'missing-raw')
+        self.run_task('scan')
+        self.assertEqual(self.targets(), {os.fsencode(package)})
+        self.run_task('clean')
+        self.assertFalse(package.exists())
 
     def test_root_bruteforce_fallback_when_normal_discovery_is_zero(self):
         brute = self.root / 'brute-only'
@@ -184,6 +208,16 @@ class PackageCoverage(unittest.TestCase):
         self.assertTrue(replaced.exists() and modified.exists())
         self.assertIn('skipped=2\n', (self.state / 'latest.env').read_text())
         self.assertIn('未完全生效', result.stdout)
+
+    def test_missing_whitelist_cannot_be_recreated_empty_during_clean(self):
+        package = self.make('0/Download/keep.apk')
+        self.run_task('scan')
+        (self.state / 'whitelist.conf').unlink()
+        result = subprocess.run(['bash', str(self.module / 'apk-cleaner.sh'), 'apk-clean'],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
+        self.assertTrue(package.exists())
+        self.assertFalse((self.state / 'whitelist.conf').exists())
 
     def test_tampered_or_missing_identity_snapshot_refuses_deletion(self):
         package = self.make('0/Download/keep.apk')

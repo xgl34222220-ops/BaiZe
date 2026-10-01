@@ -129,11 +129,11 @@ sed '/^snapshot_id=/d;/^manifest_/d;/^cursor_/d;/^snapshot_schema=/d;/^files=/d;
 grep -E '^(files|bytes|targets|scan_complete|timed_out_dirs|truncated|protected_targets)=' "$BUILD_SUMMARY" >>"$state_tmp"
 {
   echo "snapshot_id=$snapshot_id"
-  echo "snapshot_schema=deep-file-manifest-v1"
+  echo "snapshot_schema=deep-file-manifest-sha256-v2"
   echo "manifest_sha=$manifest_sha"
   echo "manifest_records=$manifest_records"
   echo "cursor_file=deep_scan.cursor"
-  echo "manifest_engine=deep-manifest-v1"
+  echo "manifest_engine=deep-manifest-sha256-v2"
 } >>"$state_tmp"
 mv -f "$state_tmp" "$STATE_FILE" || exit 71
 scan_bytes=$(sed -n 's/^bytes=//p' "$BUILD_SUMMARY")

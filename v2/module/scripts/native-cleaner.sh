@@ -431,7 +431,7 @@ else
         echo "targets_sha=$targets_sha"
         echo "items_sha=$items_sha"
         echo "manifest_sha=$manifest_sha"
-        echo "manifest_format=nul-v2"
+        echo "manifest_format=nul-v3-sha256"
         echo "manifest_items=$FILES"
         echo "whitelist_sha=$(file_sha "$WHITELIST")"
         echo "package_whitelist_sha=$(file_sha "$PACKAGE_WHITELIST")"

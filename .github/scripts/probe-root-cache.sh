@@ -38,7 +38,7 @@ for field in ('apkReadOnlyEvidenceMatchesRootStat', 'apkEvidenceOtherUserRejecte
     assert result.get(field) is True, (field, result)
 for field in ('profileFrozenManifestRejectsNewBackdatedContent', 'profilePartialReviewAndRetryRetained',
               'persistedFrozenManifestPreservesScope', 'profileRestoredMtimeRewritePreserved',
-              'persistedServiceRecreationKeepsOriginalFileScope'):
+              'persistedServiceRecreationKeepsOriginalFileScope', 'foregroundCacheRestartPreservesAddedContents'):
     assert result.get(field) is True, (field, result)
 assert result.get('crossUidBinderValidated') is False and result.get('profileDeletedBytes') == 384, result
 pathlib.Path(sys.argv[2]).write_text(json.dumps(result, ensure_ascii=False, indent=2))

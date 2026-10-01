@@ -294,7 +294,7 @@ jobs:
             adb root
             adb wait-for-device
             adb install root-probe/app-debug.apk
-            bash .github/scripts/probe-cleanup-entrypoints.sh root-probe/app-debug.apk
+            bash .github/scripts/probe-cleanup-entrypoints.sh root-probe/app-debug.apk candidate/*-Module.zip
             adb uninstall io.github.xgl34222220.baize
             python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30016 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk baseline-30015/*.apk
       - uses: actions/upload-artifact@v4
@@ -307,6 +307,8 @@ jobs:
             ${{ runner.temp }}/baize-apk-artwork-probe/
             ${{ runner.temp }}/baize-apk-deletion-probe/
             ${{ runner.temp }}/baize-storage-deletion-probe/
+            ${{ runner.temp }}/baize-module-corpse-probe/
+            ${{ runner.temp }}/baize-module-media-probe/
             ${{ runner.temp }}/baize-apk-permission-probe/
           if-no-files-found: warn
           retention-days: 7

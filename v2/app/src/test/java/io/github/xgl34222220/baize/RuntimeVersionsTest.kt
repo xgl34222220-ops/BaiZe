@@ -7,6 +7,17 @@ import org.junit.Test
 class RuntimeVersionsTest {
     private val app = ComponentVersion.parse("2.8.2", 28002)
 
+    @Test fun cleanupModuleSafetyUpdateRequiresTheMatchingNewRuntime() {
+        val update = ComponentVersion("2.0.0", 30016L)
+        for (code in 30008L..30015L) {
+            val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
+            assertTrue(versions.warning(update).contains("版本不一致"))
+            assertFalse(versions.compatibilityNote(update).contains("当前模块可继续使用"))
+        }
+        assertEquals("", RuntimeVersions(update, update).warning(update))
+        assertEquals("", RuntimeVersions(update, ComponentVersion(null, null), moduleInstalled = false).warning(update))
+    }
+
     @Test fun readDiagnosticsUpdateAcceptsUnchangedSchedulingModules() {
         val update = ComponentVersion("2.0.0", 30015L)
         for (code in 30008L..30014L) {

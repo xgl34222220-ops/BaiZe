@@ -10,6 +10,10 @@ SCRIPTDIR="$MODDIR"
 [ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-${1:-manual}}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# Capture a task's refresh identity once and keep records outside temporary lanes.
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+baize_cleanup_media_init
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
 CONFIG="$STATE_DIR/config.conf"
@@ -48,8 +52,8 @@ CACHE_SCAN_TARGETS="$STATE_DIR/$CACHE_PREFIX.targets"
 CACHE_SCAN_MANIFEST="$STATE_DIR/$CACHE_PREFIX.manifest0"
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
-[ -f "$WHITELIST" ] || : >"$WHITELIST"
-[ -f "$PACKAGE_WHITELIST" ] || : >"$PACKAGE_WHITELIST"
+[ -f "$WHITELIST" ] && [ -r "$WHITELIST" ] || { echo "白名单缺失或不可读，未开始删除" >&2; exit 7; }
+[ -f "$PACKAGE_WHITELIST" ] && [ -r "$PACKAGE_WHITELIST" ] || { echo "应用白名单缺失或不可读，未开始删除" >&2; exit 7; }
 
 # 架构支持由 baize_require_engine 判定，包里有对应 ABI 的引擎即可运行。
 [ -x "$NATIVE_ENGINE" ] || { echo "C 原生快照清理器不可用，请重新刷入完整模块" >&2; exit 8; }
@@ -170,7 +174,7 @@ if [ "$epoch" -le 0 ] || [ "$age" -lt 0 ] || [ "$age" -gt 1800 ] || [ -z "$snaps
   echo "缓存扫描快照已过期，请重新扫描"
   exit 6
 fi
-[ "$manifest_format" = "nul-v2" ] || { echo "缓存快照格式不受支持，请重新扫描"; exit 7; }
+[ "$manifest_format" = "nul-v3-sha256" ] || { echo "缓存快照格式不受支持，请重新扫描"; exit 7; }
 [ "$manifest_items" -eq "$authorized_files" ] || { echo "缓存快照项目计数不一致，请重新扫描"; exit 7; }
 [ "$(file_sha "$CACHE_SCAN_TARGETS")" = "$expected_targets_sha" ] || { echo "缓存目标快照校验失败，请重新扫描"; exit 7; }
 [ "$(file_sha "$CACHE_SCAN_ITEMS")" = "$expected_items_sha" ] || { echo "缓存摘要快照校验失败，请重新扫描"; exit 7; }
@@ -179,14 +183,18 @@ fi
 [ "$(file_sha "$PACKAGE_WHITELIST")" = "$expected_package_sha" ] || { echo "应用白名单已变化，请重新扫描"; exit 7; }
 
 set_phase "正在校验不可变缓存快照" 0 "$manifest_items" ""
+baize_cleanup_media_begin || { echo "无法保存删除后媒体刷新记录，未开始删除" >&2; exit 71; }
 code=0
 "$NATIVE_ENGINE" clean-cache-snapshot \
   --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" \
   --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
   --manifest "$CACHE_SCAN_MANIFEST" --max-file-bytes "$max_file_bytes" \
-  --report "$REPORT_FILE" --summary "$SUMMARY_FILE" \
+  --report "$REPORT_FILE" --summary "$SUMMARY_FILE" --deleted-nul "$BAIZE_CLEANUP_DELETED_NUL" \
   --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
 
+baize_cleanup_media_publish || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+[ "$code" -ne 71 ] || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+baize_cleanup_media_kick
 deleted_files=$(summary_number files)
 deleted_bytes=$(summary_number bytes)
 skipped=$(summary_number skipped)
@@ -205,6 +213,8 @@ partial_candidates=$(summary_number partial_candidates)
 failed_candidates=$(summary_number failed_candidates)
 changed_files=$(summary_number changed_files)
 missing_files=$(summary_number missing_files)
+counts_confirmed=1
+[ "$(summary_value outcome_schema)" = cache-root-outcomes-v1 ] || counts_confirmed=0
 if [ "$code" -eq 0 ]; then
   if [ "$(summary_value outcome_schema)" != cache-root-outcomes-v1 ]; then code=71
   elif [ "$errors" -gt 0 ]; then code=8
@@ -229,9 +239,16 @@ case "$code" in
     ;;
 esac
 
+if [ "$counts_confirmed" = 0 ]; then
+  BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+  result="缓存清理中断或记录失败（代码 $code），最终删除统计未确认；已写成功记录保留待核对"
+fi
+if [ "$BAIZE_CLEANUP_MEDIA_UNCONFIRMED" = 1 ]; then result="$result；媒体索引刷新未确认"; else result="$result；媒体索引已排队核对"; fi
 latest_tmp="$STATE_DIR/latest.env.tmp.$$"
 {
   echo "mode=cache-clean"
+  echo "media_refresh_unconfirmed=$BAIZE_CLEANUP_MEDIA_UNCONFIRMED"
+  echo "deletion_counts_confirmed=$counts_confirmed"
   echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
   echo "schema=clean-result-v1"
   echo "scanned_candidates=$authorized_candidates"

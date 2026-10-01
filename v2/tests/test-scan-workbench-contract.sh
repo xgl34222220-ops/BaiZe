@@ -15,8 +15,9 @@ for method in prepareCacheSelection getWhitelistPaths addWhitelistPath; do
 done
 
 grep -q 'cache_scan.manifest0' "$SELECTION"
-grep -q 'MANIFEST_FIELD_COUNT = 10' "$SELECTION"
+grep -q 'MANIFEST_FIELD_COUNT = 11' "$SELECTION"
 grep -q 'verifyHash(manifestFile' "$SELECTION"
+grep -q 'nul-v3-sha256' "$SELECTION"
 grep -q 'selection_parent_snapshot' "$SELECTION"
 grep -q 'path == root || path.startsWith("$root/")' "$SELECTION"
 
