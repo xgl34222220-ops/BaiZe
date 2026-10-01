@@ -13,6 +13,7 @@ for _ in $(seq 1 90); do
 done
 adb shell cat "/data/user/0/$APP/files/storage-deletion-probe/result.json" > "$OUT/result.json"
 adb shell cat "/data/user/0/$APP/files/storage-deletion-probe/stale-zip-diagnostic.json" > "$OUT/stale-zip-diagnostic.json" || true
+adb pull "/data/user/0/$APP/files/storage-deletion-probe/." "$OUT/" >/dev/null || true
 adb logcat -d -v threadtime > "$OUT/logcat.txt" || true
 cat "$OUT/result.json"
 python3 - "$OUT/result.json" <<'PY'

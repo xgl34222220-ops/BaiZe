@@ -14,6 +14,7 @@ done
 adb shell cat "/data/user/0/$APP/files/apk-deletion-probe/result.json" > "$OUT/result.json"
 adb shell cat "/data/user/0/$APP/files/apk-deletion-probe/missing-file-diagnostic.json" > "$OUT/missing-file-diagnostic.json" || true
 adb shell cat "/data/user/0/$APP/files/apk-deletion-probe/legacy-delete-evidence.json" > "$OUT/legacy-delete-evidence.json" || true
+adb pull "/data/user/0/$APP/files/apk-deletion-probe/." "$OUT/" >/dev/null || true
 adb logcat -d -v threadtime > "$OUT/logcat.txt" || true
 cat "$OUT/result.json"
 python3 - "$OUT/result.json" <<'PY'

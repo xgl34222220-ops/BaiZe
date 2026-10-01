@@ -287,10 +287,21 @@ object CacheRootDeviceProbe {
             val persistentToken = persistentScan.getString("snapshotId")
             val ownedPlan = File(RootPaths.STATE_DIR, "profile-snapshots/$persistentToken.json")
             try {
-                val persistentItem = JSONObject(planningService.getPage(persistentToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+                fun ownedItem(service: IPersistentCleanPlanService): JSONObject {
+                    val count = persistentScan.getInt("totalCandidates")
+                    for (offset in 0 until count step 20) {
+                        val items = JSONObject(service.getPage(persistentToken, offset, 20)).getJSONArray("items")
+                        for (index in 0 until items.length()) {
+                            val item = items.getJSONObject(index)
+                            if (item.getString("path") == persistedRoot.canonicalPath) return item
+                        }
+                    }
+                    error("Owned persistent fixture was not in the safe plan")
+                }
+                val persistentItem = ownedItem(planningService)
                 val unreviewed = File(persistedRoot, "after-restart.bin").apply { writeBytes(ByteArray(66)); setLastModified(1_500_000_000_000L) }
                 val restoredService = persistentService()
-                val visibleRestored = JSONObject(restoredService.getPage(persistentToken, 0, 20)).getJSONArray("items").getJSONObject(0)
+                val visibleRestored = ownedItem(restoredService)
                 check(!visibleRestored.has("frozenTree"))
                 checkNotNull(RootOperationLease.acquire(context, shared = true)).use {
                     val busy = JSONObject(restoredService.cleanSafe(persistentToken,
@@ -300,7 +311,8 @@ object CacheRootDeviceProbe {
                 val restoredResult = JSONObject(restoredService.cleanSafe(persistentToken,
                     JSONObject().put(persistentItem.getString("id"), true).toString(), "{}"))
                 check(restoredResult.optBoolean("persistedFallback") && restoredResult.getLong("deletedFiles") == 1L &&
-                    !persistedOld.exists() && unreviewed.length() == 66L && restoredResult.getInt("remainingCandidates") == 1) { restoredResult.toString() }
+                    !persistedOld.exists() && unreviewed.length() == 66L &&
+                    restoredResult.getInt("remainingCandidates") == persistentScan.getInt("totalCandidates")) { restoredResult.toString() }
             } finally { ownedPlan.delete() }
             markStage("corpse-package-inventory-safety")
             val corpseRoot = File(first, "synthetic-corpse-guard").apply { mkdir() }

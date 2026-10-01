@@ -67,8 +67,12 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 check(replacement.renameTo(changed))
                 check(remove(modified, safe) == ApkIndexedDeleteResult.CHANGED && changed.isFile)
                 stage = "selected-delete"
+                lastMutation = JSONObject()
+                val beforeSelected = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, target.uri, target.path, null, target.identity))
                 val deleted = remove(target, safe)
-                check(deleted == ApkIndexedDeleteResult.DELETED) { "Conditional MediaStore delete returned $deleted" }
+                val selectedEvidence = recordIndexedDeletionProbe(applicationContext, output, "selected-delete-evidence.json",
+                    target.uri, target.path, target.identity, deleted, beforeSelected, lastMutation)
+                check(deleted == ApkIndexedDeleteResult.DELETED) { selectedEvidence.toString() }
                 check(!selected.exists() && kept.isFile && changed.isFile)
                 stage = "single-file-diagnostic"
                 val diagnostic = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, target.uri, target.path, null, target.identity))

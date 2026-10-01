@@ -81,12 +81,18 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                         sharedStorageTimestampCollision = true; break
                     }
                 }
+                File(output, "shared-storage-time-evidence.json").writeText(JSONObject()
+                    .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
+                    .put("api", Build.VERSION.SDK_INT).put("uid", Process.myUid()).toString(2))
                 stage = "delete-every-indexed-category"
                 val categories = JSONArray()
                 for (file in selected) {
                     val item = record(file)
+                    val diagnosticBefore = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, item.uri, item.path, null, item.identity, indexedFile = true))
                     val outcome = StorageMediaRepository.delete(applicationContext, item, { safe })
-                    check(outcome.deleted && !file.exists()) { "${file.extension}: ${outcome.reason}" }
+                    val evidence = recordIndexedDeletionProbe(applicationContext, output, "delete-${file.extension}-evidence.json",
+                        item.uri, item.path, item.identity, outcome.result, diagnosticBefore)
+                    check(outcome.deleted && !file.exists()) { "${file.extension}: $evidence" }
                     contentResolver.query(android.net.Uri.parse(item.uri), arrayOf(MediaStore.MediaColumns._ID), null, null, null)!!.use {
                         check(!it.moveToFirst()) { "Deleted file still indexed: ${file.extension}" }
                     }
