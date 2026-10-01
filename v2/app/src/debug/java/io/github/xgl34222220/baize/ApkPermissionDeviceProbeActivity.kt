@@ -25,7 +25,7 @@ class ApkPermissionDeviceProbeActivity : ComponentActivity() {
         if (!(Build.FINGERPRINT.contains("generic") || Build.MODEL.contains("sdk"))) { finish(); return }
         val phase = request.getStringExtra("phase").orEmpty()
         val path = request.getStringExtra("path").orEmpty()
-        if (phase !in setOf("denied", "granted", "revoked", "restored", "restarted") ||
+        if (phase !in setOf("denied", "granted", "revoked", "restored", "restarted", "stale") ||
             !path.matches(Regex("/storage/emulated/0/Download/baize-apk-permission-probe-[0-9]+/fixture.apk"))) { finish(); return }
         lifecycleScope.launch(Dispatchers.IO) {
             val out = File(filesDir, "apk-permission-probe").apply { mkdirs() }

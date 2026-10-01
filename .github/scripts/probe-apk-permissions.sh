@@ -38,11 +38,14 @@ adb shell appops set "$APP" MANAGE_EXTERNAL_STORAGE allow
 stage restored
 adb shell am force-stop "$APP"
 stage restarted
+# Delete only the run-owned backing file, leaving its earlier MediaStore record for inspection.
+adb shell rm -f "/data/media/0/Download/$NAMESPACE/fixture.apk"
+stage stale
 adb logcat -d > "$OUT/logcat.txt"
 python3 - "$OUT" <<'PY'
 import json, pathlib, sys
 out=pathlib.Path(sys.argv[1]); stages={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
-for name in ('denied','granted','revoked','restored','restarted'):
+for name in ('denied','granted','revoked','restored','restarted','stale'):
     assert stages[name].get('completed') and stages[name]['uid'] >= 10000 and stages[name]['api'] == 36, stages[name]
 print(json.dumps(stages,ensure_ascii=False,indent=2))
 (out/'summary.json').write_text(json.dumps(stages,ensure_ascii=False,indent=2))
