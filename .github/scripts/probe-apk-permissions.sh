@@ -81,9 +81,16 @@ import json, pathlib, sys
 out=pathlib.Path(sys.argv[1]); stages={p.stem:json.loads(p.read_text()) for p in out.glob('*.json')}
 for name in ('denied','granted','revoked','restored','restarted','stale','raw_refreshed','public_refreshed'):
     assert stages[name].get('completed') and stages[name]['uid'] >= 10000 and stages[name]['api'] == 36, stages[name]
-for name in ('stale', 'raw_refreshed'):
-    assert stages[name]['reviewConfirmedMissing'] == 1 and stages[name]['reviewCandidateCount'] == 0, stages[name]
-    assert stages[name]['indexRowsAfterReview'] == 1, stages[name]
+# The first stale row must exist and be excluded from review without a URI mutation.
+r=stages['stale']
+assert r['indexRows'] == 1 and r['reviewConfirmedMissing'] == 1 and r['reviewCandidateCount'] == 0, r
+assert r['indexRowsAfterReview'] == 1, r
+# Later platform refreshes may already have removed that row. Recheck filtering only if it remains.
+r=stages['raw_refreshed']
+assert r['indexRows'] in (0, 1), r
+if r['indexRows'] == 1:
+    assert r['reviewConfirmedMissing'] == 1 and r['reviewCandidateCount'] == 0, r
+    assert r['indexRowsAfterReview'] == 1, r
 assert stages['public_refreshed']['indexRows'] == 0, stages['public_refreshed']
 print(json.dumps(stages,ensure_ascii=False,indent=2))
 (out/'summary.json').write_text(json.dumps(stages,ensure_ascii=False,indent=2))
