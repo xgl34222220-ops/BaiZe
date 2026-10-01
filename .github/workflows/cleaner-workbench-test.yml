@@ -234,6 +234,13 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Download exact delivered 30010 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+472f0d03-Paired-Test
+          run-id: 36829014947
+          github-token: ${{ github.token }}
+          path: baseline-30010
       - name: Build same-package archive resource fixtures
         run: |
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
@@ -251,8 +258,9 @@ jobs:
             adb install root-probe/app-debug.apk
             bash .github/scripts/probe-root-cache.sh root-probe/app-debug.apk
             bash .github/scripts/probe-apk-artwork.sh
+            bash .github/scripts/probe-apk-deletion.sh
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30010 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30011 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -261,5 +269,6 @@ jobs:
             ${{ runner.temp }}/baize-apk-startup/
             ${{ runner.temp }}/baize-root-cache-probe/
             ${{ runner.temp }}/baize-apk-artwork-probe/
+            ${{ runner.temp }}/baize-apk-deletion-probe/
           if-no-files-found: warn
           retention-days: 7

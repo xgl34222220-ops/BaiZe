@@ -19,6 +19,7 @@ previous = Path(sys.argv[3]).resolve()
 previous_30007 = Path(sys.argv[4]).resolve()
 previous_30008 = Path(sys.argv[5]).resolve()
 previous_30009 = Path(sys.argv[6]).resolve()
+previous_30010 = Path(sys.argv[7]).resolve()
 assert hashlib.sha256(baseline.read_bytes()).hexdigest() == "01949f5a8f5e87e70bf2cc18e475f38bce28cdcd835ad731d0d9ea6565f97c80"
 if hashlib.sha256(previous.read_bytes()).hexdigest() != "5c327020842f2e8f71d8549d06fc7bbd6a6468638bb4e28e8cbcc9f31f4b97c0":
     raise AssertionError("30006 baseline must be the exact delivered APK")
@@ -26,6 +27,7 @@ assert hashlib.sha256(previous_30007.read_bytes()).hexdigest() == "5f2f846b151d1
 assert hashlib.sha256(previous_30008.read_bytes()).hexdigest() == "7c3bcaec6359972f45702a9022861bd1e5cb5b0eea45bc566a39de521f067756"
 
 assert hashlib.sha256(previous_30009.read_bytes()).hexdigest() == "2bf86de59a6b1273aa7d6e28b67412b71155c8a630b434a5caafdfed8207c07b"
+assert hashlib.sha256(previous_30010.read_bytes()).hexdigest() == "71e9581aed76ac978e05449c0c8dc6d192e7e73faa1e7b512a9cf350137e0410"
 
 
 def tap(text, name, repeats=1):
@@ -193,6 +195,16 @@ try:
         detail_text = "\n".join(n.attrib.get("text", "") for n in m.ui(f"candidate-version-details-{attempt}").iter("node"))
     assert "历史版本缓存" in detail_text and "30008" in detail_text
     m.adb("uninstall", m.APP)
+    m.adb("install", str(previous_30010), timeout=120)
+    m.launch("baseline-30010")
+    mark = marker("preserve-30010-data")
+    m.adb("push", str(seed), target)
+    m.adb("shell", f"uid=$(stat -c %u /data/user/0/{m.APP}); chown $uid:$uid {target}; restorecon {target}")
+    installed_candidate()
+    assert m.adb("shell", "cat", mark) == "preserve-30010-data"
+    assert json.loads(m.adb("shell", "cat", target))["selected"] == ["upgrade-fixture"]
+    m.launch("candidate-from-30010")
+    m.adb("uninstall", m.APP)
     m.adb("install", str(apk), timeout=120)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS", check=False)
     m.launch("candidate-fresh-install")
@@ -229,6 +241,26 @@ try:
         time.sleep(1)
     assert artwork_seen, "The release APK must show its own archived label, version and decoded icon"
     m.capture("apk-artwork-final-release")
+    tree = m.ui("apk-selection-before-rotation")
+    checkbox = next(n for n in tree.iter("node") if n.attrib.get("content-desc") == f"选择安装包{fixture_name}")
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", checkbox.attrib["bounds"]))
+    m.adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+    time.sleep(1)
+    def selected_apk_review(name):
+        tree = m.ui(name)
+        labels = "\n".join(n.attrib.get("text", "") for n in tree.iter("node"))
+        assert "清理已选 1 个安装包" in labels, "APK review selection must survive Activity recreation"
+        expect_top("ApkScanActivity", name)
+    selected_apk_review("apk-selected-portrait")
+    m.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    m.adb("shell", "settings", "put", "system", "user_rotation", "1")
+    time.sleep(3)
+    selected_apk_review("apk-selected-landscape")
+    m.capture("apk-selection-retained-landscape")
+    m.adb("shell", "settings", "put", "system", "user_rotation", "0")
+    time.sleep(3)
+    selected_apk_review("apk-selection-retained-portrait")
+    m.capture("apk-selection-retained-portrait")
     m.alive()
     m.save_text("passed.json", json.dumps({"versionCode": int(expected), "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "android_api": m.adb("shell", "getprop", "ro.build.version.sdk"), "official_upgrade_preserved_data": True,
@@ -236,12 +268,14 @@ try:
         "30007_upgrade_preserved_review_and_selection": True,
         "30008_upgrade_preserved_review_and_selection": True,
         "30009_upgrade_preserved_review_and_selection": True,
+        "30010_upgrade_preserved_review_and_selection": True,
         "old_compatible_banner_reproduced_and_removed": True, "historical_versions_available_in_settings": True,
         "baseline_scan_stack": old_scan_stack, "candidate_scan_stack": new_scan_stack,
         "baseline_deep_stack": old_deep_stack, "candidate_deep_stack": new_deep_stack,
         "repeated_tap_single_page": True, "single_back_to_origin": True, "background_foreground": True,
         "organizer_without_module": True, "no_app_crash_or_anr": True,
         "release_apk_archive_icon_label_version": True,
+        "apk_review_selection_survives_rotation": True,
         "limit": "Emulator navigation and installation; actual root-manager cleaning remains unverified"}, ensure_ascii=False, indent=2))
     print((m.OUT / "passed.json").read_text())
 except Exception:

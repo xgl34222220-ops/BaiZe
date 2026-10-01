@@ -63,11 +63,12 @@ internal data class RuntimeVersions(
         val components = listOf("Root" to root) +
             if (moduleInstalled == false) emptyList() else listOf("模块" to module)
         components.forEach { (label, version) ->
-            // These App-only preview/presentation releases keep the delivered 30008
-            // Root protocol, native engines, scripts and configuration schemas.
+            // 30011 adds an App-owned protection request. Its Root process must be current;
+            // the scheduling module still uses the unchanged 30008 scripts and binaries.
             val compatibleCodes = when (app) {
                 ComponentVersion("2.0.0", 30009L) -> setOf(30008L)
                 ComponentVersion("2.0.0", 30010L) -> setOf(30008L, 30009L)
+                ComponentVersion("2.0.0", 30011L) -> if (label == "模块") setOf(30008L, 30009L, 30010L) else emptySet()
                 else -> emptySet()
             }
             if (version.name == "2.0.0" && version.code in compatibleCodes) {

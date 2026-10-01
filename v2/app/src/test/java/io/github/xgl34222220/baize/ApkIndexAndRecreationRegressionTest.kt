@@ -101,6 +101,37 @@ class ApkIndexAndRecreationRegressionTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    @Test fun rotationAndRootDisconnectCannotReplaceAnInFlightLocalScanAndCancelDiscardsItsRows() {
+        provider.rowCount = 2
+        provider.blockCollection = true
+        val controller = Robolectric.buildActivity(ApkScanActivity::class.java).setup()
+        try {
+            val before = controller.get()
+            before.call("startScan")
+            await { provider.entered.count == 0L }
+            assertTrue(before.state().running)
+            val phase = before.state().phase
+            val connection = before.session.javaClass.getDeclaredField("connection")
+                .apply { isAccessible = true }.get(before.session) as com.topjohnwu.superuser.ipc.RootService.Connection
+            connection.onServiceDisconnected(null)
+            assertEquals(phase, before.state().phase)
+            assertTrue(before.state().running)
+            controller.recreate()
+            val after = controller.get()
+            assertTrue(after.state().running)
+            after.session.stopTask()
+            provider.release.countDown()
+            await { !after.state().running }
+            assertTrue(after.state().items.isEmpty())
+            assertFalse(after.state().cleanReady)
+            assertTrue(after.state().phase.contains("停止"))
+            assertEquals(1, provider.collectionQueries)
+        } finally {
+            provider.release.countDown()
+            controller.pause().stop().destroy()
+        }
+    }
+
     private fun ApkScanActivity.state(): ApkScanUiState = javaClass.getDeclaredMethod("getScreenState")
         .apply { isAccessible = true }.invoke(this) as ApkScanUiState
     private fun ApkScanActivity.call(name: String) = javaClass.getDeclaredMethod(name).apply { isAccessible = true }.invoke(this)
@@ -115,6 +146,9 @@ class ApkIndexAndRecreationRegressionTest {
 }
 
 class SyntheticApkIndexProvider : ContentProvider() {
+    var blockCollection = false
+    val entered = java.util.concurrent.CountDownLatch(1)
+    val release = java.util.concurrent.CountDownLatch(1)
     var returnNull = false
     var rowCount = 0
     var queries = 0
@@ -123,6 +157,10 @@ class SyntheticApkIndexProvider : ContentProvider() {
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? {
         queries++
         val collection = uri.pathSegments.size == 2
+        if (collection && blockCollection) {
+            entered.countDown()
+            check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        }
         if (collection) collectionQueries++
         if (returnNull) return null
         val columns = requireNotNull(projection)

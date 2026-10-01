@@ -133,6 +133,34 @@ object CacheRootDeviceProbe {
             val afterRestart = JSONObject(root.cleanSelected(token, JSONObject().put(secondPath, true).toString(), "[]"))
             check(afterRestart.optBoolean("success") && afterRestart.optLong("deletedBytes") == 8192L && !unselectedFile.exists()) { afterRestart.toString() }
             check(personalFile.readText() == "preserve-personal")
+            markStage("apk-protection-fd-snapshot")
+            val profileService = BaiZeProfileRootService()
+            ContextWrapper::class.java.getDeclaredField("mBase").apply { isAccessible = true }.set(profileService, context)
+            val profileDelegate = IProfileRootService.Stub.asInterface(profileService.onBind(Intent()))
+            val profileTransport = object : IProfileRootService by profileDelegate {
+                override fun exchangeJsonInto(operation: String?, request: ParcelFileDescriptor?, response: ParcelFileDescriptor?): Int {
+                    val source = requireNotNull(request)
+                    val target = requireNotNull(response)
+                    return ParcelFileDescriptor.dup(source.fileDescriptor).use { receivedRequest ->
+                        ParcelFileDescriptor.dup(target.fileDescriptor).use { receivedResponse ->
+                            profileDelegate.exchangeJsonInto(operation, receivedRequest, receivedResponse)
+                        }
+                    }.also { check(source.fileDescriptor.valid() && target.fileDescriptor.valid()) }
+                }
+            }
+            val protectedFixture = first.canonicalPath
+            check(JSONObject(profileDelegate.addWhitelistPath(protectedFixture)).getBoolean("success"))
+            try {
+                val protection = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "getApkProtection"))
+                check(protection.getInt("uid") == 0 && protection.getBoolean("root") && protection.getInt("version") == 1)
+                val decoded = io.github.xgl34222220.baize.ApkProtectionStore.parse(
+                    protection.getJSONArray("packages").toString(), protection.getJSONArray("paths").toString())
+                check(protectedFixture in decoded.paths && personalFile.readText() == "preserve-personal")
+            } finally {
+                val removed = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "removeWhitelistPath",
+                    org.json.JSONArray().put(protectedFixture)))
+                check(removed.getBoolean("success"))
+            }
             val rules = File(first, "synthetic-rules").apply { mkdir() }
             val low = File(first, "ordinary").apply { mkdir(); resolve("small.bin").writeBytes(ByteArray(128)) }
             val high = File(first, "user_data").apply { mkdir(); resolve("review.bin").writeBytes(ByteArray(256)) }
@@ -156,6 +184,7 @@ object CacheRootDeviceProbe {
                 .put("formerWorkbenchError", former.optString("error")).put("scanThenSelectedClean", true)
                 .put("fdTransport", true).put("unselectedPreserved", true).put("unknownPathRejected", true)
                 .put("localBinderDescriptorCopies", true).put("crossUidBinderValidated", false)
+                .put("apkProtectionFdSnapshot", true)
                 .put("serviceRecreationSelectedClean", true).put("deletedBytes", 12288)
                 .put("lowThenHighSameSnapshot", true).put("profileDeletedBytes", 384).toString())
         } finally {

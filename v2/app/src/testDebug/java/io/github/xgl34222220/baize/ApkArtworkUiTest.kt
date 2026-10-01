@@ -67,6 +67,58 @@ class ApkArtworkUiTest {
         assertTrue("Offscreen archives must not be decoded eagerly: $reads", reads < 30)
     }
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun retainedProtectionReasonIsReadableInDarkLargeTextAndDetailsDoNotClean() {
+        val first = item(1).copy(name = "仍需保留的长文件名称".repeat(12) + ".apk", archive = parsed(),
+            retainedReason = ApkIndexedDeleteResult.PROTECTED.retainedReason())
+        render(dark = true, fontScale = 1.5f) {
+            ApkScanScreen(ready(listOf(first)).copy(selected = setOf(first.uri),
+                phase = "清理完成：删除 1 个，保留 1 个", output = "已删除 1 个，实际释放 8 MB"),
+                {}, {}, { cleanCalls++ }, {}, {})
+        }
+        compose.onNodeWithText("清理已选 1 个安装包").assertIsDisplayed()
+        compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText(first.retainedReason))
+        compose.onNodeWithText(first.retainedReason).assertIsDisplayed()
+        save("apk-retained-protection-dark-large-font")
+        compose.onNodeWithText(first.name).performClick()
+        compose.onNodeWithText("处理结果\n${first.retainedReason}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("完成").performClick()
+        assertEquals(0, cleanCalls)
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun protectionRecoveryActionsWrapAndCannotDeleteFromTheErrorMessage() {
+        var reconnects = 0
+        var localModes = 0
+        val state = ready(listOf(item(1))).copy(protectionNeedsAction = true, localModeAvailable = true,
+            protectionMessage = "保护名单尚未核对，已保留文件。请连接 Root 后重试。")
+        render(fontScale = 1.5f) { ApkScanScreen(state, {}, {}, { cleanCalls++ }, {}, { reconnects++ },
+            onLocalMode = { localModes++ }) }
+        compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText("重连保护服务"))
+        compose.onNodeWithText("重连保护服务").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText("仅本地清理"))
+        compose.onNodeWithText("仅本地清理").assertIsDisplayed().performClick()
+        save("apk-protection-recovery-large-font")
+        assertEquals(1, reconnects); assertEquals(1, localModes); assertEquals(0, cleanCalls)
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w740dp-h320dp-mdpi")
+    fun changedFileReasonAndFullPathRemainReachableInLandscape() {
+        val first = item(1).copy(archive = parsed(), retainedReason = ApkIndexedDeleteResult.CHANGED.retainedReason(),
+            samplePath = "/synthetic/" + "很长的下载文件夹/".repeat(12) + "package.apk")
+        render(dark = true, fontScale = 1.5f) { ApkScanScreen(ready(listOf(first)), {}, {}, { cleanCalls++ }, {}, {}) }
+        compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText(first.name))
+        compose.onNodeWithText(first.name).performClick()
+        compose.onNodeWithText("完整路径\n${first.samplePath}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("处理结果\n${first.retainedReason}").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("完成").assertIsDisplayed()
+        save("apk-retained-details-landscape")
+        assertEquals(0, cleanCalls)
+    }
+
     @Test fun emptyMetadataCacheCanAdvanceAVersionFilterWithoutSelectingUnknownArchives() {
         val release = CompletableDeferred<Unit>()
         var state by mutableStateOf(ready(listOf(item(1), item(2))))

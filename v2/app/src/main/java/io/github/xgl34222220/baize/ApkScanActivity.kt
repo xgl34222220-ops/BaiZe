@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -199,11 +201,13 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             service = RootServiceClients.profile(binder, applicationContext.cacheDir)
             serviceBound = true
             screenState = screenState.copy(connected = true, status = "Root 保护服务可用")
+            refreshProtectionPresentation()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             if (closed) return
             service = null; serviceBound = false
             screenState = screenState.copy(connected = false, status = "Root 保护服务未连接")
+            refreshProtectionPresentation()
         }
         override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) {
             if (closed) return
@@ -217,6 +221,23 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         initialized = true
         screenState = screenState.copy(localModeAvailable = !ApkProtectionStore.rootWasUsed(this))
         connectService()
+    }
+    private fun refreshProtectionPresentation() {
+        val remote = service
+        lifecycleScope.launch {
+            val protection = withContext(Dispatchers.IO) {
+                ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, remote))
+            }
+            if (closed || service !== remote) return@launch
+            screenState = screenState.copy(
+                localModeAvailable = protection is ApkProtectionState.Unknown && !ApkProtectionStore.rootWasUsed(applicationContext),
+                protectionNeedsAction = protection is ApkProtectionState.Unknown,
+                protectionMessage = when (protection) {
+                    is ApkProtectionState.KnownRoot -> ""
+                    is ApkProtectionState.LocalOnly -> "本地模式 · 删除前核对文件身份与本地保护规则"
+                    is ApkProtectionState.Unknown -> if (screenState.items.isNotEmpty()) protection.reason else ""
+                })
+        }
     }
     fun enableLocalMode() {
         if (closed || screenState.running) return
@@ -601,6 +622,7 @@ internal data class ApkScanItem(
     val retainedReason: String = ""
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ApkScanScreen(
     state: ApkScanUiState,
@@ -667,7 +689,7 @@ internal fun ApkScanScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text(state.protectionMessage, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!state.running && state.protectionNeedsAction) Row {
+                if (!state.running && state.protectionNeedsAction) FlowRow {
                     TextButton(onClick = onReconnect) { Text("重连保护服务") }
                     if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅本地清理") }
                 }

@@ -7,6 +7,18 @@ import org.junit.Test
 class RuntimeVersionsTest {
     private val app = ComponentVersion.parse("2.8.2", 28002)
 
+    @Test fun guardedApkUpdateKeepsOldSchedulingModuleButRequiresCurrentAppRootService() {
+        val update = ComponentVersion("2.0.0", 30011L)
+        for (code in listOf(30008L, 30009L, 30010L)) {
+            val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
+            assertEquals("", versions.warning(update))
+            assertTrue(versions.compatibilityNote(update).contains("当前模块可继续使用"))
+            val staleRoot = RuntimeVersions(ComponentVersion("2.0.0", code), versions.module)
+            assertTrue(staleRoot.warning(update).contains("Root"))
+            assertFalse(staleRoot.compatibilityNote(update).contains("当前 Root 组件可继续使用"))
+        }
+    }
+
     private fun ping(rootName: Any = "2.8.2", rootCode: Any = 28002,
                      moduleName: Any = "v2.8.2", moduleCode: Any = "28002") = JSONObject()
         .put("rootVersionName", rootName).put("rootVersionCode", rootCode)
