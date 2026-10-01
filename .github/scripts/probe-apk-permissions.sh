@@ -40,7 +40,9 @@ print(base64.b64encode(json.dumps(record).encode()).decode())
 PYROOT
 )
   fi
-  adb shell am start -W -n "$APP/.ApkPermissionDeviceProbeActivity" --es phase "$phase" --es path "$FIXTURE" --es root_evidence "$root_evidence"
+  local extra=()
+  if [ -n "$root_evidence" ]; then extra=(--es root_evidence "$root_evidence"); fi
+  adb shell am start -W -n "$APP/.ApkPermissionDeviceProbeActivity" --es phase "$phase" --es path "$FIXTURE" "${extra[@]}"
   for _ in $(seq 1 30); do
     if adb shell test -f "/data/user/0/$APP/files/apk-permission-probe/$phase.json"; then break; fi
     sleep 1
