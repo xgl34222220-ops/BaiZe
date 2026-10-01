@@ -10,7 +10,8 @@ adb wait-for-device
 adb install -r v2/app/build/outputs/apk/debug/app-debug.apk
 adb shell mkdir -p "/sdcard/Download/$NAMESPACE"
 adb push v2/app/build/outputs/apk/debug/app-debug.apk "/sdcard/Download/$NAMESPACE/fixture.apk"
-adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://$FIXTURE"
+adb shell timeout 20 /system/bin/content call --user 0 --uri content://media --method scan_file --arg "$FIXTURE" > "$OUT/initial-refresh.txt" 2>&1
+adb logcat -d > "$OUT/setup-logcat.txt"
 for _ in $(seq 1 20); do
   adb shell "content query --uri content://media/external/file --projection _id:_data --where \"_data='$FIXTURE'\"" > "$OUT/root-index.txt"
   if grep -q 'Row:' "$OUT/root-index.txt"; then break; fi
