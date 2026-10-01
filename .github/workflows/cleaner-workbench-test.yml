@@ -24,6 +24,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify diagnostic source remains the delivered 30010
+        if: contains(github.event.head_commit.message, '[apk-regression-only]')
+        run: |
+          git diff --exit-code 472f0d035e57074fdab990587dcfc1d8a791ed38 HEAD -- . \
+            ':(exclude)v2/app/src/test/java/io/github/xgl34222220/baize/ApkIndexAndRecreationRegressionTest.kt' \
+            ':(exclude).github/workflows/cleaner-workbench-test.yml'
 
       - name: Identify paired test build
         shell: bash
@@ -43,6 +51,7 @@ jobs:
           packages: platform-tools
 
       - name: Install Android and native toolchains
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -55,6 +64,7 @@ jobs:
           gradle-version: '9.5.0'
 
       - name: Prepare formal signing certificate
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         env:
           BAIZE_KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
           BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
@@ -63,6 +73,7 @@ jobs:
         run: python3 .github/scripts/prepare-formal-signing.py
 
       - name: Verify shell and full cleaner regression
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -75,9 +86,17 @@ jobs:
 
       - name: Test Android logic and render UI
         working-directory: v2
-        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        env:
+          APK_REGRESSION_ONLY: ${{ contains(github.event.head_commit.message, '[apk-regression-only]') }}
+        run: |
+          if [ "$APK_REGRESSION_ONLY" = "true" ]; then
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests io.github.xgl34222220.baize.ApkIndexAndRecreationRegressionTest
+          else
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+          fi
 
       - name: Upload debug-only Root flow probe
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-Root-Flow-Probe
@@ -85,18 +104,22 @@ jobs:
           retention-days: 3
 
       - name: Build native engines
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         working-directory: v2
         run: sh scripts/build-native.sh
 
       - name: Build signed App
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         working-directory: v2
         run: ./gradlew --no-daemon --max-workers=2 :app:compileReleaseKotlin :app:assembleRelease
 
       - name: Package matching Magisk module
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         working-directory: v2
         run: sh scripts/package-module.sh
 
       - name: Verify paired artifacts
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +140,7 @@ jobs:
           sha256sum -c SHA256SUMS.txt
 
       - name: Upload paired test bundle
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
         uses: actions/upload-artifact@v4
         with:
           name: BaiZe-${{ env.BAIZE_TEST_LABEL }}-Paired-Test
@@ -144,6 +168,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
 
   apk-installation-smoke:
+    if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') }}
     needs: build-paired-test
     runs-on: ubuntu-latest
     timeout-minutes: 20

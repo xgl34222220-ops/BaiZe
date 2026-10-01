@@ -108,7 +108,7 @@ class SyntheticApkIndexProvider : ContentProvider() {
                 MediaStore.MediaColumns.DATE_MODIFIED -> 1_700_000_000L
                 MediaStore.MediaColumns.MIME_TYPE -> "application/vnd.android.package-archive"
                 else -> null
-            } }.toTypedArray())
+            } }.toTypedArray<Any?>())
         }
     }
     override fun getType(uri: Uri) = "application/vnd.android.package-archive"
