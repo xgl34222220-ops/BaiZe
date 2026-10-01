@@ -57,6 +57,21 @@ internal class ApkDeletionGuard(
     private val files: ApkFileAccess = AndroidApkFileAccess
 ) {
     private val aliases = AndroidPathIdentity(primaryStorageRoot)
+    private val publicVolumeRoots = roots.filter {
+        it.matches(Regex("/storage/[A-Za-z0-9-]+")) && it !in setOf("/storage/emulated", "/storage/self")
+    }
+
+    private fun protectionIdentities(path: String): Set<String> = buildSet {
+        val normal = aliases.of(path)
+        add(normal)
+        // AOSP VolumeInfo.getInternalPathForUser maps a public volume's /storage path
+        // to /mnt/media_rw. Only volumes actually reported by this App's Context qualify.
+        publicVolumeRoots.forEach { root ->
+            if (normal == root || normal.startsWith("$root/")) {
+                add("/mnt/media_rw/" + root.removePrefix("/storage/") + normal.removePrefix(root))
+            }
+        }
+    }
 
     fun capture(path: String): ApkFileIdentity? = runCatching {
         if (!validPath(path) || aliases.unresolvedUserAlias(path)) return null
@@ -85,9 +100,10 @@ internal class ApkDeletionGuard(
             return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
         }
         val identity = aliases.of(path)
+        val protectionIdentities = protectionIdentities(path)
         if (rules.paths.any { protected ->
             val prefix = aliases.of(protected)
-            prefix == "/" || identity == prefix || identity.startsWith("$prefix/")
+            prefix == "/" || protectionIdentities.any { it == prefix || it.startsWith("$prefix/") }
         }) return ApkIndexedDeleteResult.PROTECTED
         val components = identity.split('/')
         val data = components.indexOf("Android")

@@ -85,6 +85,20 @@ class ApkDeletionGuardTest {
             "/storage/ABCD-1234/Keep/test.apk", 100, 30, null,
             ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf("/storage/ABCD-1234/Keep")))))
     }
+    @Test fun systemReportedSdVolumeRespectsItsRootMediaRwAliasWithoutGuessingOtherVolumes() {
+        val target = "/storage/ABCD-1234/Keep/test.apk"
+        val identity = stamp.copy(canonicalPath = target)
+        access.stamp = identity
+        for (protected in listOf("/mnt/media_rw/ABCD-1234/Keep", "/mnt/media_rw/ABCD-1234", "/mnt/media_rw")) {
+            assertEquals(protected, ApkIndexedDeleteResult.PROTECTED,
+                guard.validate(uri, target, 100, 30, identity,
+                    ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf(protected)))))
+        }
+        for (unrelated in listOf("/mnt/media_rw/OTHER-5678/Keep", "/mnt/media_rw/ABCD-1234/Keeper")) {
+            assertNull(unrelated, guard.validate(uri, target, 100, 30, identity,
+                ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf(unrelated)))))
+        }
+    }
     @Test fun invalidUrisNeverReachTheProvider() {
         for (bad in listOf("file://$path", "content://other/external/file/7", "$uri?x=1", "$uri#part",
             "content://media/external/file/07", "content://media/external/file/-1", "content://media/external/file/0",
