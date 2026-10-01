@@ -57,6 +57,8 @@ object CacheRootDeviceProbe {
         val unselectedFile = File(secondCache, "unselected.tmp").apply { writeBytes(ByteArray(8192) { 9 }) }
         val personalFile = File(first, "files/personal.txt").apply { parentFile!!.mkdirs(); writeText("preserve-personal") }
         val transport = File("/data/local/tmp/baize-probe-$suffix").apply { mkdirs() }
+        val evidenceFixture = File("/data/media/0/Download/baize-file-evidence-$suffix")
+        var evidenceFixtureOwned = false
         fun service(): IBaiZeRootService {
             val root = BaiZeRootService()
             // Attach only the Context surface; the production service and FD request dispatcher
@@ -149,6 +151,23 @@ object CacheRootDeviceProbe {
                 }
             }
             val protectedFixture = first.canonicalPath
+            markStage("apk-file-evidence-current-user")
+            check(!evidenceFixture.exists() && evidenceFixture.mkdirs())
+            evidenceFixtureOwned = true
+            val evidenceFile = File(evidenceFixture, "proof.apk").apply { writeBytes(ByteArray(128) { 4 }) }
+            val evidencePath = evidenceFile.path.replaceFirst("/data/media/0/", "/storage/emulated/0/")
+            check(JSONObject(profileDelegate.ping()).getInt("apkFileEvidenceVersion") == 1)
+            val evidence = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "getApkFileEvidence",
+                org.json.JSONArray().put(evidencePath)))
+            val proof = evidence.getJSONObject("identity")
+            val actual = android.system.Os.lstat(evidenceFile.path)
+            check(evidence.getBoolean("success") && evidence.getInt("uid") == 0 && evidence.getInt("requesterUid") == 0)
+            check(evidence.getString("requestedPath") == evidencePath && proof.getLong("inode") == actual.st_ino &&
+                proof.getLong("device") == actual.st_dev && proof.getLong("bytes") == 128L)
+            val otherUser = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "getApkFileEvidence",
+                org.json.JSONArray().put(evidencePath.replace("/emulated/0/", "/emulated/10/"))))
+            check(!otherUser.getBoolean("success") && otherUser.getString("reason") == "outside_current_user_storage")
+            check(evidenceFile.length() == 128L) { "Identity diagnostics must not mutate the APK" }
             check(JSONObject(profileDelegate.addWhitelistPath(protectedFixture)).getBoolean("success"))
             try {
                 val protection = JSONObject(RootServiceClients.profileExchange(profileTransport, transport, "getApkProtection"))
@@ -239,6 +258,7 @@ object CacheRootDeviceProbe {
                 .put("fdTransport", true).put("unselectedPreserved", true).put("unknownPathRejected", true)
                 .put("localBinderDescriptorCopies", true).put("crossUidBinderValidated", false)
                 .put("apkProtectionFdSnapshot", true)
+                .put("apkReadOnlyEvidenceMatchesRootStat", true).put("apkEvidenceOtherUserRejected", true)
                 .put("corpseUnknownInventoryPreserved", true).put("corpseCrossUserRejected", true)
                 .put("corpseEmptyInventoryRejected", true).put("corpseReviewRetained", true)
                 .put("actualRootPackageInventoryReadable", realInventory != null)
@@ -251,6 +271,7 @@ object CacheRootDeviceProbe {
         } finally {
             // These three random, newly-created namespaces contain only this probe's fixtures.
             first.deleteRecursively(); second.deleteRecursively(); transport.deleteRecursively()
+            if (evidenceFixtureOwned) evidenceFixture.deleteRecursively()
         }
     }
 }

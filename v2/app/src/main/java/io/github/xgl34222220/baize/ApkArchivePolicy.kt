@@ -1,7 +1,10 @@
 package io.github.xgl34222220.baize
 
 import java.io.File
+import java.io.IOException
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipFile
+import java.util.zip.ZipException
 
 internal enum class ApkArchiveParseStatus { PENDING, PARSED, PARTIAL, FAILED, UNSUPPORTED }
 
@@ -12,7 +15,8 @@ internal enum class ApkArchiveFailure(val label: String) {
     INACCESSIBLE("无法读取安装包"),
     FILE_CHANGED("文件已变化，请重新扫描"),
     TOO_LARGE("安装包较大，已跳过预览"),
-    INVALID_ARCHIVE("安装包损坏或无法识别"),
+    INVALID_ARCHIVE("无法识别安装包格式"),
+    READ_FAILED("预览读取失败，未判断安装包是否有效"),
     RESOURCE_LIMIT("图标资源超出预览限制"),
     TIME_BUDGET("读取超时，已跳过预览"),
     ICON_UNAVAILABLE("安装包未提供可读取的图标"),
@@ -23,6 +27,13 @@ internal class ApkArchiveReadException(val reason: ApkArchiveFailure) : Exceptio
 
 /** Bounds the metadata we inspect; APK contents are never extracted or executed. */
 internal object ApkArchivePolicy {
+    fun readFailure(error: Exception): ApkArchiveFailure = when (error) {
+        is CancellationException -> throw error
+        is ApkArchiveReadException -> error.reason
+        is ZipException -> ApkArchiveFailure.INVALID_ARCHIVE
+        is IOException, is SecurityException -> ApkArchiveFailure.INACCESSIBLE
+        else -> ApkArchiveFailure.READ_FAILED
+    }
     const val MAX_APK_BYTES = 256L * 1024 * 1024
     const val MAX_ICON_PX = 192
     const val TIME_BUDGET_MS = 3_000L

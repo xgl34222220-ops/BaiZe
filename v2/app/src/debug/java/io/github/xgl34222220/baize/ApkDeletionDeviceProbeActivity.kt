@@ -63,6 +63,11 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 val deleted = remove(target, safe)
                 check(deleted == ApkIndexedDeleteResult.DELETED) { "Conditional MediaStore delete returned $deleted" }
                 check(!selected.exists() && kept.isFile && changed.isFile)
+                val diagnostic = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, target.uri, target.path, null, target.identity))
+                check(diagnostic.getJSONObject("appPathStat").getInt("errno") == 2)
+                check(diagnostic.isNull("currentAppIdentity") && !diagnostic.isNull("scanIdentity"))
+                check(!diagnostic.getJSONObject("index").getBoolean("exists"))
+                check(!diagnostic.getJSONObject("mediaStoreFd").getBoolean("ok"))
                 // Exercise real App preferences and MediaProvider after explicitly removing one legacy rule.
                 check(legacyPreferences.edit().putStringSet("path_whitelist", originalLegacyPaths.orEmpty() + legacyProtected.path).commit())
                 val emptyRules = ApkProtectionRules(emptySet(), emptySet())
@@ -85,6 +90,7 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                     .put("unknownProtectionPreserved", true).put("freshPathProtectionPreserved", true)
                     .put("replacedFilePreserved", true).put("unselectedPreserved", true)
                     .put("legacyProtectionVisibleRemovableAndCleanable", true)
+                    .put("singleFileDiagnosticDistinguishesMissingFileAndIndex", true)
                     .put("input", "four copies of this repository's debug APK")
                     .put("protectionSource", "explicit synthetic rule states; Root transport tested separately")
             } catch (error: Exception) {

@@ -89,10 +89,12 @@ internal object ApkArchiveMetadata {
             unavailable(failure.reason)
         } catch (_: SecurityException) {
             unavailable(ApkArchiveFailure.INACCESSIBLE)
+        } catch (_: ErrnoException) {
+            unavailable(ApkArchiveFailure.INACCESSIBLE)
         } catch (_: OutOfMemoryError) {
             unavailable(ApkArchiveFailure.RESOURCE_LIMIT)
-        } catch (_: Exception) {
-            unavailable(ApkArchiveFailure.INVALID_ARCHIVE)
+        } catch (error: Exception) {
+            unavailable(ApkArchivePolicy.readFailure(error))
         }
     }
 

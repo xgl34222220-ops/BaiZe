@@ -35,7 +35,7 @@ internal fun ApkIndexedDeleteResult.retainedReason(): String = when (this) {
     ApkIndexedDeleteResult.PROTECTED -> "已保留 · 命中保护名单"
     ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE -> "已保留 · 保护名单尚未核对"
     ApkIndexedDeleteResult.CHANGED -> "已保留 · 文件已变化或不可读取，请重新扫描"
-    ApkIndexedDeleteResult.UNVERIFIED -> "已保留 · 扫描时未能核对文件身份，请检查权限后重扫"
+    ApkIndexedDeleteResult.UNVERIFIED -> "已保留 · 文件身份尚未核对，可在详情复制读取诊断"
     ApkIndexedDeleteResult.INVALID -> "已保留 · 文件索引或路径无效"
     ApkIndexedDeleteResult.FAILED -> "已保留 · 系统未确认删除，请检查权限后重试"
     ApkIndexedDeleteResult.CANCELLED -> "已保留 · 已停止清理"
@@ -49,7 +49,8 @@ internal object ApkMediaStoreIndex {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     @Suppress("DEPRECATION")
-    fun query(context: Context, cancellationSignal: CancellationSignal = CancellationSignal()): ApkMediaStoreResult {
+    fun query(context: Context, cancellationSignal: CancellationSignal = CancellationSignal(),
+        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)): ApkMediaStoreResult {
         val started = SystemClock.elapsedRealtime()
         if (!hasAllFilesAccess()) {
             return ApkMediaStoreResult(
@@ -86,7 +87,6 @@ internal object ApkMediaStoreIndex {
         }.toTypedArray()
 
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
-        val guard = ApkDeletionGuard.forContext(context)
         var truncated = false
         var cancelled = false
         val error = runCatching {

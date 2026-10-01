@@ -143,7 +143,7 @@ class ApkScanActivity : ComponentActivity() {
                         onLocalMode = { showLocalModeConfirm = true },
                         onToggle = ::toggleItem, onToggleAll = session::toggleAll,
                         onQuery = session::query, onFilter = session::filter,
-                        loadArchive = session::loadArchivePreview)
+                        loadArchive = session::loadArchivePreview, diagnoseFile = session::fileReadDiagnostics)
                     if (showCleanConfirm) BaiZeDialog(
                         onDismissRequest = { showCleanConfirm = false },
                         title = { Text("清理已选 ${screenState.selected.size} 个安装包？") },
@@ -445,6 +445,11 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         return result
     }
 
+    suspend fun fileReadDiagnostics(item: ApkScanItem): String = withContext(Dispatchers.IO) {
+        ApkFileReadDiagnostics.collect(applicationContext, item.uri, item.samplePath, service,
+            directSnapshot.firstOrNull { it.uri == item.uri && it.path == item.samplePath }?.identity)
+    }
+
     fun toggleAll() {
         if (screenState.running || !screenState.cleanReady) return
         screenState = screenState.toggleAllSelection()
@@ -509,6 +514,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
             val phase = when {
+                result.deletedFiles == 0 && (result.failed > 0 || result.skipped > 0) ->
+                    "未删除任何文件 · 保留 ${result.skipped + result.failed} 个，查看条目原因 · ${elapsed} ms"
                 result.failed > 0 || result.skipped > 0 ->
                     "清理完成：删除 ${result.deletedFiles} 个，跳过 ${result.skipped} 个，失败 ${result.failed} 个 · ${elapsed} ms"
                 else ->
@@ -636,7 +643,8 @@ internal fun ApkScanScreen(
     onToggleAll: () -> Unit = {},
     onQuery: (String) -> Unit = {},
     onFilter: (ApkInstallStatus?) -> Unit = {},
-    loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null
+    loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null,
+    diagnoseFile: (suspend (ApkScanItem) -> String)? = null
 ) {
     val context = LocalContext.current
     var showFilters by rememberSaveable { mutableStateOf(false) }
@@ -718,7 +726,7 @@ internal fun ApkScanScreen(
             }.value
             ApkArchiveResultCard(item.copy(archive = archive),
                 selected = item.uri in state.selected, enabled = !state.running && state.matchesCriteria(item),
-                onToggle = { onToggle(item.uri) })
+                onToggle = { onToggle(item.uri) }, diagnoseFile = diagnoseFile)
         }
         if (state.coverage.isNotEmpty() || state.output.isNotBlank()) item {
             DetailExpandableText("扫描详情", state.coverage.joinToString("\n\n") {

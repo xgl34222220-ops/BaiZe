@@ -34,6 +34,8 @@ for field in ('scanThenSelectedClean', 'fdTransport', 'localBinderDescriptorCopi
               'emptyBoundarySelectedClean', 'emptyDirectoryCountSeparateFromFiles', 'emptyChangedContentPreserved',
               'emptyUnreviewedParentsPreserved', 'emptyPlaceholderAndSymlinkPreserved', 'emptyParentsRequireNewPreview'):
     assert result.get(field) is True, (field, result)
+for field in ('apkReadOnlyEvidenceMatchesRootStat', 'apkEvidenceOtherUserRejected'):
+    assert result.get(field) is True, (field, result)
 assert result.get('crossUidBinderValidated') is False and result.get('profileDeletedBytes') == 384, result
 pathlib.Path(sys.argv[2]).write_text(json.dumps(result, ensure_ascii=False, indent=2))
 PY

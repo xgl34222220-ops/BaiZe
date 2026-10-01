@@ -25,10 +25,16 @@ import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 @Composable
-internal fun ApkArchiveResultCard(item: ApkScanItem, selected: Boolean, enabled: Boolean, onToggle: () -> Unit) {
+internal fun ApkArchiveResultCard(item: ApkScanItem, selected: Boolean, enabled: Boolean, onToggle: () -> Unit,
+    diagnoseFile: (suspend (ApkScanItem) -> String)? = null) {
     var details by remember(item.previewKey) { mutableStateOf(false) }
+    var diagnosing by remember(item.previewKey) { mutableStateOf(false) }
+    var diagnosticStatus by remember(item.previewKey) { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val archive = item.archive
     val size = Formatter.formatFileSize(context, item.bytes)
@@ -77,6 +83,23 @@ internal fun ApkArchiveResultCard(item: ApkScanItem, selected: Boolean, enabled:
                 if (item.retainedReason.isNotBlank()) Text("处理结果\n${item.retainedReason}", fontSize = 13.sp, lineHeight = 20.sp)
             } }
             Text("版本状态仅比较版本号，不代表签名兼容。删除安装包不会卸载已安装的应用。", fontSize = 12.sp, lineHeight = 18.sp)
+            if (diagnoseFile != null) {
+                Text("读取诊断仅包含当前文件的路径、权限和读取状态，不包含文件内容。", fontSize = 12.sp, lineHeight = 18.sp)
+                TextButton(enabled = !diagnosing, onClick = {
+                    diagnosing = true
+                    scope.launch {
+                        try {
+                            val report = diagnoseFile(item)
+                            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("白泽文件读取诊断", report))
+                            diagnosticStatus = "已复制当前文件的读取诊断"
+                        } catch (cancelled: CancellationException) { throw cancelled
+                        } catch (_: Exception) { diagnosticStatus = "读取诊断未完成，请重试"
+                        } finally { diagnosing = false }
+                    }
+                }) { Text(if (diagnosing) "正在读取…" else "复制读取诊断") }
+                if (diagnosticStatus.isNotBlank()) Text(diagnosticStatus, fontSize = 12.sp, lineHeight = 18.sp)
+            }
         } }, confirmButton = { BaiZeDialogButton({ details = false }) { Text("完成") } })
 }
 

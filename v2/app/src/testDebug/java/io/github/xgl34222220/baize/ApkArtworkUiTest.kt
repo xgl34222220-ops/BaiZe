@@ -35,6 +35,27 @@ class ApkArtworkUiTest {
     private fun parsed() = ApkArchiveInfo("示例归档应用", "synthetic.archive", "1.2.3", "1.0.0", ApkInstallStatus.NEWER,
         iconBitmap = icon, parseStatus = ApkArchiveParseStatus.PARSED)
 
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun copyingSingleFileDiagnosticsIsReachableAndNeverSelectsOrDeletes() {
+        val first = item(1).copy(retainedReason = ApkIndexedDeleteResult.UNVERIFIED.retainedReason(),
+            archive = ApkArchiveInfo(parseStatus = ApkArchiveParseStatus.FAILED, failureReason = ApkArchiveFailure.INACCESSIBLE))
+        val state = ready(listOf(first))
+        var diagnosticCalls = 0
+        val report = "{\"testData\":true,\"allFilesAccess\":true,\"errno\":13}"
+        render(dark = true, fontScale = 1.5f) { ApkScanScreen(state, {}, {}, { cleanCalls++ }, {}, {},
+            diagnoseFile = { requested -> assertEquals(first.uri, requested.uri); diagnosticCalls++; report }) }
+        compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText(first.name))
+        compose.onNodeWithText(first.name).performClick()
+        compose.onNodeWithText("复制读取诊断").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("已复制当前文件的读取诊断").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("已复制当前文件的读取诊断").performScrollTo().assertIsDisplayed()
+        val clipboard = compose.activity.getSystemService(android.content.ClipboardManager::class.java)
+        assertEquals(report, clipboard.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(1, diagnosticCalls); assertEquals(0, cleanCalls); assertTrue(state.selected.isEmpty())
+        save("apk-single-file-diagnostic-dark-large-font")
+    }
+
     @Test fun archiveArtworkNamesAndVersionsAreVisibleAndDetailsDoNotSelectOrDelete() {
         val first = item(1).copy(archive = parsed())
         val failed = item(2).copy(archive = ApkArchiveInfo(parseStatus = ApkArchiveParseStatus.FAILED,

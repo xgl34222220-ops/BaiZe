@@ -19,6 +19,7 @@ class BaiZeProfileRootService : RootService() {
     private val auditRepository = AuditRepository()
     private val packageCatalog = PackageCatalog()
     private val whitelistRepository = WhitelistRepository()
+    private val apkFileEvidence by lazy { ApkFileEvidenceRepository(ownAppUid = { applicationInfo.uid }) }
     private val cacheSelectionRepository = CacheSelectionRepository()
     private val quarantineRepository = QuarantineRepository()
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
@@ -126,6 +127,11 @@ class BaiZeProfileRootService : RootService() {
                 JSONObject(whitelistRepository.apkProtectionJson()).put("uid", Process.myUid())
                     .put("root", Process.myUid() == 0).toString()
             }
+            "getApkFileEvidence" -> {
+                require(arguments.length() == 1)
+                JSONObject(apkFileEvidence.read(arguments.getString(0), android.os.Binder.getCallingUid()))
+                    .put("uid", Process.myUid()).put("root", Process.myUid() == 0).toString()
+            }
             // Only edit whitelist configuration records, never the target files.
             // Reuse the App-owned FD channel; preserve existing AIDL transaction IDs.
             "removeWhitelistPath" -> {
@@ -152,6 +158,7 @@ class BaiZeProfileRootService : RootService() {
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
                 .put("apkProtectionVersion", 1)
+                .put("apkFileEvidenceVersion", 1)
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)
