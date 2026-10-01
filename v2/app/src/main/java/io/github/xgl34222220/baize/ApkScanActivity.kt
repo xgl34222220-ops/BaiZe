@@ -115,6 +115,7 @@ class ApkScanActivity : ComponentActivity() {
     internal val session get() = scanViewModel.session
     private val screenState: ApkScanUiState get() = session.screenState
     private var showCleanConfirm by mutableStateOf(false)
+    private var showLocalModeConfirm by mutableStateOf(false)
     private var confirmStop by mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,7 +137,8 @@ class ApkScanActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     ApkScanScreen(state = screenState, onBack = ::requestBack,
                         onScan = ::startScan, onClean = { showCleanConfirm = true },
-                        onStop = session::stopTask, onReconnect = session::connectService,
+                        onStop = session::stopTask, onReconnect = session::reconnectService,
+                        onLocalMode = { showLocalModeConfirm = true },
                         onToggle = ::toggleItem, onToggleAll = session::toggleAll,
                         onQuery = session::query, onFilter = session::filter,
                         loadArchive = session::loadArchivePreview)
@@ -151,6 +153,11 @@ class ApkScanActivity : ComponentActivity() {
                         text = { Text("已经完成的删除不会撤销，其余文件会保留。也可以继续查看当前进度。") },
                         confirmButton = { BaiZeDialogButton(onClick = { confirmStop = null; session.stopTask(); finish() }) { Text("停止并返回") } },
                         dismissButton = { BaiZeDialogButton(onClick = { confirmStop = null }) { Text("继续查看") } })
+                    if (showLocalModeConfirm) BaiZeDialog(
+                        onDismissRequest = { showLocalModeConfirm = false }, title = { Text("仅使用本地安装包清理？") },
+                        text = { Text("适用于从未使用 Root 保护设置的手机。此模式只核对本地文件和本地保护规则；如你在旧版本设置过 Root 白名单，请连接 Root 后再清理。文件仍需手动勾选并确认删除。") },
+                        confirmButton = { BaiZeDialogButton(onClick = { showLocalModeConfirm = false; session.enableLocalMode() }) { Text("使用本地模式") } },
+                        dismissButton = { BaiZeDialogButton(onClick = { showLocalModeConfirm = false }) { Text("取消") } })
                 }
             }
         }
@@ -171,7 +178,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
     private var initialized = false
     private var closed = false
     private var waitingPermission = false
-    private var service: IProfileRootService? = null
+    @Volatile private var service: IProfileRootService? = null
     private var serviceBound = false
     @Volatile private var stopRequested = false
     private var scanCancellation: CancellationSignal? = null
@@ -205,7 +212,21 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         }
         override fun onNullBinding(name: ComponentName?) = onBindingFailed(name, RootService.BindingFailure.NULL_BINDING)
     }
-    fun initialize() { if (initialized) return; initialized = true; connectService() }
+    fun initialize() {
+        if (initialized) return
+        initialized = true
+        screenState = screenState.copy(localModeAvailable = !ApkProtectionStore.rootWasUsed(this))
+        connectService()
+    }
+    fun enableLocalMode() {
+        if (closed || screenState.running) return
+        lifecycleScope.launch {
+            val enabled = withContext(Dispatchers.IO) { runCatching { ApkProtectionStore.enableLocalOnly(applicationContext) }.getOrDefault(false) }
+            screenState = screenState.copy(localModeAvailable = false,
+                protectionNeedsAction = !enabled,
+                protectionMessage = if (enabled) "本地模式 · 删除前核对文件身份与本地保护规则" else "已有 Root 保护记录，请连接 Root 后再清理")
+        }
+    }
     fun connectService() {
         if (closed || service != null || serviceBound) return
         serviceBound = true
@@ -214,6 +235,12 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             serviceBound = false
             screenState = screenState.copy(connected = false, status = "Root 保护服务暂不可用")
         }
+    }
+    fun reconnectService() {
+        if (screenState.running || closed) return
+        if (serviceBound) runCatching { RootService.unbind(connection) }
+        service = null; serviceBound = false
+        connectService()
     }
     fun resumePermission() { if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess()) startScan() }
     fun permissionScreenUnavailable() { screenState = screenState.copy(phase = "请在系统设置中为白泽开启所有文件访问") }
@@ -303,13 +330,18 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 return@launch
             }
 
+            val protection = withContext(Dispatchers.IO) {
+                ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service))
+            }
+            if (closed) return@launch
             val snapshots = indexed.candidates.map { candidate ->
                 DirectApkSnapshot(
                     uri = candidate.uri,
                     path = candidate.path,
                     name = candidate.name,
                     bytes = candidate.bytes,
-                    modifiedSeconds = candidate.modifiedSeconds
+                    modifiedSeconds = candidate.modifiedSeconds,
+                    identity = candidate.identity
                 )
             }
             directSnapshot = snapshots
@@ -358,6 +390,13 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 totalBytes = totalBytes,
                 cleanReady = snapshots.isNotEmpty(),
                 coverageIncomplete = indexed.truncated,
+                localModeAvailable = protection is ApkProtectionState.Unknown && !ApkProtectionStore.rootWasUsed(applicationContext),
+                protectionNeedsAction = protection is ApkProtectionState.Unknown,
+                protectionMessage = when (protection) {
+                    is ApkProtectionState.KnownRoot -> ""
+                    is ApkProtectionState.LocalOnly -> "本地模式 · 删除前核对文件身份与本地保护规则"
+                    is ApkProtectionState.Unknown -> protection.reason
+                },
                 output = "MediaStore.Files ${indexed.elapsedMs} ms · 清理快照 ${snapshots.size} 条 · Root 未参与前台扫描"
             )
         }
@@ -410,25 +449,40 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 var skipped = 0
                 var failed = 0
                 val removed = mutableSetOf<String>()
-                for (item in snapshot) {
+                val retained = mutableMapOf<String, String>()
+                for ((index, item) in snapshot.withIndex()) {
                     if (stopRequested) break
-                    when (ApkMediaStoreIndex.deleteIfUnchanged(
+                    val outcome = ApkMediaStoreIndex.deleteIfUnchanged(
                         context = applicationContext,
                         uriString = item.uri,
                         expectedPath = item.path,
                         expectedBytes = item.bytes,
-                        expectedModifiedSeconds = item.modifiedSeconds
-                    )) {
+                        expectedModifiedSeconds = item.modifiedSeconds,
+                        expectedIdentity = item.identity,
+                        isCancelled = { stopRequested || closed },
+                        protection = { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)) }
+                    )
+                    when (outcome) {
                         ApkIndexedDeleteResult.DELETED -> {
                             removed += item.uri
                             deletedFiles += 1
                             deletedBytes += item.bytes
                         }
-                        ApkIndexedDeleteResult.CHANGED -> skipped += 1
+                        ApkIndexedDeleteResult.CHANGED, ApkIndexedDeleteResult.PROTECTED,
+                        ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE, ApkIndexedDeleteResult.UNVERIFIED,
+                        ApkIndexedDeleteResult.INVALID -> skipped += 1
+                        ApkIndexedDeleteResult.CANCELLED -> Unit
                         ApkIndexedDeleteResult.FAILED -> failed += 1
                     }
+                    if (outcome != ApkIndexedDeleteResult.DELETED) retained[item.uri] = outcome.retainedReason()
+                    if (outcome == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE) {
+                        skipped += snapshot.size - index - 1
+                        snapshot.dropWhile { it.uri != item.uri }.forEach { retained[it.uri] = outcome.retainedReason() }
+                        break
+                    }
+                    if (outcome == ApkIndexedDeleteResult.CANCELLED) break
                 }
-                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, removed)
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, removed, retained)
             }
             if (closed) return@launch
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
@@ -444,11 +498,17 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 operation = "",
                 cleanReady = directSnapshot.isNotEmpty(),
                 phase = if (stopRequested) "清理已停止 · 删除 ${result.deletedFiles} 个，其余保留" else phase,
-                items = screenState.items.filterNot { it.uri in result.removed },
+                items = screenState.items.filterNot { it.uri in result.removed }.map {
+                    it.copy(retainedReason = result.retained[it.uri].orEmpty())
+                },
                 selected = screenState.selected - result.removed,
                 totalFiles = directSnapshot.size.toLong(),
                 totalBytes = directSnapshot.sumOf { it.bytes },
-                output = "MediaStore URI 直接删除；总耗时 ${elapsed} ms"
+                protectionMessage = if (result.retained.values.any { it.contains("尚未核对") })
+                    "保护名单未核对，已保留文件。请连接 Root 后重试。" else screenState.protectionMessage,
+                protectionNeedsAction = result.retained.values.any { it.contains("尚未核对") },
+                localModeAvailable = !ApkProtectionStore.rootWasUsed(applicationContext),
+                output = "已删除 ${result.deletedFiles} 个，实际释放 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)}；总耗时 ${elapsed} ms"
             )
         }
     }
@@ -470,7 +530,8 @@ internal data class DirectApkSnapshot(
     val path: String,
     val name: String,
     val bytes: Long,
-    val modifiedSeconds: Long
+    val modifiedSeconds: Long,
+    val identity: ApkFileIdentity? = null
 )
 
 internal data class DirectCleanResult(
@@ -478,7 +539,8 @@ internal data class DirectCleanResult(
     val deletedBytes: Long,
     val skipped: Int,
     val failed: Int,
-    val removed: Set<String> = emptySet()
+    val removed: Set<String> = emptySet(),
+    val retained: Map<String, String> = emptyMap()
 )
 
 internal data class ApkScanUiState(
@@ -497,7 +559,10 @@ internal data class ApkScanUiState(
     val query: String = "",
     val filter: ApkInstallStatus? = null,
     val scanFailed: Boolean = false,
-    val coverageIncomplete: Boolean = false
+    val coverageIncomplete: Boolean = false,
+    val localModeAvailable: Boolean = false,
+    val protectionMessage: String = "",
+    val protectionNeedsAction: Boolean = false
 ) {
     val visibleItems: List<ApkScanItem> get() = items.filter { item ->
         matchesCriteria(item) || (item.archive.awaitingInspection && (filter != null || query.isNotBlank()))
@@ -532,7 +597,8 @@ internal data class ApkScanItem(
     val samplePath: String,
     val uri: String = samplePath,
     val archive: ApkArchiveInfo = ApkArchiveInfo(),
-    val modifiedSeconds: Long = 0L
+    val modifiedSeconds: Long = 0L,
+    val retainedReason: String = ""
 )
 
 @Composable
@@ -543,6 +609,7 @@ internal fun ApkScanScreen(
     onClean: () -> Unit,
     onStop: () -> Unit,
     onReconnect: () -> Unit,
+    onLocalMode: () -> Unit = {},
     onToggle: (String) -> Unit = {},
     onToggleAll: () -> Unit = {},
     onQuery: (String) -> Unit = {},
@@ -595,6 +662,16 @@ internal fun ApkScanScreen(
         }
         if (state.items.isNotEmpty()) item {
             FileQueryBar(state.query, onQuery, !state.running, "搜索安装包", "筛选安装包", state.filter?.label.orEmpty()) { showFilters = true }
+        }
+        if (state.protectionMessage.isNotBlank()) item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text(state.protectionMessage, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!state.running && state.protectionNeedsAction) Row {
+                    TextButton(onClick = onReconnect) { Text("重连保护服务") }
+                    if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅本地清理") }
+                }
+            }
         }
         item {
             DetailSectionHeader("安装包明细", if (state.totalFiles > 0) {

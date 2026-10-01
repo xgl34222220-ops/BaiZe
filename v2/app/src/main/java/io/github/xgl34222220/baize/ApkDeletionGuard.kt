@@ -1,0 +1,133 @@
+package io.github.xgl34222220.baize
+
+import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.system.Os
+import android.system.OsConstants
+import io.github.xgl34222220.baize.root.AndroidPathIdentity
+import org.json.JSONObject
+import java.io.File
+
+/** Identity captured during scanning, never reconstructed from an old plan at deletion time. */
+internal data class ApkFileIdentity(
+    val canonicalPath: String, val device: Long, val inode: Long, val bytes: Long,
+    val modifiedSeconds: Long, val changedSeconds: Long,
+    val modifiedNanos: Long, val changedNanos: Long
+) {
+    fun json() = JSONObject().put("path", canonicalPath).put("device", device).put("inode", inode)
+        .put("bytes", bytes).put("modified", modifiedSeconds).put("changed", changedSeconds)
+        .put("modifiedNanos", modifiedNanos).put("changedNanos", changedNanos)
+    companion object {
+        fun read(json: JSONObject?): ApkFileIdentity? = runCatching {
+            requireNotNull(json)
+            ApkFileIdentity(json.getString("path"), json.getLong("device"), json.getLong("inode"),
+                json.getLong("bytes"), json.getLong("modified"), json.getLong("changed"),
+                json.getLong("modifiedNanos"), json.getLong("changedNanos"))
+        }.getOrNull()
+    }
+}
+
+internal interface ApkFileAccess {
+    fun canonical(path: String): String
+    fun isDirectoryWithoutLink(path: String): Boolean
+    fun identity(path: String): ApkFileIdentity?
+}
+
+private object AndroidApkFileAccess : ApkFileAccess {
+    override fun canonical(path: String): String = File(path).canonicalPath
+    override fun isDirectoryWithoutLink(path: String): Boolean = Os.lstat(path).let {
+        OsConstants.S_ISDIR(it.st_mode) && !OsConstants.S_ISLNK(it.st_mode)
+    }
+    override fun identity(path: String): ApkFileIdentity? {
+        val stat = Os.lstat(path)
+        if (!OsConstants.S_ISREG(stat.st_mode) || OsConstants.S_ISLNK(stat.st_mode)) return null
+        return ApkFileIdentity(canonical(path), stat.st_dev, stat.st_ino, stat.st_size,
+            stat.st_mtime, stat.st_ctime,
+            if (Build.VERSION.SDK_INT >= 27) stat.st_mtim.tv_nsec else -1L,
+            if (Build.VERSION.SDK_INT >= 27) stat.st_ctim.tv_nsec else -1L)
+    }
+}
+
+/** Shared by both APK entry points. Root aliases are comparison identities, not deletion paths. */
+internal class ApkDeletionGuard(
+    private val roots: Set<String>,
+    private val primaryStorageRoot: String?,
+    private val files: ApkFileAccess = AndroidApkFileAccess
+) {
+    private val aliases = AndroidPathIdentity(primaryStorageRoot)
+
+    fun capture(path: String): ApkFileIdentity? = runCatching {
+        if (!validPath(path) || aliases.unresolvedUserAlias(path)) return null
+        val root = roots.filter { path.startsWith("$it/") }.maxByOrNull { it.length } ?: return null
+        val relative = path.removePrefix("$root/")
+        val canonicalRoot = files.canonical(root).trimEnd('/')
+        // The platform storage root may be an alias; no link below that root is accepted.
+        val expectedCanonical = "$canonicalRoot/$relative"
+        if (files.canonical(path) != expectedCanonical) return null
+        var parent = root
+        for (part in relative.split('/').dropLast(1)) {
+            parent += "/$part"
+            if (!files.isDirectoryWithoutLink(parent)) return null
+        }
+        files.identity(path)?.takeIf { it.canonicalPath == expectedCanonical && it.bytes > 0L }
+    }.getOrNull()
+
+    fun validate(
+        uri: String, path: String, bytes: Long, modifiedSeconds: Long,
+        original: ApkFileIdentity?, protection: ApkProtectionState
+    ): ApkIndexedDeleteResult? {
+        if (!validUri(uri) || !validPath(path)) return ApkIndexedDeleteResult.INVALID
+        if (protection is ApkProtectionState.Unknown) return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        val rules = protection.rules ?: return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        if (aliases.unresolvedUserAlias(path) || rules.paths.any(aliases::unresolvedUserAlias)) {
+            return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        }
+        val identity = aliases.of(path)
+        if (rules.paths.any { protected ->
+            val prefix = aliases.of(protected)
+            prefix == "/" || identity == prefix || identity.startsWith("$prefix/")
+        }) return ApkIndexedDeleteResult.PROTECTED
+        val components = identity.split('/')
+        val data = components.indexOf("Android")
+        if (data >= 0 && components.getOrNull(data + 1) == "data" &&
+            components.getOrNull(data + 2) in rules.packages) return ApkIndexedDeleteResult.PROTECTED
+        if (original == null) return ApkIndexedDeleteResult.UNVERIFIED
+        val current = capture(path) ?: return ApkIndexedDeleteResult.CHANGED
+        if (current != original || bytes <= 0L || current.bytes != bytes || modifiedSeconds <= 0L ||
+            current.modifiedSeconds != modifiedSeconds) return ApkIndexedDeleteResult.CHANGED
+        return null
+    }
+
+    companion object {
+        fun forContext(context: Context): ApkDeletionGuard {
+            @Suppress("DEPRECATION")
+            val primary = runCatching { Environment.getExternalStorageDirectory().canonicalPath }.getOrNull()
+            val roots = linkedSetOf<String>()
+            @Suppress("DEPRECATION")
+            val configured = Environment.getExternalStorageDirectory().absolutePath
+            val candidates = listOfNotNull(configured, primary) + context.getExternalFilesDirs(null).mapNotNull { dir ->
+                dir?.absolutePath?.substringBefore("/Android/data/")
+            }
+            candidates.filterTo(roots) { it.matches(Regex("/storage/(?:emulated/[0-9]+|[A-Za-z0-9-]+)")) }
+            if (primary?.matches(Regex("/storage/emulated/[0-9]+")) == true) {
+                for (alias in listOf("/sdcard", "/storage/self/primary")) {
+                    if (runCatching { File(alias).canonicalPath == primary }.getOrDefault(false)) roots += alias
+                }
+            }
+            return ApkDeletionGuard(roots, primary)
+        }
+
+        fun validPath(path: String): Boolean = path.startsWith('/') && path.length <= 4_096 &&
+            path.none { it == '\u0000' || it == '\n' || it == '\r' } &&
+            !path.contains("//") && path.split('/').none { it == "." || it == ".." } && !path.endsWith('/')
+
+        fun validUri(raw: String): Boolean = runCatching {
+            val uri = Uri.parse(raw)
+            val id = uri.lastPathSegment?.toLongOrNull() ?: return false
+            id > 0 && raw == "content://media/external/file/$id" && uri.scheme == "content" &&
+                uri.authority == "media" && uri.query == null && uri.fragment == null
+        }.getOrDefault(false)
+    }
+}

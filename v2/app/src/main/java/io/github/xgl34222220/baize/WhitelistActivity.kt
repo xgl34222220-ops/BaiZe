@@ -119,6 +119,7 @@ class WhitelistActivity : ComponentActivity() {
                 // A failed read is not an empty whitelist and can never authorize a save.
                 val packages = stringSet(remote.getWhitelistPackages())
                 val paths = stringSet(remote.getWhitelistPaths()).sorted()
+                ApkProtectionStore.rememberRoot(applicationContext, ApkProtectionRules(packages, paths.toSet()))
                 val catalog = runCatching { JSONObject(remote.getInstalledPackageCatalog()).getJSONArray("packages") }.getOrNull()
                 val entries = linkedMapOf<String, Boolean>()
                 if (catalog != null) for (i in 0 until catalog.length()) {
@@ -175,7 +176,9 @@ class WhitelistActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = runCatching { withContext(Dispatchers.IO) {
                 requireSuccess(WhitelistFileClient.updatePackages(remote, applicationContext.cacheDir, draft.added, draft.removed))
-                stringSet(remote.getWhitelistPackages())
+                val rules = ApkProtectionStore.parse(remote.getWhitelistPackages(), remote.getWhitelistPaths())
+                ApkProtectionStore.rememberRoot(applicationContext, rules)
+                rules.packages
             } }
             if (service !== remote) return@launch
             result.onSuccess { latest ->
@@ -196,7 +199,9 @@ class WhitelistActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = runCatching { withContext(Dispatchers.IO) {
                 val response = requireSuccess(WhitelistFileClient.removePath(remote, applicationContext.cacheDir, path))
-                stringSet(remote.getWhitelistPaths()).sorted() to response.optString("message")
+                val rules = ApkProtectionStore.parse(remote.getWhitelistPackages(), remote.getWhitelistPaths())
+                ApkProtectionStore.rememberRoot(applicationContext, rules)
+                rules.paths.sorted() to response.optString("message")
             } }
             if (service !== remote) return@launch
             result.onSuccess { (paths, message) -> state = state.copy(saving = false, paths = paths, message = message) }

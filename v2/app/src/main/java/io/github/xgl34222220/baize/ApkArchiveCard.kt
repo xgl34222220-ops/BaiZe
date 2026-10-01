@@ -51,6 +51,8 @@ internal fun ApkArchiveResultCard(item: ApkScanItem, selected: Boolean, enabled:
                 Text(archiveSummary(archive), fontSize = 11.sp, lineHeight = 16.sp,
                     color = if (archive.parseStatus == ApkArchiveParseStatus.FAILED) BaiZeTokens.colors.warning
                         else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (item.retainedReason.isNotBlank()) Text(item.retainedReason,
+                    fontSize = 12.sp, lineHeight = 18.sp, color = BaiZeTokens.colors.warning)
             }
             Checkbox(selected, { onToggle() }, enabled = enabled,
                 modifier = Modifier.semantics { contentDescription = "选择安装包${item.name}" })
@@ -72,6 +74,7 @@ internal fun ApkArchiveResultCard(item: ApkScanItem, selected: Boolean, enabled:
                 if (archive.version.isNotBlank()) Text("安装包版本\n${archive.version}", fontSize = 13.sp, lineHeight = 20.sp)
                 if (archive.installedVersion.isNotBlank()) Text("已装版本\n${archive.installedVersion}", fontSize = 13.sp, lineHeight = 20.sp)
                 Text("完整路径\n${item.samplePath}", fontSize = 13.sp, lineHeight = 20.sp)
+                if (item.retainedReason.isNotBlank()) Text("处理结果\n${item.retainedReason}", fontSize = 13.sp, lineHeight = 20.sp)
             } }
             Text("版本状态仅比较版本号，不代表签名兼容。删除安装包不会卸载已安装的应用。", fontSize = 12.sp, lineHeight = 18.sp)
         } }, confirmButton = { BaiZeDialogButton({ details = false }) { Text("完成") } })

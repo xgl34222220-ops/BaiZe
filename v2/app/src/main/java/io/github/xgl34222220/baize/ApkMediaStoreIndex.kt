@@ -16,7 +16,8 @@ internal data class IndexedApkCandidate(
     val path: String,
     val name: String,
     val bytes: Long,
-    val modifiedSeconds: Long
+    val modifiedSeconds: Long,
+    val identity: ApkFileIdentity? = null
 )
 
 internal data class ApkMediaStoreResult(
@@ -27,7 +28,18 @@ internal data class ApkMediaStoreResult(
     val cancelled: Boolean = false
 )
 
-internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED }
+internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED, PROTECTED, PROTECTION_UNAVAILABLE, UNVERIFIED, INVALID, CANCELLED }
+
+internal fun ApkIndexedDeleteResult.retainedReason(): String = when (this) {
+    ApkIndexedDeleteResult.DELETED -> ""
+    ApkIndexedDeleteResult.PROTECTED -> "已保留 · 命中保护名单"
+    ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE -> "已保留 · 保护名单尚未核对"
+    ApkIndexedDeleteResult.CHANGED -> "已保留 · 文件已变化或不可读取，请重新扫描"
+    ApkIndexedDeleteResult.UNVERIFIED -> "已保留 · 扫描时未能核对文件身份，请检查权限后重扫"
+    ApkIndexedDeleteResult.INVALID -> "已保留 · 文件索引或路径无效"
+    ApkIndexedDeleteResult.FAILED -> "已保留 · 系统未确认删除，请检查权限后重试"
+    ApkIndexedDeleteResult.CANCELLED -> "已保留 · 已停止清理"
+}
 
 internal object ApkMediaStoreIndex {
     private const val APK_MIME = "application/vnd.android.package-archive"
@@ -74,6 +86,7 @@ internal object ApkMediaStoreIndex {
         }.toTypedArray()
 
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
+        val guard = ApkDeletionGuard.forContext(context)
         var truncated = false
         var cancelled = false
         val error = runCatching {
@@ -111,7 +124,8 @@ internal object ApkMediaStoreIndex {
                         path = path,
                         name = safeName,
                         bytes = bytes,
-                        modifiedSeconds = modified
+                        modifiedSeconds = modified,
+                        identity = guard.capture(path)
                     )
                 }
             }
@@ -136,8 +150,18 @@ internal object ApkMediaStoreIndex {
         uriString: String,
         expectedPath: String,
         expectedBytes: Long,
-        expectedModifiedSeconds: Long
+        expectedModifiedSeconds: Long,
+        expectedIdentity: ApkFileIdentity?,
+        protection: () -> ApkProtectionState,
+        isCancelled: () -> Boolean = { false },
+        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)
     ): ApkIndexedDeleteResult {
+        if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+        val currentProtection = try { protection() } catch (_: Exception) {
+            return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        }
+        guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
+            expectedIdentity, currentProtection)?.let { return it }
         val itemUri = runCatching { Uri.parse(uriString) }.getOrNull()
             ?: return ApkIndexedDeleteResult.FAILED
         val projection = arrayOf(
@@ -155,11 +179,17 @@ internal object ApkMediaStoreIndex {
             }
         }.getOrNull() ?: return ApkIndexedDeleteResult.CHANGED
         if (current.first != expectedPath || current.second != expectedBytes ||
-            (expectedModifiedSeconds > 0L && current.third != expectedModifiedSeconds)
+            current.third != expectedModifiedSeconds
         ) return ApkIndexedDeleteResult.CHANGED
 
         return runCatching {
-            if (context.contentResolver.delete(itemUri, null, null) > 0) ApkIndexedDeleteResult.DELETED
+            if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+            // Recheck after the provider query, and constrain the provider mutation to that row.
+            guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
+                expectedIdentity, currentProtection)?.let { return it }
+            val selection = "${MediaStore.MediaColumns.DATA} = ? AND ${MediaStore.MediaColumns.SIZE} = ? AND ${MediaStore.MediaColumns.DATE_MODIFIED} = ?"
+            if (context.contentResolver.delete(itemUri, selection,
+                    arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString())) > 0) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
         }.getOrDefault(ApkIndexedDeleteResult.FAILED)
     }

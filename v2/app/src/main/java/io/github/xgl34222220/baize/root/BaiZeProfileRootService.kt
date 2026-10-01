@@ -121,6 +121,11 @@ class BaiZeProfileRootService : RootService() {
             "getWhitelistPackages" -> { require(arguments.length() == 0); getWhitelistPackages() }
             "saveWhitelistPackages" -> { require(arguments.length() == 1); saveWhitelistPackages(arguments.getString(0)) }
             "getWhitelistPaths" -> { require(arguments.length() == 0); getWhitelistPaths() }
+            "getApkProtection" -> {
+                require(arguments.length() == 0)
+                JSONObject(whitelistRepository.apkProtectionJson()).put("uid", Process.myUid())
+                    .put("root", Process.myUid() == 0).toString()
+            }
             // Only edit whitelist configuration records, never the target files.
             // Reuse the App-owned FD channel; preserve existing AIDL transaction IDs.
             "removeWhitelistPath" -> {
@@ -146,6 +151,7 @@ class BaiZeProfileRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
+                .put("apkProtectionVersion", 1)
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)
