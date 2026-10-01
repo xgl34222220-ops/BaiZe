@@ -209,6 +209,31 @@ object CacheRootDeviceProbe {
             check(keptCorpse.readText() == "synthetic ownership must be verified")
             check(runCatching { InstalledPackageInventory.fromEntries(emptyList()) }.isFailure)
             val realInventory = runCatching { InstalledPackageInventory.read(context) }.getOrNull()
+            markStage("empty-directory-selected-clean")
+            val emptyRoot = File(first, "synthetic-empty-guard").apply { check(mkdir()) }
+            val boundary = File(emptyRoot, (1..8).joinToString("/") { "level$it" }).apply { check(mkdirs()) }
+            val nestedLeaf = File(emptyRoot, "nested/leaf").apply { check(mkdirs()) }
+            val changed = File(emptyRoot, "changed-after-scan").apply { check(mkdir()) }
+            val marker = File(emptyRoot, "keep/.nomedia").apply { parentFile.mkdirs(); writeText("") }
+            val linkedDirectory = File(second, "link-target").apply { check(mkdir()) }
+            val link = File(emptyRoot, "shortcut")
+            java.nio.file.Files.createSymbolicLink(link.toPath(), linkedDirectory.toPath())
+            val emptyEngine = NativeProfileEngine(context, java.util.concurrent.atomic.AtomicBoolean(),
+                ruleDirectory = rules, sharedRootOverride = listOf(emptyRoot))
+            val emptyScan = JSONObject(emptyEngine.scan("empty", "{}") {})
+            check(!emptyScan.getBoolean("partial") && emptyScan.getInt("emptyDirs") == 3) { emptyScan.toString() }
+            val emptyToken = emptyScan.getString("snapshotId")
+            val emptyItems = JSONObject(emptyEngine.page(emptyToken, 0, 20)).getJSONArray("items")
+            val emptySelection = JSONObject()
+            for (index in 0 until emptyItems.length()) emptySelection.put(emptyItems.getJSONObject(index).getString("id"), true)
+            val newContent = File(changed, "keep.txt").apply { writeText("created after preview") }
+            val emptyClean = JSONObject(emptyEngine.clean(emptyToken, emptySelection.toString(), "{}") {})
+            check(emptyClean.getLong("deletedDirectories") == 2L && emptyClean.getLong("deletedFiles") == 0L &&
+                emptyClean.getLong("deletedBytes") == 0L) { emptyClean.toString() }
+            check(!boundary.exists() && !nestedLeaf.exists() && boundary.parentFile.isDirectory && nestedLeaf.parentFile.isDirectory)
+            check(newContent.readText() == "created after preview" && marker.isFile && link.exists() && linkedDirectory.isDirectory)
+            val nextEmptyScan = JSONObject(emptyEngine.scan("empty", "{}") {})
+            check(nextEmptyScan.getInt("emptyDirs") == 2) { nextEmptyScan.toString() }
             println(JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", android.os.Build.VERSION.SDK_INT)
                 .put("formerWorkbenchError", former.optString("error")).put("scanThenSelectedClean", true)
                 .put("fdTransport", true).put("unselectedPreserved", true).put("unknownPathRejected", true)
@@ -218,6 +243,9 @@ object CacheRootDeviceProbe {
                 .put("corpseEmptyInventoryRejected", true).put("corpseReviewRetained", true)
                 .put("actualRootPackageInventoryReadable", realInventory != null)
                 .put("actualRootPackageInventoryUser", realInventory?.userId ?: -1)
+                .put("emptyBoundarySelectedClean", true).put("emptyDirectoryCountSeparateFromFiles", true)
+                .put("emptyChangedContentPreserved", true).put("emptyUnreviewedParentsPreserved", true)
+                .put("emptyPlaceholderAndSymlinkPreserved", true).put("emptyParentsRequireNewPreview", true)
                 .put("serviceRecreationSelectedClean", true).put("deletedBytes", 12288)
                 .put("lowThenHighSameSnapshot", true).put("profileDeletedBytes", 384).toString())
         } finally {

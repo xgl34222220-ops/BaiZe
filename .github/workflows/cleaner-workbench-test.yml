@@ -94,7 +94,7 @@ jobs:
           if [ "$APK_REGRESSION_ONLY" = "true" ]; then
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests io.github.xgl34222220.baize.ApkIndexAndRecreationRegressionTest
           elif [ "$APK_FOCUSED_CHECK" = "true" ]; then
-            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*' --tests 'io.github.xgl34222220.baize.Whitelist*' --tests 'io.github.xgl34222220.baize.root.Whitelist*' --tests 'io.github.xgl34222220.baize.UiVisualReviewTest'
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*' --tests 'io.github.xgl34222220.baize.Whitelist*' --tests 'io.github.xgl34222220.baize.root.Whitelist*' --tests 'io.github.xgl34222220.baize.UiVisualReviewTest' --tests 'io.github.xgl34222220.baize.Workbench*' --tests 'io.github.xgl34222220.baize.root.Native*' --tests 'io.github.xgl34222220.baize.root.InstalledPackageInventorySafetyTest'
           else
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
           fi
@@ -249,6 +249,13 @@ jobs:
           run-id: 36844329946
           github-token: ${{ github.token }}
           path: baseline-30011
+      - name: Download exact delivered 30012 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+d42b2616-Paired-Test
+          run-id: 36859725848
+          github-token: ${{ github.token }}
+          path: baseline-30012
       - name: Build same-package archive resource fixtures
         run: |
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
@@ -268,7 +275,7 @@ jobs:
             bash .github/scripts/probe-apk-artwork.sh
             bash .github/scripts/probe-apk-deletion.sh
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30012 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30013 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:

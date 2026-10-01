@@ -54,7 +54,8 @@ internal class NativeProfileEngine(
         val allowHighRisk: Boolean,
         val maxAutoRisk: String,
         val highRiskMode: String,
-        val includeReviewRules: Boolean = false
+        val includeReviewRules: Boolean = false,
+        val coverage: ScanCoverage = ScanCoverage()
     )
 
     private data class Candidate(
@@ -139,10 +140,19 @@ internal class NativeProfileEngine(
         var emptyDirectory: Boolean = false
             private set
 
-        fun listChildren(): Array<File>? = file.listFiles().also { emptyDirectory = it?.isEmpty() == true }
+        fun listChildren(): Array<File>? = (try { file.listFiles() } catch (_: SecurityException) { null })
+            .also { emptyDirectory = it?.isEmpty() == true }
     }
 
     private data class ScanNode(val file: File, val depth: Int, val postEntry: ScanEntry? = null)
+
+    /** Counters describe directory checks, not an estimate of remaining junk or free space. */
+    internal class ScanCoverage {
+        var unreadableDirectories = 0
+        var depthLimitedDirectories = 0
+        var storageUnavailable = false
+        val incomplete: Boolean get() = unreadableDirectories > 0 || depthLimitedDirectories > 0 || storageUnavailable
+    }
 
     internal class RuleExpansionCache {
         val listings = HashMap<String, Array<File>>()
@@ -206,7 +216,10 @@ internal class NativeProfileEngine(
             .put("snapshotExpiresInMs", SNAPSHOT_TTL_MS)
             .put("ruleSha", ruleSha)
             .put("totalCandidates", list.size)
-            .put("partial", list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
+            .put("partial", options.coverage.incomplete || list.size >= MAX_CANDIDATES || SystemClock.elapsedRealtime() - started >= if (id == "deep") DEEP_SCAN_TOTAL_MS else SCAN_TOTAL_MS)
+            .put("unreadableDirectories", options.coverage.unreadableDirectories)
+            .put("depthLimitedDirectories", options.coverage.depthLimitedDirectories)
+            .put("storageUnavailable", options.coverage.storageUnavailable)
             .put("low", list.count { it.risk == "low" })
             .put("medium", list.count { it.risk == "medium" })
             .put("high", list.count { it.risk == "high" })
@@ -247,12 +260,12 @@ internal class NativeProfileEngine(
         val cutoff = System.currentTimeMillis() - options.fragmentDays * 86_400_000L
         val fragmentPatterns = fragmentPatterns()
         val hidden = hiddenRules()
-        val roots = storageRoots()
+        val roots = storageRoots(options.coverage)
         var visited = 0
         for ((index, root) in roots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("一次遍历扫描空项目、规则垃圾与碎片", index, roots.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, true) { entry, post ->
+            walk(root, 9, started + SCAN_TOTAL_MS, true, options.coverage) { entry, post ->
                 val file = entry.file
                 if (!post) {
                     visited += 1
@@ -293,7 +306,7 @@ internal class NativeProfileEngine(
         for ((index, root) in systemLogRoots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("补充扫描系统日志碎片", index, systemLogRoots.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, false) { entry, post ->
+            walk(root, 9, started + SCAN_TOTAL_MS, false, options.coverage) { entry, post ->
                 val file = entry.file
                 if (!post) {
                     visited += 1
@@ -568,11 +581,11 @@ internal class NativeProfileEngine(
         progress: (Progress) -> Unit,
         started: Long
     ) {
-        val roots = storageRoots()
+        val roots = storageRoots(options.coverage)
         for ((index, root) in roots.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描空文件与空目录", index, roots.size, root.path))
-            walk(root, 8, started + SCAN_TOTAL_MS, true) { entry, post ->
+            walk(root, 8, started + SCAN_TOTAL_MS, true, options.coverage) { entry, post ->
                 val file = entry.file
                 if (post) {
                     if (file != root && entry.emptyDirectory && !protectedDirectoryName(file.name)) {
@@ -630,7 +643,7 @@ internal class NativeProfileEngine(
                     note = if (rule.days > 0) "保留 ${rule.days} 天" else "", retentionDays = rule.days), options, true)
             }
             if (rule.days == 0 || target.isFile) addFile(target)
-            else walk(target, 32, deadline, false) { entry, post ->
+            else walk(target, 32, deadline, false, options.coverage) { entry, post ->
                 if (!post && entry.isFile) addFile(entry.file, entry)
             }
         }
@@ -680,8 +693,8 @@ internal class NativeProfileEngine(
         }
 
         val hidden = hiddenRules()
-        for (root in storageRoots()) {
-            walk(root, 9, started + SCAN_TOTAL_MS, true) { entry, post ->
+        for (root in storageRoots(options.coverage)) {
+            walk(root, 9, started + SCAN_TOTAL_MS, true, options.coverage) { entry, post ->
                 if (!post) collectHidden(entry, root, hidden, options, out)
             }
         }
@@ -696,13 +709,13 @@ internal class NativeProfileEngine(
         val cutoff = System.currentTimeMillis() - options.fragmentDays * 86_400_000L
         val patterns = fragmentPatterns()
         val roots = ArrayList<File>()
-        roots.addAll(storageRoots())
+        roots.addAll(storageRoots(options.coverage))
         roots.addAll(logRoots())
         val distinct = roots.distinctBy { canonical(it) }
         for ((index, root) in distinct.withIndex()) {
             if (stop(started, SCAN_TOTAL_MS)) return
             progress(Progress("扫描残留碎片", index, distinct.size, root.path))
-            walk(root, 9, started + SCAN_TOTAL_MS, root.path.startsWith("/storage") || root.path.startsWith("/sdcard")) { entry, post ->
+            walk(root, 9, started + SCAN_TOTAL_MS, root.path.startsWith("/storage") || root.path.startsWith("/sdcard"), options.coverage) { entry, post ->
                 val file = entry.file
                 if (!post && entry.isFile && file.lastModified() <= cutoff && patterns.any { it.matcher(file.name).matches() }) {
                     val item = candidate("fragments", "fragment", "残留碎片", risk(file.path), file, scanEntry = entry, deleteRoot = true, note = "保留 ${options.fragmentDays} 天")
@@ -759,7 +772,7 @@ internal class NativeProfileEngine(
     ) {
         val installed = readPackageInventory()
         val roots = ArrayList<File>()
-        for (storage in storageRoots()) {
+        for (storage in storageRoots(options.coverage)) {
             roots.add(File(storage, "Android/data"))
             roots.add(File(storage, "Android/obb"))
         }
@@ -945,9 +958,10 @@ internal class NativeProfileEngine(
         return Stats(bytes, files, dirs, complete)
     }
 
-    internal fun walk(root: File, maxDepth: Int, deadline: Long, pruneShared: Boolean, visitor: (ScanEntry, Boolean) -> Unit) {
+    internal fun walk(root: File, maxDepth: Int, deadline: Long, pruneShared: Boolean,
+        coverage: ScanCoverage = ScanCoverage(), visitor: (ScanEntry, Boolean) -> Unit) {
         val rootEntry = ScanEntry(root)
-        if (!rootEntry.isDirectory) return
+        if (!rootEntry.isDirectory || isSymlink(root)) { coverage.unreadableDirectories++; return }
         val stack = ArrayDeque<ScanNode>()
         stack.add(ScanNode(root, 0))
         while (stack.isNotEmpty()) {
@@ -961,14 +975,25 @@ internal class NativeProfileEngine(
                 continue
             }
             visitor(entry, false)
-            if (!entry.isDirectory || node.depth >= maxDepth) continue
+            if (!entry.isDirectory || cancelled.get() || SystemClock.elapsedRealtime() >= deadline) continue
             if (file != root && pruneShared && prune(entry)) {
                 // Protected roots are retained; only descendant directory shells get post visits.
-                walkProtectedEmptyShells(entry, node.depth, maxDepth, deadline, visitor)
+                if (node.depth >= maxDepth) {
+                    val children = entry.listChildren()
+                    if (children == null) coverage.unreadableDirectories++
+                    else if (children.any { it.isDirectory && !isSymlink(it) }) coverage.depthLimitedDirectories++
+                } else walkProtectedEmptyShells(entry, node.depth, maxDepth, deadline, coverage, visitor)
                 continue
             }
             stack.add(ScanNode(file, node.depth, entry))
-            val children = entry.listChildren() ?: continue
+            val children = entry.listChildren()
+            if (children == null) { coverage.unreadableDirectories++; continue }
+            // Inspect the boundary itself before deciding whether more traversal is allowed.
+            // An empty boundary is a valid candidate; non-empty contents remain unvisited.
+            if (node.depth >= maxDepth) {
+                if (children.isNotEmpty()) coverage.depthLimitedDirectories++
+                continue
+            }
             for (child in children) stack.add(ScanNode(child, node.depth + 1))
         }
     }
@@ -978,6 +1003,7 @@ internal class NativeProfileEngine(
         currentDepth: Int,
         maxDepth: Int,
         deadline: Long,
+        coverage: ScanCoverage,
         visitor: (ScanEntry, Boolean) -> Unit
     ) {
         val stack = ArrayDeque<ScanNode>()
@@ -986,7 +1012,9 @@ internal class NativeProfileEngine(
                 if (child.isDirectory) stack.add(ScanNode(child, depth))
             }
         }
-        enqueueDirectories(protectedRoot.listChildren() ?: return, currentDepth + 1)
+        val children = protectedRoot.listChildren()
+        if (children == null) { coverage.unreadableDirectories++; return }
+        enqueueDirectories(children, currentDepth + 1)
         while (stack.isNotEmpty()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) return
             val node = stack.removeLast()
@@ -999,8 +1027,10 @@ internal class NativeProfileEngine(
             }
             stack.add(ScanNode(file, node.depth, entry))
             // Boundary shells still need an emptiness check, but must never be descended into.
-            val nested = entry.listChildren() ?: continue
+            val nested = entry.listChildren()
+            if (nested == null) { coverage.unreadableDirectories++; continue }
             if (node.depth < maxDepth) enqueueDirectories(nested, node.depth + 1)
+            else if (nested.any { it.isDirectory && !isSymlink(it) }) coverage.depthLimitedDirectories++
         }
     }
 
@@ -1129,11 +1159,18 @@ internal class NativeProfileEngine(
         else -> id
     }
 
-    private fun storageRoots(): List<File> {
-        sharedRootOverride?.let { return it.distinctBy(::canonical) }
+    private fun storageRoots(coverage: ScanCoverage? = null): List<File> {
+        sharedRootOverride?.let {
+            if (it.isEmpty()) coverage?.storageUnavailable = true
+            return it.distinctBy(::canonical)
+        }
         val result = ArrayList<File>()
 
-        fun numericUsers(root: File): List<File> = root.listFiles()
+        fun children(root: File): Array<File>? = (try { root.listFiles() } catch (_: SecurityException) { null }).also {
+            if (it == null && root.isDirectory) coverage?.let { state -> state.unreadableDirectories++ }
+        }
+
+        fun numericUsers(root: File): List<File> = children(root)
             ?.filter { file ->
                 file.isDirectory && !isSymlink(file) &&
                     file.name.isNotBlank() && file.name.all { it.isDigit() }
@@ -1151,16 +1188,17 @@ internal class NativeProfileEngine(
         }
 
         // Removable storage must participate in the same discovery pass.
-        File("/mnt/media_rw").listFiles()
+        children(File("/mnt/media_rw"))
             ?.filter { it.isDirectory && !isSymlink(it) }
             ?.let(result::addAll)
-        File("/storage").listFiles()
+        children(File("/storage"))
             ?.filter { file ->
                 file.isDirectory && !isSymlink(file) &&
                     file.name !in setOf("emulated", "self", "enc_emulated", "runtime")
             }
             ?.let(result::addAll)
 
+        if (result.isEmpty()) coverage?.storageUnavailable = true
         return result.distinctBy { canonical(it) }
     }
 

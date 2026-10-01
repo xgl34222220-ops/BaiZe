@@ -56,4 +56,23 @@ class WorkbenchPresentationTest {
         assertTrue(rulesOnly.incomplete)
         assertFalse(rulesOnly.summary.contains("缓存"))
     }
+
+    @Test fun directoryReadFailuresAndDepthLimitsRemainVisibleEvenWithoutLegacyPartialFlag() {
+        val result = workbenchScanCoverage(null, JSONObject().put("unreadableDirectories", 2)
+            .put("depthLimitedDirectories", 3), false, true)
+        assertTrue(result.incomplete)
+        assertTrue(result.summary.contains("目录读取失败 2 次"))
+        assertTrue(result.summary.contains("3 处到达扫描深度上限"))
+        assertTrue(result.summary.contains("不代表没有垃圾"))
+    }
+
+    @Test fun missingStorageCannotBecomeACompleteEmptyResult() {
+        val result = workbenchScanCoverage(null, JSONObject().put("storageUnavailable", true), false, true)
+        assertTrue(result.incomplete)
+        assertTrue(result.summary.contains("未找到可读取的共享存储"))
+        val cacheOnly = workbenchScanCoverage(JSONObject().put("complete", true),
+            JSONObject().put("storageUnavailable", true), true, true, profileRequired = false)
+        assertFalse(cacheOnly.incomplete)
+        assertFalse(cacheOnly.summary.contains("共享存储"))
+    }
 }

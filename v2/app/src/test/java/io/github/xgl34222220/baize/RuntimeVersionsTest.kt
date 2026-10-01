@@ -7,9 +7,9 @@ import org.junit.Test
 class RuntimeVersionsTest {
     private val app = ComponentVersion.parse("2.8.2", 28002)
 
-    @Test fun protectionManagerUpdateAcceptsUnchangedSchedulingModules() {
-        val update = ComponentVersion("2.0.0", 30012L)
-        for (code in 30008L..30011L) {
+    @Test fun emptyDirectoryUpdateAcceptsUnchangedSchedulingModules() {
+        val update = ComponentVersion("2.0.0", 30013L)
+        for (code in 30008L..30012L) {
             val versions = RuntimeVersions(update, ComponentVersion("2.0.0", code))
             assertEquals("", versions.warning(update))
             assertTrue(versions.compatibilityNote(update).contains("当前模块可继续使用"))

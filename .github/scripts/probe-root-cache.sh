@@ -30,7 +30,9 @@ assert sys.argv[3] == '0', f"Root probe exited {sys.argv[3]}: {result or records
 assert result and result['passed'] and result['uid'] == 0 and result['deletedBytes'] == 12288, records
 for field in ('scanThenSelectedClean', 'fdTransport', 'localBinderDescriptorCopies', 'unselectedPreserved',
               'unknownPathRejected', 'serviceRecreationSelectedClean', 'lowThenHighSameSnapshot', 'apkProtectionFdSnapshot',
-              'corpseUnknownInventoryPreserved', 'corpseCrossUserRejected', 'corpseEmptyInventoryRejected', 'corpseReviewRetained'):
+              'corpseUnknownInventoryPreserved', 'corpseCrossUserRejected', 'corpseEmptyInventoryRejected', 'corpseReviewRetained',
+              'emptyBoundarySelectedClean', 'emptyDirectoryCountSeparateFromFiles', 'emptyChangedContentPreserved',
+              'emptyUnreviewedParentsPreserved', 'emptyPlaceholderAndSymlinkPreserved', 'emptyParentsRequireNewPreview'):
     assert result.get(field) is True, (field, result)
 assert result.get('crossUidBinderValidated') is False and result.get('profileDeletedBytes') == 384, result
 pathlib.Path(sys.argv[2]).write_text(json.dumps(result, ensure_ascii=False, indent=2))

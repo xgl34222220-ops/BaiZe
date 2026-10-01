@@ -27,6 +27,28 @@ import java.util.concurrent.atomic.AtomicReference
 class WorkbenchSessionTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
+    @Test fun zeroByteDirectoryCleanupKeepsDirectoryCountSeparateAndPersistsIt() = withSession { session, dispatcher ->
+        val history = AtomicReference<JSONObject>()
+        val service = Proxy.newProxyInstance(IProfileRootService::class.java.classLoader,
+            arrayOf(IProfileRootService::class.java)) { _, method, args -> when (method.name) {
+                "getWhitelistPackages", "getWhitelistPaths" -> "[]"
+                "cleanProfileSelected" -> """{"success":true,"deletedBytes":0,"deletedFiles":0,"deletedDirectories":1,"cleanedCandidates":1,"remainingCandidates":0,"details":[{"id":"sample","action":"cleaned","bytes":0,"files":0,"directories":1}]}"""
+                "recordNativeTask" -> { history.set(JSONObject(args!![0] as String)); "{}" }
+                else -> "{}"
+            } } as IProfileRootService
+        val original = ready(session, service)
+        state(session, session.screenState.copy(items = listOf(original.copy(profile = "empty", category = "empty_dir",
+            title = "空目录", bytes = 0, files = 0, directories = 0))))
+        session.cleanSelection()
+        await(dispatcher) { session.screenState.cleanupCompleted }
+        assertEquals(0L, session.screenState.cleanedBytes)
+        assertEquals(0L, session.screenState.cleanedFiles)
+        val saved = ScanReviewStore.read(app, "rules")!!
+        assertEquals(1L, saved.optLong("cleanedDirectories"))
+        assertEquals(1L, history.get().optLong("emptyDirs"))
+        assertTrue(session.screenState.resultText.contains("目录 1"))
+    }
+
     @Test fun lowRiskBatchKeepsHighRiskAvailableWithoutRescanningOrReplayingLowRisk() = batchRetainsUnselected(failedFirst = false)
 
     @Test fun failedBatchLocksAttemptedItemsButKeepsUnselectedHighRiskAvailable() = batchRetainsUnselected(failedFirst = true)
@@ -355,12 +377,13 @@ class WorkbenchSessionTest {
     @Test fun completedCleanupRestoresActualBytesAndSuccessfulOutcome() = withSession { session, dispatcher ->
         ScanReviewStore.save(app, "fragments") { JSONObject().put("items", JSONArray()).put("selected", JSONArray())
             .put("phase", "已完成所选项目清理").put("notice", "SUCCESS").put("cleanupCompleted", true)
-            .put("cleanedBytes", 2048).put("cleanedFiles", 7) }
+            .put("cleanedBytes", 2048).put("cleanedFiles", 7).put("cleanedDirectories", 3) }
         set(session, "profileBound", true)
         session.initialize("fragments")
         await(dispatcher) { !session.screenState.restoringReview }
         assertTrue(session.screenState.cleanupCompleted)
         assertEquals(2048L, session.screenState.cleanedBytes)
+        assertEquals(3L, session.screenState.cleanedDirectories)
         assertEquals(WorkbenchNotice.SUCCESS, session.screenState.notice)
         assertEquals("已完成所选项目清理", session.screenState.phase)
     }

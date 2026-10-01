@@ -105,6 +105,39 @@ class WorkbenchWorkflowUiTest {
 
     @Test
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
+    fun directoryOnlyResultExplainsZeroBytesWithoutCallingDirectoriesFiles() {
+        render(ready().copy(scanProfile = "empty", scanReady = false, cleanupCompleted = true,
+            cleanedBytes = 0, cleanedFiles = 0, cleanedDirectories = 3, selectedIds = emptySet(),
+            items = listOf(cache.copy(source = "profile", profile = "empty", category = "empty_dir", title = "旧空目录",
+                bytes = 0, files = 0, directories = 1, selectable = false, outcome = "已清理")),
+            phase = "已完成所选项目清理", notice = WorkbenchNotice.SUCCESS),
+            dark = true, fontScale = 1.5f)
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("本次移除空目录"))
+        compose.onNodeWithText("本次移除空目录").assertIsDisplayed()
+        compose.onNodeWithText("已清理 0 个文件 · 3 个目录").assertIsDisplayed()
+        compose.onNodeWithText("已清理 3 个文件").assertDoesNotExist()
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("空目录没有文件内容，文件容量记为 0 B；移除数量单独统计。"))
+        compose.onNodeWithText("空目录没有文件内容，文件容量记为 0 B；移除数量单独统计。").assertIsDisplayed()
+        compose.onNodeWithText("重新扫描").assertIsDisplayed()
+        save("empty-directories-count-dark-large-font")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w740dp-h320dp-mdpi")
+    fun directoryResultAndItsDetailsRemainReachableInLandscape() {
+        render(ready().copy(scanProfile = "empty", scanReady = false, cleanupCompleted = true,
+            cleanedBytes = 0, cleanedFiles = 0, cleanedDirectories = 12,
+            phase = "已移除所选空目录，未预览的父目录保持不变"), fontScale = 1.5f)
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("已清理 0 个文件 · 12 个目录"))
+        compose.onNodeWithText("已清理 0 个文件 · 12 个目录").assertIsDisplayed()
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("查看本次处理详情"))
+        compose.onNodeWithText("查看本次处理详情").performClick()
+        compose.onNodeWithText("任务详情").assertIsDisplayed()
+        assertEquals(0, scans)
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun completedAndHistoricalStatesKeepOneReachableActionAtLargeFont() {
         render(ready().copy(scanReady = false, cleanupCompleted = true, cleanedBytes = 0, cleanedFiles = 0,
             phase = "所有所选文件均已变化，本次没有删除文件", notice = WorkbenchNotice.WARNING), dark = true, fontScale = 1.5f)
