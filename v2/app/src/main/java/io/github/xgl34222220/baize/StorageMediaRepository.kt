@@ -137,10 +137,11 @@ internal object StorageMediaRepository {
     }
 
     fun delete(context: Context, record: StorageFileRecord, protection: () -> ApkProtectionState,
-        cancelled: () -> Boolean = { false }, guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)): StorageDeleteOutcome {
+        cancelled: () -> Boolean = { false }, guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context),
+        contentProof: IndexedContentProof? = null): StorageDeleteOutcome {
         var failure: Throwable? = null
         val result = ApkMediaStoreIndex.deleteIfUnchanged(context, record.uri, record.path, record.bytes,
-            record.modifiedSeconds, record.identity, protection, cancelled, guard, onFailure = { failure = it })
+            record.modifiedSeconds, record.identity, protection, cancelled, guard, onFailure = { failure = it }, contentProof = contentProof)
         return StorageDeleteOutcome(result, when {
             failure is SecurityException -> "系统拒绝访问此文件；请核对文件访问权限"
             failure != null -> "系统文件操作失败：${failure.javaClass.simpleName}"
@@ -157,7 +158,7 @@ internal object StorageMediaRepository {
     /** Reject links, stale sizes and modified files, including stale index fallback deletion. */
     internal fun unchanged(record: StorageFileRecord, guard: ApkDeletionGuard): Boolean = record.identity != null &&
         guard.capture(record.path) == record.identity && record.identity.bytes == record.bytes &&
-        record.modifiedSeconds > 0 && record.identity.modifiedSeconds == record.modifiedSeconds
+        record.modifiedSeconds > 0
 
     private fun open(context: Context, record: StorageFileRecord, guard: ApkDeletionGuard) =
         if (!unchanged(record, guard)) null else

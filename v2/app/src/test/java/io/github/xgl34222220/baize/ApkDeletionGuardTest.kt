@@ -25,6 +25,7 @@ class ApkDeletionGuardTest {
     private val uri = "content://media/external/file/7"
     private val stamp = ApkFileIdentity(path, 4, 90, 100, 30, 31, 10, 20)
     private val safe = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), emptySet()))
+    private val proof = IndexedContentProof(stamp, "0".repeat(64), 0)
     private lateinit var access: FakeApkFiles
     private lateinit var guard: ApkDeletionGuard
     private lateinit var provider: RecordingApkDeleteProvider
@@ -41,13 +42,52 @@ class ApkDeletionGuardTest {
     private fun delete(rules: ApkProtectionState = safe, target: String = path, itemUri: String = uri,
                        identity: ApkFileIdentity? = stamp, cancel: () -> Boolean = { false }) =
         ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), itemUri, target, 100, 30,
-            identity, { rules }, cancel, guard)
+            identity, { rules }, cancel, guard, contentProof = proof, verifyContent = { _, _, _, _ -> true })
 
     @Test fun validIdentityUsesConditionalProviderDelete() {
         assertEquals(ApkIndexedDeleteResult.DELETED, delete())
         assertEquals(1, provider.deletes)
         assertArrayEquals(arrayOf(path, "100", "30"), provider.deleteArgs)
         assertTrue(provider.selection.orEmpty().contains(MediaStore.MediaColumns.DATE_MODIFIED))
+    }
+    @Test fun providerAndFilesystemTimestampsAreCheckedAgainstTheirOwnOriginals() {
+        provider.modified = 31L
+        val result = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path, 100, 31,
+            stamp, { safe }, guard = guard, contentProof = proof, verifyContent = { _, _, _, _ -> true })
+        assertEquals(ApkIndexedDeleteResult.DELETED, result)
+        assertArrayEquals(arrayOf(path, "100", "31"), provider.deleteArgs)
+    }
+    @Test fun providerTimestampChangingAfterScanStillStopsDeletion() {
+        provider.modified = 31L
+        assertEquals(ApkIndexedDeleteResult.CHANGED, delete())
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun delayedFuseAbsenceIsConfirmedWithoutPerformingAnotherDelete() {
+        var time = 0L
+        var checks = 0
+        assertTrue(guard.awaitDeletionConfirmation(path, stamp, now = { time }, pause = {
+            time += it; checks++
+            if (time >= 25) { access.missing = true; access.stamp = null }
+        }))
+        assertEquals(2, checks)
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun fileThatStillExistsCannotTurnIntoSuccessWhenConfirmationBudgetExpires() {
+        var time = 0L
+        assertFalse(guard.awaitDeletionConfirmation(path, stamp, now = { time }, pause = { time += it }))
+        assertEquals(500L, time)
+        assertEquals(stamp, access.stamp)
+    }
+    @Test fun lostOrLinkedParentCannotConfirmDeletion() {
+        access.missing = true; access.linkedParent = true
+        assertFalse(guard.deletionConfirmed(path))
+    }
+    @Test fun replacementStopsReadOnlyConfirmationInsteadOfWaitingToDeleteIt() {
+        var waits = 0
+        access.stamp = stamp.copy(inode = 999)
+        assertFalse(guard.awaitDeletionConfirmation(path, stamp, pause = { waits++ }))
+        assertEquals(0, waits)
+        assertEquals(0, provider.deletes)
     }
     @Test fun deletingOnlyAnIndexRowCannotBeReportedAsDeletingTheFile() {
         provider.onDelete = {}
@@ -165,6 +205,24 @@ class ApkDeletionGuardTest {
         assertEquals(ApkIndexedDeleteResult.CHANGED, delete())
         assertEquals(0, provider.deletes)
     }
+    @Test fun protectionAddedWhileProviderQueryRunsMustBeReadAgainBeforeMutation() {
+        var protection: ApkProtectionState = safe
+        provider.onQuery = { protection = ApkProtectionState.KnownRoot(
+            ApkProtectionRules(emptySet(), setOf(path))) }
+        val outcome = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path,
+            100, 30, stamp, { protection }, guard = guard, contentProof = proof, verifyContent = { _, _, _, _ -> true })
+        assertEquals(ApkIndexedDeleteResult.PROTECTED, outcome)
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun protectionReadFailureAfterProviderQueryMustStopMutation() {
+        var unavailable = false
+        provider.onQuery = { unavailable = true }
+        val outcome = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path,
+            100, 30, stamp, { if (unavailable) error("synthetic Root disconnect") else safe }, guard = guard,
+            contentProof = proof, verifyContent = { _, _, _, _ -> true })
+        assertEquals(ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE, outcome)
+        assertEquals(0, provider.deletes)
+    }
     @Test fun cancelDuringProviderReadPreventsThePendingDelete() {
         var cancelled = false
         provider.onQuery = { cancelled = true }
@@ -174,6 +232,33 @@ class ApkDeletionGuardTest {
     @Test fun localOnlyStillRequiresFullFileIdentityAndConditionalDelete() {
         assertEquals(ApkIndexedDeleteResult.DELETED, delete(ApkProtectionState.LocalOnly(safe.rules)))
         assertEquals(stamp, ApkFileIdentity.read(stamp.json()))
+    }
+    @Test fun noContentReviewCannotReachProviderMutation() {
+        val result = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path, 100, 30,
+            stamp, { safe }, guard = guard)
+        assertEquals(ApkIndexedDeleteResult.UNVERIFIED, result)
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun matchingMetadataWithDifferentReviewedContentCannotBeDeleted() {
+        val result = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path, 100, 30,
+            stamp, { safe }, guard = guard, contentProof = proof, verifyContent = { _, _, _, _ -> false })
+        assertEquals(ApkIndexedDeleteResult.CHANGED, result)
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun cancellationInsideContentReadDoesNotBecomeADeletionFailure() {
+        val result = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path, 100, 30,
+            stamp, { safe }, guard = guard, contentProof = proof,
+            verifyContent = { _, _, _, _ -> throw java.util.concurrent.CancellationException("synthetic stop") })
+        assertEquals(ApkIndexedDeleteResult.CANCELLED, result)
+        assertEquals(0, provider.deletes)
+    }
+    @Test fun protectionAddedDuringContentVerificationIsCheckedBeforeMutation() {
+        var rules: ApkProtectionState = safe
+        val result = ApkMediaStoreIndex.deleteIfUnchanged(RuntimeEnvironment.getApplication(), uri, path, 100, 30,
+            stamp, { rules }, guard = guard, contentProof = proof, verifyContent = { _, _, _, _ ->
+                rules = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf(path))); true })
+        assertEquals(ApkIndexedDeleteResult.PROTECTED, result)
+        assertEquals(0, provider.deletes)
     }
 }
 
@@ -189,6 +274,7 @@ private class FakeApkFiles(var stamp: ApkFileIdentity?) : ApkFileAccess {
 
 private class RecordingApkDeleteProvider(val path: String) : ContentProvider() {
     var bytes = 100L
+    var modified = 30L
     var queries = 0
     var deletes = 0
     var selection: String? = null
@@ -199,7 +285,7 @@ private class RecordingApkDeleteProvider(val path: String) : ContentProvider() {
     override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor {
         queries++; onQuery()
         return MatrixCursor(arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.SIZE, MediaStore.MediaColumns.DATE_MODIFIED))
-            .apply { addRow(arrayOf<Any>(path, bytes, 30L)) }
+            .apply { addRow(arrayOf<Any>(path, bytes, modified)) }
     }
     override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int {
         deletes++; this.selection = selection; deleteArgs = selectionArgs; onDelete(); return 1

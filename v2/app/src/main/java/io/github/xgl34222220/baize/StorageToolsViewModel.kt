@@ -30,6 +30,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     @Volatile private var remote: IProfileRootService? = null
     private var bound = false
     private var closed = false
+    private var contentReview: Map<String, IndexedContentProof> = emptyMap()
     private val connection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (closed) return
@@ -94,7 +95,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         }
     }
     fun resumePermission() { if (state.value.permissionRequired && StorageMediaRepository.hasAccess()) scan() }
-    fun stop() { control.cancel(); mutableState.update { it.copy(status = "正在停止…") } }
+    fun stop() { if (state.value.reviewRequested) dismissDeleteReview()
+        else { control.cancel(); mutableState.update { it.copy(status = "正在停止…") } } }
     fun toggle(key: String) { if (!state.value.running) mutableState.update { it.toggleSelection(key) } }
     fun toggleAll() { if (!state.value.running) mutableState.update { it.toggleAllSelection() } }
     fun filter(query: String = state.value.query, category: String? = state.value.category,
@@ -112,7 +114,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         control = StorageScanControl()
         val taskControl = control
         val mode = state.value.mode
-        mutableState.update { it.copy(running = true, permissionRequired = false, failed = false, status = "正在读取系统文件索引…",
+        contentReview = emptyMap()
+        mutableState.update { it.copy(running = true, reviewRequested = false, permissionRequired = false, failed = false, status = "正在读取系统文件索引…",
             selected = emptySet(), records = emptyList(), duplicateGroups = emptyList(), buckets = emptyList(), coverage = "", progress = null,
             outcomes = emptyMap(), diagnostic = "", diagnosticUri = "") }
         viewModelScope.launch {
@@ -163,14 +166,52 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         }
     }
 
+    fun prepareDeleteReview() {
+        val snapshot = state.value
+        if (snapshot.running || snapshot.selected.isEmpty()) return
+        val chosen = snapshot.allRecords.filter { it.uri in snapshot.selected }
+        control = StorageScanControl()
+        val task = control
+        contentReview = emptyMap()
+        mutableState.update { it.copy(running = true, reviewRequested = true,
+            reviewMessage = "只读取已选文件内容，可随时取消。", status = "正在核对所选文件内容…") }
+        viewModelScope.launch {
+            try {
+                val batch = withContext(Dispatchers.IO) { IndexedContentReview.prepare(chosen.map { it.asIndexedCandidate() },
+                    ApkDeletionGuard.forContext(context), { closed || task.cancelled }) { done, total ->
+                    mutableState.update { if (control === task && it.running && it.reviewRequested)
+                        it.copy(reviewMessage = "正在核对 $done / $total 个文件，仅核对所选内容…") else it }
+                } }
+                if (closed || task.cancelled || control !== task) return@launch
+                contentReview = batch.proofs
+                mutableState.update { it.copy(running = false, selected = batch.proofs.keys,
+                    outcomes = (it.outcomes - batch.proofs.keys) + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
+                    reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
+                        if (batch.rejected.isEmpty()) "确认后只删除这些文件；内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
+                    status = "所选内容已核对，等待确认") }
+            } catch (_: CancellationException) {
+                if (control === task) dismissDeleteReview()
+            }
+        }
+    }
+    fun dismissDeleteReview() {
+        if (!state.value.reviewRequested) return
+        control.cancel(); contentReview = emptyMap()
+        mutableState.update { it.copy(running = false, reviewRequested = false, reviewMessage = "",
+            status = "已取消清理确认，文件未删除") }
+    }
+
     fun deleteSelected() {
         val snapshot = state.value
         if (snapshot.running || snapshot.selected.isEmpty()) return
+        if (!snapshot.reviewRequested || contentReview.isEmpty() || contentReview.keys != snapshot.selected) return
+        val reviewed = contentReview
+        contentReview = emptyMap()
         val selectedRecords = snapshot.allRecords.filter { it.uri in snapshot.selected }
         if (selectedRecords.isEmpty()) return
         control = StorageScanControl()
         val taskControl = control
-        mutableState.update { it.copy(running = true, failed = false, status = "正在删除已选文件…") }
+        mutableState.update { it.copy(running = true, reviewRequested = false, failed = false, status = "正在删除已选文件…") }
         viewModelScope.launch {
             val outcomes = withContext(Dispatchers.IO) {
                 val results = linkedMapOf<String, StorageDeleteOutcome>()
@@ -182,7 +223,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                             (group != null && StorageMediaRepository.duplicateStillSafe(context, record, group, snapshot.selected, taskControl))
                         taskControl.check()
                         results[record.uri] = if (safe) StorageMediaRepository.delete(context, record, ::protection,
-                            { taskControl.cancelled }) else StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED,
+                            { taskControl.cancelled }, contentProof = reviewed[record.uri]) else StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED,
                             "重复组没有经内容核对的保留副本，请重新扫描")
                     } catch (_: CancellationException) { break
                     } catch (error: Exception) { results[record.uri] = StorageDeleteOutcome(ApkIndexedDeleteResult.FAILED,
@@ -193,6 +234,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 results
             }
             val removed = outcomes.filterValues { it.deleted }.keys
+            val unconfirmed = outcomes.count { it.value.result == ApkIndexedDeleteResult.FAILED }
+            val retained = selectedRecords.size - removed.size - unconfirmed
             val bytes = selectedRecords.filter { it.uri in removed }.sumOf { it.bytes }
             mutableState.update { current ->
                 val remaining = current.records.filterNot { it.uri in removed }.map { record ->
@@ -204,9 +247,10 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     selected = emptySet(), outcomes = current.outcomes + outcomes,
                     duplicateGroups = current.duplicateGroups.map { it.copy(records = it.records.mapNotNull { r -> remainingByUri[r.uri] }) },
                     status = "${if (taskControl.cancelled) "已停止 · " else ""}" +
-                        (if (removed.isEmpty()) "未删除文件" else "已验证删除 ${removed.size} 个文件，释放 ${Formatter.formatFileSize(context, bytes)}") +
-                        if (removed.size < selectedRecords.size) " · ${selectedRecords.size - removed.size} 项保留" else "",
-                    coverage = if (removed.size < selectedRecords.size) "保留原因已显示在每项下方；点文件可查看完整路径与读取诊断。重新处理前请核对原因并勾选。" else current.coverage)
+                        (if (removed.isEmpty()) "未确认删除文件" else "已验证删除 ${removed.size} 个文件，释放 ${Formatter.formatFileSize(context, bytes)}") +
+                        (if (retained > 0) " · $retained 项保留" else "") +
+                        (if (unconfirmed > 0) " · $unconfirmed 项结果未确认" else ""),
+                    coverage = if (removed.size < selectedRecords.size) "逐项结果已显示在文件下方；点文件可查看完整路径与读取诊断。结果未确认时请重新扫描核对。" else current.coverage)
             }
         }
     }

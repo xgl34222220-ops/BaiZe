@@ -57,11 +57,10 @@ class StorageToolsActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             val state by model.state.collectAsState()
-            var showDeleteConfirm by rememberSaveable { mutableStateOf(false) }
             var detailUri by rememberSaveable { mutableStateOf<String?>(null) }
             val detail = state.allRecords.firstOrNull { it.uri == detailUri }
             BaiZeTheme(appearance) {
-                StorageToolsScreen(state, ::finish, model::scan, model::toggle, { showDeleteConfirm = true }, ::openAllFilesSettings,
+                StorageToolsScreen(state, ::finish, model::scan, model::toggle, model::prepareDeleteReview, ::openAllFilesSettings,
                     onToggleAll = model::toggleAll, onStop = model::stop, onQuery = { model.filter(query = it) },
                     onCategory = { model.filter(category = it) }, onSort = { model.filter(sort = it) },
                     onThreshold = { model.filter(minimumBytes = it) }, onOpen = { detailUri = it.uri },
@@ -74,12 +73,10 @@ class StorageToolsActivity : ComponentActivity() {
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("白泽单文件读取诊断", it))
                         Toast.makeText(this, "已复制当前文件的读取诊断", Toast.LENGTH_SHORT).show()
                     })
-                if (showDeleteConfirm) BaiZeDialog(
-                    onDismissRequest = { showDeleteConfirm = false }, title = { Text("删除已选 ${state.selected.size} 个文件？") },
-                    text = { Text("共 ${Formatter.formatFileSize(this, state.selectedBytes)}。删除后无法在白泽内恢复，请确认文件不再需要。" +
-                        if (state.mode == StorageToolMode.DUPLICATES) "每组至少保留一份，删除前会再次核对内容。" else "") },
-                    confirmButton = { BaiZeDialogButton(onClick = { showDeleteConfirm = false; model.deleteSelected() }) { Text("确认删除") } },
-                    dismissButton = { BaiZeDialogButton(onClick = { showDeleteConfirm = false }) { Text("取消") } })
+                if (state.reviewRequested) IndexedCleanupReviewDialog(state.running, state.selected.size,
+                    state.reviewMessage + "\n共 ${Formatter.formatFileSize(this, state.selectedBytes)}。" +
+                        if (state.mode == StorageToolMode.DUPLICATES) "每组至少保留一份，删除前会再次核对内容。" else "",
+                    model::deleteSelected, model::dismissDeleteReview)
             }
         }
     }
@@ -100,6 +97,7 @@ class StorageToolsActivity : ComponentActivity() {
 }
 
 internal data class StorageToolsUiState(
+    val reviewRequested: Boolean = false, val reviewMessage: String = "",
     val mode: StorageToolMode = StorageToolMode.LARGE, val running: Boolean = false,
     val permissionRequired: Boolean = false, val status: String = "准备扫描", val elapsedMs: Long = 0L,
     val records: List<StorageFileRecord> = emptyList(), val duplicateGroups: List<DuplicateFileGroup> = emptyList(),

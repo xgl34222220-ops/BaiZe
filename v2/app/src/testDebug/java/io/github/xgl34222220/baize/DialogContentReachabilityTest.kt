@@ -38,6 +38,33 @@ class DialogContentReachabilityTest {
 
     @Test fun multiLineTitleAndLongPathScrollWithActionsFixedInPortrait() = checkDialog("portrait")
 
+    @Test fun selectedContentReviewCannotConfirmWhileReadingAndCancellationKeepsFiles() {
+        var open by mutableStateOf(true)
+        var preparing by mutableStateOf(true)
+        var confirmations = 0
+        render { if (open) IndexedCleanupReviewDialog(preparing, 3,
+            if (preparing) "正在核对 2 / 3 个文件，仅核对所选内容…" else "已核对 3 个文件的当前内容。确认后内容再变化会保留。",
+            { confirmations++; open = false }, { open = false }) }
+        compose.onNodeWithText("确认删除").assertIsNotEnabled()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+        save("indexed-content-review-preparing-dark-large-font")
+        compose.runOnIdle { preparing = false }
+        compose.onNodeWithText("确认删除").assertIsEnabled()
+        save("indexed-content-review-ready-dark-large-font")
+        compose.onNodeWithText("取消").performClick()
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        assertEquals(0, confirmations)
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w740dp-h320dp-land-mdpi")
+    fun emptyContentReviewCannotConfirmInLandscape() {
+        render { IndexedCleanupReviewDialog(false, 0, "3 个文件无法核对，已保留并取消勾选。" + "核对说明。".repeat(40), {}, {}) }
+        compose.onNodeWithText("确认删除").assertIsNotEnabled()
+        compose.onNodeWithText("取消").assertIsDisplayed()
+        save("indexed-content-review-empty-landscape-dark-large-font")
+    }
+
     @Test
     @Config(qualifiers = "zh-rCN-w740dp-h320dp-land-mdpi")
     fun multiLineTitleAndLongPathScrollWithActionsFixedInLandscape() = checkDialog("landscape")

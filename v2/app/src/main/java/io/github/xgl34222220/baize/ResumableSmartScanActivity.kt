@@ -108,6 +108,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
     private var apkSnapshot: List<SmartApkSnapshot> = emptyList()
+    private var apkContentReview: Map<String, IndexedContentProof> = emptyMap()
+    private var apkReviewMessage = ""
+    @Volatile private var contentReviewGeneration = 0L
     private var cacheCount = 0
     private var safeCount = 0
     private var apkCount = 0
@@ -206,7 +209,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         state = screenState,
                         onBack = ::finish,
                         onScan = ::startSmartScan,
-                        onClean = { showCleanConfirm = true },
+                        onClean = ::prepareCleanConfirmation,
                         onStop = ::stopTask,
                         onReconnect = ::bindServices,
                         onToggleCategory = ::toggleCategory,
@@ -228,6 +231,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                                         else append("剩余项目容量将在执行后确认。")
                                         append("已选择 ${screenState.selectedCount} 项。")
                                         append("清理前会再次验证白名单、路径与文件状态。")
+                                        if (apkReviewMessage.isNotEmpty()) append(apkReviewMessage)
                                         if (resumable) append(" 已完成项目不会重复处理。")
                                     }
                                 )
@@ -713,6 +717,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private fun stopTask() {
         apkStopRequested = true
         if (!screenState.running) return
+        if (screenState.operation == "review") {
+            contentReviewGeneration++; apkContentReview = emptyMap()
+            screenState = screenState.copy(running = false, operation = "", phase = "已停止内容核对，文件未删除")
+            return
+        }
         cacheService?.cancelCurrentTask()
         planService?.cancelCurrentTask()
         screenState = screenState.copy(phase = "正在安全停止；完成当前项目后保存进度…")
@@ -1088,6 +1097,30 @@ class ResumableSmartScanActivity : ComponentActivity() {
         )
     }
 
+    private fun prepareCleanConfirmation() {
+        if (screenState.running) return
+        apkContentReview = emptyMap(); apkReviewMessage = ""
+        if (!screenState.apkSelected || apkSnapshot.isEmpty()) { showCleanConfirm = true; return }
+        apkStopRequested = false
+        val reviewGeneration = ++contentReviewGeneration
+        screenState = screenState.copy(running = true, operation = "review", phase = "正在核对已选安装包内容，可取消…")
+        lifecycleScope.launch {
+            try {
+                val review = withContext(Dispatchers.IO) { IndexedContentReview.prepare(apkSnapshot.map {
+                    IndexedApkCandidate(0, it.uri, it.path, it.name, it.bytes, it.modifiedSeconds, it.identity)
+                }, ApkDeletionGuard.forContext(applicationContext), { apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration }) }
+                if (apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration) return@launch
+                apkContentReview = review.proofs
+                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。"
+                screenState = screenState.copy(running = false, operation = "", phase = apkReviewMessage)
+                showCleanConfirm = true
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                if (contentReviewGeneration == reviewGeneration)
+                    screenState = screenState.copy(running = false, operation = "", phase = "已取消内容核对，文件未删除")
+            }
+        }
+    }
+
     private fun cleanApkForSmartClean(): SmartApkCleanResult {
         if (apkSnapshot.isEmpty()) return SmartApkCleanResult.EMPTY
         val started = SystemClock.elapsedRealtime()
@@ -1108,6 +1141,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 expectedBytes = item.bytes,
                 expectedModifiedSeconds = item.modifiedSeconds,
                 expectedIdentity = item.identity,
+                contentProof = apkContentReview[item.uri],
                 isCancelled = { apkStopRequested },
                 protection = { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, apkProtectionService)) }
             )) {
@@ -1323,7 +1357,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         .joinToString("") { "%02x".format(it) }
 
     override fun onDestroy() {
-        apkStopRequested = true
+        apkStopRequested = true; contentReviewGeneration++
         pollJob?.cancel()
         if (cacheBindingRequested) runCatching { RootService.unbind(cacheConnection) }
         if (planBindingRequested) runCatching { RootService.unbind(planConnection) }

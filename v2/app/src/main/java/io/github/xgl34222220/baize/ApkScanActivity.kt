@@ -116,7 +116,6 @@ class ApkScanActivity : ComponentActivity() {
     private val scanViewModel: ApkScanViewModel by viewModels()
     internal val session get() = scanViewModel.session
     private val screenState: ApkScanUiState get() = session.screenState
-    private var showCleanConfirm by mutableStateOf(false)
     private var showLocalModeConfirm by mutableStateOf(false)
     private var confirmStop by mutableStateOf<Long?>(null)
 
@@ -138,18 +137,14 @@ class ApkScanActivity : ComponentActivity() {
             BaiZeTheme(appearance) {
                 Surface(modifier = Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
                     ApkScanScreen(state = screenState, onBack = ::requestBack,
-                        onScan = ::startScan, onClean = { showCleanConfirm = true },
+                        onScan = ::startScan, onClean = session::prepareCleanReview,
                         onStop = session::stopTask, onReconnect = session::reconnectService,
                         onLocalMode = { showLocalModeConfirm = true },
                         onToggle = ::toggleItem, onToggleAll = session::toggleAll,
                         onQuery = session::query, onFilter = session::filter,
                         loadArchive = session::loadArchivePreview, diagnoseFile = session::fileReadDiagnostics)
-                    if (showCleanConfirm) BaiZeDialog(
-                        onDismissRequest = { showCleanConfirm = false },
-                        title = { Text("清理已选 ${screenState.selected.size} 个安装包？") },
-                        text = { Text("只处理当前列表中你已勾选的安装文件，删除前会重新核对文件。删除后无法在白泽内恢复，请确认不再需要。") },
-                        confirmButton = { BaiZeDialogButton(onClick = { showCleanConfirm = false; session.cleanSnapshot() }) { Text("确认清理") } },
-                        dismissButton = { BaiZeDialogButton(onClick = { showCleanConfirm = false }) { Text("取消") } })
+                    if (screenState.reviewRequested) IndexedCleanupReviewDialog(screenState.running, screenState.selected.size,
+                        screenState.reviewMessage, session::cleanSnapshot, session::dismissCleanReview)
                     if (confirmStop == session.operationToken && screenState.running) BaiZeDialog(
                         onDismissRequest = { confirmStop = null }, title = { Text("停止当前任务并返回？") },
                         text = { Text("已经完成的删除不会撤销，其余文件会保留。也可以继续查看当前进度。") },
@@ -185,6 +180,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
     @Volatile private var stopRequested = false
     private var scanCancellation: CancellationSignal? = null
     private var directSnapshot: List<DirectApkSnapshot> = emptyList()
+    private var contentReview: Map<String, IndexedContentProof> = emptyMap()
     private val permissionRequests = Channel<Unit>(Channel.CONFLATED)
     val permissionEvents = permissionRequests.receiveAsFlow()
     var operationToken = 0L
@@ -285,7 +281,9 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         val cancellation = CancellationSignal().also { scanCancellation = it }
         previewCache.clear()
         directSnapshot = emptyList()
+        contentReview = emptyMap()
         screenState = screenState.copy(
+            reviewRequested = false,
             selected = emptySet(),
             running = true,
             operation = "scan",
@@ -460,15 +458,55 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         screenState = screenState.toggleAllSelection()
     }
 
+    fun prepareCleanReview() {
+        if (closed || screenState.running || !screenState.cleanReady || screenState.selected.isEmpty()) return
+        val selected = directSnapshot.filter { it.uri in screenState.selected }
+        val token = ++operationToken
+        stopRequested = false; contentReview = emptyMap()
+        screenState = screenState.copy(running = true, operation = "review", reviewRequested = true,
+            reviewMessage = "只读取已选文件内容，可随时取消。", phase = "正在核对已选文件内容…")
+        lifecycleScope.launch {
+            try {
+                val batch = withContext(Dispatchers.IO) { IndexedContentReview.prepare(selected.map {
+                    IndexedApkCandidate(0, it.uri, it.path, it.name, it.bytes, it.modifiedSeconds, it.identity)
+                }, ApkDeletionGuard.forContext(applicationContext), { closed || stopRequested || operationToken != token }) { done, total ->
+                    lifecycleScope.launch { if (operationToken == token && screenState.reviewRequested && screenState.running)
+                        screenState = screenState.copy(reviewMessage = "正在核对 $done / $total 个文件，仅核对所选内容…") }
+                } }
+                if (closed || operationToken != token || stopRequested) return@launch
+                contentReview = batch.proofs
+                screenState = screenState.copy(running = false, operation = "", selected = batch.proofs.keys,
+                    items = screenState.items.map { item -> item.copy(retainedReason = batch.rejected[item.uri]?.let { "已保留 · $it" }
+                        ?: if (item.uri in batch.proofs) "" else item.retainedReason) },
+                    reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
+                        if (batch.rejected.isEmpty()) "确认后只删除这些文件；内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
+                    phase = "所选内容已核对，等待确认")
+            } catch (_: CancellationException) {
+                if (operationToken == token) dismissCleanReview()
+            }
+        }
+    }
+
+    fun dismissCleanReview() {
+        if (!screenState.reviewRequested) return
+        stopRequested = true; operationToken++; contentReview = emptyMap()
+        screenState = screenState.copy(running = false, operation = "", reviewRequested = false,
+            reviewMessage = "", phase = "已取消清理确认，文件未删除")
+    }
+
     fun cleanSnapshot() {
         if (closed || screenState.running || !screenState.cleanReady) return
+        if (!screenState.reviewRequested || contentReview.isEmpty() || contentReview.keys != screenState.selected) return
         val snapshot = directSnapshot.filter { it.uri in screenState.selected }
+        val reviewed = contentReview
+        contentReview = emptyMap()
         if (snapshot.isEmpty()) return
         stopRequested = false
         operationToken++
 
         screenState = screenState.copy(
             running = true,
+            reviewRequested = false,
             operation = "clean",
             phase = "正在快速删除 ${snapshot.size} 个安装包…"
         )
@@ -490,6 +528,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                         expectedBytes = item.bytes,
                         expectedModifiedSeconds = item.modifiedSeconds,
                         expectedIdentity = item.identity,
+                        contentProof = reviewed[item.uri],
                         isCancelled = { stopRequested || closed },
                         protection = { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)) }
                     )
@@ -520,9 +559,9 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
             val phase = when {
                 result.deletedFiles == 0 && (result.failed > 0 || result.skipped > 0) ->
-                    "未删除任何文件 · 保留 ${result.skipped + result.failed} 个，查看条目原因 · ${elapsed} ms"
+                    "未确认删除 · 保留 ${result.skipped} 个，${result.failed} 个结果未确认，查看条目原因 · ${elapsed} ms"
                 result.failed > 0 || result.skipped > 0 ->
-                    "清理完成：删除 ${result.deletedFiles} 个，跳过 ${result.skipped} 个，失败 ${result.failed} 个 · ${elapsed} ms"
+                    "已验证删除 ${result.deletedFiles} 个，保留 ${result.skipped} 个，${result.failed} 个结果未确认 · ${elapsed} ms"
                 else ->
                     "清理完成：删除 ${result.deletedFiles} 个，释放 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)} · ${elapsed} ms"
             }
@@ -534,7 +573,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 items = screenState.items.filterNot { it.uri in result.removed }.map {
                     it.copy(retainedReason = result.retained[it.uri].orEmpty())
                 },
-                selected = screenState.selected - result.removed,
+                selected = emptySet(),
                 totalFiles = directSnapshot.size.toLong(),
                 totalBytes = directSnapshot.sumOf { it.bytes },
                 protectionMessage = if (result.retained.values.any { it.contains("尚未核对") })
@@ -547,6 +586,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
     }
 
     fun stopTask() {
+        if (screenState.reviewRequested) { dismissCleanReview(); return }
         if (!screenState.running) {
             screenState = screenState.copy(phase = "当前没有正在运行的安装包任务")
             return
@@ -577,6 +617,8 @@ internal data class DirectCleanResult(
 )
 
 internal data class ApkScanUiState(
+    val reviewRequested: Boolean = false,
+    val reviewMessage: String = "",
     val connected: Boolean = false,
     val running: Boolean = false,
     val operation: String = "",

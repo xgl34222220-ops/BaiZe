@@ -52,11 +52,16 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 val target = candidate(selected)
                 val modified = candidate(changed)
                 val safe = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), emptySet()))
+                val reviewStarted = android.os.SystemClock.elapsedRealtime()
+                val contentProofs = indexed.candidates.filter { it.path.startsWith(root.path + "/") }.associate { item ->
+                    item.uri to IndexedContentReview.capture(checkNotNull(item.identity), ApkDeletionGuard.forContext(applicationContext)) }
+                val reviewElapsed = android.os.SystemClock.elapsedRealtime() - reviewStarted
                 var lastMutation = JSONObject()
                 fun remove(item: IndexedApkCandidate, protection: ApkProtectionState) = ApkMediaStoreIndex.deleteIfUnchanged(
                     applicationContext, item.uri, item.path, item.bytes, item.modifiedSeconds, item.identity, { protection },
                     onFailure = { lastMutation.put("error", it.javaClass.name).put("message", it.message.orEmpty()) },
-                    onMutationResult = { rows, missing -> lastMutation.put("providerRows", rows).put("physicalAbsenceConfirmed", missing) })
+                    onMutationResult = { rows, missing -> lastMutation.put("providerRows", rows).put("physicalAbsenceConfirmed", missing) },
+                    contentProof = contentProofs[item.uri])
                 stage = "protection-rejection"
                 check(remove(target, ApkProtectionState.Unknown("disconnected", safe.rules)) == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE)
                 check(selected.isFile && kept.isFile)
@@ -108,6 +113,8 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
                 check(!legacyProtected.exists() && kept.isFile && changed.isFile)
                 JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
                     .put("physicalIdentityCaptured", true).put("conditionalMediaStoreDelete", true)
+                    .put("selectedContentReviewAndRecheck", true).put("contentReviewBytes", contentProofs.values.sumOf { it.identity.bytes })
+                    .put("contentReviewMs", reviewElapsed)
                     .put("unknownProtectionPreserved", true).put("freshPathProtectionPreserved", true)
                     .put("replacedFilePreserved", true).put("unselectedPreserved", true)
                     .put("legacyProtectionVisibleRemovableAndCleanable", true)

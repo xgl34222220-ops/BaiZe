@@ -56,6 +56,8 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val before = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(root.path + "/") }
                 fun record(file: File) = before.single { it.path == file.path }.also { check(it.identity != null) }
                 selected.forEach(::record)
+                val contentProofs = before.associate { item -> item.uri to IndexedContentReview.capture(
+                    checkNotNull(item.identity), ApkDeletionGuard.forContext(applicationContext)) }
                 check(selected.map { storageCategory(record(it)) }.toSet() == setOf("archive", "document", "image", "video", "audio", "apk", "other"))
                 val safe = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), emptySet()))
                 stage = "protect-and-change"
@@ -73,23 +75,35 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 // Never invoke deletion in this diagnostic; any collision remains explicit evidence.
                 val guard = ApkDeletionGuard.forContext(applicationContext)
                 var sharedStorageTimestampCollision = false
+                var sharedStorageCollisionContentPreserved = false
+                val descriptorsBefore = File("/proc/self/fd").list()?.size ?: error("Cannot observe own descriptors")
                 for (iteration in 0 until 200) {
                     val original = checkNotNull(guard.capture(tickFixture.path))
+                    val originalContent = IndexedContentReview.capture(original, guard)
                     tickFixture.writeBytes(ByteArray(4096) { if (iteration % 2 == 0) 19 else 37 })
                     check(tickFixture.setLastModified(1_500_000_000_000L))
                     if (guard.capture(tickFixture.path) == original) {
-                        sharedStorageTimestampCollision = true; break
+                        sharedStorageTimestampCollision = true
+                        val outcome = StorageMediaRepository.delete(applicationContext, record(tickFixture).copy(identity = original),
+                            { safe }, contentProof = originalContent)
+                        check(outcome.result == ApkIndexedDeleteResult.CHANGED && tickFixture.isFile) { "Changed content was not preserved: $outcome" }
+                        sharedStorageCollisionContentPreserved = true
+                        break
                     }
                 }
                 File(output, "shared-storage-time-evidence.json").writeText(JSONObject()
                     .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
+                    .put("sharedStorageCollisionContentPreserved", sharedStorageCollisionContentPreserved)
+                    .put("openDescriptorsBefore", descriptorsBefore)
+                    .put("openDescriptorsAfter", File("/proc/self/fd").list()?.size)
                     .put("api", Build.VERSION.SDK_INT).put("uid", Process.myUid()).toString(2))
                 stage = "delete-every-indexed-category"
+                check((File("/proc/self/fd").list()?.size ?: Int.MAX_VALUE) <= descriptorsBefore + 4) { "Content review leaked descriptors" }
                 val categories = JSONArray()
                 for (file in selected) {
                     val item = record(file)
                     val diagnosticBefore = JSONObject(ApkFileReadDiagnostics.collect(applicationContext, item.uri, item.path, null, item.identity, indexedFile = true))
-                    val outcome = StorageMediaRepository.delete(applicationContext, item, { safe })
+                    val outcome = StorageMediaRepository.delete(applicationContext, item, { safe }, contentProof = contentProofs[item.uri])
                     val evidence = recordIndexedDeletionProbe(applicationContext, output, "delete-${file.extension}-evidence.json",
                         item.uri, item.path, item.identity, outcome.result, diagnosticBefore)
                     check(outcome.deleted && !file.exists()) { "${file.extension}: $evidence" }
@@ -117,7 +131,8 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val group = StorageMediaRepository.findDuplicates(applicationContext, pair).groups.single()
                 val chosen = group.records.first()
                 check(StorageMediaRepository.duplicateStillSafe(applicationContext, chosen, group, setOf(chosen.uri), StorageScanControl()))
-                check(StorageMediaRepository.delete(applicationContext, chosen, { safe }).deleted)
+                val chosenProof = IndexedContentReview.capture(checkNotNull(chosen.identity), guard)
+                check(StorageMediaRepository.delete(applicationContext, chosen, { safe }, contentProof = chosenProof).deleted)
                 check(listOf(duplicateA, duplicateB).count { it.isFile } == 1)
                 JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
                     .put("categoriesActuallyDeletedAndIndexRemoved", categories)
@@ -126,6 +141,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                     .put("unselectedPreserved", kept.isFile).put("staleIndexNotSelectableOrCounted", true)
                     .put("platformAlreadyRefreshedDeletedIndex", ghost == null)
                     .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
+                    .put("sharedStorageCollisionContentPreserved", sharedStorageCollisionContentPreserved)
                     .put("duplicateContentRecheckedAndOneCopyPreserved", true)
                     .put("input", "run-owned synthetic indexed files; no user files")
             } catch (error: Exception) {

@@ -39,7 +39,7 @@ internal fun ApkIndexedDeleteResult.retainedReason(): String = when (this) {
     ApkIndexedDeleteResult.CHANGED -> "已保留 · 文件已变化或不可读取，请重新扫描"
     ApkIndexedDeleteResult.UNVERIFIED -> "已保留 · 文件身份尚未核对，可在详情复制读取诊断"
     ApkIndexedDeleteResult.INVALID -> "已保留 · 文件索引或路径无效"
-    ApkIndexedDeleteResult.FAILED -> "已保留 · 系统未确认删除，请检查权限后重试"
+    ApkIndexedDeleteResult.FAILED -> "未确认 · 系统尚未确认文件删除，请重新扫描核对"
     ApkIndexedDeleteResult.CANCELLED -> "已保留 · 已停止清理"
 }
 
@@ -159,7 +159,9 @@ internal object ApkMediaStoreIndex {
         isCancelled: () -> Boolean = { false },
         guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context),
         onFailure: (Throwable) -> Unit = {},
-        onMutationResult: (Int, Boolean) -> Unit = { _, _ -> }
+        onMutationResult: (Int, Boolean) -> Unit = { _, _ -> },
+        contentProof: IndexedContentProof? = null,
+        verifyContent: (IndexedContentProof?, ApkFileIdentity, ApkDeletionGuard, () -> Boolean) -> Boolean = IndexedContentReview::matches
     ): ApkIndexedDeleteResult {
         if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
         val currentProtection = try { protection() } catch (_: Exception) {
@@ -189,16 +191,29 @@ internal object ApkMediaStoreIndex {
 
         return runCatching {
             if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+            // Metadata can collide within a filesystem clock tick. The final confirmation
+            // authorizes an earlier content review, never a hash invented at deletion time.
+            if (contentProof == null) return ApkIndexedDeleteResult.UNVERIFIED
+            if (!verifyContent(contentProof, requireNotNull(expectedIdentity), guard, isCancelled)) {
+                return if (isCancelled()) ApkIndexedDeleteResult.CANCELLED else ApkIndexedDeleteResult.CHANGED
+            }
             // Recheck after the provider query, and constrain the provider mutation to that row.
+            val finalProtection = try { protection() } catch (_: Exception) {
+                return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+            }
+            if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
             guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
-                expectedIdentity, currentProtection)?.let { return it }
+                expectedIdentity, finalProtection)?.let { return it }
             val selection = "${MediaStore.MediaColumns.DATA} = ? AND ${MediaStore.MediaColumns.SIZE} = ? AND ${MediaStore.MediaColumns.DATE_MODIFIED} = ?"
             val rows = context.contentResolver.delete(itemUri, selection,
                 arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString()))
-            val missing = rows > 0 && guard.deletionConfirmed(expectedPath)
+            val missing = rows > 0 && guard.awaitDeletionConfirmation(expectedPath, requireNotNull(expectedIdentity))
             onMutationResult(rows, missing)
             if (missing) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
-        }.onFailure(onFailure).getOrDefault(ApkIndexedDeleteResult.FAILED)
+        }.onFailure(onFailure).getOrElse {
+            if (it is java.util.concurrent.CancellationException || isCancelled()) ApkIndexedDeleteResult.CANCELLED
+            else ApkIndexedDeleteResult.FAILED
+        }
     }
 }

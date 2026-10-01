@@ -109,6 +109,31 @@ class ApkIndexAndRecreationRegressionTest {
         } finally { controller.pause().stop().destroy() }
     }
 
+    @Test fun failedSelectedContentReviewSurvivesRotationAndCannotDelete() {
+        provider.rowCount = 1
+        val controller = Robolectric.buildActivity(ApkScanActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            activity.call("startScan")
+            await { !activity.state().running && activity.state().items.size == 1 }
+            val uri = activity.state().items.single().uri
+            activity.session.toggleItem(uri)
+            activity.session.prepareCleanReview()
+            await { !activity.state().running }
+            assertTrue(activity.state().reviewRequested)
+            assertTrue(activity.state().selected.isEmpty())
+            assertTrue(activity.state().items.single().retainedReason.contains("已保留"))
+            val queries = provider.collectionQueries
+            controller.recreate()
+            assertTrue(controller.get().state().reviewRequested)
+            controller.get().session.cleanSnapshot()
+            assertFalse(controller.get().state().running)
+            assertEquals(queries, provider.collectionQueries)
+            controller.get().session.dismissCleanReview()
+            assertFalse(controller.get().state().reviewRequested)
+        } finally { controller.pause().stop().destroy() }
+    }
+
     @Test fun rotationAndRootDisconnectCannotReplaceAnInFlightLocalScanAndCancelDiscardsItsRows() {
         provider.rowCount = 2
         provider.blockCollection = true

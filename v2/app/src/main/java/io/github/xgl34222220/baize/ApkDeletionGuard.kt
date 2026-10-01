@@ -60,7 +60,38 @@ internal class ApkDeletionGuard(
     private val primaryStorageRoot: String?,
     private val files: ApkFileAccess = AndroidApkFileAccess
 ) {
-    fun deletionConfirmed(path: String): Boolean = runCatching { files.definitelyMissing(path) }.getOrDefault(false)
+    fun deletionConfirmed(path: String): Boolean = runCatching {
+        val root = roots.filter { path.startsWith("$it/") }.maxByOrNull { it.length } ?: return false
+        val relative = path.removePrefix("$root/")
+        if (!files.isDirectoryWithoutLink(files.canonical(root))) return false
+        if (files.canonical(path) != "${files.canonical(root).trimEnd('/')}/$relative") return false
+        var parent = root
+        for (part in relative.split('/').dropLast(1)) {
+            parent += "/$part"
+            if (!files.isDirectoryWithoutLink(parent)) return false
+        }
+        files.definitelyMissing(path)
+    }.getOrDefault(false)
+
+    /** The provider may return before FUSE invalidates its cached dentry. No further mutation. */
+    fun awaitDeletionConfirmation(path: String, original: ApkFileIdentity,
+        now: () -> Long = android.os.SystemClock::elapsedRealtime,
+        pause: (Long) -> Unit = { Thread.sleep(it) }, budgetMs: Long = 500L): Boolean {
+        val budget = budgetMs.coerceIn(0L, 1_000L)
+        val deadline = now() + budget
+        var pollsLeft = (budget / 20L).toInt() + 1
+        while (true) {
+            if (deletionConfirmed(path)) return true
+            val current = capture(path)
+            // A replacement, lost directory, or unreadable path cannot prove success.
+            if (current != original) return deletionConfirmed(path)
+            val remaining = deadline - now()
+            if (remaining <= 0 || pollsLeft-- <= 0) return false
+            try { pause(minOf(20L, remaining)) } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt(); return deletionConfirmed(path)
+            }
+        }
+    }
     private val aliases = AndroidPathIdentity(primaryStorageRoot)
     private val publicVolumeRoots = roots.filter {
         it.matches(Regex("/storage/[A-Za-z0-9-]+")) && it !in setOf("/storage/emulated", "/storage/self")
@@ -116,8 +147,9 @@ internal class ApkDeletionGuard(
             components.getOrNull(data + 2) in rules.packages) return ApkIndexedDeleteResult.PROTECTED
         if (original == null) return ApkIndexedDeleteResult.UNVERIFIED
         val current = capture(path) ?: return ApkIndexedDeleteResult.CHANGED
-        if (current != original || bytes <= 0L || current.bytes != bytes || modifiedSeconds <= 0L ||
-            current.modifiedSeconds != modifiedSeconds) return ApkIndexedDeleteResult.CHANGED
+        // Provider dates and filesystem dates are separate observations. Android may
+        // report different timestamp precision; each must match its own original.
+        if (current != original || bytes <= 0L || current.bytes != bytes || modifiedSeconds <= 0L) return ApkIndexedDeleteResult.CHANGED
         return null
     }
 
