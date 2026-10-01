@@ -1,0 +1,139 @@
+name: BaiZe 30011 Device Revalidation
+
+on:
+  push:
+    branches: [codex/baize-safety-scan-20260930]
+    paths:
+      - '.github/scripts/smoke-workbench-apk.py'
+      - '.github/scripts/revalidate-30011-device.sh'
+      - '.github/workflows/baize-30011-device-validation.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: baize-30011-device-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-existing-30011:
+    if: contains(github.event.head_commit.message, '[device-validation-only]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+ae2a293f-Paired-Test
+          path: candidate
+          run-id: 36844329946
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-APK-Installation-Smoke
+          path: prior-device-proof
+          run-id: 36844329946
+          github-token: ${{ github.token }}
+      - name: Download exact 30006 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+ea8f0290-Paired-Test
+          run-id: 36744532279
+          github-token: ${{ github.token }}
+          path: baseline-30006
+      - name: Download exact 30007 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+0150dfdf-Paired-Test
+          run-id: 36752722567
+          github-token: ${{ github.token }}
+          path: baseline-30007
+      - name: Download exact delivered 30008 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+bd6a70e5-Paired-Test
+          run-id: 36776344960
+          github-token: ${{ github.token }}
+          path: baseline-30008
+      - name: Download exact delivered 30009 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+23a3de1b-Paired-Test
+          run-id: 36787354759
+          github-token: ${{ github.token }}
+          path: baseline-30009
+      - name: Prepare verified upgrade baseline and emulator
+        run: |
+          curl --fail --location --retry 3 'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v2.0.0/BaiZe-v2.0.0.apk' -o "$RUNNER_TEMP/baize-baseline.apk"
+          echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-baseline.apk" >> "$GITHUB_ENV"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download exact delivered 30010 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+472f0d03-Paired-Test
+          run-id: 36829014947
+          github-token: ${{ github.token }}
+          path: baseline-30010
+      - name: Verify exact production source, APK and prior device evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code ae2a293f4f022fcf9daf1073d29cbd40a37b9b49 HEAD -- . \
+            ':(exclude).github/workflows/cleaner-workbench-test.yml' \
+            ':(exclude).github/workflows/baize-30011-device-validation.yml' \
+            ':(exclude).github/scripts/smoke-workbench-apk.py' \
+            ':(exclude).github/scripts/revalidate-30011-device.sh'
+          sdkmanager 'build-tools;36.0.0'
+          APK=$(find candidate -maxdepth 1 -name '*.apk' -print)
+          test "$(sha256sum "$APK" | cut -d' ' -f1)" = '7dfc05fd05ee8f33078606689c674c1da5211d752e38e451494d6bb44c8d8c59'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/30011-signature.txt"
+          grep -F 'certificate SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/30011-signature.txt"
+          python3 - <<'PYCODE'
+          import json, os, pathlib, shutil
+          root = pathlib.Path('prior-device-proof')
+          r = json.loads((root / 'baize-root-cache-probe/passed.json').read_text())
+          assert r['passed'] and r['uid'] == 0 and r['apkProtectionFdSnapshot'] and r['crossUidBinderValidated'] is False
+          for key in ('scanThenSelectedClean', 'fdTransport', 'unselectedPreserved', 'unknownPathRejected', 'serviceRecreationSelectedClean', 'lowThenHighSameSnapshot'):
+              assert r[key] is True, key
+          d = json.loads((root / 'baize-apk-deletion-probe/result.json').read_text())
+          assert d['passed'] and d['uid'] >= 10000
+          for key in ('physicalIdentityCaptured', 'conditionalMediaStoreDelete', 'unknownProtectionPreserved', 'freshPathProtectionPreserved', 'replacedFilePreserved', 'unselectedPreserved'):
+              assert d[key] is True, key
+          artwork = root / 'baize-apk-artwork-probe/result.json'
+          a = json.loads(artwork.read_text())
+          assert a['passed'] and a['archiveLabel'] and a['archiveSpecificLabelsVersionsAndPixels']
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'baize-apk-artwork-probe'
+          output.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile(artwork, output / 'result.json')
+          (output / 'source-evidence.json').write_text(json.dumps({'sourceRun': 36844329946, 'productionCommit': 'ae2a293f4f022fcf9daf1073d29cbd40a37b9b49', 'uiOnlyRevalidation': True, 'crossUidBinderValidated': False}))
+          PYCODE
+      - name: Verify the same final minified APK with explicit local mode and scrolling
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash .github/scripts/revalidate-30011-device.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30011-UI-Revalidation
+          path: |
+            ${{ runner.temp }}/baize-apk-startup/
+            ${{ runner.temp }}/baize-apk-artwork-probe/
+          if-no-files-found: warn
+          retention-days: 7

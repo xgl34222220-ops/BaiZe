@@ -223,6 +223,13 @@ try:
     time.sleep(2)
     expect_top("ApkScanActivity", "apk-artwork-entry")
     tap("开始扫描", "apk-artwork-scan")
+    apk_state = m.ui("apk-local-mode-before")
+    local_mode_selected = any(n.attrib.get("text") == "仅本地清理" for n in apk_state.iter("node"))
+    if local_mode_selected:
+        tap("仅本地清理", "apk-local-mode-explanation")
+        tap("使用本地模式", "apk-local-mode-confirmed")
+        mode_text = "\n".join(n.attrib.get("text", "") for n in m.ui("apk-local-mode-result").iter("node"))
+        assert "本地模式" in mode_text and "保护名单尚未核对" not in mode_text
     # The emulator can use English resources even though the review UI is Chinese.
     # Reuse the independently verified archive label, never guess it from the filename.
     artwork_probe = json.loads((Path(os.environ["RUNNER_TEMP"]) / "baize-apk-artwork-probe/result.json").read_text())
@@ -238,6 +245,10 @@ try:
         if fixture_name in labels and expected_archive_label in label_lines and f"版本 {expected_archive_version}" in labels and "来自安装包的应用图标" in descriptions:
             artwork_seen = True
             break
+        # On a 320x640 device the first card extends below the viewport. Inspect the
+        # actual scrollable result before concluding that its filename/artwork is absent.
+        if attempt in (1, 3, 5):
+            m.adb("shell", "input", "swipe", "160", "460", "160", "220", "300")
         time.sleep(1)
     assert artwork_seen, "The release APK must show its own archived label, version and decoded icon"
     m.capture("apk-artwork-final-release")
@@ -276,6 +287,7 @@ try:
         "organizer_without_module": True, "no_app_crash_or_anr": True,
         "release_apk_archive_icon_label_version": True,
         "apk_review_selection_survives_rotation": True,
+        "apk_explicit_local_mode_confirmed": local_mode_selected,
         "limit": "Emulator navigation and installation; actual root-manager cleaning remains unverified"}, ensure_ascii=False, indent=2))
     print((m.OUT / "passed.json").read_text())
 except Exception:
