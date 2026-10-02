@@ -1684,10 +1684,12 @@ class MiuixDashboardActivity : ComponentActivity() {
             val supervisor = json.optJSONObject("supervisor") ?: JSONObject()
             val appInstall = json.optJSONObject("appInstall") ?: JSONObject()
             val performance = json.optJSONObject("scanPerformance") ?: JSONObject()
-            val appDetails = if (latest.optString("mode") == "workbench-clean") emptyList()
-                else parseAppDetails(json.optJSONArray("appDetails"))
-            val otherDetails = if (latest.optString("mode") == "workbench-clean") emptyList()
-                else parseGeneralJunk(json.optJSONArray("otherDetails"))
+            val acceptsDetails = LastCleanupStore.acceptsModuleDetails(latest.optString("mode"))
+            val appDetails = if (acceptsDetails) parseAppDetails(json.optJSONArray("appDetails")) else emptyList()
+            val otherDetails = if (acceptsDetails) parseGeneralJunk(json.optJSONArray("otherDetails")) else emptyList()
+            val recentDetails = LastCleanupStore.mergeModuleDetails(
+                dashboardState.value.recentApps to dashboardState.value.recentJunk, appDetails, otherDetails
+            )
             if (appDetails.isNotEmpty() || otherDetails.isNotEmpty()) {
                 LastCleanupStore.save(this@MiuixDashboardActivity, appDetails, otherDetails)
             }
@@ -1718,8 +1720,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             }.ifBlank { dashboardState.value.taskPhase }
             dashboardState.value = dashboardState.value.copy(
                 lastReleased = latestReleased,
-                recentApps = if (appDetails.isNotEmpty()) appDetails else dashboardState.value.recentApps,
-                recentJunk = if (otherDetails.isNotEmpty()) otherDetails else dashboardState.value.recentJunk,
+                recentApps = recentDetails.first,
+                recentJunk = recentDetails.second,
                 taskPhase = if (dashboardState.value.running) dashboardState.value.taskPhase else latestTaskText,
                 scanPerformance = ScanPerformanceUiState(
                     available = performance.optBoolean("available", false),

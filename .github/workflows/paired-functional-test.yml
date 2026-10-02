@@ -2,7 +2,7 @@ name: BaiZe Paired Functional Test
 
 on:
   push:
-    branches: [fix/apk-scan-engine-sync]
+    branches: [fix/apk-scan-engine-sync, codex/baize-safety-scan-20260930]
   pull_request:
     branches: [main]
   workflow_dispatch:

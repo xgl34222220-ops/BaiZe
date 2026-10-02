@@ -67,7 +67,7 @@ internal object IndexedContentReview {
         }
         checkActive()
         val fd = Os.open(identity.canonicalPath, OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or
-            OsConstants.O_CLOEXEC or OsConstants.O_NONBLOCK, 0)
+            closeOnExecFlag() or OsConstants.O_NONBLOCK, 0)
         // Android's FileInputStream(FileDescriptor) borrows the descriptor. This method
         // remains its owner and closes it even when hashing is cancelled or throws.
         try { return FileInputStream(fd).use {
@@ -88,6 +88,13 @@ internal object IndexedContentReview {
             digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 255) }
         } } finally { if (fd.valid()) Os.close(fd) }
     }
+
+    // Android 8.0 supports O_CLOEXEC in the kernel, but exposes the Java constant only
+    // from API 27. Keep it in open(2), rather than setting FD_CLOEXEC afterwards:
+    // a separate fcntl would leave a descriptor-inheritance race with concurrent exec.
+    // Bionic's asm-generic/fcntl.h defines 02000000 (0x80000) on supported Android ABIs.
+    internal fun closeOnExecFlag(): Int =
+        if (Build.VERSION.SDK_INT >= 27) OsConstants.O_CLOEXEC else 0x80000
 
     private fun sameFile(identity: ApkFileIdentity, stat: StructStat): Boolean =
         OsConstants.S_ISREG(stat.st_mode) && identity.device == stat.st_dev && identity.inode == stat.st_ino &&

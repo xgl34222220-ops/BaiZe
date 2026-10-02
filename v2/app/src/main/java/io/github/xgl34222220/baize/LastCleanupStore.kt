@@ -5,6 +5,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object LastCleanupStore {
+    /** A scan is an estimate, never evidence of deleted files. Workbench owns its result. */
+    fun acceptsModuleDetails(mode: String): Boolean = mode.isNotBlank() && mode != "workbench-clean" &&
+        mode != "scan" && !mode.endsWith("-scan")
+
+    /** Replace the whole result together; never mix apps and junk from different runs. */
+    fun mergeModuleDetails(
+        previous: Pair<List<AppJunkUiItem>, List<GeneralJunkUiItem>>,
+        apps: List<AppJunkUiItem>, junk: List<GeneralJunkUiItem>
+    ): Pair<List<AppJunkUiItem>, List<GeneralJunkUiItem>> =
+        if (apps.isNotEmpty() || junk.isNotEmpty()) apps to junk else previous
+
     fun save(context: Context, apps: List<AppJunkUiItem>, junk: List<GeneralJunkUiItem>) {
         ScanReviewStore.save(context, "last-clean") { encode(apps, junk) }
     }

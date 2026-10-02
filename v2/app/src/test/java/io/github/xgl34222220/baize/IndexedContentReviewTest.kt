@@ -17,6 +17,12 @@ class IndexedContentReviewTest {
     private val guard = ApkDeletionGuard(setOf("/storage/emulated/0"), "/storage/emulated/0")
     private val item = IndexedApkCandidate(1, "content://media/external/file/1", path, "synthetic.zip", 4, 5, identity)
 
+    @Test
+    @Config(sdk = [26, 28])
+    fun closeOnExecRemainsAtomicOnMinimumAndNewerAndroid() {
+        assertEquals(0x80000, IndexedContentReview.closeOnExecFlag())
+    }
+
     @Test fun missingScanIdentityIsRetainedWithoutInventingANewOne() {
         val batch = IndexedContentReview.prepare(listOf(item.copy(identity = null)), guard, { false })
         assertTrue(batch.proofs.isEmpty())
