@@ -81,17 +81,21 @@ class NavigationSmoke:
         self.events.append({"action": name, "repeated_taps": 3, "single_activity": target})
 
     def switch(self, label, name, toggle=False):
-        root, node = self.find(label, name)
+        root, _ = self.find(label, name)
         parents = {child: parent for parent in root.iter() for child in parent}
-        current = node
+        # Compose flattens row labels into a common parent, but exposes the
+        # exact accessible description as a child of its checkable switch.
+        descriptions = [n for n in self.matching(root, label) if n.attrib.get("content-desc") == label]
+        if len(descriptions) != 1:
+            raise AssertionError(f"No unique accessible switch description for {label}")
+        current = descriptions[0]
         while current is not None:
-            switches = [n for n in current.iter("node") if n.attrib.get("checkable") == "true"]
-            if len(switches) == 1:
-                before = switches[0].attrib.get("checked") == "true"
-                if toggle: self.click_node(root, switches[0], name + "-toggle")
+            if current.attrib.get("checkable") == "true":
+                before = current.attrib.get("checked") == "true"
+                if toggle: self.click_node(root, current, name + "-toggle")
                 return before
             current = parents.get(current)
-        raise AssertionError(f"No unambiguous switch for {label}")
+        raise AssertionError(f"No checkable ancestor for {label}")
 
     def settings_state_checks(self):
         for style in ("灵动", "经典"):
