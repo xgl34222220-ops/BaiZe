@@ -135,7 +135,8 @@ class NavigationSmoke:
         self.back("MiuixDashboardActivity", "state-restore-back")
         self.tap("清理审计", "state-audit-direct")
         self.evidence("state-audit", "AuditActivity")
-        self.tap("规则质量中心", "state-rule-quality")
+        self.find("规则质量中心", "state-rule-quality-card")
+        self.tap("审核", "state-rule-quality")
         self.evidence("state-rule-quality", "RuleQualityActivity")
         self.back("AuditActivity", "state-quality-back")
         self.back("MiuixDashboardActivity", "state-audit-back")
@@ -247,6 +248,8 @@ class NavigationSmoke:
             if current.attrib.get("clickable") == "true":
                 break
             current = parents.get(current)
+        if current is None:
+            raise AssertionError(f"No clickable control for action: {name}")
         target = self.action_bounds(root, node)
         if target is None:
             raise AssertionError(f"Action is clipped or covered by navigation: {name}")
