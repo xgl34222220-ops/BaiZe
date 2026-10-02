@@ -70,9 +70,11 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                 LuoShuSection("整理空间", "按文件类型，快速找到需要处理的内容")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val tools = listOf(
+                        Triple("照片瘦身", Icons.Rounded.Photo, actions.photoCompression),
+                        Triple("重复文件", Icons.Rounded.ContentCopy, actions.duplicates),
+                        Triple("回收站", Icons.Rounded.RestoreFromTrash, actions.fileTrash),
                         Triple("安装包", Icons.Rounded.InstallMobile, actions.apkScan),
                         Triple("大文件", Icons.Rounded.FolderOpen, actions.largeFiles),
-                        Triple("重复文件", Icons.Rounded.ContentCopy, actions.duplicates),
                         Triple("存储分析", Icons.Rounded.DataUsage, actions.storageAnalysis)
                     )
                     val columns = if (maxWidth.value / LocalDensity.current.fontScale < 240f) 1 else 2
@@ -81,6 +83,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 group.forEach { (label, icon, action) ->
                                     LuoShuShortcut(label, when (label) {
+                                        "照片瘦身" -> "预览后另存"; "回收站" -> "恢复已移入文件";
                                         "安装包" -> "下载遗留"; "大文件" -> "占用排行"; "重复文件" -> "保留一份"; else -> "空间构成"
                                     }, icon, action, Modifier.weight(1f))
                                 }

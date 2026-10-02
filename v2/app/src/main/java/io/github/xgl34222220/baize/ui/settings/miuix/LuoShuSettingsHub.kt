@@ -113,6 +113,10 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
         item { LuoShuSection("管理与维护") }
         item {
             LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.History, "自动任务记录", "执行、等待原因与下次计划", actions.onOpenTaskHistory)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则版本与试跑", "本地签名规则与只读命中预览", actions.onOpenRuleVersions)
+                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Shield, "保护名单", "应用与文件路径保护", actions.onOpenWhitelist)

@@ -32,3 +32,14 @@ Paired signing/build run 36991598532 passed, and Workbench build/JVM/lint stage 
 Local correction implemented and reviewed: keep ordinary payloads at a reserved hidden root on the same shared-storage mount, outside the original parent, match actual st_dev, preserve atomic-move-only semantics, and exclude the reserved root from App/native/Shell discovery and cleanup. Hidden shared storage is not private access control. Private restore metadata remains separate; uninstall/clear-data loses restore records. Parent rename/removal, cross-mount failure, symlink/unavailable journal retention and reserved-path regressions pass locally. The fresh Android 16 probe remains required. Renewed user authorization received; publish only to the existing test branch, then require a new emulator acceptance pass.
 
 Latest local correction checks: 620 JVM/UI tests passed with zero failures/errors/skips; lintDebug passed; all three native engines compile under strict warning/error flags; modified Shell scripts pass sh and busybox ash syntax. Native and Shell index fixtures exclude both reserved roots and case variants. Full core remains 74 passed with the same four sudo-only fixture groups deferred to CI.
+
+
+## 30016 navigation acceptance correction
+
+Candidate 819a51e3 passed both full CI runs (36998228366 and 36998228330), including actual Android 16 ordinary Trash move/conflict restore and original-parent rename/removal, and signed APK installation. However, the user's subsequent question exposed an acceptance blind spot: the scheduler ledger dialog and rule bundle activity existed but were not reachable through the production Miuix navigation. The prior claim that all seven features were user-accessible was incorrect. Existing tests verified definitions/isolated pages, not all entry chains.
+
+30017 also simplifies discovery: the existing home tool grid now puts Photo compression, Duplicates and Trash directly on the home screen, while rule/version and task-history tools stay under Settings.
+
+30017 correction adds explicit Settings-home rows for task history and rule versions/preview, with shared routing for both UI styles. Ledger empty state remains visible. Acceptance now requires launcher/home-driven settings dialogs, rule preview and storage/duplicate/photo navigation, in addition to prior data-safety probes. No UI redesign or cleanup-policy expansion is part of this correction. Local checks and exact-commit CI must complete before replacement delivery.
+
+30017 local evidence: full JVM/UI run wrote 623 tests with zero failures/errors/skips; after the review's repeat-tap guard correction, all 3 targeted launcher/settings tests passed again and lintDebug completed successfully. Scheduler-health and foreground architecture contracts passed. The new signed-emulator navigation script parses and synthetic helper checks pass; its real device execution is still required by CI, not counted as passed locally.

@@ -175,7 +175,7 @@ jobs:
     if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
     needs: build-paired-test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -296,7 +296,7 @@ jobs:
             adb install root-probe/app-debug.apk
             bash .github/scripts/probe-cleanup-entrypoints.sh root-probe/app-debug.apk candidate/*-Module.zip
             adb uninstall io.github.xgl34222220.baize
-            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30016 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk baseline-30015/*.apk
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30017 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk baseline-30015/*.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:

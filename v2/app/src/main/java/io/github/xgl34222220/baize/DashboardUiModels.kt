@@ -361,6 +361,8 @@ data class DashboardActions(
     val theme: () -> Unit,
     val reconnect: () -> Unit,
     val resetScanPerformance: () -> Unit,
-    val crash: () -> Unit
+    val crash: () -> Unit,
+    val photoCompression: () -> Unit = {},
+    val fileTrash: () -> Unit = {}
 )
 

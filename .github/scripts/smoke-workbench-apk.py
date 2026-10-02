@@ -265,6 +265,10 @@ try:
     tap("扫描工作台", "fresh-workbench")
     expect_top("ScanWorkbenchActivity", "fresh-workbench", single_workbench=True)
     back("fresh-workbench-back")
+    seven_spec = importlib.util.spec_from_file_location("seven_navigation", Path(__file__).with_name("smoke-seven-improvements.py"))
+    seven = importlib.util.module_from_spec(seven_spec)
+    seven_spec.loader.exec_module(seven)
+    seven_navigation = seven.run(m, expect_top)
     # Only this repository's release APK is introduced into the disposable emulator.
     # The ordinary App process must read/render its real archive icon after minification.
     fixture_name = "BaiZe-preview-fixture.apk"
@@ -344,6 +348,7 @@ try:
         "organizer_without_module": True, "no_app_crash_or_anr": True,
         "release_apk_archive_icon_label_version": True,
         "apk_review_selection_survives_rotation": True,
+        "seven_improvements_navigation": seven_navigation,
         "apk_explicit_local_mode_confirmed": local_mode_selected,
         "limit": "Emulator navigation and installation; actual root-manager cleaning remains unverified"}, ensure_ascii=False, indent=2))
     print((m.OUT / "passed.json").read_text())

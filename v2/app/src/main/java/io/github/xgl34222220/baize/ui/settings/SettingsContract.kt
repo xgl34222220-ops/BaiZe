@@ -46,7 +46,9 @@ data class SettingsUiActions(
     val onOpenResumableScan: () -> Unit,
     val onReconnect: () -> Unit,
     val onOpenAudit: () -> Unit,
-    val onOpenCrashDiagnostics: () -> Unit
+    val onOpenCrashDiagnostics: () -> Unit,
+    val onOpenTaskHistory: () -> Unit = {},
+    val onOpenRuleVersions: () -> Unit = {}
 )
 
 fun DashboardUiState.toSettingsUiState(

@@ -1,5 +1,10 @@
 package io.github.xgl34222220.baize.ui.settings
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveable
+import io.github.xgl34222220.baize.RuleBundleActivity
+import io.github.xgl34222220.baize.CleanerNavigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +31,8 @@ fun SettingsRoute(
     onDetailChanged: (Boolean) -> Unit = {},
     onOpenDetails: () -> Unit
 ) {
+    val context = LocalContext.current
+    var showTaskHistory by rememberSaveable { mutableStateOf(false) }
     var draft by remember { mutableStateOf(scheduler.copy(saving = false)) }
     var dirty by remember { mutableStateOf(false) }
     var saveRequested by remember { mutableStateOf(false) }
@@ -70,7 +77,9 @@ fun SettingsRoute(
         onOpenResumableScan = dashboardActions.resumableScan,
         onReconnect = dashboardActions.reconnect,
         onOpenAudit = onOpenDetails,
-        onOpenCrashDiagnostics = dashboardActions.crash
+        onOpenCrashDiagnostics = dashboardActions.crash,
+        onOpenTaskHistory = { showTaskHistory = true },
+        onOpenRuleVersions = { CleanerNavigation.openFrom(context, Intent(context, RuleBundleActivity::class.java)) }
     )
 
     val skin = when (style) {
@@ -78,6 +87,7 @@ fun SettingsRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
+        if (showTaskHistory) SchedulerHealthDialog(state, actions) { showTaskHistory = false }
         if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
         else VideoSettingsScreenMiuix(state, actions, onDetailChanged)
     }
