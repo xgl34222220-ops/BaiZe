@@ -284,8 +284,21 @@ def run(smoke, expect_top):
         smoke.adb("shell", "appops", "set", smoke.APP, "MANAGE_EXTERNAL_STORAGE", "allow")
         # Resolve the public launcher intent. Every feature after this point is
         # reached by visible home/settings controls, with a checked return stack.
+        # am start's implicit resolution requires a DEFAULT category, which a
+        # launcher-only filter need not declare. Resolve the registered launcher
+        # exactly as a launcher query does, then start only that verified home.
+        launchers = smoke.adb("shell", "cmd", "package", "query-activities", "--brief", "--components",
+            "--query-flags", "0", "--user", "0", "-a", "android.intent.action.MAIN",
+            "-c", "android.intent.category.LAUNCHER", "-p", smoke.APP)
+        smoke.save_text("seven-launcher-query.txt", launchers)
+        components = re.findall(re.escape(smoke.APP) + r"/[A-Za-z0-9_.$]+", launchers)
+        expected_launcher = smoke.APP + "/.MiuixDashboardActivity"
+        expanded_launcher = smoke.APP + "/" + smoke.APP + ".MiuixDashboardActivity"
+        if not any(component in (expected_launcher, expanded_launcher) for component in components):
+            raise AssertionError(f"Installed package has no expected registered home launcher: {launchers}")
+        launcher = next(component for component in components if component in (expected_launcher, expanded_launcher))
         smoke.adb("shell", "am", "force-stop", smoke.APP)
-        smoke.save_text("seven-launcher.txt", smoke.adb("shell", "am", "start", "-W", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", smoke.APP))
+        smoke.save_text("seven-launcher.txt", smoke.adb("shell", "am", "start", "-W", "-n", launcher))
         nav.wait_text("首页", "launcher-home")
         nav.home("launcher-home")
         nav.tap("照片瘦身", "home-open-photo")
