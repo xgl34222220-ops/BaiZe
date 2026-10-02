@@ -576,7 +576,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     persistCleanPlan()
                     screenState = screenState.copy(
                         apkSummary = if (apkResult.protectionUnavailable) "保护名单未核对，已保留 $apkCount 个安装包，请重连 Root" else if (apkCount > 0) "安装包剩余 $apkCount 个" else
-                            "安装包清理完成 · ${apkResult.elapsedMs} ms"
+                            "安装包已移入回收站 ${apkResult.trashed} 个，未释放空间 · ${apkResult.elapsedMs} ms"
                     )
                 }
 
@@ -666,7 +666,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     safeBytes = if (safeCount == 0) 0L else null,
                     apkBytes = apkBytes,
                     cacheSummary = if (cacheCount > 0) "应用缓存剩余 $cacheCount 项" else "应用缓存清理完成",
-                    apkSummary = if (apkResult.protectionUnavailable) "保护名单未核对，已保留 $apkCount 个安装包，请重连 Root" else if (apkCount > 0) "安装包剩余 $apkCount 个" else "安装包清理完成",
+                    apkSummary = if (apkResult.protectionUnavailable) "保护名单未核对，已保留 $apkCount 个安装包，请重连 Root" else if (apkCount > 0) "安装包剩余 $apkCount 个" else "安装包已移入回收站 ${apkResult.trashed} 个，未释放空间",
                     safeSummary = if (safeCount > 0) "安全项目剩余 $safeCount 项" else "安全项目清理完成"
                 )
                 NativeNotifier.showTaskResult(
@@ -1111,7 +1111,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 }, ApkDeletionGuard.forContext(applicationContext), { apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration }) }
                 if (apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration) return@launch
                 apkContentReview = review.proofs
-                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。"
+                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。确认后移入回收站，不立即释放空间；保留 30 天，卸载白泽会丢失回收站。"
                 screenState = screenState.copy(running = false, operation = "", phase = apkReviewMessage)
                 showCleanConfirm = true
             } catch (_: kotlinx.coroutines.CancellationException) {
@@ -1127,6 +1127,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val remaining = ArrayList<SmartApkSnapshot>()
         var deleted = 0
         var deletedBytesNow = 0L
+        var trashed = 0
         var changed = 0
         var failed = 0
         var protected = 0
@@ -1134,20 +1135,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
         apkSnapshot.forEach { item ->
             if (apkStopRequested) { remaining += item; return@forEach }
             if (protectionUnavailable) { remaining += item; protected += 1; return@forEach }
-            when (ApkMediaStoreIndex.deleteIfUnchanged(
-                context = applicationContext,
-                uriString = item.uri,
-                expectedPath = item.path,
-                expectedBytes = item.bytes,
-                expectedModifiedSeconds = item.modifiedSeconds,
-                expectedIdentity = item.identity,
-                contentProof = apkContentReview[item.uri],
-                isCancelled = { apkStopRequested },
-                protection = { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, apkProtectionService)) }
-            )) {
+            val outcome = OrdinaryFileTrash.moveReviewed(applicationContext,
+                StorageFileRecord(0, item.uri, item.path, item.name, item.bytes, item.modifiedSeconds, "application/vnd.android.package-archive", identity = item.identity),
+                apkContentReview[item.uri], { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, apkProtectionService)) },
+                { apkStopRequested })
+            when (outcome.result) {
                 ApkIndexedDeleteResult.DELETED -> {
-                    deleted += 1
-                    deletedBytesNow += item.bytes
+                    if (outcome.trashed) trashed += 1 else { deleted += 1; deletedBytesNow += item.bytes }
                 }
                 ApkIndexedDeleteResult.CHANGED, ApkIndexedDeleteResult.UNVERIFIED, ApkIndexedDeleteResult.INVALID -> {
                     changed += 1
@@ -1168,6 +1162,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         persistApkSnapshot()
         return SmartApkCleanResult(
             deleted = deleted,
+            trashed = trashed,
             deletedBytes = deletedBytesNow,
             changed = changed,
             failed = failed,
@@ -1248,7 +1243,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private fun mergeApkMetrics(result: SmartApkCleanResult) {
         if (result.processed <= 0) return
         processedCandidates += result.processed
-        cleanedCandidates += result.deleted
+        cleanedCandidates += result.deleted + result.trashed
         changedCandidates += result.changed
         protectedCandidates += result.protected
         failedCandidates += result.failed
@@ -1399,9 +1394,10 @@ internal data class SmartApkCleanResult(
     val failed: Int,
     val elapsedMs: Long,
     val protected: Int = 0,
-    val protectionUnavailable: Boolean = false
+    val protectionUnavailable: Boolean = false,
+    val trashed: Int = 0
 ) {
-    val processed: Int get() = deleted + changed + failed + protected
+    val processed: Int get() = deleted + changed + failed + protected + trashed
     companion object {
         val EMPTY = SmartApkCleanResult(0, 0L, 0, 0, 0L)
     }

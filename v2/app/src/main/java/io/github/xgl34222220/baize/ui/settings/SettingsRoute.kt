@@ -97,6 +97,7 @@ private fun SchedulerUiState.withRuntimeFrom(remote: SchedulerUiState): Schedule
     nextTask = remote.nextTask,
     blockedGroups = remote.blockedGroups,
     nextCheckEpoch = remote.nextCheckEpoch,
+    runLedger = remote.runLedger,
     runtimeGroup = remote.runtimeGroup,
     cacheNextEpoch = remote.cacheNextEpoch,
     apkNextEpoch = remote.apkNextEpoch,

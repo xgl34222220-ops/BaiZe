@@ -3,10 +3,11 @@ package io.github.xgl34222220.baize
 internal data class StorageDeleteOutcome(
     val result: ApkIndexedDeleteResult,
     val detail: String = "",
-    val confirmedMissing: Boolean = false
+    val confirmedMissing: Boolean = false, val trashed: Boolean = false
 ) {
-    val deleted: Boolean get() = result == ApkIndexedDeleteResult.DELETED
+    val deleted: Boolean get() = result == ApkIndexedDeleteResult.DELETED && !trashed
     val reason: String get() = when {
+        trashed -> "已移入回收站 · 尚未释放空间"
         deleted -> "已验证删除"
         confirmedMissing -> "文件已不存在 · 旧索引未计入释放空间"
         result == ApkIndexedDeleteResult.FAILED -> if (detail.isNotBlank()) "未确认 · $detail" else result.retainedReason()

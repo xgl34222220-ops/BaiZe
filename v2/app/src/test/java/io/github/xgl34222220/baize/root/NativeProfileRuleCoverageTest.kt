@@ -233,6 +233,18 @@ class NativeProfileRuleCoverageTest {
         assertEquals("sample", target.readText())
     }
 
+    @Test fun previewEnabledFileRulesNeverExpandMatchingDirectories() {
+        val rules = folder.newFolder("preview-rules")
+        val data = folder.newFolder("preview-data")
+        val nested = file(data, "archive.tmp/important.pdf", 30)
+        val direct = file(data, "cache.tmp", 30)
+        File(rules, "custom-preview-files.rules").writeText("${data.path}/*.tmp|7\n")
+        val engine = NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false), ruleDirectory = rules,
+            ruleRoots = ReviewRuleCatalog.Roots(data.path, emptyList()), sharedRootOverride = emptyList())
+        val scanned = items(engine).map { it.getString("path") }
+        assertTrue(scanned.toString(), scanned.contains(direct.path))
+        assertFalse(scanned.toString(), scanned.contains(nested.path))
+    }
     @Test fun exactPathsRejectIntermediateSymlinksInLegacyAndCustomRules() {
         val rules = folder.newFolder("rules")
         val data = folder.newFolder("data")

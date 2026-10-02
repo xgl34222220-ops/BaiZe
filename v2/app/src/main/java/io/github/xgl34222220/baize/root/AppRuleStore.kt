@@ -18,12 +18,16 @@ internal object AppRuleStore {
         "custom.rules",
         "deep.rules",
         "risk-overrides.conf",
-        "rules.meta.env"
+        "rules.meta.env",
+        "custom-preview-files.rules"
     )
 
     fun ensure(context: Context): File {
+        val imported = runCatching { io.github.xgl34222220.baize.IndependentRuleBundles.forContext(context).active() }.getOrNull()
+        val custom = File(context.filesDir, "custom-preview-enabled.rules").takeIf { it.isFile && it.length() <= 64 * 1024 }?.readBytes()
         return RuleBundleStore.install(File(RootPaths.STATE_DIR, "app-rules"), files) { name ->
-            context.assets.open(name).use { it.readBytes() }
+            if (name == "custom-preview-files.rules") custom ?: ByteArray(0)
+            else imported?.files?.get(name) ?: context.assets.open(name).use { it.readBytes() }
         }
     }
 }

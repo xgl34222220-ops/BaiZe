@@ -42,7 +42,7 @@ class StorageWorkbenchUiTest {
         compose.onNodeWithText("视频", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("海边日落.mp4").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("全选当前结果").performClick()
-        compose.onNodeWithText("删除已选 2 项").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 2 项").assertIsDisplayed()
         assertEquals(setOf("uri1", "uri3"), state.selected)
         save("v6-analysis-video")
     }
@@ -62,7 +62,7 @@ class StorageWorkbenchUiTest {
             }
         }
         compose.onNodeWithText("全选当前结果").performClick()
-        compose.onNodeWithText("删除已选 1 项").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 1 项").assertIsDisplayed()
         compose.onNodeWithText("海边日落.mp4").performScrollTo()
         save("v6-large-dark-320")
     }

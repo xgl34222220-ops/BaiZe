@@ -30,12 +30,15 @@ internal class NativeProfileEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean,
     private val quarantineRepository: QuarantineRepository = QuarantineRepository(),
-    private val ruleDirectory: File = AppRuleStore.ensure(context),
+    ruleDirectory: File? = null,
     private val ruleRoots: ReviewRuleCatalog.Roots = ReviewRuleCatalog.Roots(),
     private val sharedRootOverride: List<File>? = null,
     private val packageInventory: () -> InstalledPackageInventory = { InstalledPackageInventory.read(context) },
     private val corpseStorageUser: (String) -> Int? = InstalledPackageInventory::storageUser
 ) {
+    private val appOwnedRules = ruleDirectory == null
+    private var ruleDirectory: File = ruleDirectory ?: AppRuleStore.ensure(context)
+
     data class Progress(
         val phase: String,
         val current: Int,
@@ -179,6 +182,7 @@ internal class NativeProfileEngine(
         .toString()
 
     fun scan(profile: String, optionsJson: String, progress: (Progress) -> Unit): String {
+        if (appOwnedRules) ruleDirectory = AppRuleStore.ensure(context)
         pruneSnapshots()
         val id = profile.trim().lowercase()
         val options = parseOptions(optionsJson)
@@ -640,6 +644,7 @@ internal class NativeProfileEngine(
         rules += ReviewRuleCatalog.packageRules(directory?.resolve("external.rules"), true, ruleRoots)
         rules += ReviewRuleCatalog.webViewRules(ruleRoots)
         rules += ReviewRuleCatalog.customRules(directory?.resolve("custom.rules"))
+        rules += ReviewRuleCatalog.customRules(directory?.resolve("custom-preview-files.rules")).map { it.copy(fileOnly = true, label = "自定义文件规则（已试跑）") }
         if (hiddenRules().any { it.directory && it.name == ".thumbnails" && it.days == 0 }) {
             for (root in storageRoots()) for (album in listOf("DCIM", "Pictures")) {
                 rules += ReviewRuleCatalog.Target("${root.path}/$album/.thumbnails", "相册缩略图缓存", "medium")
@@ -661,6 +666,7 @@ internal class NativeProfileEngine(
     ) {
         for (target in expand(rule.pattern, listings)) {
             if (!target.exists() || isSymlink(target)) continue
+            if (rule.fileOnly && !target.isFile) continue
             if (rule.packageRelative.isNotBlank()) {
                 val base = File(target.path.removeSuffix("/${rule.packageRelative}"))
                 if (isSymlink(base) || !canonical(target).startsWith("${canonical(base)}/")) continue

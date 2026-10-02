@@ -64,7 +64,8 @@ class StorageToolsActivity : ComponentActivity() {
                     onToggleAll = model::toggleAll, onStop = model::stop, onQuery = { model.filter(query = it) },
                     onCategory = { model.filter(category = it) }, onSort = { model.filter(sort = it) },
                     onThreshold = { model.filter(minimumBytes = it) }, onOpen = { detailUri = it.uri },
-                    onReconnect = model::connect, onLocalMode = model::enableLocalMode)
+                    onReconnect = model::connect, onLocalMode = model::enableLocalMode,
+                    onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory)
                 if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
                     state.diagnosticBusy && state.diagnosticUri == detail.uri,
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
@@ -75,7 +76,7 @@ class StorageToolsActivity : ComponentActivity() {
                     })
                 if (state.reviewRequested) IndexedCleanupReviewDialog(state.running, state.selected.size,
                     state.reviewMessage + "\n共 ${Formatter.formatFileSize(this, state.selectedBytes)}。" +
-                        if (state.mode == StorageToolMode.DUPLICATES) "每组至少保留一份，删除前会再次核对内容。" else "",
+                        if (state.mode == StorageToolMode.DUPLICATES) "每组至少保留一份，移入回收站前会再次核对内容。" else "",
                     model::deleteSelected, model::dismissDeleteReview)
             }
         }
@@ -102,10 +103,12 @@ internal data class StorageToolsUiState(
     val permissionRequired: Boolean = false, val status: String = "准备扫描", val elapsedMs: Long = 0L,
     val records: List<StorageFileRecord> = emptyList(), val duplicateGroups: List<DuplicateFileGroup> = emptyList(),
     val buckets: List<StorageAnalysisBucket> = emptyList(), val selected: Set<String> = emptySet(),
+    val directory: String? = null, val growth: List<StorageGrowth> = emptyList(), val growthDescription: String = "",
     val query: String = "", val category: String? = null, val sort: StorageSort = StorageSort.SIZE,
     val minimumBytes: Long = 0, val coverage: String = "", val progress: StorageScanProgress? = null, val failed: Boolean = false,
     val outcomes: Map<String, StorageDeleteOutcome> = emptyMap(),
     val protectionMessage: String = "", val localModeAvailable: Boolean = false,
+    val keeperPreference: DuplicateKeeperPreference = DuplicateKeeperPreference.NEWEST, val keeperDirectory: String = "",
     val diagnosticBusy: Boolean = false, val diagnosticUri: String = "", val diagnostic: String = ""
 ) {
     val allRecords: List<StorageFileRecord> get() = if (mode == StorageToolMode.DUPLICATES) duplicateGroups.flatMap { it.records } else records
@@ -120,15 +123,24 @@ internal data class StorageToolsUiState(
     } }
     val visibleRecords: List<StorageFileRecord> get() = when {
         mode == StorageToolMode.DUPLICATES -> visibleGroups.flatMap { it.records }
+        mode == StorageToolMode.ANALYSIS && directory != null -> filterStorageRecords(records.filter { java.io.File(it.path).parent == directory }, query, category, 0, sort)
         mode == StorageToolMode.ANALYSIS && category == null && query.isBlank() -> emptyList()
         else -> filterStorageRecords(records, query, category, if (mode == StorageToolMode.LARGE) minimumBytes else 0, sort)
     }
     val recommended: Set<String> get() = if (mode == StorageToolMode.DUPLICATES) visibleGroups.flatMap { group ->
-        val keeper = group.records.firstOrNull { it.uri !in selected } ?: group.records.firstOrNull()
+        val available = group.records.filter { it.uri !in selected }
+        val keeper = if (group.records.any { it.uri in selected }) available.firstOrNull()
+            else preferredDuplicateKeeper(group.records, keeperPreference, keeperDirectory)
         group.records.filter { it.uri != keeper?.uri }
     }.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet() else visibleRecords.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet()
     val allSelected: Boolean get() = recommended.isNotEmpty() && selected.containsAll(recommended)
     val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.verifiedBytes }
+    fun keepCopy(key: String): StorageToolsUiState {
+        if (running) return this
+        val group = visibleGroups.firstOrNull { it.records.any { record -> record.uri == key && record.verifiedBytes > 0 } } ?: return this
+        val groupUris = group.records.map { it.uri }.toSet()
+        return copy(selected = (selected - groupUris) + group.records.filter { it.uri != key && it.verifiedBytes > 0 }.map { it.uri }, status = "已明确保留所选副本；其余副本等待你的清理确认")
+    }
     fun toggleAllSelection(): StorageToolsUiState {
         if (running) return this
         val visible = visibleRecords.map { it.uri }.toSet()
@@ -152,15 +164,24 @@ internal fun StorageToolsScreen(
     onDelete: () -> Unit, onOpenPermission: () -> Unit, onToggleAll: () -> Unit = {}, onStop: () -> Unit = {},
     onQuery: (String) -> Unit = {}, onCategory: (String?) -> Unit = {}, onSort: (StorageSort) -> Unit = {},
     onThreshold: (Long) -> Unit = {}, onOpen: (StorageFileRecord) -> Unit = {},
-    onReconnect: () -> Unit = {}, onLocalMode: () -> Unit = {}
+    onReconnect: () -> Unit = {}, onLocalMode: () -> Unit = {},
+    onKeeperPreference: (DuplicateKeeperPreference, String) -> Unit = { _, _ -> }, onKeep: (String) -> Unit = {},
+    onDirectory: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
     val title = when (state.mode) { StorageToolMode.LARGE -> "大文件"; StorageToolMode.DUPLICATES -> "重复文件"; StorageToolMode.ANALYSIS -> "存储分析" }
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然" }
+    fun backDirectory() {
+        val current = state.directory ?: return
+        val volume = storageVolume("$current/file")
+        onDirectory(if (current == volume) null else java.io.File(current).parent)
+    }
+    BackHandler(enabled = state.directory != null && !state.running) { backDirectory() }
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
-        topBar = { DetailPageHeader(title, subtitle, { if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
+        topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
+            TextButton(onClick = { context.startActivity(Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.allRecords.isNotEmpty() && !state.running && !state.permissionRequired) IconButton(onClick = onScan) {
                 Icon(Icons.Rounded.Refresh, "重新扫描")
             }
@@ -168,7 +189,7 @@ internal fun StorageToolsScreen(
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
             state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected,
             state.recommended.isNotEmpty(), onToggleAll, onDelete,
-            cleanLabel = "删除已选 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
+            cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
@@ -189,7 +210,7 @@ internal fun StorageToolsScreen(
                 } else DetailGlassPanel {
                     val bytes = if (state.mode == StorageToolMode.DUPLICATES) state.duplicateGroups.sumOf { it.reclaimableBytes }
                         else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
-                    Text(if (state.mode == StorageToolMode.DUPLICATES) "可释放空间" else "已核对文件占用",
+                    Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BaiZeMetric(Formatter.formatFileSize(context, bytes))
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -219,10 +240,34 @@ internal fun StorageToolsScreen(
                     if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅使用本地保护规则") }
                 }
             }
-            if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null) {
+            if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
+                Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
+                Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { context.startActivity(Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
+            } }
+            if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {
                 item { StorageComposition(state.buckets) }
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
                 items(state.buckets, key = { "bucket-${it.key}" }) { bucket -> StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) } }
+            }
+            if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.records.isNotEmpty()) {
+                item { DetailSectionHeader("目录占用", state.directory ?: "点击存储卷逐层查看") }
+                if (state.directory != null) item { DetailGlassPanel { BaiZePathText(state.directory); TextButton(onClick = { backDirectory() }, enabled = !state.running) { Text("返回上级目录") } } }
+                items(storageDirectories(state.records, state.directory), key = { "dir-${it.path}" }) { dir ->
+                    DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
+                        Text(dir.path.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium)
+                        Text("${dir.files} 个文件 · ${Formatter.formatFileSize(context, dir.bytes)}（含子目录）", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (state.directory == null && state.growthDescription.isNotBlank()) item { DetailGlassPanel {
+                    Text("最近谁长胖了", style = MaterialTheme.typography.titleMedium)
+                    Text(state.growthDescription, style = MaterialTheme.typography.bodySmall)
+                    state.growth.take(10).forEach { change ->
+                        BaiZePathText(change.label)
+                        Text("${if (change.delta > 0) "+" else "−"}${Formatter.formatFileSize(context, kotlin.math.abs(change.delta))}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (state.growth.isEmpty()) Text("暂无可比较的变化", style = MaterialTheme.typography.bodySmall)
+                } }
             }
             if (state.allRecords.isNotEmpty()) {
                 item { StorageFilters(state, onQuery, onCategory, onSort, onThreshold) }
@@ -230,11 +275,16 @@ internal fun StorageToolsScreen(
                     if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.query.isBlank()) "选择上方分类，或搜索文件" else "${visible.size} 个文件 · 筛选变化后重新勾选") }
             }
             if (state.mode == StorageToolMode.DUPLICATES) {
+                item { DuplicateKeeperControls(state, onKeeperPreference) }
                 state.visibleGroups.forEachIndexed { index, group ->
-                    item(key = "group-${group.key}-${group.bytesEach}") { DetailSectionHeader("重复组 ${index + 1}", "${group.records.size} 个 · 最多释放 ${Formatter.formatFileSize(context, group.reclaimableBytes)}") }
+                    item(key = "group-${group.key}-${group.bytesEach}") { DetailSectionHeader("重复组 ${index + 1}", "${group.records.size} 个 · 多余副本占用 ${Formatter.formatFileSize(context, group.reclaimableBytes)}") }
                     items(group.records, key = { "dup-${it.uri}" }) { record ->
                         val keeper = record.uri !in state.selected && group.records.count { it.uri !in state.selected } == 1
-                        StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri])
+                        Column {
+                            if (storageCategory(record) == "image") StorageComparisonThumbnail(record)
+                            StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri])
+                            TextButton(onClick = { onKeep(record.uri) }, enabled = !state.running && record.verifiedBytes > 0) { Text(if (keeper) "已保留这份" else "保留这份") }
+                        }
                     }
                 }
             } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri]) }
@@ -288,6 +338,7 @@ private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled
 @Composable
 internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDeleteOutcome?, diagnosticBusy: Boolean,
     diagnostic: String, onDismiss: () -> Unit, onOpen: () -> Unit, onDiagnose: () -> Unit, onCopy: (String) -> Unit) {
+    val context = LocalContext.current
     BaiZeDialog(onDismissRequest = onDismiss, title = { Text("文件详情") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(record.name, style = MaterialTheme.typography.titleMedium)
@@ -296,6 +347,7 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
             androidx.compose.foundation.text.selection.SelectionContainer { Text(record.path, style = MaterialTheme.typography.bodySmall) }
             Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
+            if (storageCategory(record) == "image") TextButton(onClick = { context.startActivity(Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
             TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
                 Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
             }

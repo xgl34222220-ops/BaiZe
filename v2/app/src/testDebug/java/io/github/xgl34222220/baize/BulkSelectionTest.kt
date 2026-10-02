@@ -90,7 +90,7 @@ class BulkSelectionTest {
             }
         }
         compose.onNodeWithText("勾选多余副本").assertIsDisplayed().performClick()
-        compose.onNodeWithText("删除已选 2 项").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 2 项").assertIsDisplayed()
         save("duplicate-selection-dark-320")
     }
 

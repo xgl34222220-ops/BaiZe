@@ -472,6 +472,7 @@ internal class SchedulerRepository(
             .put("nextTask", scheduler.optString("next_task"))
             .put("blockedGroups", blockedGroups)
             .put("queueSchema", scheduler.optString("queue_schema"))
+            .put("runLedger", SchedulerRunLedger.read(stateDir))
             .put("nextRuns", nextRunsJsonObject(config, now))
             .put("queue", queue)
             .put("schedulerHealthy", schedulerHealthy)

@@ -115,7 +115,7 @@ class ApkArtworkUiTest {
                 phase = "清理完成：删除 1 个，保留 1 个", output = "已删除 1 个，实际释放 8 MB"),
                 {}, {}, { cleanCalls++ }, {}, {})
         }
-        compose.onNodeWithText("清理已选 1 个安装包").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 1 个安装包").assertIsDisplayed()
         compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText(first.retainedReason))
         compose.onNodeWithText(first.retainedReason).assertIsDisplayed()
         save("apk-retained-protection-dark-large-font")
@@ -196,7 +196,7 @@ class ApkArtworkUiTest {
             samplePath = "/synthetic/" + "长目录/".repeat(20) + "W".repeat(251) + ".apk")
         val state = ready(listOf(first)).copy(selected = setOf(first.uri))
         render(dark = true, fontScale = 1.5f) { ApkScanScreen(state, {}, {}, { cleanCalls++ }, {}, {}) }
-        compose.onNodeWithText("清理已选 1 个安装包").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 1 个安装包").assertIsDisplayed()
         compose.onNodeWithTag("apk-results-list").performScrollToNode(hasText(first.name))
         save("apk-archive-artwork-dark-large-font")
         compose.onNodeWithText(first.name).performClick()

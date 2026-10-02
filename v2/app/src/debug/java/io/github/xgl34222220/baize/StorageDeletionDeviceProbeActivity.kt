@@ -47,6 +47,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 }
                 stage = "create-category-fixtures"
                 val selected = listOf("zip", "pdf", "png", "mp4", "flac", "apk", "bin").map { create("selected.$it") }
+                val trashFixture = create("trash-roundtrip.zip")
                 val kept = create("unselected.zip")
                 val protected = create("protected.zip")
                 val changed = create("changed.zip")
@@ -60,6 +61,17 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                     checkNotNull(item.identity), ApkDeletionGuard.forContext(applicationContext)) }
                 check(selected.map { storageCategory(record(it)) }.toSet() == setOf("archive", "document", "image", "video", "audio", "apk", "other"))
                 val safe = ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), emptySet()))
+                stage = "ordinary-trash-durable-roundtrip"
+                val moved = OrdinaryFileTrash.moveReviewed(applicationContext, record(trashFixture), contentProofs[record(trashFixture).uri], { safe }, { false })
+                check(moved.trashed && !moved.deleted) { "Trash move failed: ${moved.reason}" }
+                val trash = OrdinaryFileTrash.forContext(applicationContext)
+                val entry = trash.entries().single { it.original == trashFixture.canonicalPath }
+                check(!trashFixture.exists())
+                trashFixture.writeText("new original must survive restore")
+                val restored = trash.restore(entry.id)
+                check(restored.path != trashFixture.path && restored.length() == 4096L)
+                check(trashFixture.readText() == "new original must survive restore")
+                check(trash.entries().none { it.id == entry.id })
                 stage = "protect-and-change"
                 check(StorageMediaRepository.delete(applicationContext, record(protected), {
                     ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf(root.path)))
@@ -158,6 +170,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                     .put("sharedStorageTimestampCollisionObserved", sharedStorageTimestampCollision)
                     .put("sharedStorageCollisionContentPreserved", sharedStorageCollisionContentPreserved)
                     .put("duplicateContentRecheckedAndOneCopyPreserved", true)
+                    .put("ordinaryTrashDurableMoveAndConflictRestoreVerified", true)
                     .put("input", "run-owned synthetic indexed files; no user files")
             } catch (error: Exception) {
                 JSONObject().put("passed", false).put("stage", stage).put("error", error.javaClass.name)

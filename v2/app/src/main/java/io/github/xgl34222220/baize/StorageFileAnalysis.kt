@@ -67,6 +67,35 @@ internal fun filterStorageRecords(
     return filtered.sortedWith(comparator.thenBy { it.uri })
 }
 
+internal fun ApkFileIdentity.hasPreciseStorageClock(): Boolean = modifiedNanos >= 0 && changedNanos >= 0 &&
+    (modifiedNanos > 0 || changedNanos > 0)
+
+/** Scan acceleration only: never a deletion authorization. Coarse API 26 identities are not cached. */
+internal class StorageDigestCache(private val limit: Int = 120_000) {
+    private data class Key(val identity: ApkFileIdentity, val prefix: Boolean)
+    private val values = object : LinkedHashMap<Key, String>(16, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, String>?) = size > limit
+    }
+    var hits: Int = 0; private set
+    fun begin(files: List<StorageFileRecord>) {
+        hits = 0
+        val identities = files.mapNotNull { it.identity }.toSet()
+        values.keys.removeAll { it.identity !in identities }
+    }
+    fun get(record: StorageFileRecord, prefix: Boolean): String? = record.identity?.takeIf {
+        it.hasPreciseStorageClock()
+    }?.let { values[Key(it, prefix)]?.also { hits++ } }
+    fun put(record: StorageFileRecord, prefix: Boolean, hash: String) {
+        val identity = record.identity ?: return
+        if (identity.hasPreciseStorageClock()) values[Key(identity, prefix)] = hash
+    }
+}
+
+internal fun remainingDuplicateGroups(groups: List<DuplicateFileGroup>, records: List<StorageFileRecord>): List<DuplicateFileGroup> {
+    val byUri = records.associateBy { it.uri }
+    return groups.map { it.copy(records = it.records.mapNotNull { r -> byUri[r.uri] }) }.filter { it.records.size >= 2 }
+}
+
 /** Content comparison has no Android dependency, so cancellation and exact matching can be tested. */
 internal object StorageDuplicateMatcher {
     fun digest(
@@ -101,13 +130,22 @@ internal object StorageDuplicateMatcher {
     fun match(
         files: List<StorageFileRecord>, open: (StorageFileRecord) -> InputStream?,
         unchanged: (StorageFileRecord) -> Boolean = { true }, cancelled: () -> Boolean = { false },
-        progress: (StorageScanProgress) -> Unit = {}, unreadable: () -> Unit = {}
+        progress: (StorageScanProgress) -> Unit = {}, unreadable: () -> Unit = {},
+        cache: StorageDigestCache = StorageDigestCache(), completed: (List<DuplicateFileGroup>) -> Unit = {}
     ): List<DuplicateFileGroup> {
+        cache.begin(files)
+        fun hash(record: StorageFileRecord, prefix: Boolean): String? {
+            if (!unchanged(record)) return null
+            val hash = cache.get(record, prefix) ?: digest(record, prefix, open, cancelled) ?: return null
+            if (!unchanged(record)) return null
+            cache.put(record, prefix, hash)
+            return hash
+        }
         val candidates = files.distinctBy { it.path }.groupBy { it.bytes }.values.filter { it.size > 1 }.flatten()
         val prefixes = LinkedHashMap<String, MutableList<StorageFileRecord>>()
         candidates.forEachIndexed { index, record ->
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
-            val hash = if (unchanged(record)) digest(record, true, open, cancelled) else null
+            val hash = hash(record, true)
             if (hash != null) prefixes.getOrPut("${record.bytes}:$hash") { ArrayList() }.add(record) else unreadable()
             progress(StorageScanProgress("快速比对", index + 1, candidates.size, record.name))
         }
@@ -115,9 +153,12 @@ internal object StorageDuplicateMatcher {
         val matches = LinkedHashMap<String, MutableList<StorageFileRecord>>()
         fullCandidates.forEachIndexed { index, record ->
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
-            val hash = if (unchanged(record)) digest(record, false, open, cancelled) else null
+            val hash = hash(record, false)
             if (hash != null && unchanged(record)) matches.getOrPut("${record.bytes}:$hash") { ArrayList() }.add(record) else unreadable()
             progress(StorageScanProgress("完整内容校验", index + 1, fullCandidates.size, record.name))
+            if (index % 32 == 0 || index == fullCandidates.lastIndex) completed(matches.filterValues { it.size > 1 }.map { (key, records) ->
+                DuplicateFileGroup(key.substringAfter(':'), records.first().bytes, records.toList())
+            })
         }
         return matches.filterValues { it.size > 1 }.map { (key, records) ->
             DuplicateFileGroup(key.substringAfter(':'), records.first().bytes,

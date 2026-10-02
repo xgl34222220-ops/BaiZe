@@ -26,7 +26,7 @@ internal data class DuplicateFileGroup(val key: String, val bytesEach: Long, val
 }
 internal data class StorageIndexResult(val records: List<StorageFileRecord>, val elapsedMs: Long, val truncated: Boolean,
     val confirmedMissing: Int = 0, val presenceIncomplete: Boolean = false)
-internal data class StorageDuplicateResult(val groups: List<DuplicateFileGroup>, val skipped: Int)
+internal data class StorageDuplicateResult(val groups: List<DuplicateFileGroup>, val skipped: Int, val reusedHashes: Int = 0)
 internal class StorageScanControl {
     private val stopped = AtomicBoolean(false)
     val signal = CancellationSignal()
@@ -117,21 +117,28 @@ internal object StorageMediaRepository {
         return findDuplicates(context, files).groups to (SystemClock.elapsedRealtime() - start)
     }
     fun findDuplicates(context: Context, files: List<StorageFileRecord>, control: StorageScanControl = StorageScanControl(),
-                       progress: (StorageScanProgress) -> Unit = {}): StorageDuplicateResult {
+                       progress: (StorageScanProgress) -> Unit = {}, cache: StorageDigestCache = StorageDigestCache(),
+                       completed: (List<DuplicateFileGroup>) -> Unit = {}): StorageDuplicateResult {
         var skipped = 0
         val guard = ApkDeletionGuard.forContext(context)
         val groups = StorageDuplicateMatcher.match(files, { open(context, it, guard) }, { unchanged(it, guard) },
-            { control.cancelled }, progress, { skipped++ })
-        return StorageDuplicateResult(groups, skipped)
+            { control.cancelled }, progress, { skipped++ }, cache, completed)
+        return StorageDuplicateResult(groups, skipped, cache.hits)
     }
 
     /** Recheck both the selected copy and an unselected survivor before any duplicate deletion. */
     fun duplicateStillSafe(context: Context, record: StorageFileRecord, group: DuplicateFileGroup,
-                           selected: Set<String>, control: StorageScanControl): Boolean {
+                           selected: Set<String>, control: StorageScanControl,
+                           keeperProofs: MutableMap<String, Pair<ApkFileIdentity, String>> = mutableMapOf()): Boolean {
         val guard = ApkDeletionGuard.forContext(context)
         val retained = group.records.firstOrNull { it.uri !in selected && unchanged(it, guard) } ?: return false
+        val identity = retained.identity ?: return false
+        // Only this operation's fresh proof is shared. Nanosecond-less systems rehash every time.
+        val cached = keeperProofs[retained.uri]?.takeIf { it.first == identity && identity.hasPreciseStorageClock() }
+        val hash = cached?.second ?: StorageDuplicateMatcher.digest(retained, false, { open(context, it, guard) }, { control.cancelled })
+        if (hash != group.key || !unchanged(retained, guard)) return false
+        keeperProofs[retained.uri] = identity to hash
         return unchanged(record, guard) &&
-            StorageDuplicateMatcher.digest(retained, false, { open(context, it, guard) }, { control.cancelled }) == group.key &&
             StorageDuplicateMatcher.digest(record, false, { open(context, it, guard) }, { control.cancelled }) == group.key &&
             unchanged(retained, guard) && unchanged(record, guard)
     }

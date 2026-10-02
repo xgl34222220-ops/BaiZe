@@ -147,7 +147,7 @@ class ApkScanActivity : ComponentActivity() {
                         screenState.reviewMessage, session::cleanSnapshot, session::dismissCleanReview)
                     if (confirmStop == session.operationToken && screenState.running) BaiZeDialog(
                         onDismissRequest = { confirmStop = null }, title = { Text("停止当前任务并返回？") },
-                        text = { Text("已经完成的删除不会撤销，其余文件会保留。也可以继续查看当前进度。") },
+                        text = { Text("已经完成的移动可在回收站恢复，其余文件会保留。也可以继续查看当前进度。") },
                         confirmButton = { BaiZeDialogButton(onClick = { confirmStop = null; session.stopTask(); finish() }) { Text("停止并返回") } },
                         dismissButton = { BaiZeDialogButton(onClick = { confirmStop = null }) { Text("继续查看") } })
                     if (showLocalModeConfirm) BaiZeDialog(
@@ -479,7 +479,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     items = screenState.items.map { item -> item.copy(retainedReason = batch.rejected[item.uri]?.let { "已保留 · $it" }
                         ?: if (item.uri in batch.proofs) "" else item.retainedReason) },
                     reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
-                        if (batch.rejected.isEmpty()) "确认后只删除这些文件；内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
+                        if (batch.rejected.isEmpty()) "确认后移入回收站，保留 30 天，不立即释放空间；卸载白泽会丢失回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     phase = "所选内容已核对，等待确认")
             } catch (_: CancellationException) {
                 if (operationToken == token) dismissCleanReview()
@@ -508,7 +508,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             running = true,
             reviewRequested = false,
             operation = "clean",
-            phase = "正在快速删除 ${snapshot.size} 个安装包…"
+            phase = "正在移入回收站 ${snapshot.size} 个安装包…"
         )
         lifecycleScope.launch {
             val started = SystemClock.elapsedRealtime()
@@ -521,17 +521,11 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 val retained = mutableMapOf<String, String>()
                 for ((index, item) in snapshot.withIndex()) {
                     if (stopRequested) break
-                    val outcome = ApkMediaStoreIndex.deleteIfUnchanged(
-                        context = applicationContext,
-                        uriString = item.uri,
-                        expectedPath = item.path,
-                        expectedBytes = item.bytes,
-                        expectedModifiedSeconds = item.modifiedSeconds,
-                        expectedIdentity = item.identity,
-                        contentProof = reviewed[item.uri],
-                        isCancelled = { stopRequested || closed },
-                        protection = { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)) }
-                    )
+                    val moveOutcome = OrdinaryFileTrash.moveReviewed(applicationContext,
+                        StorageFileRecord(-1L, item.uri, item.path, item.name, item.bytes, item.modifiedSeconds, "application/vnd.android.package-archive", identity = item.identity),
+                        reviewed[item.uri], { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)) },
+                        { stopRequested || closed })
+                    val outcome = moveOutcome.result
                     when (outcome) {
                         ApkIndexedDeleteResult.DELETED -> {
                             removed += item.uri
@@ -544,7 +538,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                         ApkIndexedDeleteResult.CANCELLED -> Unit
                         ApkIndexedDeleteResult.FAILED -> failed += 1
                     }
-                    if (outcome != ApkIndexedDeleteResult.DELETED) retained[item.uri] = outcome.retainedReason()
+                    if (outcome != ApkIndexedDeleteResult.DELETED) retained[item.uri] = moveOutcome.reason
                     if (outcome == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE) {
                         skipped += snapshot.size - index - 1
                         snapshot.dropWhile { it.uri != item.uri }.forEach { retained[it.uri] = outcome.retainedReason() }
@@ -559,17 +553,17 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             directSnapshot = directSnapshot.filterNot { it.uri in result.removed }
             val phase = when {
                 result.deletedFiles == 0 && (result.failed > 0 || result.skipped > 0) ->
-                    "未确认删除 · 保留 ${result.skipped} 个，${result.failed} 个结果未确认，查看条目原因 · ${elapsed} ms"
+                    "未确认移入回收站 · 保留 ${result.skipped} 个，${result.failed} 个结果未确认，查看条目原因 · ${elapsed} ms"
                 result.failed > 0 || result.skipped > 0 ->
-                    "已验证删除 ${result.deletedFiles} 个，保留 ${result.skipped} 个，${result.failed} 个结果未确认 · ${elapsed} ms"
+                    "已移入回收站 ${result.deletedFiles} 个，保留 ${result.skipped} 个，${result.failed} 个结果未确认 · ${elapsed} ms"
                 else ->
-                    "清理完成：删除 ${result.deletedFiles} 个，释放 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)} · ${elapsed} ms"
+                    "移入回收站 ${result.deletedFiles} 个，尚未释放空间，占用 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)} · ${elapsed} ms"
             }
             screenState = screenState.copy(
                 running = false,
                 operation = "",
                 cleanReady = directSnapshot.isNotEmpty(),
-                phase = if (stopRequested) "清理已停止 · 删除 ${result.deletedFiles} 个，其余保留" else phase,
+                phase = if (stopRequested) "清理已停止 · 已移入回收站 ${result.deletedFiles} 个，其余保留" else phase,
                 items = screenState.items.filterNot { it.uri in result.removed }.map {
                     it.copy(retainedReason = result.retained[it.uri].orEmpty())
                 },
@@ -580,7 +574,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     "保护名单未核对，已保留文件。请连接 Root 后重试。" else screenState.protectionMessage,
                 protectionNeedsAction = result.retained.values.any { it.contains("尚未核对") },
                 localModeAvailable = !ApkProtectionStore.rootWasUsed(applicationContext),
-                output = "已删除 ${result.deletedFiles} 个，实际释放 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)}；总耗时 ${elapsed} ms"
+                output = "已移入回收站 ${result.deletedFiles} 个，尚未释放空间，占用 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)}；总耗时 ${elapsed} ms"
             )
         }
     }
@@ -709,13 +703,14 @@ internal fun ApkScanScreen(
     }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
         topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) {
+            TextButton(onClick = { context.startActivity(Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.cleanReady && !state.running) IconButton(onClick = onScan) { Icon(Icons.Rounded.Refresh, "重新扫描") }
         } },
         bottomBar = {
             if (state.cleanReady && !state.running) CleanSelectionBar(
                 state.selected.size, state.selectableVisibleItems.size, Formatter.formatFileSize(context, state.selectedBytes),
                 state.allSelected, true, onToggleAll, onClean,
-                cleanLabel = "清理已选 ${state.selected.size} 个安装包")
+                cleanLabel = "移入回收站 ${state.selected.size} 个安装包")
         }
     ) { insets ->
     LazyColumn(
@@ -735,7 +730,7 @@ internal fun ApkScanScreen(
                 cleanEnabled = true,
                 onScan = onScan, onClean = onClean, onStop = onStop, onReconnect = onReconnect,
                 scanLabel = if (state.cleanReady || completedScan) "重新扫描" else "开始扫描",
-                cleanLabel = "清理已选 ${state.selected.size} 个安装包",
+                cleanLabel = "移入回收站 ${state.selected.size} 个安装包",
                 showAction = !state.cleanReady
             )
         }

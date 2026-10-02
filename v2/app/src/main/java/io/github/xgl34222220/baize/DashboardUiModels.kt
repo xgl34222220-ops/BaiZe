@@ -197,6 +197,7 @@ data class SchedulerUiState(
     val nextTask: String = "",
     val blockedGroups: String = "",
     val nextCheckEpoch: Long = 0L,
+    val runLedger: List<String> = emptyList(),
     val runtimeGroup: String = "",
     val cacheNextEpoch: Long = 0L,
     val apkNextEpoch: Long = 0L,
@@ -308,6 +309,12 @@ data class SchedulerUiState(
                 nextTask = runtime.optString("nextTask"),
                 blockedGroups = runtime.optString("blockedGroups"),
                 nextCheckEpoch = runtime.optLong("nextCheckEpoch", 0L).coerceAtLeast(0L),
+                runLedger = runtime.optJSONArray("runLedger")?.let { rows -> (0 until minOf(rows.length(), 30)).map { index ->
+                    val row = rows.optJSONObject(index) ?: org.json.JSONObject()
+                    val stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(row.optLong("epoch") * 1000))
+                    "$stamp · ${row.optString("group")} · ${row.optString("reason")}" +
+                        if (row.has("exitCode")) "（退出码 ${row.optInt("exitCode")}）" else ""
+                } } ?: emptyList(),
                 runtimeGroup = runtime.optString("group"),
                 cacheNextEpoch = nextRuns.optLong("cache", 0L).coerceAtLeast(0L),
                 apkNextEpoch = nextRuns.optLong("apk", 0L).coerceAtLeast(0L),
