@@ -226,6 +226,13 @@ class NavigationSmoke:
             raise AssertionError(f"Downloads is not reachable in DocumentsUI: {labels(root)}")
         self.click_node(root, downloads[-1], "photo-picker-downloads")
         self.tap(folder, "photo-picker-fixture-folder")
+        # API 36 DocumentsUI's image grid hides filenames entirely. Switch via
+        # its visible List view control before selecting the exact owned file;
+        # never choose an arbitrary thumbnail by position.
+        root = self.tree("photo-picker-fixture-grid")
+        list_buttons = [n for n in root.iter("node") if n.attrib.get("resource-id", "").endswith(":id/sub_menu_list")]
+        if list_buttons:
+            self.click_node(root, list_buttons[0], "photo-picker-list-view")
         self.tap("preview.jpg", "photo-picker-select-jpeg")
         self.expect_top("PhotoCompressionActivity", "seven-photo-import-return")
 
