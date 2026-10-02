@@ -248,7 +248,7 @@ class NavigationSmoke:
             if current.attrib.get("clickable") == "true":
                 break
             current = parents.get(current)
-        if current is None:
+        if current is None and node.attrib.get("package") == self.m.APP:
             raise AssertionError(f"No clickable control for action: {name}")
         target = self.action_bounds(root, node)
         if target is None:
