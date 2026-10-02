@@ -24,3 +24,11 @@ Step 4 records bounded deduplicated schedule transitions and worker exit outcome
 - Photo export distinguishes an outstanding picker from an interrupted copy across recreation; the JPEG parser validates complete marker streams, including trailing/concatenated data.
 - Full local Android run: 614 JVM/UI tests, zero failures/errors/skips. Local lintDebug and assembleDebug passed. The final directory/file durability and explanatory-text changes are being rechecked before delivery; exact-commit remote CI remains required.
 - Equipped local core run: 74 groups passed; four host privileged /data fixture groups are blocked by unavailable sudo (deep-manifest, deep-performance, deep-recovery-bounds, rule-engine-followup). These remain required in GitHub CI; they are not counted as passes locally.
+
+## Android 16 acceptance finding (7f7007fc)
+
+Paired signing/build run 36991598532 passed, and Workbench build/JVM/lint stage 36991598569 passed. Its real emulator Trash probe failed with EXDEV on Download → Android/data: these can be distinct FUSE/passthrough mounts. The original file was preserved. This candidate must not be delivered as accepted.
+
+Local correction implemented and reviewed: keep ordinary payloads at a reserved hidden root on the same shared-storage mount, outside the original parent, match actual st_dev, preserve atomic-move-only semantics, and exclude the reserved root from App/native/Shell discovery and cleanup. Hidden shared storage is not private access control. Private restore metadata remains separate; uninstall/clear-data loses restore records. Parent rename/removal, cross-mount failure, symlink/unavailable journal retention and reserved-path regressions pass locally. The fresh Android 16 probe remains required. Renewed user authorization received; publish only to the existing test branch, then require a new emulator acceptance pass.
+
+Latest local correction checks: 620 JVM/UI tests passed with zero failures/errors/skips; lintDebug passed; all three native engines compile under strict warning/error flags; modified Shell scripts pass sh and busybox ash syntax. Native and Shell index fixtures exclude both reserved roots and case variants. Full core remains 74 passed with the same four sudo-only fixture groups deferred to CI.

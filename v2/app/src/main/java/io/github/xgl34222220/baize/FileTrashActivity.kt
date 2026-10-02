@@ -27,6 +27,7 @@ import java.util.Date
 class FileTrashActivity : ComponentActivity() {
     private val appearance: AppearanceViewModel by viewModels()
     private var entries by mutableStateOf(emptyList<TrashEntry>())
+    private var occupied by mutableStateOf(0L)
     private var busy by mutableStateOf(false)
     private var message by mutableStateOf("")
     private var budget by mutableStateOf(OrdinaryFileTrash.DEFAULT_BUDGET)
@@ -43,8 +44,8 @@ class FileTrashActivity : ComponentActivity() {
                     topBar = { DetailPageHeader("文件回收站", "恢复普通文件 · 不覆盖已有内容", ::finish) {} }) { padding ->
                     LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item { DetailGlassPanel {
-                            Text("已占用 ${Formatter.formatFileSize(this@FileTrashActivity, entries.sumOf { it.bytes })} / ${Formatter.formatFileSize(this@FileTrashActivity, budget)}")
-                            Text("前台手动处理的 APK、下载、大文件和重复副本统一保留。模块自动清理仍按原配置执行，不进入此回收站。移动不释放空间；30 天后标为到期，仍需你确认永久删除。卸载白泽会删除回收站。", style = MaterialTheme.typography.bodySmall)
+                            Text("记录容量 ${Formatter.formatFileSize(this@FileTrashActivity, occupied)} / ${Formatter.formatFileSize(this@FileTrashActivity, budget)}")
+                            Text("前台手动处理的 APK、下载、大文件和重复副本统一保留。模块自动清理仍按原配置执行，不进入此回收站。移动不释放空间；30 天后标为到期，仍需你确认永久删除。普通共享文件保留在同卷隐藏目录，其他有文件权限的应用仍可能访问；应用专属目录不会移到公共区域。卸载或清空白泽数据可能丢失回收内容或恢复记录，请先恢复或清空。", style = MaterialTheme.typography.bodySmall)
                             Text("容量上限", style = MaterialTheme.typography.labelLarge)
                             Row { listOf(1L, 5L, 10L).forEach { gib ->
                                 TextButton(enabled = !busy, onClick = {
@@ -61,15 +62,16 @@ class FileTrashActivity : ComponentActivity() {
                             Text(entry.original.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium)
                             BaiZePathText(entry.original)
                             Text("${Formatter.formatFileSize(this@FileTrashActivity, entry.bytes)} · ${if (entry.expires <= System.currentTimeMillis()) "已到期，可手动清空" else "保留至 " + DateFormat.getDateInstance().format(Date(entry.expires))}", style = MaterialTheme.typography.bodySmall)
+                            Text(entry.payloadState.label, style = MaterialTheme.typography.bodySmall)
                             Row {
-                                TextButton(enabled = !busy, onClick = { runOperation {
+                                TextButton(enabled = !busy && entry.payloadState == TrashPayloadState.READABLE, onClick = { runOperation {
                                     val restored = OrdinaryFileTrash.forContext(this@FileTrashActivity).restore(entry.id)
                                     MediaScannerConnection.scanFile(this@FileTrashActivity, arrayOf(restored.path), null, null)
                                     "已恢复至 ${restored.path}"
                                 } }) { Text("恢复") }
-                                TextButton(enabled = !busy, onClick = { confirm = entry }) { Text("永久删除") }
+                                TextButton(enabled = !busy && entry.payloadState == TrashPayloadState.READABLE, onClick = { confirm = entry }) { Text("永久删除") }
                             }
-                            TextButton(enabled = !busy, onClick = { recoverChanged = entry }) { Text("恢复内容变化的副本") }
+                            TextButton(enabled = !busy && entry.payloadState == TrashPayloadState.READABLE, onClick = { recoverChanged = entry }) { Text("恢复内容变化的副本") }
                             TextButton(enabled = !busy, onClick = { runOperation {
                                 OrdinaryFileTrash.forContext(this@FileTrashActivity).forgetMissing(entry.id)
                                 "已移除无内容记录，原文件未操作"
@@ -95,13 +97,17 @@ class FileTrashActivity : ComponentActivity() {
             }
         }
     }
-    private fun refresh() { lifecycleScope.launch { entries = withContext(Dispatchers.IO) { OrdinaryFileTrash.forContext(this@FileTrashActivity).entries() } } }
+    private fun refresh() { lifecycleScope.launch {
+        val snapshot = withContext(Dispatchers.IO) { OrdinaryFileTrash.forContext(this@FileTrashActivity).let { it.entries() to it.occupiedBytes() } }
+        entries = snapshot.first; occupied = snapshot.second
+    } }
     private fun runOperation(action: () -> String) {
         if (busy) return
         busy = true
         lifecycleScope.launch {
             message = withContext(Dispatchers.IO) { runCatching(action).getOrElse { it.message ?: "操作失败，未确认完成" } }
-            entries = withContext(Dispatchers.IO) { OrdinaryFileTrash.forContext(this@FileTrashActivity).entries() }
+            val snapshot = withContext(Dispatchers.IO) { OrdinaryFileTrash.forContext(this@FileTrashActivity).let { it.entries() to it.occupiedBytes() } }
+            entries = snapshot.first; occupied = snapshot.second
             busy = false
         }
     }

@@ -1256,6 +1256,7 @@ internal class NativeProfileEngine(
 
     private fun hardProtected(path: String): Boolean {
         val normalized = path.trimEnd('/').ifBlank { "/" }
+        if (io.github.xgl34222220.baize.OrdinaryFileTrash.isPayloadPath(normalized)) return true
         if (HARD_EXACT.contains(normalized)) return true
         if (READ_ONLY.any { normalized == it || normalized.startsWith("$it/") }) return true
         return normalized == "/data/adb" || normalized.startsWith("/data/adb/") ||
@@ -1405,7 +1406,7 @@ internal class NativeProfileEngine(
             "/system", "/vendor", "/product", "/odm", "/apex", "/proc", "/sys", "/dev", "/metadata"
         )
         private val HIDDEN_PROTECTED = setOf(
-            ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine"
+            ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine", ".baize-file-trash"
         )
         private val PERSONAL_CONTENT = setOf(
             "/documents/", "/dcim/", "/pictures/", "/movies/", "/music/",

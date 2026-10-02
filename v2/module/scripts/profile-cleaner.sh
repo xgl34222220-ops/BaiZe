@@ -185,6 +185,7 @@ else
   }
   path_conflicts_whitelist() {
     _wl_target=${1%/}
+    case "$_wl_target" in */.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]|*/.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]/*|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]/*) return 0;; esac
     [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
     _wl_old_ifs=$IFS
     case "$-" in *f*) _wl_had_f=1 ;; *) _wl_had_f=0 ;; esac

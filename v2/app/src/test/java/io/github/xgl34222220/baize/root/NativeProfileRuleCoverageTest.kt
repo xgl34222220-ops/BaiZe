@@ -245,6 +245,16 @@ class NativeProfileRuleCoverageTest {
         assertTrue(scanned.toString(), scanned.contains(direct.path))
         assertFalse(scanned.toString(), scanned.contains(nested.path))
     }
+    @Test fun explicitRulesCannotExposeOrdinaryTrashPayloads() {
+        val rules = folder.newFolder("trash-rules")
+        val data = folder.newFolder("trash-data")
+        val retained = file(data, ".baize-file-trash/app/keep.log", 30)
+        File(rules, "custom.rules").writeText("${retained.path}|0\n${retained.parent}|0\n")
+        val engine = NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false), ruleDirectory = rules,
+            ruleRoots = ReviewRuleCatalog.Roots(data.path, emptyList()), sharedRootOverride = listOf(data))
+        assertTrue(items(engine).none { it.getString("path").contains("/.baize-file-trash/") })
+        assertEquals("sample", retained.readText())
+    }
     @Test fun exactPathsRejectIntermediateSymlinksInLegacyAndCustomRules() {
         val rules = folder.newFolder("rules")
         val data = folder.newFolder("data")

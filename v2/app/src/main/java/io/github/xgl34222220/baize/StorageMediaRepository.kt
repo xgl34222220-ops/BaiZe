@@ -172,7 +172,7 @@ internal object StorageMediaRepository {
             runCatching { context.contentResolver.openInputStream(Uri.parse(record.uri)) }.getOrNull()
                 ?: if (unchanged(record, guard)) runCatching { FileInputStream(record.path) }.getOrNull() else null
 
-    internal fun safeSharedFile(path: String): Boolean = path.isNotBlank() && !path.contains('\u0000') &&
+    internal fun safeSharedFile(path: String): Boolean = !OrdinaryFileTrash.isPayloadPath(path) && path.isNotBlank() && !path.contains('\u0000') &&
         path.split('/').none { it == ".." || it == "." } &&
         (path.startsWith("/storage/") || path.startsWith("/sdcard/") || path.startsWith("/mnt/media_rw/"))
 }

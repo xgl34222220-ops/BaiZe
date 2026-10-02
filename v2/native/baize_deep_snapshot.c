@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include "cleanup_media_output.h"
 #include "baize_content_fingerprint.h"
+#include "baize_trash_guard.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -174,6 +175,7 @@ static void load_whitelist(void) {
 }
 
 static bool whitelist_conflict(const char *path) {
+    if (baize_is_ordinary_trash(path)) return true;
     for (size_t i = 0; i < g_whitelist.count; ++i) {
         if (path_relation(g_whitelist.items[i], path) || path_relation(path, g_whitelist.items[i])) return true;
     }

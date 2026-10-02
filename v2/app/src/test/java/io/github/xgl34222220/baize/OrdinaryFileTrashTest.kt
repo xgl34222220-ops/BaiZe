@@ -67,6 +67,70 @@ class OrdinaryFileTrashTest {
         assertTrue(File(entry.stored).exists()); assertEquals("data", source.readText())
         assertEquals("data", trash.restore(entry.id).readText())
     }
+    @Test fun crossMountOrAtomicRenameFailureNeverFallsBackToDeletingOriginal() = fixture { root, _ ->
+        val source = File(root, "file").apply { writeText("data") }
+        val noMount = OrdinaryFileTrash(File(root, "metadata"), listOf(File(root, "payload")), sameFileSystem = { _, _ -> false })
+        assertTrue(runCatching { noMount.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true } }.isFailure)
+        val exdev = OrdinaryFileTrash(File(root, "metadata"), listOf(File(root, "payload")), atomicMove = { a, b ->
+            throw java.nio.file.FileSystemException(a.path, b.path, "Cross-device link")
+        })
+        assertTrue(runCatching { exdev.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true } }.isFailure)
+        assertEquals("data", source.readText()); assertTrue(exdev.entries().isEmpty())
+    }
+    @Test fun sourceParentRenameOrRemovalCannotRemoveVolumeRootPayload() = fixture { root, trash ->
+        val parent = File(root, "original-parent").apply { mkdirs() }
+        val source = File(parent, "file").apply { writeText("data") }
+        val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        val movedParent = File(root, "renamed-parent")
+        assertTrue(parent.renameTo(movedParent)); assertTrue(movedParent.delete())
+        assertTrue(File(entry.stored).isFile)
+        assertTrue(runCatching { trash.restore(entry.id) }.isFailure)
+        assertEquals(1, trash.entries().size)
+        assertTrue(parent.mkdir())
+        assertEquals("data", trash.restore(entry.id).readText())
+    }
+    @Test fun externallyGrownPayloadStillConsumesBudgetAndReservedPathsCannotReenterTrash() = fixture { root, trash ->
+        val source = File(root, "file").apply { writeText("data") }
+        val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        File(entry.stored).writeText("x".repeat(20))
+        assertEquals(20L, trash.occupiedBytes())
+        source.writeText("data")
+        assertTrue(runCatching { trash.move(source, 4, OrdinaryFileTrash.digest(source), 21) { true } }.isFailure)
+        assertTrue(OrdinaryFileTrash.isPayloadPath("/storage/emulated/0/.baize-file-trash/app/file"))
+        assertFalse(OrdinaryFileTrash.isPayloadPath("/storage/emulated/0/.baize-file-trash-old/file"))
+        assertTrue(OrdinaryFileTrash.isPayloadPath("/storage/SD/.BAIZE-FILE-TRASH/app/file"))
+        assertTrue(OrdinaryFileTrash.isPayloadPath("/storage/SD/ANDROID/DATA/IO.GITHUB.XGL34222220.BAIZE/FILES/RECOVERABLE-TRASH/file"))
+        assertFalse(StorageMediaRepository.safeSharedFile("/storage/SD/.BAIZE-FILE-TRASH/app/file"))
+    }
+    @Test fun changedOrUnavailablePayloadPathsNeverMakePrivateJournalsDisappear() = fixture { root, trash ->
+        val source = File(root, "file").apply { writeText("data") }
+        val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        val payloadRoot = File(entry.stored).parentFile!!
+        val relocated = File(root, "relocated")
+        assertTrue(payloadRoot.renameTo(relocated))
+        assertEquals(TrashPayloadState.UNAVAILABLE, trash.entries().single().payloadState)
+        assertEquals(4L, trash.occupiedBytes())
+        assertTrue(runCatching { trash.forgetMissing(entry.id) }.isFailure)
+        Files.createSymbolicLink(payloadRoot.toPath(), relocated.toPath())
+        assertEquals(TrashPayloadState.PATH_CHANGED, trash.entries().single().payloadState)
+        assertEquals(4L, trash.occupiedBytes())
+        assertTrue(runCatching { trash.restore(entry.id, allowChanged = true) }.isFailure)
+        assertTrue(runCatching { trash.purge(entry.id) }.isFailure)
+        Files.delete(payloadRoot.toPath()); assertTrue(relocated.renameTo(payloadRoot))
+        assertEquals("data", trash.restore(entry.id).readText())
+    }
+    @Test fun payloadSymlinkCannotHideJournalOrCauseReadDeleteOfAnotherFile() = fixture { root, trash ->
+        val source = File(root, "file").apply { writeText("data") }
+        val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        val outside = File(root, "outside").apply { writeText("do not touch this file") }
+        assertTrue(File(entry.stored).delete())
+        Files.createSymbolicLink(File(entry.stored).toPath(), outside.toPath())
+        assertEquals(TrashPayloadState.PATH_CHANGED, trash.entries().single().payloadState)
+        assertEquals(4L, trash.occupiedBytes())
+        assertTrue(runCatching { trash.restore(entry.id, allowChanged = true) }.isFailure)
+        assertTrue(runCatching { trash.purge(entry.id) }.isFailure)
+        assertEquals("do not touch this file", outside.readText())
+    }
     @Test fun expirationDoesNotSilentlyDestroyAndPurgeIsExplicit() = fixture { root, trash ->
         val source = File(root, "file").apply { writeText("data") }
         val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 10) { true }

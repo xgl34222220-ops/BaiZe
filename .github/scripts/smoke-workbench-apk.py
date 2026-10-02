@@ -313,7 +313,7 @@ try:
     def selected_apk_review(name):
         tree = m.ui(name)
         labels = "\n".join(n.attrib.get("text", "") for n in tree.iter("node"))
-        assert "清理已选 1 个安装包" in labels, "APK review selection must survive Activity recreation"
+        assert "移入回收站 1 个安装包" in labels, "APK review selection must survive Activity recreation"
         expect_top("ApkScanActivity", name)
     selected_apk_review("apk-selected-portrait")
     m.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")

@@ -18,6 +18,11 @@ ENGINE="$T/baize_engine"
 
 # 构造覆盖各个分桶的样本
 mk() { mkdir -p "$(dirname "$T/media/0/$1")"; printf '%*s' "$2" '' > "$T/media/0/$1"; }
+mk ".baize-file-trash/io.github.xgl34222220.baize/retained.apk" 123
+mk ".baize-file-trash/io.github.xgl34222220.baize/retained.tmp" 321
+mk ".baize-file-trash/io.github.xgl34222220.baize/.nomedia" 0
+mk ".BAIZE-FILE-TRASH/app/retained.apk" 123
+mk "Android/data/io.github.xgl34222220.baize/files/recoverable-trash/retained.apk" 123
 mk "Download/app.apk" 100
 mk "Download/pkg.APKS" 100          # 大小写混合，必须按大小写不敏感匹配
 mk "Download/bundle.xapk" 100

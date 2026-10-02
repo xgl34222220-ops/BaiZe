@@ -1111,7 +1111,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 }, ApkDeletionGuard.forContext(applicationContext), { apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration }) }
                 if (apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration) return@launch
                 apkContentReview = review.proofs
-                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。确认后移入回收站，不立即释放空间；保留 30 天，卸载白泽会丢失回收站。"
+                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问；不立即释放空间；保留 30 天，卸载或清空白泽数据会丢失恢复记录，请先处理回收站。"
                 screenState = screenState.copy(running = false, operation = "", phase = apkReviewMessage)
                 showCleanConfirm = true
             } catch (_: kotlinx.coroutines.CancellationException) {

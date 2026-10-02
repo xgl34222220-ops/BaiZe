@@ -129,6 +129,7 @@ internal class ApkDeletionGuard(
         uri: String, path: String, bytes: Long, modifiedSeconds: Long,
         original: ApkFileIdentity?, protection: ApkProtectionState
     ): ApkIndexedDeleteResult? {
+        if (OrdinaryFileTrash.isPayloadPath(path)) return ApkIndexedDeleteResult.PROTECTED
         if (!validUri(uri) || !validPath(path)) return ApkIndexedDeleteResult.INVALID
         if (protection is ApkProtectionState.Unknown) return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
         val rules = protection.rules ?: return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE

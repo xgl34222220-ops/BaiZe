@@ -115,7 +115,7 @@ internal object ApkMediaStoreIndex {
                     val name = if (nameColumn >= 0) cursor.getString(nameColumn).orEmpty() else ""
                     val safeName = name.ifBlank { path.substringAfterLast('/') }
                     val extension = safeName.substringAfterLast('.', "").lowercase()
-                    if (path.isBlank() || extension !in extensions) continue
+                    if (path.isBlank() || OrdinaryFileTrash.isPayloadPath(path) || extension !in extensions) continue
                     if (path.startsWith("/data/app/") || path.startsWith("/system/") ||
                         path.startsWith("/vendor/") || path.startsWith("/product/")) continue
                     val bytes = if (sizeColumn >= 0) cursor.getLong(sizeColumn).coerceAtLeast(0L) else 0L

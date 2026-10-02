@@ -22,6 +22,7 @@ r = json.load(open(sys.argv[1]))
 assert r.get('passed') is True and r.get('uid', 0) >= 10000, r
 assert set(r['categoriesActuallyDeletedAndIndexRemoved']) == {'archive','document','image','video','audio','apk','other'}, r
 for key in ('changedSameSizeAndMtimePreserved','unknownProtectionAndProtectedFilePreserved',
-            'unselectedPreserved','staleIndexNotSelectableOrCounted','duplicateContentRecheckedAndOneCopyPreserved'):
+            'unselectedPreserved','staleIndexNotSelectableOrCounted','duplicateContentRecheckedAndOneCopyPreserved',
+            'ordinaryTrashDurableMoveAndConflictRestoreVerified','ordinaryTrashParentChangesPreservePayload'):
     assert r.get(key) is True, (key, r)
 PY

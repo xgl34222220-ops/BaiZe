@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include "cleanup_media_output.h"
 #include "baize_content_fingerprint.h"
+#include "baize_trash_guard.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -224,6 +225,7 @@ enum {
 };
 static unsigned whitelist_relation(const char *target) {
     g_whitelist_index_queries++;
+    if (baize_is_ordinary_trash(target)) return WHITELIST_ANCESTOR;
     if (!target || target[0] != '/' || g_whitelist.n == 0U) return WHITELIST_NONE;
     char normalized[PATH_MAX];
     int written = snprintf(normalized, sizeof(normalized), "%s", target);
@@ -398,7 +400,7 @@ static int walk_dir(int parent_fd, const char *name, dev_t root_dev, uint64_t ma
             rc = abort_code;
             break;
         }
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || strcasecmp(de->d_name, ".baize-file-trash") == 0) continue;
         if (de->d_type == DT_LNK) continue;                 /* 不跟随符号链接 */
         if (de->d_type == DT_DIR) {
             int sub = walk_dir(this_fd, de->d_name, root_dev, max_bytes, days, o, s,
@@ -694,6 +696,7 @@ static int content_hash_abort(void *opaque) {
 static int snapshot_cache_rec(const char *path, dev_t root_dev, const Options *o, int days,
                               FILE *manifest, const char *pkg, const char *category,
                               Stats *stats, bool may_contain_whitelist, unsigned depth) {
+    if (baize_is_ordinary_trash(path)) return 0;
     if (depth > 512U) { stats->incomplete = true; return -1; }
     int abort_code = walk_should_abort(o, o->global_budget_ms ? g_started_ms + o->global_budget_ms : 0U);
     if (abort_code != 0) { stats->incomplete = true; stats->timed_out = abort_code == 124; return abort_code; }
@@ -1275,6 +1278,7 @@ static int write_cache_outcomes(const Options *o, const CacheOutcomes *outcomes)
 
 /* Keep all path ancestors anchored; lstat on a full path follows ancestor symlinks. */
 static int clean_parent_fd(const char *path, char **storage, const char **name) {
+    if (baize_is_ordinary_trash(path)) { errno = EPERM; return -1; }
     if (!path || path[0] != '/' || strlen(path) >= PATH_MAX) { errno = EINVAL; return -1; }
     *storage = strdup(path);
     if (!*storage) return -1;
@@ -1714,7 +1718,7 @@ static void expand_rec(const char *base, const StrVec *comps, size_t idx, StrVec
     if (!d) return;
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) continue;
+        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || strcasecmp(de->d_name, ".baize-file-trash") == 0) continue;
         if (fnmatch(comp, de->d_name, FNM_PERIOD) != 0) continue;
         char p[PATH_MAX];
         if (strcmp(base, "/") == 0) snprintf(p, sizeof(p), "/%s", de->d_name);
@@ -2142,6 +2146,7 @@ static int index_classify_native(StorageIndexContext *ctx, const Options *o,
                                  const char *path, const struct stat *st,
                                  uint64_t *root_files, uint64_t *root_bytes,
                                  uint64_t *root_duplicates, uint64_t *root_skipped) {
+    if (baize_is_ordinary_trash(path)) return 0;
     const char *base = strrchr(path, '/');
     base = base ? base + 1 : path;
     if (is_partial(base)) {
@@ -2185,6 +2190,7 @@ static int scan_storage_tree_native(StorageIndexContext *ctx, const Options *o,
                                     unsigned depth, unsigned max_depth,
                                     uint64_t *root_files, uint64_t *root_bytes,
                                     uint64_t *root_duplicates, uint64_t *root_skipped) {
+    if (baize_is_ordinary_trash(path)) return 0;
     if (stop_requested(o)) return 9;
     struct stat st;
     if (lstat(path, &st) != 0) {

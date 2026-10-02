@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "cleanup_media_output.h"
+#include "baize_trash_guard.h"
 
 /* Legacy invocation only de-duplicates manifests. The explicit --begin,
  * --snapshot and --delete modes implement a bounded, no-follow deletion
@@ -180,6 +181,7 @@ static int record_matches(const Record *r, const struct stat *st) {
         old->st_mode == st->st_mode && old->st_uid == st->st_uid && old->st_gid == st->st_gid;
 }
 static int clean_path(const char *p) {
+    if (baize_is_ordinary_trash(p)) return 0;
     if (p[0] != '/' || !p[1] || p[strlen(p) - 1] == '/') return 0;
     for (const char *q = p + 1; *q;) {
         const char *end = strchr(q, '/');

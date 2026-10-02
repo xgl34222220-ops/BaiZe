@@ -479,7 +479,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     items = screenState.items.map { item -> item.copy(retainedReason = batch.rejected[item.uri]?.let { "已保留 · $it" }
                         ?: if (item.uri in batch.proofs) "" else item.retainedReason) },
                     reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
-                        if (batch.rejected.isEmpty()) "确认后移入回收站，保留 30 天，不立即释放空间；卸载白泽会丢失回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
+                        if (batch.rejected.isEmpty()) "确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问。保留 30 天，不立即释放空间；卸载或清空白泽数据会丢失恢复记录，请先处理回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     phase = "所选内容已核对，等待确认")
             } catch (_: CancellationException) {
                 if (operationToken == token) dismissCleanReview()

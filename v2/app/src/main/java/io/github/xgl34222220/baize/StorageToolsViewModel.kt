@@ -169,7 +169,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         StorageToolMode.DUPLICATES -> "发现 ${duplicates.groups.size} 组内容相同的文件"
                         StorageToolMode.ANALYSIS -> "存储分析完成"
                     }, coverage = buildString {
-                        append("已读取 ${index.records.size} 个已索引文件；不含应用私有数据和未被系统索引的文件。")
+                        append("已读取 ${index.records.size} 个已索引文件；不含应用私有数据和未被系统索引的文件。回收站占用另计，移入回收站不等于设备释放空间。")
                         if (index.truncated) append(" 本次达到 12 万项上限，结果不完整。")
                         if (index.confirmedMissing > 0) append(" 已排除 ${index.confirmedMissing} 条不存在文件的旧索引，未计入占用或释放空间。")
                         val unknown = index.records.count { it.verifiedBytes == 0L }
@@ -209,7 +209,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 mutableState.update { it.copy(running = false, selected = batch.proofs.keys,
                     outcomes = (it.outcomes - batch.proofs.keys) + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
                     reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
-                        if (batch.rejected.isEmpty()) "确认后移入回收站，保留 30 天，不立即释放空间；卸载白泽会丢失回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
+                        if (batch.rejected.isEmpty()) "确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问。保留 30 天，不立即释放空间；卸载或清空白泽数据会丢失恢复记录，请先处理回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     status = "所选内容已核对，等待确认") }
             } catch (_: CancellationException) {
                 if (control === task) dismissDeleteReview()

@@ -12,8 +12,12 @@ import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.UUID
 
+internal enum class TrashPayloadState(val label: String) {
+    READABLE("路径可读，恢复前仍需核对内容"), MISSING("回收内容未找到，恢复记录仍保留"),
+    PATH_CHANGED("回收路径已变化或含链接，操作已阻止"), UNAVAILABLE("存储卷或回收目录暂不可用，恢复记录仍保留")
+}
 internal data class TrashEntry(val id: String, val original: String, val stored: String, val bytes: Long,
-    val hash: String, val created: Long, val expires: Long) {
+    val hash: String, val created: Long, val expires: Long, val payloadState: TrashPayloadState = TrashPayloadState.READABLE) {
     fun json() = JSONObject().put("id", id).put("original", original).put("stored", stored).put("bytes", bytes)
         .put("hash", hash).put("created", created).put("expires", expires)
 }
@@ -21,27 +25,56 @@ internal data class TrashEntry(val id: String, val original: String, val stored:
 /** Ordinary-file trash. Metadata precedes a same-volume atomic move; no copy/delete fallback. */
 internal class OrdinaryFileTrash(private val metadata: File, private val roots: List<File>,
     private val now: () -> Long = System::currentTimeMillis,
+    private val sameFileSystem: (File, File) -> Boolean = { a, b -> Files.getFileStore(a.toPath()) == Files.getFileStore(b.toPath()) },
+    private val atomicMove: (File, File) -> Unit = { from, to -> Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE); Unit },
     private val syncDirectory: (File) -> Unit = { directory ->
         java.nio.channels.FileChannel.open(directory.toPath(), StandardOpenOption.READ).use { it.force(true) }
     }) {
     fun entries(): List<TrashEntry> = metadata.listFiles().orEmpty().filter { it.extension == "json" }.mapNotNull { file ->
         runCatching { val j = JSONObject(file.readText()); TrashEntry(j.getString("id"), j.getString("original"),
             j.getString("stored"), j.getLong("bytes"), j.getString("hash"), j.getLong("created"), j.getLong("expires"))
-            .takeIf { it.id.matches(Regex("[a-f0-9-]{36}")) && File(it.stored).name == it.id && safePayload(File(it.stored)) }
+            .takeIf { it.id.matches(Regex("[a-f0-9-]{36}")) && file.name == "${it.id}.json" &&
+                it.bytes > 0 && it.hash.matches(Regex("[a-f0-9]{64}")) && knownPayloadLocation(it) }
+                ?.let { it.copy(payloadState = payloadState(File(it.stored))) }
         }.getOrNull()
     }.sortedByDescending { it.created }
+
+    fun occupiedBytes(): Long = entries().sumOf { entry ->
+        if (entry.payloadState == TrashPayloadState.READABLE) maxOf(entry.bytes, File(entry.stored).length()) else entry.bytes
+    }
+    private fun knownPayloadLocation(entry: TrashEntry): Boolean {
+        val payload = File(entry.stored)
+        if (payload.name != entry.id) return false
+        if (roots.any { File(it, entry.id).absolutePath == entry.stored }) return true
+        // Offline removable volumes can disappear from Context.getExternalFilesDirs().
+        // Keep their private, previously created journal without following any payload path.
+        val volume = storageVolume(entry.original) ?: return false
+        val packagePath = "Android/data/${BuildConfig.APPLICATION_ID}/files"
+        return listOf("$DIRECTORY/${BuildConfig.APPLICATION_ID}", "$packagePath/$DIRECTORY", "$packagePath/recoverable-trash")
+            .any { entry.stored == "$volume/$it/${entry.id}" }
+    }
+    private fun payloadState(file: File): TrashPayloadState = runCatching {
+        if (roots.none { it.absolutePath == file.parentFile?.absolutePath }) return@runCatching TrashPayloadState.UNAVAILABLE
+        if (!safePayload(file)) return@runCatching TrashPayloadState.PATH_CHANGED
+        if (file.parentFile?.isDirectory != true) return@runCatching TrashPayloadState.UNAVAILABLE
+        if (Files.notExists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) return@runCatching TrashPayloadState.MISSING
+        if (file.isFile && file.canRead()) TrashPayloadState.READABLE else TrashPayloadState.UNAVAILABLE
+    }.getOrDefault(TrashPayloadState.UNAVAILABLE)
 
     fun move(source: File, expectedBytes: Long, expectedHash: String, budget: Long,
         validate: () -> Boolean): TrashEntry = synchronized(LOCK) {
         require(expectedBytes > 0 && expectedHash.matches(Regex("[0-9a-f]{64}"))) { "文件内容证明无效" }
-        check(source.isFile && !Files.isSymbolicLink(source.toPath()) && source.canonicalPath == source.absolutePath) { "文件路径已变化" }
-        check(entries().sumOf { it.bytes } <= budget - expectedBytes) { "回收站容量不足，请先恢复或手动清空；原文件保留" }
+        check(!isPayloadPath(source.path) && source.isFile && !Files.isSymbolicLink(source.toPath()) && source.canonicalPath == source.absolutePath) { "文件路径已变化" }
+        check(occupiedBytes() <= budget - expectedBytes) { "回收站容量不足，请先恢复或手动清空；原文件保留" }
         val targetRoot = roots.firstOrNull { root ->
-            root.mkdirs()
-            root.isDirectory && !Files.isSymbolicLink(root.toPath()) && root.canonicalPath == root.absolutePath &&
-                (source.path.startsWith(root.path.substringBefore("/Android/data/") + "/") ||
-                    Files.getFileStore(root.toPath()) == Files.getFileStore(source.toPath()))
+            runCatching {
+                root.canonicalPath == root.absolutePath && (root.isDirectory || root.mkdirs()) &&
+                    !Files.isSymbolicLink(root.toPath()) && sameFileSystem(root, source)
+            }.getOrDefault(false)
         } ?: error("此存储卷无法安全移动到回收站，原文件保留")
+        val marker = File(targetRoot, ".nomedia")
+        check(!Files.isSymbolicLink(marker.toPath())) { "回收目录标记异常，原文件保留" }
+        if (!marker.exists()) java.io.FileOutputStream(marker).use { it.fd.sync() }
         val id = UUID.randomUUID().toString()
         val payload = File(targetRoot, id)
         val entry = TrashEntry(id, source.path, payload.path, expectedBytes, expectedHash, now(), now() + 30L * 86_400_000)
@@ -52,10 +85,11 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         try {
             syncDirectory(metadata.parentFile!!)
             syncDirectory(metadata)
+            targetRoot.parentFile?.parentFile?.let(syncDirectory)
             syncDirectory(targetRoot.parentFile!!)
             syncDirectory(targetRoot) // Unsupported volume fails before touching the original.
             check(validate()) { "文件或保护规则已变化" }
-            Files.move(source.toPath(), payload.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            atomicMove(source, payload)
             check(!Files.exists(source.toPath(), LinkOption.NOFOLLOW_LINKS) && payload.isFile && payload.length() == expectedBytes && digest(payload) == expectedHash) { "移动结果未确认，恢复记录已保留" }
             java.io.FileInputStream(payload).use { it.fd.sync() }
             syncDirectory(targetRoot)
@@ -123,12 +157,31 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
     companion object {
         private val LOCK = Any()
         const val DEFAULT_BUDGET = 5L * 1024 * 1024 * 1024
-        fun forContext(context: Context) = OrdinaryFileTrash(File(context.filesDir, "ordinary-trash"),
-            context.getExternalFilesDirs(null).filterNotNull().map { File(it, "recoverable-trash") }, syncDirectory = { directory ->
-                val fd = android.system.Os.open(directory.path, android.system.OsConstants.O_RDONLY or
-                    android.system.OsConstants.O_NOFOLLOW or IndexedContentReview.closeOnExecFlag(), 0)
-                try { check(android.system.OsConstants.S_ISDIR(android.system.Os.fstat(fd).st_mode)) { "同步目标不是目录" }; android.system.Os.fsync(fd) } finally { android.system.Os.close(fd) }
-            })
+        const val DIRECTORY = ".baize-file-trash"
+        fun isPayloadPath(path: String): Boolean = path.split('/').any { it.equals(DIRECTORY, ignoreCase = true) } ||
+            path.contains("/Android/data/${BuildConfig.APPLICATION_ID}/files/recoverable-trash/", ignoreCase = true) ||
+            path.endsWith("/Android/data/${BuildConfig.APPLICATION_ID}/files/recoverable-trash", ignoreCase = true)
+        fun forContext(context: Context): OrdinaryFileTrash {
+            val appDirectories = context.getExternalFilesDirs(null).filterNotNull().map { it.canonicalFile }
+            // Android/data can be a separate passthrough mount even on the same storage volume.
+            // Keep payloads at the volume's shared mount, independently of the original parent.
+            val publicRoots = appDirectories.map { File(it.path.substringBefore("/Android/data/"), "$DIRECTORY/${context.packageName}") }
+            val privateRoots = appDirectories.map { File(it, DIRECTORY) }
+            val legacyRoots = appDirectories.map { File(it, "recoverable-trash") }
+            return OrdinaryFileTrash(File(context.filesDir, "ordinary-trash"), (publicRoots + privateRoots + legacyRoots).distinct(),
+                sameFileSystem = { a, b ->
+                    val privateSource = b.path.contains("/Android/data/", true) || b.path.contains("/Android/obb/", true)
+                    val allowedRoots = if (privateSource) privateRoots else publicRoots
+                    val volume = if (a in publicRoots) a.path.substringBefore("/$DIRECTORY/") else a.path.substringBefore("/Android/data/")
+                    a in allowedRoots && b.path.startsWith("$volume/") &&
+                        android.system.Os.stat(a.path).st_dev == android.system.Os.stat(b.path).st_dev
+                },
+                syncDirectory = { directory ->
+                    val fd = android.system.Os.open(directory.path, android.system.OsConstants.O_RDONLY or
+                        android.system.OsConstants.O_NOFOLLOW or android.system.OsConstants.O_NONBLOCK or IndexedContentReview.closeOnExecFlag(), 0)
+                    try { check(android.system.OsConstants.S_ISDIR(android.system.Os.fstat(fd).st_mode)) { "同步目标不是目录" }; android.system.Os.fsync(fd) } finally { android.system.Os.close(fd) }
+                })
+        }
         fun budget(context: Context) = context.getSharedPreferences("ordinary-trash", Context.MODE_PRIVATE)
             .getLong("budget", DEFAULT_BUDGET)
         fun digest(file: File): String {

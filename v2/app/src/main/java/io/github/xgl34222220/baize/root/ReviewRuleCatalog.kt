@@ -16,7 +16,7 @@ internal object ReviewRuleCatalog {
 
     private val packageName = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
     private val metadataNames = setOf(".DS_Store", "._*", "Thumbs.db", "desktop.ini", ".directory")
-    private val protectedNames = setOf(".git", ".ssh", ".gnupg", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".baize-quarantine")
+    private val protectedNames = setOf(".git", ".ssh", ".gnupg", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".baize-quarantine", ".baize-file-trash")
 
     fun packageRules(file: File?, external: Boolean, roots: Roots = Roots()): List<Target> = lines(file).flatMap { line ->
         val fields = line.split('|').map(String::trim)

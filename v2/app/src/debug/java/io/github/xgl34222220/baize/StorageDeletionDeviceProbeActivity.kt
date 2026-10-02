@@ -48,6 +48,8 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 stage = "create-category-fixtures"
                 val selected = listOf("zip", "pdf", "png", "mp4", "flac", "apk", "bin").map { create("selected.$it") }
                 val trashFixture = create("trash-roundtrip.zip")
+                val parentFixtureDirectory = File(root, "original-parent").apply { check(mkdir()) }
+                val parentFixture = create("original-parent/parent-roundtrip.zip")
                 val kept = create("unselected.zip")
                 val protected = create("protected.zip")
                 val changed = create("changed.zip")
@@ -67,11 +69,25 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                 val trash = OrdinaryFileTrash.forContext(applicationContext)
                 val entry = trash.entries().single { it.original == trashFixture.canonicalPath }
                 check(!trashFixture.exists())
+                check(OrdinaryFileTrash.isPayloadPath(entry.stored))
+                check(android.system.Os.stat(entry.stored).st_dev == record(trashFixture).identity!!.device)
+                check(StorageMediaRepository.scanIndex(applicationContext).records.none { OrdinaryFileTrash.isPayloadPath(it.path) })
                 trashFixture.writeText("new original must survive restore")
                 val restored = trash.restore(entry.id)
                 check(restored.path != trashFixture.path && restored.length() == 4096L)
                 check(trashFixture.readText() == "new original must survive restore")
                 check(trash.entries().none { it.id == entry.id })
+                stage = "ordinary-trash-parent-changes"
+                val parentMoved = OrdinaryFileTrash.moveReviewed(applicationContext, record(parentFixture), contentProofs[record(parentFixture).uri], { safe }, { false })
+                check(parentMoved.trashed) { parentMoved.reason }
+                val parentEntry = trash.entries().single { it.original == parentFixture.canonicalPath }
+                val renamedParent = File(root, "renamed-parent")
+                check(parentFixtureDirectory.renameTo(renamedParent) && renamedParent.delete())
+                check(File(parentEntry.stored).isFile)
+                check(runCatching { trash.restore(parentEntry.id) }.isFailure)
+                check(trash.entries().any { it.id == parentEntry.id })
+                check(parentFixtureDirectory.mkdir())
+                check(trash.restore(parentEntry.id).length() == 4096L)
                 stage = "protect-and-change"
                 check(StorageMediaRepository.delete(applicationContext, record(protected), {
                     ApkProtectionState.KnownRoot(ApkProtectionRules(emptySet(), setOf(root.path)))
@@ -171,6 +187,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
                     .put("sharedStorageCollisionContentPreserved", sharedStorageCollisionContentPreserved)
                     .put("duplicateContentRecheckedAndOneCopyPreserved", true)
                     .put("ordinaryTrashDurableMoveAndConflictRestoreVerified", true)
+                    .put("ordinaryTrashParentChangesPreservePayload", true)
                     .put("input", "run-owned synthetic indexed files; no user files")
             } catch (error: Exception) {
                 JSONObject().put("passed", false).put("stage", stage).put("error", error.javaClass.name)
