@@ -33,6 +33,25 @@ class PhotoCompressionTest {
             assertNull(ExifInterface(result.output.path).getAttribute(ExifInterface.TAG_DATETIME))
         } finally { root.deleteRecursively() }
     }
+    @Test fun undefinedExifOrientationMeansNoTransformAndInvalidValuesStillFail() {
+        assertEquals(1, PhotoCompressionPolicy.normalizedOrientation(0))
+        for (orientation in 1..8) assertEquals(orientation, PhotoCompressionPolicy.normalizedOrientation(orientation))
+        for (orientation in listOf(-1, 9, 65535)) assertTrue(runCatching { PhotoCompressionPolicy.normalizedOrientation(orientation) }.isFailure)
+    }
+    @Test fun ordinaryJpegWithoutExifCanBePreviewedWithoutChangingSource() {
+        val root = Files.createTempDirectory("baize-photo-no-exif").toFile()
+        try {
+            val source = File(root, "plain.jpg")
+            val bitmap = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(0xff4499cc.toInt())
+            source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, it)) }; bitmap.recycle()
+            val before = source.readBytes()
+            val preview = PhotoCompression.preview(source, File(root, "preview.jpg"), 80, 1280)
+            assertEquals(64, preview.width); assertEquals(48, preview.height)
+            assertArrayEquals(before, source.readBytes())
+            assertTrue(preview.output.isFile)
+        } finally { root.deleteRecursively() }
+    }
     @Test fun unsupportedHdrAnimatedAndTrailingMotionDataAreRejected() {
         assertTrue(runCatching { PhotoCompressionPolicy.checkJpeg("GIF89a".toByteArray()) }.isFailure)
         val concatenated = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xda.toByte(), 0, 2, 0, 0xff.toByte(), 0xd9.toByte(), 0xff.toByte(), 0xd9.toByte())

@@ -9,6 +9,12 @@ import java.io.File
 import java.io.FileOutputStream
 
 internal object PhotoCompressionPolicy {
+    // Android may report ORIENTATION_UNDEFINED (0) for an ordinary JPEG
+    // without EXIF. That means no orientation transform, not corrupt metadata.
+    fun normalizedOrientation(value: Int): Int {
+        require(value in 0..8) { "图片方向信息异常，暂不处理" }
+        return if (value == ExifInterface.ORIENTATION_UNDEFINED) ExifInterface.ORIENTATION_NORMAL else value
+    }
     const val MAX_INPUT_BYTES = 32 * 1024 * 1024
     fun checkJpeg(bytes: ByteArray) {
         require(bytes.size in 4..MAX_INPUT_BYTES && bytes[0].toInt() and 255 == 255 && bytes[1].toInt() and 255 == 216) { "仅支持普通 SDR JPEG；动图、PNG、HEIC、RAW 等暂不处理" }
@@ -60,8 +66,7 @@ internal object PhotoCompression {
             bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000L) { "图片过大或格式无法安全解码，暂不处理" }
         val exif = ExifInterface(source.path)
         require(exif.getAttributeInt(ExifInterface.TAG_COLOR_SPACE, 1) == 1) { "图片色彩空间不是标准 sRGB，暂不处理" }
-        val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1)
-        require(orientation in 1..8) { "图片方向信息异常，暂不处理" }
+        val orientation = PhotoCompressionPolicy.normalizedOrientation(exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED))
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge ||
             (bounds.outWidth.toLong() / sample) * (bounds.outHeight / sample) > 4_194_304L) sample *= 2
