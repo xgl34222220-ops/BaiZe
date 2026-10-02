@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.root
 
 import org.junit.Assert.*
+import io.github.xgl34222220.baize.BuildConfig
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -12,13 +13,13 @@ class ModuleCleanupSafetyTest {
         val directory = temporary.newFolder()
         assertNotNull(ModuleCleanupSafety.rejection(directory))
         val prop = File(directory, "module.prop")
-        for (code in 30008..30015) {
+        for (code in 30008 until BuildConfig.VERSION_CODE) {
             prop.writeText("id=baize_v2\nversion=v2.0.0\nversionCode=$code\n")
             assertNotNull(ModuleCleanupSafety.rejection(directory))
         }
-        prop.writeText("id=baize_v2\nversion=v2.0.0\nversionCode=30016\n")
+        prop.writeText("id=baize_v2\nversion=v2.0.0\nversionCode=${BuildConfig.VERSION_CODE}\n")
         assertNull(ModuleCleanupSafety.rejection(directory))
-        prop.writeText("id=other\nversion=v2.0.0\nversionCode=30016\n")
+        prop.writeText("id=other\nversion=v2.0.0\nversionCode=${BuildConfig.VERSION_CODE}\n")
         assertNotNull(ModuleCleanupSafety.rejection(directory))
     }
     @Test fun disablingOldTasksIsAllowedButEnablingAnyAutomaticGroupNeedsNewModule() {
