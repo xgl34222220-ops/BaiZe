@@ -146,11 +146,11 @@ class AuditActivity : ComponentActivity() {
                         onBack = ::finish,
                         onRefresh = ::loadTimeline,
                         onClear = ::clearTimeline,
-                        onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
-                        onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) },
-                        onOpenRuleQuality = { startActivity(Intent(this, RuleQualityActivity::class.java)) },
-                        onOpenReviewTrends = { startActivity(Intent(this, RuleReviewTrendsActivity::class.java)) },
-                        onOpenImprovementDrafts = { startActivity(Intent(this, RuleImprovementDraftsActivity::class.java)) }
+                        onOpenPolicy = { CleanerNavigation.open(this, Intent(this, CleanupPolicyActivity::class.java)) },
+                        onOpenEffectiveness = { CleanerNavigation.open(this, Intent(this, CleanupEffectivenessActivity::class.java)) },
+                        onOpenRuleQuality = { CleanerNavigation.open(this, Intent(this, RuleQualityActivity::class.java)) },
+                        onOpenReviewTrends = { CleanerNavigation.open(this, Intent(this, RuleReviewTrendsActivity::class.java)) },
+                        onOpenImprovementDrafts = { CleanerNavigation.open(this, Intent(this, RuleImprovementDraftsActivity::class.java)) }
                     )
                 }
             }

@@ -40,7 +40,7 @@ fun CleanRoute(
     )
 
     fun applyAndSave(next: SchedulerUiState) {
-        dashboardActions.updateScheduler(next)
+        if (scheduler.saving) return
         dashboardActions.saveScheduler(next)
     }
 

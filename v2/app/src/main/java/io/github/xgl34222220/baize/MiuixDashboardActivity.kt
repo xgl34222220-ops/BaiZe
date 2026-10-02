@@ -1628,13 +1628,14 @@ class MiuixDashboardActivity : ComponentActivity() {
     private fun saveScheduler(config: SchedulerUiState) {
         val service = rootService ?: return toast("Root 服务尚未连接")
         if (config.notifyOnComplete) requestNotificationPermission()
-        schedulerState.value = config.copy(saving = true)
+        val savedBeforeRequest = schedulerState.value.copy(saving = false)
+        schedulerState.value = savedBeforeRequest.copy(saving = true)
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
                 runCatching { JSONObject(service.saveSchedulerConfig(config.toJson().toString())) }
             }
             val success = response.getOrNull()?.optBoolean("success") == true
-            schedulerState.value = config.copy(saving = false)
+            schedulerState.value = if (success) config.copy(saving = false) else savedBeforeRequest
             toast(if (success) "设置已保存，调度器会自动读取" else "保存失败：${response.exceptionOrNull()?.message ?: "未知错误"}")
             if (success) FileOrganizerWorker.ensureWatchdog(this@MiuixDashboardActivity)
             loadScheduler()

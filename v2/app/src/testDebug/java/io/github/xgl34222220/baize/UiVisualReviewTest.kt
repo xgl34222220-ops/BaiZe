@@ -200,8 +200,8 @@ class UiVisualReviewTest {
         compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
         compose.onNodeWithContentDescription("仅息屏时执行").performClick()
         compose.onNodeWithText("保存").performClick()
-        assertEquals(!SchedulerUiState().screenOffOnly, updated?.screenOffOnly)
-        assertEquals(updated?.screenOffOnly, saved?.screenOffOnly)
+        assertEquals(null, updated)
+        assertEquals(!SchedulerUiState().screenOffOnly, saved?.screenOffOnly)
     }
 
     private fun render(

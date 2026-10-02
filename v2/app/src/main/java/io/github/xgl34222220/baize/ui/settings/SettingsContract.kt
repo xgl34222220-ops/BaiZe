@@ -47,6 +47,8 @@ data class SettingsUiActions(
     val onReconnect: () -> Unit,
     val onOpenAudit: () -> Unit,
     val onOpenCrashDiagnostics: () -> Unit,
+    val onDiscardSchedulerDraft: () -> Unit = {},
+    val onOpenCleanupAudit: () -> Unit = {},
     val onOpenTaskHistory: () -> Unit = {},
     val onOpenRuleVersions: () -> Unit = {}
 )

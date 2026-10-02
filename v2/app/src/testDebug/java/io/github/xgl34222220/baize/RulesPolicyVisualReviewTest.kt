@@ -39,7 +39,7 @@ import org.robolectric.annotation.GraphicsMode
 class RulesPolicyVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun rulesLightKeepsToolsAndConfirmation() {
+    @Test fun rulesLightKeepsUniqueToolsWithoutDuplicateRemnantNavigation() {
         var profile: String? = null
         render { CleanCenterRoute(actions.copy(onOpenProfile = { profile = it })) }
         compose.onNodeWithText("规则与保护").assertIsDisplayed()
@@ -47,11 +47,9 @@ class RulesPolicyVisualReviewTest {
         compose.onNodeWithText("规则垃圾").performClick()
         assertEquals("rules", profile)
         profile = null
-        compose.onNodeWithText("卸载残留").performScrollTo().performClick()
-        compose.onNodeWithText("扫描卸载残留？").assertIsDisplayed()
+        compose.onNodeWithText("卸载残留").assertDoesNotExist()
+        compose.onNodeWithText("完整深度清理").assertDoesNotExist()
         assertNull(profile)
-        compose.onNodeWithText("继续扫描").performClick()
-        assertEquals("corpses", profile)
     }
 
     @Test fun rulesDark() {

@@ -109,10 +109,11 @@ fun BaiZeMiuixApp(
                                         onExpandedCategoryChanged = { expandedCleanCategory = it }
                                     )
                                     BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
-                                    BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions) { page = BaiZePage.Records }
+                                    BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions,
+                                        onDetailChanged = { settingsDetailVisible = it }) { page = BaiZePage.Records }
                                 }
                             }
-                            MaterialFloatingDock(
+                            if (showDock) MaterialFloatingDock(
                                 selected = page,
                                 onSelected = { page = it },
                                 floating = appearance.floatingDock,

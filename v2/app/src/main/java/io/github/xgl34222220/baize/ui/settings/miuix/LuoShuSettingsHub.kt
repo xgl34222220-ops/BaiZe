@@ -34,7 +34,11 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
     val notify by rememberUpdatedState(onDetailChanged)
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
-    BackHandler(enabled = section.isNotEmpty()) { section = "" }
+    fun closeDetail() {
+        if (section == "tasks") actions.onDiscardSchedulerDraft()
+        section = ""
+    }
+    BackHandler(enabled = section.isNotEmpty()) { closeDetail() }
     AnimatedContent(
         targetState = section,
         modifier = Modifier.fillMaxSize(),
@@ -54,8 +58,8 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
             color = BaiZeTokens.colors.surfaceBase
         ) {
             when (target) {
-                "tasks" -> TaskSettings(state, actions, { section = "" })
-                "service" -> ServiceDetails(state, actions, { section = "" })
+                "tasks" -> TaskSettings(state, actions, ::closeDetail)
+                "service" -> ServiceDetails(state, actions, ::closeDetail)
                 else -> SettingsHome(state, actions, { section = it })
             }
         }
@@ -116,6 +120,8 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 LuoShuNavigationRow(Icons.Rounded.History, "自动任务记录", "执行、等待原因与下次计划", actions.onOpenTaskHistory)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Rule, "规则版本与试跑", "本地签名规则与只读命中预览", actions.onOpenRuleVersions)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FactCheck, "清理审计", "清理依据、规则复核与历史分析", actions.onOpenCleanupAudit)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()

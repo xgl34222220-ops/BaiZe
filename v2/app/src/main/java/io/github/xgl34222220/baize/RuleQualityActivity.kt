@@ -443,7 +443,7 @@ private fun RuleQualityHeader(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     DetailPageHeader("规则质量", message, onBack) {
-        TextButton(onClick = { context.startActivity(Intent(context, RuleBundleActivity::class.java)) }, enabled = !loading) { Text("规则版本") }
+        TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, RuleBundleActivity::class.java)) }, enabled = !loading) { Text("规则版本") }
         IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
     }
 }

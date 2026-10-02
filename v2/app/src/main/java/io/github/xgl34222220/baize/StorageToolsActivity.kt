@@ -181,7 +181,7 @@ internal fun StorageToolsScreen(
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
         topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
-            TextButton(onClick = { context.startActivity(Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
+            TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.allRecords.isNotEmpty() && !state.running && !state.permissionRequired) IconButton(onClick = onScan) {
                 Icon(Icons.Rounded.Refresh, "重新扫描")
             }
@@ -243,7 +243,7 @@ internal fun StorageToolsScreen(
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
                 Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
                 Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { context.startActivity(Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
+                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
             } }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {
                 item { StorageComposition(state.buckets) }
@@ -347,7 +347,7 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
             androidx.compose.foundation.text.selection.SelectionContainer { Text(record.path, style = MaterialTheme.typography.bodySmall) }
             Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
-            if (storageCategory(record) == "image") TextButton(onClick = { context.startActivity(Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
+            if (storageCategory(record) == "image") TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
             TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
                 Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
             }

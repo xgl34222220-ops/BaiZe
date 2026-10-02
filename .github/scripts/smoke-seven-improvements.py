@@ -48,7 +48,109 @@ class NavigationSmoke:
         self.events = []
 
     def tree(self, name):
-        return self.m.ui("seven-" + name)
+        root = self.m.ui("seven-" + name)
+        visible_bounds = [bounds(n) for n in root.iter("node")]
+        if visible_bounds:
+            self.width = max(b[2] for b in visible_bounds)
+            self.height = max(b[3] for b in visible_bounds)
+        return root
+
+    def wait_enabled(self, label, name, timeout=60):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            root = self.tree(name)
+            parents = {child: parent for parent in root.iter() for child in parent}
+            for node in self.matching(root, label):
+                current, enabled = node, True
+                while current is not None:
+                    enabled = enabled and current.attrib.get("enabled") != "false"
+                    current = parents.get(current)
+                if enabled: return
+            time.sleep(.5)
+        raise AssertionError(f"Action never became enabled: {label}")
+
+    def triple_tap(self, label, name, target, **kwargs):
+        root, node = self.find(label, name + "-before", **kwargs)
+        rect = self.action_bounds(root, node)
+        if not rect: raise AssertionError("Repeated-tap target is covered")
+        x, y = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+        self.m.adb("shell", "; ".join([f"input tap {x} {y}"] * 3))
+        time.sleep(1)
+        pages = self.expect_top(target, "seven-" + name)
+        assert pages.count(target) == 1, f"Repeated tap stacked {target}: {pages}"
+        self.events.append({"action": name, "repeated_taps": 3, "single_activity": target})
+
+    def switch(self, label, name, toggle=False):
+        root, node = self.find(label, name)
+        parents = {child: parent for parent in root.iter() for child in parent}
+        current = node
+        while current is not None:
+            switches = [n for n in current.iter("node") if n.attrib.get("checkable") == "true"]
+            if len(switches) == 1:
+                before = switches[0].attrib.get("checked") == "true"
+                if toggle: self.click_node(root, switches[0], name + "-toggle")
+                return before
+            current = parents.get(current)
+        raise AssertionError(f"No unambiguous switch for {label}")
+
+    def settings_state_checks(self):
+        for style in ("灵动", "经典"):
+            self.m.tap_label("设置", "seven-state-settings-" + style)
+            self.tap("外观与主题", "state-appearance-" + style, direction="up")
+            self.tap(style, "state-style-" + style)
+            self.back("MiuixDashboardActivity", "state-appearance-back-" + style)
+            self.tap("自动任务设置", "state-task-detail-" + style)
+            root = self.tree("state-detail-dock-" + style)
+            assert not any(n.attrib.get("text") == "首页" for n in root.iter("node")), "Settings detail still exposes the dock"
+            before = self.switch("仅充电时执行", "state-charge-before-" + style, toggle=True)
+            assert self.switch("仅充电时执行", "state-charge-edited-" + style) != before
+            old_rotation = self.m.adb("shell", "settings", "get", "system", "user_rotation")
+            old_auto = self.m.adb("shell", "settings", "get", "system", "accelerometer_rotation")
+            try:
+                self.m.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+                self.m.adb("shell", "settings", "put", "system", "user_rotation", "1")
+                time.sleep(2)
+                self.find("自动任务设置", "state-landscape-title-" + style, direction="up")
+                assert self.width > self.height, "Expected actual landscape recreation"
+                assert self.switch("仅充电时执行", "state-rotation-retained-" + style) != before
+                self.tap("最低执行电量", "state-value-dialog-" + style)
+                self.tap("取消", "state-value-cancel-" + style)
+                assert self.switch("仅充电时执行", "state-dialog-cancel-retained-" + style) != before
+                self.evidence("state-landscape-" + style, "MiuixDashboardActivity")
+            finally:
+                self.m.adb("shell", "settings", "put", "system", "user_rotation", old_rotation if old_rotation != "null" else "0")
+                self.m.adb("shell", "settings", "put", "system", "accelerometer_rotation", old_auto if old_auto != "null" else "0")
+                time.sleep(2)
+            self.back("MiuixDashboardActivity", "state-back-discard-" + style)
+            self.tap("自动任务设置", "state-reopen-" + style)
+            assert self.switch("仅充电时执行", "state-cancelled-value-" + style) == before
+            self.back("MiuixDashboardActivity", "state-reopen-back-" + style)
+        # Restore the original default UI through its real control.
+        self.tap("外观与主题", "state-restore-appearance", direction="up")
+        self.tap("灵动", "state-restore-style")
+        self.back("MiuixDashboardActivity", "state-restore-back")
+        self.tap("清理审计", "state-audit-direct")
+        self.evidence("state-audit", "AuditActivity")
+        self.tap("规则质量中心", "state-rule-quality")
+        self.evidence("state-rule-quality", "RuleQualityActivity")
+        self.back("AuditActivity", "state-quality-back")
+        self.back("MiuixDashboardActivity", "state-audit-back")
+        self.m.tap_label("清理", "seven-state-clean-direct")
+        self.tap("规则与保护", "state-rules-direct")
+        self.expect_top("CleanCenterActivity", "seven-state-rules-center")
+        seen = []
+        previous = None
+        for attempt in range(8):
+            root = self.tree("state-rules-unique-" + str(attempt))
+            current = labels(root)
+            seen.append(current)
+            if current == previous: break
+            previous = current
+            self.scroll(root)
+        combined = "\n".join(seen)
+        assert "隔离区" in combined and "规则垃圾" in combined
+        assert all(label not in combined for label in ("完整深度清理", "卸载残留", "扫描并选择清理")), "Duplicate primary routes remain in rule center"
+        self.back("MiuixDashboardActivity", "state-rules-back")
 
     def content_bottom(self, root):
         parents = {child: parent for parent in root.iter() for child in parent}
@@ -327,7 +429,7 @@ def run(smoke, expect_top):
         nav.enter_analysis("home-storage-analysis")
         # Secondary entries remain reachable too, but the user's direct home
         # routes above are required and cannot be replaced by these older paths.
-        nav.tap("打开照片瘦身", "analysis-open-photo-secondary")
+        nav.triple_tap("打开照片瘦身", "analysis-open-photo-secondary", "PhotoCompressionActivity")
         nav.evidence("photo-from-analysis-secondary", "PhotoCompressionActivity")
         nav.back("StorageToolsActivity", "photo-back-to-analysis")
 
@@ -349,11 +451,17 @@ def run(smoke, expect_top):
         nav.find("scan-added.jpg", "refresh-new-file")
         nav.evidence("refresh-new-file", "StorageToolsActivity")
         nav.leave_directory("refresh-directory-back")
-        nav.tap("回收站", "analysis-top-trash", direction="up")
+        nav.triple_tap("回收站", "analysis-top-trash", "FileTrashActivity", direction="up")
         nav.evidence("trash-from-analysis", "FileTrashActivity")
         nav.back("StorageToolsActivity", "trash-back-to-analysis")
         nav.back("MiuixDashboardActivity", "analysis-back-to-home")
 
+        nav.home("apk-secondary-home")
+        nav.tap("安装包", "apk-secondary-open")
+        nav.wait_enabled("回收站", "apk-secondary-scan")
+        nav.triple_tap("回收站", "apk-secondary-trash", "FileTrashActivity", direction="up")
+        nav.back("ApkScanActivity", "apk-trash-back")
+        nav.back("MiuixDashboardActivity", "apk-tool-back")
         nav.home("duplicate-home")
         nav.tap("重复文件", "home-duplicates")
         nav.expect_top("StorageToolsActivity", "seven-duplicates-entry")
@@ -402,9 +510,16 @@ def run(smoke, expect_top):
         for path in created:
             actual = smoke.adb("shell", "sha256sum", path).split()[0]
             assert actual == JPEG_SHA256, f"Preview or scan modified a fixture: {path}"
+        nav.settings_state_checks()
         nav.home("all-routes-return-home")
         result = {
             "launcher_home_routes_only": True,
+            "secondary_trash_photo_triple_taps_single_activity": True,
+            "both_theme_details_hide_dock": True,
+            "both_theme_drafts_survive_landscape_recreation": True,
+            "both_theme_back_discards_unsaved_drafts": True,
+            "audit_and_unique_rule_review_reachable": True,
+            "rule_center_direct_and_primary_duplicates_removed": True,
             "home_photo_system_picker_and_generated_preview": True,
             "home_trash_and_return": True,
             "analysis_secondary_photo_and_return": True,

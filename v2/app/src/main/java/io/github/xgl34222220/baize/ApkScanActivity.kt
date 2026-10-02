@@ -703,7 +703,7 @@ internal fun ApkScanScreen(
     }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
         topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) {
-            TextButton(onClick = { context.startActivity(Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
+            TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.cleanReady && !state.running) IconButton(onClick = onScan) { Icon(Icons.Rounded.Refresh, "重新扫描") }
         } },
         bottomBar = {
