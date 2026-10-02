@@ -42,8 +42,8 @@ internal object ApkArchiveMetadata {
     internal fun closeOnExecFlag(): Int = if (Build.VERSION.SDK_INT >= 27) OsConstants.O_CLOEXEC else ANDROID_26_O_CLOEXEC
     /**
      * A cooperative three-second budget, not a hard timeout: Android's synchronous parser cannot
-     * be interrupted safely. Cancellation is checked between calls, then descriptors/resources
-     * close before this coroutine can complete. No APK code, installer or Root service is used.
+     * be interrupted safely. Cancellation is checked between calls, then owned descriptors/ZIP streams
+     * close before this coroutine can complete. Platform Resources remain framework-owned. No APK code, installer or Root service is used.
      */
     suspend fun inspect(context: Context, uri: String, path: String, expectedBytes: Long,
         expectedModifiedSeconds: Long): ApkArchiveInfo = withContext(Dispatchers.IO) {
@@ -170,19 +170,17 @@ internal object ApkArchiveMetadata {
         var icon: Bitmap? = null
         try {
             val resources = platform.archiveResources(application)
-            try {
-                usePreviewDensity(resources)
-                if (name.isEmpty() && application.labelRes != 0) {
-                    name = try { cleanLabel(resources.getText(application.labelRes).toString()) }
-                    catch (_: Resources.NotFoundException) { "" }
-                }
-                checkpoint()
-                ZipFile(path).use { zip -> icon = ApkArchiveIcon.load(resources, application.icon, zip, checkpoint) }
-            } finally {
-                // This asset manager belongs to a unique temporary archive path, never the host
-                // app or an installed package. Returned bitmaps no longer depend on it.
-                resources.assets.close()
+            // PackageManager/ResourcesManager retains this ResourcesImpl for configuration
+            // updates, even for a unique temporary archive path. It is borrowed: closing its
+            // AssetManager can crash the main thread on a later rotation. Only our own file
+            // descriptors, alias and ZipFile are released here; the framework owns Resources.
+            usePreviewDensity(resources)
+            if (name.isEmpty() && application.labelRes != 0) {
+                name = try { cleanLabel(resources.getText(application.labelRes).toString()) }
+                catch (_: Resources.NotFoundException) { "" }
             }
+            checkpoint()
+            ZipFile(path).use { zip -> icon = ApkArchiveIcon.load(resources, application.icon, zip, checkpoint) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: ApkArchiveReadException) {
@@ -242,6 +240,7 @@ internal object ApkArchiveMetadata {
 
 internal interface ApkArchivePlatform {
     fun archiveInfo(path: String): PackageInfo?
+    /** Borrowed from the platform; callers must not close its AssetManager. */
     fun archiveResources(application: ApplicationInfo): Resources
     fun installedInfo(packageName: String): PackageInfo?
 }

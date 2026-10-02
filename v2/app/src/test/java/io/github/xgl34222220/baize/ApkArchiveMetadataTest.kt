@@ -17,6 +17,7 @@ import android.util.DisplayMetrics
 import android.util.TypedValue
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -35,6 +36,53 @@ import java.util.zip.ZipOutputStream
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ApkArchiveMetadataTest {
     @get:Rule val folder = TemporaryFolder()
+    @After fun releaseResourcesOwnedByTheFixtureProvider() {
+        fixtureAssets.forEach { it.close() }
+        fixtureAssets.clear()
+    }
+
+    @Test fun borrowedResourcesRemainOpenAfterReadAndConfigurationChanges() {
+        val apk = fixture("borrowed-success.apk")
+        val resources = FixtureResources("借用资源", Color.RED)
+        val base = FixturePlatform(mapOf(apk.path to ("借用资源" to Color.RED)))
+        val platform = object : ApkArchivePlatform by base {
+            override fun archiveResources(application: ApplicationInfo): Resources = resources
+        }
+        assertEquals(ApkArchiveParseStatus.PARSED, ApkArchiveMetadata.readArchive(platform, apk.path) {}.parseStatus)
+        assertTrue("PackageManager owns its returned AssetManager", ReflectionHelpers.getField<Boolean>(resources.assets, "mOpen"))
+        @Suppress("DEPRECATION")
+        repeat(4) { index ->
+            resources.updateConfiguration(Configuration(resources.configuration).apply {
+                orientation = if (index % 2 == 0) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+            }, resources.displayMetrics)
+            assertEquals("借用资源", resources.getText(LABEL).toString())
+        }
+    }
+
+    @Test fun borrowedResourcesRemainOpenWhenPreviewIsCancelled() {
+        val apk = fixture("borrowed-cancel.apk")
+        val resources = FixtureResources("取消预览", Color.BLUE)
+        val base = FixturePlatform(mapOf(apk.path to ("取消预览" to Color.BLUE)))
+        val platform = object : ApkArchivePlatform by base {
+            override fun archiveResources(application: ApplicationInfo): Resources = resources
+        }
+        var checkpoints = 0
+        assertThrows(CancellationException::class.java) {
+            ApkArchiveMetadata.readArchive(platform, apk.path) { if (++checkpoints == 3) throw CancellationException("after resources acquired") }
+        }
+        assertTrue("Cancellation cannot close borrowed framework assets", ReflectionHelpers.getField<Boolean>(resources.assets, "mOpen"))
+    }
+
+    @Test fun borrowedResourcesRemainOpenWhenIconIsUnavailable() {
+        val apk = fixture("borrowed-no-icon.apk")
+        val resources = FixtureResources("无图标", Color.BLUE)
+        val base = FixturePlatform(mapOf(apk.path to ("无图标" to Color.BLUE)), iconId = 0)
+        val platform = object : ApkArchivePlatform by base {
+            override fun archiveResources(application: ApplicationInfo): Resources = resources
+        }
+        assertEquals(ApkArchiveParseStatus.PARTIAL, ApkArchiveMetadata.readArchive(platform, apk.path) {}.parseStatus)
+        assertTrue("Partial metadata cannot close borrowed framework assets", ReflectionHelpers.getField<Boolean>(resources.assets, "mOpen"))
+    }
 
     @Test
     @Config(sdk = [26])
@@ -159,7 +207,7 @@ class ApkArchiveMetadataTest {
 
     @Suppress("DEPRECATION")
     private class FixtureResources(private val label: String, private val color: Int) : Resources(
-        ReflectionHelpers.callConstructor(AssetManager::class.java), DisplayMetrics(), Configuration()) {
+        newFixtureAssets(), DisplayMetrics(), Configuration()) {
         override fun getText(id: Int): CharSequence { assertEquals(LABEL, id); return label }
         override fun getValueForDensity(id: Int, density: Int, outValue: TypedValue, resolveRefs: Boolean) {
             assertEquals(ICON, id)
@@ -180,6 +228,9 @@ class ApkArchiveMetadataTest {
     }
 
     companion object {
+        private val fixtureAssets = mutableListOf<AssetManager>()
+        private fun newFixtureAssets(): AssetManager = ReflectionHelpers.callConstructor(AssetManager::class.java).also { fixtureAssets += it }
+
         private const val LABEL = 0x7f010001
         private const val ICON = 0x7f020001
         @Suppress("DEPRECATION")

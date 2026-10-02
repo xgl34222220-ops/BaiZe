@@ -321,14 +321,16 @@ try:
         expect_top("ApkScanActivity", name)
     selected_apk_review("apk-selected-portrait")
     m.adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
-    m.adb("shell", "settings", "put", "system", "user_rotation", "1")
-    time.sleep(3)
-    selected_apk_review("apk-selected-landscape")
-    m.capture("apk-selection-retained-landscape")
-    m.adb("shell", "settings", "put", "system", "user_rotation", "0")
-    time.sleep(3)
-    selected_apk_review("apk-selection-retained-portrait")
+    for rotation_cycle in range(3):
+        m.adb("shell", "settings", "put", "system", "user_rotation", "1")
+        time.sleep(3)
+        selected_apk_review(f"apk-selected-landscape-{rotation_cycle}")
+        if rotation_cycle == 2: m.capture("apk-selection-retained-landscape")
+        m.adb("shell", "settings", "put", "system", "user_rotation", "0")
+        time.sleep(3)
+        selected_apk_review(f"apk-selection-retained-portrait-{rotation_cycle}")
     m.capture("apk-selection-retained-portrait")
+    back("apk-review-back-after-rotations")
     m.alive()
     m.save_text("passed.json", json.dumps({"versionCode": int(expected), "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
         "android_api": m.adb("shell", "getprop", "ro.build.version.sdk"), "official_upgrade_preserved_data": True,
@@ -348,6 +350,7 @@ try:
         "organizer_without_module": True, "no_app_crash_or_anr": True,
         "release_apk_archive_icon_label_version": True,
         "apk_review_selection_survives_rotation": True,
+        "apk_archive_preview_survives_three_rotation_cycles_and_back": True,
         "seven_improvements_navigation": seven_navigation,
         "apk_explicit_local_mode_confirmed": local_mode_selected,
         "limit": "Emulator navigation and installation; actual root-manager cleaning remains unverified"}, ensure_ascii=False, indent=2))
