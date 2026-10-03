@@ -30,9 +30,9 @@ class SharedStorageAccessTest {
     @Test @Config(sdk = [35]) fun modernStorageUsesSpecialGrantRatherThanLegacyPermissions() {
         val context = RuntimeEnvironment.getApplication()
         shadowOf(context).grantPermissions(*SharedStorageAccess.legacyPermissions)
-        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode(AppOpsManager.OPSTR_MANAGE_EXTERNAL_STORAGE, Process.myUid(), context.packageName, AppOpsManager.MODE_ERRORED)
+        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode("android:manage_external_storage", Process.myUid(), context.packageName, AppOpsManager.MODE_ERRORED)
         assertFalse(SharedStorageAccess.granted(context))
-        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode(AppOpsManager.OPSTR_MANAGE_EXTERNAL_STORAGE, Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
+        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode("android:manage_external_storage", Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
         assertTrue(SharedStorageAccess.granted(context))
         assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, SharedStorageAccess.settings(context).action)
     }
