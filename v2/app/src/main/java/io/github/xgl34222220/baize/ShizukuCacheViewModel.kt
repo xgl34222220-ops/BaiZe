@@ -27,7 +27,7 @@ import org.json.JSONObject
 import rikka.shizuku.Shizuku
 import java.util.concurrent.atomic.AtomicBoolean
 
-internal data class ShizukuCacheApp(val packageName: String, val label: String, val protected: Boolean)
+internal data class ShizukuCacheApp(val packageName: String, val label: String, val isProtected: Boolean)
 internal data class ShizukuCacheState(val apps: List<ShizukuCacheApp> = emptyList(), val selected: Set<String> = emptySet(),
     val connected: Boolean = false, val supported: Boolean = false, val busy: Boolean = false, val query: String = "",
     val protectionKnown: Boolean = false, val localModeAvailable: Boolean = false,
@@ -136,14 +136,14 @@ internal class ShizukuCacheViewModel(application: Application) : AndroidViewMode
                 apps to protection
             } }
             result.onSuccess { (apps, protection) -> mutableState.update { it.copy(apps = apps,
-                selected = it.selected.intersect(apps.filterNot { app -> app.protected }.map { app -> app.packageName }.toSet()),
+                selected = it.selected.intersect(apps.filterNot { app -> app.isProtected }.map { app -> app.packageName }.toSet()),
                 protectionKnown = protection !is ApkProtectionState.Unknown, localModeAvailable = !ApkProtectionStore.rootWasUsed(context)) } }
                 .onFailure { mutableState.update { state -> state.copy(protectionKnown = false, selected = emptySet(), status = "无法核对应用与保护名单：${it.message.orEmpty()}") } }
         }
     }
     fun query(value: String) { mutableState.update { it.copy(query = value) } }
     fun toggle(pkg: String) {
-        if (state.value.busy || state.value.apps.none { it.packageName == pkg && !it.protected }) return
+        if (state.value.busy || state.value.apps.none { it.packageName == pkg && !it.isProtected }) return
         mutableState.update { if (pkg in it.selected) it.copy(selected = it.selected - pkg)
             else if (it.selected.size < 30) it.copy(selected = it.selected + pkg) else it.copy(status = "单次最多选择 30 个应用") }
     }

@@ -64,12 +64,12 @@ class ShizukuCacheActivity : ComponentActivity() {
                         items(state.apps.filter { state.query.isBlank() || it.label.contains(state.query, true) || it.packageName.contains(state.query, true) }, key = { it.packageName }) { app ->
                             DetailGlassPanel {
                                 Row(Modifier.fillMaxWidth().toggleable(app.packageName in state.selected,
-                                    enabled = !state.busy && !app.protected, role = Role.Checkbox, onValueChange = { model.toggle(app.packageName) })) {
-                                    Checkbox(app.packageName in state.selected, null, enabled = !state.busy && !app.protected)
+                                    enabled = !state.busy && !app.isProtected, role = Role.Checkbox, onValueChange = { model.toggle(app.packageName) })) {
+                                    Checkbox(app.packageName in state.selected, null, enabled = !state.busy && !app.isProtected)
                                     Column(Modifier.weight(1f).padding(top = 8.dp)) {
                                         Text(app.label, style = MaterialTheme.typography.titleSmall)
                                         Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                                        if (app.protected) Text("受保护或保护名单未确认", style = MaterialTheme.typography.labelSmall)
+                                        if (app.isProtected) Text("受保护或保护名单未确认", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
