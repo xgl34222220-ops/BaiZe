@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         mode: [shell, root]
-    if: contains(github.event.head_commit.message, '[30022-features]')
+    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -45,7 +45,15 @@ jobs:
             const runId = 37155986970;
             const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
-              const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
+              let run;
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
+              } catch (error) {
+                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
+                core.warning('Transient GitHub build-status response: ' + error.status);
+                await new Promise(resolve => setTimeout(resolve, 15000));
+                continue;
+              }
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
               if (run.status === 'completed') {
                 if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
@@ -91,7 +99,7 @@ jobs:
 
   legacy-storage-device:
     name: storage-permissions-api-${{ matrix.api }}
-    if: contains(github.event.head_commit.message, '[30022-features]')
+    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]')
     strategy:
       fail-fast: false
       matrix:
@@ -120,7 +128,15 @@ jobs:
             const runId = 37155986970;
             const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
-              const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
+              let run;
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
+              } catch (error) {
+                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
+                core.warning('Transient GitHub build-status response: ' + error.status);
+                await new Promise(resolve => setTimeout(resolve, 15000));
+                continue;
+              }
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
               if (run.status === 'completed') {
                 if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
@@ -235,7 +251,15 @@ jobs:
             const runId = 37155986970;
             const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
-              const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
+              let run;
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
+              } catch (error) {
+                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
+                core.warning('Transient GitHub build-status response: ' + error.status);
+                await new Promise(resolve => setTimeout(resolve, 15000));
+                continue;
+              }
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
               if (run.status === 'completed') {
                 if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');

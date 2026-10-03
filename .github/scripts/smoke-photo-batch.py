@@ -68,6 +68,13 @@ def picker_action(texts, name):
     assert node is not None, seven.labels(root)
     nav.click_node(root, node, name)
 
+def assert_restored_history(root):
+    texts = [n.attrib.get("text", "") for n in root.iter("node")]
+    assert "暂无成功导出记录" not in texts, "Successful export history disappeared after process restart"
+    qualities = {int(match.group(1)) for text in texts if "→" in text
+                 for match in [re.search(r"质量 (\d+)", text)] if match}
+    assert {60, 90}.issubset(qualities), "Both verified export records must survive restart: " + str(texts)
+
 try:
     m.adb("shell", "mkdir", "-p", remote)
     for name in ("preview.jpg", "duplicate.jpg"):
@@ -125,7 +132,8 @@ try:
     m.launch("photo-batch-process-restart", 3)
     m.tap_label("首页", "photo-batch-restart-home-tab")
     nav.tap("照片瘦身", "photo-batch-restart-entry")
-    nav.find("压缩记录", "photo-history-after-process-restart", direction="down")
+    history_root, _ = nav.find("压缩记录", "photo-history-after-process-restart", direction="down")
+    assert_restored_history(history_root)
     after_restart = [path for path in m.adb("shell", "find", remote, "-type", "f").splitlines()
         if path not in (remote + "/preview.jpg", remote + "/duplicate.jpg")]
     assert sorted(after_restart) == sorted(files), "Restart must never replay an export"
