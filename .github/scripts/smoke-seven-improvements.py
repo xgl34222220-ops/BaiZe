@@ -350,8 +350,15 @@ class NavigationSmoke:
         if len(editors) != 1:
             raise AssertionError(f"Expected one real rule editor, found {len(editors)}")
         self.click_node(root, editors[0], "rule-input-focus")
-        self.m.adb("shell", "input", "keycombination", "113", "29")  # Ctrl+A on API 36.
-        self.m.adb("shell", "input", "keyevent", "67")
+        # API 36 may ignore Ctrl+A and leave the caret inside the old rule.
+        # Delete on both sides of that caret, then prove the actual UI is blank.
+        count = len(editors[0].attrib.get("text", "")) + 1
+        self.m.adb("shell", "input", "keyevent", "--delay", "10",
+                   *(["67"] * count + ["112"] * count))
+        root = self.tree("rule-input-cleared")
+        editors = [n for n in root.iter("node") if n.attrib.get("class") == "android.widget.EditText"]
+        if len(editors) != 1 or editors[0].attrib.get("focused") != "true" or editors[0].attrib.get("text") != "":
+            raise AssertionError("The real rule editor was not cleared; refusing broader trial")
         self.m.adb("shell", "input text " + shlex.quote(rule))
         root = self.tree("rule-input-replaced")
         if not any(n.attrib.get("class") == "android.widget.EditText" and n.attrib.get("text") == rule for n in root.iter("node")):
