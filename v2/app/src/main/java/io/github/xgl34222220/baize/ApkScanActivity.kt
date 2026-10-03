@@ -259,7 +259,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         service = null; serviceBound = false
         connectService()
     }
-    fun resumePermission() { if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess(this)) startScan() }
+    fun resumePermission() { if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) startScan() }
     fun permissionScreenUnavailable() { screenState = screenState.copy(phase = "请在系统设置中为白泽开启${SharedStorageAccess.label}") }
     fun query(value: String) { if (!screenState.running) screenState = screenState.copy(query = value, selected = emptySet()) }
     fun filter(value: ApkInstallStatus?) { if (!screenState.running) screenState = screenState.copy(filter = value, selected = emptySet()) }
@@ -300,7 +300,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         )
 
         lifecycleScope.launch {
-            if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
+            if (!ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) {
                 service?.let { root ->
                     withContext(Dispatchers.IO) {
                         runCatching {
@@ -317,7 +317,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 if (!closed) screenState = screenState.copy(running = false, operation = "", phase = "安装包扫描已停止")
                 return@launch
             }
-            if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
+            if (!ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) {
                 screenState = screenState.copy(
                     running = false,
                     operation = "",

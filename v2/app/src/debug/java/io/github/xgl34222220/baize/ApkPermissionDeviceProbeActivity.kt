@@ -31,7 +31,7 @@ class ApkPermissionDeviceProbeActivity : ComponentActivity() {
             val out = File(filesDir, "apk-permission-probe").apply { mkdirs() }
             val result = JSONObject().put("phase", phase).put("uid", Process.myUid()).put("pid", Process.myPid())
                 .put("api", Build.VERSION.SDK_INT).put("versionCode", BuildConfig.VERSION_CODE)
-                .put("allFiles", ApkMediaStoreIndex.hasAllFilesAccess()).put("path", path)
+                .put("allFiles", ApkMediaStoreIndex.hasAllFilesAccess(this@ApkPermissionDeviceProbeActivity)).put("path", path)
             fun stat(target: String): JSONObject = try {
                 val s = Os.lstat(target)
                 JSONObject().put("ok", true).put("device", s.st_dev).put("inode", s.st_ino)

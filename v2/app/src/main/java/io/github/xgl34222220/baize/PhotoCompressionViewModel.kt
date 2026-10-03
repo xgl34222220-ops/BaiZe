@@ -19,6 +19,8 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class PhotoBatchOutcome(val name: String, val message: String, val succeeded: Boolean = false)
+internal fun samePhotoDocument(a: Uri, b: Uri): Boolean = a == b || (a.authority == b.authority &&
+    runCatching { DocumentsContract.getDocumentId(a) == DocumentsContract.getDocumentId(b) }.getOrDefault(false))
 internal data class PhotoCompressionState(val quality: Int = 80, val edge: Int = 2048,
     val metadata: PhotoMetadataMode = PhotoMetadataMode.STRIP, val busy: Boolean = false, val picker: String = "",
     val sourceReady: Boolean = false, val preview: PhotoCompressionPreview? = null,
@@ -90,7 +92,7 @@ internal class PhotoCompressionViewModel(application: Application, private val s
             try {
                 read(uri, file); check()
                 source?.delete(); state.value.preview?.output?.delete(); source = file
-                saved["source"] = file.path; saved["name"] = name(uri)
+                saved["source"] = file.path; saved["name"] = name(uri); saved["sourceUri"] = uri.toString()
                 mutableState.update { it.copy(sourceReady = true, preview = null) }
                 "照片已读取，原图未修改；选择参数后生成预览"
             } catch (error: Exception) { file.delete(); throw error }
@@ -143,6 +145,9 @@ internal class PhotoCompressionViewModel(application: Application, private val s
     fun exportSingle(uri: Uri?) {
         cancelPicker()
         if (uri == null) return
+        if (saved.get<String>("sourceUri")?.let { samePhotoDocument(Uri.parse(it), uri) } == true) {
+            mutableState.update { it.copy(status = "目标指向原图，已停止导出；请选择新的副本位置") }; return
+        }
         val output = pending; val input = source; val options = state.value
         pending = null; saved["pending"] = null
         if (output == null || input == null || !output.isFile) {
@@ -186,6 +191,7 @@ internal class PhotoCompressionViewModel(application: Application, private val s
                             val filename = "${label.substringBeforeLast('.').take(64)}-白泽-${UUID.randomUUID().toString().take(8)}.jpg"
                             val target = DocumentsContract.createDocument(context.contentResolver, parent, "image/jpeg", filename)
                                 ?: error("无法创建新的压缩副本")
+                            require(selected.none { samePhotoDocument(Uri.parse(it), target) }) { "目标指向所选原图，已停止导出" }
                             PhotoBatchOutcome(label, record(label, input, output, target, options), true)
                         }
                     }

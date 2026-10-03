@@ -254,7 +254,12 @@ internal fun StorageToolsScreen(
                 if (state.directory != null) item { DetailGlassPanel { BaiZePathText(state.directory); TextButton(onClick = { backDirectory() }, enabled = !state.running) { Text("返回上级目录") } } }
                 items(state.directoryUsage?.children(state.directory) ?: storageDirectories(state.records, state.directory), key = { "dir-${it.path}" }) { dir ->
                     DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
-                        Text(dir.path.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium)
+                        Text(when {
+                            dir.path.matches(Regex("/data/user/[0-9]+")) -> "应用私有数据"
+                            dir.path.matches(Regex("/data/user_de/[0-9]+")) -> "设备保护应用数据"
+                            else -> dir.path.substringAfterLast('/')
+                        }, style = MaterialTheme.typography.titleMedium)
+                        if (state.directory == null) BaiZePathText(dir.path)
                         Text("${dir.files} 个文件 · ${Formatter.formatFileSize(context, dir.bytes)}（含子目录）", style = MaterialTheme.typography.bodySmall)
                     }
                 }

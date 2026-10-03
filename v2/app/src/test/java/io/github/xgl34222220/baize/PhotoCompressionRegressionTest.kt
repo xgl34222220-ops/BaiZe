@@ -65,7 +65,7 @@ class PhotoCompressionRegressionTest {
     }
     private fun fixture(block: (PhotoBatchTestProvider, PhotoCompressionViewModel) -> Unit) {
         val provider = PhotoBatchTestProvider()
-        val app = RuntimeEnvironment.getApplication<Application>()
+        val app = RuntimeEnvironment.getApplication()
         provider.attachInfo(app, ProviderInfo().apply { authority = PhotoBatchTestProvider.AUTHORITY; grantUriPermissions = true; exported = true; readPermission = "android.permission.MANAGE_DOCUMENTS"; writePermission = "android.permission.MANAGE_DOCUMENTS" })
         ShadowContentResolver.registerProviderInternal(PhotoBatchTestProvider.AUTHORITY, provider)
         val history = File(app.filesDir, "photo-compression-history.json"); history.delete()
@@ -99,6 +99,14 @@ class PhotoCompressionRegressionTest {
         assertEquals(0, model.state.value.outcomes.count { it.succeeded }); assertTrue(model.state.value.history.isEmpty())
         assertArrayEquals(original, source.readBytes())
     }
+    @Test fun providerReturningOriginalDocumentIsRejectedWithoutWritingOrDeletingIt() = fixture { provider, model ->
+        val source = jpeg(File(provider.root, "source.jpg")); val original = source.readBytes()
+        provider.reuseSourceId = "source.jpg"
+        model.selectBatch(listOf(provider.uri("source.jpg"))); model.exportBatch(provider.tree); await(model)
+        assertEquals(0, provider.deleted); assertTrue(model.state.value.history.isEmpty())
+        assertTrue(model.state.value.outcomes.single().message.contains("目标指向所选原图"))
+        assertArrayEquals(original, source.readBytes())
+    }
     @Test fun cancelBetweenItemsPreservesSuccessfulCopyAndDoesNotExportRemainingOriginal() = fixture { provider, model ->
         jpeg(File(provider.root, "first.jpg")); jpeg(File(provider.root, "second.jpg"))
         provider.onRead = { if (it == "second.jpg") model.stop() }
@@ -119,6 +127,7 @@ class PhotoCompressionRegressionTest {
 class PhotoBatchTestProvider : DocumentsProvider() {
     val root: File = Files.createTempDirectory("baize-photo-provider").toFile()
     var created = 0; var deleted = 0; var corruptOutputReads = false
+    var reuseSourceId: String? = null
     val outputIds = mutableListOf<String>()
     var onRead: (String) -> Unit = {}
     val tree: Uri get() = DocumentsContract.buildTreeDocumentUri(AUTHORITY, "destination")
@@ -139,6 +148,7 @@ class PhotoBatchTestProvider : DocumentsProvider() {
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor = MatrixCursor(projection ?: arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
         require(parentDocumentId == "destination" && mimeType == "image/jpeg")
+        reuseSourceId?.let { created++; return it }
         val id = "output-${++created}.jpg"; File(root, id).createNewFile(); outputIds += id; return id
     }
     override fun deleteDocument(documentId: String) { require(documentId in outputIds); File(root, documentId).delete(); outputIds.remove(documentId); deleted++ }

@@ -26,7 +26,7 @@ class StorageDeletionDeviceProbeActivity : ComponentActivity() {
             val createdRows = mutableListOf<android.net.Uri>()
             var stage = "permissions"
             val result = try {
-                check(Process.myUid() >= 10_000 && StorageMediaRepository.hasAccess())
+                check(Process.myUid() >= 10_000 && StorageMediaRepository.hasAccess(this@StorageDeletionDeviceProbeActivity))
                 @Suppress("DEPRECATION")
                 val root = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                     "baize-storage-delete-probe-${UUID.randomUUID()}")

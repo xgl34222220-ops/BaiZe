@@ -27,7 +27,7 @@ class ApkDeletionDeviceProbeActivity : ComponentActivity() {
             val legacyPreferences = getSharedPreferences("baize_v2", MODE_PRIVATE)
             val originalLegacyPaths = legacyPreferences.getStringSet("path_whitelist", null)?.toSet()
             val result = try {
-                check(Process.myUid() >= 10_000 && ApkMediaStoreIndex.hasAllFilesAccess())
+                check(Process.myUid() >= 10_000 && ApkMediaStoreIndex.hasAllFilesAccess(this@ApkDeletionDeviceProbeActivity))
                 @Suppress("DEPRECATION")
                 val root = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                     "baize-apk-delete-probe-${UUID.randomUUID()}")
