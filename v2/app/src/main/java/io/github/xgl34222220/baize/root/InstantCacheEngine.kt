@@ -94,21 +94,19 @@ internal class InstantCacheEngine(
             .toString()
     }
 
-    private fun supportsCacheOnly(): Boolean = runCatching {
+    fun supportsCacheOnly(): Boolean = runCatching {
         val process = ProcessBuilder("/system/bin/cmd", "package", "help")
             .redirectErrorStream(true)
             .start()
+        val output = readOutput(process)
         val finished = process.waitFor(5, TimeUnit.SECONDS)
         if (!finished) process.destroyForcibly()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        finished && output.contains("--cache-only")
+        finished && output.get(2, TimeUnit.SECONDS).contains("--cache-only")
     }.getOrDefault(false)
 
     private fun execute(packageName: String, userId: Int): JSONObject {
-        val process = ProcessBuilder(
-            "/system/bin/cmd", "package", "clear", "--cache-only",
-            "--user", userId.toString(), packageName
-        ).redirectErrorStream(true).start()
+        val process = ProcessBuilder(CacheOnlyCommandPolicy.command(packageName, userId)).redirectErrorStream(true).start()
+        val captured = readOutput(process)
         val deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS
         var finished = false
         var wasCancelled = false
@@ -128,7 +126,7 @@ internal class InstantCacheEngine(
             }
         }
         val output = runCatching {
-            process.inputStream.bufferedReader().use { it.readText().trim().take(1200) }
+            captured.get(2, TimeUnit.SECONDS).trim().take(1200)
         }.getOrDefault("")
         val exitCode = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
         val success = finished && exitCode == 0 && !output.contains("Failed", ignoreCase = true)
@@ -139,6 +137,20 @@ internal class InstantCacheEngine(
             .put("timeout", !finished && !wasCancelled)
             .put("exitCode", exitCode)
             .put("output", output)
+    }
+
+    /** Drain while the process runs so long PackageManager help cannot fill its pipe. */
+    private fun readOutput(process: java.lang.Process): java.util.concurrent.FutureTask<String> {
+        val task = java.util.concurrent.FutureTask<String> {
+            process.inputStream.bufferedReader().use { reader ->
+                val text = StringBuilder(); val buffer = CharArray(4096)
+                while (true) { val count = reader.read(buffer); if (count < 0) break
+                    if (text.length < 131072) text.append(buffer, 0, minOf(count, 131072 - text.length)) }
+                text.toString()
+            }
+        }
+        Thread(task, "baize-cache-command-output").apply { isDaemon = true; start() }
+        return task
     }
 
     private fun failure(code: String, message: String, packageName: String = ""): String =

@@ -91,6 +91,7 @@ import java.util.UUID
 
 /** Smart clean with stage checkpoints and crash-safe resume. */
 class ResumableSmartScanActivity : ComponentActivity() {
+    private val storagePermission = StoragePermissionRequest(this) { startSmartScan() }
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
 
@@ -314,18 +315,11 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private fun startSmartScan() {
         if (screenState.running) return
         apkStopRequested = false
-        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+        if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
             screenState = screenState.copy(
-                phase = "需要“所有文件访问”才能完成安装包、大文件和存储扫描"
+                phase = "需要${SharedStorageAccess.label}才能完成安装包、大文件和存储扫描"
             )
-            runCatching {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            }
+            storagePermission.launch()
             return
         }
         val cache = cacheService
@@ -1063,7 +1057,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun scanApkForSmartClean(): SmartApkScanResult {
         val started = SystemClock.elapsedRealtime()
-        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+        if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
             return SmartApkScanResult(
                 items = emptyList(),
                 elapsedMs = 0L,

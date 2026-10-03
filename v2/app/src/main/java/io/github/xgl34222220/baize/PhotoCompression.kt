@@ -3,7 +3,7 @@ package io.github.xgl34222220.baize
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.ExifInterface
+import androidx.exifinterface.media.ExifInterface
 import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
@@ -56,7 +56,8 @@ internal data class PhotoCompressionPreview(val original: Bitmap, val compressed
     val savesSpace: Boolean get() = outputBytes in 1 until originalBytes
 }
 internal object PhotoCompression {
-    fun preview(source: File, output: File, quality: Int, maxEdge: Int): PhotoCompressionPreview {
+    fun preview(source: File, output: File, quality: Int, maxEdge: Int,
+        metadata: PhotoMetadataMode = PhotoMetadataMode.STRIP): PhotoCompressionPreview {
         require(quality in 50..95 && maxEdge in setOf(1280, 2048, 4096))
         require(source != output && source.length() <= PhotoCompressionPolicy.MAX_INPUT_BYTES)
         PhotoCompressionPolicy.checkJpeg(source.readBytes())
@@ -83,7 +84,26 @@ internal object PhotoCompression {
         if (ratio < 1) bitmap = Bitmap.createScaledBitmap(bitmap, (bitmap.width * ratio).toInt().coerceAtLeast(1), (bitmap.height * ratio).toInt().coerceAtLeast(1), true).also { if (it !== bitmap) bitmap.recycle() }
         // App-private preview only. User-visible export always uses CreateDocument as a new copy.
         FileOutputStream(output).use { stream -> check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)) { "编码失败" }; stream.fd.sync() }
+        PhotoMetadata.copy(exif, output, metadata)
         val compressed = requireNotNull(BitmapFactory.decodeFile(output.path))
         return PhotoCompressionPreview(bitmap, compressed, output, source.length(), output.length(), bitmap.width, bitmap.height)
+    }
+}
+
+internal enum class PhotoMetadataMode(val label: String) { STRIP("全部移除"), CAPTURE_TIME("保留拍摄时间"), CAMERA("时间与相机参数") }
+
+internal object PhotoMetadata {
+    private val time = listOf("DateTime", "DateTimeOriginal", "DateTimeDigitized", "SubSecTime", "SubSecTimeOriginal",
+        "SubSecTimeDigitized", "OffsetTime", "OffsetTimeOriginal", "OffsetTimeDigitized")
+    private val camera = listOf("Make", "Model", "LensMake", "LensModel", "FNumber", "ExposureTime", "PhotographicSensitivity", "FocalLength")
+    fun copy(source: ExifInterface, output: File, mode: PhotoMetadataMode) {
+        if (mode == PhotoMetadataMode.STRIP) return
+        val target = ExifInterface(output)
+        (time + if (mode == PhotoMetadataMode.CAMERA) camera else emptyList()).forEach { tag ->
+            source.getAttribute(tag)?.takeIf { it.length <= 256 }?.let { target.setAttribute(tag, it) }
+        }
+        // Pixels have already been rotated. Never copy GPS, maker notes, thumbnails, XMP or HDR.
+        target.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+        target.saveAttributes()
     }
 }

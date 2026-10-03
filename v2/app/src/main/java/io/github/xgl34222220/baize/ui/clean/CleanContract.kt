@@ -102,6 +102,7 @@ data class CleanUiActions(
     val onDeepClean: () -> Unit,
     val onCorpses: () -> Unit,
     val onAudit: () -> Unit,
+    val onShizukuCache: () -> Unit = {},
     val onApkPackageDaysChanged: (Int) -> Unit = {}
 )
 

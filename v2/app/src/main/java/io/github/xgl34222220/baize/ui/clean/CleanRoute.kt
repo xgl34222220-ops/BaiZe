@@ -69,6 +69,7 @@ fun CleanRoute(
         onSave = { dashboardActions.saveScheduler(scheduler) },
         onScan = dashboardActions.scan,
         onApkScan = dashboardActions.apkScan,
+        onShizukuCache = { CleanerNavigation.openFrom(context, Intent(context, io.github.xgl34222220.baize.ShizukuCacheActivity::class.java)) },
         onInstantCache = { CleanerNavigation.openFrom(context, Intent(context, InstantCacheActivity::class.java)) },
         onFileOrganizer = dashboardActions.organize,
         onLargeFiles = dashboardActions.largeFiles,

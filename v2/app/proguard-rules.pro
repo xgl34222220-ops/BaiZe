@@ -66,3 +66,6 @@
 -keep class io.github.xgl34222220.baize.root.ModuleCorpseSnapshot {
     public static void main(java.lang.String[]);
 }
+
+# Shizuku reflects this Context constructor in its UID 2000/0 process.
+-keep class io.github.xgl34222220.baize.shizuku.** { *; }

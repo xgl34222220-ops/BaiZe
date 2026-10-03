@@ -38,7 +38,7 @@ internal object ApkFileReadDiagnostics {
         cancellation?.throwIfCanceled()
         val report = JSONObject().put("diagnosticVersion", 1).put("appVersionCode", BuildConfig.VERSION_CODE)
             .put("androidApi", Build.VERSION.SDK_INT).put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
-            .put("appUid", Process.myUid()).put("allFilesAccess", ApkMediaStoreIndex.hasAllFilesAccess())
+            .put("appUid", Process.myUid()).put("allFilesAccess", ApkMediaStoreIndex.hasAllFilesAccess(context))
             .put("path", path).put("uri", uriString).put("appPathStat", stat(path))
             .put("scanIdentity", scanIdentity?.json() ?: JSONObject.NULL)
             .put("currentAppIdentity", ApkDeletionGuard.forContext(context).capture(path)?.json() ?: JSONObject.NULL)

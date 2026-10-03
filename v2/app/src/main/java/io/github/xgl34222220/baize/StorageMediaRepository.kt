@@ -37,7 +37,7 @@ internal class StorageScanControl {
 
 internal object StorageMediaRepository {
     private const val MAX_FILES = 120_000
-    fun hasAccess(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    fun hasAccess(context: Context): Boolean = SharedStorageAccess.granted(context)
 
     /** Reports limits; a provider failure is an error, never an empty successful scan. */
     @Suppress("DEPRECATION")
@@ -45,7 +45,7 @@ internal object StorageMediaRepository {
                   progress: (StorageScanProgress) -> Unit = {},
                   guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)): StorageIndexResult {
         val started = SystemClock.elapsedRealtime()
-        check(hasAccess()) { "需要开启所有文件访问" }
+        check(hasAccess(context)) { "需要开启${SharedStorageAccess.label}" }
         control.check()
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL) else MediaStore.Files.getContentUri("external")

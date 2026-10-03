@@ -49,6 +49,7 @@ enum class StorageToolMode { LARGE, DUPLICATES, ANALYSIS }
 class StorageToolsActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val model: StorageToolsViewModel by viewModels()
+    private val storagePermission = StoragePermissionRequest(this) { model.resumePermission() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -82,10 +83,7 @@ class StorageToolsActivity : ComponentActivity() {
         }
     }
     override fun onResume() { super.onResume(); model.resumePermission() }
-    private fun openAllFilesSettings() {
-        runCatching { startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))) }
-            .onFailure { Toast.makeText(this, "请在系统设置中开启所有文件访问", Toast.LENGTH_LONG).show() }
-    }
+    private fun openAllFilesSettings() = storagePermission.launch()
     private fun openFile(record: StorageFileRecord) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(record.uri), record.mime.ifBlank { "*/*" })
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
@@ -103,6 +101,7 @@ internal data class StorageToolsUiState(
     val permissionRequired: Boolean = false, val status: String = "准备扫描", val elapsedMs: Long = 0L,
     val records: List<StorageFileRecord> = emptyList(), val duplicateGroups: List<DuplicateFileGroup> = emptyList(),
     val buckets: List<StorageAnalysisBucket> = emptyList(), val selected: Set<String> = emptySet(),
+    val directoryUsage: DirectoryUsage? = null,
     val directory: String? = null, val growth: List<StorageGrowth> = emptyList(), val growthDescription: String = "",
     val query: String = "", val category: String? = null, val sort: StorageSort = StorageSort.SIZE,
     val minimumBytes: Long = 0, val coverage: String = "", val progress: StorageScanProgress? = null, val failed: Boolean = false,
@@ -174,7 +173,7 @@ internal fun StorageToolsScreen(
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然" }
     fun backDirectory() {
         val current = state.directory ?: return
-        val volume = storageVolume("$current/file")
+        val volume = state.directoryUsage?.roots?.firstOrNull { current == it || current.startsWith("$it/") } ?: storageVolume("$current/file")
         onDirectory(if (current == volume) null else java.io.File(current).parent)
     }
     BackHandler(enabled = state.directory != null && !state.running) { backDirectory() }
@@ -209,8 +208,8 @@ internal fun StorageToolsScreen(
                     }
                 } else DetailGlassPanel {
                     val bytes = if (state.mode == StorageToolMode.DUPLICATES) state.duplicateGroups.sumOf { it.reclaimableBytes }
-                        else if (state.mode == StorageToolMode.ANALYSIS) state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
-                    Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else "已核对文件占用",
+                        else if (state.mode == StorageToolMode.ANALYSIS) state.directoryUsage?.bytes ?: state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
+                    Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     BaiZeMetric(Formatter.formatFileSize(context, bytes))
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -228,7 +227,7 @@ internal fun StorageToolsScreen(
                     }
                     if (state.elapsedMs > 0) Text("用时 ${"%.1f".format(state.elapsedMs / 1000.0)} 秒", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.permissionRequired || state.running || state.allRecords.isEmpty()) Spacer(Modifier.height(14.dp))
-                    when { state.permissionRequired -> GlassActionButton("开启所有文件访问", onOpenPermission, Modifier.fillMaxWidth())
+                    when { state.permissionRequired -> GlassActionButton("开启${SharedStorageAccess.label}", onOpenPermission, Modifier.fillMaxWidth())
                         state.running -> GlassActionButton("停止", onStop, Modifier.fillMaxWidth(), secondary = true)
                         state.allRecords.isEmpty() -> GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true) }
                 }
@@ -250,10 +249,10 @@ internal fun StorageToolsScreen(
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
                 items(state.buckets, key = { "bucket-${it.key}" }) { bucket -> StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) } }
             }
-            if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.records.isNotEmpty()) {
+            if (state.mode == StorageToolMode.ANALYSIS && state.category == null && (state.records.isNotEmpty() || state.directoryUsage != null)) {
                 item { DetailSectionHeader("目录占用", state.directory ?: "点击存储卷逐层查看") }
                 if (state.directory != null) item { DetailGlassPanel { BaiZePathText(state.directory); TextButton(onClick = { backDirectory() }, enabled = !state.running) { Text("返回上级目录") } } }
-                items(storageDirectories(state.records, state.directory), key = { "dir-${it.path}" }) { dir ->
+                items(state.directoryUsage?.children(state.directory) ?: storageDirectories(state.records, state.directory), key = { "dir-${it.path}" }) { dir ->
                     DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
                         Text(dir.path.substringAfterLast('/'), style = MaterialTheme.typography.titleMedium)
                         Text("${dir.files} 个文件 · ${Formatter.formatFileSize(context, dir.bytes)}（含子目录）", style = MaterialTheme.typography.bodySmall)

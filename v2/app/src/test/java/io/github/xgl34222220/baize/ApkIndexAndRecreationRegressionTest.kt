@@ -29,6 +29,7 @@ class ApkIndexAndRecreationRegressionTest {
     private lateinit var provider: SyntheticApkIndexProvider
 
     @Before fun registerProvider() {
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(*SharedStorageAccess.legacyPermissions)
         provider = SyntheticApkIndexProvider()
         provider.attachInfo(RuntimeEnvironment.getApplication(), ProviderInfo().apply { authority = "media" })
         ShadowContentResolver.registerProviderInternal("media", provider)

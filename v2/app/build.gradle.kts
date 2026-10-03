@@ -23,7 +23,7 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30020
+        versionCode = 30021
         versionName = "2.0.0"
     }
 
@@ -118,6 +118,9 @@ kotlin {
 }
 
 dependencies {
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     val composeBom = platform("androidx.compose:compose-bom:2026.03.00")
     implementation(composeBom)
     implementation("androidx.core:core-ktx:1.16.0")

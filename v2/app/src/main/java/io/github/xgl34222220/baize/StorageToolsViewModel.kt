@@ -22,12 +22,13 @@ import io.github.xgl34222220.baize.root.RootServiceClients
 import org.json.JSONObject
 
 internal class StorageToolsViewModel(application: Application) : AndroidViewModel(application) {
-    private data class StorageScanBundle(val index: StorageIndexResult, val duplicates: StorageDuplicateResult, val buckets: List<StorageAnalysisBucket>, val growth: StorageGrowthResult)
+    private data class StorageScanBundle(val index: StorageIndexResult, val duplicates: StorageDuplicateResult, val buckets: List<StorageAnalysisBucket>, val growth: StorageGrowthResult, val directoryUsage: DirectoryUsage?)
     private val mutableState = MutableStateFlow(StorageToolsUiState())
     val state = mutableState.asStateFlow()
     private val digestCache = StorageDigestCache()
     private var initialized = false
     private var control = StorageScanControl()
+    private var directoryToken = ""
     private val context get() = getApplication<Application>()
     @Volatile private var remote: IProfileRootService? = null
     private var bound = false
@@ -98,9 +99,14 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             mutableState.update { it.copy(diagnosticBusy = false, diagnostic = report) }
         }
     }
-    fun resumePermission() { if (state.value.permissionRequired && StorageMediaRepository.hasAccess()) scan() }
+    fun resumePermission() { if (state.value.permissionRequired && StorageMediaRepository.hasAccess(context)) scan() }
     fun stop() { if (state.value.reviewRequested) dismissDeleteReview()
-        else { control.cancel(); mutableState.update { it.copy(status = "正在停止…") } } }
+        else { control.cancel()
+            val source = remote; val token = directoryToken
+            if (source != null && token.isNotBlank()) viewModelScope.launch(Dispatchers.IO) {
+                runCatching { RootServiceClients.profileExchange(source, context.cacheDir, "cancelDirectoryUsage", org.json.JSONArray().put(token)) }
+            }
+            mutableState.update { it.copy(status = "正在停止…") } } }
     fun toggle(key: String) { if (!state.value.running) mutableState.update { it.toggleSelection(key) } }
     fun toggleAll() { if (!state.value.running) mutableState.update { it.toggleAllSelection() } }
     fun filter(query: String = state.value.query, category: String? = state.value.category,
@@ -123,7 +129,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     }
     fun scan() {
         if (state.value.running) return
-        if (!StorageMediaRepository.hasAccess()) {
+        if (!StorageMediaRepository.hasAccess(context)) {
             mutableState.update { it.copy(permissionRequired = true, status = "开启文件访问后，开始分析共享存储") }
             return
         }
@@ -133,7 +139,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         contentReview = emptyMap()
         mutableState.update { it.copy(running = true, reviewRequested = false, permissionRequired = false, failed = false, status = "正在读取系统文件索引…",
             selected = emptySet(), records = emptyList(), duplicateGroups = emptyList(), buckets = emptyList(), coverage = "", progress = null,
-            outcomes = emptyMap(), diagnostic = "", diagnosticUri = "") }
+            outcomes = emptyMap(), directoryUsage = null, diagnostic = "", diagnosticUri = "") }
         viewModelScope.launch {
             val started = SystemClock.elapsedRealtime()
             try {
@@ -156,20 +162,49 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     val growth = if (mode == StorageToolMode.ANALYSIS) runCatching {
                         StorageGrowthStore(java.io.File(context.filesDir, "storage-growth.json")).record(index)
                     }.getOrElse { StorageGrowthResult(emptyList(), "增长基线写入失败，本轮不显示比较") } else StorageGrowthResult(emptyList(), "")
-                    StorageScanBundle(index, duplicates, storageBuckets(index.records), growth)
+                    val usage = if (mode == StorageToolMode.ANALYSIS) {
+                        report(StorageScanProgress("正在遍历目录…", 0, 0, ""))
+                        val source = remote
+                        directoryToken = java.util.UUID.randomUUID().toString()
+                        val rootUsage = source?.let { runCatching {
+                            taskControl.check()
+                            DirectoryUsage.parse(RootServiceClients.profileExchange(it, context.cacheDir,
+                                "scanDirectoryUsage", org.json.JSONArray().put(directoryToken)))
+                        }.getOrNull() }
+                        taskControl.check()
+                        val localRoots = (listOf(android.os.Environment.getExternalStorageDirectory()) +
+                            context.getExternalFilesDirs(null).filterNotNull().mapNotNull { file ->
+                                file.path.substringBefore("/Android/", "").takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+                            }).distinctBy { it.canonicalPath }.associate { it.canonicalFile to it.canonicalPath }
+                        val local = DirectoryUsageScanner.scan(if (rootUsage != null)
+                            localRoots.filterValues { it !in rootUsage.roots } else localRoots,
+                            check = taskControl::check, progress = { count, name -> report(StorageScanProgress("正在遍历目录…", count, 0, name)) })
+                        directoryToken = ""
+                        if (rootUsage == null) local else DirectoryUsage(rootUsage.roots + local.roots,
+                            rootUsage.directories + local.directories, rootUsage.inaccessible + local.inaccessible,
+                            rootUsage.linksSkipped + local.linksSkipped, rootUsage.limited || local.limited, "Root + 本地")
+                    } else null
+                    StorageScanBundle(index, duplicates, storageBuckets(index.records), growth, usage)
                 }
                 taskControl.check()
                 val index = result.index
                 val duplicates = result.duplicates
                 mutableState.update { current -> current.copy(running = false, records = index.records,
-                    duplicateGroups = duplicates.groups, buckets = result.buckets, growth = result.growth.changes, growthDescription = result.growth.description, progress = null,
+                    duplicateGroups = duplicates.groups, buckets = result.buckets, directoryUsage = result.directoryUsage, growth = result.growth.changes, growthDescription = result.growth.description, progress = null,
                     elapsedMs = SystemClock.elapsedRealtime() - started,
                     status = when (mode) {
                         StorageToolMode.LARGE -> "大文件扫描完成"
                         StorageToolMode.DUPLICATES -> "发现 ${duplicates.groups.size} 组内容相同的文件"
                         StorageToolMode.ANALYSIS -> "存储分析完成"
                     }, coverage = buildString {
-                        append("已读取 ${index.records.size} 个已索引文件；不含应用私有数据和未被系统索引的文件。回收站占用另计，移入回收站不等于设备释放空间。")
+                        append("分类和文件操作覆盖 ${index.records.size} 个已索引文件。回收站占用另计，移入回收站不等于设备释放空间。")
+                        result.directoryUsage?.let { usage ->
+                            append(" 目录统计使用${usage.backend}遍历，包含未索引文件，仅供查看；${if (usage.backend.startsWith("Root")) "包含当前用户的应用私有目录" else "不包含无权读取的应用私有目录"}。")
+                            if (usage.inaccessible > 0) append(" ${usage.inaccessible} 处无法读取，统计为已读部分。")
+                            if (usage.limited) append(" 达到遍历时间、深度或数量上限，目录统计不完整。")
+                            if (usage.linksSkipped > 0) append(" 已跳过 ${usage.linksSkipped} 个链接。")
+                            append(" 数值为文件逻辑大小，目录包含子目录，不代表可释放容量。")
+                        }
                         if (index.truncated) append(" 本次达到 12 万项上限，结果不完整。")
                         if (index.confirmedMissing > 0) append(" 已排除 ${index.confirmedMissing} 条不存在文件的旧索引，未计入占用或释放空间。")
                         val unknown = index.records.count { it.verifiedBytes == 0L }
@@ -179,6 +214,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         if (duplicates.skipped > 0) append(" ${duplicates.skipped} 次文件校验因不可读或文件变化而跳过。")
                     }) }
             } catch (error: Exception) {
+                directoryToken = ""
                 val stopped = taskControl.cancelled || error is CancellationException || error is android.os.OperationCanceledException
                 mutableState.update { it.copy(running = false, progress = null, failed = !stopped,
                     elapsedMs = SystemClock.elapsedRealtime() - started,
@@ -264,7 +300,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     if (outcomes[record.uri]?.result in setOf(ApkIndexedDeleteResult.CHANGED, ApkIndexedDeleteResult.UNVERIFIED))
                         record.copy(identity = null) else record
                 }
-                current.copy(running = false, progress = null, records = remaining, buckets = storageBuckets(remaining),
+                current.copy(running = false, progress = null, records = remaining, buckets = storageBuckets(remaining), directoryUsage = null,
                     selected = emptySet(), outcomes = current.outcomes + outcomes,
                     duplicateGroups = remainingDuplicateGroups(current.duplicateGroups, remaining),
                     status = "${if (taskControl.cancelled) "已停止 · " else ""}" +

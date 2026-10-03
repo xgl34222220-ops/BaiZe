@@ -47,14 +47,13 @@ internal object ApkMediaStoreIndex {
     private const val APK_MIME = "application/vnd.android.package-archive"
     private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
 
-    fun hasAllFilesAccess(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    fun hasAllFilesAccess(context: Context): Boolean = SharedStorageAccess.granted(context)
 
     @Suppress("DEPRECATION")
     fun query(context: Context, cancellationSignal: CancellationSignal = CancellationSignal(),
         guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)): ApkMediaStoreResult {
         val started = SystemClock.elapsedRealtime()
-        if (!hasAllFilesAccess()) {
+        if (!hasAllFilesAccess(context)) {
             return ApkMediaStoreResult(
                 candidates = emptyList(),
                 elapsedMs = SystemClock.elapsedRealtime() - started,

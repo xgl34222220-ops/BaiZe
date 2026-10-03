@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 
 /** Binder facade; repositories own validation and task coordination. */
 class BaiZeProfileRootService : RootService() {
+    private val directoryCancelled = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
     private val coordinator = TaskCoordinator(acquireLease = { shared -> RootOperationLease.acquire(this, shared) })
     private val schedulerRepository = SchedulerRepository()
     private val diagnostics = DiagnosticRepository()
@@ -70,6 +71,33 @@ class BaiZeProfileRootService : RootService() {
             "getQuarantinePage" -> {
                 require(arguments.length() == 2)
                 getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
+            }
+            "scanDirectoryUsage" -> {
+                require(arguments.length() == 1)
+                val token = arguments.getString(0)
+                require(Regex("[a-f0-9-]{36}").matches(token))
+                val owner = applicationInfo.uid
+                val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+                require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+                val user = caller / 100_000
+                val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+                synchronized(directoryCancelled) {
+                    check(directoryCancelled.isEmpty()) { "目录统计正在运行" }
+                    directoryCancelled[token] = cancelled
+                }
+                try {
+                    io.github.xgl34222220.baize.DirectoryUsageScanner.scan(linkedMapOf(
+                        File("/data/media/$user") to "/storage/emulated/$user",
+                        File("/data/user/$user") to "/data/user/$user",
+                        File("/data/user_de/$user") to "/data/user_de/$user"), "Root", cancelled = cancelled::get).json()
+                } finally { directoryCancelled.remove(token) }
+            }
+            "cancelDirectoryUsage" -> {
+                require(arguments.length() == 1)
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid)
+                directoryCancelled[arguments.getString(0)]?.set(true)
+                JSONObject().put("success", true).toString()
             }
             "getModuleState" -> { require(arguments.length() == 0); getModuleState() }
             "ensureAllFilesAccess" -> {

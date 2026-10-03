@@ -133,6 +133,8 @@ fun CleanScreenMiuix(
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "仅检查应用缓存", actions.onInstantCache)
                 LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "免 Root 缓存清理", "连接 Shizuku 后清理", actions.onShizukuCache)
+                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Rule, "规则与保护", "规则范围、清理策略与隔离区", actions.onAudit)
             }
         }
