@@ -86,7 +86,7 @@ try:
     m.save_text("shell-userservice-processes.txt", processes)
     nav.tap("BaiZe CI Selected Cache", "shizuku-select-owned-package")
     nav.tap("清除所选 1 个应用的缓存", "shizuku-clean-selected", direction="up")
-    nav.find("BaiZe CI Selected Cache", "shizuku-review-owned-package")
+    nav.find("BaiZe CI Selected Cache", "shizuku-review-owned-package", contains=True)
     nav.tap("确认清缓存", "shizuku-confirm-owned-package")
     nav.wait_text("处理结束", "shizuku-finished", direction="up")
     nav.find("成功 1 个", "shizuku-confirmed-result", contains=True)
