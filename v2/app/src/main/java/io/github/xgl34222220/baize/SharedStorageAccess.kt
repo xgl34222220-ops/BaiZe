@@ -26,13 +26,13 @@ internal object SharedStorageAccess {
 internal class StoragePermissionRequest(private val activity: ComponentActivity, private val onGranted: () -> Unit) {
     private val prefs by lazy { activity.getSharedPreferences("storage-permission", Context.MODE_PRIVATE) }
     private val request = activity.registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        if (SharedStorageAccess.granted(activity)) onGranted() else {
+        if (SharedStorageAccess.granted(activity)) permissionGranted() else {
             prefs.edit().putBoolean("denied", true).apply()
             Toast.makeText(activity, "未授予存储读写权限，扫描尚未开始", Toast.LENGTH_LONG).show()
         }
     }
     fun launch() {
-        if (SharedStorageAccess.granted(activity)) { onGranted(); return }
+        if (SharedStorageAccess.granted(activity)) { permissionGranted(); return }
         val deniedPermanently = prefs.getBoolean("denied", false) &&
             SharedStorageAccess.legacyPermissions.none(activity::shouldShowRequestPermissionRationale)
         if (Build.VERSION.SDK_INT < 30 && !deniedPermanently) request.launch(SharedStorageAccess.legacyPermissions)
@@ -40,6 +40,10 @@ internal class StoragePermissionRequest(private val activity: ComponentActivity,
             if (Build.VERSION.SDK_INT >= 30) runCatching { activity.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
                 .onFailure { unavailable() } else unavailable()
         }
+    }
+    private fun permissionGranted() {
+        prefs.edit().remove("denied").apply()
+        onGranted()
     }
     private fun unavailable() { Toast.makeText(activity, "请在系统设置中开启${SharedStorageAccess.label}", Toast.LENGTH_LONG).show() }
 }

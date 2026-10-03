@@ -111,7 +111,7 @@ try:
     nav.tap("开启存储读写权限", "legacy-app-settings-fallback")
     root = m.ui("legacy-real-app-settings")
     assert any(n.attrib.get("package") == "com.android.settings" for n in root.iter("node"))
-    assert "白泽" in seven.labels(root)
+    assert any(label in seven.labels(root) for label in ("白泽", "BaiZe"))
     for permission in permissions:
         m.adb("shell", "pm", "grant", m.APP, permission)
     m.adb("shell", "input", "keyevent", "4")

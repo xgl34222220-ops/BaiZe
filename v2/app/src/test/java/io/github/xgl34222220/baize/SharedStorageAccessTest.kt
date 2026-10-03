@@ -9,6 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implements
@@ -18,6 +19,43 @@ import org.robolectric.shadows.ShadowEnvironment
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class SharedStorageAccessTest {
+    @Test @Config(sdk = [28, 29]) fun aSuccessfulRuntimeGrantClearsThePriorDenialFlag() {
+        val controller = Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java)
+        val activity = controller.get()
+        val prefs = activity.getSharedPreferences("storage-permission", 0)
+        prefs.edit().putBoolean("denied", true).commit()
+        var resumed = 0
+        val request = StoragePermissionRequest(activity) { resumed++ }
+        controller.setup()
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(*SharedStorageAccess.legacyPermissions)
+        shadowOf(activity.packageManager).setShouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE, true)
+        request.launch()
+        val submitted = shadowOf(activity).lastRequestedPermission
+        assertArrayEquals(SharedStorageAccess.legacyPermissions, submitted.requestedPermissions)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(*SharedStorageAccess.legacyPermissions)
+        activity.onRequestPermissionsResult(submitted.requestCode, submitted.requestedPermissions,
+            IntArray(submitted.requestedPermissions.size) { android.content.pm.PackageManager.PERMISSION_GRANTED })
+        assertEquals(1, resumed)
+        assertFalse(prefs.getBoolean("denied", false))
+        controller.pause().stop().destroy()
+    }
+
+    @Test @Config(sdk = [28, 29]) fun alreadyGrantedPermissionsAlsoClearAStaleDenialWithoutRequestingMoreAccess() {
+        val controller = Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java)
+        val activity = controller.get()
+        val prefs = activity.getSharedPreferences("storage-permission", 0)
+        prefs.edit().putBoolean("denied", true).commit()
+        var resumed = 0
+        val request = StoragePermissionRequest(activity) { resumed++ }
+        controller.setup()
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(*SharedStorageAccess.legacyPermissions)
+        request.launch()
+        assertEquals(1, resumed)
+        assertFalse(prefs.getBoolean("denied", false))
+        assertNull(shadowOf(activity).lastRequestedPermission)
+        controller.pause().stop().destroy()
+    }
+
     @Test @Config(sdk = [28, 29]) fun legacyRequiresBothPermissionsAndRoutesToAppSettings() {
         val context = RuntimeEnvironment.getApplication()
         shadowOf(context).denyPermissions(*SharedStorageAccess.legacyPermissions)
