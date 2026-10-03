@@ -65,9 +65,9 @@ fun CleanScreenMiuix(
     onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    var showDailyTimeDialog by remember { mutableStateOf(false) }
-    var showDailyGraceDialog by remember { mutableStateOf(false) }
-    var showApkDaysDialog by remember { mutableStateOf(false) }
+    var showDailyTimeDialog by rememberSaveable { mutableStateOf(false) }
+    var showDailyGraceDialog by rememberSaveable { mutableStateOf(false) }
+    var showApkDaysDialog by rememberSaveable { mutableStateOf(false) }
     var automationExpanded by rememberSaveable { mutableStateOf(expandedCategory == "__open_plan__") }
 
     LaunchedEffect(expandedCategory) {

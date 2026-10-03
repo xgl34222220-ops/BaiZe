@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -63,9 +64,10 @@ import io.github.xgl34222220.baize.ui.miuix.VideoStatusPill
 import io.github.xgl34222220.baize.ui.miuix.VideoTabs
 import io.github.xgl34222220.baize.ui.miuix.VideoTopBar
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.components.DetailPageHeader
 
 @Composable
-fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
+fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions, onBack: (() -> Unit)? = null) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var onlyErrors by rememberSaveable { mutableStateOf(false) }
@@ -74,15 +76,17 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions) {
     val rawLines = remember(state.rawLog) { state.rawLog.lines() }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + 112.dp),
+        modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + if (onBack != null) 24.dp else 112.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            VideoTopBar("运行日志", actions = {
+            val headerActions: @Composable RowScope.() -> Unit = {
                 VideoIconButton(Icons.Rounded.Refresh, "刷新日志", actions.onRefresh)
                 if (selectedTab == 0 && state.logs.isNotEmpty()) VideoIconButton(Icons.Rounded.DeleteOutline, "清空任务日志", actions.onClearTaskLogs)
                 if (selectedTab == 1 && state.hasRawLog) VideoIconButton(Icons.Rounded.DeleteOutline, "清空原始输出", actions.onClearRawLog)
-            })
+            }
+            if (onBack != null) DetailPageHeader("运行日志", "", onBack, actions = headerActions)
+            else VideoTopBar("运行日志", actions = headerActions)
         }
         item { RuntimeCard(state) }
         item { VideoTabs(listOf("任务日志", "原始输出"), selectedTab, { selectedTab = it }) }

@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -181,6 +182,7 @@ private fun AnimatedPageHost(
     modifier: Modifier = Modifier,
     content: @Composable (BaiZePage) -> Unit
 ) {
+    val pageState = rememberSaveableStateHolder()
     AnimatedContent(
         targetState = page,
         modifier = modifier,
@@ -203,7 +205,9 @@ private fun AnimatedPageHost(
         },
         label = "baizePageMotion"
     ) { targetPage ->
-        content(targetPage)
+        pageState.SaveableStateProvider(targetPage.name) {
+            content(targetPage)
+        }
     }
 }
 
@@ -272,5 +276,7 @@ private fun DashboardUiState.forSettingsPage(): DashboardUiState = DashboardUiSt
     connecting = connecting, connectionFailed = connectionFailed,
     connected = connected, ready = ready, running = running, serviceText = serviceText,
     taskPhase = taskPhase, whitelistCount = whitelistCount, scanPerformance = scanPerformance,
-    versionWarning = versionWarning, versionDetails = versionDetails
+    versionWarning = versionWarning, versionDetails = versionDetails,
+    schedulerText = schedulerText, device = device, android = android,
+    rawLogName = rawLogName, rawLog = rawLog, history = history
 )

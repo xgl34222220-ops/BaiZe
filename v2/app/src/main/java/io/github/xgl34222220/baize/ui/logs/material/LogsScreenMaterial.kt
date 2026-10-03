@@ -8,6 +8,6 @@ import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 
 @Composable
-fun LogsScreenMaterial(state: LogsUiState, actions: LogsUiActions) {
-    ProvideVideoSkin(VideoSkin.MATERIAL3) { LogsScreenMiuix(state, actions) }
+fun LogsScreenMaterial(state: LogsUiState, actions: LogsUiActions, onBack: (() -> Unit)? = null) {
+    ProvideVideoSkin(VideoSkin.MATERIAL3) { LogsScreenMiuix(state, actions, onBack) }
 }

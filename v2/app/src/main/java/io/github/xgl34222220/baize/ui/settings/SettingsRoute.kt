@@ -23,6 +23,7 @@ import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
 import io.github.xgl34222220.baize.ui.settings.miuix.LuoShuSettingsHub
+import io.github.xgl34222220.baize.ui.logs.LogsRoute
 
 @Composable
 fun SettingsRoute(
@@ -98,8 +99,13 @@ fun SettingsRoute(
     }
     ProvideVideoSkin(skin) {
         if (showTaskHistory) SchedulerHealthDialog(state, actions) { showTaskHistory = false }
-        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
-        else VideoSettingsScreenMiuix(state, actions, onDetailChanged)
+        val runtimeLogs: @Composable (onBack: () -> Unit) -> Unit = { back ->
+            LogsRoute(style, dashboard, dashboardActions,
+                onOpenDetails = { CleanerNavigation.openFrom(context, Intent(context, AuditActivity::class.java)) },
+                onBack = back)
+        }
+        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged, runtimeLogs)
+        else VideoSettingsScreenMiuix(state, actions, onDetailChanged, runtimeLogs)
     }
 }
 

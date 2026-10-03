@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -29,8 +30,11 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 /** LuoShu SettingsHubScreen structure: overview -> navigation groups -> separate detail page. */
 @Composable
-fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDetailChanged: (Boolean) -> Unit = {}) {
+fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions,
+    onDetailChanged: (Boolean) -> Unit = {},
+    runtimeLogs: (@Composable (onBack: () -> Unit) -> Unit)? = null) {
     var section by rememberSaveable { mutableStateOf("") }
+    val sectionState = rememberSaveableStateHolder()
     val notify by rememberUpdatedState(onDetailChanged)
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
@@ -53,14 +57,17 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
         },
         label = "settingsHub"
     ) { target ->
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = BaiZeTokens.colors.surfaceBase
-        ) {
-            when (target) {
-                "tasks" -> TaskSettings(state, actions, ::closeDetail)
-                "service" -> ServiceDetails(state, actions, ::closeDetail)
-                else -> SettingsHome(state, actions, { section = it })
+        sectionState.SaveableStateProvider(target) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = BaiZeTokens.colors.surfaceBase
+            ) {
+                when (target) {
+                    "tasks" -> TaskSettings(state, actions, ::closeDetail)
+                    "service" -> ServiceDetails(state, actions, ::closeDetail)
+                    "logs" -> runtimeLogs?.invoke(::closeDetail)
+                    else -> SettingsHome(state, actions, { section = it }, runtimeLogs != null)
+                }
             }
         }
     }
@@ -71,7 +78,8 @@ private fun pagePadding(detail: Boolean = false): PaddingValues = PaddingValues(
     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (detail) 32.dp else 132.dp)
 
 @Composable
-private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit) {
+private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit,
+    runtimeLogsAvailable: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val colors = BaiZeTokens.colors
     val statusColor = if (state.connectionFailed) scheme.error else if (state.ready) colors.success else colors.warning
@@ -123,6 +131,10 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.FactCheck, "清理审计", "清理依据、规则复核与历史分析", actions.onOpenCleanupAudit)
                 LuoShuGroupDivider()
+                if (runtimeLogsAvailable) {
+                    LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务记录、原始输出与连接诊断", { open("logs") })
+                    LuoShuGroupDivider()
+                }
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Shield, "保护名单", "应用与文件路径保护", actions.onOpenWhitelist)
