@@ -89,9 +89,7 @@ class NavigationStateRetentionTest {
         restore.setContent { BaiZeMiuixApp(DashboardUiState(ready = true, automationAvailable = true),
             SchedulerUiState(scheduleMode = 2, dailyEnabled = true, dailyHour = 3, dailyMinute = 15),
             actions.copy(saveScheduler = { savedTimes += it }), AppearanceSettings(uiStyle = style), initialPage = 1) }
-        if (style == UiStyle.MIUIX) {
-            compose.onNodeWithContentDescription("展开自动清理设置").performScrollTo().performClick()
-        }
+        compose.onNodeWithContentDescription("展开自动清理设置").performScrollTo().performClick()
         scrollTo("执行时间").performClick()
         compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("21")
         compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("42")
