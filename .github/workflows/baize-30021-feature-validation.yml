@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code 6164be3961b48f2d8017018c5ddd4e4b7a736f7f HEAD -- . \
+          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -42,8 +42,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37154619913;
-            const expectedSource = '6164be3961b48f2d8017018c5ddd4e4b7a736f7f';
+            const runId = 37155986970;
+            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
               const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
@@ -57,8 +57,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+6164be39-Paired-Test
-          run-id: 37154619913
+          name: BaiZe-functional-test+f9a66dcd-Paired-Test
+          run-id: 37155986970
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare disposable packages
@@ -104,7 +104,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code 6164be3961b48f2d8017018c5ddd4e4b7a736f7f HEAD -- . \
+          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -117,8 +117,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37154619913;
-            const expectedSource = '6164be3961b48f2d8017018c5ddd4e4b7a736f7f';
+            const runId = 37155986970;
+            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
               const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
@@ -132,8 +132,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+6164be39-Paired-Test
-          run-id: 37154619913
+          name: BaiZe-functional-test+f9a66dcd-Paired-Test
+          run-id: 37155986970
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare emulator
@@ -173,7 +173,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code 6164be3961b48f2d8017018c5ddd4e4b7a736f7f HEAD -- . \
+          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -219,7 +219,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code 6164be3961b48f2d8017018c5ddd4e4b7a736f7f HEAD -- . \
+          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -232,8 +232,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37154619913;
-            const expectedSource = '6164be3961b48f2d8017018c5ddd4e4b7a736f7f';
+            const runId = 37155986970;
+            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
             for (let attempt = 0; attempt < 80; attempt++) {
               const { data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId });
               if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
@@ -247,8 +247,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+6164be39-Paired-Test
-          run-id: 37154619913
+          name: BaiZe-functional-test+f9a66dcd-Paired-Test
+          run-id: 37155986970
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare emulator
