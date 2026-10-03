@@ -66,7 +66,17 @@ def picker_action(texts, name):
 
 try:
     m.adb("shell", "mkdir", "-p", remote + "/exports")
-    for name in ("preview.jpg", "duplicate.jpg"): m.adb("push", str(local), remote + "/" + name)
+    for name in ("preview.jpg", "duplicate.jpg"):
+        path = remote + "/" + name
+        m.adb("push", str(local), path)
+        m.adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file://" + path)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            row = m.adb("shell", "content", "query", "--uri", "content://media/external/file", "--projection", "_id:_data:mime_type",
+                "--where", shlex.quote("_data='" + path + "'"), check=False)
+            if "image/jpeg" in row and path in row: break
+            time.sleep(.5)
+        else: raise AssertionError("The owned JPEG was not indexed for the real image picker: " + path)
     m.launch("photo-batch-home", 2)
     nav.tap("照片瘦身", "photo-batch-entry"); expect_top("PhotoCompressionActivity", "photo-batch-top")
     nav.tap("选择照片", "photo-batch-select-single"); picker_folder(); nav.tap("preview.jpg", "photo-batch-owned-single")
