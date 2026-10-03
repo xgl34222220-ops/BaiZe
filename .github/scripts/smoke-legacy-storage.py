@@ -126,6 +126,8 @@ try:
     # read-only assertion above, then revoke READ too before exercising real denial.
     m.adb("shell", "pm", "revoke", m.APP, permissions[0])
     assert not any(granted(p) for p in permissions)
+    enter()  # Revoking a granted runtime permission terminates the test App.
+    nav.wait_text("开启存储读写权限", "legacy-both-revoked")
     deny_permanently()
     denied_state = m.adb("shell", "dumpsys", "package", m.APP)
     m.save_text("legacy-permanent-denial-package.txt", denied_state)
