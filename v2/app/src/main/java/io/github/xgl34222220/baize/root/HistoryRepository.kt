@@ -106,7 +106,7 @@ internal class HistoryRepository(
         val release = ReleaseAmount.fromResult(mode, input)
         val success = input.optBoolean("success", true)
         val cancelled = input.optBoolean("cancelled", false)
-        val bytes = input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)
+        val bytes = release.bytes ?: input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)
         val files = input.optLong("files", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val emptyFiles = input.optLong("emptyFiles", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val emptyDirs = input.optLong("emptyDirs", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())

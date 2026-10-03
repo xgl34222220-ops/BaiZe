@@ -96,8 +96,9 @@ jobs:
           elif [ "$APK_FOCUSED_CHECK" = "true" ]; then
             ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*' --tests 'io.github.xgl34222220.baize.Whitelist*' --tests 'io.github.xgl34222220.baize.root.Whitelist*' --tests 'io.github.xgl34222220.baize.UiVisualReviewTest' --tests 'io.github.xgl34222220.baize.Workbench*' --tests 'io.github.xgl34222220.baize.root.Native*' --tests 'io.github.xgl34222220.baize.root.InstalledPackageInventorySafetyTest'
           else
-            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest
-            ./gradlew --no-daemon --max-workers=2 :app:lintDebug :app:assembleDebug
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:testDebugUnitTest
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:lintDebug
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:assembleDebug
           fi
 
       - name: Upload debug-only Root flow probe

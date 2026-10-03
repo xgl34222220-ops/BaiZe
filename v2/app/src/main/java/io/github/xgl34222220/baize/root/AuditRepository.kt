@@ -275,8 +275,12 @@ internal class AuditRepository(
                 .ifBlank { errorCode.ifBlank { defaultMessage(operation, status) } },
             600
         )
-        val bytes = if (release.state == ReleaseAmount.State.UNKNOWN) null else
-            number(result, latest, "deletedBytes", "quarantinedBytes", "bytes").coerceAtLeast(0L)
+        val bytes = when (release.state) {
+            ReleaseAmount.State.UNKNOWN -> null
+            ReleaseAmount.State.MEASURED, ReleaseAmount.State.PARTIAL -> release.bytes
+            ReleaseAmount.State.RETAINED -> release.retainedBytes
+            ReleaseAmount.State.NOT_APPLICABLE -> number(result, latest, "bytes").coerceAtLeast(0L)
+        }
         val files = number(result, latest, "deletedFiles", "quarantinedFiles", "files", "regular_files").coerceAtLeast(0L)
         val directories = number(result, latest, "deletedDirectories", "quarantinedDirectories", "directories", "empty_dirs", "emptyDirs").coerceAtLeast(0L)
         val selected = number(result, latest, "selected", "selectedCandidates", "totalCandidates").coerceAtLeast(0L)

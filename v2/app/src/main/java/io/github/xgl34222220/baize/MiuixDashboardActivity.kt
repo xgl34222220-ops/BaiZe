@@ -213,6 +213,8 @@ class MiuixDashboardActivity : ComponentActivity() {
         FileOrganizerWorker.ensureWatchdog(this)
         dashboardState.value = dashboardState.value.copy(
             lastTaskTime = preferences.getString("last_task_time", "").orEmpty(),
+            lastReleased = preferences.getLong("last_clean_bytes", 0L),
+            lastReleasedKnown = preferences.getBoolean("last_clean_bytes_known", preferences.getLong("last_clean_bytes", 0L) > 0L),
             protectedItems = loadProtectedItems()
         )
 
@@ -998,16 +1000,18 @@ class MiuixDashboardActivity : ComponentActivity() {
             val latest = json.optJSONObject("latest") ?: JSONObject()
             val success = json.optBoolean("success")
             val cancelled = json.optBoolean("cancelled")
-            val bytes = latest.optLong("bytes", 0L).coerceAtLeast(0L)
+            val release = ReleaseAmount.fromResult("clean", json)
+            val bytes = release.bytes ?: 0L
             val files = latest.optLong("files", 0L).coerceAtLeast(0L)
             val emptyFiles = latest.optLong("empty_files", 0L).coerceAtLeast(0L)
             val emptyDirs = latest.optLong("empty_dirs", 0L).coerceAtLeast(0L)
             val fragments = latest.optLong("fragment_files", 0L).coerceAtLeast(0L)
             val errors = latest.optLong("errors", if (success) 0L else 1L).coerceAtLeast(0L)
             val elapsed = latest.optLong("elapsed", json.optLong("elapsedMs", 0L) / 1000L).coerceAtLeast(0L)
-            val resultLine = latest.optString("result").ifBlank {
+            val result = latest.optString("result").ifBlank {
                 json.optString("message", if (success) "清理完成" else "清理失败")
             }
+            val resultLine = "$result · ${release.description(::formatBytes)}"
             val appDetails = parseAppDetails(json.optJSONArray("appDetails"))
             val otherDetails = parseGeneralJunk(json.optJSONArray("otherDetails"))
             val detailLine = "文件 $files · 空文件 $emptyFiles · 空目录 $emptyDirs · 碎片 $fragments · 异常 $errors · ${formatElapsed(elapsed)}"
@@ -1024,6 +1028,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 lastReleased = bytes,
+                lastReleasedKnown = release.state == ReleaseAmount.State.MEASURED,
                 recentApps = appDetails,
                 recentJunk = otherDetails,
                 lastTaskTime = taskTime,
@@ -1032,9 +1037,10 @@ class MiuixDashboardActivity : ComponentActivity() {
             )
             preferences.edit()
                 .putLong("last_clean_bytes", bytes)
+                .putBoolean("last_clean_bytes_known", release.state == ReleaseAmount.State.MEASURED)
                 .putString("last_report_text", "$resultLine\n$detailLine")
                 .apply()
-            notifyCleanResult(title, resultLine, detailLine, bytes)
+            notifyCleanResult(title, resultLine, detailLine, bytes, release.state == ReleaseAmount.State.MEASURED)
             refreshHistory()
             refreshModuleState()
             updateStorage()
@@ -1187,6 +1193,8 @@ class MiuixDashboardActivity : ComponentActivity() {
         startNativePoll()
         lifecycleScope.launch {
             var deletedBytes = 0L
+            var bytesKnown = true
+            val includedAuditEventIds = linkedSetOf<String>()
             var deletedFiles = 0L
             var deletedDirectories = 0L
             var emptyFiles = 0L
@@ -1205,12 +1213,16 @@ class MiuixDashboardActivity : ComponentActivity() {
             val whitelist = JSONArray(packageWhitelist().toList()).toString()
 
             suspend fun consume(result: JSONObject, profileResult: Boolean) {
+                val amount = ReleaseAmount.fromResult(if (profileResult) "profile-clean" else "cache-clean", result)
+                bytesKnown = bytesKnown && amount.state == ReleaseAmount.State.MEASURED
+                amount.bytes?.let { deletedBytes = ReleaseAmount.addSaturated(deletedBytes, it) }
+                result.optString("auditEventId").takeIf { it.isNotBlank() }?.let(includedAuditEventIds::add)
+                cancelled = cancelled || result.optBoolean("cancelled")
                 if (result.has("error")) {
                     failures += 1
                     stale = stale || result.optString("error").contains("snapshot")
                     return
                 }
-                deletedBytes += result.optLong("deletedBytes", 0L).coerceAtLeast(0L)
                 deletedFiles += result.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                 deletedDirectories += result.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
                 cleanedCandidates += result.optInt("cleanedCandidates", 0).coerceAtLeast(0)
@@ -1267,40 +1279,47 @@ class MiuixDashboardActivity : ComponentActivity() {
                     consume(result, profileResult = true)
                 }
             } catch (error: Throwable) {
+                bytesKnown = false
                 failures += 1
                 dashboardState.value = dashboardState.value.copy(taskPhase = "快照清理异常：${error.message ?: error.javaClass.simpleName}")
             }
 
             pollJob?.cancel()
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
-            val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
+            val release = ReleaseAmount(
+                if (bytesKnown) ReleaseAmount.State.MEASURED else if (deletedBytes > 0L) ReleaseAmount.State.PARTIAL else ReleaseAmount.State.UNKNOWN,
+                deletedBytes.takeIf { bytesKnown || it > 0L })
+            val mutated = deletedBytes > 0L || deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
             val skippedCandidates = changedCandidates + protectedCandidates
             val title = when {
                 cancelled -> "白泽快照清理已停止"
                 stale -> "部分扫描结果已过期"
                 failures > 0 || failedCandidates > 0 -> "白泽快照清理完成，但有异常"
-                !mutated -> "本次未删除任何文件"
+                !mutated && bytesKnown -> "本次未删除任何文件"
+                !bytesKnown -> "本次清理结果未完整确认"
                 else -> "白泽快照清理完成"
             }
             val resultLine = when {
-                stale -> "扫描快照已过期，没有重新扫描；请手动再次扫描"
-                cancelled -> "任务已安全停止，已释放 ${formatBytes(deletedBytes)}"
-                !mutated -> "未删除任何文件 · 跳过/保护 $skippedCandidates 项 · 部分 $partialCandidates 项"
-                else -> "实际释放 ${formatBytes(deletedBytes)} · 清理 $cleanedCandidates 项"
+                stale -> "扫描快照已过期，没有重新扫描；请手动再次扫描 · ${release.description(::formatBytes)}"
+                cancelled -> "任务已安全停止 · ${release.description(::formatBytes)}"
+                !mutated && bytesKnown -> "未删除任何文件 · ${release.description(::formatBytes)} · 跳过 $changedCandidates 项 · 保护 $protectedCandidates 项"
+                else -> "${release.description(::formatBytes)} · 清理 $cleanedCandidates 项"
             }
-            val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 跳过/保护 $skippedCandidates · 部分 $partialCandidates · 失败 $failedCandidates · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
+            val detailLine = "文件 $deletedFiles · 目录 $deletedDirectories · 跳过 $changedCandidates · 保护 $protectedCandidates · 部分 $partialCandidates · 失败 $failedCandidates · 异常 $failures · ${formatElapsed(elapsed / 1000L)}"
             val taskTime = markTaskTime()
             saveProtectedItems(protectedItems)
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 scanCompleted = false,
                 lastReleased = deletedBytes,
+                lastReleasedKnown = bytesKnown,
                 lastTaskTime = taskTime,
                 protectedItems = protectedItems,
                 taskPhase = "$resultLine\n$detailLine"
             )
             preferences.edit()
                 .putLong("last_clean_bytes", deletedBytes)
+                .putBoolean("last_clean_bytes_known", bytesKnown)
                 .putString("last_report_text", "$resultLine\n$detailLine")
                 .apply()
             val recorder = profileEngine ?: rootService
@@ -1308,11 +1327,14 @@ class MiuixDashboardActivity : ComponentActivity() {
                 runCatching {
                     withContext(Dispatchers.IO) {
                         recorder.recordNativeTask(
-                            JSONObject()
+                            release.writeTo(JSONObject()
                                 .put("mode", "snapshot-clean")
-                                .put("success", !cancelled && failures == 0 && failedCandidates == 0 && mutated)
+                                .put("success", !cancelled && failures == 0 && failedCandidates == 0)
                                 .put("cancelled", cancelled)
-                                .put("bytes", deletedBytes)
+                                .put("bytes", if (bytesKnown || deletedBytes > 0L) deletedBytes else JSONObject.NULL)
+                                .put("includedAuditEventIds", JSONArray(includedAuditEventIds.toList()))
+                                .put("protectedCandidates", protectedCandidates)
+                                .put("skippedCandidates", skippedCandidates)
                                 .put("files", deletedFiles)
                                 .put("emptyFiles", emptyFiles)
                                 .put("emptyDirs", emptyDirs)
@@ -1328,13 +1350,13 @@ class MiuixDashboardActivity : ComponentActivity() {
                                         if (emptyDirs > 0) add("空目录|0|$emptyDirs")
                                         if (fragments > 0) add("残留碎片|0|$fragments")
                                     }.joinToString(";")
-                                )
+                                ))
                                 .toString()
                         )
                     }
                 }
             }
-            notifyCleanResult(title, resultLine, detailLine, deletedBytes)
+            notifyCleanResult(title, resultLine, detailLine, deletedBytes, bytesKnown)
             clearSnapshotHandles()
             refreshHistory()
             refreshModuleState()
@@ -1381,9 +1403,9 @@ class MiuixDashboardActivity : ComponentActivity() {
         )
     }
 
-    private fun notifyCleanResult(title: String, summary: String, detail: String, bytes: Long) {
+    private fun notifyCleanResult(title: String, summary: String, detail: String, bytes: Long, bytesKnown: Boolean = true) {
         val config = schedulerState.value
-        if (!config.notifyOnComplete || (bytes == 0L && !config.notifyZero && !summary.contains("过期"))) return
+        if (!config.notifyOnComplete || (bytesKnown && bytes == 0L && !config.notifyZero && !summary.contains("过期"))) return
         NativeNotifier.showTaskResult(this, title, summary, detail)
     }
 

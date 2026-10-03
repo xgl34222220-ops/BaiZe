@@ -161,6 +161,19 @@ class ReleaseAccountingTest {
         assertEquals(0L, summary.getLong("lifetimeRuns"))
     }
 
+    @Test fun canonicalReleasedBytesPersistIdenticallyInHistoryLatestAndAudit() {
+        val history = HistoryRepository(folder.newFolder("module"), folder.root)
+        val task = JSONObject().put("mode", "snapshot-clean").put("success", true)
+            .put("releasedBytes", 130).put("releaseState", "measured")
+        val result = history.recordNativeTaskJson(task.toString())
+        assertTrue(JSONObject(result).getBoolean("success"))
+        repo.recordNativeTask(task.toString(), result)
+        assertEquals(130L, JSONObject(history.taskHistoryJson(10)).getJSONArray("entries").getJSONObject(0).getLong("bytes"))
+        assertEquals(130L, RootFileStore.readEnv(File(folder.root, "latest.env")).getLong("bytes"))
+        assertEquals(1, timeline().getInt("total")); assertEquals(130L, timeline().getLong("releasedBytes"))
+        assertEquals(130L, timeline().getJSONArray("events").getJSONObject(0).getLong("bytes"))
+    }
+
     @Test fun repeatedIdenticalNativeTasksHaveDistinctIdsWhileEachHistoryCopyMerges() {
         val history = HistoryRepository(folder.newFolder("module"), folder.root)
         val task = JSONObject().put("mode", "workbench-clean").put("success", true)
