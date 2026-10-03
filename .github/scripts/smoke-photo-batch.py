@@ -121,11 +121,23 @@ try:
     nav.find("压缩记录", "photo-batch-history", direction="down")
     nav.evidence("photo-batch-final", "PhotoCompressionActivity")
     nav.back("MiuixDashboardActivity", "photo-batch-single-back"); m.alive()
+    m.adb("shell", "am", "force-stop", m.APP)
+    m.launch("photo-batch-process-restart", 3)
+    m.tap_label("首页", "photo-batch-restart-home-tab")
+    nav.tap("照片瘦身", "photo-batch-restart-entry")
+    nav.find("压缩记录", "photo-history-after-process-restart", direction="down")
+    after_restart = [path for path in m.adb("shell", "find", remote, "-type", "f").splitlines()
+        if path not in (remote + "/preview.jpg", remote + "/duplicate.jpg")]
+    assert sorted(after_restart) == sorted(files), "Restart must never replay an export"
+    for name in ("preview.jpg", "duplicate.jpg"):
+        assert m.adb("shell", "sha256sum", remote + "/" + name).split()[0] == expected
+    nav.evidence("photo-history-restored", "PhotoCompressionActivity")
     actual_version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
     m.save_text("passed.json", json.dumps({"versionCode": actual_version, "androidApi": 36, "realSingleAndMultipleDocumentPickers": True,
         "realFolderWriteGrant": True, "selectedUrisSurviveRotation": True, "singleAndBatchExportsVerified": True,
         "repeatImageSkipped": True, "captureTimePreserved": True, "unselectedCameraMetadataRemoved": True,
         "originalHashesUnchanged": True, "twoSmallerCopies": True, "historyVisible": True, "singleBackToOrigin": True,
+        "completedHistorySurvivesProcessRestart": True, "noExportReplayedAfterRestart": True,
         "noCrashOrAnr": True}, indent=2))
     print((m.OUT / "passed.json").read_text())
 except Exception:
