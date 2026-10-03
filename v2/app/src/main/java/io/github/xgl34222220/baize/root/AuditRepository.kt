@@ -51,11 +51,14 @@ internal class AuditRepository(
         val task = runCatching { JSONObject(taskJson) }.getOrNull() ?: return
         val history = runCatching { JSONObject(historyResult) }.getOrNull()
         val result = JSONObject(task.toString())
+        history?.optString("result")?.takeIf { it.isNotBlank() }?.let { result.put("message", it) }
         if (history?.optBoolean("success") != true) {
             result.put("success", false)
             result.put("error", history?.optString("error").orEmpty().ifBlank { "history_record_failed" })
         }
-        appendEvent(buildEvent(task.optString("mode", "native-task"), "app-native", result, System.currentTimeMillis(), history?.optString("time")))
+        val event = buildEvent(task.optString("mode", "native-task"), "app-native", result, System.currentTimeMillis(), history?.optString("time"))
+        history?.optString("recordId")?.takeIf { it.isNotBlank() && it.length <= 100 }?.let { event.put("id", it) }
+        appendEvent(event)
     }
 
     @Synchronized
@@ -238,7 +241,7 @@ internal class AuditRepository(
         val operation = sanitize(operationRaw, 80).ifBlank { "unknown" }
         val latest = result.optJSONObject("latest") ?: JSONObject()
         val now = System.currentTimeMillis()
-        val time = recordedTime?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")) }
+        val time = recordedTime?.takeIf { it.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}")) }
             ?: TIME_FORMAT.get().format(Date(now))
         val errorCode = sanitize(result.optString("error"), 120)
         val cancelled = result.optBoolean("cancelled") || latest.optBoolean("cancelled")
@@ -391,7 +394,7 @@ internal class AuditRepository(
     private fun readLegacyEvents(clearEpoch: Long): List<JSONObject> = runCatching {
         if (!historyFile.isFile) return@runCatching emptyList()
         historyFile.readLines().takeLast(MAX_LEGACY).mapNotNull { raw ->
-            val columns = raw.split('\t', limit = 11)
+            val columns = raw.split('\t', limit = 12)
             if (columns.size < 7) return@mapNotNull null
             val time = sanitize(columns[0], 40)
             val epoch = runCatching { TIME_FORMAT.get().parse(time)?.time ?: 0L }.getOrDefault(0L)
@@ -437,6 +440,7 @@ internal class AuditRepository(
             columns.getOrNull(10)?.takeIf { it.isNotBlank() }?.let {
                 event.put("releaseState", it).put("releasedBytes", bytes)
             }
+            columns.getOrNull(11)?.trim()?.takeIf { it.isNotBlank() && it.length <= 100 }?.let { event.put("id", it) }
             ReleaseAmount.fromEvent(event).writeTo(event)
         }
     }.getOrDefault(emptyList())

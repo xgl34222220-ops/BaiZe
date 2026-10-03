@@ -1783,6 +1783,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                             errors = item.optInt("errors", 0).coerceAtLeast(0),
                             cleaned = item.optBoolean("cleaned"),
                             releaseState = item.optString("releaseState", "unknown"),
+                            recordId = item.optString("recordId"),
                             categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
                             apps = parseHistoryApps(item.optJSONArray("appDetails"))
                         )
@@ -1791,7 +1792,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
 
             val merged = (appHistory.entries + moduleEntries)
-                .distinctBy { listOf(it.time, it.title, it.trigger, it.result).joinToString("|") }
+                .distinctBy { it.recordId.ifBlank { listOf(it.time, it.title, it.trigger, it.result).joinToString("|") } }
                 .sortedByDescending { it.time }
                 .take(50)
 

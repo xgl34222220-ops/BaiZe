@@ -91,7 +91,7 @@ class WorkbenchWorkflowUiTest {
     @Test fun completedCleanupShowsMeasuredBytesAndKeepsTheReportOnThisPage() {
         render(ready().copy(scanReady = false, cleanupCompleted = true, cleanedBytes = 4_096, cleanedFiles = 1,
             phase = "已清理 1 个文件，其他项目已保留", items = listOf(cache.copy(outcome = "已清理"), rule)))
-        compose.onNodeWithText("本次实际释放").assertIsDisplayed()
+        compose.onNodeWithText("本次确认删除容量").assertIsDisplayed()
         compose.onNodeWithText("4.10").assertIsDisplayed()
         compose.onNodeWithText("已清理 1 个文件").assertIsDisplayed()
         compose.onNodeWithText("上次结果已保留").assertDoesNotExist()

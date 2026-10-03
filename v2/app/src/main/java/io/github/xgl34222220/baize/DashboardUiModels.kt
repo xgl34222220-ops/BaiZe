@@ -136,7 +136,8 @@ data class HistoryUiItem(
     val cleaned: Boolean,
     val categories: List<HistoryCategoryUiItem> = emptyList(),
     val apps: List<HistoryAppUiItem> = emptyList(),
-    val releaseState: String = "measured"
+    val releaseState: String = "measured",
+    val recordId: String = ""
 ) {
     fun capacityText(format: (Long) -> String): String = when (releaseState) {
         "unknown" -> "无法测量"

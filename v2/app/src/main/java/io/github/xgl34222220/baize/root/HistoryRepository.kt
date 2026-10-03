@@ -25,7 +25,7 @@ internal class HistoryRepository(
         }.getOrDefault(emptyList())
 
         lines.forEach { raw ->
-            val columns = raw.split('\t', limit = 11)
+            val columns = raw.split('\t', limit = 12)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
             val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
@@ -40,6 +40,7 @@ internal class HistoryRepository(
             entries.put(
                 JSONObject()
                     .put("time", columns[0].trim())
+                    .put("recordId", columns.getOrNull(11).orEmpty().trim())
                     .put("mode", mode)
                     .put("bytes", bytes)
                     .put("releaseState", release.state.wire)
@@ -112,16 +113,17 @@ internal class HistoryRepository(
         val fragments = input.optLong("fragments", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val errors = input.optLong("errors", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val elapsedSeconds = input.optLong("elapsedSeconds", 0L).coerceIn(0L, 24L * 60L * 60L)
-        val result = input.optString("result", "原生智能清理完成")
-            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(500)
+        val result = input.optString("result").ifBlank { "原生智能清理完成" }
+            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').trim().take(500)
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val recordId = "audit-${java.util.UUID.randomUUID()}"
         stateDir.mkdirs()
         val history = File(stateDir, "history.tsv")
         val categorySummary = input.optString("categorySummary")
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
         val appSummary = input.optString("appSummary")
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
-        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\t${release.state.wire}\n")
+        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\t${release.state.wire}\t$recordId\n")
         val retained = history.readLines().takeLast(100)
         RootFileStore.writeAtomic(history, retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))
 
@@ -159,7 +161,7 @@ internal class HistoryRepository(
             append("elapsed=").append(elapsedSeconds).append('\n')
             append("result=").append(result).append('\n')
         })
-        JSONObject().put("success", true).put("time", timestamp).toString()
+        JSONObject().put("success", true).put("time", timestamp).put("result", result).put("recordId", recordId).toString()
     }.getOrElse { error ->
         JSONObject().put("success", false).put("error", error.message ?: error.javaClass.simpleName).toString()
     }

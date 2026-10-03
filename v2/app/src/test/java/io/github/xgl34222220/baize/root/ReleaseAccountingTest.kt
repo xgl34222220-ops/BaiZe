@@ -161,6 +161,20 @@ class ReleaseAccountingTest {
         assertEquals(0L, summary.getLong("lifetimeRuns"))
     }
 
+    @Test fun repeatedIdenticalNativeTasksHaveDistinctIdsWhileEachHistoryCopyMerges() {
+        val history = HistoryRepository(folder.newFolder("module"), folder.root)
+        val task = JSONObject().put("mode", "workbench-clean").put("success", true)
+            .put("bytes", 1024).put("files", 1).put("result", "  \t  ")
+        val first = history.recordNativeTaskJson(task.toString())
+        val second = history.recordNativeTaskJson(task.toString())
+        assertNotEquals(JSONObject(first).getString("recordId"), JSONObject(second).getString("recordId"))
+        repo.recordNativeTask(task.toString(), first); repo.recordNativeTask(task.toString(), second)
+        assertEquals(2, timeline().getInt("total"))
+        assertEquals(2048L, timeline().getLong("releasedBytes"))
+        val entries = JSONObject(history.taskHistoryJson(10)).getJSONArray("entries")
+        assertNotEquals(entries.getJSONObject(0).getString("recordId"), entries.getJSONObject(1).getString("recordId"))
+    }
+
     @Test fun unknownHistoryRetainsItsMeaningAfterReload() {
         val history = HistoryRepository(folder.newFolder("module"), folder.root)
         assertTrue(JSONObject(history.recordNativeTaskJson(JSONObject().put("mode", "workbench-clean")
