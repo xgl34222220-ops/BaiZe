@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize
 
 import android.content.ContextWrapper
+import android.app.Application
 import android.content.pm.PackageManager
 import io.github.xgl34222220.baize.shizuku.shizukuCachePermission
 import org.junit.Assert.*
@@ -10,7 +11,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class ShizukuCacheCapabilityTest {
     @Test fun legacyDeleteCachePermissionDoesNotAuthorizeTheShellOperation() {
         val context = object : ContextWrapper(null) {
