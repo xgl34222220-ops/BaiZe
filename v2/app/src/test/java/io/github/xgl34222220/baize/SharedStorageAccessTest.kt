@@ -2,8 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.Manifest
 import android.app.Application
-import android.app.AppOpsManager
-import android.os.Process
+import android.os.Environment
 import android.provider.Settings
 import org.junit.Assert.*
 import org.junit.Test
@@ -12,6 +11,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implements
+import org.robolectric.annotation.Implementation
+import org.robolectric.shadows.ShadowEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -27,13 +29,23 @@ class SharedStorageAccessTest {
         assertTrue(SharedStorageAccess.granted(context)); assertTrue(StorageMediaRepository.hasAccess(context))
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, SharedStorageAccess.settings(context).action)
     }
-    @Test @Config(sdk = [35]) fun modernStorageUsesSpecialGrantRatherThanLegacyPermissions() {
+    @Test @Config(sdk = [35], shadows = [StorageGrantEnvironmentShadow::class]) fun modernStorageUsesSpecialGrantRatherThanLegacyPermissions() {
         val context = RuntimeEnvironment.getApplication()
         shadowOf(context).grantPermissions(*SharedStorageAccess.legacyPermissions)
-        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode("android:manage_external_storage", Process.myUid(), context.packageName, AppOpsManager.MODE_ERRORED)
+        StorageGrantEnvironmentShadow.specialGrant = false
         assertFalse(SharedStorageAccess.granted(context))
-        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode("android:manage_external_storage", Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
+        StorageGrantEnvironmentShadow.specialGrant = true
         assertTrue(SharedStorageAccess.granted(context))
         assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, SharedStorageAccess.settings(context).action)
+    }
+}
+
+/** Robolectric has no real storage volume. Device tests exercise actual AppOps on API 36. */
+@Implements(Environment::class)
+class StorageGrantEnvironmentShadow : ShadowEnvironment() {
+    companion object {
+        @JvmField var specialGrant = false
+        @JvmStatic @Implementation(minSdk = 30)
+        fun isExternalStorageManager(): Boolean = specialGrant
     }
 }

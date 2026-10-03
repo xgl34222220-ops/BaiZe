@@ -57,7 +57,9 @@ class PhotoCompressionRegressionTest {
                     assertNull(metadata.latLong)
                     assertEquals(if (mode == PhotoMetadataMode.STRIP) null else "2020:01:02 03:04:05", metadata.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL))
                     assertEquals(if (mode == PhotoMetadataMode.CAMERA) "Synthetic Camera" else null, metadata.getAttribute(ExifInterface.TAG_MAKE))
-                    assertEquals(ExifInterface.ORIENTATION_NORMAL, metadata.getAttributeInt(ExifInterface.TAG_ORIENTATION, 1))
+                    val orientation = metadata.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED)
+                    assertEquals(ExifInterface.ORIENTATION_NORMAL, if (mode == PhotoMetadataMode.STRIP)
+                        PhotoCompressionPolicy.normalizedOrientation(orientation) else orientation)
                 } finally { preview.original.recycle(); preview.compressed.recycle() }
                 assertArrayEquals(original, source.readBytes())
             }

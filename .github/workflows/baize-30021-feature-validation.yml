@@ -44,7 +44,7 @@ jobs:
           echo 'c29ca696bce4e5cc96f253359078d846c25d5535162b02b09430b627beb924ea  candidate/BaiZe-functional-test+8860bc4f.apk' | sha256sum -c -
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/baize-30021-certificate.txt"
-          rg -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30021-certificate.txt"
+          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30021-certificate.txt"
           python3 .github/scripts/create-cache-only-fixtures.py "$RUNNER_TEMP/baize-cache-fixtures"
           curl --fail --location --retry 3 'https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk' -o "$RUNNER_TEMP/shizuku.apk"
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
