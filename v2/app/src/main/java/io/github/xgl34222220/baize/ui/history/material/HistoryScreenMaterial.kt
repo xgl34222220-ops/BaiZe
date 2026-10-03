@@ -439,6 +439,8 @@ private fun MaterialRecordRow(record: HistoryUiItem) {
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
     val hasDetails = record.categories.isNotEmpty() || record.apps.isNotEmpty()
     val summary = when {
+        record.releaseState == "unknown" -> "释放量无法测量 · ${record.result}"
+        record.releaseState == "retained" -> "移入回收站或隔离区，尚未释放空间"
         record.emptyDirs > 0 -> "${record.files.coerceAtLeast(0)} 个文件 · ${record.emptyDirs} 个目录"
         record.apps.isNotEmpty() -> "涉及 ${record.apps.size} 个应用 · ${record.files} 项"
         record.categories.isNotEmpty() -> record.categories.take(2).joinToString(" · ") { it.name }
@@ -474,7 +476,7 @@ private fun MaterialRecordRow(record: HistoryUiItem) {
                 Text(summary, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(Formatter.formatFileSize(context, record.bytes), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                Text(record.capacityText { Formatter.formatFileSize(context, it) }, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 Text(if (record.cleaned) "已完成" else record.result.ifBlank { "已记录" }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
             if (hasDetails) {

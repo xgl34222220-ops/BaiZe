@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.ReleaseAmount
+
 import io.github.xgl34222220.baize.root.RootServiceClients
 import android.app.Application
 import android.content.ContextWrapper
@@ -581,6 +583,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                         .put("allowHighRisk", profileItems.any { it.risk == "high" }).toString()
                     ensureMutationCanStart(stopRequested)
                     var bytes = 0L
+                    var bytesKnown = true
+                    val includedAuditEventIds = JSONArray()
                     var files = 0L
                     var directories = 0L
                     var failures = 0
@@ -602,7 +606,10 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             cache.cleanSelected(reviewedCacheSnapshot, selection.toString(), packageWhitelist)
                         })
                         remainingCache = remainingReview(cacheResult, reviewedExpiresAt)
-                        val cacheDeletedBytes = cacheResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
+                        val cacheAmount = ReleaseAmount.fromResult("cache-clean", cacheResult)
+                        val cacheDeletedBytes = cacheAmount.bytes ?: 0L
+                        bytesKnown = bytesKnown && cacheAmount.state == ReleaseAmount.State.MEASURED
+                        cacheResult.optString("auditEventId").takeIf { it.isNotBlank() }?.let(includedAuditEventIds::put)
                         val cacheDeletedFiles = cacheResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         val cacheCleanedCandidates = cacheResult.optInt("cleanedCandidates", 0).coerceAtLeast(0)
                         val cacheChangedCandidates = cacheResult.optInt("changedCandidates", 0).coerceAtLeast(0)
@@ -622,7 +629,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             if (cacheResult.optBoolean("success")) cacheFailedCandidates else 1
                         ).coerceAtLeast(0)
 
-                        bytes += cacheDeletedBytes
+                        bytes = ReleaseAmount.addSaturated(bytes, cacheDeletedBytes)
                         files += cacheDeletedFiles
                         directories += cacheResult.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
                         failures += cacheFailures
@@ -641,7 +648,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             cacheSkippedCandidates > 0 || cachePartialCandidates > 0 || cacheFailedCandidates > 0 ->
                                 "实际删除 $cacheDeletedFiles 个文件 · 跳过 $cacheSkippedCandidates 项"
                             else ->
-                                "实际删除 $cacheDeletedFiles 个文件 · 释放 ${formatBytes(cacheDeletedBytes)}"
+                                "实际删除 $cacheDeletedFiles 个文件 · ${cacheAmount.description(::formatBytes)}"
                         }
                         cacheItems.forEach { outcomes[it.id] = status }
 
@@ -677,7 +684,10 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             profile.cleanProfileSelected(reviewedProfileSnapshot, selection.toString(), options)
                         })
                         remainingProfile = remainingReview(profileResult, reviewedExpiresAt)
-                        bytes += profileResult.optLong("deletedBytes", 0L).coerceAtLeast(0L)
+                        val profileAmount = ReleaseAmount.fromResult("profile-clean", profileResult)
+                        bytes = ReleaseAmount.addSaturated(bytes, profileAmount.bytes ?: 0L)
+                        bytesKnown = bytesKnown && profileAmount.state == ReleaseAmount.State.MEASURED
+                        profileResult.optString("auditEventId").takeIf { it.isNotBlank() }?.let(includedAuditEventIds::put)
                         files += profileResult.optLong("deletedFiles", 0L).coerceAtLeast(0L)
                         directories += profileResult.optLong("deletedDirectories", 0L).coerceAtLeast(0L)
                         failures += profileResult.optInt("failures", if (profileResult.optBoolean("success")) 0 else 1).coerceAtLeast(0)
@@ -713,11 +723,14 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     }
                     currentCoroutineContext().ensureActive()
                     runCatching {
-                        profile.recordNativeTask(JSONObject().put("mode", "workbench-clean")
+                        profile.recordNativeTask(ReleaseAmount(
+                            if (bytesKnown) ReleaseAmount.State.MEASURED else if (bytes > 0L) ReleaseAmount.State.PARTIAL else ReleaseAmount.State.UNKNOWN,
+                            bytes.takeIf { bytesKnown || it > 0L }).writeTo(JSONObject().put("mode", "workbench-clean")
                             .put("success", !incomplete && failures == 0 && !cancelled)
-                            .put("cancelled", cancelled).put("bytes", bytes).put("files", files).put("errors", failures)
+                            .put("cancelled", cancelled).put("bytes", if (bytesKnown || bytes > 0L) bytes else JSONObject.NULL)
+                            .put("includedAuditEventIds", includedAuditEventIds).put("files", files).put("errors", failures)
                             .put("emptyDirs", directories)
-                            .put("result", "工作台清理完成，处理 $cleanedCandidates 个候选").toString())
+                            .put("result", "工作台清理完成，处理 $cleanedCandidates 个候选")).toString())
                     }
                     val groupedApps = actualApps.groupBy { it.packageName }.values.map { entries ->
                         entries.first().copy(files = entries.sumOf { it.files }, bytes = entries.sumOf { it.bytes },
@@ -725,8 +738,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                                 AppJunkCategoryUiItem(it.category, it.files, it.bytes, it.errors, "")
                             })
                     }
-                    CleanAggregate(bytes, files, directories, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete,
-                        groupedApps, actualJunk, remainingCache, remainingProfile)
+                    CleanAggregate(bytes, files, directories, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete || !bytesKnown,
+                        groupedApps, actualJunk, remainingCache, remainingProfile, bytesKnown)
                 }
             }
             if (closed || epoch != operationEpoch) return@launch
@@ -751,7 +764,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 val canContinue = updatedItems.any { it.selectable }
                 snapshotExpiresAtRealtime = if (canContinue) listOfNotNull(cacheRemaining?.expiresAt, profileRemaining?.expiresAt).minOrNull() ?: 0L else 0L
                 screenState = screenState.copy(running = false, scanReady = canContinue, operation = "idle",
-                    cleanupCompleted = true, cleanedBytes = result.bytes, cleanedFiles = result.files, cleanedDirectories = result.directories,
+                    cleanupCompleted = true, cleanedBytes = result.bytes, cleanedBytesKnown = result.bytesKnown,
+                    cleanedFiles = result.files, cleanedDirectories = result.directories,
                     items = updatedItems, selectedIds = emptySet(),
                     notice = if (result.incomplete) WorkbenchNotice.WARNING else WorkbenchNotice.SUCCESS, expiresAtRealtime = snapshotExpiresAtRealtime,
                     phase = when {
@@ -761,7 +775,9 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                         result.incomplete -> "部分项目未完成，重新扫描后可继续清理"
                         else -> "已完成所选项目清理"
                     },
-                    resultText = "释放 ${formatBytes(result.bytes)} · 文件 ${result.files} · 目录 ${result.directories} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}")
+                    resultText = (if (result.bytesKnown) "已确认删除 ${formatBytes(result.bytes)} 内容"
+                        else if (result.bytes > 0L) "已确认删除 ${formatBytes(result.bytes)} 内容 · 部分释放量无法测量"
+                        else "释放量无法测量") + " · 文件 ${result.files} · 目录 ${result.directories} · 候选 ${result.candidates}\n${result.messages.filter { it.isNotBlank() }.joinToString("\n")}")
             }.onFailure { error ->
                 val canRetry = !stopRequested.get() && !attempt.snapshotTouched && !attempt.cleanupSubmitted && SystemClock.elapsedRealtime() < snapshotExpiresAtRealtime &&
                     profileService != null && (cacheItems.isEmpty() || cacheService != null)
@@ -1020,6 +1036,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                 .put("loadingResults", state.loadingResults).put("phase", state.phase)
                 .put("operation", state.operation).put("running", state.running)
                 .put("cleanupCompleted", state.cleanupCompleted).put("cleanedBytes", state.cleanedBytes).put("cleanedFiles", state.cleanedFiles)
+                .put("cleanedBytesKnown", state.cleanedBytesKnown)
                 .put("cleanedDirectories", state.cleanedDirectories)
                 .put("resultText", state.resultText).put("notice", state.notice.name)
                 .put("coverageSummary", state.coverageSummary).put("coverageIncomplete", state.coverageIncomplete)
@@ -1057,6 +1074,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
         screenState = screenState.copy(items = items, selectedIds = selectedIds,
             cleanupCompleted = saved.optBoolean("cleanupCompleted") && !incomplete,
             cleanedBytes = saved.optLong("cleanedBytes", 0L).coerceAtLeast(0L),
+            cleanedBytesKnown = saved.optBoolean("cleanedBytesKnown", saved.optLong("cleanedBytes", 0L) > 0L),
             cleanedFiles = saved.optLong("cleanedFiles", 0L).coerceAtLeast(0L), operation = "idle",
             cleanedDirectories = saved.optLong("cleanedDirectories", 0L).coerceAtLeast(0L),
             scanReady = saved.optBoolean("scanReady") && !incomplete && remaining > 0L,
@@ -1084,7 +1102,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
 private data class CleanAggregate(val bytes: Long, val files: Long, val directories: Long, val failures: Int, val candidates: Int,
     val messages: List<String>, val outcomes: Map<String, String>, val cancelled: Boolean, val incomplete: Boolean,
     val apps: List<AppJunkUiItem>, val junk: List<GeneralJunkUiItem>,
-    val cacheRemaining: RemainingReview, val profileRemaining: RemainingReview)
+    val cacheRemaining: RemainingReview, val profileRemaining: RemainingReview, val bytesKnown: Boolean)
 private data class RemainingReview(val id: String, val expiresAt: Long)
 private fun remainingReview(response: JSONObject, previousExpiry: Long): RemainingReview {
     val remainingId = response.optString("remainingSnapshotId")

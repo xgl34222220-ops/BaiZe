@@ -49,7 +49,7 @@ grep -Fq 'MIN_TREND_SAMPLES = 2' "$ANALYZER"
 grep -Fq 'current.size >= MIN_TREND_SAMPLES && previous.size >= MIN_TREND_SAMPLES' "$ANALYZER"
 
 # Audit response exposes a read-only effectiveness object; the UI has a dedicated screen and audit entry.
-grep -Fq 'effectivenessAnalyzer.analyze(combined)' "$AUDIT_REPO"
+grep -Fq 'effectivenessAnalyzer.analyze(accountingEvents)' "$AUDIT_REPO"
 grep -Fq '.put("effectiveness", effectiveness)' "$AUDIT_REPO"
 grep -Fq 'class CleanupEffectivenessActivity' "$ACTIVITY"
 for label in '安全性' '收益' '耗时' '稳定性' '规则观察' '最近任务' '只读分析'; do

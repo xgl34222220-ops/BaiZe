@@ -81,6 +81,8 @@ internal class InstantCacheEngine(
             .put("failed", failed)
             .put("elapsedMs", (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L))
             .put("mode", "package-manager-cache-only")
+            .put("releaseState", "unknown")
+            .put("releasedBytes", JSONObject.NULL)
             .put("snapshotUsed", false)
             .put("results", results)
             .put(

@@ -47,6 +47,7 @@ data class DashboardUiState(
     val storageFree: Long = 0,
     val storagePercent: Float = 0f,
     val lastReleased: Long = 0,
+    val lastReleasedKnown: Boolean = true,
     val scanCompleted: Boolean = false,
     val scanBytes: Long = 0,
     val scanFiles: Long = 0,
@@ -134,8 +135,16 @@ data class HistoryUiItem(
     val errors: Int,
     val cleaned: Boolean,
     val categories: List<HistoryCategoryUiItem> = emptyList(),
-    val apps: List<HistoryAppUiItem> = emptyList()
-)
+    val apps: List<HistoryAppUiItem> = emptyList(),
+    val releaseState: String = "measured"
+) {
+    fun capacityText(format: (Long) -> String): String = when (releaseState) {
+        "unknown" -> "无法测量"
+        "partial" -> "已确认 ${format(bytes)} · 部分未知"
+        "retained" -> "尚未释放"
+        else -> format(bytes)
+    }
+}
 
 @Immutable
 data class HistoryCategoryUiItem(
@@ -365,4 +374,3 @@ data class DashboardActions(
     val photoCompression: () -> Unit = {},
     val fileTrash: () -> Unit = {}
 )
-

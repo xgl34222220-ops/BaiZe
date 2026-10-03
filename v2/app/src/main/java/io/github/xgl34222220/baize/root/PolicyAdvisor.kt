@@ -50,13 +50,15 @@ internal class PolicyAdvisor(
         val selected = operations.sumOf { it.optLong("selected").coerceAtLeast(0L) }
         val protected = operations.sumOf { it.optLong("protected").coerceAtLeast(0L) }
         val protectionRate = if (selected <= 0L) 0 else ((protected.coerceAtMost(selected) * 100.0) / selected).roundToInt()
-        val releasedBytes = operations.asSequence()
-            .filter { it.optString("kind") == "clean" && it.optString("status") in setOf("success", "partial") }
-            .sumOf { it.optLong("bytes").coerceAtLeast(0L) }
-        val successfulCleans = operations.count {
-            it.optString("kind") == "clean" && it.optString("status") in setOf("success", "partial")
+        val measuredCleans = operations.filter { it.optString("kind") == "clean" && ReleaseAmount.countable(it) }
+        val releasedBytes = measuredCleans.fold(0L) { total, event ->
+            ReleaseAmount.addSaturated(total, requireNotNull(ReleaseAmount.fromEvent(event).bytes))
         }
-        val averageReleaseBytes = if (successfulCleans == 0) 0L else releasedBytes / successfulCleans
+        val fullyMeasuredCleans = measuredCleans.filter { ReleaseAmount.fromEvent(it).state == ReleaseAmount.State.MEASURED }
+        val fullyMeasuredBytes = fullyMeasuredCleans.fold(0L) { total, event ->
+            ReleaseAmount.addSaturated(total, requireNotNull(ReleaseAmount.fromEvent(event).bytes))
+        }
+        val averageReleaseBytes = if (fullyMeasuredCleans.isEmpty()) null else fullyMeasuredBytes / fullyMeasuredCleans.size
         val averageScanMs = scans.map { it.optLong("elapsedMs").coerceAtLeast(0L) }
             .filter { it > 0L }
             .averageOrZero()
@@ -109,7 +111,7 @@ internal class PolicyAdvisor(
         if (averageScanMs >= SLOW_SCAN_MS) {
             reasons += "平均扫描耗时约 ${formatSeconds(averageScanMs)}，建议避免频繁手动重复扫描"
         }
-        if (averageReleaseBytes > 0L) {
+        if (averageReleaseBytes != null && averageReleaseBytes > 0L) {
             reasons += "最近每次成功清理平均释放 ${humanBytes(averageReleaseBytes)}"
         }
 
@@ -147,7 +149,8 @@ internal class PolicyAdvisor(
             .put("protectionRate", protectionRate)
             .put("averageScanMs", averageScanMs)
             .put("releasedBytes", releasedBytes)
-            .put("averageReleaseBytes", averageReleaseBytes)
+            .put("measuredReleaseCount", fullyMeasuredCleans.size)
+            .put("averageReleaseBytes", averageReleaseBytes ?: JSONObject.NULL)
             .put("reasons", JSONArray(reasons.distinct().take(MAX_REASONS)))
             .put("signals", JSONArray().apply {
                 put(signal("storage", "可用空间", if (storage.freePercent < 0) "未知" else "${storage.freePercent}%"))

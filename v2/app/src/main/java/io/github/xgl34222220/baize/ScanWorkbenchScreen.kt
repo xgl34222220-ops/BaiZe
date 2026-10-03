@@ -97,6 +97,7 @@ internal data class WorkbenchUiState(
     val scanProfile: String = "safe",
     val operation: String = "idle",
     val cleanedBytes: Long = 0L,
+    val cleanedBytesKnown: Boolean = true,
     val cleanedFiles: Long = 0L,
     val cleanedDirectories: Long = 0L,
     val cleanupCompleted: Boolean = false
@@ -487,9 +488,9 @@ private fun WorkbenchCategories(categories: List<WorkbenchCategorySummary>, acti
 }
 
 @Composable
-private fun WorkbenchCompletionCard(state: WorkbenchUiState, onDetails: () -> Unit) {
+internal fun WorkbenchCompletionCard(state: WorkbenchUiState, onDetails: () -> Unit) {
     val directories = state.cleanedDirectories.coerceAtLeast(0L)
-    val directoryOnly = directories > 0L && state.cleanedFiles == 0L && state.cleanedBytes == 0L
+    val directoryOnly = state.cleanedBytesKnown && directories > 0L && state.cleanedFiles == 0L && state.cleanedBytes == 0L
     Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("workbench-completion"),
         shape = RoundedCornerShape(22.dp), color = BaiZeTokens.colors.surfaceRaised) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -502,12 +503,20 @@ private fun WorkbenchCompletionCard(state: WorkbenchUiState, onDetails: () -> Un
                     fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
             Column {
-                Text(if (directoryOnly) "本次移除空目录" else "本次实际释放", style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                BaiZeMetric(if (directoryOnly) "$directories 个" else Formatter.formatFileSize(LocalContext.current, state.cleanedBytes.coerceAtLeast(0L)), Modifier.padding(top = 4.dp))
+                Text(if (directoryOnly) "本次移除空目录" else "本次确认删除容量", style = BaiZeTokens.type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                BaiZeMetric(when {
+                    directoryOnly -> "$directories 个"
+                    !state.cleanedBytesKnown && state.cleanedBytes == 0L -> "无法测量"
+                    else -> Formatter.formatFileSize(LocalContext.current, state.cleanedBytes.coerceAtLeast(0L))
+                }, Modifier.padding(top = 4.dp))
             }
             Text("已清理 ${state.cleanedFiles.coerceAtLeast(0L)} 个文件" + if (directories > 0L) " · $directories 个目录" else "",
                 fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (directoryOnly) Text("空目录没有文件内容，文件容量记为 0 B；移除数量单独统计。",
+                fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!state.cleanedBytesKnown) Text("部分清理结果未返回容量，未计入确认删除量。请查看处理详情。",
+                fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (!directoryOnly && state.cleanedBytes == 0L) Text("本次确认删除的文件内容为 0 B；保护、跳过和失败不算已释放。",
                 fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (directories > 0 && state.scanProfile == "empty") Text("仅移除本次预览并勾选的目录；新变为空的父目录可重新扫描后选择。",
                 fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

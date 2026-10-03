@@ -46,7 +46,7 @@ if not (keep < safety < critical < insufficient):
 PY
 
 # Audit response exposes the advisor; both screens consume it, but only the existing explicit apply action writes policy.
-grep -Fq 'policyAdvisor.evaluate(combined)' "$AUDIT_REPO"
+grep -Fq 'policyAdvisor.evaluate(accountingEvents)' "$AUDIT_REPO"
 grep -Fq '.put("advisor", advisor)' "$AUDIT_REPO"
 grep -Fq 'root.getAuditTimelinePage(0, 100)' "$POLICY_UI"
 # The compact advice panel keeps the same explicit apply path; presentation names may change.

@@ -42,6 +42,7 @@ class WorkbenchSessionTest {
         session.cleanSelection()
         await(dispatcher) { session.screenState.cleanupCompleted }
         assertEquals(0L, session.screenState.cleanedBytes)
+        assertTrue(session.screenState.cleanedBytesKnown)
         assertEquals(0L, session.screenState.cleanedFiles)
         val saved = ScanReviewStore.read(app, "rules")!!
         assertEquals(1L, saved.optLong("cleanedDirectories"))
@@ -403,6 +404,53 @@ class WorkbenchSessionTest {
         assertFalse(session.screenState.scanReady)
         assertFalse(session.screenState.cleanupCompleted)
         assertTrue(session.screenState.phase.contains("结果未确认"))
+    }
+
+    @Test fun missingCapacityStaysUnknownAndDoesNotUseTheSelectedEstimate() = withSession { session, dispatcher ->
+        val history = AtomicReference<JSONObject>()
+        val service = Proxy.newProxyInstance(IProfileRootService::class.java.classLoader,
+            arrayOf(IProfileRootService::class.java)) { _, method, args -> when (method.name) {
+                "getWhitelistPackages", "getWhitelistPaths" -> "[]"
+                "cleanProfileSelected" -> """{"success":true,"deletedFiles":1,"cleanedCandidates":1,"auditEventId":"child-unknown","details":[{"id":"sample","action":"cleaned","files":1}]}"""
+                "recordNativeTask" -> { history.set(JSONObject(args!![0] as String)); "{}" }
+                else -> "{}"
+            } } as IProfileRootService
+        ready(session, service)
+        session.cleanSelection()
+        await(dispatcher) { session.screenState.cleanupCompleted }
+        assertEquals(0L, session.screenState.cleanedBytes)
+        assertFalse(session.screenState.cleanedBytesKnown)
+        assertEquals(WorkbenchNotice.WARNING, session.screenState.notice)
+        assertTrue(session.screenState.resultText.contains("释放量无法测量"))
+        assertTrue(history.get().isNull("bytes"))
+        assertEquals("unknown", history.get().getString("releaseState"))
+        assertEquals("child-unknown", history.get().getJSONArray("includedAuditEventIds").getString(0))
+        session.saveReview()
+        val saved = ScanReviewStore.read(app, "rules")!!
+        assertFalse(saved.getBoolean("cleanedBytesKnown"))
+    }
+
+    @Test fun unknownCompletionSurvivesProcessRestorationWithoutReplayingCleanup() = withSession { session, dispatcher ->
+        ScanReviewStore.save(app, "fragments") { JSONObject().put("items", JSONArray()).put("selected", JSONArray())
+            .put("cleanupCompleted", true).put("cleanedBytes", 0).put("cleanedBytesKnown", false)
+            .put("resultText", "释放量无法测量").put("notice", "WARNING") }
+        set(session, "profileBound", true)
+        session.initialize("fragments")
+        await(dispatcher) { !session.screenState.restoringReview }
+        assertTrue(session.screenState.cleanupCompleted)
+        assertFalse(session.screenState.cleanedBytesKnown)
+        assertFalse(session.screenState.scanReady)
+        assertTrue(session.screenState.resultText.contains("无法测量"))
+    }
+
+    @Test fun legacyZeroCompletionDoesNotAcquireNewMeasurementEvidence() = withSession { session, dispatcher ->
+        ScanReviewStore.save(app, "fragments") { JSONObject().put("items", JSONArray()).put("selected", JSONArray())
+            .put("cleanupCompleted", true).put("cleanedBytes", 0).put("notice", "SUCCESS") }
+        set(session, "profileBound", true)
+        session.initialize("fragments")
+        await(dispatcher) { !session.screenState.restoringReview }
+        assertTrue(session.screenState.cleanupCompleted)
+        assertFalse(session.screenState.cleanedBytesKnown)
     }
 
     private fun withSession(block: (ScanWorkbenchSession, TestDispatcher) -> Unit) {

@@ -121,7 +121,8 @@ try:
     nav.find("压缩记录", "photo-batch-history", direction="down")
     nav.evidence("photo-batch-final", "PhotoCompressionActivity")
     nav.back("MiuixDashboardActivity", "photo-batch-single-back"); m.alive()
-    m.save_text("passed.json", json.dumps({"versionCode": 30021, "androidApi": 36, "realSingleAndMultipleDocumentPickers": True,
+    actual_version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
+    m.save_text("passed.json", json.dumps({"versionCode": actual_version, "androidApi": 36, "realSingleAndMultipleDocumentPickers": True,
         "realFolderWriteGrant": True, "selectedUrisSurviveRotation": True, "singleAndBatchExportsVerified": True,
         "repeatImageSkipped": True, "captureTimePreserved": True, "unselectedCameraMetadataRemoved": True,
         "originalHashesUnchanged": True, "twoSmallerCopies": True, "historyVisible": True, "singleBackToOrigin": True,

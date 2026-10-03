@@ -340,8 +340,10 @@ class BaiZeProfileRootService : RootService() {
     private fun audited(operation: String, source: String = "app", block: () -> String): String {
         val started = System.currentTimeMillis()
         val result = block()
-        runCatching { auditRepository.recordResult(operation, source, result, started) }
-        return result
+        val eventId = runCatching { auditRepository.recordResult(operation, source, result, started) }.getOrNull()
+        return if (eventId == null) result else runCatching {
+            JSONObject(result).put("auditEventId", eventId).toString()
+        }.getOrDefault(result)
     }
     private fun ensureAllFilesAccessJson(): String {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {

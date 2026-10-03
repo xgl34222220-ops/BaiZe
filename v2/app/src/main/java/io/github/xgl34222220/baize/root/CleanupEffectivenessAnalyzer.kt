@@ -20,8 +20,11 @@ internal class CleanupEffectivenessAnalyzer {
             .toList()
         val scoreable = recent.filter { event ->
             event.optString("kind") in setOf("scan", "clean", "organize") &&
-                event.optString("status") !in setOf("accepted")
+                event.optString("status") !in setOf("accepted") && event.optBoolean("releaseCounted", true) &&
+                (event.optString("kind") != "clean" || ReleaseAmount.fromEvent(event).state == ReleaseAmount.State.MEASURED)
         }
+        val unmeasuredTaskCount = recent.count { it.optString("kind") == "clean" &&
+            ReleaseAmount.fromEvent(it).state in setOf(ReleaseAmount.State.UNKNOWN, ReleaseAmount.State.PARTIAL) }
         val taskScores = scoreable.take(MAX_RECENT_TASKS).map(::scoreTask)
         val dimensions = aggregateDimensions(taskScores)
         val overall = weightedOverall(dimensions)
@@ -37,6 +40,7 @@ internal class CleanupEffectivenessAnalyzer {
             .put("scheduleUntouched", true)
             .put("lookbackDays", LOOKBACK_DAYS)
             .put("sampleCount", scoreable.size)
+            .put("unmeasuredTaskCount", unmeasuredTaskCount)
             .put("overall", if (available) overall else 0)
             .put("grade", if (available) grade(overall) else "N/A")
             .put("summary", summary(available, overall, trend.optString("direction"), observations.length()))
@@ -97,6 +101,7 @@ internal class CleanupEffectivenessAnalyzer {
             kind = kind.take(20),
             status = status.take(20),
             bytes = bytes,
+            release = ReleaseAmount.fromEvent(event),
             elapsedMs = elapsedMs,
             safety = safety,
             benefit = benefit,
@@ -237,6 +242,7 @@ internal class CleanupEffectivenessAnalyzer {
         val kind: String,
         val status: String,
         val bytes: Long,
+        val release: ReleaseAmount,
         val elapsedMs: Long,
         val safety: Int,
         val benefit: Int,
@@ -244,7 +250,7 @@ internal class CleanupEffectivenessAnalyzer {
         val stability: Int,
         val overall: Int
     ) {
-        fun toJson(): JSONObject = JSONObject()
+        fun toJson(): JSONObject = release.writeTo(JSONObject()
             .put("id", id)
             .put("time", time)
             .put("operation", operation)
@@ -257,7 +263,7 @@ internal class CleanupEffectivenessAnalyzer {
             .put("speed", speed)
             .put("stability", stability)
             .put("overall", overall)
-            .put("grade", gradeFor(overall))
+            .put("grade", gradeFor(overall)))
 
         private fun gradeFor(score: Int): String = when {
             score >= 90 -> "S"

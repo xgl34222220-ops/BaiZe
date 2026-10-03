@@ -124,7 +124,8 @@ try:
     nav.evidence("shizuku-cache-only-final", "ShizukuCacheActivity")
     nav.back("MiuixDashboardActivity", "shizuku-single-back")
     m.alive()
-    m.save_text("passed.json", json.dumps({"versionCode": 30021, "androidApi": 36, "adbUid": int(expected_uid),
+    actual_version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
+    m.save_text("passed.json", json.dumps({"versionCode": actual_version, "androidApi": 36, "adbUid": int(expected_uid),
         "serverUid": int(expected_uid), "userServiceUid": int(expected_uid), "realManagerPermissionUI": True,
         "permissionLimitedBatchDisabled": mode == "shell", "realSystemCacheOnlyFallback": mode == "shell",
         "actualShizukuCacheOnlyOperation": mode == "root",

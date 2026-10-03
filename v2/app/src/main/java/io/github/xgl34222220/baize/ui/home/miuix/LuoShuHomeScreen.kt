@@ -117,7 +117,8 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         Metric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f))
                     }
                     if (state.lastTaskTime.isNotBlank()) Text(
-                        "上次清理 ${state.lastTaskTime} · 释放 ${Formatter.formatFileSize(context, state.lastReleased)}",
+                        "上次清理 ${state.lastTaskTime} · " + if (state.lastReleasedKnown)
+                            "确认删除 ${Formatter.formatFileSize(context, state.lastReleased)} 内容" else "释放量未完整确认",
                         Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

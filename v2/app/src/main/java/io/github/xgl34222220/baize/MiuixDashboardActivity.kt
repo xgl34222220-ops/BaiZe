@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.ReleaseAmount
+
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import androidx.compose.material3.Text
@@ -1702,6 +1704,9 @@ class MiuixDashboardActivity : ComponentActivity() {
             } else {
                 latest.optLong("bytes", preferences.getLong("last_clean_bytes", 0L)).coerceAtLeast(0L)
             }
+            val latestReleasedKnown = if (latestMode.endsWith("scan") || latestMode == "scan" || latestMode.isBlank())
+                preferences.getBoolean("last_clean_bytes_known", latestReleased > 0L)
+                else ReleaseAmount.fromResult(latestMode, latest).state == ReleaseAmount.State.MEASURED
             val latestTaskText = buildString {
                 val result = latest.optString("result").trim()
                 if (result.isNotBlank()) append(result)
@@ -1723,6 +1728,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             }.ifBlank { dashboardState.value.taskPhase }
             dashboardState.value = dashboardState.value.copy(
                 lastReleased = latestReleased,
+                lastReleasedKnown = latestReleasedKnown,
                 recentApps = recentDetails.first,
                 recentJunk = recentDetails.second,
                 taskPhase = if (dashboardState.value.running) dashboardState.value.taskPhase else latestTaskText,
@@ -1776,6 +1782,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                             emptyDirs = item.optInt("emptyDirs", 0).coerceAtLeast(0),
                             errors = item.optInt("errors", 0).coerceAtLeast(0),
                             cleaned = item.optBoolean("cleaned"),
+                            releaseState = item.optString("releaseState", "unknown"),
                             categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
                             apps = parseHistoryApps(item.optJSONArray("appDetails"))
                         )

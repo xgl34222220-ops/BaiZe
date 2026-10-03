@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.root.ReleaseAmount
+
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -192,6 +194,7 @@ class CleanupEffectivenessActivity : ComponentActivity() {
             grade = json.optString("grade", "N/A"),
             summary = json.optString("summary", "暂无效果评分"),
             sampleCount = json.optInt("sampleCount").coerceAtLeast(0),
+            unmeasuredTaskCount = json.optInt("unmeasuredTaskCount").coerceAtLeast(0),
             safety = dimensions.optInt("safety").coerceIn(0, 100),
             benefit = dimensions.optInt("benefit").coerceIn(0, 100),
             speed = dimensions.optInt("speed").coerceIn(0, 100),
@@ -220,6 +223,7 @@ private data class EffectivenessReport(
     val grade: String = "N/A",
     val summary: String = "暂无效果评分",
     val sampleCount: Int = 0,
+    val unmeasuredTaskCount: Int = 0,
     val safety: Int = 0,
     val benefit: Int = 0,
     val speed: Int = 0,
@@ -239,6 +243,7 @@ private data class EffectivenessTask(
     val operation: String,
     val status: String,
     val bytes: Long,
+    val release: ReleaseAmount,
     val elapsedMs: Long,
     val overall: Int,
     val grade: String,
@@ -354,6 +359,8 @@ private fun EffectivenessHero(report: EffectivenessReport, horizontal: androidx.
                 Text(report.summary, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 20.sp)
                 Spacer(Modifier.height(7.dp))
                 Text("基于 ${report.sampleCount} 次有效任务", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                if (report.unmeasuredTaskCount > 0) Text("${report.unmeasuredTaskCount} 次任务容量无法完整测量，未按零收益评分。",
+                    style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -452,7 +459,7 @@ private fun TaskScoreCard(task: EffectivenessTask, horizontal: androidx.compose.
             if (task.bytes > 0L || task.elapsedMs > 0L) {
                 Spacer(Modifier.height(9.dp))
                 Text(
-                    "释放 ${Formatter.formatFileSize(context, task.bytes)} · 用时 ${formatDuration(task.elapsedMs)}",
+                    task.release.description { Formatter.formatFileSize(context, it) } + " · 用时 ${formatDuration(task.elapsedMs)}",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
@@ -512,6 +519,7 @@ private fun JSONArray?.toTasks(): List<EffectivenessTask> = buildList {
             operation = item.optString("operation"),
             status = item.optString("status"),
             bytes = item.optLong("bytes").coerceAtLeast(0L),
+            release = ReleaseAmount.fromEvent(item),
             elapsedMs = item.optLong("elapsedMs").coerceAtLeast(0L),
             overall = item.optInt("overall").coerceIn(0, 100),
             grade = item.optString("grade", "D"),

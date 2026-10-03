@@ -34,14 +34,16 @@ internal class AuditRepository(
         source: String,
         rawResult: String,
         startedEpoch: Long = System.currentTimeMillis()
-    ) {
+    ): String {
         val result = runCatching { JSONObject(rawResult) }.getOrElse {
             JSONObject()
                 .put("success", false)
                 .put("error", "invalid_result")
                 .put("message", it.message ?: "无法解析任务结果")
         }
-        appendEvent(buildEvent(operation, source, result, startedEpoch))
+        val event = buildEvent(operation, source, result, startedEpoch)
+        appendEvent(event)
+        return event.getString("id")
     }
 
     @Synchronized
@@ -53,7 +55,7 @@ internal class AuditRepository(
             result.put("success", false)
             result.put("error", history?.optString("error").orEmpty().ifBlank { "history_record_failed" })
         }
-        appendEvent(buildEvent(task.optString("mode", "native-task"), "app-native", result, System.currentTimeMillis()))
+        appendEvent(buildEvent(task.optString("mode", "native-task"), "app-native", result, System.currentTimeMillis(), history?.optString("time")))
     }
 
     @Synchronized
@@ -70,29 +72,49 @@ internal class AuditRepository(
         val page = JSONArray()
         for (index in safeOffset until end) page.put(combined[index])
 
+        // A workbench summary includes its profile-engine event. Show both, count the bytes once.
+        val coveredIds = combined.filter(ReleaseAmount::countable).flatMap { event ->
+            val ids = event.optJSONArray("includedAuditEventIds") ?: JSONArray()
+            (0 until ids.length()).map { ids.optString(it) }
+        }.toSet()
+        val accountingEvents = combined.map { event ->
+            JSONObject(event.toString()).put("releaseCounted", event.optString("id") !in coveredIds)
+        }
+
         var successCount = 0
         var failedCount = 0
         var cancelledCount = 0
         var releasedBytes = 0L
         var quarantinedBytes = 0L
         var protectedCount = 0L
-        combined.forEach { event ->
+        var measuredReleaseCount = 0
+        var unmeasuredReleaseCount = 0
+        var retainedCount = 0
+        var zeroReleaseCount = 0
+        accountingEvents.forEach { event ->
             when (event.optString("status")) {
-                "success", "partial", "scanned", "accepted" -> successCount += 1
+                "success", "partial", "scanned", "accepted", "protected", "skipped" -> successCount += 1
                 "cancelled" -> cancelledCount += 1
                 else -> failedCount += 1
             }
-            val kind = event.optString("kind")
-            val bytes = event.optLong("bytes").coerceAtLeast(0L)
-            if (kind == "clean" && event.optString("status") in setOf("success", "partial")) releasedBytes += bytes
-            if (kind == "safety" && event.optString("operation").contains("quarantine") && event.optString("status") in setOf("success", "partial")) {
-                quarantinedBytes += bytes
+            val release = ReleaseAmount.fromEvent(event)
+            if (ReleaseAmount.countable(event)) {
+                measuredReleaseCount += 1
+                if (release.state == ReleaseAmount.State.MEASURED && release.bytes == 0L) zeroReleaseCount += 1
+                if (release.state == ReleaseAmount.State.PARTIAL) unmeasuredReleaseCount += 1
+                releasedBytes = ReleaseAmount.addSaturated(releasedBytes, requireNotNull(release.bytes))
+            } else if (release.state == ReleaseAmount.State.UNKNOWN && event.optString("kind") == "clean" &&
+                event.optString("status") != "accepted" && event.optBoolean("releaseCounted", true)) {
+                unmeasuredReleaseCount += 1
+            } else if (release.state == ReleaseAmount.State.RETAINED) {
+                retainedCount += 1
+                quarantinedBytes = ReleaseAmount.addSaturated(quarantinedBytes, release.retainedBytes ?: 0L)
             }
             protectedCount += event.optLong("protected").coerceAtLeast(0L)
         }
 
-        val advisor = policyAdvisor.evaluate(combined)
-        val effectiveness = effectivenessAnalyzer.analyze(combined)
+        val advisor = policyAdvisor.evaluate(accountingEvents)
+        val effectiveness = effectivenessAnalyzer.analyze(accountingEvents)
         val preliminaryRuleQuality = ruleQualityAnalyzer.analyze(combined, ruleQualityReviewRepository.read())
         val reconciliation = ruleQualityReviewRepository.reconcile(preliminaryRuleQuality)
         recordAutomaticReopens(reconciliation.reopened)
@@ -123,6 +145,10 @@ internal class AuditRepository(
             .put("failedCount", failedCount)
             .put("cancelledCount", cancelledCount)
             .put("releasedBytes", releasedBytes)
+            .put("measuredReleaseCount", measuredReleaseCount)
+            .put("unmeasuredReleaseCount", unmeasuredReleaseCount)
+            .put("zeroReleaseCount", zeroReleaseCount)
+            .put("retainedCount", retainedCount)
             .put("quarantinedBytes", quarantinedBytes)
             .put("protectedCount", protectedCount)
             .put("advisor", advisor)
@@ -208,22 +234,32 @@ internal class AuditRepository(
         JSONObject().put("success", false).put("error", it.message ?: it.javaClass.simpleName).toString()
     }
 
-    private fun buildEvent(operationRaw: String, sourceRaw: String, result: JSONObject, startedEpoch: Long): JSONObject {
+    private fun buildEvent(operationRaw: String, sourceRaw: String, result: JSONObject, startedEpoch: Long, recordedTime: String? = null): JSONObject {
         val operation = sanitize(operationRaw, 80).ifBlank { "unknown" }
         val latest = result.optJSONObject("latest") ?: JSONObject()
         val now = System.currentTimeMillis()
-        val time = TIME_FORMAT.get().format(Date(now))
+        val time = recordedTime?.takeIf { it.matches(Regex("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")) }
+            ?: TIME_FORMAT.get().format(Date(now))
         val errorCode = sanitize(result.optString("error"), 120)
         val cancelled = result.optBoolean("cancelled") || latest.optBoolean("cancelled")
         val accepted = result.optBoolean("accepted")
         val failures = number(result, latest, "failures", "errors").coerceAtLeast(0L)
         val success = result.optBoolean("success", errorCode.isBlank())
+        val skippedTotal = number(result, latest, "skippedCandidates", "skipped").coerceAtLeast(0L)
+        val protectedTotal = number(result, latest, "protectedCandidates", "protected").coerceAtLeast(0L)
+        val release = ReleaseAmount.fromResult(operation, result)
         val status = when {
             cancelled -> "cancelled"
             accepted -> "accepted"
             errorCode.isNotBlank() || !success -> "failed"
             failures > 0L -> "partial"
             operation.contains("scan") -> "scanned"
+            release.state == ReleaseAmount.State.MEASURED && release.bytes == 0L &&
+                number(result, latest, "deletedFiles", "files") == 0L &&
+                number(result, latest, "deletedDirectories", "directories", "emptyDirs") == 0L && protectedTotal > 0 -> "protected"
+            release.state == ReleaseAmount.State.MEASURED && release.bytes == 0L &&
+                number(result, latest, "deletedFiles", "files") == 0L &&
+                number(result, latest, "deletedDirectories", "directories", "emptyDirs") == 0L && skippedTotal > 0 -> "skipped"
             else -> "success"
         }
         val source = sanitize(
@@ -236,12 +272,12 @@ internal class AuditRepository(
                 .ifBlank { errorCode.ifBlank { defaultMessage(operation, status) } },
             600
         )
-        val bytes = number(result, latest, "deletedBytes", "quarantinedBytes", "bytes").coerceAtLeast(0L)
+        val bytes = if (release.state == ReleaseAmount.State.UNKNOWN) null else
+            number(result, latest, "deletedBytes", "quarantinedBytes", "bytes").coerceAtLeast(0L)
         val files = number(result, latest, "deletedFiles", "quarantinedFiles", "files", "regular_files").coerceAtLeast(0L)
         val directories = number(result, latest, "deletedDirectories", "quarantinedDirectories", "directories", "empty_dirs", "emptyDirs").coerceAtLeast(0L)
         val selected = number(result, latest, "selected", "selectedCandidates", "totalCandidates").coerceAtLeast(0L)
         val processed = number(result, latest, "cleanedCandidates", "quarantinedCandidates", "purged", "processed").coerceAtLeast(0L)
-        val skipped = number(result, latest, "skippedCandidates", "skipped").coerceAtLeast(0L)
         val elapsedMs = when {
             result.has("elapsedMs") -> result.optLong("elapsedMs")
             latest.has("elapsedMs") -> latest.optLong("elapsedMs")
@@ -250,19 +286,22 @@ internal class AuditRepository(
             else -> (now - startedEpoch).coerceAtLeast(0L)
         }.coerceAtLeast(0L)
         val details = sanitizeDetails(result.optJSONArray("details"))
-        val protected = (0 until details.length()).count {
+        val protected = maxOf(protectedTotal, (0 until details.length()).count {
             val action = details.optJSONObject(it)?.optString("action").orEmpty()
             action == "protected" || action == "partial" || action == "skipped"
-        }.toLong()
+        }.toLong())
+        val skipped = if (result.has("skippedCandidates") || latest.has("skippedCandidates"))
+            (skippedTotal - protected).coerceAtLeast(0L) else skippedTotal
         val reasons = collectReasons(errorCode, message, details)
         val snapshot = sanitize(
             result.optString("snapshotId").ifBlank { latest.optString("snapshotId") },
             100
         )
         val profile = sanitize(result.optString("profile").ifBlank { latest.optString("profile") }, 80)
-        val id = stableId("$time\u0000$operation\u0000$bytes\u0000$files\u0000$message")
+        val id = if (sourceRaw == "app-native") stableId("$time\u0000$operation\u0000${bytes ?: 0L}\u0000$files\u0000$message")
+            else java.util.UUID.randomUUID().toString()
 
-        return JSONObject()
+        return release.writeTo(JSONObject()
             .put("schema", SCHEMA_VERSION)
             .put("id", id)
             .put("timeEpoch", now)
@@ -279,14 +318,21 @@ internal class AuditRepository(
             .put("processed", processed)
             .put("skipped", skipped)
             .put("protected", protected)
-            .put("bytes", bytes)
+            .put("bytes", bytes ?: JSONObject.NULL)
+            .put("includedAuditEventIds", JSONArray().apply {
+                val ids = result.optJSONArray("includedAuditEventIds") ?: JSONArray()
+                for (index in 0 until minOf(ids.length(), 100)) {
+                    val id = sanitize(ids.optString(index), 100)
+                    if (id.isNotBlank()) put(id)
+                }
+            })
             .put("files", files)
             .put("directories", directories)
             .put("errors", failures)
             .put("elapsedMs", elapsedMs)
             .put("reasonCodes", reasons)
             .put("details", details)
-            .put("legacy", false)
+            .put("legacy", false))
     }
 
     private fun sanitizeDetails(raw: JSONArray?): JSONArray {
@@ -338,13 +384,14 @@ internal class AuditRepository(
         auditFile.readLines()
             .mapNotNull { line -> runCatching { JSONObject(line) }.getOrNull() }
             .filter { it.optLong("timeEpoch") > clearEpoch }
+            .onEach { ReleaseAmount.fromEvent(it).writeTo(it) }
             .takeLast(MAX_EVENTS)
     }.getOrDefault(emptyList())
 
     private fun readLegacyEvents(clearEpoch: Long): List<JSONObject> = runCatching {
         if (!historyFile.isFile) return@runCatching emptyList()
         historyFile.readLines().takeLast(MAX_LEGACY).mapNotNull { raw ->
-            val columns = raw.split('\t', limit = 10)
+            val columns = raw.split('\t', limit = 11)
             if (columns.size < 7) return@mapNotNull null
             val time = sanitize(columns[0], 40)
             val epoch = runCatching { TIME_FORMAT.get().parse(time)?.time ?: 0L }.getOrDefault(0L)
@@ -362,7 +409,7 @@ internal class AuditRepository(
                 scan -> "scanned"
                 else -> "success"
             }
-            JSONObject()
+            val event = JSONObject()
                 .put("schema", SCHEMA_VERSION)
                 .put("id", stableId("$time\u0000$operation\u0000$bytes\u0000$files\u0000$message"))
                 .put("timeEpoch", epoch)
@@ -387,6 +434,10 @@ internal class AuditRepository(
                 .put("reasonCodes", JSONArray())
                 .put("details", JSONArray())
                 .put("legacy", true)
+            columns.getOrNull(10)?.takeIf { it.isNotBlank() }?.let {
+                event.put("releaseState", it).put("releasedBytes", bytes)
+            }
+            ReleaseAmount.fromEvent(event).writeTo(event)
         }
     }.getOrDefault(emptyList())
 
@@ -435,7 +486,7 @@ internal class AuditRepository(
         .take(24)
 
     companion object {
-        private const val SCHEMA_VERSION = 1
+        private const val SCHEMA_VERSION = 2
         private const val MAX_EVENTS = 500
         private const val MAX_LEGACY = 100
         private const val MAX_PAGE_SIZE = 100
