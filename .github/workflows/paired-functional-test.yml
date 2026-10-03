@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: baize-paired-functional-test-${{ github.ref }}
+  group: baize-paired-functional-test-${{ github.ref }}${{ contains(github.event.head_commit.message, '[device-validation-only]') && '-device-only' || '' }}
   cancel-in-progress: true
 
 env:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   build-paired-test:
-    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'build/paired-functional-')
+    if: ${{ !contains(github.event.head_commit.message, '[device-validation-only]') && (github.event_name != 'pull_request' || startsWith(github.head_ref, 'build/paired-functional-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
