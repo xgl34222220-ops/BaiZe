@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: baize-30021-features-${{ github.ref }}
+  group: baize-30021-features-${{ github.ref }}${{ contains(github.event.head_commit.message, '[30021-photo-device]') && '-photos' || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -64,5 +64,59 @@ jobs:
         with:
           name: BaiZe-30021-Shizuku-Device
           path: ${{ runner.temp }}/baize-shizuku-device/
+          if-no-files-found: warn
+          retention-days: 7
+
+  photo-document-device:
+    if: contains(github.event.head_commit.message, '[30021-photo-device]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require identical application source
+        run: |
+          git diff --exit-code 8860bc4f0482030da022cc0d85a203a0836038b1 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-functional-test+8860bc4f-Paired-Test
+          run-id: 37124986343
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify exact signed APK and prepare emulator
+        run: |
+          echo 'c29ca696bce4e5cc96f253359078d846c25d5535162b02b09430b627beb924ea  candidate/BaiZe-functional-test+8860bc4f.apk' | sha256sum -c -
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/baize-30021-certificate.txt"
+          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30021-certificate.txt"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual system pickers and photo exports
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install candidate/*.apk
+            adb shell pm grant io.github.xgl34222220.baize android.permission.POST_NOTIFICATIONS
+            python3 -c "import runpy; runpy.run_path('.github/scripts/smoke-release-apk.py')['settle_emulator_boot']()"
+            python3 .github/scripts/smoke-photo-batch.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30021-Photo-Batch-Device
+          path: ${{ runner.temp }}/baize-photo-batch-device/
           if-no-files-found: warn
           retention-days: 7
