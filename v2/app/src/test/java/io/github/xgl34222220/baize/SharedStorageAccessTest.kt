@@ -72,7 +72,7 @@ class SharedStorageAccessTest {
         shadowOf(activity.packageManager).setShouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE, false)
         request.launch()
         assertArrayEquals(SharedStorageAccess.legacyPermissions, shadowOf(activity).lastRequestedPermission.requestedPermissions)
-        assertNull(shadowOf(activity).nextStartedActivity)
+        assertEquals("android.content.pm.action.REQUEST_PERMISSIONS", shadowOf(activity).nextStartedActivity.action)
         controller.pause().stop().destroy()
     }
 
