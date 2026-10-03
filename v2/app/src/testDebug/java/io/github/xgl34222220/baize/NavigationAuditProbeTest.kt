@@ -90,8 +90,8 @@ class NavigationAuditProbeTest {
         compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
         compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
-        compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         save("settings-detail-${style.name.lowercase()}")
+        compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         compose.onNodeWithText("首页", useUnmergedTree = true).assertDoesNotExist()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理与维护"))
@@ -105,6 +105,7 @@ class NavigationAuditProbeTest {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
         compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
         restoration.emulateSavedInstanceStateRestore()
+        save("settings-detail-restored-miuix")
         compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理与维护"))

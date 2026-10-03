@@ -36,7 +36,7 @@ class NavigationStateRetentionTest {
     private fun retainTabPosition(style: UiStyle) {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions,
             AppearanceSettings(uiStyle = style), initialPage = 3) }
-        compose.onNodeWithText("清理有据，保留有度").performScrollTo().assertIsDisplayed()
+        scrollTo("清理有据，保留有度").assertIsDisplayed()
         val before = scrollPosition()
         assertTrue(before > 0f)
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
@@ -52,7 +52,8 @@ class NavigationStateRetentionTest {
     private fun retainHubPosition(style: UiStyle) {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions,
             AppearanceSettings(uiStyle = style), initialPage = 3) }
-        compose.onNodeWithText("自动任务设置").performScrollTo()
+        scrollTo("清理有据，保留有度")
+        scrollTo("自动任务设置")
         val before = scrollPosition()
         assertTrue(before > 0f)
         compose.onNodeWithText("自动任务设置").performClick()
@@ -67,13 +68,13 @@ class NavigationStateRetentionTest {
         val restore = StateRestorationTester(compose)
         restore.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(minBattery = 20),
             actions.copy(saveScheduler = { saves += it }), AppearanceSettings(), initialPage = 3) }
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
-        compose.onNodeWithText("最低执行电量").performScrollTo().performClick()
+        scrollTo("自动任务设置").performClick()
+        scrollTo("最低执行电量").performClick()
         compose.onNode(hasSetTextAction()).performTextReplacement("75")
         restore.emulateSavedInstanceStateRestore()
         compose.onNode(hasSetTextAction()).assertTextContains("75")
         compose.onNodeWithText("取消").performClick()
-        compose.onNodeWithText("最低执行电量").performScrollTo().performClick()
+        scrollTo("最低执行电量").performClick()
         compose.onNode(hasSetTextAction()).assertTextContains("20")
         compose.onNodeWithText("取消").performClick()
         back()
@@ -91,7 +92,7 @@ class NavigationStateRetentionTest {
         if (style == UiStyle.MIUIX) {
             compose.onNodeWithContentDescription("展开自动清理设置").performScrollTo().performClick()
         }
-        compose.onNodeWithText("执行时间").performScrollTo().performClick()
+        scrollTo("执行时间").performClick()
         compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("21")
         compose.onAllNodes(hasSetTextAction())[1].performTextReplacement("42")
         restore.emulateSavedInstanceStateRestore()
@@ -113,7 +114,8 @@ class NavigationStateRetentionTest {
         val restore = StateRestorationTester(compose)
         restore.setContent { BaiZeMiuixApp(dashboard, SchedulerUiState(),
             actions.copy(clearRawLog = { clears++ }), AppearanceSettings(uiStyle = style), initialPage = 3) }
-        compose.onNodeWithText("运行日志").performScrollTo().performClick()
+        scrollTo("清理有据，保留有度")
+        scrollTo("运行日志").performClick()
         assertNull("Inline logs must not create another Activity", shadowOf(compose.activity).nextStartedActivity)
         compose.onNodeWithText("合成清理记录").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("原始输出").performScrollTo().performClick()
@@ -137,7 +139,13 @@ class NavigationStateRetentionTest {
 
     private fun scrollPosition(): Float {
         compose.waitForIdle()
-        return compose.onNode(hasScrollAction()).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        return compose.onNode(verticalList()).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+    }
+    private fun verticalList() = hasScrollAction() and
+        SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+    private fun scrollTo(text: String): SemanticsNodeInteraction {
+        compose.onNode(verticalList()).performScrollToNode(hasText(text))
+        return compose.onNodeWithText(text).performScrollTo()
     }
     private fun back() {
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }

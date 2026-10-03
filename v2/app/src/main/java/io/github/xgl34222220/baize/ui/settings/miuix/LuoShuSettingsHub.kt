@@ -131,13 +131,13 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.FactCheck, "清理审计", "清理依据、规则复核与历史分析", actions.onOpenCleanupAudit)
                 LuoShuGroupDivider()
-                if (runtimeLogsAvailable) {
-                    LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务记录、原始输出与连接诊断", { open("logs") })
-                    LuoShuGroupDivider()
-                }
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Shield, "保护名单", "应用与文件路径保护", actions.onOpenWhitelist)
+                if (runtimeLogsAvailable) {
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务记录、原始输出与连接诊断", { open("logs") })
+                }
             }
         }
         item {
