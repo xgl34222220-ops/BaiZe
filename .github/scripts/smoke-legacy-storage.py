@@ -37,17 +37,39 @@ def expect_top(component, name):
 
 nav = seven.NavigationSmoke(m, expect_top)
 
-def system_permission(label, name):
+def permission_dialog(name):
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         root = m.ui(name)
-        nodes = [n for text in label for n in nav.matching(root, text)]
-        if nodes:
-            assert any("permissioncontroller" in n.attrib.get("package", "") or "packageinstaller" in n.attrib.get("package", "")
-                       for n in root.iter("node")), "Must be the real Android permission dialog"
-            nav.click_node(root, nodes[0], name); return
+        if any("permissioncontroller" in n.attrib.get("package", "") or "packageinstaller" in n.attrib.get("package", "")
+               for n in root.iter("node")):
+            return root
         time.sleep(.5)
-    raise AssertionError("Permission dialog button not found: " + str(label))
+    raise AssertionError("The real Android permission dialog was not shown")
+
+def system_permission(label, name):
+    root = permission_dialog(name)
+    accepted = {x.casefold() for x in label}
+    nodes = [n for n in root.iter("node") if n.attrib.get("text", "").casefold() in accepted
+             and nav.action_bounds(root, n)]
+    assert nodes, "Permission dialog button not found: " + str(label)
+    nav.click_node(root, nodes[0], name)
+
+def deny_permanently():
+    for attempt in range(3):
+        nav.tap("开启存储读写权限", f"legacy-permanent-request-{attempt}")
+        root = permission_dialog(f"legacy-permanent-dialog-{attempt}")
+        direct = [n for n in root.iter("node") if n.attrib.get("resource-id", "").endswith("/permission_deny_and_dont_ask_again_button")]
+        if direct:
+            nav.click_node(root, direct[0], "legacy-real-permanent-deny"); return
+        checkbox = [n for n in root.iter("node") if n.attrib.get("resource-id", "").endswith("/do_not_ask_checkbox")]
+        if checkbox:
+            if checkbox[0].attrib.get("checked") != "true":
+                nav.click_node(root, checkbox[0], "legacy-real-dont-ask-checkbox")
+            system_permission(("Deny", "拒绝"), "legacy-real-permanent-deny"); return
+        system_permission(("Deny", "拒绝"), f"legacy-real-repeat-deny-{attempt}")
+        nav.wait_text("开启存储读写权限", f"legacy-repeat-denied-{attempt}")
+    raise AssertionError("No real permanent-denial control was reached")
 
 def granted(permission):
     return bool(re.search(re.escape(permission) + r": granted=true", m.adb("shell", "dumpsys", "package", m.APP)))
@@ -80,9 +102,10 @@ try:
     enter()
     nav.wait_text("开启存储读写权限", "legacy-read-only-insufficient")
     assert granted(permissions[0]) and not granted(permissions[1])
-    for permission in permissions:
-        m.adb("shell", "pm", "revoke", m.APP, permission, check=False)
-        m.adb("shell", "pm", "set-permission-flags", m.APP, permission, "user-set", "user-fixed")
+    deny_permanently()
+    denied_state = m.adb("shell", "dumpsys", "package", m.APP)
+    m.save_text("legacy-permanent-denial-package.txt", denied_state)
+    assert re.search(re.escape(permissions[1]) + r"[^\n]*USER_FIXED", denied_state), denied_state
     enter()
     nav.wait_text("开启存储读写权限", "legacy-permanent-denied")
     nav.tap("开启存储读写权限", "legacy-app-settings-fallback")
@@ -90,7 +113,6 @@ try:
     assert any(n.attrib.get("package") == "com.android.settings" for n in root.iter("node"))
     assert "白泽" in seven.labels(root)
     for permission in permissions:
-        m.adb("shell", "pm", "clear-permission-flags", m.APP, permission, "user-fixed", "user-set")
         m.adb("shell", "pm", "grant", m.APP, permission)
     m.adb("shell", "input", "keyevent", "4")
     nav.wait_text("存储分析完成", "legacy-return-from-settings", timeout=90)
