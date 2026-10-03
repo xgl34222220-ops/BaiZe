@@ -45,6 +45,11 @@ nav = seven.NavigationSmoke(m, expect_top)
 def picker_folder():
     tree = nav.tree("photo-batch-picker")
     assert any(n.attrib.get("package", "").endswith("documentsui") for n in tree.iter("node"))
+    # OpenDocumentTree uses the actual shared-storage root without a roots
+    # drawer on Android 16. Its Download child is deliberately spelled singular.
+    if nav.matching(tree, "Download") and nav.matching(tree, "USE THIS FOLDER"):
+        nav.tap("Download", "photo-batch-tree-download"); nav.tap(folder, "photo-batch-tree-owned-folder")
+        return
     drawer = next((n for text in ("Show roots", "Open navigation drawer", "显示根目录", "显示位置", "打开导航抽屉") for n in nav.matching(tree, text)), None)
     if drawer is None: drawer = next((n for n in tree.iter("node") if n.attrib.get("resource-id") == "android:id/home"), None)
     assert drawer is not None
