@@ -2,6 +2,8 @@ package io.github.xgl34222220.baize
 
 import android.Manifest
 import android.app.Application
+import android.app.AppOpsManager
+import android.os.Process
 import android.provider.Settings
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,7 +12,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import org.robolectric.shadows.ShadowEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -29,9 +30,9 @@ class SharedStorageAccessTest {
     @Test @Config(sdk = [35]) fun modernStorageUsesSpecialGrantRatherThanLegacyPermissions() {
         val context = RuntimeEnvironment.getApplication()
         shadowOf(context).grantPermissions(*SharedStorageAccess.legacyPermissions)
-        ShadowEnvironment.setIsExternalStorageManager(false)
+        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode(AppOpsManager.OPSTR_MANAGE_EXTERNAL_STORAGE, Process.myUid(), context.packageName, AppOpsManager.MODE_ERRORED)
         assertFalse(SharedStorageAccess.granted(context))
-        ShadowEnvironment.setIsExternalStorageManager(true)
+        shadowOf(context.getSystemService(AppOpsManager::class.java)).setMode(AppOpsManager.OPSTR_MANAGE_EXTERNAL_STORAGE, Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
         assertTrue(SharedStorageAccess.granted(context))
         assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, SharedStorageAccess.settings(context).action)
     }

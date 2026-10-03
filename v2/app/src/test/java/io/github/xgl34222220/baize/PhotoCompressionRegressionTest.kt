@@ -143,7 +143,7 @@ class PhotoBatchTestProvider : DocumentsProvider() {
             DocumentsContract.Document.COLUMN_MIME_TYPE -> if (documentId == "destination") DocumentsContract.Document.MIME_TYPE_DIR else "image/jpeg"
             DocumentsContract.Document.COLUMN_FLAGS -> DocumentsContract.Document.FLAG_SUPPORTS_WRITE or DocumentsContract.Document.FLAG_SUPPORTS_DELETE
             else -> null
-        } }.toTypedArray()) }
+        } }.toTypedArray<Any?>()) }
     }
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor = MatrixCursor(projection ?: arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
