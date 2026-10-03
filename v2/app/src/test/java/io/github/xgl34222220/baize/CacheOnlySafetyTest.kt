@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize
 import io.github.xgl34222220.baize.root.CacheOnlyCommandPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 
 class CacheOnlySafetyTest {
     @Test fun commandAlwaysIncludesCacheOnlyAndExplicitCurrentUser() {
@@ -20,5 +22,18 @@ class CacheOnlySafetyTest {
             assertTrue(path, cachePackageProtected(pkg, 10, ApkProtectionRules(emptySet(), setOf(path))))
         assertTrue(cachePackageProtected(pkg, 10, ApkProtectionRules(setOf(pkg), emptySet())))
         assertFalse(cachePackageProtected(pkg, 10, ApkProtectionRules(emptySet(), setOf("/storage/emulated/10/Pictures", "/data/user/0/$pkg"))))
+    }
+    @Test fun cacheResultShowsTheActualSystemFailureInsteadOfOnlyCounts() {
+        val reply = JSONObject().put("message", "任务完成：成功 0 个，失败 1 个")
+            .put("results", JSONArray().put(JSONObject().put("success", false).put("output", "Permission denied")))
+        assertTrue(shizukuCacheResultMessage(reply).contains("Permission denied"))
+        reply.getJSONArray("results").getJSONObject(0).put("timeout", true)
+        assertTrue(shizukuCacheResultMessage(reply).contains("等待系统结果超时"))
+    }
+    @Test fun cacheResultPreservesExplicitCapabilityFailuresAndSuccessfulResults() {
+        assertEquals("权限不可用", shizukuCacheResultMessage(JSONObject().put("message", "权限不可用")))
+        val success = JSONObject().put("message", "成功 1 个")
+            .put("results", JSONArray().put(JSONObject().put("success", true).put("output", "Success")))
+        assertEquals("成功 1 个", shizukuCacheResultMessage(success))
     }
 }

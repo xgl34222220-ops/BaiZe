@@ -42,6 +42,19 @@ internal fun cachePackageProtected(pkg: String, user: Int, rules: ApkProtectionR
     }
 }
 
+internal fun shizukuCacheResultMessage(reply: JSONObject): String {
+    val message = reply.optString("message", "结果未确认")
+    val rows = reply.optJSONArray("results") ?: return message
+    val failed = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }.firstOrNull { !it.optBoolean("success") }
+        ?: return message
+    val detail = when {
+        failed.optBoolean("cancelled") -> "已停止，未确认完成"
+        failed.optBoolean("timeout") -> "等待系统结果超时，未确认完成"
+        else -> failed.optString("output").trim().take(600).ifBlank { "系统未确认清缓存，请在系统应用详情核对" }
+    }
+    return "$message · $detail"
+}
+
 internal class ShizukuCacheViewModel(application: Application) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
     private val mutableState = MutableStateFlow(ShizukuCacheState())
@@ -65,7 +78,7 @@ internal class ShizukuCacheViewModel(application: Application) : AndroidViewMode
                 if (current !== service || closed) return@launch
                 mutableState.update { it.copy(connected = capability != null, supported = capability?.optBoolean("cacheOnly") == true,
                     status = when { capability == null -> "服务未就绪，请重新连接"
-                        !capability.optBoolean("cacheOnly") -> "当前系统不支持只清缓存，未执行清理"
+                        !capability.optBoolean("cacheOnly") -> "Shizuku 已连接；${capability.optString("message", "当前系统不支持只清缓存，未执行清理") }"
                         else -> "Shizuku 已连接；选择应用后确认清理当前缓存" }) }
                 refreshApps()
             }
@@ -167,7 +180,7 @@ internal class ShizukuCacheViewModel(application: Application) : AndroidViewMode
                         }
                         mutableState.update { it.copy(status = "正在清缓存 ${index + 1} / ${snapshot.selected.size}：$pkg") }
                         val reply = JSONObject(current.clearCaches(JSONArray().put(pkg).toString()))
-                        mutableState.update { it.copy(results = it.results + "$pkg：${reply.optString("message", "结果未确认")}") }
+                        mutableState.update { it.copy(results = it.results + "$pkg：${shizukuCacheResultMessage(reply)}") }
                     }
                 }
                 mutableState.update { it.copy(status = if (cancelled.get()) "已停止；已完成的缓存清理不会撤回" else "处理结束，请查看各应用结果") }

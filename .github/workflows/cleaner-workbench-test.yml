@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: baize-cleaner-workbench-${{ github.ref }}${{ contains(github.event.head_commit.message, '[device-validation-only]') && '-device-only' || '' }}
+  group: baize-cleaner-workbench-${{ github.ref }}${{ contains(github.event.head_commit.message, '[device-validation-only]') && '-device-only' || contains(github.event.head_commit.message, '[30021-cache-capability]') && '-capability' || '' }}
   cancel-in-progress: true
 
 env:

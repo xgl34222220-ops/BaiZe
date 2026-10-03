@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -16,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import io.github.xgl34222220.baize.ui.components.*
@@ -39,7 +43,7 @@ class ShizukuCacheActivity : ComponentActivity() {
                     topBar = { DetailPageHeader("免 Root 缓存清理", "通过 Shizuku · 逐个应用确认结果", { back() }) {} }) { padding ->
                     LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         item { DetailGlassPanel {
-                            Text("仅处理当前用户所选应用的缓存。需要安装并启动 Shizuku，支持无线调试或电脑启动。系统不支持只清缓存时会停止。", style = MaterialTheme.typography.bodySmall)
+                            Text("仅处理当前用户所选应用的缓存。Shizuku 需要安装、启动并具备系统清缓存权限；无线调试启动不保证该权限。系统不允许时，可打开每个应用的系统缓存设置手动清理。", style = MaterialTheme.typography.bodySmall)
                             Text(state.status, style = MaterialTheme.typography.bodyMedium)
                             if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = model::stop) { Text("停止清理") } }
                             else {
@@ -72,6 +76,14 @@ class ShizukuCacheActivity : ComponentActivity() {
                                         if (app.isProtected) Text("受保护或保护名单未确认", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
+                                TextButton(enabled = !state.busy && !app.isProtected,
+                                    modifier = Modifier.semantics { contentDescription = "系统缓存设置：${app.label}" },
+                                    onClick = {
+                                        runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.parse("package:${app.packageName}"))) }.onFailure {
+                                            Toast.makeText(this@ShizukuCacheActivity, "无法打开系统设置，请在系统应用管理中查找该应用", Toast.LENGTH_LONG).show()
+                                        }
+                                    }) { Text("系统缓存设置") }
                             }
                         }
                         if (state.apps.isEmpty()) item { Text("暂无可选的第三方应用", style = MaterialTheme.typography.bodySmall) }
