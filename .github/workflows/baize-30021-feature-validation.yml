@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
+          git diff --exit-code 8cddede8756c7cb2ac47f29acf66ff59679d73c2 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -42,8 +42,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37155986970;
-            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
+            const runId = 37157552577;
+            const expectedSource = '8cddede8756c7cb2ac47f29acf66ff59679d73c2';
             for (let attempt = 0; attempt < 80; attempt++) {
               let run;
               try {
@@ -65,8 +65,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+f9a66dcd-Paired-Test
-          run-id: 37155986970
+          name: BaiZe-functional-test+8cddede8-Paired-Test
+          run-id: 37157552577
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare disposable packages
@@ -99,7 +99,7 @@ jobs:
 
   legacy-storage-device:
     name: storage-permissions-api-${{ matrix.api }}
-    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]')
+    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]') || contains(github.event.head_commit.message, '[30022-legacy-storage]')
     strategy:
       fail-fast: false
       matrix:
@@ -112,7 +112,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
+          git diff --exit-code 8cddede8756c7cb2ac47f29acf66ff59679d73c2 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -125,8 +125,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37155986970;
-            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
+            const runId = 37157552577;
+            const expectedSource = '8cddede8756c7cb2ac47f29acf66ff59679d73c2';
             for (let attempt = 0; attempt < 80; attempt++) {
               let run;
               try {
@@ -148,8 +148,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+f9a66dcd-Paired-Test
-          run-id: 37155986970
+          name: BaiZe-functional-test+8cddede8-Paired-Test
+          run-id: 37157552577
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare emulator
@@ -189,7 +189,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
+          git diff --exit-code 8cddede8756c7cb2ac47f29acf66ff59679d73c2 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -235,7 +235,7 @@ jobs:
           fetch-depth: 0
       - name: Require identical application source
         run: |
-          git diff --exit-code f9a66dcd7738b8b11ff6a4196970ce6d47997715 HEAD -- . \
+          git diff --exit-code 8cddede8756c7cb2ac47f29acf66ff59679d73c2 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -248,8 +248,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37155986970;
-            const expectedSource = 'f9a66dcd7738b8b11ff6a4196970ce6d47997715';
+            const runId = 37157552577;
+            const expectedSource = '8cddede8756c7cb2ac47f29acf66ff59679d73c2';
             for (let attempt = 0; attempt < 80; attempt++) {
               let run;
               try {
@@ -271,8 +271,8 @@ jobs:
             throw new Error('The exact paired build did not finish in time');
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+f9a66dcd-Paired-Test
-          run-id: 37155986970
+          name: BaiZe-functional-test+8cddede8-Paired-Test
+          run-id: 37157552577
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare emulator
