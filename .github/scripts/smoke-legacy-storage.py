@@ -74,6 +74,26 @@ def deny_permanently():
 def granted(permission):
     return bool(re.search(re.escape(permission) + r": granted=true", m.adb("shell", "dumpsys", "package", m.APP)))
 
+def grant_in_app_settings():
+    root = m.ui("legacy-settings-permissions-entry")
+    labels = seven.labels(root)
+    nav.tap(next(label for label in ("Permissions", "权限") if label in labels), "legacy-settings-permissions")
+    root = m.ui("legacy-settings-storage-entry")
+    labels = seven.labels(root)
+    nav.tap(next(label for label in ("Storage", "存储") if label in labels), "legacy-settings-storage")
+    # API 28 uses a switch; API 29 opens the Allow/Deny permission page.
+    if not all(granted(p) for p in permissions):
+        root = m.ui("legacy-settings-storage-choice")
+        labels = seven.labels(root)
+        nav.tap(next(label for label in ("Allow", "ALLOW", "允许") if label in labels), "legacy-settings-real-grant")
+    assert all(granted(p) for p in permissions)
+    for attempt in range(4):
+        root = m.ui(f"legacy-settings-return-{attempt}")
+        if any(n.attrib.get("package") == m.APP for n in root.iter("node")):
+            return
+        m.adb("shell", "input", "keyevent", "4")
+    raise AssertionError("Settings grant did not return to BaiZe")
+
 def enter():
     m.launch("legacy-home", 3)
     m.tap_label("首页", "legacy-home-tab")
@@ -102,6 +122,10 @@ try:
     enter()
     nav.wait_text("开启存储读写权限", "legacy-read-only-insufficient")
     assert granted(permissions[0]) and not granted(permissions[1])
+    # The STORAGE group can auto-grant WRITE when READ is still granted. Keep the
+    # read-only assertion above, then revoke READ too before exercising real denial.
+    m.adb("shell", "pm", "revoke", m.APP, permissions[0])
+    assert not any(granted(p) for p in permissions)
     deny_permanently()
     denied_state = m.adb("shell", "dumpsys", "package", m.APP)
     m.save_text("legacy-permanent-denial-package.txt", denied_state)
@@ -112,16 +136,24 @@ try:
     root = m.ui("legacy-real-app-settings")
     assert any(n.attrib.get("package") == "com.android.settings" for n in root.iter("node"))
     assert any(label in seven.labels(root) for label in ("白泽", "BaiZe"))
-    for permission in permissions:
-        m.adb("shell", "pm", "grant", m.APP, permission)
-    m.adb("shell", "input", "keyevent", "4")
+    grant_in_app_settings()
     nav.wait_text("存储分析完成", "legacy-return-from-settings", timeout=90)
+    # A grant observed on resume must clear the remembered denial as well.
+    for permission in permissions:
+        m.adb("shell", "pm", "revoke", m.APP, permission)
+    enter()
+    nav.wait_text("开启存储读写权限", "legacy-revoked-after-settings")
+    nav.tap("开启存储读写权限", "legacy-request-after-settings-grant")
+    system_permission(("Allow", "允许"), "legacy-runtime-grant-after-settings")
+    nav.wait_text("存储分析完成", "legacy-final-scan", timeout=90)
+    assert all(granted(p) for p in permissions)
     assert m.adb("shell", "sha256sum", folder + "/unindexed.bin").split()[0] == expected
     m.alive(); nav.evidence("legacy-final", "StorageToolsActivity")
     version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
     m.save_text("passed.json", json.dumps({"passed":True,"androidApi":api,"versionCode":version,
         "actualRuntimePermissionDialog":True,"denyDoesNotStartScan":True,"bothReadAndWriteGranted":True,
         "readAloneInsufficient":True,"permanentDenialRoutesToAppSettings":True,"resumeAfterSettingsGrant":True,
+        "actualSettingsPermissionGrant":True,"grantRevocationReturnsToRuntimeDialog":True,
         "directoryScannerVisible":True,"testFileHashUnchanged":True,"noUserFileDeletion":True,"noCrashOrAnr":True},indent=2))
 except Exception:
     m.capture("legacy-failed"); raise

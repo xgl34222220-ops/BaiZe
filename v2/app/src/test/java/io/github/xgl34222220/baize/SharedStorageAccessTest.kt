@@ -56,6 +56,26 @@ class SharedStorageAccessTest {
         controller.pause().stop().destroy()
     }
 
+    @Test @Config(sdk = [28, 29]) fun observingASettingsGrantDoesNotMisrouteTheNextRevocation() {
+        val controller = Robolectric.buildActivity(androidx.activity.ComponentActivity::class.java)
+        val activity = controller.get()
+        val prefs = activity.getSharedPreferences("storage-permission", 0)
+        prefs.edit().putBoolean("denied", true).commit()
+        val request = StoragePermissionRequest(activity) {}
+        controller.setup()
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(*SharedStorageAccess.legacyPermissions)
+        // StorageTools and APK scan call this check on resume after the settings page.
+        assertTrue(SharedStorageAccess.granted(activity))
+        assertFalse(prefs.getBoolean("denied", false))
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(*SharedStorageAccess.legacyPermissions)
+        shadowOf(activity.packageManager).setShouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE, false)
+        shadowOf(activity.packageManager).setShouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE, false)
+        request.launch()
+        assertArrayEquals(SharedStorageAccess.legacyPermissions, shadowOf(activity).lastRequestedPermission.requestedPermissions)
+        assertNull(shadowOf(activity).nextStartedActivity)
+        controller.pause().stop().destroy()
+    }
+
     @Test @Config(sdk = [28, 29]) fun legacyRequiresBothPermissionsAndRoutesToAppSettings() {
         val context = RuntimeEnvironment.getApplication()
         shadowOf(context).denyPermissions(*SharedStorageAccess.legacyPermissions)
