@@ -41,6 +41,14 @@ def expect_top(component, name):
     assert pages and pages[0] == component, (component, pages)
     return pages
 
+def wait_shell_process(token):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        processes = m.adb("shell", "ps", "-A", "-o", "UID,PID,NAME,ARGS")
+        if any(line.split()[0] == "2000" and token in line for line in processes.splitlines()): return processes
+        time.sleep(.5)
+    raise AssertionError("UID 2000 process did not become ready: " + token)
+
 try:
     m.adb("install", "-r", str(apk))
     m.adb("install", str(manager))
@@ -55,8 +63,7 @@ try:
     assert path.endswith("/base.apk") and "\n" not in path, path
     starter = str(Path(path).parent / "lib/x86_64/libshizuku.so")
     m.save_text("manager-starter.txt", m.adb("shell", shlex.quote(starter), timeout=60))
-    processes = m.adb("shell", "ps", "-A", "-o", "UID,PID,NAME")
-    assert any(line.split()[0] == "2000" and "shizuku_server" in line for line in processes.splitlines()), processes
+    processes = wait_shell_process("shizuku_server")
     m.save_text("shell-server-processes.txt", processes)
     # Fresh App preferences after independent upgrade/navigation checks; this AVD has no user data.
     assert "Success" in m.adb("shell", "pm", "clear", m.APP)
@@ -75,8 +82,7 @@ try:
     assert allow is not None, seven.labels(root)
     nav.click_node(root, allow, "shizuku-grant")
     nav.wait_text("Shizuku 已连接", "shizuku-connected", direction="up")
-    processes = m.adb("shell", "ps", "-A", "-o", "UID,PID,NAME")
-    assert any(line.split()[0] == "2000" and "shizuku-cache" in line for line in processes.splitlines()), processes
+    processes = wait_shell_process("shizuku-cache")
     m.save_text("shell-userservice-processes.txt", processes)
     nav.tap("BaiZe CI Selected Cache", "shizuku-select-owned-package")
     nav.tap("清除所选 1 个应用的缓存", "shizuku-clean-selected", direction="up")
