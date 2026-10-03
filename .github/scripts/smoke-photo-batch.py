@@ -42,7 +42,7 @@ def expect_top(component, name):
 
 nav = seven.NavigationSmoke(m, expect_top)
 
-def picker_folder(destination=False):
+def picker_folder():
     tree = nav.tree("photo-batch-picker")
     assert any(n.attrib.get("package", "").endswith("documentsui") for n in tree.iter("node"))
     drawer = next((n for text in ("Show roots", "Open navigation drawer", "显示根目录", "显示位置", "打开导航抽屉") for n in nav.matching(tree, text)), None)
@@ -53,7 +53,6 @@ def picker_folder(destination=False):
     downloads = [n for text in ("Downloads", "下载", "下载内容") for n in nav.matching(tree, text)]
     assert downloads; nav.click_node(tree, downloads[-1], "photo-batch-downloads")
     nav.tap(folder, "photo-batch-owned-folder")
-    if destination: nav.tap("exports", "photo-batch-exports-folder")
     tree = nav.tree("photo-batch-folder")
     switch = next((n for n in tree.iter("node") if n.attrib.get("resource-id", "").endswith(":id/sub_menu_list")), None)
     if switch is not None: nav.click_node(tree, switch, "photo-batch-list-view")
@@ -65,7 +64,7 @@ def picker_action(texts, name):
     nav.click_node(root, node, name)
 
 try:
-    m.adb("shell", "mkdir", "-p", remote + "/exports")
+    m.adb("shell", "mkdir", "-p", remote)
     for name in ("preview.jpg", "duplicate.jpg"):
         path = remote + "/" + name
         m.adb("push", str(local), path)
@@ -86,7 +85,7 @@ try:
     nav.tap("生成压缩预览", "photo-batch-generate")
     nav.wait_text("预览已生成", "photo-batch-preview", direction="down")
     nav.tap("选择位置，另存副本", "photo-batch-export-single")
-    picker_folder(True); picker_action(("Save", "SAVE", "保存"), "photo-batch-single-save")
+    picker_folder(); picker_action(("Save", "SAVE", "保存"), "photo-batch-single-save")
     nav.wait_text("已导出并核对，原图保留", "photo-batch-single-exported", direction="up")
     nav.tap("90", "photo-batch-quality-90", direction="up")
     nav.tap("选择多张照片", "photo-batch-select-multiple", direction="down")
@@ -102,12 +101,13 @@ try:
     nav.find("已选择 2 张", "photo-batch-rotation-retained", direction="down")
     m.adb("shell", "settings", "put", "system", "user_rotation", "0"); time.sleep(2)
     nav.tap("选择文件夹，批量另存", "photo-batch-export-multiple", direction="down")
-    picker_folder(True); picker_action(("Use this folder", "USE THIS FOLDER", "使用此文件夹"), "photo-batch-use-folder")
+    picker_folder(); picker_action(("Use this folder", "USE THIS FOLDER", "使用此文件夹"), "photo-batch-use-folder")
     picker_action(("Allow", "ALLOW", "允许"), "photo-batch-grant-folder")
     nav.wait_text("批量完成：1 张已导出，1 张跳过", "photo-batch-complete", direction="up")
     for name in ("preview.jpg", "duplicate.jpg"):
         assert m.adb("shell", "sha256sum", remote + "/" + name).split()[0] == expected
-    files = m.adb("shell", "find", remote + "/exports", "-type", "f").splitlines()
+    files = [path for path in m.adb("shell", "find", remote, "-type", "f").splitlines()
+        if path not in (remote + "/preview.jpg", remote + "/duplicate.jpg")]
     assert len(files) == 2, files
     for i, path in enumerate(files):
         result = subprocess.run(["adb", "exec-out", "cat", path], check=True, capture_output=True).stdout
