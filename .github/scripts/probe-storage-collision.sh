@@ -49,6 +49,9 @@ def exists(path):
     # response instead of treating a transport success as filesystem evidence.
     return adb('shell',f'[ -f {path} ] && echo baize-fixture-file',check=False).stdout.strip()=='baize-fixture-file'
 processed=set()
+tool_help=adb('shell','touch','--help',check=False)
+(out/'fixture-touch-help.json').write_text(json.dumps({'stdout':tool_help.stdout,
+    'stderr':tool_help.stderr,'exitCode':tool_help.returncode},indent=2))
 deadline=time.monotonic()+120
 while time.monotonic()<deadline:
     for request in (1,2,3):
@@ -64,17 +67,25 @@ while time.monotonic()<deadline:
         (out/f'fixture-lstat-{request}.json').write_text(json.dumps({'path':r['path'],'modeHex':mode}))
         assert re.fullmatch(r'[0-9a-fA-F]+',mode) and stat.S_ISREG(int(mode,16)), (r,mode)
         assert adb('shell','stat','-c','%s',r['path']).stdout.strip()=='131072', r
-        journal={'path':r['path'],'mtimeBefore':adb('shell','stat','-c','%Y',r['path']).stdout.strip(),'attempts':[]}
+        before_hash=adb('shell','sha256sum',r['path']).stdout.split()[0]
+        assert re.fullmatch(r'[0-9a-f]{64}',before_hash), r
+        journal={'path':r['path'],'mtimeBefore':adb('shell','stat','-c','%Y',r['path']).stdout.strip(),
+            'contentSha256Before':before_hash,'attempts':[]}
         def set_clock(path):
-            for args in (('touch','-m','-d','@1500000000',path),
-                         ('env','TZ=UTC','touch','-m','-t','201707140240.00',path)):
-                attempt=adb('shell',*args,check=False)
-                observed=adb('shell','stat','-c','%Y',r['path']).stdout.strip()
-                journal['attempts'].append({'setterPath':path,'command':list(args),'stdout':attempt.stdout,
-                    'stderr':attempt.stderr,'exitCode':attempt.returncode,'sharedMtimeSeconds':observed})
-                (out/f'fixture-clock-{request}.json').write_text(json.dumps(journal,indent=2))
-                if observed=='1500000000':return True
-            return False
+            # Legacy Toybox accepts ISO dates, not GNU @seconds, and historical
+            # -m selected the wrong timespec. Set both times only on this owned
+            # fixture; never infer success from the tool's exit status.
+            args=('touch','-c','-d','2017-07-14T02:40:00Z',path)
+            attempt=adb('shell',*args,check=False)
+            observed=adb('shell','stat','-c','%Y',r['path']).stdout.strip()
+            setter_time=adb('shell','stat','-c','%X,%Y',path).stdout.strip()
+            after_hash=adb('shell','sha256sum',r['path']).stdout.split()[0]
+            journal['attempts'].append({'setterPath':path,'command':list(args),'stdout':attempt.stdout,
+                'stderr':attempt.stderr,'exitCode':attempt.returncode,'sharedMtimeSeconds':observed,
+                'setterAtimeAndMtimeSeconds':setter_time,'contentSha256After':after_hash})
+            (out/f'fixture-clock-{request}.json').write_text(json.dumps(journal,indent=2))
+            assert after_hash==before_hash, journal
+            return observed=='1500000000'
         applied=set_clock(r['path'])
         if not applied:
             assert adb('shell','getprop','ro.build.version.sdk').stdout.strip()=='26', journal

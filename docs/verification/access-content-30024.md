@@ -157,6 +157,18 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
 夹具的 `/data/media/0` 叶子，核对普通类型、精确大小、两个视图完整 SHA 相同后设置 mtime。
 必须观测到共享视图目标时间及 App 自己再次核验才能继续，不改 App 权限、系统时钟或 SELinux。
 
+[84838e7](https://github.com/xgl34222220-ops/BaiZe/commit/84838e76478366451557c87984454caad0e1f53f)
+的 API 26 专项 [37178798251](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37178798251)
+/ job 111366932395 / artifact 11294270816 仍失败，不能写成设备通过。
+两个视图均为普通 131072 字节文件，完整 SHA 相同；`touch -m -d @1500000000` 明确返回 bad date，
+`touch -m -t` 虽返回 0，但共享视图仍为原 mtime，App 未获得成功确认。没有据此降低断言。
+读取 Toybox 固定 0.7.3 源码发现 `-m` 的 timespec 选择相反，0.7.4 已改正；这是与观测相符的
+工具兼容性解释，尚未证明该模拟器二进制恰好来自这些固定版本。
+下一次仅续接 API 26、复用同一 debug APK：采用上游文档支持的 UTC ISO 日期，省略单字段选项，
+只设置生成夹具的 atime/mtime，`-c` 防止重新创建消失的文件。保存设备 help、设置视图与共享视图
+时间及设置前后完整内容 SHA；必须实际 mtime 符合且内容不变才能回复 App，App 再次独立核验。
+生产代码、debug 包、权限、系统时钟和全局策略不变。
+
 ## 每批开源参考、许可证与独立实现
 
 本轮阅读以下固定来源。仅参考设计原则，没有复制源码、文字、图标或素材，没有增加第三方依赖。
@@ -168,6 +180,7 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
 | 内容身份：SD Maid SE [ChecksumSleuth.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-deduplicator/src/main/java/eu/darken/sdmse/deduplicator/core/scanner/checksum/ChecksumSleuth.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE)；[Java InputStream 文档](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/io/InputStream.html) | 参考按大小分组后读取完整 SHA-256；读取失败不发布重复组。标准正长度 InputStream 读取应读取至少一字节或报告结束/异常，连续 0 属于异常提供器行为。 | 在白泽既有前缀/完整摘要和 O_NOFOLLOW 文件描述符核验上独立限制空转；容忍短暂零进展，连续三次拒绝该文件。纳秒缺失或实际完整元组未复现时，继续依赖新鲜内容读取；失败保留文件。正常读取行为和 minSdk 26 不变。 |
 | 目录界面：SD Maid SE [ContentScreen.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentScreen.kt)、[ContentInfoBanner.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentInfoBanner.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE) | 参考当前内容的计数及只读/受限说明，让统计覆盖与操作能力可以分别判断。 | 使用白泽原有统计和界面组件，当前目录汇总来自已经读到的扫描结果；不复制上游布局、文字或图标，不把未索引目录变成可删除文件。 |
 | 独立副本：Czkawka Core [duplicate/mod.rs](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/src/tools/duplicate/mod.rs)、[FAQ](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/instructions/FAQ.md)、[Core MIT LICENSE](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/LICENSE_MIT) | 参考同一文件的硬链接不应重复计为可整理副本。只参考 MIT 的 Core，不使用其他界面、图标或测试资产。 | 独立 Kotlin 实现依据白泽已观察到的规范路径及 device+inode；所读上游 Unix 代码按 inode 过滤，白泽额外区分 device 并用跨卷相同 inode 回归防止误折叠。无新依赖、权限或系统调用边界扩大；设备别名/硬链接观察与合成结果分别报告。 |
+| 验收工具兼容性：Toybox [0.7.3 touch 源码与内嵌用法](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/toys/posix/touch.c)、[LICENSE](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/LICENSE)、[0.7.4 修正源码](https://github.com/landley/toybox/blob/0.7.4/toys/posix/touch.c) | 源码宽松授权为零条款 BSD 文本；LICENSE 单独指出 kconfig 构建基础设施仍有 GPLv2。参考旧日期格式及单字段选择缺陷，避免工具返回码充当时间证据。 | 不复制或引入 Toybox/构建代码；CI 独立调用设备已有工具，以已生成且校验过的唯一夹具设置 UTC 日期，两视图及 App 实值核验。未改 App 权限，未更新系统工具，也不把源代码解释当作设备版本鉴定。 |
 
 ## 证据边界
 
