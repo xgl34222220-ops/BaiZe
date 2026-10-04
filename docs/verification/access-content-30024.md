@@ -137,7 +137,7 @@ versionCode=30024。API 36 续接通过（job 111362704241，artifact 1129287437
 | 同大小、受控 mtime 与 MediaStore 秒碰撞 | 实际观察到；三次 mtime 均由普通 App 设置，不使用主机回退。131072 字节文件尾部变化，前缀相同，扫描拒绝重复组和旧组授权。 |
 | 完整采集 stat 身份元组碰撞 | **未复现**；ctime 秒与纳秒实际变化，capturedIdentityTupleCollisionObserved / fullFilesystemIdentityCollisionObserved 均为 false。不能标成设备通过。 |
 | 当前身份重新绑定旧内容证明 | 在实际文件上合成旧证明/新身份绑定；新鲜完整 SHA 拒绝，属于混合故障注入，不能替代真实完整元组碰撞。 |
-| 共享路径别名 | 实际 `/sdcard` 别名观察到；不产生重复组，别名不能授权幸存副本。 |
+| 共享路径别名 | 实际 `/sdcard` 别名及身份观察到；将人工追加的别名索引记录送入生产匹配器/前置核验，不产生重复组，别名不能授权幸存副本。索引输入属于混合夹具，未证明 MediaStore 会实际返回重复别名行。 |
 | 私有读取与遍历边界 | App UID=10216，真实读取 Errno=13/EACCES；不发布内容证明。边界链接/循环不遍历、entry limit 明确不完整、missing root 不可用、取消传播和文件内容保留均通过。 |
 | 私有硬链接 | **未复现**；App link 返回 EACCES，结果为 null + 未验证原因。保留合成硬链接回归通过；没有放宽 SELinux 或新增权限来制造通过。 |
 | 旧时间戳审计 | 设备执行真实解析器，但 history 两行与 4096 字节为合成夹具，计两次操作且仅一次已知容量，第二次 null/unknown。不是实际释放容量证据。 |
@@ -147,6 +147,15 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
 下一次只续接这一项，保持整个 App/debug/测试与 `22fbe92` 完全一致、复用上述完成的精确 debug
 产物及 SHA，不再构建、不重跑 API 36。脚本改为读取实际 lstat 文件类型位，并以明确 stdout 响应
 判断文件存在，拒绝非普通文件和未知响应，避免将旧 adb 的传输成功当作文件系统谓词证据。
+
+[f514b40](https://github.com/xgl34222220-ops/BaiZe/commit/f514b40452adfb9ab883ee5aede99c2d7e358f26)
+的 API 26 专项 [37178105026](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37178105026)
+/ job 111364878568 / artifact 11292919848 仍保留失败。新增 lstat 证据为 `81b0` 普通文件、
+131072 字节；已跨过先前的链接检查，失败在 touch 后的 mtime 实值核验，未取得应用结果。
+后续只改主机夹具控制及诊断，App/debug 字节保持 `22fbe92` 不变：优先尝试绝对 Unix 秒，
+保存 touch 返回和共享视图 stat；若 API 26 旧挂载拒绝，则仅允许映射到同一个 user-0 UUID
+夹具的 `/data/media/0` 叶子，核对普通类型、精确大小、两个视图完整 SHA 相同后设置 mtime。
+必须观测到共享视图目标时间及 App 自己再次核验才能继续，不改 App 权限、系统时钟或 SELinux。
 
 ## 每批开源参考、许可证与独立实现
 

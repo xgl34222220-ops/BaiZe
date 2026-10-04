@@ -58,14 +58,38 @@ while time.monotonic()<deadline:
         r=json.loads(text)
         (out/name).write_text(text)
         # Never accept arbitrary paths, links, different sizes or different clocks.
-        assert r['appUid']>=10000 and r['mtimeMillis']==1500000000000, r
+        assert 10000<=r['appUid']<100000 and r['mtimeMillis']==1500000000000, r
         assert re.fullmatch(r'/storage/emulated/0/Download/baize-collision-owned-[0-9a-f-]{36}/(first|second)\.bin',r['path']), r
         mode=adb('shell','stat','-c','%f',r['path']).stdout.strip()
         (out/f'fixture-lstat-{request}.json').write_text(json.dumps({'path':r['path'],'modeHex':mode}))
         assert re.fullmatch(r'[0-9a-fA-F]+',mode) and stat.S_ISREG(int(mode,16)), (r,mode)
         assert adb('shell','stat','-c','%s',r['path']).stdout.strip()=='131072', r
-        adb('shell','env','TZ=UTC','touch','-m','-t','201707140240.00',r['path'])
-        assert adb('shell','stat','-c','%Y',r['path']).stdout.strip()=='1500000000', r
+        journal={'path':r['path'],'mtimeBefore':adb('shell','stat','-c','%Y',r['path']).stdout.strip(),'attempts':[]}
+        def set_clock(path):
+            for args in (('touch','-m','-d','@1500000000',path),
+                         ('env','TZ=UTC','touch','-m','-t','201707140240.00',path)):
+                attempt=adb('shell',*args,check=False)
+                observed=adb('shell','stat','-c','%Y',r['path']).stdout.strip()
+                journal['attempts'].append({'setterPath':path,'command':list(args),'stdout':attempt.stdout,
+                    'stderr':attempt.stderr,'exitCode':attempt.returncode,'sharedMtimeSeconds':observed})
+                (out/f'fixture-clock-{request}.json').write_text(json.dumps(journal,indent=2))
+                if observed=='1500000000':return True
+            return False
+        applied=set_clock(r['path'])
+        if not applied:
+            assert adb('shell','getprop','ro.build.version.sdk').stdout.strip()=='26', journal
+            # Android's user-0 emulated storage maps to /data/media/0. Only this
+            # generated UUID leaf can be touched, after checking regular type,
+            # exact size and the same full content through both views.
+            lower=r['path'].replace('/storage/emulated/0/','/data/media/0/',1)
+            lower_mode=adb('shell','stat','-c','%f',lower).stdout.strip()
+            assert re.fullmatch(r'[0-9a-fA-F]+',lower_mode) and stat.S_ISREG(int(lower_mode,16)), (r,lower_mode)
+            assert adb('shell','stat','-c','%s',lower).stdout.strip()=='131072', r
+            hashes=adb('shell','sha256sum',r['path'],lower).stdout.splitlines()
+            assert len(hashes)==2 and hashes[0].split()[0]==hashes[1].split()[0] and re.fullmatch(r'[0-9a-f]{64}',hashes[0].split()[0]), hashes
+            journal.update({'lowerFixturePath':lower,'lowerModeHex':lower_mode,'bothViewContentSha256':hashes[0].split()[0]})
+            applied=set_clock(lower)
+        assert applied, journal
         adb('shell',f'echo 1500000000000 > {remote}/timestamp-ack-{request}.txt')
         processed.add(request)
     if exists(f'{remote}/result.json'): break
