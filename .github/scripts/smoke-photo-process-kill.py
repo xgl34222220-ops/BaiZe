@@ -72,7 +72,7 @@ try:
     assert "sdk" in m.adb("shell", "getprop", "ro.product.model").lower() or "generic" in m.adb("shell", "getprop", "ro.build.fingerprint")
     m.adb("root"); m.adb("wait-for-device"); assert m.adb("shell", "id", "-u") == "0"
     m.adb("install", str(fixture / "fixture.apk"), timeout=120)
-    m.adb("install", str(apk), timeout=120)
+    m.adb("install", "-r", str(apk), timeout=120)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS")
     # The document picker activates the provider. Seed only its private synthetic files.
     m.adb("shell", "content", "query", "--uri", "content://test.baize.photo.fixture.documents/roots")
@@ -84,6 +84,7 @@ try:
     m.adb("shell", "touch", scope + "/armed")
     command = f"uid=$(stat -c %u /data/user/0/test.baize.photo.fixture); chown -R $uid:$uid {shlex.quote(scope)}; restorecon -R {shlex.quote(scope)}"
     m.adb("shell", "sh", "-c", shlex.quote(command))
+    history_before = read_json(app_files + "/photo-compression-history.json") or []
     m.launch("photo-kill-launch", 3); nav.tap("照片瘦身", "photo-kill-entry")
     nav.tap("60", "photo-kill-quality")
     nav.tap("选择多张照片", "photo-kill-select", direction="down")
@@ -106,7 +107,7 @@ try:
     else: raise AssertionError("The second copy never reached a durable partial write")
     target = scope + "/" + partial
     size = int(m.adb("shell", "stat", "-c", "%s", target)); assert 0 < size <= 64
-    history = read_json(app_files + "/photo-compression-history.json"); assert len(history) == 1, history
+    history = read_json(app_files + "/photo-compression-history.json"); assert len(history) == len(history_before) + 1, history
     checkpoint = read_json(app_files + "/photo-compression-journal.json")
     before_kill = snapshot(); assert all(before_kill[path] == sha for path, sha in originals.items())
     pid = m.adb("shell", "pidof", m.APP); assert pid and " " not in pid
@@ -136,9 +137,14 @@ try:
         "originalHashesUnchanged": all(after_restart[path] == sha for path, sha in originals.items()),
         "partialTargetPreserved": after_restart.get(target) == before_kill[target]}
     m.save_text("recovery-observed.json", json.dumps(result, indent=2)); print(json.dumps(result, indent=2))
+    for key in ("noReplayAfterRestart", "completedHistoryPreserved", "originalHashesUnchanged", "partialTargetPreserved"): assert result[key], key
+    if "--expect-baseline-failure" in sys.argv:
+        assert checkpoint is None and not recovery_seen, "Frozen baseline no longer reproduces the expected recovery failure"
+        result.update(expectedBaselineFailureObserved=True, baselineRecoveryPassed=False)
+        m.alive(); m.save_text("baseline-observed.json", json.dumps(result, indent=2)); print(json.dumps(result, indent=2))
+        sys.exit(0)
     assert checkpoint is not None, "No durable export checkpoint exists at the real kill point"
     assert recovery_seen, "Interrupted export silently disappeared after cold restart"
-    for key in ("noReplayAfterRestart", "completedHistoryPreserved", "originalHashesUnchanged", "partialTargetPreserved"): assert result[key], key
     nav.tap("核对上次导出", "photo-kill-verify-residual", direction="down")
     nav.wait_text("副本不完整或内容已变化", "photo-kill-residual-rejected", direction="up")
     assert snapshot() == before_kill, "Read-only recovery must not modify or delete a copy"

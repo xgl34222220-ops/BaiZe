@@ -133,9 +133,10 @@ internal object StorageMediaRepository {
         val guard = ApkDeletionGuard.forContext(context)
         val retained = group.records.firstOrNull { it.uri !in selected && unchanged(it, guard) } ?: return false
         val identity = retained.identity ?: return false
-        // Only this operation's fresh proof is shared. Nanosecond-less systems rehash every time.
-        val cached = keeperProofs[retained.uri]?.takeIf { it.first == identity && identity.hasPreciseStorageClock() }
-        val hash = cached?.second ?: StorageDuplicateMatcher.digest(retained, false, { open(context, it, guard) }, { control.cancelled })
+        // Each selected deletion needs a fresh content proof of the surviving copy.
+        // A shared-storage timestamp tuple cannot authorize reuse of an earlier hash.
+        keeperProofs.remove(retained.uri)
+        val hash = StorageDuplicateMatcher.digest(retained, false, { open(context, it, guard) }, { control.cancelled })
         if (hash != group.key || !unchanged(retained, guard)) return false
         keeperProofs[retained.uri] = identity to hash
         return unchanged(record, guard) &&

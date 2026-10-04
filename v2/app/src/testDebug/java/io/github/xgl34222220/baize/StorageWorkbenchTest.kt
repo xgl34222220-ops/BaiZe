@@ -9,7 +9,7 @@ class StorageWorkbenchTest {
     private fun record(id: Long, size: Long = 10, name: String = "文件$id.pdf", modified: Long = id) =
         StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/$name", name, size, modified, "application/pdf").withVerifiedStorageIdentity()
 
-    @Test fun incrementalScanReusesOnlyUnchangedPreciseIdentity() {
+    @Test fun requestedScanRehashesContentEvenWithUnchangedPreciseIdentity() {
         val cache = StorageDigestCache()
         val files = listOf(record(1), record(2)).map { it.copy(identity = it.identity!!.copy(changedNanos = 10)) }
         var reads = 0
@@ -17,11 +17,11 @@ class StorageWorkbenchTest {
         assertEquals(1, StorageDuplicateMatcher.match(files, open, cache = cache).size)
         val initialReads = reads
         assertEquals(1, StorageDuplicateMatcher.match(files, open, cache = cache).size)
-        assertEquals(initialReads, reads)
-        assertEquals(4, cache.hits)
+        assertEquals(initialReads + 4, reads)
+        assertEquals(0, cache.hits)
         val changed = files.map { if (it.id == 1L) it.copy(identity = it.identity!!.copy(changedNanos = 7)) else it }
         StorageDuplicateMatcher.match(changed, open, cache = cache)
-        assertEquals(initialReads + 2, reads)
+        assertEquals(initialReads + 8, reads)
         val coarse = files.map { it.copy(identity = it.identity!!.copy(modifiedNanos = -1, changedNanos = -1)) }
         StorageDuplicateMatcher.match(coarse, open, cache = cache)
         val coarseReads = reads

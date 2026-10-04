@@ -70,7 +70,7 @@ internal fun filterStorageRecords(
 internal fun ApkFileIdentity.hasPreciseStorageClock(): Boolean = modifiedNanos >= 0 && changedNanos >= 0 &&
     (modifiedNanos > 0 || changedNanos > 0)
 
-/** Scan acceleration only: never a deletion authorization. Coarse API 26 identities are not cached. */
+/** Hashes belong to one scan. A nanosecond field does not prove fresh shared-storage content. */
 internal class StorageDigestCache(private val limit: Int = 120_000) {
     private data class Key(val identity: ApkFileIdentity, val prefix: Boolean)
     private val values = object : LinkedHashMap<Key, String>(16, .75f, true) {
@@ -79,8 +79,9 @@ internal class StorageDigestCache(private val limit: Int = 120_000) {
     var hits: Int = 0; private set
     fun begin(files: List<StorageFileRecord>) {
         hits = 0
-        val identities = files.mapNotNull { it.identity }.toSet()
-        values.keys.removeAll { it.identity !in identities }
+        // FUSE/provider metadata can collide or be cached, even with nonzero nanoseconds.
+        // Re-read content on every requested scan; metadata alone cannot refresh a SHA proof.
+        values.clear()
     }
     fun get(record: StorageFileRecord, prefix: Boolean): String? = record.identity?.takeIf {
         it.hasPreciseStorageClock()

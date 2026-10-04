@@ -18,7 +18,7 @@ env:
 
 jobs:
   build-paired-test:
-    if: ${{ (!contains(github.event.head_commit.message, '[device-validation-only]') || contains(github.event.head_commit.message, '[workbench-validation-only]')) && !contains(github.event.head_commit.message, '[apk-permission-diagnostic]') }}
+    if: ${{ (!contains(github.event.head_commit.message, '[device-validation-only]') || contains(github.event.head_commit.message, '[workbench-validation-only]')) && !contains(github.event.head_commit.message, '[apk-permission-diagnostic]') && !contains(github.event.head_commit.message, '[reliability-build]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

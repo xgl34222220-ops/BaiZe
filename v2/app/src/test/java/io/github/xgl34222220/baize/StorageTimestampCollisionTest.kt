@@ -35,10 +35,11 @@ class StorageTimestampCollisionTest {
         try { block(root) } finally { root.deleteRecursively() }
     }
     private val oldRow = "2026-10-03 12:00:00\tdeep\t4096\t1\t0\t0\t完成\n"
-    @Test fun identicalLegacyTasksAtOneSecondKeepBothAmounts() = fixture { state ->
+    @Test fun ambiguousLegacyRowsStayVisibleWithoutInventingAnotherRelease() = fixture { state ->
         val file = File(state, "history.tsv").apply { writeText(oldRow + oldRow) }; val original = file.readBytes()
         val result = JSONObject(AuditRepository(state).timelinePageJson(0, 30))
-        assertEquals(2, result.getInt("total")); assertEquals(8192L, result.getLong("releasedBytes"))
+        assertEquals(2, result.getInt("total")); assertEquals(4096L, result.getLong("releasedBytes"))
+        assertEquals(1, result.getInt("unmeasuredReleaseCount"))
         assertArrayEquals(original, file.readBytes())
     }
     @Test fun oldAuditMirrorStillDeduplicatesOneCorrespondingLegacyOccurrence() = fixture { state ->
@@ -47,7 +48,16 @@ class StorageTimestampCollisionTest {
         File(state, "audit.jsonl").writeText(first.toString() + "\n")
         File(state, "history.tsv").appendText(oldRow)
         val result = JSONObject(AuditRepository(state).timelinePageJson(0, 30))
+        assertEquals(2, result.getInt("total")); assertEquals(4096L, result.getLong("releasedBytes"))
+        assertEquals(1, result.getInt("unmeasuredReleaseCount"))
+    }
+    @Test fun distinctStoredIdsWithSameTimestampAndAmountAreBothCountedExactlyOnce() = fixture { state ->
+        val rows = listOf("audit-owned-one", "audit-owned-two").joinToString("\n", postfix = "\n") { id ->
+            listOf("2026-10-03 12:00:00", "deep", "4096", "1", "0", "0", "完成", "test", "", "", "measured", id).joinToString("\t") }
+        File(state, "history.tsv").writeText(rows)
+        val result = JSONObject(AuditRepository(state).timelinePageJson(0, 30))
         assertEquals(2, result.getInt("total")); assertEquals(8192L, result.getLong("releasedBytes"))
+        assertEquals(0, result.getInt("unmeasuredReleaseCount"))
     }
     @Test fun declaredMeasurementWithInvalidTsvBytesStaysUnknownInHistoryAndAudit() = fixture { state ->
         val values = listOf("-1", "1.5", "true", "9223372036854775808", "")

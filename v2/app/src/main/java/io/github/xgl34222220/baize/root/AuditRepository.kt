@@ -397,6 +397,7 @@ internal class AuditRepository(
 
     private fun readLegacyEvents(clearEpoch: Long): List<JSONObject> = runCatching {
         if (!historyFile.isFile) return@runCatching emptyList()
+        val occurrences = mutableMapOf<String, Int>()
         historyFile.readLines().takeLast(MAX_LEGACY).mapNotNull { raw ->
             val columns = raw.split('\t', limit = 12)
             if (columns.size < 7) return@mapNotNull null
@@ -404,7 +405,8 @@ internal class AuditRepository(
             val epoch = runCatching { TIME_FORMAT.get().parse(time)?.time ?: 0L }.getOrDefault(0L)
             if (epoch <= clearEpoch) return@mapNotNull null
             val operation = sanitize(columns[1], 80)
-            val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val rawBytes = columns[2].toLongOrNull()?.takeIf { it >= 0L }
+            val bytes = rawBytes ?: 0L
             val files = columns[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
             val directories = columns[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
             val errors = columns[5].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
@@ -416,9 +418,12 @@ internal class AuditRepository(
                 scan -> "scanned"
                 else -> "success"
             }
+            val baseId = stableId("$time\u0000$operation\u0000$bytes\u0000$files\u0000$message")
+            val storedId = columns.getOrNull(11)?.trim()?.takeIf { it.isNotBlank() && it.length <= 100 }
+            val occurrence = if (storedId == null) occurrences.getOrDefault(baseId, 0).also { occurrences[baseId] = it + 1 } else 0
             val event = JSONObject()
                 .put("schema", SCHEMA_VERSION)
-                .put("id", stableId("$time\u0000$operation\u0000$bytes\u0000$files\u0000$message"))
+                .put("id", storedId ?: if (occurrence == 0) baseId else "$baseId-legacy-$occurrence")
                 .put("timeEpoch", epoch)
                 .put("time", time)
                 .put("operation", operation)
@@ -433,7 +438,7 @@ internal class AuditRepository(
                 .put("processed", files)
                 .put("skipped", 0)
                 .put("protected", 0)
-                .put("bytes", bytes)
+                .put("bytes", rawBytes ?: JSONObject.NULL)
                 .put("files", files)
                 .put("directories", directories)
                 .put("errors", errors)
@@ -442,9 +447,15 @@ internal class AuditRepository(
                 .put("details", JSONArray())
                 .put("legacy", true)
             columns.getOrNull(10)?.takeIf { it.isNotBlank() }?.let {
-                event.put("releaseState", it).put("releasedBytes", bytes)
+                event.put("releaseState", it).put("releasedBytes", rawBytes ?: JSONObject.NULL)
             }
             columns.getOrNull(11)?.trim()?.takeIf { it.isNotBlank() && it.length <= 100 }?.let { event.put("id", it) }
+            if (storedId == null && occurrence > 0) {
+                // Keep the row visible, but an old timestamp cannot prove another distinct release.
+                event.put("releaseState", "unknown").put("releasedBytes", JSONObject.NULL)
+                    .put("message", "$message · 旧记录身份重合，容量不重复累计")
+                    .getJSONArray("reasonCodes").put("legacy_identity_collision")
+            }
             ReleaseAmount.fromEvent(event).writeTo(event)
         }
     }.getOrDefault(emptyList())

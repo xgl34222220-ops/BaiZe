@@ -15,6 +15,167 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  storage-collision:
+    if: contains(github.event.head_commit.message, '[reliability-build]')
+    needs: android-reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-Reliability-Android-Verification
+          path: verification
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Prepare disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual shared timestamps and read-only content/audit checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash .github/scripts/probe-storage-collision.sh verification/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Shared-Storage-Collision
+          path: ${{ runner.temp }}/baize-storage-collision-probe/
+          retention-days: 7
+          if-no-files-found: warn
+
+  signed-photo-recovery:
+    if: contains(github.event.head_commit.message, '[reliability-build]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Continue the exact signed producer
+        uses: actions/github-script@v7
+        with:
+          script: await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core})
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify signed pair and build independent document provider
+        run: |
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/candidate-certificate.txt"
+          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/candidate-certificate.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging candidate/*.apk | grep "versionCode='30023'"
+          unzip -p candidate/*-Module.zip app/baize.apk > "$RUNNER_TEMP/embedded.apk"
+          cmp candidate/*.apk "$RUNNER_TEMP/embedded.apk"
+          python3 .github/scripts/create-photo-kill-fixture.py "$RUNNER_TEMP/photo-kill-fixture"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Signed normal exports followed by actual in-flight process kill and recovery
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install candidate/*.apk
+            adb shell pm grant io.github.xgl34222220.baize android.permission.POST_NOTIFICATIONS
+            python3 -c "import runpy; runpy.run_path('.github/scripts/smoke-release-apk.py')['settle_emulator_boot']()"
+            python3 .github/scripts/smoke-photo-batch.py
+            python3 .github/scripts/smoke-photo-process-kill.py candidate/*.apk "$RUNNER_TEMP/photo-kill-fixture"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30023-Signed-Photo-Recovery
+          path: |
+            ${{ runner.temp }}/baize-photo-batch-device/
+            ${{ runner.temp }}/baize-photo-process-kill/
+            ${{ runner.temp }}/candidate-certificate.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+  signed-upgrade-repair:
+    if: contains(github.event.head_commit.message, '[reliability-build]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools build-tools;36.0.0
+      - name: Continue the exact signed producer
+        uses: actions/github-script@v7
+        with:
+          script: await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core})
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
+          github-token: ${{ github.token }}
+          path: repair-30023
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-functional-test+bb5c8224-Paired-Test
+          run-id: 37130389704
+          github-token: ${{ github.token }}
+          path: baseline-30021
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
+          run-id: 37158958651
+          github-token: ${{ github.token }}
+          path: original-30022
+      - name: Verify exact old/new signatures and hashes
+        run: |
+          for bundle in baseline-30021 original-30022 repair-30023; do
+            (cd "$bundle" && sha256sum -c SHA256SUMS.txt)
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$bundle"/*.apk > "$RUNNER_TEMP/$bundle-certificate.txt"
+            grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/$bundle-certificate.txt"
+          done
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exact 30021 to 30022 migration, then validate the 30023 history repair
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 .github/scripts/smoke-direct-30022-upgrade.py baseline-30021/*.apk original-30022/*.apk repair-30023/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30021-30022-Migration-And-30023-Repair
+          path: |
+            ${{ runner.temp }}/baize-direct-30022-upgrade/
+            ${{ runner.temp }}/*-certificate.txt
+          retention-days: 7
+          if-no-files-found: warn
+
   android-reliability:
     if: contains(github.event.head_commit.message, '[30023-unit-reliability]') || contains(github.event.head_commit.message, '[reliability-build]')
     runs-on: ubuntu-latest
@@ -89,7 +250,7 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: python3 .github/scripts/smoke-photo-process-kill.py candidate/*.apk "$RUNNER_TEMP/photo-kill-fixture"
+          script: python3 .github/scripts/smoke-photo-process-kill.py candidate/*.apk "$RUNNER_TEMP/photo-kill-fixture" --expect-baseline-failure
       - uses: actions/upload-artifact@v4
         if: always()
         with:

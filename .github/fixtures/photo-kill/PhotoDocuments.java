@@ -56,8 +56,9 @@ public final class PhotoDocuments extends DocumentsProvider {
         String[] names = root.list(); if (names != null) { Arrays.sort(names); for (String name : names) if (name.endsWith(".jpg")) add(cursor, name); }
         return cursor;
     }
-    @Override public boolean isChildDocument(String parent, String child) throws java.io.FileNotFoundException {
-        return parent.equals("root") && !child.equals("root") && file(child).isFile();
+    @Override public boolean isChildDocument(String parent, String child) {
+        try { return parent.equals("root") && !child.equals("root") && file(child).isFile(); }
+        catch (java.io.FileNotFoundException e) { return false; }
     }
     @Override public synchronized String createDocument(String parent, String mime, String name) throws java.io.FileNotFoundException {
         if (!parent.equals("root") || !mime.equals("image/jpeg")) throw new java.io.FileNotFoundException();

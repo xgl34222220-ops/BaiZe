@@ -28,11 +28,12 @@ internal class HistoryRepository(
             val columns = raw.split('\t', limit = 12)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
-            val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val rawBytes = columns[2].toLongOrNull()?.takeIf { it >= 0L }
+            val bytes = rawBytes ?: 0L
             val cleaned = mode != "scan" && !mode.endsWith("-scan")
             val release = if (columns.getOrNull(10).orEmpty().isNotBlank()) ReleaseAmount.fromEvent(JSONObject()
-                .put("operation", mode).put("releaseState", columns[10]).put("releasedBytes", bytes))
-                else ReleaseAmount.fromEvent(JSONObject().put("operation", mode).put("bytes", bytes))
+                .put("operation", mode).put("releaseState", columns[10]).put("releasedBytes", rawBytes ?: JSONObject.NULL))
+                else ReleaseAmount.fromEvent(JSONObject().put("operation", mode).put("bytes", rawBytes ?: JSONObject.NULL))
             if (cleaned) {
                 if (release.bytes != null) totalReleased = ReleaseAmount.addSaturated(totalReleased, release.bytes)
                 cleanedRuns += 1
