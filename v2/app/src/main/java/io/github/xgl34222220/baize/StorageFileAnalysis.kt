@@ -109,13 +109,20 @@ internal object StorageDuplicateMatcher {
             val md = MessageDigest.getInstance("SHA-256")
             val expected = if (prefixOnly) minOf(record.bytes, 64 * 1024L) else record.bytes
             var readBytes = 0L
+            var emptyReads = 0
             (open(record) ?: return null).use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (readBytes < expected) {
                     checkCancelled()
                     val read = input.read(buffer, 0, minOf(buffer.size.toLong(), expected - readBytes).toInt())
                     if (read < 0) return null
-                    if (read == 0) continue
+                    if (read == 0) {
+                        checkCancelled()
+                        // A broken provider must not keep a scan spinning without evidence.
+                        if (++emptyReads >= 3) return null
+                        continue
+                    }
+                    emptyReads = 0
                     md.update(buffer, 0, read)
                     readBytes += read
                 }

@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Process
 import android.provider.MediaStore
+import android.system.ErrnoException
+import android.system.Os
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import io.github.xgl34222220.baize.root.AuditRepository
@@ -14,6 +16,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import java.nio.file.Files
+import java.util.concurrent.CancellationException
 
 /** No deletion: actual shared-storage timestamps plus explicitly forced identity collisions. */
 class StorageCollisionDeviceProbeActivity : ComponentActivity() {
@@ -33,12 +37,12 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                         put(MediaStore.MediaColumns.SIZE, length()); put(MediaStore.MediaColumns.DATE_MODIFIED, lastModified() / 1000)
                         put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
                     }
-                    checkNotNull(contentResolver.insert(MediaStore.Files.getContentUri("external_primary"), values))
+                    checkNotNull(contentResolver.insert(MediaStore.Files.getContentUri(if (Build.VERSION.SDK_INT >= 29) "external_primary" else "external"), values))
                 } }
                 val before = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(owned.path + "/") }
                 check(before.size == 2)
                 val cache = StorageDigestCache()
-                check(StorageMediaRepository.findDuplicates(applicationContext, before, cache = cache).groups.size == 1)
+                val originalGroup = StorageMediaRepository.findDuplicates(applicationContext, before, cache = cache).groups.single()
                 val guard = ApkDeletionGuard.forContext(applicationContext)
                 val originalIdentity = checkNotNull(guard.capture(files[1].path))
                 val originalProof = IndexedContentReview.capture(originalIdentity, guard)
@@ -58,6 +62,12 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                 check(!IndexedContentReview.matches(originalProof.copy(identity = newIdentity), newIdentity, guard) { false })
                 val finalProof = IndexedContentReview.capture(newIdentity, guard)
                 check(finalProof.sha256 != originalProof.sha256 && files[1].readBytes().contentEquals(changed))
+                // The old group's digest cannot authorize today's selected file even if
+                // the caller supplies today's observed metadata. No mutation API is called.
+                val currentSelected = after.single { it.path == files[1].path }
+                check(!StorageMediaRepository.duplicateStillSafe(applicationContext, currentSelected,
+                    originalGroup.copy(records = after), setOf(currentSelected.uri), StorageScanControl()))
+                val privateChecks = privateReadOnlyBoundaries(output)
                 val auditState = File(output, "audit-owned-${UUID.randomUUID()}").apply { mkdirs() }
                 val row = "2026-10-03 12:00:00\tdeep\t4096\t1\t0\t0\t完成\n"
                 File(auditState, "history.tsv").writeText(row + row)
@@ -68,14 +78,65 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                     .put("sharedMtimeMillisCollisionObserved", true).put("mediaStoreSecondsCollisionObserved", true)
                     .put("freshDuplicateScanRejectsChangedContent", true).put("staleReviewProofRejected", true)
                     .put("forcedIdentityCollisionRejectedByContentHash", true)
-                    .put("fullFilesystemIdentityCollisionObserved", originalIdentity == newIdentity)
+                    .put("versionCode", BuildConfig.VERSION_CODE)
+                    .put("sameSizeContentMutationObserved", before.map { it.bytes } == after.map { it.bytes })
+                    .put("staleDuplicateGroupRefused", true)
+                    .put("nanosecondStatFieldsAvailable", originalIdentity.modifiedNanos >= 0 && originalIdentity.changedNanos >= 0)
+                    .put("capturedIdentityTupleCollisionObserved", originalIdentity == newIdentity)
+                    // API 26's -1 fields are unobserved nanoseconds, not real equal nanoseconds.
+                    .put("fullFilesystemIdentityCollisionObserved", originalIdentity.modifiedNanos >= 0 &&
+                        originalIdentity.changedNanos >= 0 && originalIdentity == newIdentity)
                     .put("originalIdentity", originalIdentity.json()).put("newIdentity", newIdentity.json())
                     .put("sameSecondLegacyAuditOccurrences", 2).put("syntheticConfirmedBytes", 4096)
                     .put("ambiguousLegacyCapacityNotDoubleCounted", true)
                     .put("noDeletionPerformed", true).put("bothSharedFixturesPreserved", files.all { it.isFile })
+                    .put("privateReadOnlyBoundaries", privateChecks)
                     .put("fixtureDirectory", owned.path)
             }.getOrElse { JSONObject().put("passed", false).put("error", it.toString()) }
             File(output, "result.json").writeText(result.toString(2)); finish()
         }
+    }
+
+    private fun privateReadOnlyBoundaries(output: File): JSONObject {
+        val fixtures = File(output, "readonly-owned-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        val root = File(fixtures, "scan").apply { check(mkdir()) }
+        val outside = File(fixtures, "outside").apply { check(mkdir()) }
+        File(root, "first.bin").writeBytes(ByteArray(7))
+        File(root, "nested").mkdir()
+        File(root, "nested/second.bin").writeBytes(ByteArray(9))
+        val privateFile = File(outside, "retained.bin").apply { writeBytes(ByteArray(33) { 7 }) }
+        Os.symlink(outside.path, File(root, "outside-link").path)
+        Os.symlink(root.path, File(root, "loop-link").path)
+        val usage = DirectoryUsageScanner.scan(mapOf(root to root.path))
+        check(usage.bytes == 16L && usage.linksSkipped == 2 && !usage.limited)
+        val limited = DirectoryUsageScanner.scan(mapOf(root to root.path), maxEntries = 2)
+        check(limited.limited && limited.bytes < 16L)
+        val missing = DirectoryUsageScanner.scan(mapOf(File(fixtures, "missing") to "missing"))
+        check(missing.inaccessible == 1 && missing.roots.isEmpty())
+        check(runCatching { DirectoryUsageScanner.scan(mapOf(root to root.path), check = { throw CancellationException() }) }
+            .exceptionOrNull() is CancellationException)
+        val privateGuard = ApkDeletionGuard(setOf(outside.path), null)
+        val identity = checkNotNull(privateGuard.capture(privateFile.path))
+        val expected = privateFile.readBytes()
+        val proof = IndexedContentReview.capture(identity, privateGuard)
+        var errno: Int? = null
+        try {
+            Os.chmod(privateFile.path, 0)
+            val blockedIdentity = checkNotNull(privateGuard.capture(privateFile.path))
+            val failure = runCatching { IndexedContentReview.capture(blockedIdentity, privateGuard) }.exceptionOrNull()
+            errno = (failure as? ErrnoException)?.errno
+            check(errno == android.system.OsConstants.EACCES) { "No real EACCES observed: $failure" }
+            check(!IndexedContentReview.matches(proof, identity, privateGuard) { false })
+            val item = IndexedApkCandidate(999, "content://media/external/file/999", privateFile.path,
+                privateFile.name, blockedIdentity.bytes, blockedIdentity.modifiedSeconds, blockedIdentity)
+            val batch = IndexedContentReview.prepare(listOf(item), privateGuard, { false })
+            check(batch.proofs.isEmpty() && batch.rejected.keys == setOf(item.uri))
+        } finally { Os.chmod(privateFile.path, 384) }
+        check(privateFile.readBytes().contentEquals(expected))
+        return JSONObject().put("appUid", Process.myUid()).put("realReadErrno", errno)
+            .put("realReadFailureRejectsContentProof", true)
+            .put("outsideLinksAndLoopsNotTraversed", true).put("entryLimitReportedIncomplete", true)
+            .put("missingRootReportedUnavailable", true).put("cancellationPropagated", true)
+            .put("allFixtureContentsPreserved", true).put("linksPreserved", Files.isSymbolicLink(File(root, "outside-link").toPath()))
     }
 }
