@@ -15,6 +15,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  photo-kill-baseline:
+    if: contains(github.event.head_commit.message, '[30022-photo-kill-baseline]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require unchanged baseline application
+        run: git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
+          run-id: 37158958651
+          github-token: ${{ github.token }}
+          path: candidate
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Verify signed baseline and build the independent fault provider
+        run: |
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          python3 .github/scripts/create-photo-kill-fixture.py "$RUNNER_TEMP/photo-kill-fixture"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual process kill before second export completes
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: python3 .github/scripts/smoke-photo-process-kill.py candidate/*.apk "$RUNNER_TEMP/photo-kill-fixture"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30022-Photo-Kill-Baseline
+          path: ${{ runner.temp }}/baize-photo-process-kill/
+          retention-days: 7
+          if-no-files-found: warn
+
   direct-30021-30022:
     if: contains(github.event.head_commit.message, '[30022-direct-upgrade]')
     runs-on: ubuntu-latest
