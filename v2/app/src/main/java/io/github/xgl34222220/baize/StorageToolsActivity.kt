@@ -281,7 +281,7 @@ internal fun StorageToolsScreen(
             if (state.allRecords.isNotEmpty()) {
                 item { StorageFilters(state, onQuery, onCategory, onSort, onThreshold) }
                 item { DetailSectionHeader(if (state.mode == StorageToolMode.ANALYSIS) storageCategoryLabel(state.category.orEmpty()) else "文件明细",
-                    if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.query.isBlank()) "选择上方分类，或搜索文件" else "${visible.size} 个文件 · 筛选变化后重新勾选") }
+                    if (state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank()) "选择上方分类，或搜索文件" else "${visible.size} 个文件 · 筛选变化后重新勾选") }
             }
             if (state.mode == StorageToolMode.DUPLICATES) {
                 item { DuplicateKeeperControls(state, onKeeperPreference) }
@@ -297,7 +297,7 @@ internal fun StorageToolsScreen(
                     }
                 }
             } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri]) }
-            if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
+            if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
                     state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
                 item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作" else "没有符合条件的文件",

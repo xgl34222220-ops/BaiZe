@@ -59,7 +59,40 @@ Shizuku root 成功不等于白泽 libsu 跨 UID Root Binder 验收，JSON 明�
 停止扫描后的文字改为重新读取内容，和实际摘要缓存策略一致。构建号增加到 30024，显示版本仍为 2.0.0。
 不新增生产权限、导出组件、hook 或文件删除入口。
 
+新增“其他目录有全局分类、当前目录未索引”的回归进一步暴露空状态被总览条件隐藏。
+修正仅在存储总览免除空列表说明，目录内始终按当前目录提供说明和可操作项数。
+
+## 第四批：同一物理文件不能充当多份副本
+
+[f628b73](https://github.com/xgl34222220-ops/BaiZe/commit/f628b732ac6106ea772979fe48661730b5ff64d5)
+先补充别名、硬链接和跨设备相同 inode 的合成回归，以及上述目录分类回归。
+[37174431572](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37174431572) / job 111353993618 /
+artifact 11292083942 独立解析为 2 套件、14 项、3 失败、0 错误/跳过。
+路径别名和硬链接各被误计为可保留的独立副本；目录说明也实际缺失。
+
+按已经捕获的规范路径或 `(device, inode)` 折叠同一物理对象；inode 单独相同不能跨卷折叠。
+清理前还要求保留项与所选项是独立对象，继续为二者重新读取完整 SHA。
+这同时避免虚增可整理副本容量和用同一对象的别名充当幸存副本。
+新增只读设备观察分别尝试共享路径别名及私有夹具硬链接；环境不支持时结果为 null 并说明未验证，
+不将合成身份当成实际文件系统观察。所有生成夹具保留，不调用永久删除。
+
 ## 最终构建与验收
+
+首次候选 [27b95d2](https://github.com/xgl34222220-ops/BaiZe/commit/27b95d2f23311a1532f477ec4a5fcbc667e399d2)
+的 [37173893169](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37173893169) / job 111352366921 /
+artifact 11292727472 全量 XML 为 112 套件、750 项、0 失败/错误/跳过，lint 和 debug 构建通过。
+但 [Paired 37173893168](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37173893168)
+在 Cleaner 的版本一致性检查中失败（77 组通过、1 组失败）：根 `module.prop` 未同步到 30024。
+四项签名设备任务的 [37173893197](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37173893197)
+因此在等待签名生产任务时失败，未安装新 APK，不能作为 30024 设备结果。
+修正仅同步源版本元数据，OTA 不变。API 36 的首次内容探针也在应用启动前因刚启动的 `adb root`
+连接关闭而失败；脚本改为先检查隔离 AVD 和当前 UID，必要时有界重试，不重启或清空模拟器。
+API 26 已安装 debug APK，但无界 `am start -W` 一直等待 headless 探针首帧，25 分钟后被 GitHub
+任务超时取消。只有 APK 哈希 artifact 11293096163，没有应用结果，不能计为通过。脚本改用有界
+普通 Activity 启动和结果文件作为探针完成屏障，保留启动及失败日志；不主动取消既有 job。
+本地隔离源码的 Cleaner 尝试为 70 组通过、3 组失败、5 组因缺少 busybox 跳过：缺失 javac，
+以及两个进程所有权测试无法读取该环境 `/proc/<pid>/stat`。这些本地环境失败保留记录，完整配置的
+CI 全量结果单独验收，不将这次本地尝试写成全通过。版本暂存测试已在隔离当前源码树通过。
 
 待本轮新提交 CI 完成后补充精确源、签名产物、新全量 XML 和设备结果。
 尚未完成的运行及未观察到的现象不计为通过。
@@ -74,6 +107,7 @@ Shizuku root 成功不等于白泽 libsu 跨 UID Root Binder 验收，JSON 明�
 | 旧权限/Shizuku：SD Maid SE [ShizukuWrapper.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-common-adb/src/main/java/eu/darken/sdmse/common/adb/shizuku/ShizukuWrapper.kt)、[README](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/README.md)、[LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE)；Shizuku [官方指南](https://github.com/RikkaApps/Shizuku-API/blob/a27f6e4151ba7b39965ca47edb2bf0aeed7102e5/README.md)、[API 源码](https://github.com/RikkaApps/Shizuku-API/blob/a27f6e4151ba7b39965ca47edb2bf0aeed7102e5/api/src/main/java/rikka/shizuku/Shizuku.java)、[MIT LICENSE](https://github.com/RikkaApps/Shizuku-API/blob/a27f6e4151ba7b39965ca47edb2bf0aeed7102e5/LICENSE) | SD Maid 代码 GPLv3，README 的部分素材/文档/翻译不在该授权内；Shizuku API MIT。参考将许可、连接、UID 和能力分别核对，未知回答不作为可用能力。 | 复用白泽原有能力查询和标准 UserService，设备脚本通过真实管理器授权和系统设置验证；不采用自动注入或 hook，不添加系统签名权限。API 28/29 的读写授权和当前 shell/root 能力各自独立验收。 |
 | 内容身份：SD Maid SE [ChecksumSleuth.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-deduplicator/src/main/java/eu/darken/sdmse/deduplicator/core/scanner/checksum/ChecksumSleuth.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE)；[Java InputStream 文档](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/io/InputStream.html) | 参考按大小分组后读取完整 SHA-256；读取失败不发布重复组。标准正长度 InputStream 读取应读取至少一字节或报告结束/异常，连续 0 属于异常提供器行为。 | 在白泽既有前缀/完整摘要和 O_NOFOLLOW 文件描述符核验上独立限制空转；容忍短暂零进展，连续三次拒绝该文件。纳秒缺失或实际完整元组未复现时，继续依赖新鲜内容读取；失败保留文件。正常读取行为和 minSdk 26 不变。 |
 | 目录界面：SD Maid SE [ContentScreen.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentScreen.kt)、[ContentInfoBanner.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentInfoBanner.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE) | 参考当前内容的计数及只读/受限说明，让统计覆盖与操作能力可以分别判断。 | 使用白泽原有统计和界面组件，当前目录汇总来自已经读到的扫描结果；不复制上游布局、文字或图标，不把未索引目录变成可删除文件。 |
+| 独立副本：Czkawka Core [duplicate/mod.rs](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/src/tools/duplicate/mod.rs)、[FAQ](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/instructions/FAQ.md)、[Core MIT LICENSE](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/LICENSE_MIT) | 参考同一文件的硬链接不应重复计为可整理副本。只参考 MIT 的 Core，不使用其他界面、图标或测试资产。 | 独立 Kotlin 实现依据白泽已观察到的规范路径及 device+inode；所读上游 Unix 代码按 inode 过滤，白泽额外区分 device 并用跨卷相同 inode 回归防止误折叠。无新依赖、权限或系统调用边界扩大；设备别名/硬链接观察与合成结果分别报告。 |
 
 ## 证据边界
 

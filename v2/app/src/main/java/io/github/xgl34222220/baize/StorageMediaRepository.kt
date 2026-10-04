@@ -131,7 +131,10 @@ internal object StorageMediaRepository {
                            selected: Set<String>, control: StorageScanControl,
                            keeperProofs: MutableMap<String, Pair<ApkFileIdentity, String>> = mutableMapOf()): Boolean {
         val guard = ApkDeletionGuard.forContext(context)
-        val retained = group.records.firstOrNull { it.uri !in selected && unchanged(it, guard) } ?: return false
+        val selectedIdentity = record.identity ?: return false
+        val retained = group.records.firstOrNull {
+            it.uri !in selected && it.identity?.sameStorageObject(selectedIdentity) == false && unchanged(it, guard)
+        } ?: return false
         val identity = retained.identity ?: return false
         // Each selected deletion needs a fresh content proof of the surviving copy.
         // A shared-storage timestamp tuple cannot authorize reuse of an earlier hash.

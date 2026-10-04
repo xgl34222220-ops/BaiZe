@@ -70,6 +70,10 @@ internal fun filterStorageRecords(
 internal fun ApkFileIdentity.hasPreciseStorageClock(): Boolean = modifiedNanos >= 0 && changedNanos >= 0 &&
     (modifiedNanos > 0 || changedNanos > 0)
 
+/** Paths and hard links to one object are not independent copies that can survive cleanup. */
+internal fun ApkFileIdentity.sameStorageObject(other: ApkFileIdentity): Boolean =
+    canonicalPath == other.canonicalPath || (device == other.device && inode == other.inode)
+
 /** Hashes belong to one scan. A nanosecond field does not prove fresh shared-storage content. */
 internal class StorageDigestCache(private val limit: Int = 120_000) {
     private data class Key(val identity: ApkFileIdentity, val prefix: Boolean)
@@ -149,7 +153,15 @@ internal object StorageDuplicateMatcher {
             cache.put(record, prefix, hash)
             return hash
         }
-        val candidates = files.distinctBy { it.path }.groupBy { it.bytes }.values.filter { it.size > 1 }.flatten()
+        val paths = HashSet<String>()
+        val objects = HashSet<Pair<Long, Long>>()
+        val candidates = files.filter { record ->
+            val identity = record.identity
+            val newPath = paths.add(identity?.canonicalPath ?: record.path)
+            // Inode numbers only identify an object within their device, not across volumes.
+            val newObject = identity?.let { objects.add(it.device to it.inode) } ?: true
+            newPath && newObject
+        }.groupBy { it.bytes }.values.filter { it.size > 1 }.flatten()
         val prefixes = LinkedHashMap<String, MutableList<StorageFileRecord>>()
         candidates.forEachIndexed { index, record ->
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()

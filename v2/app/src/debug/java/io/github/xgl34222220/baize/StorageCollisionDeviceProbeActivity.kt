@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.util.UUID
 import java.nio.file.Files
 import java.util.concurrent.CancellationException
@@ -44,6 +45,26 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                 val cache = StorageDigestCache()
                 val originalGroup = StorageMediaRepository.findDuplicates(applicationContext, before, cache = cache).groups.single()
                 val guard = ApkDeletionGuard.forContext(applicationContext)
+                val originalRecord = before.single { it.path == files[0].path }
+                val aliasPath = files[0].path.replace("/storage/emulated/0/", "/sdcard/")
+                val aliasIdentity = guard.capture(aliasPath)
+                val aliasObserved = aliasPath != files[0].path && aliasIdentity != null &&
+                    aliasIdentity.sameStorageObject(checkNotNull(originalRecord.identity))
+                val aliasChecks = JSONObject().put("realSharedAliasObserved", aliasObserved)
+                    .put("aliasPath", aliasPath)
+                if (aliasObserved) {
+                    val aliasRecord = originalRecord.copy(id = 900001, uri = "content://media/external/file/900001",
+                        path = aliasPath, identity = aliasIdentity)
+                    check(StorageMediaRepository.findDuplicates(applicationContext, listOf(originalRecord, aliasRecord)).groups.isEmpty())
+                    check(!StorageMediaRepository.duplicateStillSafe(applicationContext, originalRecord,
+                        originalGroup.copy(records = listOf(originalRecord, aliasRecord)),
+                        setOf(originalRecord.uri), StorageScanControl()))
+                    aliasChecks.put("aliasScanRejectsDuplicate", true).put("aliasCannotAuthorizeSurvivor", true)
+                } else {
+                    aliasChecks.put("aliasScanRejectsDuplicate", JSONObject.NULL)
+                        .put("aliasCannotAuthorizeSurvivor", JSONObject.NULL)
+                        .put("unverifiedReason", "A supported shared alias identity was not observed")
+                }
                 val originalIdentity = checkNotNull(guard.capture(files[1].path))
                 val originalProof = IndexedContentReview.capture(originalIdentity, guard)
                 val changed = ByteArray(128 * 1024).apply { this[lastIndex] = 1 }
@@ -91,6 +112,7 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                     .put("ambiguousLegacyCapacityNotDoubleCounted", true)
                     .put("noDeletionPerformed", true).put("bothSharedFixturesPreserved", files.all { it.isFile })
                     .put("privateReadOnlyBoundaries", privateChecks)
+                    .put("sharedAliasChecks", aliasChecks)
                     .put("fixtureDirectory", owned.path)
             }.getOrElse { JSONObject().put("passed", false).put("error", it.toString()) }
             File(output, "result.json").writeText(result.toString(2)); finish()
@@ -133,10 +155,32 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
             check(batch.proofs.isEmpty() && batch.rejected.keys == setOf(item.uri))
         } finally { Os.chmod(privateFile.path, 384) }
         check(privateFile.readBytes().contentEquals(expected))
+        val link = File(outside, "retained-hardlink.bin")
+        val linkFailure = runCatching { Os.link(privateFile.path, link.path) }.exceptionOrNull()
+        val hardLinkChecks = JSONObject().put("realHardlinkObserved", linkFailure == null)
+        if (linkFailure == null) {
+            val sourceIdentity = checkNotNull(privateGuard.capture(privateFile.path))
+            val linkedIdentity = checkNotNull(privateGuard.capture(link.path))
+            check(sourceIdentity.canonicalPath != linkedIdentity.canonicalPath &&
+                sourceIdentity.device == linkedIdentity.device && sourceIdentity.inode == linkedIdentity.inode)
+            val records = listOf(privateFile to sourceIdentity, link to linkedIdentity).mapIndexed { index, (file, observed) ->
+                StorageFileRecord(800001L + index, "content://media/external/file/${800001L + index}",
+                    file.path, file.name, observed.bytes, observed.modifiedSeconds, "application/octet-stream", identity = observed)
+            }
+            check(StorageDuplicateMatcher.match(records, { FileInputStream(it.path) },
+                unchanged = { privateGuard.capture(it.path) == it.identity }).isEmpty())
+            check(link.readBytes().contentEquals(expected))
+            hardLinkChecks.put("hardlinkScanRejectsDuplicate", true).put("bothLinkContentsPreserved", true)
+                .put("device", sourceIdentity.device).put("inode", sourceIdentity.inode)
+        } else {
+            hardLinkChecks.put("hardlinkScanRejectsDuplicate", JSONObject.NULL)
+                .put("bothLinkContentsPreserved", JSONObject.NULL).put("unverifiedReason", linkFailure.toString())
+        }
         return JSONObject().put("appUid", Process.myUid()).put("realReadErrno", errno)
             .put("realReadFailureRejectsContentProof", true)
             .put("outsideLinksAndLoopsNotTraversed", true).put("entryLimitReportedIncomplete", true)
             .put("missingRootReportedUnavailable", true).put("cancellationPropagated", true)
             .put("allFixtureContentsPreserved", true).put("linksPreserved", Files.isSymbolicLink(File(root, "outside-link").toPath()))
+            .put("hardLinkChecks", hardLinkChecks)
     }
 }

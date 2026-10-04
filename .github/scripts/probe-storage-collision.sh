@@ -3,9 +3,7 @@ set -euo pipefail
 APP=io.github.xgl34222220.baize
 OUT="${RUNNER_TEMP:-/tmp}/baize-storage-collision-probe"
 mkdir -p "$OUT"
-adb root
-adb wait-for-device
-test "$(adb shell id -u | tr -d '\r')" = 0
+trap 'timeout 20s adb logcat -d -v threadtime > "$OUT/logcat.txt" || true' EXIT
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 case "$api" in 26|36) ;; *) echo 'Only acceptance API 26/36 is allowed' >&2; exit 1 ;; esac
 fingerprint=$(adb shell getprop ro.build.fingerprint | tr -d '\r')
@@ -13,7 +11,16 @@ case "$fingerprint" in
   *generic*|*sdk*) printf '%s\n' "$fingerprint" ;;
   *) echo 'Only a disposable emulator is allowed' >&2; exit 1 ;;
 esac
-trap 'adb logcat -d -v threadtime > "$OUT/logcat.txt" || true' EXIT
+# Check the disposable AVD before changing adbd. A just-booted emulator may close
+# the first root connection; bounded retries do not restart or wipe the AVD.
+for attempt in $(seq 1 5); do
+  if [ "$(adb shell id -u 2>/dev/null | tr -d '\r')" = 0 ]; then
+    break
+  fi
+  timeout 20s adb root >> "$OUT/adbd-startup.txt" 2>&1 || true
+  sleep 2
+done
+test "$(adb shell id -u | tr -d '\r')" = 0
 sha256sum "$1" > "$OUT/debug-apk-sha256.txt"
 adb install "$1"
 if [ "$api" = 26 ]; then
@@ -22,7 +29,10 @@ if [ "$api" = 26 ]; then
 else
   adb shell appops set "$APP" MANAGE_EXTERNAL_STORAGE allow
 fi
-adb shell am start -W -n "$APP/.StorageCollisionDeviceProbeActivity"
+# This headless debug probe has no first frame to await on Android 8.0.
+# Its result file, not ActivityManager's draw waiter, is the completion barrier.
+timeout 30s adb shell am start -n "$APP/.StorageCollisionDeviceProbeActivity" > "$OUT/launch.txt" 2>&1
+cat "$OUT/launch.txt"
 for _ in $(seq 1 90); do
   if adb shell test -f "/data/user/0/$APP/files/storage-collision-probe/result.json"; then break; fi
   sleep 1
@@ -50,6 +60,18 @@ for key in ('realReadFailureRejectsContentProof','outsideLinksAndLoopsNotTravers
             'entryLimitReportedIncomplete','missingRootReportedUnavailable',
             'cancellationPropagated','allFixtureContentsPreserved','linksPreserved'):
     assert p.get(key) is True, (key,p)
+aliases=r['sharedAliasChecks']
+assert isinstance(aliases['realSharedAliasObserved'],bool), aliases
+if aliases['realSharedAliasObserved']:
+    assert aliases['aliasScanRejectsDuplicate'] is True and aliases['aliasCannotAuthorizeSurvivor'] is True, aliases
+else:
+    assert aliases['aliasScanRejectsDuplicate'] is None and aliases['unverifiedReason'], aliases
+links=p['hardLinkChecks']
+assert isinstance(links['realHardlinkObserved'],bool), links
+if links['realHardlinkObserved']:
+    assert links['hardlinkScanRejectsDuplicate'] is True and links['bothLinkContentsPreserved'] is True, links
+else:
+    assert links['hardlinkScanRejectsDuplicate'] is None and links['unverifiedReason'], links
 if r['api']==26:
     assert r['nanosecondStatFieldsAvailable'] is False and r['fullFilesystemIdentityCollisionObserved'] is False
 PY
