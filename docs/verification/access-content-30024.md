@@ -94,8 +94,37 @@ API 26 已安装 debug APK，但无界 `am start -W` 一直等待 headless 探�
 以及两个进程所有权测试无法读取该环境 `/proc/<pid>/stat`。这些本地环境失败保留记录，完整配置的
 CI 全量结果单独验收，不将这次本地尝试写成全通过。版本暂存测试已在隔离当前源码树通过。
 
-待本轮新提交 CI 完成后补充精确源、签名产物、新全量 XML 和设备结果。
-尚未完成的运行及未观察到的现象不计为通过。
+最终生产改动 [251da03](https://github.com/xgl34222220-ops/BaiZe/commit/251da038f95feb4b959ed245dd6dea26fc98b4d4)
+包含上述内容对象、目录分类和源版本修正。在旧任务全部完成且 queued/in_progress 均为 0 后提交，
+没有重复启动或取消活动生产任务。
+
+| 验收 | 本轮结果 | CI / job / artifact |
+| --- | --- | --- |
+| 全量 Android 单元回归 | **112 套件、753 项，0 失败/错误/跳过**，ZIP 校验和 XML 独立解析；内容身份 11 项、目录界面 3 项均通过 | [37175574014](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37175574014) / 111357370670 / 11293880522 |
+| lint / debug 构建 | 同一新提交通过，按顺序执行，debug APK 27,553,626 字节，SHA-256 `fff9410fd2ab782468fdfc814811746797c9ed424b561b1d97bf82c5648002cb` | 同一 Android job |
+| 签名配套构建及 Cleaner | **成功；两次各 78 组通过，0 失败**。正式证书一致，APK 与模块内 APK 独立按字节比较一致，模块 versionCode=30024 | [37175574045](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37175574045) / 111357370611 / 11293516905 |
+| 30024 权限 / Shizuku 设备 | **四项成功**，分别核验实际结果与数据保留 | [37175574030](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37175574030)；API 28 job 111357370682 / artifact 11293346878，API 29 111357370783 / 11293067798，Shizuku shell 111357370779 / 11293751812，root 111357370870 / 11293582085 |
+| 内容身份与只读边界设备首次新构建 | **失败保留**：API 26 泛化断言错误；API 36 私有夹具的根路径未包括其规范路径，身份核对保守拒绝。整体 Reliability 运行仍为失败，不能借 Android job 成功写成整体通过 | 同一 Reliability / 111358494837、111358494861 / artifacts 11292857766、11293970370 |
+
+签名 APK SHA-256：`c0a618bd5a7a062a5e03c5c5b8a66f60aa2f14fb2a56c34e3fc7445ba00a2cbc`；
+配套模块：`8b95ec87f2b498cbcff4ada2492b97fa6fcd427ef61d3ded533940faa21b58ae`。
+四份设备的 access-input.json 均为精确源 `251da038f95feb4b959ed245dd6dea26fc98b4d4`、
+生产运行 `37175574045`、30024 和同一 APK / 正式证书，未换用 debug 包做签名权限验收。
+
+内容探针续修只改 debug 夹具、CI 和采集脚本。新运行先用 git diff 核对生产代码、全部已有回归及版本
+仍与 `251da03` 相同，不重启已成功的签名生产任务或四项设备；复用原 debug 构建恢复 job 做新探针
+编译/lint，再只续跑已失败的两项内容设备。私有 guard 接受该夹具的原路径和规范路径，不弱化生产
+身份规则。新增错误阶段/堆栈及部分已观察结果，避免泛化错误使未执行检查被混淆。
+
+若 App 对生成共享文件的 setLastModified 实际返回 false，夹具请求由已经受 AVD/SDK/UID 检查的
+CI root 控制器处理。仅允许本轮 UUID 目录的 first.bin/second.bin、131072 字节和固定 mtime；
+拒绝叶子链接，核验实际 stat 秒后才回复。App 再核验实际 mtime，记录每次控制来自 App 或 CI 主机，
+不提高 App 权限、不修改系统时钟或全局策略。实际完整 stat 元组是否相同仍由独立布尔值报告。
+
+API 36 的首轮采集实际跟随循环链接，产生 124 份拷贝及 ELOOP 警告。采集改为只拉取固定的
+result/shared-observations/audit-observed JSON，夹具及链接原样保留。参考 AOSP
+[ADB 文件同步源码](https://github.com/aosp-mirror/platform_system_core/blob/android10-release/adb/client/file_sync_client.cpp)
+（已读取其 Apache-2.0 文件头及递归链接逻辑），独立实现结果文件白名单，没有复制上游代码或新增依赖。
 
 ## 每批开源参考、许可证与独立实现
 

@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
       matrix:
         api: [26, 36]
-    if: always() && (contains(github.event.head_commit.message, '[30023-storage-continuation]') || ((contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[identity-build]') || contains(github.event.head_commit.message, '[30023-debug-continuation]')) && (needs.android-reliability.result == 'success' || needs.android-build-recovery.result == 'success')))
+    if: always() && (contains(github.event.head_commit.message, '[30023-storage-continuation]') || ((contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[identity-build]') || contains(github.event.head_commit.message, '[identity-probe-repair]') || contains(github.event.head_commit.message, '[30023-debug-continuation]')) && (needs.android-reliability.result == 'success' || needs.android-build-recovery.result == 'success')))
     needs: [android-reliability, android-build-recovery]
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -77,7 +77,7 @@ jobs:
             if (run.head_sha !== 'e70d1227a592a774786a485248f825cd89b301cc' || run.status !== 'completed' || !jobs.some(job => job.name === 'android-build-recovery' && job.conclusion === 'success')) throw new Error('Unexpected debug producer');
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ (contains(github.event.head_commit.message, '[30023-debug-continuation]') || contains(github.event.head_commit.message, '[30023-storage-continuation]')) && 'BaiZe-Reliability-Debug-Recovery' || 'BaiZe-Reliability-Android-Verification' }}
+          name: ${{ (contains(github.event.head_commit.message, '[30023-debug-continuation]') || contains(github.event.head_commit.message, '[30023-storage-continuation]') || contains(github.event.head_commit.message, '[identity-probe-repair]')) && 'BaiZe-Reliability-Debug-Recovery' || 'BaiZe-Reliability-Android-Verification' }}
           run-id: ${{ contains(github.event.head_commit.message, '[30023-storage-continuation]') && 37169949638 || github.run_id }}
           github-token: ${{ github.token }}
           path: verification
@@ -277,7 +277,7 @@ jobs:
           if-no-files-found: warn
 
   android-build-recovery:
-    if: contains(github.event.head_commit.message, '[30023-debug-continuation]')
+    if: contains(github.event.head_commit.message, '[30023-debug-continuation]') || contains(github.event.head_commit.message, '[identity-probe-repair]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -285,8 +285,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Require unchanged production source for debug build recovery
+        if: contains(github.event.head_commit.message, '[30023-debug-continuation]')
         run: |
           git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**'
+      - name: Preserve accepted 30024 production and regression source
+        if: contains(github.event.head_commit.message, '[identity-probe-repair]')
+        run: |
+          git diff --exit-code 251da038f95feb4b959ed245dd6dea26fc98b4d4 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**' ':(exclude)v2/app/src/debug/**'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -308,7 +313,8 @@ jobs:
       - name: Verify complete debug APK
         run: |
           unzip -tq v2/app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging v2/app/build/outputs/apk/debug/app-debug.apk | grep "versionCode='30023'"
+          code=$(sed -n 's/^versionCode=//p' module.prop)
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging v2/app/build/outputs/apk/debug/app-debug.apk | grep "versionCode='$code'"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

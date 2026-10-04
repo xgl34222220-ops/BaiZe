@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Process
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.system.ErrnoException
 import android.system.Os
@@ -27,12 +28,16 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
         if (!(Build.FINGERPRINT.contains("generic") || Build.MODEL.lowercase().contains("sdk"))) { finish(); return }
         lifecycleScope.launch(Dispatchers.IO) {
             val output = File(filesDir, "storage-collision-probe").apply { mkdirs() }
+            var phase = "access"
             val result = runCatching {
                 check(Process.myUid() >= 10000 && StorageMediaRepository.hasAccess(this@StorageCollisionDeviceProbeActivity))
+                phase = "shared-fixtures"
+                val timestampSetters = ArrayList<String>()
                 @Suppress("DEPRECATION")
                 val owned = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "baize-collision-owned-${UUID.randomUUID()}").apply { check(mkdirs()) }
-                val files = listOf("first.bin", "second.bin").map { name -> File(owned, name).apply {
-                    writeBytes(ByteArray(128 * 1024)); check(setLastModified(1500000000000L))
+                val files = listOf("first.bin", "second.bin").mapIndexed { index, name -> File(owned, name).apply {
+                    writeBytes(ByteArray(128 * 1024))
+                    timestampSetters += controlledTimestamp(this, output, index + 1)
                     val values = ContentValues().apply {
                         put(MediaStore.MediaColumns.DATA, path); put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                         put(MediaStore.MediaColumns.SIZE, length()); put(MediaStore.MediaColumns.DATE_MODIFIED, lastModified() / 1000)
@@ -41,7 +46,8 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                     checkNotNull(contentResolver.insert(MediaStore.Files.getContentUri(if (Build.VERSION.SDK_INT >= 29) "external_primary" else "external"), values))
                 } }
                 val before = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(owned.path + "/") }
-                check(before.size == 2)
+                check(before.size == 2) { "Expected two owned index rows, observed ${before.size}" }
+                phase = "original-duplicate-proof"
                 val cache = StorageDigestCache()
                 val originalGroup = StorageMediaRepository.findDuplicates(applicationContext, before, cache = cache).groups.single()
                 val guard = ApkDeletionGuard.forContext(applicationContext)
@@ -68,9 +74,11 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                 val originalIdentity = checkNotNull(guard.capture(files[1].path))
                 val originalProof = IndexedContentReview.capture(originalIdentity, guard)
                 val changed = ByteArray(128 * 1024).apply { this[lastIndex] = 1 }
-                files[1].writeBytes(changed); check(files[1].setLastModified(1500000000000L))
+                phase = "same-size-content-mutation"
+                files[1].writeBytes(changed)
+                timestampSetters += controlledTimestamp(files[1], output, 3)
                 val after = StorageMediaRepository.scanIndex(applicationContext).records.filter { it.path.startsWith(owned.path + "/") }
-                check(after.size == 2)
+                check(after.size == 2) { "Expected two owned index rows after mutation, observed ${after.size}" }
                 val modifiedBefore = before.single { it.path == files[1].path }.modifiedSeconds
                 val modifiedAfter = after.single { it.path == files[1].path }.modifiedSeconds
                 check(files.all { it.lastModified() == 1500000000000L })
@@ -88,7 +96,13 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                 val currentSelected = after.single { it.path == files[1].path }
                 check(!StorageMediaRepository.duplicateStillSafe(applicationContext, currentSelected,
                     originalGroup.copy(records = after), setOf(currentSelected.uri), StorageScanControl()))
+                File(output, "shared-observations.json").writeText(JSONObject()
+                    .put("appUid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
+                    .put("mtimeSetters", org.json.JSONArray(timestampSetters))
+                    .put("originalIdentity", originalIdentity.json()).put("newIdentity", newIdentity.json()).toString(2))
+                phase = "private-read-only-boundaries"
                 val privateChecks = privateReadOnlyBoundaries(output)
+                phase = "legacy-audit-fixture"
                 val auditState = File(output, "audit-owned-${UUID.randomUUID()}").apply { mkdirs() }
                 val row = "2026-10-03 12:00:00\tdeep\t4096\t1\t0\t0\t完成\n"
                 File(auditState, "history.tsv").writeText(row + row)
@@ -97,6 +111,7 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                 File(output, "audit-observed.json").writeText(audit.toString(2))
                 JSONObject().put("passed", true).put("uid", Process.myUid()).put("api", Build.VERSION.SDK_INT)
                     .put("sharedMtimeMillisCollisionObserved", true).put("mediaStoreSecondsCollisionObserved", true)
+                    .put("mtimeSetters", org.json.JSONArray(timestampSetters))
                     .put("freshDuplicateScanRejectsChangedContent", true).put("staleReviewProofRejected", true)
                     .put("forcedIdentityCollisionRejectedByContentHash", true)
                     .put("versionCode", BuildConfig.VERSION_CODE)
@@ -114,9 +129,32 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
                     .put("privateReadOnlyBoundaries", privateChecks)
                     .put("sharedAliasChecks", aliasChecks)
                     .put("fixtureDirectory", owned.path)
-            }.getOrElse { JSONObject().put("passed", false).put("error", it.toString()) }
+            }.getOrElse { JSONObject().put("passed", false).put("error", it.toString())
+                .put("phase", phase).put("api", Build.VERSION.SDK_INT).put("uid", Process.myUid())
+                .put("stackTrace", it.stackTraceToString()) }
             File(output, "result.json").writeText(result.toString(2)); finish()
         }
+    }
+
+    /** Some legacy shared filesystems refuse App utime. Only the guarded CI host
+     * may set mtime on these generated fixtures; the App receives no new privilege. */
+    private fun controlledTimestamp(file: File, output: File, request: Int): String {
+        val mtime = 1500000000000L
+        if (file.setLastModified(mtime)) return "app"
+        val ack = File(output, "timestamp-ack-$request.txt").apply { writeText("pending") }
+        val requestFile = File(output, "timestamp-request-$request.json")
+        val pending = File(output, "timestamp-request-$request.part")
+        pending.writeText(JSONObject().put("path", file.path).put("mtimeMillis", mtime)
+            .put("appUid", Process.myUid()).toString(2))
+        check(pending.renameTo(requestFile)) { "Could not publish fixture clock request" }
+        val deadline = SystemClock.elapsedRealtime() + 30_000L
+        while (ack.readText().trim() != mtime.toString()) {
+            check(SystemClock.elapsedRealtime() < deadline) { "Generated fixture mtime could not be controlled: ${file.path}" }
+            Thread.sleep(50)
+        }
+        while (file.lastModified() != mtime && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
+        check(file.lastModified() == mtime) { "Controller ack did not match the observed fixture mtime" }
+        return "guarded-ci-root-fixture-controller"
     }
 
     private fun privateReadOnlyBoundaries(output: File): JSONObject {
@@ -137,7 +175,9 @@ class StorageCollisionDeviceProbeActivity : ComponentActivity() {
         check(missing.inaccessible == 1 && missing.roots.isEmpty())
         check(runCatching { DirectoryUsageScanner.scan(mapOf(root to root.path), check = { throw CancellationException() }) }
             .exceptionOrNull() is CancellationException)
-        val privateGuard = ApkDeletionGuard(setOf(outside.path), null)
+        // Context's /data/user/0 alias may canonicalize to /data/data. Both roots
+        // refer only to this App-owned fixture, never arbitrary private data.
+        val privateGuard = ApkDeletionGuard(setOf(outside.path, outside.canonicalPath), null)
         val identity = checkNotNull(privateGuard.capture(privateFile.path))
         val expected = privateFile.readBytes()
         val proof = IndexedContentReview.capture(identity, privateGuard)
