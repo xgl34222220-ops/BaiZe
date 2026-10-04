@@ -71,8 +71,9 @@ class PhotoCompressionRegressionTest {
         provider.attachInfo(app, ProviderInfo().apply { authority = PhotoBatchTestProvider.AUTHORITY; grantUriPermissions = true; exported = true; readPermission = "android.permission.MANAGE_DOCUMENTS"; writePermission = "android.permission.MANAGE_DOCUMENTS" })
         ShadowContentResolver.registerProviderInternal(PhotoBatchTestProvider.AUTHORITY, provider)
         val history = File(app.filesDir, "photo-compression-history.json"); history.delete()
+        val journal = PhotoCompressionJournal(File(app.filesDir, "photo-compression-journal.json")); journal.clearReminder()
         val model = PhotoCompressionViewModel(app, SavedStateHandle())
-        try { block(provider, model) } finally { provider.root.deleteRecursively(); history.delete() }
+        try { block(provider, model) } finally { provider.root.deleteRecursively(); history.delete(); journal.clearReminder() }
     }
     private fun await(model: PhotoCompressionViewModel) {
         val deadline = System.nanoTime() + 15_000_000_000L
@@ -93,13 +94,14 @@ class PhotoCompressionRegressionTest {
         assertEquals(0, model.state.value.outcomes.count { it.succeeded }); assertEquals(1, provider.created)
         assertTrue(model.state.value.outcomes.all { it.message.contains("已压缩") })
     }
-    @Test fun failedExportVerificationRemovesOwnedCopyAndDoesNotCreateHistory() = fixture { provider, model ->
+    @Test fun failedExportVerificationRetainsCopyForReviewAndDoesNotCreateHistory() = fixture { provider, model ->
         val source = jpeg(File(provider.root, "source.jpg")); val original = source.readBytes()
         provider.corruptOutputReads = true
         model.selectBatch(listOf(provider.uri("source.jpg"))); model.exportBatch(provider.tree); await(model)
-        assertEquals(1, provider.created); assertEquals(1, provider.deleted)
+        assertEquals(1, provider.created); assertEquals(0, provider.deleted)
         assertEquals(0, model.state.value.outcomes.count { it.succeeded }); assertTrue(model.state.value.history.isEmpty())
         assertArrayEquals(original, source.readBytes())
+        assertTrue(model.state.value.recoveryMessage.isNotBlank()); assertEquals(1, model.state.value.pendingCopies.size)
     }
     @Test fun providerReturningOriginalDocumentIsRejectedWithoutWritingOrDeletingIt() = fixture { provider, model ->
         val source = jpeg(File(provider.root, "source.jpg")); val original = source.readBytes()
@@ -123,6 +125,43 @@ class PhotoCompressionRegressionTest {
         assertFalse(model.state.value.busy); assertEquals("", model.state.value.picker); assertEquals(0, provider.created)
         val restored = PhotoCompressionViewModel(RuntimeEnvironment.getApplication(), SavedStateHandle(mapOf("active" to true)))
         assertFalse(restored.state.value.busy); assertTrue(restored.state.value.status.contains("未自动重试")); assertEquals(0, provider.created)
+    }
+
+    private fun pending(provider: PhotoBatchTestProvider, partial: Boolean = false, alreadyRecorded: Boolean = false): Pair<File, PhotoCompressionRecord> {
+        val app = RuntimeEnvironment.getApplication()
+        val completed = jpeg(File(provider.root, "completed.jpg")); val bytes = completed.readBytes()
+        val target = File(provider.root, "residual.jpg").apply { writeBytes(if (partial) bytes.take(64).toByteArray() else bytes) }
+        val hash = bytes.inputStream().use { photoDigest(it) }
+        val row = PhotoCompressionRecord("原图.jpg", "a".repeat(64), hash, provider.uri("residual.jpg").toString(), bytes.size * 2L, bytes.size.toLong(), 60, 2048, PhotoMetadataMode.STRIP)
+        val journal = PhotoCompressionJournal(File(app.filesDir, "photo-compression-journal.json"))
+        journal.begin(2); journal.prepare("residual.jpg", row)
+        if (alreadyRecorded) PhotoCompressionHistory(File(app.filesDir, "photo-compression-history.json")).add(row)
+        return target to row
+    }
+    @Test fun coldRestartWithNoSavedStateReadsDurablePendingCopyWithoutReplay() = fixture { provider, _ ->
+        val (target, _) = pending(provider, partial = true); val original = target.readBytes()
+        val restored = PhotoCompressionViewModel(RuntimeEnvironment.getApplication(), SavedStateHandle())
+        assertFalse(restored.state.value.busy); assertTrue(restored.state.value.recoveryMessage.contains("上次导出已中断"))
+        assertEquals(1, restored.state.value.pendingCopies.size); assertEquals(0, provider.created)
+        restored.reviewInterruptedExport(); await(restored)
+        assertTrue(restored.state.value.pendingCopies.single().note.contains("副本不完整或内容已变化"))
+        assertTrue(restored.state.value.history.isEmpty()); assertEquals(0, provider.deleted)
+        assertArrayEquals(original, target.readBytes()); assertFalse(restored.prepareBatchExport())
+    }
+    @Test fun fullCopyWrittenBeforeDeathCanBeReadOnlyVerifiedAndRecorded() = fixture { provider, _ ->
+        val (target, row) = pending(provider); val original = target.readBytes()
+        val restored = PhotoCompressionViewModel(RuntimeEnvironment.getApplication(), SavedStateHandle())
+        restored.reviewInterruptedExport(); await(restored)
+        assertEquals(row, restored.state.value.history.single()); assertTrue(restored.state.value.pendingCopies.isEmpty())
+        assertEquals("", restored.state.value.recoveryMessage); assertEquals(0, provider.created); assertEquals(0, provider.deleted)
+        assertArrayEquals(original, target.readBytes())
+    }
+    @Test fun deathAfterHistorySavedBeforeJournalClearedDoesNotDuplicateSuccess() = fixture { provider, _ ->
+        pending(provider, alreadyRecorded = true)
+        val restored = PhotoCompressionViewModel(RuntimeEnvironment.getApplication(), SavedStateHandle())
+        restored.reviewInterruptedExport(); await(restored)
+        assertEquals(1, restored.state.value.history.size); assertTrue(restored.state.value.pendingCopies.isEmpty())
+        restored.reviewInterruptedExport(); await(restored); assertEquals(1, restored.state.value.history.size)
     }
 }
 

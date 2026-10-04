@@ -34,6 +34,7 @@ class PhotoCompressionActivity : ComponentActivity() {
             val settings by appearance.settings.collectAsState()
             val state by model.state.collectAsState()
             var confirmBack by rememberSaveable { mutableStateOf(false) }
+            var confirmRecovery by rememberSaveable { mutableStateOf(false) }
             fun back() { if (state.busy) confirmBack = true else finish() }
             BackHandler { back() }
             BaiZeTheme(settings) {
@@ -51,6 +52,16 @@ class PhotoCompressionActivity : ComponentActivity() {
                             Text(state.status, style = MaterialTheme.typography.bodySmall)
                             if (state.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = model::stop) { Text("停止处理") } }
                         } }
+                        if (state.recoveryMessage.isNotBlank()) item { DetailGlassPanel {
+                            Text("上次导出待核对", style = MaterialTheme.typography.titleMedium)
+                            Text(state.recoveryMessage, style = MaterialTheme.typography.bodySmall)
+                            state.pendingCopies.forEach { pending ->
+                                Text(pending.filename, style = MaterialTheme.typography.labelLarge)
+                                Text(pending.note, style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = model::reviewInterruptedExport, enabled = !state.busy) { Text("核对上次导出") }
+                            TextButton(onClick = { confirmRecovery = true }, enabled = !state.busy) { Text("已核对，关闭提醒") }
+                        } }
                         state.preview?.let { result -> item { DetailGlassPanel {
                             Text("原图预览", style = MaterialTheme.typography.titleMedium)
                             Image(result.original.asImageBitmap(), "原图方向校正后的预览", Modifier.fillMaxWidth().height(220.dp))
@@ -58,7 +69,7 @@ class PhotoCompressionActivity : ComponentActivity() {
                             Image(result.compressed.asImageBitmap(), "压缩副本效果预览", Modifier.fillMaxWidth().height(220.dp))
                             Text("${Formatter.formatFileSize(this@PhotoCompressionActivity, result.originalBytes)} → ${Formatter.formatFileSize(this@PhotoCompressionActivity, result.outputBytes)} · ${result.width} × ${result.height}")
                             Text(if (result.savesSpace) "另存副本不会自动删除原图；两份同时保留会增加当前占用。" else "没有节省空间，建议保留原图，本次不导出。", style = MaterialTheme.typography.bodySmall)
-                            TextButton(enabled = result.savesSpace && !state.busy && state.picker.isBlank(), onClick = {
+                            TextButton(enabled = result.savesSpace && !state.busy && state.picker.isBlank() && state.recoveryMessage.isBlank(), onClick = {
                                 if (model.prepareSingleExport()) export.launch("白泽压缩副本-${System.currentTimeMillis()}.jpg")
                             }) { Text("选择位置，另存副本") }
                         } } }
@@ -68,7 +79,7 @@ class PhotoCompressionActivity : ComponentActivity() {
                             TextButton(onClick = { selectBatch.launch(arrayOf("image/jpeg")) }, enabled = !state.busy && state.picker.isBlank()) { Text("选择多张照片") }
                             Text("已选择 ${state.photos.size} 张", style = MaterialTheme.typography.bodySmall)
                             Row { Checkbox(state.allowRepeat, model::allowRepeat, enabled = !state.busy && state.picker.isBlank()); Text("允许再次处理已压缩照片", Modifier.padding(top = 12.dp), style = MaterialTheme.typography.bodySmall) }
-                            TextButton(onClick = { if (model.prepareBatchExport()) exportBatch.launch(null) }, enabled = state.photos.isNotEmpty() && !state.busy && state.picker.isBlank()) { Text("选择文件夹，批量另存") }
+                            TextButton(onClick = { if (model.prepareBatchExport()) exportBatch.launch(null) }, enabled = state.photos.isNotEmpty() && !state.busy && state.picker.isBlank() && state.recoveryMessage.isBlank()) { Text("选择文件夹，批量另存") }
                             state.outcomes.forEach { outcome ->
                                 Text(outcome.name, style = MaterialTheme.typography.labelLarge)
                                 Text(outcome.message, style = MaterialTheme.typography.bodySmall)
@@ -90,6 +101,10 @@ class PhotoCompressionActivity : ComponentActivity() {
                     text = { Text("已导出的副本会保留，正在写入的副本将停止；原图不会修改。") },
                     confirmButton = { BaiZeDialogButton(onClick = { model.stop(); finish() }) { Text("停止并返回") } },
                     dismissButton = { BaiZeDialogButton(onClick = { confirmBack = false }) { Text("继续处理") } })
+                if (confirmRecovery) BaiZeDialog(onDismissRequest = { confirmRecovery = false }, title = { Text("已核对目标副本？") },
+                    text = { Text("请先在所选文件夹核对留下的副本。关闭提醒只移除处理记录；副本和原图均保留，不自动重试。") },
+                    confirmButton = { BaiZeDialogButton(onClick = { confirmRecovery = false; model.closeRecoveryReminder() }) { Text("关闭提醒") } },
+                    dismissButton = { BaiZeDialogButton(onClick = { confirmRecovery = false }) { Text("继续核对") } })
             }
         }
         if (savedInstanceState == null) intent.getStringExtra("photo_uri")?.let { model.importSingle(Uri.parse(it)) }

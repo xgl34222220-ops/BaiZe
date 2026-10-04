@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -26,12 +27,14 @@ internal data class PhotoCompressionState(val quality: Int = 80, val edge: Int =
     val sourceReady: Boolean = false, val preview: PhotoCompressionPreview? = null,
     val photos: List<String> = emptyList(), val outcomes: List<PhotoBatchOutcome> = emptyList(),
     val history: List<PhotoCompressionRecord> = emptyList(), val allowRepeat: Boolean = false,
+    val recoveryMessage: String = "", val pendingCopies: List<PendingPhotoCopy> = emptyList(),
     val status: String = "选择 JPEG 照片，先比较再另存")
 
 /** Activity recreation keeps the worker and progress; process death never silently replays an export. */
 internal class PhotoCompressionViewModel(application: Application, private val saved: SavedStateHandle) : AndroidViewModel(application) {
     private val context get() = getApplication<Application>()
     private val history = PhotoCompressionHistory(File(context.filesDir, "photo-compression-history.json"))
+    private val journal = PhotoCompressionJournal(File(context.filesDir, "photo-compression-journal.json"))
     private val cancelled = AtomicBoolean(false)
     private fun cacheFile(key: String) = saved.get<String>(key)?.let(::File)?.takeIf {
         it.parentFile?.canonicalPath == context.cacheDir.canonicalPath && it.isFile && it.name.startsWith("photo-") }
@@ -42,6 +45,8 @@ internal class PhotoCompressionViewModel(application: Application, private val s
         metadata = runCatching { PhotoMetadataMode.valueOf(saved["metadata"] ?: "STRIP") }.getOrDefault(PhotoMetadataMode.STRIP),
         photos = saved.get<ArrayList<String>>("photos")?.toList().orEmpty(), sourceReady = source != null,
         picker = saved.get<String>("picker").orEmpty(), history = runCatching { history.records() }.getOrDefault(emptyList()),
+        recoveryMessage = runCatching { journal.message() }.getOrElse { "上次导出记录无法读取，请核对目标副本；未自动重试。" },
+        pendingCopies = runCatching { journal.pending() }.getOrDefault(emptyList()),
         status = if (saved.get<Boolean>("active") == true) "上次处理已中断，请核对目标副本；原图未修改，未自动重试。" else "选择 JPEG 照片，先比较再另存"))
     val state = mutableState.asStateFlow()
     init {
@@ -58,18 +63,26 @@ internal class PhotoCompressionViewModel(application: Application, private val s
     fun allowRepeat(value: Boolean) { if (!state.value.busy) mutableState.update { it.copy(allowRepeat = value) } }
     private fun check() { if (cancelled.get()) throw CancellationException("已停止") }
     fun stop() { cancelled.set(true); mutableState.update { it.copy(status = "正在停止；已导出的副本保留") } }
-    private fun task(action: () -> String) {
+    private fun task(exportCount: Int = 0, action: () -> String) {
         if (state.value.busy) return
         cancelled.set(false); saved["active"] = true
         mutableState.update { it.copy(busy = true) }
         viewModelScope.launch {
             try {
-                val message = withContext(Dispatchers.IO) { action() }
+                val message = withContext(Dispatchers.IO) {
+                    if (exportCount > 0) journal.begin(exportCount)
+                    try { action() } finally { if (exportCount > 0) journal.finish() }
+                }
                 mutableState.update { it.copy(status = message) }
             } catch (error: Exception) {
                 mutableState.update { it.copy(status = if (cancelled.get() || error is CancellationException)
                     "已停止，已导出的副本保留；原图未修改" else error.message ?: "处理未完成，原图未修改") }
-            } finally { saved["active"] = false; mutableState.update { it.copy(busy = false) } }
+            } finally {
+                saved["active"] = false
+                mutableState.update { it.copy(busy = false,
+                    recoveryMessage = runCatching { journal.message() }.getOrElse { "上次导出记录无法读取，请核对目标副本" },
+                    pendingCopies = runCatching { journal.pending() }.getOrDefault(emptyList())) }
+            }
         }
     }
     private fun name(uri: Uri): String = runCatching {
@@ -112,7 +125,7 @@ internal class PhotoCompressionViewModel(application: Application, private val s
     }
     fun prepareSingleExport(): Boolean {
         val current = state.value
-        if (current.busy || current.picker.isNotBlank()) return false
+        if (current.busy || current.picker.isNotBlank() || current.recoveryMessage.isNotBlank()) return false
         pending = current.preview?.takeIf { it.savesSpace }?.output ?: return false
         saved["pending"] = pending!!.path; saved["picker"] = "single"
         mutableState.update { it.copy(picker = "single") }; return true
@@ -130,17 +143,21 @@ internal class PhotoCompressionViewModel(application: Application, private val s
             require(actual == expected) { "导出副本核对失败" }
             return actual
         } catch (error: Exception) {
-            val deleted = runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
-            if (cancelled.get() && deleted) throw error
-            throw java.io.IOException("${error.message}；${if (deleted) "不完整副本已移除" else "请检查目标处留下的副本"}", error)
+            throw java.io.IOException("${error.message}；副本已保留，请核对目标处的内容", error)
         }
     }
-    private fun record(name: String, input: File, output: File, uri: Uri, options: PhotoCompressionState): String {
-        val outputHash = writeCopy(output, uri)
-        val row = PhotoCompressionRecord(name, input.inputStream().use { photoDigest(it) }, outputHash, uri.toString(),
+    private fun plannedRecord(name: String, input: File, output: File, options: PhotoCompressionState) =
+        PhotoCompressionRecord(name, input.inputStream().use { photoDigest(it, ::check) }, output.inputStream().use { photoDigest(it, ::check) }, "",
             input.length(), output.length(), options.quality, options.edge, options.metadata)
-        return try { history.add(row); mutableState.update { it.copy(history = history.records()) }; "已导出并核对，原图保留" }
-            catch (_: Exception) { "已导出并核对，原图保留；压缩记录保存失败" }
+
+    private fun record(id: String, row: PhotoCompressionRecord, output: File, uri: Uri): String {
+        journal.target(id, uri.toString(), name(uri)) // Durable BEFORE opening or truncating the destination.
+        val outputHash = writeCopy(output, uri)
+        require(outputHash == row.outputHash) { "导出副本核对失败" }
+        history.add(row.copy(uri = uri.toString()))
+        journal.confirmed(id) // A crash after history persistence remains idempotent on review.
+        mutableState.update { it.copy(history = history.records()) }
+        return "已导出并核对，原图保留"
     }
     fun exportSingle(uri: Uri?) {
         cancelPicker()
@@ -153,7 +170,12 @@ internal class PhotoCompressionViewModel(application: Application, private val s
         if (output == null || input == null || !output.isFile) {
             mutableState.update { it.copy(status = "预览已过期，未写入；请移除目标处的空白文档后重新预览") }; return
         }
-        task { record(saved["name"] ?: "照片.jpg", input, output, uri, options) }
+        persistGrant(uri)
+        task(exportCount = 1) {
+            val row = plannedRecord(saved["name"] ?: "照片.jpg", input, output, options)
+            val id = journal.prepare(name(uri), row.copy(uri = uri.toString()))
+            record(id, row, output, uri)
+        }
     }
     fun selectBatch(uris: List<Uri>) {
         if (state.value.busy) return
@@ -162,7 +184,7 @@ internal class PhotoCompressionViewModel(application: Application, private val s
         mutableState.update { it.copy(photos = selected, outcomes = emptyList(), status = "已选择 ${selected.size} 张照片${if (uris.size > 100) "；最多 100 张，超出的未选入" else ""}，选择文件夹后批量另存") }
     }
     fun prepareBatchExport(): Boolean {
-        if (state.value.busy || state.value.photos.isEmpty() || state.value.picker.isNotBlank()) return false
+        if (state.value.busy || state.value.photos.isEmpty() || state.value.picker.isNotBlank() || state.value.recoveryMessage.isNotBlank()) return false
         saved["picker"] = "batch"; mutableState.update { it.copy(picker = "batch") }; return true
     }
     fun exportBatch(tree: Uri?) {
@@ -171,13 +193,15 @@ internal class PhotoCompressionViewModel(application: Application, private val s
         val options = state.value; val selected = options.photos.toList()
         if (selected.isEmpty()) return
         mutableState.update { it.copy(outcomes = emptyList()) }
-        task {
+        persistGrant(tree)
+        task(exportCount = selected.size) {
             val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
             selected.forEachIndexed { index, value ->
                 check(); val uri = Uri.parse(value); val label = name(uri)
                 mutableState.update { it.copy(status = "正在处理 ${index + 1} / ${selected.size}：$label") }
                 val input = File(context.cacheDir, "photo-batch-source-${UUID.randomUUID()}.jpg")
                 val output = File(context.cacheDir, "photo-batch-output-${UUID.randomUUID()}.jpg")
+                journal.trackCache(input, output)
                 var result: PhotoCompressionPreview? = null
                 val outcome = try {
                     read(uri, input)
@@ -189,10 +213,12 @@ internal class PhotoCompressionViewModel(application: Application, private val s
                         check()
                         if (!result!!.savesSpace) PhotoBatchOutcome(label, "未节省空间，跳过") else {
                             val filename = "${label.substringBeforeLast('.').take(64)}-白泽-${UUID.randomUUID().toString().take(8)}.jpg"
+                            val row = plannedRecord(label, input, output, options)
+                            val id = journal.prepare(filename, row) // Also covers death immediately after createDocument.
                             val target = DocumentsContract.createDocument(context.contentResolver, parent, "image/jpeg", filename)
                                 ?: error("无法创建新的压缩副本")
                             require(selected.none { samePhotoDocument(Uri.parse(it), target) }) { "目标指向所选原图，已停止导出" }
-                            PhotoBatchOutcome(label, record(label, input, output, target, options), true)
+                            PhotoBatchOutcome(label, record(id, row, output, target), true)
                         }
                     }
                 } catch (error: Exception) {
@@ -203,6 +229,46 @@ internal class PhotoCompressionViewModel(application: Application, private val s
             }
             val success = state.value.outcomes.count { it.succeeded }
             "批量完成：$success 张已导出，${selected.size - success} 张跳过或失败；原图均保留"
+        }
+    }
+    private fun persistGrant(uri: Uri) {
+        // Persist only the grant the person already chose in the system picker.
+        runCatching { context.contentResolver.takePersistableUriPermission(uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+    }
+
+    fun reviewInterruptedExport() {
+        if (state.value.busy || state.value.recoveryMessage.isBlank()) return
+        task {
+            var verified = 0
+            journal.pending().forEach { pending ->
+                check()
+                val row = pending.record
+                val note = try {
+                    require(row.uri.isNotBlank()) { "创建目标时中断，请在所选文件夹核对 ${pending.filename}" }
+                    val actual = context.contentResolver.openInputStream(Uri.parse(row.uri))?.use { photoDigest(it, ::check) }
+                        ?: error("无法读取上次目标，请在文件管理器核对 ${pending.filename}")
+                    require(actual == row.outputHash) { "副本不完整或内容已变化，已保留，请核对 ${pending.filename}" }
+                    if (history.records().none { it.uri == row.uri && it.outputHash == row.outputHash }) history.add(row)
+                    journal.confirmed(pending.id); verified++
+                    null
+                } catch (error: Exception) {
+                    if (cancelled.get() || error is CancellationException) throw error
+                    error.message ?: "副本无法核对，已保留"
+                }
+                if (note != null) journal.note(pending.id, note)
+            }
+            journal.discardOwnedCache(context.cacheDir); journal.finish()
+            mutableState.update { it.copy(history = history.records()) }
+            "已核对 $verified 份完整副本；未确认副本保留，原图未修改，未自动重试。"
+        }
+    }
+
+    fun closeRecoveryReminder() {
+        if (state.value.busy) return
+        task {
+            journal.discardOwnedCache(context.cacheDir); journal.clearReminder()
+            "已关闭记录提醒；所有目标副本保留，原图未修改，未自动重试。"
         }
     }
     override fun onCleared() {

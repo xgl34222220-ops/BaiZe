@@ -19,11 +19,7 @@ internal class PhotoCompressionHistory(private val file: File) {
     @Synchronized fun records(): List<PhotoCompressionRecord> = if (!file.exists()) emptyList() else {
         require(file.length() <= 256 * 1024) { "压缩记录过大" }
         val rows = JSONArray(file.readText())
-        List(minOf(rows.length(), 100)) { i -> val row = rows.getJSONObject(i)
-            PhotoCompressionRecord(row.getString("name"), row.getString("sourceHash"), row.getString("outputHash"), row.getString("uri"),
-                row.getLong("before"), row.getLong("after"), row.getInt("quality"), row.getInt("edge"),
-                PhotoMetadataMode.valueOf(row.getString("metadata")), row.getLong("epoch"))
-        }
+        List(minOf(rows.length(), 100)) { i -> photoRecord(rows.getJSONObject(i)) }
     }
     @Synchronized fun alreadyProcessed(hash: String, quality: Int, edge: Int, metadata: PhotoMetadataMode): Boolean = records().any {
         it.outputHash == hash || (it.sourceHash == hash && it.quality == quality && it.edge == edge && it.metadata == metadata)
@@ -38,6 +34,9 @@ internal class PhotoCompressionHistory(private val file: File) {
 }
 internal fun photoDigest(input: java.io.InputStream, check: () -> Unit = {}): String {
     val digest = MessageDigest.getInstance("SHA-256"); val buffer = ByteArray(65536)
-    while (true) { check(); val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+    var bytes = 0L
+    while (true) { check(); val count = input.read(buffer); if (count < 0) break
+        bytes += count; require(bytes <= PhotoCompressionPolicy.MAX_INPUT_BYTES) { "副本超出核对上限，已保留" }
+        digest.update(buffer, 0, count) }
     return digest.digest().joinToString("") { "%02x".format(it) }
 }

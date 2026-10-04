@@ -34,7 +34,7 @@ public final class PhotoDocuments extends DocumentsProvider {
         MatrixCursor cursor = new MatrixCursor(columns);
         MatrixCursor.RowBuilder row = cursor.newRow();
         for (String column : columns) row.add(column, column.equals("root_id") ? "owned" : column.equals("document_id") ? "root" :
-            column.equals("title") ? "BaiZe CI Photos" : column.equals("flags") ? DocumentsContract.Root.FLAG_SUPPORTS_CREATE :
+            column.equals("title") ? "BaiZe CI Photos" : column.equals("flags") ? DocumentsContract.Root.FLAG_SUPPORTS_CREATE | DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD :
             column.equals("mime_types") ? "image/jpeg" : column.equals("available_bytes") ? 104857600L : null);
         return cursor;
     }
@@ -55,6 +55,9 @@ public final class PhotoDocuments extends DocumentsProvider {
         MatrixCursor cursor = new MatrixCursor(projection != null ? projection : DOC);
         String[] names = root.list(); if (names != null) { Arrays.sort(names); for (String name : names) if (name.endsWith(".jpg")) add(cursor, name); }
         return cursor;
+    }
+    @Override public boolean isChildDocument(String parent, String child) throws java.io.FileNotFoundException {
+        return parent.equals("root") && !child.equals("root") && file(child).isFile();
     }
     @Override public synchronized String createDocument(String parent, String mime, String name) throws java.io.FileNotFoundException {
         if (!parent.equals("root") || !mime.equals("image/jpeg")) throw new java.io.FileNotFoundException();
