@@ -42,5 +42,5 @@ def verify_private_data(m, evidence):
     assert int(m.adb("shell", "stat", "-c", "%u", evidence["path"])) == evidence["appUid"]
     version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
     return {**evidence, "versionCode": version, "appPrivateDataPreserved": True,
-            "appDataCleared": False, "fixtureDataDeleted": False,
+            "appDataCleared": False, "persistentFixtureDataDeleted": False,
             "crossUidRootBinderValidated": False}

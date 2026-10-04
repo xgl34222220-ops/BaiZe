@@ -219,7 +219,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 mutableState.update { it.copy(running = false, progress = null, failed = !stopped,
                     elapsedMs = SystemClock.elapsedRealtime() - started,
                     status = if (stopped) "扫描已停止" else "扫描未完成：${error.message ?: "文件读取失败"}",
-                    coverage = if (stopped) "扫描已停止，仅保留已完成内容校验的部分结果。重新扫描会复用身份未变化的摘要；清理仍需重新确认。" else "请检查文件访问权限后重试。") }
+                    coverage = if (stopped) "扫描已停止，仅保留已完成内容校验的部分结果。重新扫描会再次读取文件内容；清理仍需重新确认。" else "请检查文件访问权限后重试。") }
             }
         }
     }

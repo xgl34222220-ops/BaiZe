@@ -32,4 +32,27 @@ class DirectoryDrillDownUiTest {
         compose.onNodeWithText("没有符合条件的文件").assertDoesNotExist()
         compose.onAllNodes(isToggleable()).assertCountEquals(0)
     }
+
+    @Test fun missingDirectoryObservationDoesNotBorrowTheWholeVolumeOrInventZero() {
+        val root = "/storage/emulated/0"
+        val state = StorageToolsUiState(mode = StorageToolMode.ANALYSIS, directory = "$root/Download/missing",
+            directoryUsage = DirectoryUsage(listOf(root), listOf(StorageDirectory(root, 80, 9000000)), 1, 0, false, "本地"))
+        compose.setContent { BaiZeTheme(AppearanceSettings()) { StorageToolsScreen(state, {}, {}, {}, {}, {}) } }
+        compose.onNodeWithText("尚未统计").assertIsDisplayed()
+        compose.onNodeWithText("当前目录占用").assertIsDisplayed()
+    }
+
+    @Test fun indexedSubsetKeepsSelectionWhileDirectoryTotalIncludesUnindexedFiles() {
+        val root = "/storage/emulated/0"; val leaf = "$root/Download/fixture"
+        val record = StorageFileRecord(1, "uri1", "$leaf/indexed.bin", "indexed.bin", 1024, 1500000000,
+            "application/octet-stream").withVerifiedStorageIdentity()
+        val state = StorageToolsUiState(mode = StorageToolMode.ANALYSIS, directory = leaf, records = listOf(record),
+            selected = setOf(record.uri), directoryUsage = DirectoryUsage(listOf(root),
+                listOf(StorageDirectory(root, 80, 9000000), StorageDirectory(leaf, 2, 3072)), 0, 0, false, "本地"))
+        compose.setContent { BaiZeTheme(AppearanceSettings()) { StorageToolsScreen(state, {}, {}, {}, {}, {}) } }
+        compose.onNodeWithText("2 个文件（含子目录）").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 1 项").assertIsDisplayed()
+        compose.onNodeWithText("indexed.bin").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("目录文件尚不可操作").assertDoesNotExist()
+    }
 }

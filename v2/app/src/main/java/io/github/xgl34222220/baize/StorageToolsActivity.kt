@@ -207,11 +207,16 @@ internal fun StorageToolsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else DetailGlassPanel {
+                    val currentDirectory = state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }
+                    val directorySelected = state.mode == StorageToolMode.ANALYSIS && state.directory != null
                     val bytes = if (state.mode == StorageToolMode.DUPLICATES) state.duplicateGroups.sumOf { it.reclaimableBytes }
+                        else if (directorySelected) currentDirectory?.bytes ?: 0L
                         else if (state.mode == StorageToolMode.ANALYSIS) state.directoryUsage?.bytes ?: state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
-                    Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
+                    Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (directorySelected) "当前目录占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    BaiZeMetric(Formatter.formatFileSize(context, bytes))
+                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else Formatter.formatFileSize(context, bytes))
+                    if (directorySelected && currentDirectory != null)
+                        Text("${currentDirectory.files} 个文件（含子目录）", style = MaterialTheme.typography.bodySmall)
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                     if (state.running) {
                         Spacer(Modifier.height(12.dp))
@@ -293,7 +298,12 @@ internal fun StorageToolsScreen(
                 }
             } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri]) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
-                item { DetailEmptyState(if (state.failed) "扫描未完成" else "没有符合条件的文件", if (state.failed) "请检查权限并重新扫描。" else "可调整筛选条件，或重新扫描。") }
+                val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
+                    state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
+                item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作" else "没有符合条件的文件",
+                    if (state.failed) "请检查权限并重新扫描。" else if (directoryFiles > 0)
+                        "目录统计包含 $directoryFiles 个文件。当前系统索引与筛选未提供可操作文件，仅展示目录占用；可调整筛选或稍后重新扫描。"
+                    else "可调整筛选条件，或重新扫描。") }
             }
         }
     }

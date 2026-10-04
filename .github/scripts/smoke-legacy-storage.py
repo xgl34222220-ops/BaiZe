@@ -115,6 +115,7 @@ def directory_row_count(label, count, name):
 
 try:
     m.adb("install", "-r", str(apk))
+    installed_version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
     private = evidence.seed_private_data(m, apk)
     for permission in permissions: m.adb("shell", "pm", "revoke", m.APP, permission, check=False)
     m.adb("shell", "mkdir", "-p", folder)
@@ -172,9 +173,16 @@ try:
     nav.tap("Download", "legacy-download-directory")
     directory_row_count(folder.rsplit("/", 1)[1], 2, "legacy-owned-directory-count")
     nav.tap(folder.rsplit("/", 1)[1], "legacy-owned-directory")
+    if installed_version >= 30024:
+        nav.find("当前目录占用", "legacy-current-directory-metric", direction="up")
+        nav.find("2 个文件（含子目录）", "legacy-current-directory-count", direction="up")
+        nav.evidence("legacy-current-directory-summary", "StorageToolsActivity")
     directory_row_count("nested", 1, "legacy-nested-directory-count")
     nav.tap("nested", "legacy-nested-directory")
     assert folder + "/nested" in seven.labels(nav.tree("legacy-nested-path"))
+    if installed_version >= 30024:
+        nav.find("1 个文件（含子目录）", "legacy-leaf-directory-count", direction="up")
+        nav.find("目录文件尚不可操作", "legacy-unindexed-directory-explanation")
     nav.evidence("legacy-nested-scan-boundary", "StorageToolsActivity")
     nav.tap("返回上级目录", "legacy-nested-return")
     expect_top("StorageToolsActivity", "legacy-parent-same-activity")
@@ -189,6 +197,8 @@ try:
         "readAloneInsufficient":True,"permanentDenialRoutesToAppSettings":True,"resumeAfterSettingsGrant":True,
         "actualSettingsPermissionGrant":True,"grantRevocationReturnsToRuntimeDialog":True,
         "directoryScannerVisible":True,"unindexedNestedDirectoryTraversed":True,"parentReturnWithinSameActivity":True,
+        "currentDirectorySummaryValidated": installed_version >= 30024,
+        "unindexedDirectoryExplanationValidated": installed_version >= 30024,
         "testFileHashUnchanged":True,"nestedFileHashUnchanged":True,"noUserFileDeletion":True,"noCrashOrAnr":True},indent=2))
 except Exception:
     m.capture("legacy-failed"); raise
