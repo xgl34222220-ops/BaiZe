@@ -111,7 +111,7 @@ def directory_row_count(label, count, name):
     while node is not None and node.attrib.get("clickable") != "true":
         node = parents.get(node)
     assert node is not None
-    assert any(text.startswith(f"{count} 个文件 ·") for text in seven.labels(node)), seven.labels(node)
+    assert any(n.attrib.get("text", "").startswith(f"{count} 个文件 ·") for n in node.iter("node")), seven.labels(node)
 
 try:
     m.adb("install", "-r", str(apk))
@@ -144,6 +144,7 @@ try:
     enter()  # Revoking a granted runtime permission terminates the test App.
     nav.wait_text("开启存储读写权限", "legacy-both-revoked")
     deny_permanently()
+    nav.wait_text("开启存储读写权限", "legacy-permanent-denial-result-applied")
     denied_state = m.adb("shell", "dumpsys", "package", m.APP)
     m.save_text("legacy-permanent-denial-package.txt", denied_state)
     assert re.search(re.escape(permissions[1]) + r"[^\n]*USER_FIXED", denied_state), denied_state
