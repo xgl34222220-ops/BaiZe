@@ -55,11 +55,17 @@ jobs:
           if-no-files-found: warn
 
   signed-photo-recovery:
-    if: contains(github.event.head_commit.message, '[reliability-build]')
+    if: contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[30023-photo-continuation]')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require unchanged production source for a CI-only photo continuation
+        if: contains(github.event.head_commit.message, '[30023-photo-continuation]')
+        run: |
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -70,7 +76,10 @@ jobs:
       - name: Continue the exact signed producer
         uses: actions/github-script@v7
         with:
-          script: await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core})
+          script: |
+            const sourceSha = context.payload.head_commit?.message.includes('[30023-photo-continuation]')
+              ? '3331c47ca065972311eb91858d85de16f1eb3830' : context.sha;
+            await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core, sourceSha});
       - uses: actions/download-artifact@v4
         with:
           name: ${{ env.BAIZE_PAIRED_NAME }}

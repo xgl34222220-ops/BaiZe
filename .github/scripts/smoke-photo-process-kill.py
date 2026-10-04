@@ -162,6 +162,7 @@ try:
     assert recovery_seen, "Interrupted export silently disappeared after cold restart"
     nav.tap("核对上次导出", "photo-kill-verify-residual", direction="down")
     nav.wait_text("副本不完整或内容已变化", "photo-kill-residual-rejected", direction="up")
+    nav.wait_enabled("核对上次导出", "photo-kill-review-completed")
     assert snapshot() == before_kill, "Read-only recovery must not modify or delete a copy"
     assert read_json(app_files + "/photo-compression-history.json") == history, "A partial copy must not become success history"
     nav.back("MiuixDashboardActivity", "photo-kill-back")
