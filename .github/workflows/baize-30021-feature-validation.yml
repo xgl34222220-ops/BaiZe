@@ -1,4 +1,4 @@
-name: BaiZe 30022 Feature Device Validation
+name: BaiZe Access and Feature Device Validation
 
 on:
   push:
@@ -10,8 +10,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: baize-30022-features-${{ github.ref }}${{ contains(github.event.head_commit.message, '[30022-photo-device]') && '-photos' || '' }}
-  cancel-in-progress: true
+  group: baize-access-features-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   shizuku-device:
@@ -20,16 +20,17 @@ jobs:
       fail-fast: false
       matrix:
         mode: [shell, root]
-    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]')
+    if: contains(github.event.head_commit.message, '[30023-access]') || contains(github.event.head_commit.message, '[access-build]') || contains(github.event.head_commit.message, '[30023-shizuku]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require identical application source
+      - name: Require identical frozen 30023 application source
+        if: "!contains(github.event.head_commit.message, '[access-build]')"
         run: |
-          git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . \
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -38,43 +39,26 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - name: Wait for the exact verified paired build
+      - name: Continue the exact signed producer
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37158958651;
-            const expectedSource = '4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2';
-            for (let attempt = 0; attempt < 80; attempt++) {
-              let run;
-              try {
-                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
-              } catch (error) {
-                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
-                core.warning('Transient GitHub build-status response: ' + error.status);
-                await new Promise(resolve => setTimeout(resolve, 15000));
-                continue;
-              }
-              if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
-              if (run.status === 'completed') {
-                if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
-                return;
-              }
-              core.info('Waiting for the exact signed build: ' + run.status);
-              await new Promise(resolve => setTimeout(resolve, 15000));
-            }
-            throw new Error('The exact paired build did not finish in time');
+            const current = context.payload.head_commit?.message.includes('[access-build]');
+            const sourceSha = current ? context.sha : '3331c47ca065972311eb91858d85de16f1eb3830';
+            core.exportVariable('BAIZE_ACCESS_SOURCE', sourceSha);
+            core.exportVariable('BAIZE_EXPECTED_APK_SHA', current ? '' : '5f2046f89cc3415f95c4e637df9e86f7f8326582defd258a5559b44d1bbdae18');
+            await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core, sourceSha});
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
-          run-id: 37158958651
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare disposable packages
         run: |
           (cd candidate && sha256sum -c SHA256SUMS.txt)
           sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/baize-30022-certificate.txt"
-          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30022-certificate.txt"
+          python3 .github/scripts/verify-access-apk.py
           python3 .github/scripts/create-cache-only-fixtures.py "$RUNNER_TEMP/baize-cache-fixtures"
           curl --fail --location --retry 3 'https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk' -o "$RUNNER_TEMP/shizuku.apk"
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -92,14 +76,16 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: BaiZe-30022-Shizuku-${{ matrix.mode }}-Device
-          path: ${{ runner.temp }}/baize-shizuku-device/
+          name: BaiZe-Access-Shizuku-${{ matrix.mode }}-Device
+          path: |
+            ${{ runner.temp }}/baize-shizuku-device/
+            ${{ runner.temp }}/access-input.json
           if-no-files-found: warn
           retention-days: 7
 
   legacy-storage-device:
     name: storage-permissions-api-${{ matrix.api }}
-    if: contains(github.event.head_commit.message, '[30022-features]') || contains(github.event.head_commit.message, '[30022-signed-devices]') || contains(github.event.head_commit.message, '[30022-legacy-storage]')
+    if: contains(github.event.head_commit.message, '[30023-access]') || contains(github.event.head_commit.message, '[access-build]') || contains(github.event.head_commit.message, '[30023-legacy-storage]')
     strategy:
       fail-fast: false
       matrix:
@@ -110,9 +96,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require identical application source
+      - name: Require identical frozen 30023 application source
+        if: "!contains(github.event.head_commit.message, '[access-build]')"
         run: |
-          git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . \
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . \
             ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
       - uses: actions/setup-java@v4
         with:
@@ -121,43 +108,26 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - name: Wait for the exact verified paired build
+      - name: Continue the exact signed producer
         uses: actions/github-script@v7
         with:
           script: |
-            const runId = 37158958651;
-            const expectedSource = '4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2';
-            for (let attempt = 0; attempt < 80; attempt++) {
-              let run;
-              try {
-                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
-              } catch (error) {
-                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
-                core.warning('Transient GitHub build-status response: ' + error.status);
-                await new Promise(resolve => setTimeout(resolve, 15000));
-                continue;
-              }
-              if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
-              if (run.status === 'completed') {
-                if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
-                return;
-              }
-              core.info('Waiting for the exact signed build: ' + run.status);
-              await new Promise(resolve => setTimeout(resolve, 15000));
-            }
-            throw new Error('The exact paired build did not finish in time');
+            const current = context.payload.head_commit?.message.includes('[access-build]');
+            const sourceSha = current ? context.sha : '3331c47ca065972311eb91858d85de16f1eb3830';
+            core.exportVariable('BAIZE_ACCESS_SOURCE', sourceSha);
+            core.exportVariable('BAIZE_EXPECTED_APK_SHA', current ? '' : '5f2046f89cc3415f95c4e637df9e86f7f8326582defd258a5559b44d1bbdae18');
+            await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core, sourceSha});
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
-          run-id: 37158958651
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
           github-token: ${{ github.token }}
           path: candidate
       - name: Verify exact signed APK and prepare emulator
         run: |
           (cd candidate && sha256sum -c SHA256SUMS.txt)
           sdkmanager 'build-tools;36.0.0'
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/baize-30022-certificate.txt"
-          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30022-certificate.txt"
+          python3 .github/scripts/verify-access-apk.py
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
@@ -174,8 +144,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: BaiZe-30022-Legacy-Storage-${{ matrix.api }}-Device
-          path: ${{ runner.temp }}/baize-legacy-storage-${{ matrix.api }}/
+          name: BaiZe-Access-Legacy-Storage-${{ matrix.api }}-Device
+          path: |
+            ${{ runner.temp }}/baize-legacy-storage-${{ matrix.api }}/
+            ${{ runner.temp }}/access-input.json
           if-no-files-found: warn
           retention-days: 7
 

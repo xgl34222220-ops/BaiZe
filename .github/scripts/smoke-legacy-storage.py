@@ -16,6 +16,7 @@ def module(name, file):
 
 m = module("legacy_storage_base", "smoke-release-apk.py")
 seven = module("legacy_storage_navigation", "smoke-seven-improvements.py")
+evidence = module("legacy_storage_evidence", "access-fixture-evidence.py")
 api = int(m.adb("shell", "getprop", "ro.build.version.sdk"))
 assert api in (28, 29)
 assert "sdk" in m.adb("shell", "getprop", "ro.product.model").lower() or "generic" in m.adb("shell", "getprop", "ro.build.fingerprint")
@@ -27,6 +28,9 @@ folder = "/storage/emulated/0/Download/baize-legacy-" + uuid.uuid4().hex
 fixture = m.OUT / "unindexed.bin"
 fixture.write_bytes(b"BAIZE_READ_ONLY_PERMISSION_FIXTURE" * 64)
 expected = hashlib.sha256(fixture.read_bytes()).hexdigest()
+nested = m.OUT / "nested.bin"
+nested.write_bytes(b"BAIZE_NESTED_SCAN_BOUNDARY" * 37)
+nested_hash = hashlib.sha256(nested.read_bytes()).hexdigest()
 
 def expect_top(component, name):
     raw = m.adb("shell", "dumpsys", "activity", "activities")
@@ -103,9 +107,12 @@ def enter():
 
 try:
     m.adb("install", "-r", str(apk))
+    private = evidence.seed_private_data(m, apk)
     for permission in permissions: m.adb("shell", "pm", "revoke", m.APP, permission, check=False)
     m.adb("shell", "mkdir", "-p", folder)
     m.adb("push", str(fixture), folder + "/unindexed.bin")
+    m.adb("shell", "mkdir", "-p", folder + "/nested")
+    m.adb("push", str(nested), folder + "/nested/nested.bin")
     enter()
     nav.wait_text("开启存储读写权限", "legacy-initial-denied")
     nav.tap("开启存储读写权限", "legacy-first-request")
@@ -149,13 +156,31 @@ try:
     system_permission(("Allow", "允许"), "legacy-runtime-grant-after-settings")
     nav.wait_text("存储分析完成", "legacy-final-scan", timeout=90)
     assert all(granted(p) for p in permissions)
+    # Traverse real unindexed directories, including a nested leaf and parent return.
+    # These controls stay inside one Activity and never select a deletion action.
+    nav.find("目录占用", "legacy-directory-boundary-entry", direction="up")
+    nav.tap("0", "legacy-primary-volume")
+    nav.tap("Download", "legacy-download-directory")
+    nav.tap(folder.rsplit("/", 1)[1], "legacy-owned-directory")
+    root = nav.tree("legacy-owned-directory-count")
+    assert any(label.startswith("2 个文件 ·") for label in seven.labels(root)), seven.labels(root)
+    nav.tap("nested", "legacy-nested-directory")
+    root = nav.tree("legacy-nested-directory-count")
+    assert any(label.startswith("1 个文件 ·") for label in seven.labels(root)), seven.labels(root)
+    nav.evidence("legacy-nested-scan-boundary", "StorageToolsActivity")
+    nav.tap("返回上级目录", "legacy-nested-return")
+    expect_top("StorageToolsActivity", "legacy-parent-same-activity")
+    assert folder in seven.labels(nav.tree("legacy-parent-path"))
     assert m.adb("shell", "sha256sum", folder + "/unindexed.bin").split()[0] == expected
+    assert m.adb("shell", "sha256sum", folder + "/nested/nested.bin").split()[0] == nested_hash
     m.alive(); nav.evidence("legacy-final", "StorageToolsActivity")
+    private = evidence.verify_private_data(m, private)
     version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
-    m.save_text("passed.json", json.dumps({"passed":True,"androidApi":api,"versionCode":version,
+    m.save_text("passed.json", json.dumps({**private,"passed":True,"androidApi":api,"versionCode":version,
         "actualRuntimePermissionDialog":True,"denyDoesNotStartScan":True,"bothReadAndWriteGranted":True,
         "readAloneInsufficient":True,"permanentDenialRoutesToAppSettings":True,"resumeAfterSettingsGrant":True,
         "actualSettingsPermissionGrant":True,"grantRevocationReturnsToRuntimeDialog":True,
-        "directoryScannerVisible":True,"testFileHashUnchanged":True,"noUserFileDeletion":True,"noCrashOrAnr":True},indent=2))
+        "directoryScannerVisible":True,"unindexedNestedDirectoryTraversed":True,"parentReturnWithinSameActivity":True,
+        "testFileHashUnchanged":True,"nestedFileHashUnchanged":True,"noUserFileDeletion":True,"noCrashOrAnr":True},indent=2))
 except Exception:
     m.capture("legacy-failed"); raise

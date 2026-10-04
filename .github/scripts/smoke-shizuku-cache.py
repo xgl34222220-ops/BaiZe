@@ -19,6 +19,7 @@ def module(name, file):
 
 m = module("shizuku_smoke_base", "smoke-release-apk.py")
 seven = module("shizuku_smoke_navigation", "smoke-seven-improvements.py")
+evidence = module("shizuku_smoke_evidence", "access-fixture-evidence.py")
 m.OUT = Path(os.environ["RUNNER_TEMP"]) / "baize-shizuku-device"
 m.OUT.mkdir(parents=True, exist_ok=True)
 apk, manager, fixtures = (Path(p).resolve() for p in sys.argv[1:4])
@@ -54,6 +55,7 @@ def wait_shell_process(token):
 
 try:
     m.adb("install", "-r", str(apk))
+    private = evidence.seed_private_data(m, apk)
     m.adb("install", str(manager))
     for package, kind in ((selected, "selected"), (retained, "retained")):
         m.adb("install", str(fixtures / f"{kind}.apk"))
@@ -68,8 +70,6 @@ try:
     m.save_text("manager-starter.txt", m.adb("shell", shlex.quote(starter), timeout=60))
     processes = wait_shell_process("shizuku_server")
     m.save_text("shell-server-processes.txt", processes)
-    # Fresh App preferences after independent upgrade/navigation checks; this AVD has no user data.
-    assert "Success" in m.adb("shell", "pm", "clear", m.APP)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS", check=False)
     m.launch("shizuku-fresh-home", 3)
     nav = seven.NavigationSmoke(m, expect_top)
@@ -81,6 +81,18 @@ try:
     root = m.ui("shizuku-permission")
     assert any(n.attrib.get("package", "").startswith("moe.shizuku") for n in root.iter("node")), "The real manager permission prompt must be shown"
     assert any(label in seven.labels(root) for label in ("白泽", "BaiZe")), seven.labels(root)
+    deny = next((n for label in ("Deny", "Don't allow", "拒绝", "不允许") for n in nav.matching(root, label)), None)
+    assert deny is not None, seven.labels(root)
+    nav.click_node(root, deny, "shizuku-real-deny")
+    nav.wait_text("未授权 Shizuku，未执行清理", "shizuku-denied-no-service")
+    assert not any("shizuku-cache" in line for line in m.adb("shell", "ps", "-A", "-o", "NAME,ARGS").splitlines())
+    for package in (selected, retained):
+        assert command(package, "stat -c %s cache/owned.bin") == "16384"
+        assert command(package, "cat files/keep.txt") == "BAIZE_CI_PERSISTENT_DATA"
+    nav.tap("连接 Shizuku", "shizuku-request-again")
+    time.sleep(2)
+    root = m.ui("shizuku-second-real-permission")
+    assert any(n.attrib.get("package", "").startswith("moe.shizuku") for n in root.iter("node"))
     allow = next((n for label in ("Allow all the time", "始终允许") for n in nav.matching(root, label)), None)
     assert allow is not None, seven.labels(root)
     nav.click_node(root, allow, "shizuku-grant")
@@ -124,9 +136,11 @@ try:
     nav.evidence("shizuku-cache-only-final", "ShizukuCacheActivity")
     nav.back("MiuixDashboardActivity", "shizuku-single-back")
     m.alive()
+    private = evidence.verify_private_data(m, private)
     actual_version = int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1))
-    m.save_text("passed.json", json.dumps({"versionCode": actual_version, "androidApi": 36, "adbUid": int(expected_uid),
+    m.save_text("passed.json", json.dumps({**private, "passed": True, "versionCode": actual_version, "androidApi": 36, "adbUid": int(expected_uid),
         "serverUid": int(expected_uid), "userServiceUid": int(expected_uid), "realManagerPermissionUI": True,
+        "denialDoesNotBindOrClear": True, "realManagerRegrant": True,
         "permissionLimitedBatchDisabled": mode == "shell", "realSystemCacheOnlyFallback": mode == "shell",
         "actualShizukuCacheOnlyOperation": mode == "root",
         "selectedCacheRemoved": True, "selectedPersistentDataPreserved": True,
@@ -136,5 +150,3 @@ try:
 except Exception:
     m.capture("shizuku-failed")
     raise
-finally:
-    for package in (selected, retained): m.adb("uninstall", package, check=False)
