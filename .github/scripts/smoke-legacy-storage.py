@@ -105,6 +105,14 @@ def enter():
     nav.tap("存储分析", "legacy-analysis")
     expect_top("StorageToolsActivity", "legacy-analysis")
 
+def directory_row_count(label, count, name):
+    root, node = nav.find(label, name)
+    parents = {child: parent for parent in root.iter() for child in parent}
+    while node is not None and node.attrib.get("clickable") != "true":
+        node = parents.get(node)
+    assert node is not None
+    assert any(text.startswith(f"{count} 个文件 ·") for text in seven.labels(node)), seven.labels(node)
+
 try:
     m.adb("install", "-r", str(apk))
     private = evidence.seed_private_data(m, apk)
@@ -161,12 +169,11 @@ try:
     nav.find("目录占用", "legacy-directory-boundary-entry", direction="up")
     nav.tap("0", "legacy-primary-volume")
     nav.tap("Download", "legacy-download-directory")
+    directory_row_count(folder.rsplit("/", 1)[1], 2, "legacy-owned-directory-count")
     nav.tap(folder.rsplit("/", 1)[1], "legacy-owned-directory")
-    root = nav.tree("legacy-owned-directory-count")
-    assert any(label.startswith("2 个文件 ·") for label in seven.labels(root)), seven.labels(root)
+    directory_row_count("nested", 1, "legacy-nested-directory-count")
     nav.tap("nested", "legacy-nested-directory")
-    root = nav.tree("legacy-nested-directory-count")
-    assert any(label.startswith("1 个文件 ·") for label in seven.labels(root)), seven.labels(root)
+    assert folder + "/nested" in seven.labels(nav.tree("legacy-nested-path"))
     nav.evidence("legacy-nested-scan-boundary", "StorageToolsActivity")
     nav.tap("返回上级目录", "legacy-nested-return")
     expect_top("StorageToolsActivity", "legacy-parent-same-activity")
