@@ -5,6 +5,11 @@
 739 项 JVM、78 组 Cleaner 和上一轮设备结果只作基线。本报告只将本轮完成的运行列为通过。
 所有设备操作均为一次性 CI 模拟器，未使用用户设备。未合并 main、发布 Release、更新 OTA 或部署。
 
+本轮已完成：原签名 30023 的旧权限和 Shizuku 重跑；修复后签名 30024 四项设备验证；
+新全量 753 项、lint/debug、配套签名构建、两次各 78 组 Cleaner；API 26/36 内容身份及只读边界。
+生产代码验收提交为 `251da03`，后续 `22fbe92` 只修 debug 夹具，`4055079` 只修主机验收脚本与记录。
+完整真实 stat 元组碰撞、真实硬链接、厂商强杀与白泽跨 UID Root Binder 保留未验证。
+
 ## 第一批：精确签名 30023 的旧权限与 Shizuku
 
 复用冻结源 `3331c47ca065972311eb91858d85de16f1eb3830` 的
@@ -48,7 +53,7 @@ Shizuku root 成功不等于白泽 libsu 跨 UID Root Binder 验收，JSON 明�
 增加连续无进展读取上限，返回不可核对、关闭流，取消优先，不产生空内容 SHA 或删除授权。
 现有跨扫描重新读取和清理前新鲜内容证明继续保留。
 合成回归覆盖非零纳秒、整秒、缺失纳秒下完整供应身份不变但尾部内容变化，以及旧成功后读取失败、
-身份缺失不可选择、取消和资源关闭。内容修复后的 [37173553698](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37173553698) / job 111351343744 / artifact 11292696484 已独立解析为 8 项、0 失败/错误/跳过。真实设备探针新增 API 26/36，详细结果在完成后补充。
+身份缺失不可选择、取消和资源关闭。内容修复后的 [37173553698](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37173553698) / job 111351343744 / artifact 11292696484 已独立解析为 8 项、0 失败/错误/跳过。真实 API 26/36 与混合故障注入的最终证据分别列于下文。
 
 ## 第三批：目录统计与可操作索引
 
@@ -110,6 +115,8 @@ CI 全量结果单独验收，不将这次本地尝试写成全通过。版本�
 配套模块：`8b95ec87f2b498cbcff4ada2492b97fa6fcd427ef61d3ded533940faa21b58ae`。
 四份设备的 access-input.json 均为精确源 `251da038f95feb4b959ed245dd6dea26fc98b4d4`、
 生产运行 `37175574045`、30024 和同一 APK / 正式证书，未换用 debug 包做签名权限验收。
+753 项 XML 中，释放量核算 `ReleaseAccountingTest` 23 项及其界面 `ReleaseAmountUiTest` 4 项
+均为 0 失败/错误/跳过；回收站状态回归也随本轮新构建执行。不是借用上轮测试数字。
 
 内容探针续修只改 debug 夹具、CI 和采集脚本。新运行先用 git diff 核对生产代码、全部已有回归及版本
 仍与 `251da03` 相同，不重启已成功的签名生产任务或四项设备；复用原 debug 构建恢复 job 做新探针
@@ -169,6 +176,25 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
 时间及设置前后完整内容 SHA；必须实际 mtime 符合且内容不变才能回复 App，App 再次独立核验。
 生产代码、debug 包、权限、系统时钟和全局策略不变。
 
+该修正 [4055079](https://github.com/xgl34222220-ops/BaiZe/commit/4055079b81032109fac60dee8db2dd345f6783b1)
+的 API 26 专项 [37179644032](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37179644032)
+已整体成功 / job 111369415702 / artifact 11294401734。其余生产、构建、API 36 和权限任务全部
+跳过，没有重复运行。artifact ZIP SHA-256
+`881603627646695d91632c0281aec993d3c96d1a3f2c110a5946bbab2a9dd7b6`
+及 ZIP 完整性、JSON 内容已独立核验，精确 debug SHA 仍为上述 `c79f189…`。
+
+| API 26 最终观察 | 结果与边界 |
+| --- | --- |
+| 受控 mtime | 普通 App 的设置请求由守卫后的 CI 控制器处理三次；每次仅共享视图一次 ISO 日期调用即成功，无需 lower 路径回退。atime/mtime 均实际为 1500000000 秒，设置前后完整内容 SHA 相同，App 自己确认 mtime。不是 App 自主设置能力通过。 |
+| 内容改变而大小与 mtime 相同 | UID=10077 的普通 App 实际读取 131072 字节文件；尾部内容变更、前缀不变，mtime 与 MediaStore 秒相同；重新扫描拒绝重复组，旧证明/旧组不得授权。两个共享夹具保留，无永久删除。 |
+| 完整真实 stat 身份碰撞 | **未复现**；ctime 秒实际不同，纳秒字段不可用且为 -1。capturedIdentityTupleCollisionObserved / fullFilesystemIdentityCollisionObserved 均为 false。保守 SHA 校验与旧证明重新绑定的混合故障注入通过，不替代真实完整元组证据。 |
+| 只读和扫描边界 | 真实 App EACCES=13，拒绝发布内容证明；链接/循环不遍历、entry limit 不完整、missing root 不可用、取消传播与文件保留通过。真实共享别名可观察；人工别名索引输入的混合核验通过，未证明系统索引实际重复发出别名行。 |
+| 硬链接与审计 | App link 实际 EACCES，硬链接仍 null/未验证。两行相同时间戳 history 的设备解析通过，但输入和 4096 字节仍为合成容量；未知行保持 unknown/null，不作为实际释放证据。 |
+
+因此，API 26 的时间工具失败已经续修并取得成功结果；先前失败 CI 仍完整保留。
+API 36 的成功 job 属于整体失败运行 `37177116264`，最终 Android job 属于整体失败运行
+`37175574014`；不能将这些运行的总体状态改写为通过。报告的通过结论逐 job/产物核验。
+
 ## 每批开源参考、许可证与独立实现
 
 本轮阅读以下固定来源。仅参考设计原则，没有复制源码、文字、图标或素材，没有增加第三方依赖。
@@ -180,7 +206,7 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
 | 内容身份：SD Maid SE [ChecksumSleuth.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-deduplicator/src/main/java/eu/darken/sdmse/deduplicator/core/scanner/checksum/ChecksumSleuth.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE)；[Java InputStream 文档](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/io/InputStream.html) | 参考按大小分组后读取完整 SHA-256；读取失败不发布重复组。标准正长度 InputStream 读取应读取至少一字节或报告结束/异常，连续 0 属于异常提供器行为。 | 在白泽既有前缀/完整摘要和 O_NOFOLLOW 文件描述符核验上独立限制空转；容忍短暂零进展，连续三次拒绝该文件。纳秒缺失或实际完整元组未复现时，继续依赖新鲜内容读取；失败保留文件。正常读取行为和 minSdk 26 不变。 |
 | 目录界面：SD Maid SE [ContentScreen.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentScreen.kt)、[ContentInfoBanner.kt](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/app-tool-analyzer/src/main/java/eu/darken/sdmse/analyzer/ui/storage/content/ContentInfoBanner.kt)、同一 [LICENSE](https://github.com/d4rken-org/sdmaid-se/blob/21642bab7fff3dccc02fe1e2e69fa3056e205092/LICENSE) | 参考当前内容的计数及只读/受限说明，让统计覆盖与操作能力可以分别判断。 | 使用白泽原有统计和界面组件，当前目录汇总来自已经读到的扫描结果；不复制上游布局、文字或图标，不把未索引目录变成可删除文件。 |
 | 独立副本：Czkawka Core [duplicate/mod.rs](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/src/tools/duplicate/mod.rs)、[FAQ](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/instructions/FAQ.md)、[Core MIT LICENSE](https://github.com/qarmin/czkawka/blob/eb8b91dbb4d25dff416202674ee0de84ee4b5e5c/czkawka_core/LICENSE_MIT) | 参考同一文件的硬链接不应重复计为可整理副本。只参考 MIT 的 Core，不使用其他界面、图标或测试资产。 | 独立 Kotlin 实现依据白泽已观察到的规范路径及 device+inode；所读上游 Unix 代码按 inode 过滤，白泽额外区分 device 并用跨卷相同 inode 回归防止误折叠。无新依赖、权限或系统调用边界扩大；设备别名/硬链接观察与合成结果分别报告。 |
-| 验收工具兼容性：Toybox [0.7.3 touch 源码与内嵌用法](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/toys/posix/touch.c)、[LICENSE](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/LICENSE)、[0.7.4 修正源码](https://github.com/landley/toybox/blob/0.7.4/toys/posix/touch.c) | 源码宽松授权为零条款 BSD 文本；LICENSE 单独指出 kconfig 构建基础设施仍有 GPLv2。参考旧日期格式及单字段选择缺陷，避免工具返回码充当时间证据。 | 不复制或引入 Toybox/构建代码；CI 独立调用设备已有工具，以已生成且校验过的唯一夹具设置 UTC 日期，两视图及 App 实值核验。未改 App 权限，未更新系统工具，也不把源代码解释当作设备版本鉴定。 |
+| 验收工具兼容性：Toybox [0.7.3 touch 源码与内嵌用法](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/toys/posix/touch.c)、[LICENSE](https://github.com/landley/toybox/blob/9283f7b63c734972b1455f405d7d00eb12a4a211/LICENSE)、[0.7.4 修正源码](https://github.com/landley/toybox/blob/279eb227c54edec20ce2dcc6dc1e397ec778a464/toys/posix/touch.c) | 源码宽松授权为零条款 BSD 文本；LICENSE 单独指出 kconfig 构建基础设施仍有 GPLv2。参考旧日期格式及单字段选择缺陷，避免工具返回码充当时间证据。 | 不复制或引入 Toybox/构建代码；CI 独立调用设备已有工具，以已生成且校验过的唯一夹具设置 UTC 日期，实际视图及 App 实值核验。未改 App 权限，未更新系统工具，也不把源代码解释当作设备版本鉴定。 |
 
 ## 证据边界
 
@@ -189,5 +215,7 @@ artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求�
   API 26 的缺失纳秒（-1）不当作观测到相等纳秒；没有真实完整元组观察时继续明确未验证。
 - 真机跨 UID Root Binder 仍未验证，Shizuku root job 不替代这项证明。
 - 无进展流仅有合成回归，阻塞在底层 read 内部的厂商 I/O 并未由本轮证据证明可立即中断。
+- 30024 的直接安装迁移、批量压缩中的 SIGKILL 恢复没有在本轮重跑；30023 的相关验收只作既有证据，
+  不写成这次新构建的设备通过。
 - 所有字节数为夹具/扫描逻辑占用，不作为用户设备实际释放量。继续区分无法测量、回收站未释放、
   可信真实 0 与保护/跳过/失败；不推造容量，不为验收执行用户数据永久删除。
