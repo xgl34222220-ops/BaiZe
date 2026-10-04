@@ -47,6 +47,9 @@ def choose_root(name):
     assert node is not None, seven.labels(tree)
     nav.click_node(tree, node, name + "-drawer")
     nav.tap("BaiZe CI Photos", name + "-owned-provider")
+    tree = nav.tree(name + "-provider-view")
+    switch = next((n for n in tree.iter("node") if n.attrib.get("resource-id", "").endswith(":id/sub_menu_list")), None)
+    if switch is not None: nav.click_node(tree, switch, name + "-list-view")
 
 
 def action(labels, name):
