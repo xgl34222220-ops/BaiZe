@@ -117,19 +117,34 @@ try:
         "journalBeforeKill": checkpoint, "hashesBeforeKill": before_kill}, indent=2))
     m.adb("shell", "kill", "-9", pid)
     deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and m.adb("shell", "pidof", m.APP, check=False): time.sleep(.1)
-    assert not m.adb("shell", "pidof", m.APP, check=False), "App was not killed"
+    while time.monotonic() < deadline and pid in m.adb("shell", "pidof", m.APP, check=False).split(): time.sleep(.1)
+    # Android can immediately restart the remaining dashboard Activity. The
+    # killed PID must disappear; a replacement PID is independent evidence.
+    replacement_pid = m.adb("shell", "pidof", m.APP, check=False)
+    assert pid not in replacement_pid.split(), "Original App process was not killed"
+    death_log = m.adb("logcat", "-d")
+    m.save_text("actual-sigkill-logcat.txt", death_log)
+    death_observed = f"Process {m.APP} (pid {pid}) has died" in death_log
+    assert death_observed, "Android did not report death of the original App PID"
     assert m.adb("shell", "pidof", "test.baize.photo.fixture") == provider_pid, "Fixture must survive the App kill"
     m.adb("shell", "touch", scope + "/abort")
     m.launch("photo-kill-cold-restart", 3); m.tap_label("首页", "photo-kill-restart-home")
     nav.tap("照片瘦身", "photo-kill-restart-entry")
-    tree = nav.tree("photo-kill-recovery-status")
-    # Durable warning is required even if Android discarded the Activity saved state.
-    recovery_seen = "上次导出已中断" in seven.labels(tree) or "有待核对的导出副本" in seven.labels(tree)
+    # Search the real scrollable page: the options panel can fill the first
+    # viewport on small emulators. No UI state is injected into the App.
+    try:
+        tree, _ = nav.find("上次导出待核对", "photo-kill-recovery-status")
+        tree, _ = nav.find("上次导出已中断", "photo-kill-recovery-message", contains=True)
+        recovery_seen = "上次导出已中断" in seven.labels(tree)
+    except AssertionError:
+        if "--expect-baseline-failure" not in sys.argv: raise
+        recovery_seen = False
     after_restart = snapshot()
     result = {"versionCode": int(re.search(r"versionCode=(\d+)", m.adb("shell", "dumpsys", "package", m.APP)).group(1)),
         "apkSha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "realSystemDocumentGrants": True,
         "actualSigkillDuringSecondPartialCopy": True, "externalProviderSurvived": True,
+        "killedAppPid": pid, "replacementPidObserved": replacement_pid,
+        "androidReportedOriginalProcessDeath": death_observed,
         "partialBytesAtKill": size, "completedHistoryCountBeforeKill": len(history),
         "durableJournalBeforeKill": checkpoint is not None, "interruptionVisibleAfterColdRestart": recovery_seen,
         "noReplayAfterRestart": before_kill == after_restart,
