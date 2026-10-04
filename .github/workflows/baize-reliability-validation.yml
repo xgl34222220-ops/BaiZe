@@ -16,15 +16,15 @@ concurrency:
 
 jobs:
   storage-collision:
-    if: contains(github.event.head_commit.message, '[reliability-build]')
-    needs: android-reliability
+    if: always() && (contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[30023-debug-continuation]')) && (needs.android-reliability.result == 'success' || needs.android-build-recovery.result == 'success')
+    needs: [android-reliability, android-build-recovery]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: BaiZe-Reliability-Android-Verification
+          name: ${{ contains(github.event.head_commit.message, '[30023-debug-continuation]') && 'BaiZe-Reliability-Debug-Recovery' || 'BaiZe-Reliability-Android-Verification' }}
           path: verification
       - uses: actions/setup-java@v4
         with:
@@ -204,9 +204,12 @@ jobs:
       - name: Fresh full Android regressions
         working-directory: v2
         run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest
-      - name: Lint and debug application
+      - name: Lint application
         working-directory: v2
-        run: ./gradlew --no-daemon --max-workers=2 :app:lintDebug :app:assembleDebug
+        run: ./gradlew --no-daemon --max-workers=2 :app:lintDebug
+      - name: Assemble debug application after lint has finished
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=1 :app:assembleDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -215,6 +218,49 @@ jobs:
             v2/app/build/test-results/testDebugUnitTest/
             v2/app/build/reports/lint-results-debug.html
             v2/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: warn
+
+  android-build-recovery:
+    if: contains(github.event.head_commit.message, '[30023-debug-continuation]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require unchanged production source for debug build recovery
+        run: |
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Assemble on a fresh checkout without concurrent lint work
+        timeout-minutes: 15
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=1 :app:assembleDebug
+      - name: Complete lint separately
+        timeout-minutes: 12
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=1 :app:lintDebug
+      - name: Verify complete debug APK
+        run: |
+          unzip -tq v2/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging v2/app/build/outputs/apk/debug/app-debug.apk | grep "versionCode='30023'"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Reliability-Debug-Recovery
+          path: |
+            v2/app/build/outputs/apk/debug/app-debug.apk
+            v2/app/build/reports/lint-results-debug.html
           retention-days: 7
           if-no-files-found: warn
 
