@@ -126,6 +126,28 @@ result/shared-observations/audit-observed JSON，夹具及链接原样保留。�
 [ADB 文件同步源码](https://github.com/aosp-mirror/platform_system_core/blob/android10-release/adb/client/file_sync_client.cpp)
 （已读取其 Apache-2.0 文件头及递归链接逻辑），独立实现结果文件白名单，没有复制上游代码或新增依赖。
 
+[22fbe92](https://github.com/xgl34222220-ops/BaiZe/commit/22fbe92083158cbab29f05cfa83195495b25dc8a)
+的 [37177116264](https://github.com/xgl34222220-ops/BaiZe/actions/runs/37177116264) 中，
+生产/回归源冻结核对、debug 编译及 lint 已通过（job 111361944486，artifact 11293598690）。
+新 debug SHA-256 `c79f189227a7a4dddb3e36e4ecdf44d2dbaaf2daa869341e611a08a4f8d70b57`，
+versionCode=30024。API 36 续接通过（job 111362704241，artifact 11292874371），独立 JSON 核验：
+
+| API 36 实际或混合观察 | 结果与边界 |
+| --- | --- |
+| 同大小、受控 mtime 与 MediaStore 秒碰撞 | 实际观察到；三次 mtime 均由普通 App 设置，不使用主机回退。131072 字节文件尾部变化，前缀相同，扫描拒绝重复组和旧组授权。 |
+| 完整采集 stat 身份元组碰撞 | **未复现**；ctime 秒与纳秒实际变化，capturedIdentityTupleCollisionObserved / fullFilesystemIdentityCollisionObserved 均为 false。不能标成设备通过。 |
+| 当前身份重新绑定旧内容证明 | 在实际文件上合成旧证明/新身份绑定；新鲜完整 SHA 拒绝，属于混合故障注入，不能替代真实完整元组碰撞。 |
+| 共享路径别名 | 实际 `/sdcard` 别名观察到；不产生重复组，别名不能授权幸存副本。 |
+| 私有读取与遍历边界 | App UID=10216，真实读取 Errno=13/EACCES；不发布内容证明。边界链接/循环不遍历、entry limit 明确不完整、missing root 不可用、取消传播和文件内容保留均通过。 |
+| 私有硬链接 | **未复现**；App link 返回 EACCES，结果为 null + 未验证原因。保留合成硬链接回归通过；没有放宽 SELinux 或新增权限来制造通过。 |
+| 旧时间戳审计 | 设备执行真实解析器，但 history 两行与 4096 字节为合成夹具，计两次操作且仅一次已知容量，第二次 null/unknown。不是实际释放容量证据。 |
+
+该续接整体仍为失败：API 26 在控制器的 `test -L` 退出状态检查处失败（job 111362704281，
+artifact 11293329607）；确实收到 App 的 setLastModified 不支持请求，但未控制成功，没有应用结果。
+下一次只续接这一项，保持整个 App/debug/测试与 `22fbe92` 完全一致、复用上述完成的精确 debug
+产物及 SHA，不再构建、不重跑 API 36。脚本改为读取实际 lstat 文件类型位，并以明确 stdout 响应
+判断文件存在，拒绝非普通文件和未知响应，避免将旧 adb 的传输成功当作文件系统谓词证据。
+
 ## 每批开源参考、许可证与独立实现
 
 本轮阅读以下固定来源。仅参考设计原则，没有复制源码、文字、图标或素材，没有增加第三方依赖。

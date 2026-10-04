@@ -54,8 +54,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [26, 36]
-    if: always() && (contains(github.event.head_commit.message, '[30023-storage-continuation]') || ((contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[identity-build]') || contains(github.event.head_commit.message, '[identity-probe-repair]') || contains(github.event.head_commit.message, '[30023-debug-continuation]')) && (needs.android-reliability.result == 'success' || needs.android-build-recovery.result == 'success')))
+        api: ${{ fromJSON(contains(github.event.head_commit.message, '[identity-probe-26]') && '[26]' || '[26,36]') }}
+    if: always() && (contains(github.event.head_commit.message, '[identity-probe-26]') || contains(github.event.head_commit.message, '[30023-storage-continuation]') || ((contains(github.event.head_commit.message, '[reliability-build]') || contains(github.event.head_commit.message, '[identity-build]') || contains(github.event.head_commit.message, '[identity-probe-repair]') || contains(github.event.head_commit.message, '[30023-debug-continuation]')) && (needs.android-reliability.result == 'success' || needs.android-build-recovery.result == 'success')))
     needs: [android-reliability, android-build-recovery]
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -67,6 +67,19 @@ jobs:
         if: contains(github.event.head_commit.message, '[30023-storage-continuation]')
         run: |
           git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**'
+      - name: Require identical accepted 30024 App and probe for API 26 continuation
+        if: contains(github.event.head_commit.message, '[identity-probe-26]')
+        run: |
+          git diff --exit-code 22fbe92083158cbab29f05cfa83195495b25dc8a HEAD -- . ':(exclude).github/**' ':(exclude)docs/**'
+      - name: Continue the completed exact 30024 debug producer
+        if: contains(github.event.head_commit.message, '[identity-probe-26]')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id: 37177116264});
+            const {data: {jobs}} = await github.rest.actions.listJobsForWorkflowRun({...context.repo, run_id: 37177116264, per_page: 100});
+            if (run.head_sha !== '22fbe92083158cbab29f05cfa83195495b25dc8a' || run.status !== 'completed' || !jobs.some(job => job.name === 'android-build-recovery' && job.conclusion === 'success')) throw new Error('Unexpected 30024 debug producer');
+            core.exportVariable('BAIZE_EXPECTED_DEBUG_SHA', 'c79f189227a7a4dddb3e36e4ecdf44d2dbaaf2daa869341e611a08a4f8d70b57');
       - name: Reuse the completed exact debug producer
         if: contains(github.event.head_commit.message, '[30023-storage-continuation]')
         uses: actions/github-script@v7
@@ -77,8 +90,8 @@ jobs:
             if (run.head_sha !== 'e70d1227a592a774786a485248f825cd89b301cc' || run.status !== 'completed' || !jobs.some(job => job.name === 'android-build-recovery' && job.conclusion === 'success')) throw new Error('Unexpected debug producer');
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ (contains(github.event.head_commit.message, '[30023-debug-continuation]') || contains(github.event.head_commit.message, '[30023-storage-continuation]') || contains(github.event.head_commit.message, '[identity-probe-repair]')) && 'BaiZe-Reliability-Debug-Recovery' || 'BaiZe-Reliability-Android-Verification' }}
-          run-id: ${{ contains(github.event.head_commit.message, '[30023-storage-continuation]') && 37169949638 || github.run_id }}
+          name: ${{ (contains(github.event.head_commit.message, '[30023-debug-continuation]') || contains(github.event.head_commit.message, '[30023-storage-continuation]') || contains(github.event.head_commit.message, '[identity-probe-repair]') || contains(github.event.head_commit.message, '[identity-probe-26]')) && 'BaiZe-Reliability-Debug-Recovery' || 'BaiZe-Reliability-Android-Verification' }}
+          run-id: ${{ contains(github.event.head_commit.message, '[identity-probe-26]') && 37177116264 || contains(github.event.head_commit.message, '[30023-storage-continuation]') && 37169949638 || github.run_id }}
           github-token: ${{ github.token }}
           path: verification
       - uses: actions/setup-java@v4

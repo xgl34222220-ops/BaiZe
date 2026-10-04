@@ -22,6 +22,9 @@ for attempt in $(seq 1 5); do
 done
 test "$(adb shell id -u | tr -d '\r')" = 0
 sha256sum "$1" > "$OUT/debug-apk-sha256.txt"
+if [ -n "${BAIZE_EXPECTED_DEBUG_SHA:-}" ]; then
+  test "$(cut -d ' ' -f 1 "$OUT/debug-apk-sha256.txt")" = "$BAIZE_EXPECTED_DEBUG_SHA"
+fi
 adb install "$1"
 if [ "$api" = 26 ]; then
   adb shell pm grant "$APP" android.permission.READ_EXTERNAL_STORAGE
@@ -34,37 +37,44 @@ fi
 timeout 30s adb shell am start -n "$APP/.StorageCollisionDeviceProbeActivity" > "$OUT/launch.txt" 2>&1
 cat "$OUT/launch.txt"
 python3 - "$APP" "$OUT" <<'PY'
-import json,re,subprocess,sys,time
+import json,re,stat,subprocess,sys,time
 from pathlib import Path
 app,out=sys.argv[1],Path(sys.argv[2])
+assert app=='io.github.xgl34222220.baize'
 remote=f'/data/user/0/{app}/files/storage-collision-probe'
 def adb(*args,check=True):
     return subprocess.run(['adb',*args],check=check,capture_output=True,text=True,timeout=15)
+def exists(path):
+    # Legacy adb shell may not preserve a predicate's exit code. Read an explicit
+    # response instead of treating a transport success as filesystem evidence.
+    return adb('shell',f'[ -f {path} ] && echo baize-fixture-file',check=False).stdout.strip()=='baize-fixture-file'
 processed=set()
 deadline=time.monotonic()+120
 while time.monotonic()<deadline:
     for request in (1,2,3):
         name=f'timestamp-request-{request}.json'
-        if request in processed or adb('shell','test','-f',f'{remote}/{name}',check=False).returncode: continue
+        if request in processed or not exists(f'{remote}/{name}'): continue
         text=adb('shell','cat',f'{remote}/{name}').stdout
         r=json.loads(text)
+        (out/name).write_text(text)
         # Never accept arbitrary paths, links, different sizes or different clocks.
         assert r['appUid']>=10000 and r['mtimeMillis']==1500000000000, r
         assert re.fullmatch(r'/storage/emulated/0/Download/baize-collision-owned-[0-9a-f-]{36}/(first|second)\.bin',r['path']), r
-        assert adb('shell','test','-L',r['path'],check=False).returncode!=0, r
+        mode=adb('shell','stat','-c','%f',r['path']).stdout.strip()
+        (out/f'fixture-lstat-{request}.json').write_text(json.dumps({'path':r['path'],'modeHex':mode}))
+        assert re.fullmatch(r'[0-9a-fA-F]+',mode) and stat.S_ISREG(int(mode,16)), (r,mode)
         assert adb('shell','stat','-c','%s',r['path']).stdout.strip()=='131072', r
         adb('shell','env','TZ=UTC','touch','-m','-t','201707140240.00',r['path'])
         assert adb('shell','stat','-c','%Y',r['path']).stdout.strip()=='1500000000', r
         adb('shell',f'echo 1500000000000 > {remote}/timestamp-ack-{request}.txt')
-        (out/name).write_text(text)
         processed.add(request)
-    if adb('shell','test','-f',f'{remote}/result.json',check=False).returncode==0: break
+    if exists(f'{remote}/result.json'): break
     time.sleep(.25)
 else: raise AssertionError('Probe did not produce a result within 120 seconds')
 # adb pull recursively follows directory symlinks. Export only fixed result files;
 # leave scanner boundary fixtures, outside links and loops on the AVD unchanged.
 for name in ('result.json','shared-observations.json','audit-observed.json'):
-    if adb('shell','test','-f',f'{remote}/{name}',check=False).returncode==0:
+    if exists(f'{remote}/{name}'):
         adb('pull',f'{remote}/{name}',str(out/name))
 PY
 adb logcat -d -v threadtime > "$OUT/logcat.txt"
