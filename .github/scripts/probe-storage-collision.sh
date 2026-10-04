@@ -7,7 +7,13 @@ adb root
 adb wait-for-device
 test "$(adb shell id -u | tr -d '\r')" = 0
 test "$(adb shell getprop ro.build.version.sdk | tr -d '\r')" = 36
-adb shell getprop ro.build.fingerprint | rg 'generic|sdk'
+fingerprint=$(adb shell getprop ro.build.fingerprint | tr -d '\r')
+case "$fingerprint" in
+  *generic*|*sdk*) printf '%s\n' "$fingerprint" ;;
+  *) echo 'Only a disposable emulator is allowed' >&2; exit 1 ;;
+esac
+trap 'adb logcat -d -v threadtime > "$OUT/logcat.txt" || true' EXIT
+sha256sum "$1" > "$OUT/debug-apk-sha256.txt"
 adb install "$1"
 adb shell appops set "$APP" MANAGE_EXTERNAL_STORAGE allow
 adb shell am start -W -n "$APP/.StorageCollisionDeviceProbeActivity"
