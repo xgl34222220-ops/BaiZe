@@ -23,8 +23,12 @@ class DirectoryDrillDownUiTest {
         val leaf = "$root/Download/fixture"
         val usage = DirectoryUsage(listOf(root), listOf(StorageDirectory(root, 80, 9000000),
             StorageDirectory(leaf, 2, 3072)), 0, 0, false, "本地")
+        // Other indexed files create global category buckets even though this leaf
+        // has no operation records. A global overview must not hide the leaf's explanation.
+        val other = StorageFileRecord(7, "uri7", "$root/Pictures/other.jpg", "other.jpg", 4096, 1500000000,
+            "image/jpeg").withVerifiedStorageIdentity()
         val state = StorageToolsUiState(mode = StorageToolMode.ANALYSIS, directoryUsage = usage,
-            directory = leaf, status = "存储分析完成")
+            directory = leaf, status = "存储分析完成", records = listOf(other), buckets = storageBuckets(listOf(other)))
         compose.setContent { BaiZeTheme(AppearanceSettings()) { StorageToolsScreen(state, {}, {}, {}, {}, {}) } }
         compose.onNodeWithText("当前目录占用").assertIsDisplayed()
         compose.onNodeWithText("2 个文件（含子目录）").assertIsDisplayed()

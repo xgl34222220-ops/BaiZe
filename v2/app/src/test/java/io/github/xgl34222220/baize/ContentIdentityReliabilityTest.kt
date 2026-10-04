@@ -49,6 +49,25 @@ class ContentIdentityReliabilityTest {
         assertEquals(2, failures)
     }
 
+    @Test fun storageAliasesOfOnePhysicalFileAreNotIndependentCopies() {
+        val original = record(1)
+        val alias = original.copy(id = 2, uri = "content://media/external/file/2",
+            path = original.path.replace("/storage/emulated/0", "/sdcard"))
+        assertTrue(StorageDuplicateMatcher.match(listOf(original, alias), { ByteArrayInputStream(ByteArray(131072)) }).isEmpty())
+    }
+
+    @Test fun hardlinkIdentitiesCannotInventAnIndependentSurvivingCopy() {
+        val original = record(1)
+        val linked = record(2).copy(identity = original.identity!!.copy(canonicalPath = record(2).path))
+        assertTrue(StorageDuplicateMatcher.match(listOf(original, linked), { ByteArrayInputStream(ByteArray(131072)) }).isEmpty())
+    }
+
+    @Test fun equalInodeNumbersOnDifferentDevicesRemainIndependentCandidates() {
+        val original = record(1)
+        val other = record(2).copy(identity = original.identity!!.copy(device = 99, canonicalPath = record(2).path))
+        assertEquals(1, StorageDuplicateMatcher.match(listOf(original, other), { ByteArrayInputStream(ByteArray(131072)) }).size)
+    }
+
     @Test fun missingStatRetainsTheFileWithoutPublishingAnAuthorization() {
         val item = record(1).asIndexedCandidate().copy(identity = null)
         val guard = ApkDeletionGuard(setOf("/storage/emulated/0"), "/storage/emulated/0")
