@@ -72,6 +72,7 @@ try:
     m.adb("install", str(apk), timeout=120)
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS")
     # The document picker activates the provider. Seed only its private synthetic files.
+    m.adb("shell", "content", "query", "--uri", "content://test.baize.photo.fixture.documents/roots")
     m.adb("shell", "mkdir", "-p", scope)
     originals = {}
     for index in (1, 2):
