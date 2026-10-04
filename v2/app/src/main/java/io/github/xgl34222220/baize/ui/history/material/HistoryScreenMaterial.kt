@@ -237,7 +237,7 @@ private fun MaterialCurrentResult(state: HistoryUiState) {
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    Formatter.formatFileSize(context, state.currentBytes),
+                    state.currentCapacityText { Formatter.formatFileSize(context, it) },
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.titleLarge
                 )

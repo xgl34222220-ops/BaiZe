@@ -26,6 +26,22 @@ import org.robolectric.annotation.GraphicsMode
 class HistoryZeroByteUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun videoUnknownCapacityDoesNotRenderAsMeasuredZero() = videoCapacity("unknown", "无法测量")
+    @Test fun videoRetainedCapacityDoesNotRenderAsReleasedBytes() = videoCapacity("retained", "尚未释放")
+    @Test fun videoVerifiedZeroRemainsZero() = videoCapacity("measured", "0 B")
+
+    private fun videoCapacity(release: String, expected: String) {
+        val record = HistoryUiItem("容量状态夹具", "2026-10-03 12:00:00", "手动", "待核对", 0, 0, 0, 0, true, releaseState = release)
+        val state = HistoryUiState("待核对", "2026-10-03 12:00:00", 1, 0, 0, 0, 0, 0, 1,
+            emptyList(), emptyList(), emptyList(), listOf(record))
+        val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false)
+        compose.setContent { BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
+            VideoHistoryScreenMiuix(state, HistoryUiActions({}, {}, {}))
+        } } }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("容量状态夹具"))
+        compose.onAllNodesWithText(expected).onLast().assertIsDisplayed()
+    }
+
     @Test fun directoryOnlyMiuixHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(0)
     @Test fun directoryOnlyMaterialHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(1)
     @Test fun directoryOnlyVideoHistoryDoesNotTurnDirectoriesIntoFiles() = directoryHistory(2)

@@ -288,6 +288,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         updateStorage()
+        // App-owned history remains usable while Root/Shizuku is unavailable.
+        refreshHistory()
         lifecycleScope.launch {
             val saved = withContext(Dispatchers.IO) { LastCleanupStore.read(this@MiuixDashboardActivity) }
             if (saved.first.isNotEmpty() || saved.second.isNotEmpty()) {

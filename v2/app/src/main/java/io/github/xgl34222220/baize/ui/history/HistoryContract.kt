@@ -40,6 +40,9 @@ data class HistoryUiState(
     val currentBytes: Long
         get() = recentApps.sumOf { it.bytes.coerceAtLeast(0L) } +
             recentJunk.sumOf { it.bytes.coerceAtLeast(0L) }
+
+    fun currentCapacityText(format: (Long) -> String): String = records.firstOrNull()
+        ?.takeIf { it.result == latestResult }?.capacityText(format) ?: "无法测量"
 }
 
 data class HistoryUiActions(

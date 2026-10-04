@@ -260,7 +260,7 @@ private fun CurrentResultGroup(state: HistoryUiState) {
             }
             Spacer(Modifier.width(10.dp))
             Text(
-                Formatter.formatFileSize(context, state.currentBytes),
+                state.currentCapacityText { Formatter.formatFileSize(context, it) },
                 style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
             )
         }

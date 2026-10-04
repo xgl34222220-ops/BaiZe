@@ -143,6 +143,7 @@ data class HistoryUiItem(
         "unknown" -> "无法测量"
         "partial" -> "已确认 ${format(bytes)} · 部分未知"
         "retained" -> "尚未释放"
+        "not_applicable" -> "不计释放"
         else -> format(bytes)
     }
 }

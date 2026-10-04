@@ -193,7 +193,7 @@ private fun CurrentResultCard(state: HistoryUiState, onReviewProtected: () -> Un
                 DetailStatusText(state.latestResult.ifBlank { "最近一次任务已完成" }, Modifier.padding(top = 6.dp))
                 if (state.hasCurrentResult) {
                     Spacer(Modifier.height(8.dp))
-                    Text("${Formatter.formatFileSize(context, state.currentBytes)} · ${state.currentCountDescription}",
+                    Text("${state.currentCapacityText { Formatter.formatFileSize(context, it) }} · ${state.currentCountDescription}",
                         fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -255,11 +255,11 @@ private fun HistoryTimelineRow(record: HistoryUiItem) {
                 }
                 Column(Modifier.widthIn(min = 76.dp, max = 120.dp), horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(Formatter.formatFileSize(context, record.bytes), fontSize = 17.sp,
+                    Text(record.capacityText { Formatter.formatFileSize(context, it) }, fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End,
                         style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
                     Text(if (record.emptyDirs > 0) "${record.files.coerceAtLeast(0)} 个文件 · ${record.emptyDirs} 个目录"
-                        else "${record.files} 项 · ${if (record.cleaned) "已清理" else "已记录"}",
+                        else "${record.files} 项 · ${if (record.cleaned) "清理任务" else "已记录"}",
                         style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

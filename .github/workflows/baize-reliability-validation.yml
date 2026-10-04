@@ -15,6 +15,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  android-reliability:
+    if: contains(github.event.head_commit.message, '[30023-unit-reliability]') || contains(github.event.head_commit.message, '[reliability-build]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Fresh full Android regressions
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest
+      - name: Lint and debug application
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=2 :app:lintDebug :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Reliability-Android-Verification
+          path: |
+            v2/app/build/test-results/testDebugUnitTest/
+            v2/app/build/reports/lint-results-debug.html
+            v2/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          if-no-files-found: warn
+
   photo-kill-baseline:
     if: contains(github.event.head_commit.message, '[30022-photo-kill-baseline]')
     runs-on: ubuntu-latest
