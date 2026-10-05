@@ -175,7 +175,7 @@ class Smoke:
         self.save(f"{label}-package.txt", package)
         require(re.search(rf"\bversionCode={code}\b", package) is not None, "Wrong installed versionCode")
         require("DEBUGGABLE" not in package and "TEST_ONLY" not in package, "Installed APK is not production")
-        match = re.search(r"\buserId=(\d+)", package)
+        match = re.search(r"\b(?:userId|appId)=(\d+)", package)
         require(match is not None and int(match.group(1)) >= 10000, "No ordinary application UID")
         return int(match.group(1))
 
@@ -466,6 +466,7 @@ class Smoke:
         require(candidate["signer_sha256"] == baseline["signer_sha256"], "Candidate does not share the delivered signing certificate")
         self.result.update({"baseline": baseline, "candidate": candidate})
         self.identify_emulator()
+        require(self.shell("am get-current-user") == "0", "Expected emulator primary user")
         installed = self.adb("shell", "pm", "list", "packages", APP)
         require(f"package:{APP}" not in installed.splitlines(),
                 "Refusing to replace existing application data; start a fresh disposable emulator")
