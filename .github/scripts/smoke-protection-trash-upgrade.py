@@ -337,6 +337,21 @@ class Smoke:
         require(data.returncode == 0, f"Cannot read seeded file {remote}: {data.stderr!r}")
         return data.stdout
 
+    def preference_xml(self, remote: str) -> ET.Element:
+        raw = self.read_bytes(remote)
+        evidence = self.out / (Path(remote).name + ".observed.bin")
+        evidence.write_bytes(raw)
+        if raw.startswith(b"ABX\x00"):
+            # AOSP may rewrite SharedPreferences using its typed binary XML.
+            # Decode to stdout only: no in-place conversion or preference mutation.
+            decoded = self.adb("shell", "abx2xml", remote, "-")
+            self.save(Path(remote).name + ".observed.xml", decoded)
+            return ET.fromstring(decoded)
+        try:
+            return ET.fromstring(raw)
+        except ET.ParseError as error:
+            raise AssertionError(f"Unsupported preference encoding at {remote}; prefix={raw[:16].hex()}") from error
+
     def seed_file(self, remote: str, data: bytes, label: str) -> None:
         local = self.out / "seed" / label
         local.parent.mkdir(parents=True, exist_ok=True)
@@ -350,7 +365,7 @@ class Smoke:
     def seed_preference(self, filename: str, key: str, tag: str, value: str) -> None:
         remote = f"{DATA}/shared_prefs/{filename}.xml"
         exists = self.shell("if [ -f " + shlex.quote(remote) + " ]; then echo present; fi") == "present"
-        root = ET.fromstring(self.read_bytes(remote)) if exists else ET.Element("map")
+        root = self.preference_xml(remote) if exists else ET.Element("map")
         require(root.tag == "map", f"Invalid existing preferences: {filename}")
         for old in list(root):
             if old.get("name") == key:
@@ -407,7 +422,7 @@ class Smoke:
         for remote, original in self.fixtures.items():
             require(self.read_bytes(remote) == original, f"Upgrade/cancel changed seeded file: {remote}")
         for remote, (key, value) in self.preference_expectations.items():
-            root = ET.fromstring(self.read_bytes(remote))
+            root = self.preference_xml(remote)
             nodes = [node for node in root if node.get("name") == key]
             require(len(nodes) == 1, f"Seeded preference vanished: {key}")
             values = {node.text for node in nodes[0]} if nodes[0].tag == "set" else {nodes[0].get("value")}
