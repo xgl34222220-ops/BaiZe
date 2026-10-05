@@ -174,8 +174,14 @@ internal object LegacyPreferencesAccess {
     } catch (_: NoSuchFileException) { null }
 
     private fun syncDirectory(directory: File) {
-        val fd = Os.open(directory.absolutePath, OsConstants.O_RDONLY or OsConstants.O_DIRECTORY, 0)
-        try { Os.fsync(fd) } finally { Os.close(fd) }
+        // O_DIRECTORY is not exposed by Android's public SDK. Open without following symlinks,
+        // reject non-directories using the opened descriptor, and avoid blocking on special files.
+        val fd = Os.open(directory.absolutePath,
+            OsConstants.O_RDONLY or OsConstants.O_NOFOLLOW or OsConstants.O_NONBLOCK, 0)
+        try {
+            check(OsConstants.S_ISDIR(Os.fstat(fd).st_mode)) { "同步目标不是目录，已停止启动。" }
+            Os.fsync(fd)
+        } finally { Os.close(fd) }
     }
 
     private class GuardedPreferences(private val context: Context) : SharedPreferences {
