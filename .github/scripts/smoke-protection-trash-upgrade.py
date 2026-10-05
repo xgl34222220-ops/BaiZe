@@ -146,8 +146,11 @@ class Smoke:
                 f"{label} must be a non-debuggable production APK")
         certificates = self.command([sdk_tool("apksigner"), "verify", "--verbose", "--print-certs", str(apk)])
         self.save(f"{label}-signature.txt", certificates)
-        signers = sorted(re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})$",
-                                    certificates, re.M))
+        # Build-tools 37 labels signers as "V3.0 Signer:"; 36 uses "Signer #1".
+        # Match certificate digests only, not the distinct public-key digest lines.
+        signers = sorted(set(re.findall(
+            r"^(?:Signer #\d+|V\d+(?:\.\d+)? Signer:)\s+certificate SHA-256 digest: ([0-9a-fA-F]{64})$",
+            certificates, re.M)))
         require(bool(signers), f"No verified {label} APK signing certificate")
         return {"sha256": sha, "version_code": code, "signer_sha256": [s.lower() for s in signers],
                 "debuggable": False, "package": APP}
