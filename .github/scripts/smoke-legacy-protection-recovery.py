@@ -97,7 +97,7 @@ class RecoverySmoke(base.Smoke):
             while True:
                 root = self.tree(attempt + "-blocked")
                 labels = self.texts(root)
-                if any("已暂停清理" in label for label in labels):
+                if "旧版保护暂不可确认" in labels and any("暂停清理" in label for label in labels):
                     break
                 base.require(time.monotonic() < deadline, "Corrupt protection did not stay fail-closed")
                 time.sleep(.5)

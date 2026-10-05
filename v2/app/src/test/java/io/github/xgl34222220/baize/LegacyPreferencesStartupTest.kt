@@ -33,12 +33,12 @@ class LegacyPreferencesStartupTest {
             .apply { isAccessible = true }.newInstance()
         assertTrue("Fresh Linux must bind the directory-aware shadow",
             Shadow.extract<Any>(linux) is DirectorySyncLinuxShadow)
-        val guarded = Class.forName("libcore.io.BlockGuardOs")
-            .getDeclaredConstructor(Class.forName("libcore.io.Os"))
-            .apply { isAccessible = true }.newInstance(linux)
         val field = Class.forName("libcore.io.Libcore").getDeclaredField("os").apply { isAccessible = true }
         originalOs = field.get(null)
-        field.set(null, guarded)
+        // API 28 Os.close delegates to Libcore.os. Robolectric 4.14.1's ShadowBlockGuardOs.close
+        // intentionally does nothing, so wrapping this instance would swallow production's finally
+        // close. Bind Linux directly to the same Os interface only within this test fixture.
+        field.set(null, linux)
     }
 
     @After fun restoreHandler() {
@@ -65,6 +65,19 @@ class LegacyPreferencesStartupTest {
         return app
     }
     private fun archive(name: String = "baize_v2.xml") = File(LegacyPreferencesAccess.quarantineDirectory(context), name)
+
+    @Test fun publicOsDirectoryRoundTripReachesSyncAndActuallyClosesTheTrackedChannel() {
+        val directory = File(context.cacheDir, "directory-sync-harness").apply { mkdirs() }
+        val fd = android.system.Os.open(directory.absolutePath,
+            android.system.OsConstants.O_RDONLY or android.system.OsConstants.O_NOFOLLOW or android.system.OsConstants.O_NONBLOCK, 0)
+        try {
+            assertEquals(1, DirectorySyncLinuxShadow.openDirectoryCount)
+            assertTrue(android.system.OsConstants.S_ISDIR(android.system.Os.fstat(fd).st_mode))
+            android.system.Os.fsync(fd)
+            assertEquals(1, DirectorySyncLinuxShadow.directorySyncCalls)
+        } finally { android.system.Os.close(fd) }
+        assertEquals(0, DirectorySyncLinuxShadow.openDirectoryCount)
+    }
 
     @Test fun corruptColdSourceSurvivesActualStartupQueuedUiWritesAndRelaunch() = runBlocking {
         val original = "<map><set name=\"path_whitelist\"><string>/Keep</string>".toByteArray()
