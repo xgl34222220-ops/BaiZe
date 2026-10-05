@@ -29,11 +29,13 @@ class LegacyPreferencesStartupTest {
         // Reusing that Linux instance retains its original ShadowLinux association and causes
         // ClassCastException at the first custom method. Bind a fresh instance for this test only.
         DirectorySyncLinuxShadow.reset()
-        val linux = Class.forName("libcore.io.Linux").getDeclaredConstructor().newInstance()
+        val linux = Class.forName("libcore.io.Linux").getDeclaredConstructor()
+            .apply { isAccessible = true }.newInstance()
         assertTrue("Fresh Linux must bind the directory-aware shadow",
             Shadow.extract<Any>(linux) is DirectorySyncLinuxShadow)
         val guarded = Class.forName("libcore.io.BlockGuardOs")
-            .getDeclaredConstructor(Class.forName("libcore.io.Os")).newInstance(linux)
+            .getDeclaredConstructor(Class.forName("libcore.io.Os"))
+            .apply { isAccessible = true }.newInstance(linux)
         val field = Class.forName("libcore.io.Libcore").getDeclaredField("os").apply { isAccessible = true }
         originalOs = field.get(null)
         field.set(null, guarded)
