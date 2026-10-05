@@ -16,11 +16,15 @@ import org.robolectric.annotation.Config
 
 /** Seed real app files before actual BaiZeApplication.attachBaseContext/onCreate, not a helper-only read. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], application = Application::class)
+@Config(sdk = [28], application = Application::class, shadows = [DirectorySyncLinuxShadow::class])
 class LegacyPreferencesStartupTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val oldHandler = Thread.getDefaultUncaughtExceptionHandler()
-    @After fun restoreHandler() { Thread.setDefaultUncaughtExceptionHandler(oldHandler) }
+    @After fun restoreHandler() {
+        Thread.setDefaultUncaughtExceptionHandler(oldHandler)
+        assertEquals("Directory descriptors must close even when preservation fails", 0, DirectorySyncLinuxShadow.openDirectoryCount)
+        DirectorySyncLinuxShadow.reset()
+    }
     private fun source(suffix: String = "") = File(context.dataDir, "shared_prefs/baize_v2.xml$suffix")
     private fun seed(bytes: ByteArray, suffix: String = "") = source(suffix).apply {
         parentFile!!.mkdirs(); writeBytes(bytes)
@@ -153,4 +157,46 @@ class LegacyPreferencesStartupTest {
         assertArrayEquals(original, source().readBytes())
         assertTrue(LegacyPreferencesAccess.isBlocked(context))
     }
+    @Test fun directoryOpenFailureHaltsStartupWithoutOverwritingOriginalEvidence() {
+        val original = "<map><broken".toByteArray()
+        seed(original)
+        DirectorySyncLinuxShadow.failOpen = true
+        val failure = runCatching { startup() }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(causes(failure!!).any { it is android.system.ErrnoException && it.message.orEmpty().startsWith("open failed") })
+        assertArrayEquals(original, source().readBytes())
+        assertTrue(LegacyPreferencesAccess.isBlocked(context))
+        assertFalse(File(LegacyPreferencesAccess.quarantineDirectory(context), "manifest.json").exists())
+        DirectorySyncLinuxShadow.failOpen = false
+        assertTrue(runCatching { startup() }.isFailure)
+    }
+
+    @Test fun parentDirectoryFsyncFailureHaltsStartupAndClosesItsDescriptor() {
+        val original = "<map><broken".toByteArray()
+        seed(original)
+        DirectorySyncLinuxShadow.failSyncAt = 1
+        val failure = runCatching { startup() }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(causes(failure!!).any { it is android.system.ErrnoException && it.message.orEmpty().startsWith("fsync failed") })
+        assertArrayEquals(original, source().readBytes())
+        assertEquals(0, DirectorySyncLinuxShadow.openDirectoryCount)
+        assertFalse(File(LegacyPreferencesAccess.quarantineDirectory(context), "manifest.json").exists())
+        assertTrue(runCatching { LegacyProtectionRecovery.read(context) }.isFailure)
+    }
+
+    @Test fun finalDirectoryFsyncFailureStillStopsStartupAndKeepsExactArchive() {
+        val original = "<map><broken".toByteArray()
+        seed(original)
+        DirectorySyncLinuxShadow.failSyncAt = 2
+        val failure = runCatching { startup() }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(causes(failure!!).any { it is android.system.ErrnoException && it.message.orEmpty().startsWith("fsync failed") })
+        assertArrayEquals(original, source().readBytes())
+        assertArrayEquals(original, archive().readBytes())
+        assertEquals(0, DirectorySyncLinuxShadow.openDirectoryCount)
+        assertTrue(runCatching { LegacyProtectionRecovery.read(context) }.isFailure)
+    }
+
+    private fun causes(failure: Throwable): Sequence<Throwable> = generateSequence(failure) { it.cause }
+
 }
