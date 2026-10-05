@@ -7,12 +7,14 @@ import androidx.datastore.preferences.core.emptyPreferences
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.shadow.api.Shadow
 
 /** Seed real app files before actual BaiZeApplication.attachBaseContext/onCreate, not a helper-only read. */
 @RunWith(RobolectricTestRunner::class)
@@ -20,10 +22,33 @@ import org.robolectric.annotation.Config
 class LegacyPreferencesStartupTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val oldHandler = Thread.getDefaultUncaughtExceptionHandler()
+    private var originalOs: Any? = null
+
+    @Before fun installFreshLinuxForThisShadowConfiguration() {
+        // Robolectric initializes Libcore.os before applying a class's custom shadow mapping.
+        // Reusing that Linux instance retains its original ShadowLinux association and causes
+        // ClassCastException at the first custom method. Bind a fresh instance for this test only.
+        DirectorySyncLinuxShadow.reset()
+        val linux = Class.forName("libcore.io.Linux").getDeclaredConstructor().newInstance()
+        assertTrue("Fresh Linux must bind the directory-aware shadow",
+            Shadow.extract<Any>(linux) is DirectorySyncLinuxShadow)
+        val guarded = Class.forName("libcore.io.BlockGuardOs")
+            .getDeclaredConstructor(Class.forName("libcore.io.Os")).newInstance(linux)
+        val field = Class.forName("libcore.io.Libcore").getDeclaredField("os").apply { isAccessible = true }
+        originalOs = field.get(null)
+        field.set(null, guarded)
+    }
+
     @After fun restoreHandler() {
         Thread.setDefaultUncaughtExceptionHandler(oldHandler)
-        assertEquals("Directory descriptors must close even when preservation fails", 0, DirectorySyncLinuxShadow.openDirectoryCount)
-        DirectorySyncLinuxShadow.reset()
+        try {
+            assertEquals("Directory descriptors must close even when preservation fails", 0, DirectorySyncLinuxShadow.openDirectoryCount)
+        } finally {
+            DirectorySyncLinuxShadow.reset()
+            originalOs?.let {
+                Class.forName("libcore.io.Libcore").getDeclaredField("os").apply { isAccessible = true }.set(null, it)
+            }
+        }
     }
     private fun source(suffix: String = "") = File(context.dataDir, "shared_prefs/baize_v2.xml$suffix")
     private fun seed(bytes: ByteArray, suffix: String = "") = source(suffix).apply {
