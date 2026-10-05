@@ -38,13 +38,22 @@ class FileTrashScreenUiTest {
     @get:Rule val compose = createAndroidComposeRule<FileTrashActivity>()
     @Test fun trashScreenDoesNotOfferSilentAutomaticPurge() {
         compose.onNodeWithText("文件回收站").assertIsDisplayed()
-        compose.onNodeWithText("容量上限").assertIsDisplayed()
+        compose.onNodeWithText("1 GiB").assertDoesNotExist()
         compose.onNodeWithText("回收站为空").assertIsDisplayed()
         compose.onNodeWithText("永久删除").assertDoesNotExist()
-        compose.onNodeWithText("1 GiB").performClick()
-        compose.onNodeWithText("1 GiB ✓").assertIsDisplayed()
+        compose.onNodeWithText("清空回收站").assertIsNotEnabled()
+        compose.onNodeWithText("说明与容量设置").performClick()
+        compose.onNodeWithText("1 GiB").performScrollTo().performClick()
+        compose.onNodeWithText("1 GiB").assertIsSelected()
+        compose.runOnIdle {
+            org.junit.Assert.assertEquals(1024L * 1024 * 1024,
+                compose.activity.getSharedPreferences("ordinary-trash", android.content.Context.MODE_PRIVATE).getLong("budget", 0))
+        }
+        compose.onNodeWithText("清空回收站").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithText("永久删除这 0 项").assertDoesNotExist()
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
         File("build/reports/ui-screenshots/round-file-trash-320.png").apply { parentFile!!.mkdirs(); outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
     }
 }
+

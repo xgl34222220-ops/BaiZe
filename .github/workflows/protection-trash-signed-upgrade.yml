@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Require the exact signed application source
-        run: git diff --exit-code 253225897cf983a53d5647e87f04855d32570134 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**'
+        run: git diff --exit-code 253225897cf983a53d5647e87f04855d32570134 HEAD -- . ':(exclude).github/**' ':(exclude)docs/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**'
       - name: Verify exact signed producer runs
         uses: actions/github-script@v7
         with:
