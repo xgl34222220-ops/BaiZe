@@ -404,9 +404,32 @@ class Smoke:
             self.seed_file(f"{DATA}/files/ordinary-trash/{entry_id}.json",
                            json.dumps(entry).encode(), f"journal-{number}.json")
             self.entries.append(entry)
+        # adbd-root writes are not app writes. Android/data may be bind-mounted
+        # directly into the app's namespace, bypassing FUSE's displayed ownership.
+        # Fix only our new external fixtures and their files/trash ancestors in
+        # the backing store; do not change the package directory, inherited GID,
+        # default ACL, other files, storage grants, or any system security setting.
+        external_paths = [EXTERNAL, f"{EXTERNAL}/.baize-file-trash", *[entry["stored"] for entry in self.entries]]
+        ownership = []
+        for remote in external_paths:
+            backing = "/data/media/0/" + remote.removeprefix("/storage/emulated/0/")
+            require(self.shell("readlink -f " + shlex.quote(backing)) == backing,
+                    f"Synthetic external fixture has an unexpected backing path: {backing}")
+            if remote in self.fixtures:
+                require(self.read_bytes(backing) == self.fixtures[remote],
+                        f"External fixture backing bytes differ: {remote}")
+            before = self.shell("stat -c '%u:%g %a %n' " + shlex.quote(backing))
+            # Change only the owner and owner bits. Preserve Android's existing
+            # external-data GID/default ACL instead of making the fixture public.
+            owner_bits = "u+rw" if remote in self.fixtures else "u+rwx"
+            self.shell(f"chown {self.app_uid} {shlex.quote(backing)} && chmod {owner_bits} {shlex.quote(backing)}")
+            require(self.shell("stat -c %u " + shlex.quote(backing)) == str(self.app_uid),
+                    f"Synthetic external fixture is not owned by the app: {backing}")
+            ownership.append({"path": remote, "backing": backing, "before": before,
+                              "after": self.shell("stat -c '%u:%g %a %n' " + shlex.quote(backing))})
+        self.save("seed-external-ownership.json", json.dumps(ownership, indent=2))
         # Correct only the created private directories/files, not security policy
-        # or unrelated application contents. External storage ownership is exposed
-        # by Android's per-app emulated-storage mount, not chmod/appops workarounds.
+        # or unrelated application contents.
         for directory in (f"{DATA}/files", f"{DATA}/files/ordinary-trash", f"{DATA}/shared_prefs"):
             self.shell(f"chown {self.app_uid}:{self.app_uid} {shlex.quote(directory)} && chmod 700 {shlex.quote(directory)}")
         paths = [*self.fixtures, *self.preference_expectations,
