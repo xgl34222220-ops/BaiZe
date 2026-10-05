@@ -23,7 +23,7 @@ android {
         applicationId = "io.github.xgl34222220.baize"
         minSdk = 26
         targetSdk = 36
-        versionCode = 30024
+        versionCode = 30025
         versionName = "2.0.0"
     }
 
@@ -160,3 +160,4 @@ dependencies {
     testImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+

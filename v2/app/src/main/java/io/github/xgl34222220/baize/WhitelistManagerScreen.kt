@@ -35,6 +35,19 @@ internal fun WhitelistManagerScreen(
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
+    var focusOnly by rememberSaveable(state.focusFile) { mutableStateOf(state.focusFile != null) }
+    var focusTabChosen by rememberSaveable(state.focusFile) { mutableStateOf(false) }
+    LaunchedEffect(state.focusFile, state.focusDetails) {
+        val details = state.focusDetails
+        if (state.focusFile != null && !focusTabChosen && details != null && details.unavailableReason == null) {
+            tab = if (details.paths.isEmpty() && details.packages.isNotEmpty()) 0 else 1
+            focusTabChosen = true
+        }
+    }
+    val matchingPaths = state.paths.filter { path -> state.focusDetails?.paths.orEmpty().any {
+        it.identity == path || it.rule in state.pathAliases[path].orEmpty()
+    } }.toSet()
+    val matchingPackages = state.focusDetails?.packages.orEmpty()
     var protectedOnly by rememberSaveable { mutableStateOf(false) }
     var showClear by rememberSaveable { mutableStateOf(false) }
     var removal by rememberSaveable { mutableStateOf<String?>(null) }
@@ -53,12 +66,13 @@ internal fun WhitelistManagerScreen(
     val edit = state.connected && state.packagesLoaded && !state.loading && !state.saving
     val pathEdit = state.connected && state.pathsLoaded && !state.loading && !state.saving
     val leave: () -> Unit = { if (!state.saving) onBack() }
-    val visible = remember(state.apps, state.draft.selected, query, protectedOnly) {
-        state.apps.filter { (!protectedOnly || it.packageName in state.draft.selected) &&
+    val visible = remember(state.apps, state.draft.selected, query, protectedOnly, focusOnly, matchingPackages) {
+        state.apps.filter { (!focusOnly || it.packageName in matchingPackages) && (!protectedOnly || it.packageName in state.draft.selected) &&
             (it.label.contains(query, true) || it.packageName.contains(query, true)) }
     }
-    val visiblePaths = remember(state.paths, state.pathAliases, query) { state.paths.filter { path ->
-        path.contains(query, true) || state.pathAliases[path].orEmpty().any { it.contains(query, true) }
+    val visiblePaths = remember(state.paths, state.pathAliases, query, focusOnly, matchingPaths) { state.paths.filter { path ->
+        (!focusOnly || path in matchingPaths) &&
+            (path.contains(query, true) || state.pathAliases[path].orEmpty().any { it.contains(query, true) })
     } }
     Surface(Modifier.fillMaxSize(), color = BaiZeTokens.colors.surfaceBase) {
         Column {
@@ -68,6 +82,23 @@ internal fun WhitelistManagerScreen(
             VideoTabs(listOf("应用保护", "路径保护"), tab, { tab = it; query = "" })
             LazyColumn(Modifier.weight(1f).navigationBarsPadding().imePadding().testTag("whitelist-list"),
                 contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                state.focusFile?.let { file -> item {
+                    LuoShuGroup { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("正在管理此文件的保护", style = MaterialTheme.typography.titleSmall)
+                        SelectionContainer { Text(file, style = MaterialTheme.typography.bodySmall) }
+                        val details = state.focusDetails
+                        Text(when {
+                            state.loading || details == null -> "正在核对此文件匹配的路径和应用保护…"
+                            !state.connected || !state.pathsLoaded || !state.packagesLoaded -> "尚未核对当前保护，下面仅供参考；重连并刷新后才能修改。"
+                            else -> details.summary
+                        }, style = MaterialTheme.typography.bodySmall)
+                        if (details?.manageable == true) Text("匹配 ${matchingPaths.size} 个路径、${matchingPackages.size} 个应用。各条规则独立生效；取消一条后仍可能受其它规则保护。",
+                            style = MaterialTheme.typography.bodySmall)
+                        TextButton({ focusOnly = !focusOnly; query = "" }) {
+                            Text(if (focusOnly) "显示全部保护" else "仅看此文件匹配保护")
+                        }
+                    } }
+                } }
                 item {
                     OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                         shape = RoundedCornerShape(18.dp), leadingIcon = { Icon(Icons.Rounded.Search, null) },
@@ -80,7 +111,7 @@ internal fun WhitelistManagerScreen(
                     item { FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !protectedOnly, onClick = { protectedOnly = false }, label = { Text("全部应用") })
                         FilterChip(selected = protectedOnly, onClick = { protectedOnly = true }, label = { Text("已保护 ${state.draft.selected.size}") })
-                        TextButton({ showClear = true }, enabled = edit && state.draft.selected.isNotEmpty()) { Text("取消全部应用保护") }
+                        if (state.focusFile == null) TextButton({ showClear = true }, enabled = edit && state.draft.selected.isNotEmpty()) { Text("取消全部应用保护") }
                     } }
                     if (visible.isEmpty() && !state.loading) item { Text("没有匹配的应用", style = MaterialTheme.typography.bodyMedium) }
                     items(visible, key = { "app:${it.packageName}" }) { app ->
@@ -91,6 +122,8 @@ internal fun WhitelistManagerScreen(
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                     Text(app.label, style = MaterialTheme.typography.titleSmall)
                                     Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (app.packageName in matchingPackages) Text("此文件位于该应用的 Android/data 目录，受此项保护",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                     if (app.packageName in state.legacyPackages) Text("包含旧版保护记录",
                                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -115,8 +148,13 @@ internal fun WhitelistManagerScreen(
                             Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
                     } }
                     items(visiblePaths, key = { "path:$it" }) { path -> LuoShuGroup {
-                        Column(Modifier.padding(16.dp)) {
+                        Column(Modifier.padding(16.dp).testTag("whitelist-path:$path")) {
                             SelectionContainer { Text(path, style = MaterialTheme.typography.bodyMedium) }
+                            if (path in matchingPaths) Text(
+                                if (state.focusDetails?.paths.orEmpty().any { it.identity == path && it.ancestor }) "此文件受该父目录保护，包含目录内全部子项"
+                                else "此文件匹配此路径保护",
+                                Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary)
                             Text(when {
                                 path in state.legacyPaths && path in state.rootPaths -> "清理服务与旧版设置中的同一路径"
                                 path in state.legacyPaths -> "来自旧版设置"
@@ -178,3 +216,4 @@ internal fun WhitelistManagerScreen(
             dismissButton = { BaiZeDialogButton({ adding = false }, enabled = !state.addingPath) { Text("返回") } })
     }
 }
+

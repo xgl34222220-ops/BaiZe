@@ -103,8 +103,9 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
     }
 
     /** Exclusive creation prevents overwriting a newly created original. Trash stays until full verification. */
-    fun restore(id: String, allowChanged: Boolean = false): File = synchronized(LOCK) {
+    fun restore(id: String, allowChanged: Boolean = false, expected: TrashEntry? = null): File = synchronized(LOCK) {
         val entry = entries().firstOrNull { it.id == id } ?: error("恢复记录不存在")
+        checkReviewedEntry(entry, expected)
         val payload = checkedPayload(entry, allowChanged)
         val restoreBytes = payload.length()
         val restoreHash = digest(payload)
@@ -128,8 +129,9 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         destination
     }
 
-    fun purge(id: String): Long = synchronized(LOCK) {
+    fun purge(id: String, expected: TrashEntry? = null): Long = synchronized(LOCK) {
         val entry = entries().firstOrNull { it.id == id } ?: error("回收站记录不存在")
+        checkReviewedEntry(entry, expected)
         val payload = checkedPayload(entry)
         check(payload.delete() && !Files.exists(payload.toPath(), LinkOption.NOFOLLOW_LINKS)) { "永久删除未确认" }
         syncDirectory(payload.parentFile!!)
@@ -138,12 +140,19 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         entry.bytes
     }
     /** Removes only a journal whose payload is conclusively absent on an available volume. */
-    fun forgetMissing(id: String) = synchronized(LOCK) {
+    fun forgetMissing(id: String, expected: TrashEntry? = null) = synchronized(LOCK) {
         val entry = entries().firstOrNull { it.id == id } ?: error("记录不存在")
+        checkReviewedEntry(entry, expected)
         val file = File(entry.stored)
         check(safePayload(file) && file.parentFile?.isDirectory == true && Files.notExists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) { "内容仍存在或存储卷不可用，未清理记录" }
         check(File(metadata, "$id.json").delete()) { "无法清理记录" }
         syncDirectory(metadata)
+    }
+    /** A reviewed batch cannot act on a rewritten journal, even if its ID was reused. */
+    private fun checkReviewedEntry(current: TrashEntry, expected: TrashEntry?) {
+        check(expected == null || current.copy(payloadState = expected.payloadState) == expected) {
+            "回收记录在确认后已变化，已保留，请刷新后重新选择"
+        }
     }
     private fun checkedPayload(entry: TrashEntry, allowChanged: Boolean = false): File {
         val file = File(entry.stored)
@@ -211,3 +220,4 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         }
     }
 }
+

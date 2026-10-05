@@ -1,0 +1,97 @@
+name: BaiZe Protection and Trash Validation
+
+on:
+  push:
+    branches: [codex/baize-safety-scan-20260930]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baize-protection-trash-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  android-tests:
+    if: contains(github.event.head_commit.message, '[protection-trash-validation]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Run all Android logic and Compose UI regressions
+        working-directory: v2
+        run: gradle --no-daemon --max-workers=2 :app:testDebugUnitTest
+      - name: Lint the changed application
+        working-directory: v2
+        run: gradle --no-daemon --max-workers=2 :app:lintDebug
+      - name: Build disposable-emulator probe APK
+        working-directory: v2
+        run: gradle --no-daemon --max-workers=1 :app:assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Protection-Trash-Verification
+          path: |
+            v2/app/build/test-results/testDebugUnitTest/
+            v2/app/build/reports/ui-screenshots/
+            v2/app/build/reports/lint-results-debug.html
+            v2/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+  disposable-device:
+    needs: android-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 36]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-Protection-Trash-Verification
+          path: verification
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Prepare disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise reviewed synthetic trash batches on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048
+          script: bash .github/scripts/probe-trash-batch.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Trash-Device-API-${{ matrix.api }}
+          path: evidence/trash-batch/
+          if-no-files-found: warn
+          retention-days: 7

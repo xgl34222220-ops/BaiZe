@@ -27,14 +27,21 @@ internal data class WhitelistUiState(
     val pathSaveError: String = "",
     val pathSaveRevision: Int = 0,
     val draft: WhitelistDraft = WhitelistDraft(),
+    val focusFile: String? = null,
+    val focusDetails: ApkProtectionDetails? = null,
     val message: String = "正在连接 Root 服务…"
 )
 
-internal fun WhitelistUiState.withProtection(snapshot: WhitelistProtectionSnapshot): WhitelistUiState {
+internal fun WhitelistUiState.withProtection(snapshot: WhitelistProtectionSnapshot,
+    guard: ApkDeletionGuard? = null): WhitelistUiState {
     val entries = snapshot.pathEntries
-    return copy(paths = entries.map { it.path },
+    return copy(focusDetails = focusFile?.let { file ->
+            guard?.protectionDetails(file, ApkProtectionState.KnownRoot(snapshot.effective))
+                ?: ApkProtectionDetails(unavailableReason = "此文件的保护范围尚未核对，请刷新。")
+        }, paths = entries.map { it.path },
         rootPaths = entries.filter { it.rootRecords.isNotEmpty() }.map { it.path }.toSet(),
         legacyPaths = entries.filter { it.localRecords.isNotEmpty() }.map { it.path }.toSet(),
         legacyPackages = snapshot.local.packages,
         pathAliases = entries.associate { it.path to (it.rootRecords + it.localRecords).sorted() })
 }
+

@@ -109,6 +109,28 @@ internal class ApkDeletionGuard(
         }
     }
 
+    /** The decision and its explanation use this one matcher, including public-volume aliases. */
+    fun protectionDetails(path: String, protection: ApkProtectionState): ApkProtectionDetails {
+        if (OrdinaryFileTrash.isPayloadPath(path)) return ApkProtectionDetails(internalTrash = true)
+        if (!validPath(path)) return ApkProtectionDetails(unavailableReason = "文件路径无效，无法核对保护范围；文件保留。")
+        if (protection is ApkProtectionState.Unknown) return ApkProtectionDetails(unavailableReason = protection.reason)
+        val rules = protection.rules ?: return ApkProtectionDetails(unavailableReason = "保护名单尚未核对，文件保留。")
+        if (aliases.unresolvedUserAlias(path) || rules.paths.any(aliases::unresolvedUserAlias)) {
+            return ApkProtectionDetails(unavailableReason = "无法确认主存储路径别名，保护范围尚未核对；请重连保护服务后重新扫描。")
+        }
+        val identities = protectionIdentities(path)
+        val paths = rules.paths.mapNotNull { rule ->
+            val prefix = aliases.of(rule)
+            if (prefix == "/" || identities.any { it == prefix || it.startsWith("$prefix/") }) {
+                ApkPathProtectionMatch(rule, prefix, identities.none { it == prefix })
+            } else null
+        }.sortedWith(compareByDescending<ApkPathProtectionMatch> { it.identity.length }.thenBy { it.rule })
+        val components = aliases.of(path).split('/')
+        val data = components.indexOf("Android")
+        val pkg = if (data >= 0 && components.getOrNull(data + 1) == "data") components.getOrNull(data + 2) else null
+        return ApkProtectionDetails(paths, setOfNotNull(pkg?.takeIf { it in rules.packages }))
+    }
+
     fun capture(path: String): ApkFileIdentity? = runCatching {
         if (!validPath(path) || aliases.unresolvedUserAlias(path)) return null
         val root = roots.filter { path.startsWith("$it/") }.maxByOrNull { it.length } ?: return null
@@ -131,21 +153,9 @@ internal class ApkDeletionGuard(
     ): ApkIndexedDeleteResult? {
         if (OrdinaryFileTrash.isPayloadPath(path)) return ApkIndexedDeleteResult.PROTECTED
         if (!validUri(uri) || !validPath(path)) return ApkIndexedDeleteResult.INVALID
-        if (protection is ApkProtectionState.Unknown) return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
-        val rules = protection.rules ?: return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
-        if (aliases.unresolvedUserAlias(path) || rules.paths.any(aliases::unresolvedUserAlias)) {
-            return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
-        }
-        val identity = aliases.of(path)
-        val protectionIdentities = protectionIdentities(path)
-        if (rules.paths.any { protected ->
-            val prefix = aliases.of(protected)
-            prefix == "/" || protectionIdentities.any { it == prefix || it.startsWith("$prefix/") }
-        }) return ApkIndexedDeleteResult.PROTECTED
-        val components = identity.split('/')
-        val data = components.indexOf("Android")
-        if (data >= 0 && components.getOrNull(data + 1) == "data" &&
-            components.getOrNull(data + 2) in rules.packages) return ApkIndexedDeleteResult.PROTECTED
+        val details = protectionDetails(path, protection)
+        if (details.unavailableReason != null) return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        if (details.isProtected) return ApkIndexedDeleteResult.PROTECTED
         if (original == null) return ApkIndexedDeleteResult.UNVERIFIED
         val current = capture(path) ?: return ApkIndexedDeleteResult.CHANGED
         // Provider dates and filesystem dates are separate observations. Android may

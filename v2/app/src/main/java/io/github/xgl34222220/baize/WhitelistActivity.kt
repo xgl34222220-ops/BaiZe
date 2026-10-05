@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -35,6 +36,7 @@ import org.json.JSONObject
 @androidx.annotation.Keep
 internal class WhitelistViewModel : ViewModel() {
     var state by mutableStateOf(WhitelistUiState())
+    var protectionGuard: ApkDeletionGuard? = null
 
     fun save(message: String, addingPath: Boolean = false, reload: () -> WhitelistProtectionSnapshot,
         operation: () -> Pair<WhitelistProtectionSnapshot, String>) {
@@ -44,7 +46,7 @@ internal class WhitelistViewModel : ViewModel() {
             val result = runCatching { withContext(Dispatchers.IO) { operation() } }
             result.onSuccess { (snapshot, message) ->
                 val packages = snapshot.effective.packages
-                state = state.withProtection(snapshot).copy(saving = false, addingPath = false,
+                state = state.withProtection(snapshot, protectionGuard).copy(saving = false, addingPath = false,
                     packagesLoaded = true, pathsLoaded = true, draft = WhitelistDraft(packages, packages),
                     pathSaveRevision = state.pathSaveRevision + if (addingPath) 1 else 0,
                     pathSaveError = "", message = message)
@@ -53,7 +55,7 @@ internal class WhitelistViewModel : ViewModel() {
                 // Read back after an uncertain save; never automatically retry a mutation.
                 val latest = withContext(Dispatchers.IO) { runCatching(reload).getOrNull() }
                 val message = "修改未确认，请刷新核对；其它保护继续保留。${error.message.orEmpty()}"
-                state = (latest?.let { state.withProtection(it).copy(
+                state = (latest?.let { state.withProtection(it, protectionGuard).copy(
                     draft = WhitelistDraft(it.effective.packages, it.effective.packages)) } ?: state)
                     .copy(saving = false, addingPath = false, packagesLoaded = latest != null, pathsLoaded = latest != null,
                         pathSaveError = if (addingPath) message else "", message = message)
@@ -94,7 +96,9 @@ class WhitelistActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        state = state.copy(connected = false, loading = false)
+        model.protectionGuard = ApkDeletionGuard.forContext(applicationContext)
+        state = state.copy(connected = false, loading = false,
+            focusFile = intent.getStringExtra(EXTRA_FOCUS_FILE)?.takeIf(ApkDeletionGuard::validPath))
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             val settings = appearance.settings.collectAsStateWithLifecycle().value
@@ -173,7 +177,7 @@ class WhitelistActivity : ComponentActivity() {
             result.onSuccess { (snapshot, apps) ->
                 val packages = snapshot.effective.packages
                 val draft = if (state.draft.dirty) state.draft.rebase(packages) else WhitelistDraft(packages, packages)
-                state = state.withProtection(snapshot).copy(loading = false, packagesLoaded = true, pathsLoaded = true,
+                state = state.withProtection(snapshot, model.protectionGuard).copy(loading = false, packagesLoaded = true, pathsLoaded = true,
                     apps = apps, draft = draft,
                     message = "已保护 ${packages.size} 个应用、${snapshot.pathEntries.size} 个路径。包含旧版设置，修改后请重新扫描核对。")
             }.onFailure {
@@ -239,6 +243,9 @@ class WhitelistActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val EXTRA_FOCUS_FILE = "io.github.xgl34222220.baize.FOCUS_PROTECTED_FILE"
+        internal fun forFile(context: Context, path: String): Intent =
+            Intent(context, WhitelistActivity::class.java).putExtra(EXTRA_FOCUS_FILE, path)
         private fun requireSuccess(raw: String): JSONObject = JSONObject(raw).also {
             check(it.optBoolean("success")) { it.optString("message", it.optString("error", "请求未确认")) }
         }
@@ -250,3 +257,4 @@ class WhitelistActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
+

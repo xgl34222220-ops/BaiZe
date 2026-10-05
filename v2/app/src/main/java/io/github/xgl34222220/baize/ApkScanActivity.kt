@@ -142,7 +142,11 @@ class ApkScanActivity : ComponentActivity() {
                         onLocalMode = { showLocalModeConfirm = true },
                         onToggle = ::toggleItem, onToggleAll = session::toggleAll,
                         onQuery = session::query, onFilter = session::filter,
-                        loadArchive = session::loadArchivePreview, diagnoseFile = session::fileReadDiagnostics)
+                        loadArchive = session::loadArchivePreview, diagnoseFile = session::fileReadDiagnostics,
+                        onManageProtection = { item ->
+                            session.requireProtectionRescan()
+                            CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, item.samplePath))
+                        })
                     if (screenState.reviewRequested) IndexedCleanupReviewDialog(screenState.running, screenState.selected.size,
                         screenState.reviewMessage, session::cleanSnapshot, session::dismissCleanReview)
                     if (confirmStop == session.operationToken && screenState.running) BaiZeDialog(
@@ -260,6 +264,12 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         connectService()
     }
     fun resumePermission() { if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) startScan() }
+    /** Returning from management must never present an old decision as current permission. */
+    fun requireProtectionRescan() {
+        if (closed || screenState.running) return
+        contentReview = emptyMap()
+        screenState = screenState.afterProtectionManagement()
+    }
     fun permissionScreenUnavailable() { screenState = screenState.copy(phase = "请在系统设置中为白泽开启${SharedStorageAccess.label}") }
     fun query(value: String) { if (!screenState.running) screenState = screenState.copy(query = value, selected = emptySet()) }
     fun filter(value: ApkInstallStatus?) { if (!screenState.running) screenState = screenState.copy(filter = value, selected = emptySet()) }
@@ -296,7 +306,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             output = "",
             scanFailed = false,
             coverageIncomplete = false,
-            confirmedMissingRecords = 0
+            confirmedMissingRecords = 0,
+            protectionReviewRequired = false
         )
 
         lifecycleScope.launch {
@@ -367,7 +378,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             directSnapshot = snapshots
             val totalBytes = indexed.candidates.sumOf { it.bytes }
             // Publish indexed files immediately; only visible rows decode archive resources.
-            val items = indexed.candidates.map { candidate ->
+            val protectionGuard = ApkDeletionGuard.forContext(applicationContext)
+            val items = withContext(Dispatchers.Default) { indexed.candidates.map { candidate ->
                 ApkScanItem(
                     name = candidate.name,
                     files = 1,
@@ -375,9 +387,10 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     errors = 0,
                     samplePath = candidate.path,
                     uri = candidate.uri,
-                    modifiedSeconds = candidate.modifiedSeconds
+                    modifiedSeconds = candidate.modifiedSeconds,
+                    protectionDetails = protectionGuard.protectionDetails(candidate.path, protection)
                 )
-            }
+            } }
             if (stopRequested) {
                 directSnapshot = emptyList()
                 screenState = screenState.copy(running = false, operation = "", phase = "安装包扫描已停止")
@@ -427,7 +440,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
     }
 
     fun toggleItem(uri: String) {
-        if (screenState.running || screenState.selectableVisibleItems.none { it.uri == uri }) return
+        if (screenState.running || screenState.protectionReviewRequired || screenState.selectableVisibleItems.none { it.uri == uri }) return
         screenState = screenState.copy(selected = screenState.selected.toMutableSet().apply {
             if (!add(uri)) remove(uri)
         })
@@ -519,11 +532,18 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 var failed = 0
                 val removed = mutableSetOf<String>()
                 val retained = mutableMapOf<String, String>()
+                val protectionDetails = mutableMapOf<String, ApkProtectionDetails>()
+                val guard = ApkDeletionGuard.forContext(applicationContext)
                 for ((index, item) in snapshot.withIndex()) {
                     if (stopRequested) break
+                    var checkedProtection: ApkProtectionState = ApkProtectionState.Unknown("本次未完成保护核对，文件保留。")
                     val moveOutcome = OrdinaryFileTrash.moveReviewed(applicationContext,
                         StorageFileRecord(-1L, item.uri, item.path, item.name, item.bytes, item.modifiedSeconds, "application/vnd.android.package-archive", identity = item.identity),
-                        reviewed[item.uri], { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)) },
+                        reviewed[item.uri], {
+                            ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, service)).also {
+                                checkedProtection = it
+                            }
+                        },
                         { stopRequested || closed })
                     val outcome = moveOutcome.result
                     when (outcome) {
@@ -538,15 +558,24 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                         ApkIndexedDeleteResult.CANCELLED -> Unit
                         ApkIndexedDeleteResult.FAILED -> failed += 1
                     }
-                    if (outcome != ApkIndexedDeleteResult.DELETED) retained[item.uri] = moveOutcome.reason
+                    if (outcome != ApkIndexedDeleteResult.DELETED) {
+                        // Keep the rules from the actual move guard; do not explain a later, different snapshot.
+                        val details = guard.protectionDetails(item.path, checkedProtection)
+                        protectionDetails[item.uri] = details
+                        retained[item.uri] = if (outcome == ApkIndexedDeleteResult.PROTECTED) details.retainedLabel
+                            else moveOutcome.reason
+                    }
                     if (outcome == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE) {
                         skipped += snapshot.size - index - 1
-                        snapshot.dropWhile { it.uri != item.uri }.forEach { retained[it.uri] = outcome.retainedReason() }
+                        snapshot.drop(index + 1).forEach {
+                            retained[it.uri] = outcome.retainedReason()
+                            protectionDetails[it.uri] = ApkProtectionDetails(unavailableReason = "本次保护名单未能核对，文件保留。")
+                        }
                         break
                     }
                     if (outcome == ApkIndexedDeleteResult.CANCELLED) break
                 }
-                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, removed, retained)
+                DirectCleanResult(deletedFiles, deletedBytes, skipped, failed, removed, retained, protectionDetails)
             }
             if (closed) return@launch
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
@@ -565,7 +594,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 cleanReady = directSnapshot.isNotEmpty(),
                 phase = if (stopRequested) "清理已停止 · 已移入回收站 ${result.deletedFiles} 个，其余保留" else phase,
                 items = screenState.items.filterNot { it.uri in result.removed }.map {
-                    it.copy(retainedReason = result.retained[it.uri].orEmpty())
+                    it.copy(retainedReason = result.retained[it.uri] ?: it.retainedReason,
+                        protectionDetails = result.protectionDetails[it.uri] ?: it.protectionDetails)
                 },
                 selected = emptySet(),
                 totalFiles = directSnapshot.size.toLong(),
@@ -607,7 +637,8 @@ internal data class DirectCleanResult(
     val skipped: Int,
     val failed: Int,
     val removed: Set<String> = emptySet(),
-    val retained: Map<String, String> = emptyMap()
+    val retained: Map<String, String> = emptyMap(),
+    val protectionDetails: Map<String, ApkProtectionDetails> = emptyMap()
 )
 
 internal data class ApkScanUiState(
@@ -632,18 +663,22 @@ internal data class ApkScanUiState(
     val localModeAvailable: Boolean = false,
     val protectionMessage: String = "",
     val protectionNeedsAction: Boolean = false,
-    val confirmedMissingRecords: Int = 0
+    val confirmedMissingRecords: Int = 0,
+    val protectionReviewRequired: Boolean = false
 ) {
+    fun afterProtectionManagement(): ApkScanUiState = copy(protectionReviewRequired = true,
+        cleanReady = false, selected = emptySet(), reviewRequested = false, reviewMessage = "",
+        phase = "已打开保护管理；以下为上次核对结果，请重新扫描后再清理")
     val visibleItems: List<ApkScanItem> get() = items.filter { item ->
         matchesCriteria(item) || (item.archive.awaitingInspection && (filter != null || query.isNotBlank()))
     }
     fun matchesCriteria(item: ApkScanItem): Boolean =
         (filter == null || (!item.archive.awaitingInspection && item.archive.status == filter)) && (query.isBlank() ||
             listOf(item.name, item.samplePath, item.archive.appName, item.archive.packageName).any { it.contains(query.trim(), true) })
-    val selectableVisibleItems: List<ApkScanItem> get() = visibleItems.filter(::matchesCriteria)
+    val selectableVisibleItems: List<ApkScanItem> get() = if (protectionReviewRequired) emptyList() else visibleItems.filter(::matchesCriteria)
     val allSelected: Boolean get() = selectableVisibleItems.isNotEmpty() && selectableVisibleItems.all { it.uri in selected }
     fun toggleAllSelection(): ApkScanUiState {
-        if (running) return this
+        if (running || protectionReviewRequired) return this
         val visible = selectableVisibleItems.map { it.uri }.toSet()
         return copy(selected = if (allSelected) selected - visible else selected + visible)
     }
@@ -668,7 +703,8 @@ internal data class ApkScanItem(
     val uri: String = samplePath,
     val archive: ApkArchiveInfo = ApkArchiveInfo(),
     val modifiedSeconds: Long = 0L,
-    val retainedReason: String = ""
+    val retainedReason: String = "",
+    val protectionDetails: ApkProtectionDetails? = null
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -686,7 +722,8 @@ internal fun ApkScanScreen(
     onQuery: (String) -> Unit = {},
     onFilter: (ApkInstallStatus?) -> Unit = {},
     loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null,
-    diagnoseFile: (suspend (ApkScanItem) -> String)? = null
+    diagnoseFile: (suspend (ApkScanItem) -> String)? = null,
+    onManageProtection: (ApkScanItem) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showFilters by rememberSaveable { mutableStateOf(false) }
@@ -737,6 +774,13 @@ internal fun ApkScanScreen(
         if (state.items.isNotEmpty()) item {
             FileQueryBar(state.query, onQuery, !state.running, "搜索安装包", "筛选安装包", state.filter?.label.orEmpty()) { showFilters = true }
         }
+        if (state.protectionReviewRequired) item {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Text("上次保护结果，仅供查看。保护设置可能已变化；重新扫描后才能选择清理。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onScan, enabled = !state.running) { Text("重新扫描并核对保护") }
+            }
+        }
         if (state.protectionMessage.isNotBlank()) item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                 Text(state.protectionMessage, style = MaterialTheme.typography.bodySmall,
@@ -769,8 +813,13 @@ internal fun ApkScanScreen(
                 value = requireNotNull(loader).invoke(item)
             }.value
             ApkArchiveResultCard(item.copy(archive = archive),
-                selected = item.uri in state.selected, enabled = !state.running && state.matchesCriteria(item),
+                selected = item.uri in state.selected, enabled = !state.running && !state.protectionReviewRequired && state.matchesCriteria(item),
                 onToggle = { onToggle(item.uri) }, diagnoseFile = diagnoseFile)
+            item.protectionDetails?.takeIf { it.isProtected || it.unavailableReason != null }?.let { details ->
+                ApkProtectionResultPanel(details, historical = state.protectionReviewRequired, enabled = !state.running,
+                    onManage = { onManageProtection(item) },
+                    onTrash = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) })
+            }
         }
         if (state.coverage.isNotEmpty() || state.output.isNotBlank()) item {
             DetailExpandableText("扫描详情", state.coverage.joinToString("\n\n") {
@@ -781,3 +830,4 @@ internal fun ApkScanScreen(
     }
     }
 }
+

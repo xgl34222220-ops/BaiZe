@@ -11,6 +11,30 @@ class OrdinaryFileTrashTest {
         try { test(root, OrdinaryFileTrash(File(root, "metadata"), listOf(File(root, "payload")), now = { 1234L })) }
         finally { root.deleteRecursively() }
     }
+    @Test fun reviewedSnapshotRejectsRewrittenJournalBeforeRestoreOrPurge() = fixture { root, trash ->
+        val source = File(root, "reviewed.apk").apply { writeText("data") }
+        val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        val replacement = entry.copy(original = File(root, "different.apk").path, created = entry.created + 1)
+        File(root, "metadata/${entry.id}.json").writeText(replacement.json().toString())
+        assertTrue(runCatching { trash.purge(entry.id, expected = entry) }.isFailure)
+        assertTrue(runCatching { trash.restore(entry.id, expected = entry) }.isFailure)
+        assertEquals("data", File(entry.stored).readText())
+        assertFalse(File(replacement.original).exists())
+        assertEquals(1, trash.entries().size)
+    }
+    @Test fun reviewedPurgeDoesNotDeleteNewArrivalAndKeepsChangedContent() = fixture { root, trash ->
+        fun add(name: String): TrashEntry {
+            val source = File(root, name).apply { writeText("data") }
+            return trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+        }
+        val reviewed = add("reviewed.apk")
+        val later = add("later.apk")
+        assertEquals(4L, trash.purge(reviewed.id, expected = reviewed))
+        assertEquals(listOf(later.id), trash.entries().map { it.id })
+        File(later.stored).writeText("changed")
+        assertTrue(runCatching { trash.purge(later.id, expected = later) }.isFailure)
+        assertEquals("changed", File(later.stored).readText())
+    }
     @Test fun moveSurvivesRepositoryRestartAndRestoreKeepsConflict() = fixture { root, trash ->
         val source = File(root, "photo.jpg").apply { writeText("original") }
         val entry = trash.move(source, source.length(), OrdinaryFileTrash.digest(source), 1000) { true }
@@ -139,3 +163,4 @@ class OrdinaryFileTrashTest {
         assertEquals(4L, future.purge(entry.id)); assertTrue(future.entries().isEmpty())
     }
 }
+
