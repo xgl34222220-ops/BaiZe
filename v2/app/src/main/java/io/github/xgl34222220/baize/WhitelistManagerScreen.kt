@@ -31,7 +31,8 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 internal fun WhitelistManagerScreen(
     state: WhitelistUiState, onBack: () -> Unit, onRefresh: () -> Unit,
     onToggle: (String) -> Unit, onClearApps: () -> Unit,
-    onRemovePath: (String) -> Unit, onAddPath: (String) -> Unit = {}
+    onRemovePath: (String) -> Unit, onAddPath: (String) -> Unit = {},
+    onReviewLegacyProtection: () -> Unit = {}
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -78,6 +79,12 @@ internal fun WhitelistManagerScreen(
         Column {
             DetailPageHeader("保护名单", "", leave) {
                 IconButton(onRefresh, enabled = !state.loading && !state.saving) { Icon(Icons.Rounded.Refresh, "刷新白名单") }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("旧版记录可在本地核对", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onReviewLegacyProtection, enabled = !state.saving,
+                    modifier = Modifier.testTag("whitelist-legacy-recovery")) { Text("检查旧版保护") }
             }
             VideoTabs(listOf("应用保护", "路径保护"), tab, { tab = it; query = "" })
             LazyColumn(Modifier.weight(1f).navigationBarsPadding().imePadding().testTag("whitelist-list"),
@@ -216,4 +223,3 @@ internal fun WhitelistManagerScreen(
             dismissButton = { BaiZeDialogButton({ adding = false }, enabled = !state.addingPath) { Text("返回") } })
     }
 }
-

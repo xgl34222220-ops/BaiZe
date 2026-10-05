@@ -93,6 +93,7 @@ internal object ApkProtectionStore {
     }.getOrNull()
 
     @Synchronized fun legacyRules(context: Context): ApkProtectionRules {
+        LegacyProtectionRecovery.requireReviewed(context)
         val prefs = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
         return parse(JSONArray(prefs.getStringSet("package_whitelist", emptySet()).orEmpty().toList()).toString(),
             JSONArray(prefs.getStringSet("path_whitelist", emptySet()).orEmpty().toList()).toString())
@@ -133,7 +134,7 @@ internal object ApkProtectionStore {
         } else {
             ApkProtectionState.Unknown("保护名单尚未核对，未删除文件。请连接 Root 后重试。", cached(context)?.plus(local))
         }
-    }.getOrElse { ApkProtectionState.Unknown("保护设置暂不可读，已保留文件。", cached(context)) }
+    }.getOrElse { ApkProtectionState.Unknown("保护设置暂不可读，已保留文件。${it.message.orEmpty().take(180)}", cached(context)) }
 
     /** Called on IO. Both rule halves are read under the Root repository lock; no module is required. */
     fun refresh(context: Context, source: ApkProtectionSource?): ApkProtectionState {
@@ -150,3 +151,4 @@ internal object ApkProtectionStore {
         }
     }
 }
+

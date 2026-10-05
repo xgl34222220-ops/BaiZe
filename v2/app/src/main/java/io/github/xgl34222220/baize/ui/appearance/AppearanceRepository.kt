@@ -1,7 +1,8 @@
 package io.github.xgl34222220.baize.ui.appearance
 
 import android.content.Context
-import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -16,12 +17,41 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
-private val Context.appearanceDataStore by preferencesDataStore(
+/** The only appearance DataStore instance, shared by rendering and protection recovery. */
+internal val Context.appearanceDataStore by preferencesDataStore(
     name = "appearance",
     produceMigrations = { context ->
-        listOf(SharedPreferencesMigration(context, ThemeManager.PREFS))
+        listOf(AppearanceCopyMigration(context))
     }
 )
+
+/** Copy only appearance fields. ThemeManager still reads the source, so NEVER clean it up. */
+internal class AppearanceCopyMigration(context: Context) : DataMigration<Preferences> {
+    private val source = context.getSharedPreferences(ThemeManager.PREFS, Context.MODE_PRIVATE)
+    private val strings = setOf("ui_style", ThemeManager.KEY_MODE, ThemeManager.KEY_ACCENT,
+        "theme_kolor_style", ThemeManager.KEY_MONET_STYLE, "refresh_rate_mode")
+    private val booleans = setOf(ThemeManager.KEY_MONET, ThemeManager.KEY_AMOLED,
+        ThemeManager.KEY_BLUR, ThemeManager.KEY_GLASS, ThemeManager.KEY_FLOATING_DOCK,
+        "adaptive_smooth_mode")
+
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+        source.all.keys.any { it in strings || it in booleans || it == "theme_seed_argb" }
+
+    override suspend fun migrate(currentData: Preferences): Preferences {
+        val copied = currentData.toMutablePreferences()
+        val present = currentData.asMap().keys.mapTo(mutableSetOf()) { it.name }
+        source.all.forEach { (name, value) ->
+            if (name !in present) when {
+                name in strings && value is String -> copied[stringPreferencesKey(name)] = value
+                name in booleans && value is Boolean -> copied[booleanPreferencesKey(name)] = value
+                name == "theme_seed_argb" && value is Int -> copied[intPreferencesKey(name)] = value
+            }
+        }
+        return copied.toPreferences()
+    }
+
+    override suspend fun cleanUp() = Unit
+}
 
 class AppearanceRepository(private val context: Context) {
     private object Keys {

@@ -258,8 +258,9 @@ class PersistentSmartScanActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-                val options = optionsJson()
+                val protection = withContext(Dispatchers.IO) { ApkProtectionStore.legacyRules(applicationContext) }
+                val whitelist = protection.packages
+                val options = optionsJson(protection)
                 val (cacheJson, safeJson) = withContext(Dispatchers.IO) {
                     coroutineScope {
                         val cacheJob = async {
@@ -372,7 +373,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
             var cancelled = false
             try {
                 val selection = JSONObject().put("__all_safe__", true).toString()
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+                withContext(Dispatchers.IO) { LegacyProtectionRecovery.requireReviewed(applicationContext) }
 
                 if (cacheSnapshotId.isNotBlank() && cacheCount > 0) {
                     screenState = screenState.copy(phase = "正在清理应用缓存计划…")
@@ -381,7 +382,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
                             cache.cleanSelected(
                                 cacheSnapshotId,
                                 selection,
-                                JSONArray(whitelist.toList().sorted()).toString()
+                                JSONArray(ApkProtectionStore.legacyRules(applicationContext).packages.sorted()).toString()
                             )
                         }
                     )
@@ -514,7 +515,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
         val age = System.currentTimeMillis() - createdAt
         if (plan.optInt("version", 0) != CLEAN_PLAN_VERSION ||
             createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS ||
-            plan.optString("optionsSha") != sha256(optionsJson())
+            plan.optString("optionsSha") != sha256(planFingerprintOptionsJson())
         ) {
             clearPersistedCleanPlan()
             screenState = screenState.copy(phase = "旧清理计划已过期或设置已变化，请重新扫描")
@@ -605,7 +606,7 @@ class PersistentSmartScanActivity : ComponentActivity() {
             .put("version", CLEAN_PLAN_VERSION)
             .put("planId", cleanPlanId)
             .put("createdAt", cleanPlanCreatedAt)
-            .put("optionsSha", sha256(optionsJson()))
+            .put("optionsSha", sha256(planFingerprintOptionsJson()))
             .put("cacheSnapshotId", cacheSnapshotId)
             .put("cacheCount", cacheCount)
             .put("safeSnapshotId", safeSnapshotId)
@@ -622,12 +623,18 @@ class PersistentSmartScanActivity : ComponentActivity() {
             JSONObject(preferences.getString(CLEAN_PLAN_KEY, null).orEmpty())
         }.getOrNull() ?: return false
         return plan.optString("planId") == cleanPlanId &&
-            plan.optString("optionsSha") == sha256(optionsJson())
+            plan.optString("optionsSha") == sha256(planFingerprintOptionsJson())
     }
 
-    private fun optionsJson(): String {
-        val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty().toList().sorted()
-        val pathWhitelist = preferences.getStringSet("path_whitelist", emptySet()).orEmpty().toList().sorted()
+    /** Metadata only: never pass this unchecked value to a scan or cleanup service. */
+    private fun planFingerprintOptionsJson(): String = optionsJson(ApkProtectionRules(
+        preferences.getStringSet("package_whitelist", emptySet()).orEmpty(),
+        preferences.getStringSet("path_whitelist", emptySet()).orEmpty()))
+
+    /** Called on IO before execution; unresolved recovery never becomes an empty rule list. */
+    private fun optionsJson(protection: ApkProtectionRules = ApkProtectionStore.legacyRules(applicationContext)): String {
+        val whitelist = protection.packages.sorted()
+        val pathWhitelist = protection.paths.sorted()
         val maxMb = preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L)
         return JSONObject()
             .put("whitelistPackages", JSONArray(whitelist))
@@ -820,3 +827,4 @@ private fun PlanSummaryCard(title: String, summary: String) {
         }
     }
 }
+

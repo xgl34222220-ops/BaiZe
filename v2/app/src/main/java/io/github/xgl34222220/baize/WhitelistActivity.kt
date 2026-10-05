@@ -116,11 +116,21 @@ class WhitelistActivity : ComponentActivity() {
                         onBack = ::finish, onRefresh = { if (service == null) connect() else load() },
                         onToggle = ::toggleAppProtection,
                         onClearApps = ::clearAppProtection,
-                        onRemovePath = ::removePath, onAddPath = ::addPath)
+                        onRemovePath = ::removePath, onAddPath = ::addPath,
+                        onReviewLegacyProtection = {
+                            if (!state.saving) CleanerNavigation.openFrom(this,
+                                Intent(this, LegacyProtectionRecoveryActivity::class.java))
+                        })
                 }
             }
         }
         connect()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Recovery can change local rules without touching Root; don't retain stale effective rules.
+        if (service != null) load()
     }
 
     private fun canEditApps() = state.connected && state.packagesLoaded && !state.loading && !state.saving
@@ -257,4 +267,3 @@ class WhitelistActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-

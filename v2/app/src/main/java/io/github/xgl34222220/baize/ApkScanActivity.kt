@@ -143,6 +143,10 @@ class ApkScanActivity : ComponentActivity() {
                         onToggle = ::toggleItem, onToggleAll = session::toggleAll,
                         onQuery = session::query, onFilter = session::filter,
                         loadArchive = session::loadArchivePreview, diagnoseFile = session::fileReadDiagnostics,
+                        onReviewLegacyProtection = {
+                            session.requireProtectionRescan()
+                            CleanerNavigation.openFrom(this, Intent(this, LegacyProtectionRecoveryActivity::class.java))
+                        },
                         onManageProtection = { item ->
                             session.requireProtectionRescan()
                             CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, item.samplePath))
@@ -213,6 +217,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             if (closed) return
             service = null; serviceBound = false
             screenState = screenState.copy(connected = false, status = RootConnectionMessages.bindingFailure(reason))
+            refreshProtectionPresentation()
         }
         override fun onNullBinding(name: ComponentName?) = onBindingFailed(name, RootService.BindingFailure.NULL_BINDING)
     }
@@ -220,6 +225,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         if (initialized) return
         initialized = true
         screenState = screenState.copy(localModeAvailable = !ApkProtectionStore.rootWasUsed(this))
+        refreshProtectionPresentation()
         connectService()
     }
     private fun refreshProtectionPresentation() {
@@ -235,7 +241,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 protectionMessage = when (protection) {
                     is ApkProtectionState.KnownRoot -> ""
                     is ApkProtectionState.LocalOnly -> "本地模式 · 删除前核对文件身份与本地保护规则"
-                    is ApkProtectionState.Unknown -> if (screenState.items.isNotEmpty()) protection.reason else ""
+                    is ApkProtectionState.Unknown -> protection.reason
                 })
         }
     }
@@ -245,7 +251,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             val enabled = withContext(Dispatchers.IO) { runCatching { ApkProtectionStore.enableLocalOnly(applicationContext) }.getOrDefault(false) }
             screenState = screenState.copy(localModeAvailable = false,
                 protectionNeedsAction = !enabled,
-                protectionMessage = if (enabled) "本地模式 · 删除前核对文件身份与本地保护规则" else "已有 Root 保护记录，请连接 Root 后再清理")
+                protectionMessage = if (enabled) "本地模式 · 删除前核对文件身份与本地保护规则"
+                    else "本地模式未启用。请先检查旧版保护；若曾使用 Root 保护，还需连接 Root 后再核对。")
         }
     }
     fun connectService() {
@@ -263,7 +270,10 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
         service = null; serviceBound = false
         connectService()
     }
-    fun resumePermission() { if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) startScan() }
+    fun resumePermission() {
+        if (waitingPermission && ApkMediaStoreIndex.hasAllFilesAccess(this@ApkScanSession)) startScan()
+        else if (screenState.protectionReviewRequired && !screenState.running) refreshProtectionPresentation()
+    }
     /** Returning from management must never present an old decision as current permission. */
     fun requireProtectionRescan() {
         if (closed || screenState.running) return
@@ -601,7 +611,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 totalFiles = directSnapshot.size.toLong(),
                 totalBytes = directSnapshot.sumOf { it.bytes },
                 protectionMessage = if (result.retained.values.any { it.contains("尚未核对") })
-                    "保护名单未核对，已保留文件。请连接 Root 后重试。" else screenState.protectionMessage,
+                    "保护名单未核对，已保留文件。可先检查旧版保护，再连接 Root 核对并重新扫描。" else screenState.protectionMessage,
                 protectionNeedsAction = result.retained.values.any { it.contains("尚未核对") },
                 localModeAvailable = !ApkProtectionStore.rootWasUsed(applicationContext),
                 output = "已移入回收站 ${result.deletedFiles} 个，尚未释放空间，占用 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)}；总耗时 ${elapsed} ms"
@@ -723,7 +733,8 @@ internal fun ApkScanScreen(
     onFilter: (ApkInstallStatus?) -> Unit = {},
     loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null,
     diagnoseFile: (suspend (ApkScanItem) -> String)? = null,
-    onManageProtection: (ApkScanItem) -> Unit = {}
+    onManageProtection: (ApkScanItem) -> Unit = {},
+    onReviewLegacyProtection: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showFilters by rememberSaveable { mutableStateOf(false) }
@@ -786,6 +797,8 @@ internal fun ApkScanScreen(
                 Text(state.protectionMessage, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (!state.running && state.protectionNeedsAction) FlowRow {
+                    TextButton(onClick = onReviewLegacyProtection,
+                        modifier = Modifier.testTag("apk-legacy-recovery")) { Text("检查旧版保护") }
                     TextButton(onClick = onReconnect) { Text("重连保护服务") }
                     if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅本地清理") }
                 }
@@ -830,4 +843,3 @@ internal fun ApkScanScreen(
     }
     }
 }
-

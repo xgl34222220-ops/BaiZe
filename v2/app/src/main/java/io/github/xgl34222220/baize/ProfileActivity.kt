@@ -442,7 +442,10 @@ class ProfileActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { root.runModuleTask(cleanMode(profile)) }
+                withContext(Dispatchers.IO) {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    root.runModuleTask(cleanMode(profile))
+                }
             }
             taskRunning = false
             pollJob?.cancel()
@@ -606,8 +609,9 @@ class ProfileActivity : ComponentActivity() {
     }
 
     private fun optionsJson(allowHighRisk: Boolean): String {
-        val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-        val pathWhitelist = preferences.getStringSet("path_whitelist", emptySet()).orEmpty()
+        val protection = ApkProtectionStore.legacyRules(applicationContext)
+        val whitelist = protection.packages
+        val pathWhitelist = protection.paths
         val maxMb = preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L)
         val fragmentDays = preferences.getInt("fragment_days", 7).coerceIn(1, 365)
         return JSONObject()
@@ -920,3 +924,4 @@ private fun formatBytes(value: Long): String {
         else -> "${bytes.toLong()} B"
     }
 }
+

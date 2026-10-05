@@ -853,7 +853,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         startNativePoll()
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.runModuleTask("organize")) }
+                runCatching {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    JSONObject(service.runModuleTask("organize"))
+                }
             }
             pollJob?.cancel()
             if (response.isFailure) {
@@ -906,7 +909,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         startNativePoll()
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.runModuleTask(mode)) }
+                runCatching {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    JSONObject(service.runModuleTask(mode))
+                }
             }
             pollJob?.cancel()
             if (response.isFailure) {
@@ -974,7 +980,10 @@ class MiuixDashboardActivity : ComponentActivity() {
         startNativePoll()
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(service.runModuleTask("clean")) }
+                runCatching {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    JSONObject(service.runModuleTask("clean"))
+                }
             }
             pollJob?.cancel()
             if (response.isFailure) {
@@ -1212,7 +1221,6 @@ class MiuixDashboardActivity : ComponentActivity() {
             var stale = false
             val protectedItems = ArrayList<ProtectedUiItem>()
             val selection = JSONObject().put("__all_safe__", true).toString()
-            val whitelist = JSONArray(packageWhitelist().toList()).toString()
 
             suspend fun consume(result: JSONObject, profileResult: Boolean) {
                 val amount = ReleaseAmount.fromResult(if (profileResult) "profile-clean" else "cache-clean", result)
@@ -1269,6 +1277,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 if (needsCacheEngine) {
                     dashboardState.value = dashboardState.value.copy(taskPhase = "正在清理应用缓存快照…")
                     val result = withContext(Dispatchers.IO) {
+                        val whitelist = JSONArray(packageWhitelist().toList()).toString()
                         JSONObject(requireNotNull(cacheEngine).cleanSelected(cacheSnapshotId, selection, whitelist))
                     }
                     consume(result, profileResult = false)
@@ -1507,15 +1516,16 @@ class MiuixDashboardActivity : ComponentActivity() {
     }.getOrDefault(emptyList())
 
     private fun packageWhitelist(): Set<String> =
-        preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+        ApkProtectionStore.legacyRules(applicationContext).packages
 
     private fun optionsJson(): String {
-        val paths = preferences.getStringSet("path_whitelist", emptySet()).orEmpty()
+        val protection = ApkProtectionStore.legacyRules(applicationContext)
+        val paths = protection.paths
         val config = runCatching { JSONObject(rootService?.getSchedulerConfig().orEmpty()) }.getOrDefault(JSONObject())
         val policy = CleanupPolicy.fromId(config.optInt("cleanup_policy", CleanupPolicy.BALANCED.id))
         val maxMb = config.optInt("max_file_mb", schedulerState.value.maxFileMb).coerceIn(16, 16_384)
         return JSONObject()
-            .put("whitelistPackages", JSONArray(packageWhitelist().toList()))
+            .put("whitelistPackages", JSONArray(protection.packages.toList()))
             .put("whitelistPaths", JSONArray(paths.toList()))
             .put("maxFileBytes", maxMb * 1024L * 1024L)
             .put("fragmentDays", config.optInt("fragment_days", 7).coerceIn(0, 365))
@@ -1993,3 +2003,4 @@ class MiuixDashboardActivity : ComponentActivity() {
         private const val RAW_LOG_LIMIT = 16_000
     }
 }
+

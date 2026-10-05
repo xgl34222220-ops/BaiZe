@@ -350,8 +350,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-                val options = optionsJson()
+                val protection = withContext(Dispatchers.IO) { ApkProtectionStore.legacyRules(applicationContext) }
+                val whitelist = protection.packages
+                val options = optionsJson(protection)
                 val scanStarted = SystemClock.elapsedRealtime()
                 val scanBundle = withContext(Dispatchers.IO) {
                     coroutineScope {
@@ -512,6 +513,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             var interrupted = false
             try {
                 val begin = JSONObject(withContext(Dispatchers.IO) {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
                     transactions.begin(cleanPlanId, cacheSnapshotId, safeSnapshotId, cacheCount, safeCount)
                 })
                 if (begin.has("error")) throw IllegalStateException(begin.optString("message", "无法启动清理事务"))
@@ -519,7 +521,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 persistCleanPlan()
 
                 val selection = JSONObject().put("__all_safe__", true).toString()
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+                withContext(Dispatchers.IO) { LegacyProtectionRecovery.requireReviewed(applicationContext) }
 
                 val apkJob = if (screenState.apkSelected && apkCount > 0 && apkSnapshot.isNotEmpty()) {
                     screenState = screenState.copy(phase = "正在并行清理安装包与其他垃圾")
@@ -533,7 +535,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                             JSONObject(cache.cleanSelected(
                                 cacheSnapshotId,
                                 selection,
-                                JSONArray(whitelist.toList().sorted()).toString()
+                                JSONArray(ApkProtectionStore.legacyRules(applicationContext).packages.sorted()).toString()
                             ))
                         }.getOrElse { throwableJson(it) }
                     }
@@ -776,7 +778,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         }
         val createdAt = plan.optLong("createdAt", 0L)
         val age = System.currentTimeMillis() - createdAt
-        if (createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS || plan.optString("optionsSha") != sha256(optionsJson())) {
+        if (createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS || plan.optString("optionsSha") != sha256(planFingerprintOptionsJson())) {
             clearLocalPlan()
             screenState = screenState.copy(phase = "旧清理计划已过期或设置已变化，请重新扫描")
             return
@@ -992,7 +994,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("version", CLEAN_PLAN_VERSION)
             .put("planId", cleanPlanId)
             .put("createdAt", cleanPlanCreatedAt)
-            .put("optionsSha", sha256(optionsJson()))
+            .put("optionsSha", sha256(planFingerprintOptionsJson()))
             .put("cacheSnapshotId", cacheSnapshotId)
             .put("safeSnapshotId", safeSnapshotId)
             .put("cacheSelected", screenState.cacheSelected)
@@ -1039,12 +1041,18 @@ class ResumableSmartScanActivity : ComponentActivity() {
         if (cleanPlanId.isBlank() || cleanPlanCreatedAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS) return false
         val plan = runCatching { JSONObject(preferences.getString(CLEAN_PLAN_KEY, null).orEmpty()) }.getOrNull()
             ?: return false
-        return plan.optString("planId") == cleanPlanId && plan.optString("optionsSha") == sha256(optionsJson())
+        return plan.optString("planId") == cleanPlanId && plan.optString("optionsSha") == sha256(planFingerprintOptionsJson())
     }
 
-    private fun optionsJson(): String {
-        val packages = preferences.getStringSet("package_whitelist", emptySet()).orEmpty().toList().sorted()
-        val paths = preferences.getStringSet("path_whitelist", emptySet()).orEmpty().toList().sorted()
+    /** Metadata only: never pass this unchecked value to a scan or cleanup service. */
+    private fun planFingerprintOptionsJson(): String = optionsJson(ApkProtectionRules(
+        preferences.getStringSet("package_whitelist", emptySet()).orEmpty(),
+        preferences.getStringSet("path_whitelist", emptySet()).orEmpty()))
+
+    /** Called on IO before execution; unresolved recovery never becomes an empty rule list. */
+    private fun optionsJson(protection: ApkProtectionRules = ApkProtectionStore.legacyRules(applicationContext)): String {
+        val packages = protection.packages.sorted()
+        val paths = protection.paths.sorted()
         val maxMb = preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L)
         return JSONObject()
             .put("whitelistPackages", JSONArray(packages))
@@ -1694,3 +1702,4 @@ private fun formatMetricBuckets(raw: String): String {
     }
     return lines.joinToString("\n")
 }
+

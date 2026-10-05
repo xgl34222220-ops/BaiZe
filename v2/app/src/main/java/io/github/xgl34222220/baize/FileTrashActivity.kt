@@ -203,6 +203,8 @@ internal class FileTrashViewModel(application: Application) : AndroidViewModel(a
                                 TrashItemSuccess("已恢复至 ${restored.path}" + if (indexed) "" else "；媒体索引通知失败，可稍后刷新")
                             }
                             TrashBatchAction.PURGE -> {
+                                // Ambiguous protection migration must be reviewed before any irreversible batch.
+                                ApkProtectionStore.legacyRules(context)
                                 val bytes = repository.purge(entry.id, expected = entry)
                                 TrashItemSuccess("已永久删除 ${Formatter.formatFileSize(context, bytes)} 内容")
                             }
@@ -352,12 +354,18 @@ private fun TrashPanel(content: @Composable ColumnScope.() -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TrashHelp(state: FileTrashUiState, actions: FileTrashActions) {
+    val context = LocalContext.current
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .45f))
     Text("前台手动处理的 APK、下载、大文件和重复副本统一保留。模块自动清理仍按原配置执行，不进入此回收站。30 天后标为到期，仍需手动确认永久删除。",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("普通共享文件保留在同卷隐藏目录，其他有文件权限的应用仍可能访问；应用专属目录不会移到公共区域。卸载或清空白泽数据可能丢失回收内容或恢复记录，请先恢复或清空。",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("恢复不会覆盖已有文件；降低容量上限不会自动删除内容。", style = MaterialTheme.typography.bodySmall)
+    Text("旧版保护尚待确认时，永久删除会暂停。可先在本地核对历史记录，恢复文件不受影响。",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    TextButton({ CleanerNavigation.openFrom(context,
+        android.content.Intent(context, LegacyProtectionRecoveryActivity::class.java)) }, enabled = !state.busy,
+        modifier = Modifier.testTag("trash-legacy-recovery")) { Text("检查旧版保护") }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(1L, 5L, 10L).forEach { gib ->
             FilterChip(selected = state.budget == gib * 1024 * 1024 * 1024,

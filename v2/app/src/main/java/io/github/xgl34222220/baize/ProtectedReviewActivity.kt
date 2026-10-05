@@ -299,13 +299,16 @@ class ProtectedReviewActivity : ComponentActivity() {
         }
     }
 
-    private fun optionsJson(allowHighRisk: Boolean): String = JSONObject()
-        .put("whitelistPackages", JSONArray(preferences.getStringSet("package_whitelist", emptySet()).orEmpty().toList()))
-        .put("whitelistPaths", JSONArray(preferences.getStringSet("path_whitelist", emptySet()).orEmpty().toList()))
+    private fun optionsJson(allowHighRisk: Boolean): String {
+        val protection = ApkProtectionStore.legacyRules(applicationContext)
+        return JSONObject()
+        .put("whitelistPackages", JSONArray(protection.packages.toList()))
+        .put("whitelistPaths", JSONArray(protection.paths.toList()))
         .put("maxFileBytes", preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L) * 1024L * 1024L)
         .put("fragmentDays", preferences.getInt("fragment_days", 7).coerceIn(0, 365))
         .put("allowHighRisk", allowHighRisk)
         .toString()
+    }
 
     private fun pageCount(): Int = ceil(total / PAGE_SIZE.toDouble()).toInt().coerceAtLeast(1)
 
@@ -531,3 +534,4 @@ private fun formatBytes(bytes: Long): String {
     }
     return if (index == 0) "${value.toLong()} ${units[index]}" else String.format(Locale.US, "%.2f %s", value, units[index])
 }
+
