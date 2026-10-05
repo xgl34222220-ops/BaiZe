@@ -66,6 +66,58 @@ class RecoverySmoke(base.Smoke):
         self.capture(name)
         base.require(self.current_paths() is None, 'Historical rules were silently restored before review')
 
+    def verify_corrupt_startup(self) -> None:
+        self.adb("shell", "am", "force-stop", APP)
+        valid = self.read_bytes(PREFS)
+        (self.out / "pre-corruption-valid-baize_v2.xml").write_bytes(valid)
+        corrupt = b'<map><set name="path_whitelist"><string>synthetic-corrupt-rule'
+        self.seed_file(PREFS, corrupt, "synthetic-corrupt-baize_v2.xml")
+        self.shell("restorecon " + shlex.quote(PREFS))
+        quarantine = f"{DATA}/no_backup/legacy-protection-integrity-v1"
+        archive = quarantine + "/baize_v2.xml"
+        manifest = quarantine + "/manifest.json"
+        expected_manifest = None
+        for attempt in ("corrupt-startup", "corrupt-cold-relaunch"):
+            self.launch(attempt + "-home")
+            base.require(self.read_bytes(PREFS) == corrupt, "Startup replaced the corrupt original with defaults")
+            base.require(self.present(archive) and self.read_bytes(archive) == corrupt,
+                         "Exact corrupt preference bytes were not preserved")
+            raw_manifest = self.read_bytes(manifest)
+            saved = json.loads(raw_manifest)
+            base.require(saved.get("version") == 1 and saved.get("complete") is True,
+                         "Quarantine archive was not durably completed")
+            if expected_manifest is not None:
+                base.require(raw_manifest == expected_manifest, "Relaunch rewrote the immutable quarantine record")
+            expected_manifest = raw_manifest
+            self.tap("设置", attempt + "-settings")
+            self.tap("保护名单", attempt + "-whitelist", scroll=True)
+            self.tap("检查旧版保护", attempt + "-review")
+            self.top("LegacyProtectionRecoveryActivity")
+            deadline = time.monotonic() + 30
+            while True:
+                root = self.tree(attempt + "-blocked")
+                labels = self.texts(root)
+                if any("已暂停清理" in label for label in labels):
+                    break
+                base.require(time.monotonic() < deadline, "Corrupt protection did not stay fail-closed")
+                time.sleep(.5)
+            parents = {child: parent for parent in root.iter("node") for child in parent}
+            for node in root.iter("node"):
+                if node.get("text") in ("核对并保存", "确认保存"):
+                    current = node
+                    disabled = False
+                    while current is not None:
+                        disabled = disabled or current.get("enabled") == "false"
+                        current = parents.get(current)
+                    base.require(disabled, "Unreadable protection incorrectly offered an enabled recovery save")
+            self.verify_payloads(attempt + "-unchanged-fixtures")
+            self.capture(attempt + "-blocked")
+            base.require(self.read_bytes(PREFS) == corrupt and self.read_bytes(archive) == corrupt,
+                         "Opening the recovery screen modified corrupt evidence")
+            self.cases.append({"case": attempt, "canonical_corrupt_bytes_preserved": True,
+                               "quarantine_exact_and_durable": True, "cleanup_still_blocked": True})
+        (self.out / "quarantine-manifest.json").write_bytes(expected_manifest)
+
     def run(self) -> None:
         base.require(self.args.version >= 30026, 'Candidate must include the migration repair')
         baseline = self.inspect_apk(self.args.baseline.resolve(), 30025, 'baseline')
@@ -132,8 +184,10 @@ class RecoverySmoke(base.Smoke):
         self.open_trash('repaired-trash')
         self.cancel_clear_all('repaired-clear-keep')
         self.cancel_clear_all('repaired-clear-back', use_back=True)
+        self.verify_corrupt_startup()
         self.result.update({'passed': True, 'actual_old_migration_reproduced': True,
                             'explicit_protection_recovery': True, 'protection_survives_relaunch': True,
+                            'corrupt_startup_preserved': True, 'corrupt_relaunch_still_blocked': True,
                             'graphics_settings_modified': False, 'security_permissions_expanded': False,
                             'data_cleared': False, 'permanent_deletion_executed': False,
                             'ordinary_app_uid': self.app_uid, 'final_pid': self.alive()})

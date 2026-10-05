@@ -22,3 +22,21 @@ The real DataStore tests reproduce AndroidX 1.2.1 all-key migration and repeated
 The signed smoke must install the exact previously delivered 30025 APK, seed a synthetic protection rule, relaunch 30025 to reproduce its production migration, replace-install 30026, show the historical rule as pending, cancel the first review without writing, explicitly confirm the selected rule, and verify semantic protection preservation across a cold launch. It also checks trash navigation and both clear-all cancellation paths without permanently deleting any fixture.
 
 No real phone, HyperOS/ColorOS, user data deletion, main merge, official release or OTA publication is covered by this test-branch repair. Review CI evidence for the exact repaired commit before relying on these checks; this document does not assert pending checks passed.
+
+## Startup integrity follow-up
+
+Before delivering 30026, review found that ThemeManager startup could rewrite malformed
+legacy XML using Android's empty fallback before the protection reader ran. The repair
+now preflights legacy preferences in Application.attachBaseContext, before providers.
+Corrupt XML, backup/temp files and the observation marker are retained in a verified,
+fsynced no-backup archive. A durable quarantine blocks cleanup across restarts and later
+source replacement; an incomplete or unverifiable archive stops startup. Identified
+legacy writers, including editors captured before corruption, recheck integrity before
+writing. Quarantine does not silently restore a backup or approve stale protection.
+
+Ten startup regressions cover these boundaries. The signed emulator upgrade harness
+also injects a synthetic malformed source after successful explicit recovery, checks
+exact original/archive bytes and sealed manifest, force-stops/relaunches twice, and
+requires the recovery UI to remain blocked. These are synthetic emulator fixtures only.
+A sealed quarantine currently requires a separately reviewed support repair; ordinary
+cleanup remains unavailable. Real HyperOS/ColorOS devices are not covered by this test.

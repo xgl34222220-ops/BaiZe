@@ -110,7 +110,7 @@ import kotlin.math.ceil
 class ProfileActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val profile by lazy { intent.getStringExtra(EXTRA_PROFILE).orEmpty() }
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
 
     private var service: IProfileRootService? = null
     private var bindingRequested = false

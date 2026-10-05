@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.xgl34222220.baize.ThemeManager
+import io.github.xgl34222220.baize.CheckedLegacyPreferences
+import io.github.xgl34222220.baize.LegacyPreferencesAccess
 import io.github.xgl34222220.baize.performance.DisplayPerformanceController
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -26,8 +28,9 @@ internal val Context.appearanceDataStore by preferencesDataStore(
 )
 
 /** Copy only appearance fields. ThemeManager still reads the source, so NEVER clean it up. */
-internal class AppearanceCopyMigration(context: Context) : DataMigration<Preferences> {
-    private val source = context.getSharedPreferences(ThemeManager.PREFS, Context.MODE_PRIVATE)
+internal class AppearanceCopyMigration(private val context: Context,
+    private val sourceName: String = ThemeManager.PREFS) : DataMigration<Preferences> {
+    private fun source() = CheckedLegacyPreferences.read(context, sourceName)
     private val strings = setOf("ui_style", ThemeManager.KEY_MODE, ThemeManager.KEY_ACCENT,
         "theme_kolor_style", ThemeManager.KEY_MONET_STYLE, "refresh_rate_mode")
     private val booleans = setOf(ThemeManager.KEY_MONET, ThemeManager.KEY_AMOLED,
@@ -35,12 +38,12 @@ internal class AppearanceCopyMigration(context: Context) : DataMigration<Prefere
         "adaptive_smooth_mode")
 
     override suspend fun shouldMigrate(currentData: Preferences): Boolean =
-        source.all.keys.any { it in strings || it in booleans || it == "theme_seed_argb" }
+        !LegacyPreferencesAccess.isBlocked(context) && source().keys.any { it in strings || it in booleans || it == "theme_seed_argb" }
 
     override suspend fun migrate(currentData: Preferences): Preferences {
         val copied = currentData.toMutablePreferences()
         val present = currentData.asMap().keys.mapTo(mutableSetOf()) { it.name }
-        source.all.forEach { (name, value) ->
+        source().forEach { (name, value) ->
             if (name !in present) when {
                 name in strings && value is String -> copied[stringPreferencesKey(name)] = value
                 name in booleans && value is Boolean -> copied[booleanPreferencesKey(name)] = value

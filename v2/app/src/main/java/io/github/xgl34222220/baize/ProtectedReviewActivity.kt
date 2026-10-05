@@ -90,7 +90,7 @@ import kotlin.math.ceil
 
 class ProtectedReviewActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
     private var service: IProfileRootService? = null
     private var bound = false
     private var snapshotId = ""

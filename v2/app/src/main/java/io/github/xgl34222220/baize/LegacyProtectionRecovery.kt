@@ -70,7 +70,7 @@ internal object LegacyProtectionRecovery {
         bridge { engine(context).resolve(expected, selectedPackages, selectedPaths) }
     }
 
-    private fun local(context: Context) = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
+    private fun local(context: Context) = LegacyPreferencesAccess.preferences(context)
     private fun engine(context: Context) = Engine(context.appearanceDataStore, local(context)) {
         CheckedLegacyPreferences.read(context, "baize_v2")
     }

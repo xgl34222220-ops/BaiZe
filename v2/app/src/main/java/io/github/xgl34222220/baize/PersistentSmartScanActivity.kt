@@ -91,7 +91,7 @@ import java.util.UUID
  */
 class PersistentSmartScanActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
 
     private var cacheService: IBaiZeRootService? = null
     private var planService: IPersistentCleanPlanService? = null

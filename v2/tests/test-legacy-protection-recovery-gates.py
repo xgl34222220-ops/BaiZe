@@ -13,6 +13,26 @@ def source(name):
 
 
 class RecoveryCallSiteContract(unittest.TestCase):
+    def test_startup_and_all_known_ui_writers_use_integrity_barrier(self):
+        application = source('BaiZeApplication.kt')
+        attach = application.split('override fun attachBaseContext', 1)[1].split('override fun onCreate', 1)[0]
+        self.assertIn('LegacyPreferencesAccess.initialize(this)', attach)
+        for name in ['CacheActivity.kt', 'ProfileActivity.kt', 'PersistentSmartScanActivity.kt',
+                     'ProtectedReviewActivity.kt', 'MiuixDashboardActivity.kt', 'ResumableSmartScanActivity.kt', 'ThemeManager.kt']:
+            self.assertIn('LegacyPreferencesAccess.preferences(', source(name), name)
+        self.assertNotIn('getSharedPreferences(', source('ui/appearance/AppearanceRepository.kt'))
+        self.assertIn('CheckedLegacyPreferences.read(context, sourceName)', source('ui/appearance/AppearanceRepository.kt'))
+
+    def test_no_new_raw_legacy_preference_access_can_bypass_guard(self):
+        allowed = {'ApkProtection.kt'}  # One read only, immediately after the synchronous recovery gate.
+        for path in SRC.rglob('*.kt'):
+            if re.search(r'getSharedPreferences\(\s*"baize_v2"', path.read_text()):
+                self.assertIn(path.name, allowed, str(path))
+        text = source('ApkProtection.kt')
+        self.assertEqual(1, text.count('getSharedPreferences("baize_v2"'))
+        mutation = text.split('fun removeLegacyRules', 1)[1].split('fun readRoot', 1)[0]
+        self.assertIn('LegacyPreferencesAccess.preferences(context)', mutation)
+
     def test_appearance_migration_is_allowlisted_copy_only(self):
         text = source('ui/appearance/AppearanceRepository.kt')
         self.assertNotIn('SharedPreferencesMigration(', text)

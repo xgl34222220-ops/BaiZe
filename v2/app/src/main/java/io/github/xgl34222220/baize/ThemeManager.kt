@@ -229,7 +229,7 @@ object ThemeManager {
     fun isDark(context: Context): Boolean =
         context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) = LegacyPreferencesAccess.preferences(context)
 
     private fun putBoolean(context: Context, key: String, value: Boolean) {
         prefs(context).edit().putBoolean(key, value).apply()
@@ -357,3 +357,4 @@ object ThemeManager {
         editor.putBoolean(KEY_ALPHA17_MIGRATED, true).apply()
     }
 }
+

@@ -18,7 +18,11 @@ internal object CheckedLegacyPreferences {
     private val observedFiles = ConcurrentHashMap.newKeySet<String>()
     private class PendingWrite(message: String) : IllegalStateException(message)
 
+    internal fun isPendingWrite(failure: Exception): Boolean = failure is PendingWrite
+
     fun read(context: Context, name: String): Map<String, *> {
+        if (name == "baize_v2" || name == "legacy-protection-recovery-v1")
+            LegacyPreferencesAccess.requireHealthy(context)
         // apply() may still be queued after the UI saves unrelated plan/theme metadata. Wait only
         // briefly for a stable disk snapshot; never write/flush corrupt or unverified preferences.
         for (attempt in 0..5) {

@@ -430,8 +430,24 @@ class Smoke:
         self.cases.append({"case": name, "marker_payloads_and_journals_unchanged": True,
                            "budget_and_legacy_path_preserved": True})
 
+    @staticmethod
+    def selected_ancestor(root: ET.Element, node: ET.Element) -> bool:
+        parents = {child: parent for parent in root.iter("node") for child in parent}
+        current = node
+        while current is not None:
+            if current.get("selected") == "true":
+                return True
+            current = parents.get(current)
+        return False
+
     def open_trash(self, name: str) -> None:
-        self.tap("首页", name + "-home")
+        root, home = self.find("首页", name + "-home")
+        # The selected bottom tab is intentionally non-clickable. Do not mistake
+        # an already-established Home state for a missing navigation control.
+        if not self.selected_ancestor(root, home):
+            self.click(root, home)
+            root, home = self.find("首页", name + "-home-selected")
+        require(self.selected_ancestor(root, home), "Home tab selection was not established")
         self.tap("回收站", name + "-open", scroll=True)
         self.top("FileTrashActivity")
         deadline = time.monotonic() + 45

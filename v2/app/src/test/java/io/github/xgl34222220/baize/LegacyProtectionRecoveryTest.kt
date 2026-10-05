@@ -96,18 +96,19 @@ class LegacyProtectionRecoveryTest {
     }
 
     @Test fun replacementCopiesOnlyAppearanceAndNeverCleansOrOverwritesSourceOrDestination() = runBlocking {
-        val local = prefs()
+        val name = "appearance-checked-${UUID.randomUUID()}"
+        val local = context.getSharedPreferences(name, Context.MODE_PRIVATE)
         local.edit().putString("theme_mode", "dark").putBoolean("theme_blur", false)
             .putStringSet("package_whitelist", packages).putStringSet("path_whitelist", paths)
             .putString("unknown_module_setting", "source-original").commit()
-        val replacement = store(migrations = listOf(AppearanceCopyMigration(routed(local))))
+        val replacement = store(migrations = listOf(AppearanceCopyMigration(context, name)))
         val result = replacement.data.first()
         assertEquals("dark", result[themeKey])
         assertFalse(result.asMap().keys.any { it.name == "path_whitelist" || it.name == "package_whitelist" || it.name == "unknown_module_setting" })
         assertEquals(paths, local.getStringSet("path_whitelist", null))
         assertEquals("source-original", local.getString("unknown_module_setting", null))
         assertEquals("dark", local.getString("theme_mode", null))
-        val migration = AppearanceCopyMigration(routed(local))
+        val migration = AppearanceCopyMigration(context, name)
         replacement.edit { it[themeKey] = "light"; it[unknownKey] = "destination-original" }
         val repeat = migration.migrate(replacement.data.first())
         migration.cleanUp()

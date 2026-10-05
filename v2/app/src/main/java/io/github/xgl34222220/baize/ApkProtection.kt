@@ -104,7 +104,7 @@ internal object ApkProtectionStore {
         val before = legacyRules(context)
         val next = ApkProtectionRules(before.packages - packages, before.paths - paths)
         if (next == before) return
-        val prefs = context.getSharedPreferences("baize_v2", Context.MODE_PRIVATE)
+        val prefs = LegacyPreferencesAccess.preferences(context)
         if (!prefs.edit().putStringSet("package_whitelist", next.packages).putStringSet("path_whitelist", next.paths).commit()) {
             // SharedPreferences can update its in-memory map before reporting a disk failure.
             prefs.edit().putStringSet("package_whitelist", before.packages).putStringSet("path_whitelist", before.paths).commit()
