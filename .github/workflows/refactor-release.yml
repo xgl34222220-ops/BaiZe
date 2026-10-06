@@ -12,8 +12,8 @@ env:
   BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle --no-daemon --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble 2>&1 | tee "$RUNNER_TEMP/baize-refactor-build.log"
+          gradle --no-daemon --max-workers=2 --continue :app:test :app:assembleRelease :app:lintDebug :app:lintRelease :macrobenchmark:assemble 2>&1 | tee "$RUNNER_TEMP/baize-refactor-build.log"
       - name: Prepare first refactor upgrade baseline and KVM
         run: |
           set -euo pipefail
@@ -196,3 +196,4 @@ jobs:
       - name: Remove ephemeral signing material
         if: always()
         run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
+

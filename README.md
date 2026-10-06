@@ -6,8 +6,8 @@
 
 自动清理模块适用于 Magisk、KernelSU 与 APatch
 
-![Version](https://img.shields.io/badge/重构版-2.0.0-2364db)
-![Build](https://img.shields.io/badge/build-30005-6f42c1)
+![Version](https://img.shields.io/badge/重构版-2.2.2-2364db)
+![Build](https://img.shields.io/badge/build-30027-6f42c1)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3ddc84?logo=android)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
@@ -17,7 +17,7 @@
 
 白泽是一套面向 Root Android 设备的清理工具，目标不是“扫得越多越好”，而是把 **扫描、风险判断、用户确认、实际删除、结果复核** 做成一条完整且可追踪的流程。
 
-**当前源码版本为 2.0.0，沿用重构版编号规则。正式安装包以 Releases 最新发布为准。**
+**当前源码版本为 2.2.2，沿用重构版编号规则。正式安装包以 Releases 最新发布为准。**
 
 ## 当前开发方向
 
@@ -27,11 +27,11 @@
 共享文件工具需要文件访问权限；私有缓存和深度清理需要 Root。
 
 支持分类钻取、文件搜索与排序、筛选后批量勾选、可停止的完整内容查重和 APK 版本识别。
-2.0.0 整合统一界面、新图标与模块目录整理，见 [本版说明](docs/releases/refactor-v2.0.0.md)。
+2.2.2 整合清理工作台、文件工具、保护管理与旧设置恢复，见 [本版说明](docs/releases/refactor-v2.2.2.md)。
 
-## 2.0.0
+## 2.2.2
 
-统一页面视觉与选择操作，清理废弃 UI 代码；模块内部脚本集中到 `scripts/`，App 兼容旧版平铺目录。
+完善安装包保护原因、普通文件回收站批量操作、目录与内容核对、图片中断恢复。修复旧设置迁移可能丢失保护名单的问题；历史规则恢复需要逐项确认，损坏的设置会阻止清理。
 
 ## 重构版基础
 
@@ -105,14 +105,14 @@
 ### 完整安装
 
 1. 打开 [GitHub Releases](https://github.com/xgl34222220-ops/BaiZe/releases/latest)。
-2. 下载 `BaiZe-v1.0.0-Module.zip`。
+2. 下载 `BaiZe-v2.2.2-Module.zip`。
 3. 在 Magisk、KernelSU 或 APatch 中刷入模块。
 4. 重启设备。
 5. 打开白泽 App，授予所需 Root 权限后开始扫描。
 
 ### 只更新 App
 
-可以直接安装 `BaiZe-v1.0.0.apk`。前台清理使用 App 自带引擎；需要定时自动清理时，再安装对应版本模块。
+可以直接安装 `BaiZe-v2.2.2.apk`。前台清理使用 App 自带引擎；需要定时自动清理时，再安装对应版本模块。
 
 模块安装时会校验内置 APK 的 SHA-256；正式模块中的 App 与 Release 提供的独立 APK 字节一致。
 
@@ -193,6 +193,7 @@ python3 v2/scripts/validate-rules.py --check
 
 ## 文档
 
+- [2.2.2 发布说明](docs/releases/refactor-v2.2.2.md)
 - [2.0.0 发布说明](docs/releases/refactor-v2.0.0.md)
 - [重构版 1.0.0 发布说明](docs/releases/refactor-v1.0.0.md)
 - [详细使用说明](docs/README-detailed.md)
@@ -206,3 +207,4 @@ python3 v2/scripts/validate-rules.py --check
 本项目以 GPL-3.0 许可证发布。第三方项目、规则来源、名称和资源继续遵循各自许可证，详见 [NOTICE.md](NOTICE.md)。
 
 作者：**惜故里丶**
+

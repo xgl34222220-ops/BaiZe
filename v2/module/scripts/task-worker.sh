@@ -147,7 +147,7 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.0.0"
+  echo "worker=detached-root-worker-v2.2.2"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then
@@ -186,3 +186,4 @@ code=$(sed -n 's/^exit_code=//p' "$RESULT_FILE" 2>/dev/null | tail -n 1)
 case "$code" in ''|*[!0-9]*) code=$runner_code ;; esac
 case "$code" in ''|*[!0-9]*) code=8 ;; esac
 exit "$code"
+
