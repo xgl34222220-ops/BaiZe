@@ -38,6 +38,7 @@ baize_whitelist_load() {
 # 与旧实现语义一致：白名单项覆盖目标，或目标覆盖白名单项，都算冲突。
 path_conflicts_whitelist() {
   _wl_target=${1%/}
+    case "$_wl_target" in */.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]|*/.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]/*|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]/*) return 0;; esac
   [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
   # 按换行切分需要临时改 IFS；同时关闭 glob，
   # 否则白名单里的 * ? [ 会被路径展开吃掉。

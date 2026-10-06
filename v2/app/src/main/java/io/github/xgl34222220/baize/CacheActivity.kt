@@ -84,7 +84,7 @@ import kotlin.math.ceil
 
 class CacheActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
 
     private var cacheService: IBaiZeRootService? = null
     private var moduleService: IProfileRootService? = null
@@ -239,9 +239,11 @@ class CacheActivity : ComponentActivity() {
         startPolling()
 
         lifecycleScope.launch {
-            val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
             val result = runCatching {
-                withContext(Dispatchers.IO) { root.scanCandidates(JSONArray(whitelist.toList()).toString()) }
+                withContext(Dispatchers.IO) {
+                    val whitelist = ApkProtectionStore.legacyRules(applicationContext).packages
+                    root.scanCandidates(JSONArray(whitelist.toList()).toString())
+                }
             }
             pollJob?.cancel()
             if (result.isFailure) {
@@ -379,7 +381,10 @@ class CacheActivity : ComponentActivity() {
         startPolling()
         lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { root.runModuleTask("cache-clean") }
+                withContext(Dispatchers.IO) {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    root.runModuleTask("cache-clean")
+                }
             }
             pollJob?.cancel()
             if (result.isFailure) {
@@ -698,3 +703,4 @@ private fun CacheCandidateCard(item: CacheCandidateUi, first: Boolean, last: Boo
         icon = Icons.Rounded.Storage, first = first, last = last
     )
 }
+

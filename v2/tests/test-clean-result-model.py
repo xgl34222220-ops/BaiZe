@@ -57,8 +57,14 @@ require('profile.getModuleState()).optJSONArray("appDetails")' not in WORKBENCH,
         "workbench still reuses stale scan app details as cleanup results")
 require('val mutated = deletedFiles > 0L || cleanedCandidates > 0' in CACHE_ACTIVITY,
         "cache detail page still treats exit code as cleanup success")
-require('val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0' in DASHBOARD,
-        "dashboard snapshot cleanup still treats exit code as a real cleanup")
+dashboard_mutation = next((line for line in DASHBOARD.splitlines() if 'val mutated =' in line), '')
+require(all(evidence in dashboard_mutation for evidence in (
+    'deletedBytes > 0L', 'deletedFiles > 0L', 'deletedDirectories > 0L', 'cleanedCandidates > 0'
+)), "dashboard snapshot cleanup must derive mutations from confirmed content and item counts")
+require('ReleaseAmount.fromResult' in DASHBOARD and '"last_clean_bytes_known"' in DASHBOARD,
+        "dashboard must preserve missing-capacity state through completion and persistence")
+require('deletedBytes += result.optLong("deletedBytes", 0L)' not in DASHBOARD,
+        "dashboard still converts missing deleted-byte measurements into zero")
 require('本次未删除任何文件' in DASHBOARD,
         "dashboard does not expose zero-mutation cleanup honestly")
 require('result.optBoolean("success") && mutated' in SERVICE,

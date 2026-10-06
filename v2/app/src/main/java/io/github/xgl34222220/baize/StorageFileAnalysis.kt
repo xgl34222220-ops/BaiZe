@@ -33,7 +33,7 @@ internal fun storageCategoryLabel(key: String): String = when (key) {
 
 internal fun storageBuckets(files: List<StorageFileRecord>): List<StorageAnalysisBucket> =
     files.groupBy(::storageCategory).map { (key, records) ->
-        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf { it.bytes })
+        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf { it.verifiedBytes })
     }.sortedByDescending { it.bytes }
 
 /** Only Android's package-owned directory convention establishes an app association. */
@@ -67,6 +67,40 @@ internal fun filterStorageRecords(
     return filtered.sortedWith(comparator.thenBy { it.uri })
 }
 
+internal fun ApkFileIdentity.hasPreciseStorageClock(): Boolean = modifiedNanos >= 0 && changedNanos >= 0 &&
+    (modifiedNanos > 0 || changedNanos > 0)
+
+/** Paths and hard links to one object are not independent copies that can survive cleanup. */
+internal fun ApkFileIdentity.sameStorageObject(other: ApkFileIdentity): Boolean =
+    canonicalPath == other.canonicalPath || (device == other.device && inode == other.inode)
+
+/** Hashes belong to one scan. A nanosecond field does not prove fresh shared-storage content. */
+internal class StorageDigestCache(private val limit: Int = 120_000) {
+    private data class Key(val identity: ApkFileIdentity, val prefix: Boolean)
+    private val values = object : LinkedHashMap<Key, String>(16, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, String>?) = size > limit
+    }
+    var hits: Int = 0; private set
+    fun begin(files: List<StorageFileRecord>) {
+        hits = 0
+        // FUSE/provider metadata can collide or be cached, even with nonzero nanoseconds.
+        // Re-read content on every requested scan; metadata alone cannot refresh a SHA proof.
+        values.clear()
+    }
+    fun get(record: StorageFileRecord, prefix: Boolean): String? = record.identity?.takeIf {
+        it.hasPreciseStorageClock()
+    }?.let { values[Key(it, prefix)]?.also { hits++ } }
+    fun put(record: StorageFileRecord, prefix: Boolean, hash: String) {
+        val identity = record.identity ?: return
+        if (identity.hasPreciseStorageClock()) values[Key(identity, prefix)] = hash
+    }
+}
+
+internal fun remainingDuplicateGroups(groups: List<DuplicateFileGroup>, records: List<StorageFileRecord>): List<DuplicateFileGroup> {
+    val byUri = records.associateBy { it.uri }
+    return groups.map { it.copy(records = it.records.mapNotNull { r -> byUri[r.uri] }) }.filter { it.records.size >= 2 }
+}
+
 /** Content comparison has no Android dependency, so cancellation and exact matching can be tested. */
 internal object StorageDuplicateMatcher {
     fun digest(
@@ -79,13 +113,20 @@ internal object StorageDuplicateMatcher {
             val md = MessageDigest.getInstance("SHA-256")
             val expected = if (prefixOnly) minOf(record.bytes, 64 * 1024L) else record.bytes
             var readBytes = 0L
+            var emptyReads = 0
             (open(record) ?: return null).use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (readBytes < expected) {
                     checkCancelled()
                     val read = input.read(buffer, 0, minOf(buffer.size.toLong(), expected - readBytes).toInt())
                     if (read < 0) return null
-                    if (read == 0) continue
+                    if (read == 0) {
+                        checkCancelled()
+                        // A broken provider must not keep a scan spinning without evidence.
+                        if (++emptyReads >= 3) return null
+                        continue
+                    }
+                    emptyReads = 0
                     md.update(buffer, 0, read)
                     readBytes += read
                 }
@@ -101,13 +142,30 @@ internal object StorageDuplicateMatcher {
     fun match(
         files: List<StorageFileRecord>, open: (StorageFileRecord) -> InputStream?,
         unchanged: (StorageFileRecord) -> Boolean = { true }, cancelled: () -> Boolean = { false },
-        progress: (StorageScanProgress) -> Unit = {}, unreadable: () -> Unit = {}
+        progress: (StorageScanProgress) -> Unit = {}, unreadable: () -> Unit = {},
+        cache: StorageDigestCache = StorageDigestCache(), completed: (List<DuplicateFileGroup>) -> Unit = {}
     ): List<DuplicateFileGroup> {
-        val candidates = files.distinctBy { it.path }.groupBy { it.bytes }.values.filter { it.size > 1 }.flatten()
+        cache.begin(files)
+        fun hash(record: StorageFileRecord, prefix: Boolean): String? {
+            if (!unchanged(record)) return null
+            val hash = cache.get(record, prefix) ?: digest(record, prefix, open, cancelled) ?: return null
+            if (!unchanged(record)) return null
+            cache.put(record, prefix, hash)
+            return hash
+        }
+        val paths = HashSet<String>()
+        val objects = HashSet<Pair<Long, Long>>()
+        val candidates = files.filter { record ->
+            val identity = record.identity
+            val newPath = paths.add(identity?.canonicalPath ?: record.path)
+            // Inode numbers only identify an object within their device, not across volumes.
+            val newObject = identity?.let { objects.add(it.device to it.inode) } ?: true
+            newPath && newObject
+        }.groupBy { it.bytes }.values.filter { it.size > 1 }.flatten()
         val prefixes = LinkedHashMap<String, MutableList<StorageFileRecord>>()
         candidates.forEachIndexed { index, record ->
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
-            val hash = if (unchanged(record)) digest(record, true, open, cancelled) else null
+            val hash = hash(record, true)
             if (hash != null) prefixes.getOrPut("${record.bytes}:$hash") { ArrayList() }.add(record) else unreadable()
             progress(StorageScanProgress("快速比对", index + 1, candidates.size, record.name))
         }
@@ -115,9 +173,12 @@ internal object StorageDuplicateMatcher {
         val matches = LinkedHashMap<String, MutableList<StorageFileRecord>>()
         fullCandidates.forEachIndexed { index, record ->
             if (cancelled() || Thread.currentThread().isInterrupted) throw CancellationException()
-            val hash = if (unchanged(record)) digest(record, false, open, cancelled) else null
+            val hash = hash(record, false)
             if (hash != null && unchanged(record)) matches.getOrPut("${record.bytes}:$hash") { ArrayList() }.add(record) else unreadable()
             progress(StorageScanProgress("完整内容校验", index + 1, fullCandidates.size, record.name))
+            if (index % 32 == 0 || index == fullCandidates.lastIndex) completed(matches.filterValues { it.size > 1 }.map { (key, records) ->
+                DuplicateFileGroup(key.substringAfter(':'), records.first().bytes, records.toList())
+            })
         }
         return matches.filterValues { it.size > 1 }.map { (key, records) ->
             DuplicateFileGroup(key.substringAfter(':'), records.first().bytes,

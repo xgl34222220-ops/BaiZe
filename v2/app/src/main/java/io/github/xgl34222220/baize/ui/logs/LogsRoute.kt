@@ -12,7 +12,8 @@ fun LogsRoute(
     style: UiStyle,
     dashboard: DashboardUiState,
     dashboardActions: DashboardActions,
-    onOpenDetails: () -> Unit
+    onOpenDetails: () -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     val state = dashboard.toLogsUiState()
     val actions = LogsUiActions(
@@ -25,7 +26,7 @@ fun LogsRoute(
     )
 
     when (style) {
-        UiStyle.MATERIAL -> LogsScreenMaterial(state, actions)
-        UiStyle.MIUIX -> LogsScreenMiuix(state, actions)
+        UiStyle.MATERIAL -> LogsScreenMaterial(state, actions, onBack)
+        UiStyle.MIUIX -> LogsScreenMiuix(state, actions, onBack)
     }
 }

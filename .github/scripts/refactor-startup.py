@@ -61,7 +61,7 @@ def main() -> None:
     smoke.launch('refactor-cold-start')
     for i, label in enumerate(['清理', '记录', '设置']):
         smoke.tap_label(label, f'refactor-tab-{i}')
-    tap('应用白名单', 'whitelist-entry')
+    tap('保护名单', 'whitelist-entry')
     root = smoke.ui('whitelist-apps')
     assert {'应用保护', '路径保护'}.issubset({n.attrib.get('text') for n in root.iter('node')})
     smoke.tap_label('路径保护', 'whitelist-paths')
@@ -92,3 +92,4 @@ if __name__ == '__main__':
     except Exception:
         smoke.capture('refactor-failure')
         raise
+

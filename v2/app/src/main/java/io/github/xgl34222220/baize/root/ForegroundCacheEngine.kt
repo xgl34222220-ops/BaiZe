@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Foreground cache engine owned entirely by the App RootService.
@@ -25,6 +26,8 @@ internal class ForegroundCacheEngine(
     private val context: Context,
     private val cancelled: AtomicBoolean
 ) {
+    private var protectionIdentity: AndroidPathIdentity? = null
+    private var manifestBudget = AtomicInteger(100_000)
     data class Item(
         val packageName: String,
         val appName: String,
@@ -33,7 +36,10 @@ internal class ForegroundCacheEngine(
         val bytes: Long,
         val files: Long,
         val directories: Long,
-        val complete: Boolean = true
+        val complete: Boolean = true,
+        val identity: String = "",
+        val incompleteReason: String = "",
+        val frozenTree: FrozenReviewTree.Snapshot? = null
     ) {
         fun json(): JSONObject = JSONObject()
             .put("appName", appName)
@@ -45,6 +51,7 @@ internal class ForegroundCacheEngine(
             .put("directories", directories)
             .put("measured", true)
             .put("complete", complete)
+            .put("incompleteReason", incompleteReason)
     }
 
     data class Snapshot(
@@ -54,7 +61,11 @@ internal class ForegroundCacheEngine(
         val totalBytes: Long,
         val totalFiles: Long,
         val visitedDirs: Long,
-        val elapsedMs: Long
+        val elapsedMs: Long,
+        val totalRoots: Int = items.size,
+        val scannedRoots: Int = items.size,
+        val incompleteRoots: Int = items.count { !it.complete },
+        val firstResultMs: Long = elapsedMs
     )
 
     data class CleanResult(
@@ -77,7 +88,7 @@ internal class ForegroundCacheEngine(
             val mutated = deletedFiles > 0L || deletedDirectories > 0L || cleanedCandidates > 0
             val skipped = changedCandidates + protectedCandidates
             return JSONObject()
-                .put("success", !cancelled)
+                .put("success", !cancelled && failedCandidates == 0 && partialCandidates == 0)
                 .put("mutated", mutated)
                 .put("cancelled", cancelled)
                 .put("elapsedMs", elapsedMs)
@@ -96,6 +107,7 @@ internal class ForegroundCacheEngine(
                 .put("details", details)
                 .put("message", when {
                     cancelled -> "缓存清理已停止"
+                    partialCandidates > 0 || failedCandidates > 0 -> "缓存部分处理完成，未确认或已变化的内容已保留"
                     mutated -> "应用缓存清理完成"
                     skipped > 0 -> "本次缓存已变化或受保护，没有删除文件"
                     else -> "本次未删除任何缓存文件"
@@ -107,43 +119,63 @@ internal class ForegroundCacheEngine(
         val bytes: Long,
         val files: Long,
         val directories: Long,
-        val complete: Boolean
+        val complete: Boolean,
+        val identity: String = "",
+        val reason: String = "",
+        val frozenTree: FrozenReviewTree.Snapshot? = null
     )
 
-    private data class Node(val file: File, val post: Boolean)
 
     fun scan(whitelistJson: String, progress: (String, Int, Int, String) -> Unit): Snapshot {
+        protectionIdentity = null
+        manifestBudget = AtomicInteger(100_000)
         val started = SystemClock.elapsedRealtime()
-        val whitelist = parseWhitelist(whitelistJson)
+        val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
+        val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
         val labels = installedLabels()
-        val roots = discoverCacheRoots(whitelist, labels)
+        val roots = discoverCacheRoots(whitelist, labels).filterNot { protectedPath(it.path, protectedPaths) }
         val items = ArrayList<Item>(roots.size)
         var totalBytes = 0L
         var totalFiles = 0L
         var visitedDirs = 0L
+        var scannedRoots = 0
+        var incompleteRoots = 0
+        var firstResultMs = -1L
 
         val workerCount = minOf(
             roots.size.coerceAtLeast(1),
             (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
         )
         val executor = Executors.newFixedThreadPool(workerCount)
+        val acceptingProgress = AtomicBoolean(true)
+        val completedRoots = AtomicInteger(0)
         try {
             val completions = ExecutorCompletionService<MeasuredRoot>(executor)
             roots.forEach { seed ->
                 completions.submit(Callable {
-                    MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(seed.file))
+                    // /data/user/0 can be Android's owner alias symlink. The canonical path
+                    // was checked against this package's cache boundary during discovery;
+                    // measure exactly the same path that is shown and later authorized.
+                    MeasuredRoot(seed, if (cancelled.get()) Stats(0L, 0L, 0L, false) else measure(File(seed.path)) { files, bytes ->
+                        if (acceptingProgress.get()) progress("正在扫描 ${labels[seed.packageName] ?: seed.packageName} · $files 个文件", completedRoots.get(), roots.size, seed.path)
+                    })
                 })
             }
             var completed = 0
-            while (completed < roots.size && !cancelled.get()) {
+            while (completed < roots.size && !cancelled.get() && SystemClock.elapsedRealtime() - started < 90_000L) {
                 val future = completions.poll(150, TimeUnit.MILLISECONDS) ?: continue
                 completed++
-                val measured = runCatching { future.get() }.getOrNull() ?: continue
+                completedRoots.set(completed)
+                val measured = runCatching { future.get() }.getOrNull()
+                scannedRoots++
+                if (measured == null) { incompleteRoots++; continue }
                 val seed = measured.seed
                 val stats = measured.stats
+                if (!stats.complete) incompleteRoots++
                 progress("正在扫描应用缓存", completed, roots.size, seed.path)
                 visitedDirs += stats.directories
-                if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L) {
+                if (stats.files > 0L || stats.directories > 0L || stats.bytes > 0L || !stats.complete) {
+                    if (firstResultMs < 0) firstResultMs = SystemClock.elapsedRealtime() - started
                     items += Item(
                         packageName = seed.packageName,
                         appName = labels[seed.packageName].orEmpty().ifBlank { seed.packageName },
@@ -152,14 +184,19 @@ internal class ForegroundCacheEngine(
                         bytes = stats.bytes,
                         files = stats.files,
                         directories = stats.directories,
-                        complete = stats.complete
+                        complete = stats.complete,
+                        identity = stats.identity,
+                        incompleteReason = stats.reason,
+                        frozenTree = stats.frozenTree
                     )
                     totalBytes += stats.bytes
                     totalFiles += stats.files
                 }
             }
         } finally {
+            acceptingProgress.set(false)
             executor.shutdownNow()
+            executor.awaitTermination(2, TimeUnit.SECONDS)
         }
 
         return Snapshot(
@@ -169,7 +206,10 @@ internal class ForegroundCacheEngine(
             totalBytes = totalBytes,
             totalFiles = totalFiles,
             visitedDirs = visitedDirs,
-            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+            totalRoots = roots.size, scannedRoots = scannedRoots,
+            incompleteRoots = incompleteRoots + (roots.size - scannedRoots),
+            firstResultMs = firstResultMs.coerceAtLeast(0L)
         )
     }
 
@@ -178,8 +218,10 @@ internal class ForegroundCacheEngine(
         whitelistJson: String,
         progress: (String, Int, Int, String) -> Unit
     ): CleanResult {
+        protectionIdentity = null
         val started = SystemClock.elapsedRealtime()
-        val whitelist = parseWhitelist(whitelistJson)
+        val whitelist = parseWhitelist(whitelistJson) + parseWhitelist(WhitelistRepository().packagesJson())
+        val protectedPaths = parseProtectedPaths(WhitelistRepository().pathsJson())
         var processed = 0
         var cleaned = 0
         var changed = 0
@@ -193,10 +235,10 @@ internal class ForegroundCacheEngine(
         val remaining = ArrayList<Item>()
 
         snapshot.items.forEachIndexed { index, item ->
-            if (cancelled.get()) return@forEachIndexed
+            if (cancelled.get()) { remaining += item; return@forEachIndexed }
             processed += 1
             progress("正在清理应用缓存", index, snapshot.items.size, item.path)
-            if (item.packageName in whitelist || !knownCachePath(item.path, item.packageName)) {
+            if (item.packageName in whitelist || protectedPath(item.path, protectedPaths) || !knownCachePath(item.path, item.packageName)) {
                 protected += 1
                 remaining += item
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "protected", "白名单或路径保护", 0, 0, 0))
@@ -210,15 +252,20 @@ internal class ForegroundCacheEngine(
                 if (details.length() < MAX_DETAILS) details.put(detail(item, "changed", "缓存目录已变化", 0, 0, 0))
                 return@forEachIndexed
             }
-            val result = clearChildren(root)
+            val result = clearChildren(root, item.frozenTree) { files, bytes ->
+                progress("正在清理 ${item.appName} · $files 个文件", index, snapshot.items.size, item.path)
+            }
             deletedBytes += result.bytes
             deletedFiles += result.files
             deletedDirs += result.directories
             when {
                 !result.complete -> {
                     partial += 1
-                    remaining += item
-                    if (details.length() < MAX_DETAILS) details.put(detail(item, "partial", "部分文件未能删除", result.bytes, result.files, result.directories))
+                    remaining += item.copy(bytes = (item.bytes - result.bytes).coerceAtLeast(0),
+                        files = (item.files - result.files).coerceAtLeast(0),
+                        directories = (item.directories - result.directories).coerceAtLeast(0), complete = false,
+                        incompleteReason = result.reason)
+                    if (details.length() < MAX_DETAILS) details.put(detail(item, "partial", "部分文件保留：${result.reason}", result.bytes, result.files, result.directories))
                 }
                 result.files > 0 || result.directories > 0 -> {
                     cleaned += 1
@@ -291,6 +338,8 @@ internal class ForegroundCacheEngine(
         if (userIds.isEmpty()) userIds += "0"
 
         packageNames.forEach { pkg ->
+            if (cancelled.get()) return@forEach
+            if (pkg in whitelist) return@forEach
             for (user in userIds) {
                 for (base in listOf("/data/user/$user/$pkg", "/data/user_de/$user/$pkg")) {
                     val app = File(base)
@@ -315,11 +364,12 @@ internal class ForegroundCacheEngine(
             if (!engine.isDirectory || isSymlink(engine)) continue
             val stack = ArrayDeque<Pair<File, Int>>()
             stack.add(engine to 0)
-            while (stack.isNotEmpty()) {
+            while (stack.isNotEmpty() && !cancelled.get()) {
                 val (file, depth) = stack.removeLast()
                 if (!file.isDirectory || isSymlink(file) || depth > 3) continue
                 if (file != engine && file.name in WEBVIEW_CACHE_NAMES) {
                     val path = canonical(file)
+                    if (!knownCachePath(path, packageName)) continue
                     out.putIfAbsent(path, CacheSeed(packageName, "WebView 缓存", file, path))
                     continue
                 }
@@ -328,65 +378,26 @@ internal class ForegroundCacheEngine(
         }
     }
 
-    private fun measure(root: File): Stats {
-        val stack = ArrayDeque<File>()
-        stack.add(root)
-        var bytes = 0L
-        var files = 0L
-        var dirs = 0L
-        var complete = true
-        while (stack.isNotEmpty()) {
-            if (cancelled.get() || Thread.currentThread().isInterrupted) return Stats(bytes, files, dirs, false)
-            val file = stack.removeLast()
-            val stat = lstat(file) ?: run { complete = false; continue }
-            if (OsConstants.S_ISLNK(stat.st_mode)) continue
-            when {
-                OsConstants.S_ISREG(stat.st_mode) -> {
-                    files += 1
-                    bytes += stat.st_size.coerceAtLeast(0L)
-                }
-                OsConstants.S_ISDIR(stat.st_mode) -> {
-                    if (file != root) dirs += 1
-                    val children = file.listFiles()
-                    if (children == null) complete = false else children.forEach(stack::add)
-                }
-            }
+    private fun measure(root: File, progress: (Long, Long) -> Unit = { _, _ -> }): Stats =
+        FrozenReviewTree.capture(root.toPath(), cancelled, 15_000L, 100_000, progress, manifestBudget).let {
+            Stats(it.bytes, it.files, (it.directories - 1).coerceAtLeast(0), it.complete,
+                "original-file-manifest-v2", it.reason, it)
         }
-        return Stats(bytes, files, dirs, complete)
-    }
 
-    /** Delete contents, never the app-owned cache root itself. */
-    private fun clearChildren(root: File): Stats {
-        val children = root.listFiles() ?: return Stats(0, 0, 0, false)
-        val stack = ArrayDeque<Node>()
-        children.forEach { stack.add(Node(it, false)) }
-        var bytes = 0L
-        var files = 0L
-        var dirs = 0L
-        var complete = true
-        while (stack.isNotEmpty()) {
-            if (cancelled.get() || Thread.currentThread().isInterrupted) return Stats(bytes, files, dirs, false)
-            val node = stack.removeLast()
-            val file = node.file
-            val stat = lstat(file) ?: continue
-            if (OsConstants.S_ISLNK(stat.st_mode)) continue
-            if (node.post) {
-                if (runCatching { file.delete() }.getOrDefault(false)) dirs += 1 else complete = false
-                continue
-            }
-            if (OsConstants.S_ISREG(stat.st_mode)) {
-                val size = stat.st_size.coerceAtLeast(0L)
-                if (runCatching { Os.remove(file.path); true }.getOrDefault(false)) {
-                    bytes += size
-                    files += 1
-                } else complete = false
-            } else if (OsConstants.S_ISDIR(stat.st_mode)) {
-                stack.add(Node(file, true))
-                val nested = file.listFiles()
-                if (nested == null) complete = false else nested.forEach { stack.add(Node(it, false)) }
-            }
+    private fun clearChildren(root: File, tree: FrozenReviewTree.Snapshot?, progress: (Long, Long) -> Unit): Stats {
+        if (tree?.root != root.path) return Stats(0, 0, 0, false, reason = "原始逐文件快照缺失，请重新扫描")
+        var files = 0L; var bytes = 0L
+        val result = FrozenReviewTree.delete(tree, false, Long.MAX_VALUE, cancelled, 60_000L, { _, _ -> true },
+            { path, directory, size ->
+                if (!directory) {
+                    files++; bytes += size
+                    if (path.startsWith("/data/media/") || path.startsWith("/storage/")) RootMediaScanQueue.enqueueAsync(context, listOf(path))
+                }
+                progress(files, bytes)
+            })
+        return result.let {
+            Stats(it.bytes, it.files, it.directories, it.complete, reason = it.reason, frozenTree = tree)
         }
-        return Stats(bytes, files, dirs, complete)
     }
 
     private fun knownCachePath(path: String, packageName: String): Boolean {
@@ -396,8 +407,8 @@ internal class ForegroundCacheEngine(
         val internal = Regex("""^/data/(?:user|user_de)/\d+/$pkg/(?:cache|code_cache)(?:/.*)?$""")
         val legacy = Regex("""^/data/data/$pkg/(?:cache|code_cache)(?:/.*)?$""")
         val external = Regex("""^/data/media/\d+/Android/data/$pkg/cache(?:/.*)?$""")
-        val webview = Regex("""^/data/(?:user|user_de)/\d+/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/.*/(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
-        val legacyWebview = Regex("""^/data/data/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/.*/(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
+        val webview = Regex("""^/data/(?:user|user_de)/\d+/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/(?:[^/]+/){0,3}(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
+        val legacyWebview = Regex("""^/data/data/$pkg/app_(?:webview|hws_webview|x5webview)(?:[^/]*)/(?:[^/]+/){0,3}(?:Cache|Code Cache|GPUCache|GPU Cache)(?:/.*)?$""")
         return internal.matches(normalized) || legacy.matches(normalized) || external.matches(normalized) ||
             webview.matches(normalized) || legacyWebview.matches(normalized)
     }
@@ -409,15 +420,47 @@ internal class ForegroundCacheEngine(
         }
     }.getOrDefault(emptyMap())
 
-    private fun parseWhitelist(raw: String): Set<String> = runCatching {
-        val array = JSONArray(raw)
-        buildSet {
+    private fun parseWhitelist(raw: String): Set<String> {
+        val array = try { JSONArray(raw) } catch (error: Exception) {
+            throw IllegalArgumentException("白名单无法读取，已停止操作以保护文件", error)
+        }
+        return buildSet {
             for (index in 0 until array.length()) {
-                val value = array.optString(index).trim()
-                if (PACKAGE_NAME.matches(value)) add(value)
+                val value = array.opt(index) as? String
+                    ?: throw IllegalArgumentException("白名单格式无效，已停止操作")
+                require(PACKAGE_NAME.matches(value.trim())) { "白名单包名无效，已停止操作" }
+                add(value.trim())
             }
         }
-    }.getOrDefault(emptySet())
+    }
+
+    private fun parseProtectedPaths(raw: String): Set<String> {
+        val array = JSONArray(raw)
+        return buildSet { for (index in 0 until array.length()) {
+            val path = array.getString(index)
+            require(path.startsWith("/")) { "路径白名单无效，已停止操作" }
+            add(path)
+        } }
+    }
+
+    private fun protectedPath(path: String, protected: Set<String>): Boolean {
+        if (protected.isEmpty()) return false
+        // An unregistered Root app_process cannot always call Framework volume APIs:
+        // StorageManager may reject its package/uid attribution. Protection must not make
+        // an otherwise valid raw-filesystem scan depend on that optional lookup.
+        val identity = protectionIdentity ?: run {
+            val primary = runCatching { android.os.Environment.getExternalStorageDirectory().canonicalPath }
+                .getOrNull() ?: runCatching { File("/sdcard").canonicalPath }.getOrNull()
+            AndroidPathIdentity(primary).also { protectionIdentity = it }
+        }
+        val candidate = identity.of(path)
+        return protected.any { raw ->
+            // Unknown user-relative aliases cannot silently become an empty whitelist.
+            if (identity.unresolvedUserAlias(raw)) return@any true
+            val keep = identity.of(raw)
+            keep == "/" || candidate == keep || candidate.startsWith("$keep/") || keep.startsWith("$candidate/")
+        }
+    }
 
     private fun detail(item: Item, action: String, reason: String, bytes: Long, files: Long, dirs: Long) =
         JSONObject()

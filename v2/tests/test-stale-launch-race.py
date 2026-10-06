@@ -24,6 +24,8 @@ class StaleLaunchRace(unittest.TestCase):
             for directory in (module, state, fake):
                 directory.mkdir()
             shutil.copy2(ROOT / 'v2/module/scripts/task-worker.sh', module)
+            (module / 'config').mkdir()
+            shutil.copy2(ROOT / 'config/operation-lock.sh', module / 'config')
             runner = module / 'worker-runner.sh'
             runner.write_text('''#!/bin/sh
 mkdir -p "$BAIZE_STATE_DIR/task-results"

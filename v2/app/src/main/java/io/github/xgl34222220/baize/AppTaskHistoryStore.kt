@@ -1,12 +1,15 @@
 package io.github.xgl34222220.baize
 
 import android.content.Context
+import android.util.AtomicFile
+import io.github.xgl34222220.baize.root.ReleaseAmount
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 internal data class AppHistorySnapshot(
     val entries: List<HistoryUiItem>,
@@ -31,18 +34,23 @@ internal object AppTaskHistoryStore {
         elapsedMs: Long,
         categories: List<HistoryCategoryUiItem> = emptyList(),
         apps: List<HistoryAppUiItem> = emptyList(),
-        cleaned: Boolean = true
+        cleaned: Boolean = true,
+        release: ReleaseAmount = ReleaseAmount.fromEvent(JSONObject().put("operation", if (cleaned) "app-clean" else "scan").put("bytes", bytes))
     ) {
         val root = readRoot(context)
         val entries = root.optJSONArray("entries") ?: JSONArray()
         val next = JSONArray()
         next.put(
             JSONObject()
+                .put("recordId", "app-${UUID.randomUUID()}")
                 .put("title", title)
                 .put("time", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
                 .put("trigger", "App 手动")
                 .put("result", result.take(1200))
-                .put("bytes", bytes.coerceAtLeast(0L))
+                .put("bytes", release.bytes ?: JSONObject.NULL)
+                .put("releaseState", release.state.wire)
+                .put("releasedBytes", release.bytes ?: JSONObject.NULL)
+                .put("retainedBytes", release.retainedBytes ?: JSONObject.NULL)
                 .put("files", files.coerceAtLeast(0))
                 .put("emptyDirs", 0)
                 .put("errors", 0)
@@ -67,7 +75,7 @@ internal object AppTaskHistoryStore {
         for (index in 0 until minOf(entries.length(), MAX_ENTRIES - 1)) next.put(entries.opt(index))
         root.put("entries", next)
             .put("lifetimeRuns", root.optLong("lifetimeRuns", 0L) + if (cleaned) 1L else 0L)
-            .put("lifetimeReleased", root.optLong("lifetimeReleased", 0L) + bytes.coerceAtLeast(0L))
+            .put("lifetimeReleased", ReleaseAmount.addSaturated(root.optLong("lifetimeReleased", 0L).coerceAtLeast(0L), release.bytes ?: 0L))
             .put("lifetimeFiles", root.optLong("lifetimeFiles", 0L) + files.coerceAtLeast(0))
             .put("lifetimeElapsed", root.optLong("lifetimeElapsed", 0L) + elapsedMs.coerceAtLeast(0L) / 1000L)
         writeRoot(context, root)
@@ -80,13 +88,20 @@ internal object AppTaskHistoryStore {
         val entries = buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
+                val release = ReleaseAmount.fromEvent(JSONObject(item.toString())
+                    .put("operation", if (item.optBoolean("cleaned", true)) "app-clean" else "scan"))
                 add(
                     HistoryUiItem(
                         title = item.optString("title", "一键清理"),
                         time = item.optString("time"),
                         trigger = item.optString("trigger", "App 手动"),
                         result = item.optString("result"),
-                        bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
+                        bytes = release.bytes ?: 0L,
+                        releaseState = release.state.wire,
+                        // Identical old rows are separate occurrences, even at the same second.
+                        recordId = item.optString("recordId").ifBlank {
+                            "legacy-app-${UUID.nameUUIDFromBytes("$index:$item".toByteArray())}"
+                        },
                         files = item.optInt("files", 0).coerceAtLeast(0),
                         emptyDirs = item.optInt("emptyDirs", 0).coerceAtLeast(0),
                         errors = item.optInt("errors", 0).coerceAtLeast(0),
@@ -142,18 +157,15 @@ internal object AppTaskHistoryStore {
     private fun file(context: Context): File = File(context.filesDir, FILE_NAME)
 
     private fun readRoot(context: Context): JSONObject = runCatching {
-        file(context).takeIf(File::isFile)?.readText()?.let(::JSONObject) ?: JSONObject()
+        AtomicFile(file(context)).openRead().bufferedReader().use { JSONObject(it.readText()) }
     }.getOrDefault(JSONObject())
 
     private fun writeRoot(context: Context, root: JSONObject) {
         val target = file(context)
-        val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
-        runCatching {
-            temp.writeText(root.toString())
-            if (!temp.renameTo(target)) {
-                temp.copyTo(target, overwrite = true)
-                temp.delete()
-            }
-        }.onFailure { temp.delete() }
+        target.parentFile?.mkdirs()
+        val atomic = AtomicFile(target)
+        val stream = atomic.startWrite()
+        try { stream.write(root.toString().toByteArray()); atomic.finishWrite(stream) }
+        catch (error: Exception) { atomic.failWrite(stream); throw error }
     }
 }

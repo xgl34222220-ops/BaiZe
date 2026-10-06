@@ -15,13 +15,16 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include "cleanup_media_output.h"
+#include "baize_content_fingerprint.h"
+#include "baize_trash_guard.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
 
-#define MANIFEST_FIELDS 11U
-#define ENGINE_VERSION "deep-manifest-v1"
+#define MANIFEST_FIELDS 12U
+#define ENGINE_VERSION "deep-manifest-sha256-v2"
 
 typedef struct {
     const char *targets;
@@ -29,6 +32,7 @@ typedef struct {
     const char *cursor;
     const char *report;
     const char *summary;
+    const char *deleted_nul;
     const char *whitelist;
     const char *progress;
     const char *stop;
@@ -75,6 +79,7 @@ static void request_stop(int signal_number) {
 
 static void die(const char *message);
 static int read_record(FILE *file, Record *record);
+static int read_root_record(FILE *file, Record *record);
 static int read_nul_field(FILE *file, char **value, size_t *capacity);
 static void free_record(Record *record);
 static bool parse_u64(const char *text, uint64_t *value);
@@ -170,6 +175,7 @@ static void load_whitelist(void) {
 }
 
 static bool whitelist_conflict(const char *path) {
+    if (baize_is_ordinary_trash(path)) return true;
     for (size_t i = 0; i < g_whitelist.count; ++i) {
         if (path_relation(g_whitelist.items[i], path) || path_relation(path, g_whitelist.items[i])) return true;
     }
@@ -216,7 +222,7 @@ static bool write_nul_u64(FILE *file, uint64_t value) {
 }
 
 static bool write_record(FILE *file, const char *kind, const char *risk, const char *target,
-                         const struct stat *status, uint64_t size, const char *path) {
+                         const struct stat *status, uint64_t size, const char *path, const char *digest) {
     return write_nul_field(file, kind) && write_nul_field(file, risk) &&
            write_nul_field(file, target) &&
            write_nul_u64(file, (uint64_t)status->st_dev) &&
@@ -226,7 +232,7 @@ static bool write_record(FILE *file, const char *kind, const char *risk, const c
            write_nul_u64(file, (uint64_t)status->st_mtim.tv_nsec) &&
            write_nul_u64(file, (uint64_t)status->st_ctim.tv_sec) &&
            write_nul_u64(file, (uint64_t)status->st_ctim.tv_nsec) &&
-           write_nul_field(file, path);
+           write_nul_field(file, path) && write_nul_field(file, digest);
 }
 
 static int copy_stream(FILE *source, FILE *destination) {
@@ -247,6 +253,11 @@ static int snapshot_abort(void) {
     return 0;
 }
 
+static int deep_content_abort(void *opaque) {
+    uint64_t deadline = *(uint64_t *)opaque;
+    int code = snapshot_abort();
+    return code ? code : monotonic_ms() >= deadline ? 124 : 0;
+}
 static int snapshot_path(int parent_fd, const char *name, const char *path,
                          const char *target, const char *risk, dev_t root_device, ino_t root_inode,
                          FILE *manifest, Summary *summary, unsigned depth) {
@@ -264,7 +275,11 @@ static int snapshot_path(int parent_fd, const char *name, const char *path,
         if (size > g_options.max_file_bytes) return 8;
         abort_code = snapshot_abort();
         if (abort_code != 0) return abort_code;
-        if (!write_record(manifest, "file", risk, target, &status, size, path)) return -1;
+        char digest[65]; int content = -1; uint64_t deadline = monotonic_ms() + 15000U;
+        int hash_code = baize_hash_at(parent_fd, name, &status, digest, &content, deep_content_abort, &deadline);
+        if (content >= 0) close(content);
+        if (hash_code) return hash_code;
+        if (!write_record(manifest, "file", risk, target, &status, size, path, digest)) return -1;
         summary->records++;
         summary->files++;
         summary->bytes += size;
@@ -303,7 +318,7 @@ static int snapshot_path(int parent_fd, const char *name, const char *path,
     if (result != 0) return result;
     abort_code = snapshot_abort();
     if (abort_code != 0) return abort_code;
-    if (!write_record(manifest, "dir", risk, target, &status, 0U, path)) return -1;
+    if (!write_record(manifest, "dir", risk, target, &status, 0U, path, "-")) return -1;
     summary->records++;
     summary->dirs++;
     return 0;
@@ -365,7 +380,7 @@ static int build_manifest(void) {
         if (lstat(target, &root) != 0 || S_ISLNK(root.st_mode)) { result = 7; break; }
         if (roots) {
             uint64_t dev, ino, mt, mn, ct, cn;
-            if (read_record(roots, &root_record) != 1 ||
+            if (read_root_record(roots, &root_record) != 1 ||
                 strcmp(root_record.field[2], target) || strcmp(root_record.field[1], risk) ||
                 !parse_u64(root_record.field[3], &dev) || !parse_u64(root_record.field[4], &ino) ||
                 !parse_u64(root_record.field[6], &mt) || !parse_u64(root_record.field[7], &mn) ||
@@ -420,7 +435,7 @@ static int build_manifest(void) {
         if (ferror(report)) result = 71;
         if (fclose(report) != 0) result = 71;
     }
-    if (roots && read_record(roots, &root_record) != 0 && result == 0) result = 7;
+    if (roots && read_root_record(roots, &root_record) != 0 && result == 0) result = 7;
     if (roots) fclose(roots);
     free_record(&root_record);
     free(line);
@@ -453,13 +468,23 @@ static int read_nul_field(FILE *file, char **value, size_t *capacity) {
     return 1;
 }
 
+/* The 11-field roots stream is discovery input only, not an authorized cleanup
+ * manifest. Build hashes each selected file before publishing the 12-field review. */
+static int read_root_record(FILE *file, Record *record) {
+    int first = read_nul_field(file, &record->field[0], &record->capacity[0]);
+    if (first <= 0) return first;
+    for (size_t i = 1; i < 11U; ++i)
+        if (read_nul_field(file, &record->field[i], &record->capacity[i]) != 1) return -1;
+    return 1;
+}
 static int read_record(FILE *file, Record *record) {
     int first = read_nul_field(file, &record->field[0], &record->capacity[0]);
     if (first <= 0) return first;
     for (size_t i = 1; i < MANIFEST_FIELDS; ++i) {
         if (read_nul_field(file, &record->field[i], &record->capacity[i]) != 1) return -1;
     }
-    return 1;
+    if (!strcmp(record->field[0], "file")) return baize_sha256_hex_valid(record->field[11]) ? 1 : -1;
+    return !strcmp(record->field[0], "dir") && !strcmp(record->field[11], "-") ? 1 : -1;
 }
 
 static void free_record(Record *record) {
@@ -504,6 +529,12 @@ static int open_parent_nofollow(const char *path, char *buffer, const char **nam
         if (strcmp(part, ".") == 0 || strcmp(part, "..") == 0) { close(fd); errno = EINVAL; return -1; }
         int next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
         int error = errno;
+        if (next < 0 && (error == ENOTDIR || error == ELOOP)) {
+            struct stat entry;
+            /* Linux may return ENOTDIR for O_NOFOLLOW on a symlink. Confirm the
+             * symlink before classifying it as protection instead of an I/O failure. */
+            if (fstatat(fd, part, &entry, AT_SYMLINK_NOFOLLOW) == 0 && S_ISLNK(entry.st_mode)) error = ELOOP;
+        }
         close(fd);
         fd = next;
         errno = error;
@@ -707,12 +738,17 @@ static int clean_manifest(void) {
     for (uint64_t i = 0; i < cursor; ++i) {
         if (read_record(manifest, &record) != 1) { free_record(&record); fclose(manifest); fclose(report); fclose(journal); return 7; }
     }
+    FILE *deleted = g_options.deleted_nul ? open_media_output(g_options.deleted_nul) : NULL;
+    if (g_options.deleted_nul && !deleted) { free_record(&record); fclose(manifest); fclose(report); fclose(journal); return 71; }
     uint64_t current = cursor, batch_end = current;
     int mutation_fds[128];
     dev_t mutation_devs[128];
     ino_t mutation_inos[128];
     size_t mutation_count = 0U;
     int result = 0;
+    /* A retryable attempt is not a terminal journal outcome: leave its record
+     * before the cursor, while sealing all successfully processed predecessors. */
+    uint64_t attempt_errors = 0U;
     while ((read_code = read_record(manifest, &record)) == 1) {
         if (stop_requested()) { result = 9; break; }
         if (current == batch_end) {
@@ -749,22 +785,55 @@ static int clean_manifest(void) {
             summary.skipped++;
             report_row(report, "protected", valid_risk(risk) ? risk : "high", 0U, path);
         } else if (parent_fd < 0) {
-            summary.skipped++;
-            if (parent_error == ENOENT && current < replay_end) {
-                summary.uncertain++;
-                summary.uncertain_bytes += size;
+            if (parent_error == ENOENT) {
+                summary.skipped++;
+                if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                report_row(report, "missing", risk, 0U, path);
+            } else if (parent_error == ELOOP) {
+                summary.skipped++;
+                report_row(report, "protected", risk, 0U, path);
+            } else {
+                attempt_errors++; result = 8;
+                report_row(report, "failed", risk, 0U, path);
             }
-            report_row(report, parent_error == ENOENT ? "missing" : "protected", risk, 0U, path);
         } else if (strcmp(kind, "file") == 0) {
             struct stat first;
             struct stat second;
+            int content = -1, hash_code = 0; char digest[65]; uint64_t hash_deadline = monotonic_ms() + 15000U;
             if (fstatat(parent_fd, name, &first, AT_SYMLINK_NOFOLLOW) != 0) {
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
+            } else if (!file_metadata_matches(&first, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
                 summary.skipped++;
-                if (errno == ENOENT && current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
-                report_row(report, "missing", risk, 0U, path);
-            } else if (!file_metadata_matches(&first, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec) ||
-                       fstatat(parent_fd, name, &second, AT_SYMLINK_NOFOLLOW) != 0 ||
-                       !file_metadata_matches(&second, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
+                if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                report_row(report, "changed", risk, size, path);
+            } else if ((hash_code = baize_hash_at(parent_fd, name, &first, digest, &content, deep_content_abort, &hash_deadline)) != 0) {
+                if (hash_code == 7) {
+                    summary.skipped++;
+                    report_row(report, "changed", risk, size, path);
+                } else {
+                    attempt_errors++; result = hash_code == 9 ? 9 : 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
+            } else if (strcmp(digest, record.field[11])) {
+                summary.skipped++;
+                report_row(report, "changed", risk, size, path);
+            } else if (fstatat(parent_fd, name, &second, AT_SYMLINK_NOFOLLOW) != 0) {
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
+            } else if (!file_metadata_matches(&second, device, inode, size, mtime_sec, mtime_nsec, ctime_sec, ctime_nsec)) {
                 summary.skipped++;
                 if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                 report_row(report, "changed", risk, size, path);
@@ -774,15 +843,21 @@ static int clean_manifest(void) {
                 summary.bytes += size;
                 report_row(report, "cleaned", risk, size, path);
             } else {
-                summary.errors++;
+                attempt_errors++; result = 8;
                 report_row(report, "failed", risk, size, path);
             }
+            if (content >= 0) close(content);
         } else {
             struct stat status;
             if (fstatat(parent_fd, name, &status, AT_SYMLINK_NOFOLLOW) != 0) {
-                summary.skipped++;
-                if (errno == ENOENT && current < replay_end) summary.uncertain++;
-                report_row(report, "missing", risk, 0U, path);
+                if (errno == ENOENT) {
+                    summary.skipped++;
+                    if (current < replay_end) summary.uncertain++;
+                    report_row(report, "missing", risk, 0U, path);
+                } else {
+                    attempt_errors++; result = 8;
+                    report_row(report, "failed", risk, 0U, path);
+                }
             } else if (!S_ISDIR(status.st_mode) || S_ISLNK(status.st_mode) ||
                        (uint64_t)status.st_dev != device || (uint64_t)status.st_ino != inode) {
                 summary.skipped++;
@@ -796,11 +871,12 @@ static int clean_manifest(void) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
             } else {
-                summary.errors++;
+                attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
         }
         if (mutated) {
+            if (deleted && fwrite(path, 1, strlen(path) + 1U, deleted) != strlen(path) + 1U) result = 71;
             struct stat parent;
             if (fstat(parent_fd, &parent) != 0) result = 71;
             else {
@@ -818,6 +894,7 @@ static int clean_manifest(void) {
             }
         }
         if (parent_fd >= 0) close(parent_fd);
+        if (result == 8 || result == 9) break;
         current++;
         summary.processed++;
         if (journal_outcome(journal, &summary) != 0 || fflush(report) != 0) result = 71;
@@ -829,9 +906,10 @@ static int clean_manifest(void) {
     }
     if (read_code < 0) result = 7;
     if (sync_mutations(mutation_fds, &mutation_count) != 0) result = 71;
-    if ((result == 0 || result == 9 || result == 7) && seal_checkpoint(journal, current) != 0) result = 71;
+    if ((result == 0 || result == 9 || result == 7 || result == 8) && seal_checkpoint(journal, current) != 0) result = 71;
     if (checkpoint(journal) != 0) result = 71;
     if (fclose(journal) != 0) result = 71;
+    if (deleted && fclose(deleted) != 0) result = 71;
     free_record(&record);
     fclose(manifest);
     if (fclose(report) != 0) result = 71;
@@ -844,15 +922,16 @@ static int clean_manifest(void) {
             "\nerrors=%" PRIu64 "\nremaining=%" PRIu64 "\ncursor=%" PRIu64
             "\nengine=%s\n",
             total, summary.processed - initial.processed, summary.files, summary.dirs, summary.bytes,
-            summary.skipped, summary.errors, remaining, current, ENGINE_VERSION);
+            summary.skipped, summary.errors + attempt_errors, remaining, current, ENGINE_VERSION);
     fprintf(summary_file, "recovered_unsealed_records=%" PRIu64 "\nrecovery_requires_audit=%d\n",
             recovered_unsealed, g_recovery_requires_audit);
     fprintf(summary_file, "accounting=cumulative-journal-v1\nuncertain_records=%" PRIu64
             "\nuncertain_bytes=%" PRIu64 "\nrun_files=%" PRIu64 "\nrun_dirs=%" PRIu64
             "\nrun_bytes=%" PRIu64 "\nrun_errors=%" PRIu64 "\ncheckpoint_records=%" PRIu64 "\n",
             summary.uncertain, summary.uncertain_bytes, summary.files - initial.files,
-            summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors,
+            summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors + attempt_errors,
             g_options.checkpoint_records);
+    fprintf(summary_file, "pending_errors=%" PRIu64 "\n", attempt_errors);
     if (ferror(summary_file)) result = 71;
     if (fclose(summary_file) != 0) result = 71;
     return result;
@@ -873,6 +952,7 @@ static void parse_options(int argc, char **argv) {
         else if (strcmp(argument, "--manifest") == 0) g_options.manifest = option_value(argc, argv, &i);
         else if (strcmp(argument, "--cursor") == 0) g_options.cursor = option_value(argc, argv, &i);
         else if (strcmp(argument, "--report") == 0) g_options.report = option_value(argc, argv, &i);
+        else if (strcmp(argument, "--deleted-nul") == 0) g_options.deleted_nul = option_value(argc, argv, &i);
         else if (strcmp(argument, "--summary") == 0) g_options.summary = option_value(argc, argv, &i);
         else if (strcmp(argument, "--whitelist") == 0) g_options.whitelist = option_value(argc, argv, &i);
         else if (strcmp(argument, "--progress") == 0) g_options.progress = option_value(argc, argv, &i);

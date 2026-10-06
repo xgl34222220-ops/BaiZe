@@ -148,6 +148,7 @@ else
   }
   path_conflicts_whitelist() {
     _wl_target=${1%/}
+    case "$_wl_target" in */.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]|*/.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]/*|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]/*) return 0;; esac
     [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
     _wl_old_ifs=$IFS
     case "$-" in *f*) _wl_had_f=1 ;; *) _wl_had_f=0 ;; esac
@@ -265,7 +266,7 @@ while IFS= read -r -d '' candidate; do
   fi
   [ -f "$candidate" ] || continue
   # One metadata read captures the object shown to the user. ctime and inode
-  # prevent a same-name replacement (even with restored mtime) being deleted.
+  # bind the selected object; the batch content hash below also guards coarse timestamps.
   identity=$(stat -c '%d:%i:%s:%y:%z' "$candidate" 2>/dev/null) || { errors=$((errors + 1)); continue; }
   device=${identity%%:*}
   identity_rest=${identity#*:}
@@ -301,6 +302,19 @@ while IFS= read -r -d '' candidate; do
   [ -n "$sample_path" ] || sample_path=$candidate
 done <"$APK_INDEX"
 
+APK_HASH_ENGINE=${BAIZE_NATIVE_ENGINE:-}
+if [ -z "$APK_HASH_ENGINE" ] && [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
+  . "$SCRIPTDIR/abi-resolve.sh"
+  APK_HASH_ENGINE=$(baize_require_engine "$MODDIR" baize_engine "" 2>/dev/null) || APK_HASH_ENGINE=
+fi
+[ -n "$APK_HASH_ENGINE" ] && [ -x "$APK_HASH_ENGINE" ] || { echo "安装包内容指纹组件缺失，未生成清理快照" >&2; exit 8; }
+HASHED_IDENTITIES="$IDENTITIES_TMP.sha256"
+"$APK_HASH_ENGINE" hash-apk-snapshot "$TARGETS_TMP" "$IDENTITIES_TMP" "$HASHED_IDENTITIES" "$STOP_FILE" "$MAX_FILE_BYTES" || {
+  hash_code=$?
+  echo "安装包内容变化、读取失败或达到预算，未生成清理快照（代码 $hash_code）" >&2
+  exit "$hash_code"
+}
+mv -f "$HASHED_IDENTITIES" "$IDENTITIES_TMP" || exit 71
 scan_epoch=$(date +%s)
 targets_sha=$(file_sha "$TARGETS_TMP")
 snapshot_id="${scan_epoch}-$(printf '%s' "$targets_sha" | cut -c1-16)"
@@ -312,6 +326,7 @@ targets_sha=$(file_sha "$TARGETS_FILE")
   echo "snapshot_id=$snapshot_id"
   echo "targets_sha=$targets_sha"
   echo "identities_sha=$(file_sha "$IDENTITIES_FILE")"
+  echo "identity_format=stat-sha256-v1"
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "package_days=$DAYS"

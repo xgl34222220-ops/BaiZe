@@ -188,7 +188,10 @@ class NativeProfileRiskSelectionTest {
             method("candidate").invoke(
                 engine, "empty", if (target.file.isFile) "empty_file" else "empty_dir", "空项目", target.risk, target.file,
                 target.packageName, "", true, "", null, target.retentionDays
-            )
+            ).also { candidate ->
+                candidate.javaClass.getDeclaredField("frozenTree").apply { isAccessible = true }
+                    .set(candidate, FrozenReviewTree.capture(target.file.toPath(), AtomicBoolean(false), 5_000))
+            }
         }.toMutableList()
         val id = UUID.randomUUID().toString()
         val snapshotClass = NativeProfileEngine::class.java.declaredClasses.single { it.simpleName == "Snapshot" }

@@ -65,10 +65,9 @@ fun CleanScreenMiuix(
     onExpandedCategoryChanged: (String) -> Unit
 ) {
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    var showDailyTimeDialog by remember { mutableStateOf(false) }
-    var showDailyGraceDialog by remember { mutableStateOf(false) }
-    var showApkDaysDialog by remember { mutableStateOf(false) }
-    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
+    var showDailyTimeDialog by rememberSaveable { mutableStateOf(false) }
+    var showDailyGraceDialog by rememberSaveable { mutableStateOf(false) }
+    var showApkDaysDialog by rememberSaveable { mutableStateOf(false) }
     var automationExpanded by rememberSaveable { mutableStateOf(expandedCategory == "__open_plan__") }
 
     LaunchedEffect(expandedCategory) {
@@ -132,13 +131,11 @@ fun CleanScreenMiuix(
         }
         item(key = "clean-advanced") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Rule, "高级工具", if (advancedExpanded) "点击收起" else "缓存专项、规则与保护", { advancedExpanded = !advancedExpanded })
-                if (advancedExpanded) {
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "仅检查应用缓存", actions.onInstantCache)
-                    LuoShuGroupDivider()
-                    LuoShuNavigationRow(Icons.Rounded.Rule, "规则审计", "规则命中与保护", actions.onAudit)
-                }
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "仅检查应用缓存", actions.onInstantCache)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "免 Root 缓存清理", "连接 Shizuku 后清理", actions.onShizukuCache)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则与保护", "规则范围、清理策略与隔离区", actions.onAudit)
             }
         }
         item(key = "clean-auto-title") {

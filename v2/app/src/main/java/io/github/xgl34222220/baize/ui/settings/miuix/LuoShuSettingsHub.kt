@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -29,12 +30,19 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 /** LuoShu SettingsHubScreen structure: overview -> navigation groups -> separate detail page. */
 @Composable
-fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDetailChanged: (Boolean) -> Unit = {}) {
-    var section by remember { mutableStateOf("") }
+fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions,
+    onDetailChanged: (Boolean) -> Unit = {},
+    runtimeLogs: (@Composable (onBack: () -> Unit) -> Unit)? = null) {
+    var section by rememberSaveable { mutableStateOf("") }
+    val sectionState = rememberSaveableStateHolder()
     val notify by rememberUpdatedState(onDetailChanged)
     LaunchedEffect(section) { notify(section.isNotEmpty()) }
     DisposableEffect(Unit) { onDispose { notify(false) } }
-    BackHandler(enabled = section.isNotEmpty()) { section = "" }
+    fun closeDetail() {
+        if (section == "tasks") actions.onDiscardSchedulerDraft()
+        section = ""
+    }
+    BackHandler(enabled = section.isNotEmpty()) { closeDetail() }
     AnimatedContent(
         targetState = section,
         modifier = Modifier.fillMaxSize(),
@@ -49,14 +57,17 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions, onDeta
         },
         label = "settingsHub"
     ) { target ->
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = BaiZeTokens.colors.surfaceBase
-        ) {
-            when (target) {
-                "tasks" -> TaskSettings(state, actions, { section = "" })
-                "service" -> ServiceDetails(state, actions, { section = "" })
-                else -> SettingsHome(state, actions, { section = it })
+        sectionState.SaveableStateProvider(target) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = BaiZeTokens.colors.surfaceBase
+            ) {
+                when (target) {
+                    "tasks" -> TaskSettings(state, actions, ::closeDetail)
+                    "service" -> ServiceDetails(state, actions, ::closeDetail)
+                    "logs" -> runtimeLogs?.invoke(::closeDetail)
+                    else -> SettingsHome(state, actions, { section = it }, runtimeLogs != null)
+                }
             }
         }
     }
@@ -67,10 +78,11 @@ private fun pagePadding(detail: Boolean = false): PaddingValues = PaddingValues(
     bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + if (detail) 32.dp else 132.dp)
 
 @Composable
-private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit) {
+private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, open: (String) -> Unit,
+    runtimeLogsAvailable: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val colors = BaiZeTokens.colors
-    val statusColor = if (state.ready) colors.success else colors.warning
+    val statusColor = if (state.connectionFailed) scheme.error else if (state.ready) colors.success else colors.warning
     LazyColumn(Modifier.fillMaxSize(), contentPadding = pagePadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { LuoShuPageHeader("设置") }
         item {
@@ -96,7 +108,7 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                             Text("自动清理", fontSize = 12.sp, color = scheme.onSurfaceVariant)
                             Text(if (state.scheduler.enabled) "自动计划已开启" else "自动计划已暂停",
                                 fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
-                            if (!state.ready && state.serviceText.isNotBlank()) {
+                            if ((!state.ready || state.connectionFailed) && state.serviceText.isNotBlank()) {
                                 DetailStatusText(state.serviceText)
                             }
                         }
@@ -113,9 +125,19 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
         item { LuoShuSection("管理与维护") }
         item {
             LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.History, "自动任务记录", "执行、等待原因与下次计划", actions.onOpenTaskHistory)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Rule, "规则版本与试跑", "本地签名规则与只读命中预览", actions.onOpenRuleVersions)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FactCheck, "清理审计", "清理依据、规则复核与历史分析", actions.onOpenCleanupAudit)
+                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.CalendarMonth, "自动任务设置", "条件、上限与通知", { open("tasks") })
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Shield, "应用白名单", "已保护 ${state.whitelistCount} 个应用", actions.onOpenWhitelist)
+                LuoShuNavigationRow(Icons.Rounded.Shield, "保护名单", "应用与文件路径保护", actions.onOpenWhitelist)
+                if (runtimeLogsAvailable) {
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务记录、原始输出与连接诊断", { open("logs") })
+                }
             }
         }
         item {
@@ -209,11 +231,22 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
                 }
             }
         }
+        if (state.versionDetails.isNotBlank()) item {
+            LuoShuGroup {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("版本信息", style = MaterialTheme.typography.titleMedium)
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        DetailStatusText(state.versionDetails)
+                    }
+                }
+            }
+        }
         item {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "断点续清", "继续已保存任务", actions.onOpenResumableScan)
+                LuoShuNavigationRow(Icons.Rounded.PlayArrow, "旧版任务恢复", "恢复升级前保存的清理计划", actions.onOpenResumableScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Refresh, "重新连接服务", "重新连接", actions.onReconnect)
+                LuoShuNavigationRow(Icons.Rounded.Refresh, if (state.connecting) "正在连接" else "重新连接服务",
+                    if (state.connecting) "等待当前连接完成" else "重新连接", { if (!state.connecting) actions.onReconnect() })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.BugReport, "崩溃与诊断信息", "异常与故障记录", actions.onOpenCrashDiagnostics)
             }

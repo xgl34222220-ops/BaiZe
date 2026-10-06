@@ -56,3 +56,16 @@
 -dontwarn kotlinx.coroutines.**
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# Standalone module recovery entry point, invoked without opening the App.
+-keep class io.github.xgl34222220.baize.root.CleanupMediaWorker {
+    public static void main(java.lang.String[]);
+}
+
+# The paired scheduling module invokes this original-manifest consumer through app_process.
+-keep class io.github.xgl34222220.baize.root.ModuleCorpseSnapshot {
+    public static void main(java.lang.String[]);
+}
+
+# Shizuku reflects this Context constructor in its UID 2000/0 process.
+-keep class io.github.xgl34222220.baize.shizuku.** { *; }

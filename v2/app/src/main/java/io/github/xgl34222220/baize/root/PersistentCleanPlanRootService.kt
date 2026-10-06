@@ -129,8 +129,12 @@ class PersistentCleanPlanRootService : RootService() {
                             )
                         }
                     )
-                    if (!result.has("error") && !result.optBoolean("cancelled") && !result.optBoolean("timedOut")) {
-                        deleteSnapshot(id)
+                    if (!result.has("error")) {
+                        val remaining = engine.persistentItems(id)
+                        if (remaining == null && result.optInt("remainingCandidates", -1) == 0) deleteSnapshot(id)
+                        else if (remaining != null && !saveRemaining(id, remaining)) {
+                            result.put("persistenceWarning", "剩余清理计划保存失败，重连后需要重新扫描")
+                        }
                     }
                     result
                 },
@@ -163,6 +167,15 @@ class PersistentCleanPlanRootService : RootService() {
                 .put("message", "当前已有扫描或清理任务正在运行")
                 .toString()
         }
+        val lease = try {
+            RootOperationLease.acquire(this, shared = operation.endsWith("-scan")) ?: return JSONObject()
+                .put("success", false).put("error", "busy")
+                .put("message", "已有扫描、清理或归类任务正在运行").toString().also { running.set(false) }
+        } catch (error: Exception) {
+            running.set(false)
+            return JSONObject().put("success", false).put("error", "operation_lock_unavailable")
+                .put("message", error.message ?: "无法确认清理互斥状态").toString()
+        }
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
         publish(operation, initialPhase, 0, 0, "", started)
@@ -174,6 +187,7 @@ class PersistentCleanPlanRootService : RootService() {
                 .put("message", error.message ?: error.javaClass.simpleName)
                 .toString()
         } finally {
+            runCatching { lease.close() }
             running.set(false)
             stateJson = idleState()
         }
@@ -210,21 +224,8 @@ class PersistentCleanPlanRootService : RootService() {
         scanResult: JSONObject,
         normalizedOptions: String
     ): Boolean {
-        val items = JSONArray()
-        var offset = 0
-        var total = Int.MAX_VALUE
-        while (offset < total && items.length() < MAX_CANDIDATES) {
-            val page = JSONObject(engine.page(snapshotId, offset, PAGE_SIZE))
-            if (page.has("error")) return false
-            total = page.optInt("total", 0).coerceAtMost(MAX_CANDIDATES)
-            val pageItems = page.optJSONArray("items") ?: JSONArray()
-            for (index in 0 until pageItems.length()) {
-                items.put(pageItems.getJSONObject(index))
-            }
-            if (pageItems.length() == 0) break
-            offset += pageItems.length()
-        }
-        if (total > 0 && items.length() == 0) return false
+        val items = engine.persistentItems(snapshotId) ?: return false
+        if (items.length() > MAX_CANDIDATES) return false
 
         val payload = JSONObject()
             .put("version", SNAPSHOT_VERSION)
@@ -249,7 +250,12 @@ class PersistentCleanPlanRootService : RootService() {
         val count = limit.coerceIn(1, PAGE_SIZE)
         val end = min(items.length(), start + count)
         val page = JSONArray()
-        for (index in start until end) page.put(items.getJSONObject(index))
+        for (index in start until end) {
+            val item = items.getJSONObject(index)
+            val visible = JSONObject()
+            item.keys().forEach { key -> if (key != "frozenTree" && key != "identity") visible.put(key, item.get(key)) }
+            page.put(visible)
+        }
         return JSONObject()
             .put("success", true)
             .put("persisted", true)
@@ -303,6 +309,7 @@ class PersistentCleanPlanRootService : RootService() {
         var cleaned = 0
         var skipped = 0
         var failures = 0
+        val completed = hashSetOf<String>()
 
         for ((index, candidate) in candidates.withIndex()) {
             if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) break
@@ -329,6 +336,7 @@ class PersistentCleanPlanRootService : RootService() {
             deletedFiles += stats.files
             deletedDirectories += stats.directories
             failures += stats.failures
+            if (stats.complete) completed += candidate.optString("id")
             if (stats.bytes > 0L || stats.files > 0L || stats.directories > 0L || stats.complete) cleaned++ else skipped++
             if (details.length() < MAX_DETAILS) {
                 details.put(detail(candidate, if (stats.complete) "cleaned" else "partial", "", stats))
@@ -337,10 +345,18 @@ class PersistentCleanPlanRootService : RootService() {
 
         val timedOut = SystemClock.elapsedRealtime() >= deadline
         val wasCancelled = cancelled.get()
-        if (!wasCancelled && !timedOut) deleteSnapshot(snapshotId)
+        val remaining = JSONArray()
+        for (index in 0 until source.length()) {
+            val item = source.getJSONObject(index)
+            if (item.optString("id") !in completed) remaining.put(item)
+        }
+        val saved = if (remaining.length() == 0) { deleteSnapshot(snapshotId); true } else saveRemaining(snapshotId, remaining)
         return JSONObject()
-            .put("success", true)
+            .put("success", failures == 0 && !wasCancelled && !timedOut && saved)
             .put("persistedFallback", true)
+            .put("remainingSnapshotId", if (remaining.length() == 0) "" else snapshotId)
+            .put("remainingCandidates", remaining.length())
+            .apply { if (!saved) put("persistenceWarning", "剩余清理计划保存失败，重连后需要重新扫描") }
             .put("selected", candidates.size)
             .put("cleanedCandidates", cleaned)
             .put("skippedCandidates", skipped)
@@ -408,6 +424,8 @@ class PersistentCleanPlanRootService : RootService() {
         if (isSymlink(target)) return "符号链接受保护"
         if (path in mounts) return "挂载点受保护"
         if (whitelisted(path, candidate.optString("packageName"), options)) return "白名单保护"
+        val frozen = FrozenReviewTree.fromJson(candidate.optJSONObject("frozenTree"))
+        if (frozen == null || frozen.root != path) return "旧计划没有完整文件身份，请重新扫描；未执行删除"
         return when (candidate.optString("profile")) {
             "empty" -> when (candidate.optString("category")) {
                 "empty_file" -> if (target.isFile && target.length() == 0L && !placeholder(target.name)) null else "目标不再是空文件"
@@ -429,63 +447,22 @@ class PersistentCleanPlanRootService : RootService() {
         mounts: Set<String>,
         deadline: Long
     ): DeleteStats {
-        if (target.isFile) {
-            val size = target.length()
-            if (size > maxFileBytes) return DeleteStats(complete = false)
-            val deleted = runCatching { target.delete() }.getOrDefault(false)
-            return DeleteStats(
-                bytes = if (deleted) size else 0L,
-                files = if (deleted) 1L else 0L,
-                failures = if (deleted) 0 else 1,
-                complete = deleted
-            )
-        }
-        if (candidate.optString("category") == "empty_dir") {
-            val deleted = runCatching { target.delete() }.getOrDefault(false)
-            return DeleteStats(
-                directories = if (deleted) 1L else 0L,
-                failures = if (deleted) 0 else 1,
-                complete = deleted
-            )
-        }
+        val frozen = FrozenReviewTree.fromJson(candidate.optJSONObject("frozenTree"))
+        val result = FrozenReviewTree.delete(frozen, candidate.optBoolean("deleteRoot", false), maxFileBytes, cancelled,
+            (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(1L)) { path, directory ->
+                val file = File(path)
+                !placeholder(file.name) && (path == target.path || path !in mounts) &&
+                    (directory || ReviewRuleCatalog.oldEnough(file, candidate.optInt("retentionDays", 0)))
+            }
+        val indexed = result.deletedPaths.filter { it.startsWith("/storage/") || it.startsWith("/data/media/") || it.startsWith("/mnt/media_rw/") }
+        if (indexed.isNotEmpty()) RootMediaScanQueue.enqueueAsync(this, indexed)
+        return DeleteStats(result.bytes, result.files, result.directories, result.failures, result.complete)
+    }
 
-        val deleteRoot = candidate.optBoolean("deleteRoot", false)
-        val stack = ArrayDeque<DeleteNode>()
-        stack.add(DeleteNode(target, false))
-        var bytes = 0L
-        var files = 0L
-        var directories = 0L
-        var failures = 0
-        var complete = true
-        while (stack.isNotEmpty()) {
-            if (cancelled.get() || SystemClock.elapsedRealtime() >= deadline) {
-                complete = false
-                break
-            }
-            val node = stack.removeLast()
-            val file = node.file
-            if (!file.exists() || isSymlink(file)) continue
-            val path = canonical(file)
-            if (file != target && path in mounts) continue
-            if (node.post) {
-                if ((file != target || deleteRoot) && runCatching { file.delete() }.getOrDefault(false)) directories++
-                continue
-            }
-            if (file.isFile) {
-                val size = file.length()
-                if (size > maxFileBytes) continue
-                if (runCatching { file.delete() }.getOrDefault(false)) {
-                    bytes += size
-                    files++
-                } else failures++
-            } else if (file.isDirectory) {
-                stack.add(DeleteNode(file, true))
-                val children = file.listFiles()
-                if (children == null) failures++ else children.forEach { stack.add(DeleteNode(it, false)) }
-            }
-        }
-        val targetComplete = if (deleteRoot) !target.exists() else target.list()?.isEmpty() == true
-        return DeleteStats(bytes, files, directories, failures, complete && targetComplete)
+    private fun saveRemaining(id: String, items: JSONArray): Boolean {
+        val before = readSnapshot(id) ?: return false
+        before.put("items", items)
+        return atomicWrite(snapshotFile(id) ?: return false, before.toString())
     }
 
     private fun detail(candidate: JSONObject, action: String, reason: String, stats: DeleteStats): JSONObject = JSONObject()
@@ -503,6 +480,7 @@ class PersistentCleanPlanRootService : RootService() {
     private fun readSnapshot(snapshotId: String): JSONObject? {
         val file = snapshotFile(snapshotId) ?: return null
         if (!file.isFile) return null
+        if (file.length() > 64L * 1024L * 1024L) return null
         val json = runCatching { JSONObject(file.readText()) }.getOrNull() ?: run {
             file.delete()
             return null
@@ -531,12 +509,16 @@ class PersistentCleanPlanRootService : RootService() {
 
     private fun atomicWrite(target: File, content: String): Boolean = runCatching {
         target.parentFile?.mkdirs()
-        val temporary = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
-        temporary.writeText(content)
-        if (!temporary.renameTo(target)) {
-            target.writeText(content)
-            temporary.delete()
-        }
+        require(content.toByteArray(Charsets.UTF_8).size <= 64 * 1024 * 1024)
+        val temporary = File.createTempFile(".${target.name}.", ".tmp", target.parentFile)
+        temporary.setReadable(false, false); temporary.setWritable(false, false)
+        temporary.setReadable(true, true); temporary.setWritable(true, true)
+        try {
+            java.io.FileOutputStream(temporary).use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8)); output.fd.sync()
+            }
+            check(temporary.renameTo(target)) { "无法原子保存清理计划" }
+        } finally { temporary.delete() }
         target.setReadable(false, false)
         target.setWritable(false, false)
         target.setExecutable(false, false)

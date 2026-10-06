@@ -7,7 +7,8 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal class TaskCoordinator(
-    private val stateDir: File = File(RootPaths.STATE_DIR)
+    private val stateDir: File = File(RootPaths.STATE_DIR),
+    private val acquireLease: (shared: Boolean) -> AutoCloseable?
 ) {
     val cancelled = AtomicBoolean(false)
     private val taskRunning = AtomicBoolean(false)
@@ -22,6 +23,15 @@ internal class TaskCoordinator(
         block: (startedRealtime: Long) -> String
     ): String {
         if (!taskRunning.compareAndSet(false, true)) return busy(operation)
+        val lease = try {
+            // Reads may overlap between the two App services. Every foreground mutation
+            // excludes module workers and other services for its entire lifetime.
+            val shared = operation.endsWith("-scan") || operation.startsWith("module-")
+            acquireLease(shared) ?: return busy(operation).also { taskRunning.set(false) }
+        } catch (error: Exception) {
+            taskRunning.set(false)
+            return failure(failureCode, error)
+        }
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
         setState(
@@ -38,6 +48,7 @@ internal class TaskCoordinator(
         } catch (error: Throwable) {
             failure(failureCode, error)
         } finally {
+            runCatching { lease.close() }
             taskRunning.set(false)
             taskStateJson = idleState()
             publish(true)

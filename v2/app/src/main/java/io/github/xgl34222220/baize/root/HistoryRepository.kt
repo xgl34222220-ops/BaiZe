@@ -25,20 +25,26 @@ internal class HistoryRepository(
         }.getOrDefault(emptyList())
 
         lines.forEach { raw ->
-            val columns = raw.split('\t', limit = 10)
+            val columns = raw.split('\t', limit = 12)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
-            val bytes = columns[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val rawBytes = columns[2].toLongOrNull()?.takeIf { it >= 0L }
+            val bytes = rawBytes ?: 0L
             val cleaned = mode != "scan" && !mode.endsWith("-scan")
+            val release = if (columns.getOrNull(10).orEmpty().isNotBlank()) ReleaseAmount.fromEvent(JSONObject()
+                .put("operation", mode).put("releaseState", columns[10]).put("releasedBytes", rawBytes ?: JSONObject.NULL))
+                else ReleaseAmount.fromEvent(JSONObject().put("operation", mode).put("bytes", rawBytes ?: JSONObject.NULL))
             if (cleaned) {
-                totalReleased += bytes
+                if (release.bytes != null) totalReleased = ReleaseAmount.addSaturated(totalReleased, release.bytes)
                 cleanedRuns += 1
             }
             entries.put(
                 JSONObject()
                     .put("time", columns[0].trim())
+                    .put("recordId", columns.getOrNull(11).orEmpty().trim())
                     .put("mode", mode)
                     .put("bytes", bytes)
+                    .put("releaseState", release.state.wire)
                     .put("files", columns[3].toIntOrNull()?.coerceAtLeast(0) ?: 0)
                     .put("emptyDirs", columns[4].toIntOrNull()?.coerceAtLeast(0) ?: 0)
                     .put("errors", columns[5].toIntOrNull()?.coerceAtLeast(0) ?: 0)
@@ -98,39 +104,41 @@ internal class HistoryRepository(
         val input = JSONObject(raw)
         val mode = input.optString("mode").trim()
         require(mode in NATIVE_MODES) { "unsupported_native_mode" }
+        val release = ReleaseAmount.fromResult(mode, input)
         val success = input.optBoolean("success", true)
         val cancelled = input.optBoolean("cancelled", false)
-        val bytes = input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)
+        val bytes = release.bytes ?: input.optLong("bytes", 0L).coerceIn(0L, Long.MAX_VALUE / 4)
         val files = input.optLong("files", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val emptyFiles = input.optLong("emptyFiles", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val emptyDirs = input.optLong("emptyDirs", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val fragments = input.optLong("fragments", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val errors = input.optLong("errors", 0L).coerceIn(0L, Int.MAX_VALUE.toLong())
         val elapsedSeconds = input.optLong("elapsedSeconds", 0L).coerceIn(0L, 24L * 60L * 60L)
-        val result = input.optString("result", "原生智能清理完成")
-            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(500)
+        val result = input.optString("result").ifBlank { "原生智能清理完成" }
+            .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').trim().take(500)
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val recordId = "audit-${java.util.UUID.randomUUID()}"
         stateDir.mkdirs()
         val history = File(stateDir, "history.tsv")
         val categorySummary = input.optString("categorySummary")
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
         val appSummary = input.optString("appSummary")
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
-        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\n")
+        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\t${release.state.wire}\t$recordId\n")
         val retained = history.readLines().takeLast(100)
         RootFileStore.writeAtomic(history, retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))
 
-        if (success && !cancelled) {
+        if ((success && !cancelled) || (release.bytes ?: 0L) > 0L || files > 0L || emptyDirs > 0L) {
             val totalsFile = File(stateDir, "totals.env")
             val totals = RootFileStore.readEnv(totalsFile)
             val updated = linkedMapOf(
-                "runs" to totals.optLong("runs", 0L) + 1L,
+                "runs" to totals.optLong("runs", 0L) + if (success && !cancelled) 1L else 0L,
                 "regular_files" to totals.optLong("regular_files", 0L) + files,
                 "empty_files" to totals.optLong("empty_files", 0L) + emptyFiles,
                 "empty_dirs" to totals.optLong("empty_dirs", 0L) + emptyDirs,
                 "hidden_items" to totals.optLong("hidden_items", 0L),
                 "fragment_files" to totals.optLong("fragment_files", 0L) + fragments,
-                "bytes" to totals.optLong("bytes", 0L) + bytes,
+                "bytes" to ReleaseAmount.addSaturated(totals.optLong("bytes", 0L).coerceAtLeast(0L), release.bytes ?: 0L),
                 "elapsed" to totals.optLong("elapsed", 0L) + elapsedSeconds
             )
             RootFileStore.writeAtomic(totalsFile, buildString {
@@ -149,11 +157,12 @@ internal class HistoryRepository(
             append("empty_dirs=").append(emptyDirs).append('\n')
             append("fragment_files=").append(fragments).append('\n')
             append("bytes=").append(bytes).append('\n')
+            append("release_state=").append(release.state.wire).append('\n')
             append("errors=").append(errors).append('\n')
             append("elapsed=").append(elapsedSeconds).append('\n')
             append("result=").append(result).append('\n')
         })
-        JSONObject().put("success", true).toString()
+        JSONObject().put("success", true).put("time", timestamp).put("result", result).put("recordId", recordId).toString()
     }.getOrElse { error ->
         JSONObject().put("success", false).put("error", error.message ?: error.javaClass.simpleName).toString()
     }

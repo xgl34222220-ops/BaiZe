@@ -3,6 +3,7 @@ package io.github.xgl34222220.baize
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
+import io.github.xgl34222220.baize.root.ReleaseAmount
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import android.content.ComponentName
@@ -146,11 +147,11 @@ class AuditActivity : ComponentActivity() {
                         onBack = ::finish,
                         onRefresh = ::loadTimeline,
                         onClear = ::clearTimeline,
-                        onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
-                        onOpenEffectiveness = { startActivity(Intent(this, CleanupEffectivenessActivity::class.java)) },
-                        onOpenRuleQuality = { startActivity(Intent(this, RuleQualityActivity::class.java)) },
-                        onOpenReviewTrends = { startActivity(Intent(this, RuleReviewTrendsActivity::class.java)) },
-                        onOpenImprovementDrafts = { startActivity(Intent(this, RuleImprovementDraftsActivity::class.java)) }
+                        onOpenPolicy = { CleanerNavigation.open(this, Intent(this, CleanupPolicyActivity::class.java)) },
+                        onOpenEffectiveness = { CleanerNavigation.open(this, Intent(this, CleanupEffectivenessActivity::class.java)) },
+                        onOpenRuleQuality = { CleanerNavigation.open(this, Intent(this, RuleQualityActivity::class.java)) },
+                        onOpenReviewTrends = { CleanerNavigation.open(this, Intent(this, RuleReviewTrendsActivity::class.java)) },
+                        onOpenImprovementDrafts = { CleanerNavigation.open(this, Intent(this, RuleImprovementDraftsActivity::class.java)) }
                     )
                 }
             }
@@ -205,6 +206,9 @@ class AuditActivity : ComponentActivity() {
                     failedCount = json.optInt("failedCount").coerceAtLeast(0),
                     cancelledCount = json.optInt("cancelledCount").coerceAtLeast(0),
                     releasedBytes = json.optLong("releasedBytes").coerceAtLeast(0L),
+                    measuredReleaseCount = json.optInt("measuredReleaseCount"),
+                    unmeasuredReleaseCount = json.optInt("unmeasuredReleaseCount"),
+                    retainedCount = json.optInt("retainedCount"),
                     quarantinedBytes = json.optLong("quarantinedBytes").coerceAtLeast(0L),
                     protectedCount = json.optLong("protectedCount").coerceAtLeast(0L),
                     advice = parseAdvice(json.optJSONObject("advisor")),
@@ -249,6 +253,7 @@ class AuditActivity : ComponentActivity() {
         skipped = json.optLong("skipped").coerceAtLeast(0L),
         protected = json.optLong("protected").coerceAtLeast(0L),
         bytes = json.optLong("bytes").coerceAtLeast(0L),
+        release = ReleaseAmount.fromEvent(json),
         files = json.optLong("files").coerceAtLeast(0L),
         directories = json.optLong("directories").coerceAtLeast(0L),
         errors = json.optLong("errors").coerceAtLeast(0L),
@@ -288,6 +293,9 @@ private data class AuditUiState(
     val failedCount: Int = 0,
     val cancelledCount: Int = 0,
     val releasedBytes: Long = 0L,
+    val measuredReleaseCount: Int = 0,
+    val unmeasuredReleaseCount: Int = 0,
+    val retainedCount: Int = 0,
     val quarantinedBytes: Long = 0L,
     val protectedCount: Long = 0L,
     val advice: AuditPolicyAdvice? = null,
@@ -321,6 +329,7 @@ private data class AuditEvent(
     val skipped: Long,
     val protected: Long,
     val bytes: Long,
+    val release: ReleaseAmount,
     val files: Long,
     val directories: Long,
     val errors: Long,
@@ -477,12 +486,20 @@ private fun AuditSummary(state: AuditUiState, horizontal: androidx.compose.ui.un
                 Column(Modifier.weight(1f)) {
                     Text("${state.total} 条可追溯事件", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "实际释放 ${Formatter.formatFileSize(context, state.releasedBytes)}",
+                        when {
+                            state.measuredReleaseCount > 0 -> "已确认删除 ${Formatter.formatFileSize(context, state.releasedBytes)} 内容"
+                            state.unmeasuredReleaseCount > 0 -> "释放量无法测量"
+                            state.retainedCount > 0 -> "内容尚未释放"
+                            else -> "暂无可计量的删除记录"
+                        },
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+            if (state.unmeasuredReleaseCount > 0) Text("另有 ${state.unmeasuredReleaseCount} 次任务容量未确认，未按 0 B 计入统计。",
+                style = MaterialTheme.typography.bodySmall)
+            Text("按确认删除的文件内容统计；系统可用空间可能延迟更新。", style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AuditMetric("成功", state.successCount.toString(), Modifier.weight(1f))
@@ -764,12 +781,15 @@ private fun AuditEventCard(
             }
             Spacer(Modifier.height(10.dp))
             Text(event.message.ifBlank { "任务未提供结果说明" }, fontSize = 14.sp, lineHeight = 20.sp)
+            Text(event.release.description { Formatter.formatFileSize(context, it) }, fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                if (event.bytes > 0L) AuditPill(Formatter.formatFileSize(context, event.bytes))
+                if (event.release.retainedBytes != null) AuditPill("仍占用 ${Formatter.formatFileSize(context, event.release.retainedBytes)}")
                 if (event.selected > 0L) AuditPill("选择 ${event.selected}")
                 if (event.processed > 0L) AuditPill("处理 ${event.processed}")
-                if (event.skipped > 0L || event.protected > 0L) AuditPill("保护 ${event.skipped + event.protected}")
+                if (event.protected > 0L) AuditPill("保护 ${event.protected}")
+                if (event.skipped > 0L) AuditPill("跳过 ${event.skipped}")
                 if (event.errors > 0L) AuditPill("异常 ${event.errors}")
             }
             if (event.elapsedMs > 0L) {
@@ -814,6 +834,8 @@ private fun StatusBadge(status: String) {
         "success" -> "成功" to BaiZeTokens.colors.success
         "scanned" -> "已扫描" to MaterialTheme.colorScheme.primary
         "accepted" -> "后台执行" to MaterialTheme.colorScheme.primary
+        "protected" -> "受保护" to BaiZeTokens.colors.warning
+        "skipped" -> "已跳过" to MaterialTheme.colorScheme.onSurfaceVariant
         "partial" -> "部分异常" to BaiZeTokens.colors.warning
         "cancelled" -> "已停止" to BaiZeTokens.colors.warning
         else -> "失败" to MaterialTheme.colorScheme.error

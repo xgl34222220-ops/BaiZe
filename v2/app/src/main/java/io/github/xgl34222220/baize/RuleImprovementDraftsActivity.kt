@@ -137,7 +137,9 @@ class RuleImprovementDraftsActivity : ComponentActivity() {
                         miuix = appearance.uiStyle == UiStyle.MIUIX,
                         onBack = ::finish,
                         onRefresh = ::load,
-                        onOpenRuleQuality = { startActivity(Intent(this, RuleQualityActivity::class.java)) }
+                        onOpenRuleQuality = {
+                            if (CleanerNavigation.open(this, Intent(this, RuleQualityActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))) finish()
+                        }
                     )
                 }
             }

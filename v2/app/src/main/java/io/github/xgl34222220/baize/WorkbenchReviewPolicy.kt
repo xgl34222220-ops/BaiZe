@@ -4,6 +4,7 @@ internal const val REVIEW_HISTORY_HINT = "列表和大小来自上次扫描，�
 
 /** One selection gate shared by callbacks and the visible controls. */
 internal fun reviewSelectionBlockReason(state: WorkbenchUiState, now: Long): String? = when {
+    state.restoringReview -> "正在恢复上次记录，请稍候"
     state.loadingResults -> "正在读取结果，读取完成后可选择"
     state.running -> "任务正在执行，请等待完成或停止"
     !state.connected -> "清理服务未连接，请重新连接后扫描"

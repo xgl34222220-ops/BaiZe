@@ -23,6 +23,10 @@ class Rules(unittest.TestCase):
         subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-O2', '-Wall', '-Wextra',
                         '-Wno-unused-result', '-Wno-misleading-indentation',
                         str(ROOT / 'v2/native/baize_engine_42_4.c'), '-o', str(cls.engine)], check=True)
+        cls.compat_engine = cls.work / 'baize_compat_filter'
+        subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-O2', '-Wall', '-Wextra',
+                        '-Werror', str(ROOT / 'v2/native/baize_compat_filter.c'),
+                        '-o', str(cls.compat_engine)], check=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -170,6 +174,7 @@ class Rules(unittest.TestCase):
                 data, state, module, fake = (case / name for name in ('data', 'state', 'module', 'fake'))
                 for path in (data, state, module, fake): path.mkdir()
                 shutil.copytree(ROOT / 'config', module / 'config')
+                shutil.copy(ROOT / 'v2/module/scripts/cleanup-media-queue.sh', module / 'cleanup-media-queue.sh')
                 mapped = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), source)
                 (module / 'cleaner.sh').write_text(mapped)
                 (module / 'config/app.rules').write_text('com.example.app|files/logs|0\n')
@@ -195,7 +200,7 @@ class Rules(unittest.TestCase):
                 env.update(BAIZE_STATE_DIR=str(state), PATH=str(fake) + ':' + env['PATH'])
                 result = subprocess.run(['bash', str(module / 'cleaner.sh'), 'rules-clean', 'manual'],
                                         env=env, text=True, capture_output=True, timeout=30)
-                self.assertEqual(result.returncode, 9 if exit_code == 9 else 0, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 9 if exit_code == 9 else 8, result.stdout + result.stderr)
                 self.assertTrue(first.is_dir()); self.assertTrue(second.is_dir())
                 latest = (state / 'latest.env').read_text()
                 self.assertIn('empty_dirs=0\n', latest)
@@ -212,6 +217,7 @@ class Rules(unittest.TestCase):
                 data, state, module = (case / p for p in ('data', 'state', 'module'))
                 data.mkdir(); state.mkdir(); module.mkdir()
                 shutil.copytree(ROOT / 'config', module / 'config')
+                shutil.copy(ROOT / 'v2/module/scripts/cleanup-media-queue.sh', module / 'cleanup-media-queue.sh')
                 mapped = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), source)
                 (module / 'cleaner.sh').write_text(mapped)
                 (module / 'config/app.rules').write_text('com.example.app|files/logs|1\n')
@@ -246,13 +252,20 @@ class Rules(unittest.TestCase):
                 (module / 'abi-resolve.sh').write_text('baize_resolve_engine() {\n'
                     ' [ -x "$1/bin/x86_64/$2" ] || return 1\n'
                     ' printf "%s\\n" "$1/bin/x86_64/$2"\n}\n')
+                # Only discovery falls back to shell; safe deletion always
+                # requires the native snapshot/identity helper.
+                helper = module / 'bin/x86_64/baize_compat_filter'
+                helper.parent.mkdir(parents=True)
+                shutil.copy(self.compat_engine, helper)
                 if native:
-                    binary = module / 'bin/x86_64/baize_engine'; binary.parent.mkdir(parents=True)
+                    binary = module / 'bin/x86_64/baize_engine'
                     binary.write_text('#!/bin/bash\nexec ' + shlex.quote(str(self.engine)) +
                         ' "$@" --data-root ' + shlex.quote(str(data)) +
                         ' --media-root ' + shlex.quote(str(data / 'media')) + '\n')
                     binary.chmod(0o755)
                 env = os.environ.copy(); env['BAIZE_STATE_DIR'] = str(state)
+                # Backdating mtime alone cannot establish an old identity.
+                time.sleep(2.05)
                 result = subprocess.run(['bash', str(module / 'cleaner.sh'), 'rules-clean', 'manual'],
                     env=env, text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

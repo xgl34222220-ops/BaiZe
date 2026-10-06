@@ -240,8 +240,8 @@ private fun MaterialSafetySettings(state: SettingsUiState, actions: SettingsUiAc
         MaterialDivider()
         MaterialValueRow(
             icon = Icons.Rounded.Security,
-            title = "应用白名单",
-            subtitle = "${state.whitelistCount} 个应用受到保护",
+            title = "保护名单",
+            subtitle = "管理应用及文件路径",
             onClick = actions.onOpenWhitelist
         )
     }

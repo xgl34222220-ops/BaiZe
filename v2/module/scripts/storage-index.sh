@@ -269,6 +269,7 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
   key=$(hash_text "$root"); cache="$CACHE_DIR/$key.nul"; meta="$CACHE_DIR/$key.env"
   list="$TMP/root.$current.nul"; status=scanned; reason=
   find "$root" -xdev -mindepth 1 -maxdepth "$depth" \
+    \( -type d -iname .baize-file-trash -prune \) -o \
     \( -type d \( -iname cache -o -iname code_cache -o -iname no_backup -o -iname databases -o -iname shared_prefs -o -iname lib -o -iname tmp -o -iname temp \) -prune \) \
     -o \( -type f -print0 \) 2>/dev/null >"$list"
   code=$?
@@ -315,6 +316,7 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
     # 扩展名从分类表读（已在顶层载入），不再在这里写死一份。
     mkdir -p "$TMP/seen"
     while IFS= read -r -d '' file; do
+      case "$file" in */.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]|*/.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]/*|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]/*) continue;; esac
       [ -f "$file" ] || continue; [ ! -L "$file" ] || continue
       lower=$(printf '%s' "${file##*/}" | tr '[:upper:]' '[:lower:]')
       case "$lower" in *.part|*.partial|*.download|*.crdownload) continue ;; esac

@@ -73,17 +73,10 @@ class CleanCenterActivity : ComponentActivity() {
                     CleanCenterRoute(
                         actions = CleanCenterActions(
                             onBack = ::finish,
-                            onQuickClean = {
-                                startActivity(
-                                    Intent(this, MiuixDashboardActivity::class.java)
-                                        .putExtra(MiuixDashboardActivity.EXTRA_RUN_SMART_CLEAN, true)
-                                        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                                )
-                                finish()
-                            },
-                            onOpenCache = { startActivity(Intent(this, CacheActivity::class.java)) },
-                            onOpenPolicy = { startActivity(Intent(this, CleanupPolicyActivity::class.java)) },
-                            onOpenQuarantine = { startActivity(Intent(this, QuarantineActivity::class.java)) },
+                            onQuickClean = { CleanerNavigation.scan(this) },
+                            onOpenCache = { CleanerNavigation.scan(this, "cache") },
+                            onOpenPolicy = { CleanerNavigation.open(this, Intent(this, CleanupPolicyActivity::class.java)) },
+                            onOpenQuarantine = { CleanerNavigation.open(this, Intent(this, QuarantineActivity::class.java)) },
                             onOpenProfile = ::openProfile
                         )
                     )
@@ -92,12 +85,8 @@ class CleanCenterActivity : ComponentActivity() {
         }
     }
 
-    private fun openProfile(profile: String) {
-        startActivity(
-            Intent(this, ProfileActivity::class.java)
-                .putExtra(ProfileActivity.EXTRA_PROFILE, profile)
-        )
-    }
+    private fun openProfile(profile: String) { CleanerNavigation.scan(this, profile) }
+
 }
 
 internal data class CleanCenterActions(
@@ -114,16 +103,13 @@ private data class CleanCenterItem(
     val title: String,
     val description: String,
     val profile: String? = null,
-    val directAction: (() -> Unit)? = null,
-    val dangerous: Boolean = false
+    val directAction: (() -> Unit)? = null
 )
 
 @Composable
 internal fun CleanCenterRoute(actions: CleanCenterActions) {
-    var confirmation by rememberSaveable { mutableStateOf<String?>(null) }
     val openItem: (CleanCenterItem) -> Unit = { item ->
         when {
-            item.dangerous && item.profile != null -> confirmation = item.profile
             item.profile != null -> actions.onOpenProfile(item.profile)
             item.directAction != null -> item.directAction.invoke()
         }
@@ -138,9 +124,7 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
         CleanCenterItem(Icons.Rounded.Inventory2, "隔离区", "恢复或永久删除已隔离的内容", directAction = actions.onOpenQuarantine)
     )
     val more = listOf(
-        CleanCenterItem(Icons.Rounded.Storage, "应用缓存", "查看应用缓存与占用明细", directAction = actions.onOpenCache),
-        CleanCenterItem(Icons.Rounded.DeleteForever, "卸载残留", "核对应用卸载后留下的数据", profile = "corpses", dangerous = true),
-        CleanCenterItem(Icons.Rounded.DeleteSweep, "完整深度清理", "扫描完整规则库，按风险查看结果", profile = "deep", dangerous = true)
+        CleanCenterItem(Icons.Rounded.Storage, "应用缓存", "查看应用缓存与占用明细", directAction = actions.onOpenCache)
     )
 
     LazyColumn(
@@ -155,44 +139,13 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
         item { DetailSectionHeader("更多清理") }
         item { CleanCenterGroup(more, openItem) }
         item {
-            GlassActionButton(
-                label = "按当前规则快速清理",
-                onClick = actions.onQuickClean,
-                icon = Icons.Rounded.CleaningServices,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 16.dp),
-                secondary = true
-            )
-        }
-        item {
             DetailExpandableText("清理与保护说明",
-                "各项扫描完成后可查看明细，再选择需要处理的内容。白名单、关键路径、软链接与挂载点保护会在清理时再次核对。\n\n快速清理会立即按当前启用的规则与保留时间执行。高风险内容需要单独确认，不会被普通清理直接删除。")
+                "各项扫描完成后可查看明细，再选择需要处理的内容。白名单、关键路径、软链接与挂载点保护会在清理时再次核对。\n\n扫描不会删除文件，结果与选择都在同一个页面完成。高风险内容需要单独确认，不会被普通清理直接删除。")
         }
         item { Spacer(Modifier.navigationBarsPadding()) }
     }
 
-    confirmation?.let { profile ->
-        val corpses = profile == "corpses"
-        BaiZeDialog(
-            onDismissRequest = { confirmation = null },
-            title = { Text(if (corpses) "扫描卸载残留？" else "开始完整深度扫描？") },
-            text = {
-                Text(
-                    if (corpses) {
-                        "将核对应用卸载后留下的数据。扫描不会删除文件，清理前会再次确认应用安装状态。"
-                    } else {
-                        "将扫描完整规则库，并按风险展示结果。扫描不会删除文件。"
-                    }
-                )
-            },
-            confirmButton = {
-                BaiZeDialogButton(onClick = {
-                    confirmation = null
-                    actions.onOpenProfile(profile)
-                }) { Text("继续扫描") }
-            },
-            dismissButton = { BaiZeDialogButton(onClick = { confirmation = null }) { Text("取消") } }
-        )
-    }
+
 }
 
 @Composable

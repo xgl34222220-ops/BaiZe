@@ -13,6 +13,7 @@ internal class ModuleTaskController(
     private val diagnostics: DiagnosticRepository
 ) {
     fun startDetachedModuleTask(mode: String, started: Long): String {
+        ModuleCleanupSafety.rejection()?.let { return it }
         val worker = RootPaths.script("task-worker.sh")
         if (!worker.isFile) {
             return JSONObject().put("error", "worker_missing")
@@ -49,6 +50,7 @@ internal class ModuleTaskController(
     }
 
     fun executeModuleTask(mode: String, started: Long): String {
+        ModuleCleanupSafety.rejection()?.let { return it }
         val taskStartedAt = System.currentTimeMillis()
         val cleaner = RootPaths.script("cleaner.sh")
         if (!cleaner.isFile) {

@@ -3,6 +3,8 @@ package io.github.xgl34222220.baize
 import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.os.CancellationSignal
+import android.os.OperationCanceledException
 import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
@@ -14,28 +16,44 @@ internal data class IndexedApkCandidate(
     val path: String,
     val name: String,
     val bytes: Long,
-    val modifiedSeconds: Long
+    val modifiedSeconds: Long,
+    val identity: ApkFileIdentity? = null
 )
 
 internal data class ApkMediaStoreResult(
     val candidates: List<IndexedApkCandidate>,
     val elapsedMs: Long,
-    val error: String? = null
+    val error: String? = null,
+    val truncated: Boolean = false,
+    val cancelled: Boolean = false,
+    val confirmedMissingRecords: Int = 0,
+    val missingCheckIncomplete: Boolean = false
 )
 
-internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED }
+internal enum class ApkIndexedDeleteResult { DELETED, CHANGED, FAILED, PROTECTED, PROTECTION_UNAVAILABLE, UNVERIFIED, INVALID, CANCELLED }
+
+internal fun ApkIndexedDeleteResult.retainedReason(): String = when (this) {
+    ApkIndexedDeleteResult.DELETED -> ""
+    ApkIndexedDeleteResult.PROTECTED -> "已保留 · 命中保护名单"
+    ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE -> "已保留 · 保护名单尚未核对"
+    ApkIndexedDeleteResult.CHANGED -> "已保留 · 文件已变化或不可读取，请重新扫描"
+    ApkIndexedDeleteResult.UNVERIFIED -> "已保留 · 文件身份尚未核对，可在详情复制读取诊断"
+    ApkIndexedDeleteResult.INVALID -> "已保留 · 文件索引或路径无效"
+    ApkIndexedDeleteResult.FAILED -> "未确认 · 系统尚未确认文件删除，请重新扫描核对"
+    ApkIndexedDeleteResult.CANCELLED -> "已保留 · 已停止清理"
+}
 
 internal object ApkMediaStoreIndex {
     private const val APK_MIME = "application/vnd.android.package-archive"
     private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
 
-    fun hasAllFilesAccess(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    fun hasAllFilesAccess(context: Context): Boolean = SharedStorageAccess.granted(context)
 
     @Suppress("DEPRECATION")
-    fun query(context: Context): ApkMediaStoreResult {
+    fun query(context: Context, cancellationSignal: CancellationSignal = CancellationSignal(),
+        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context)): ApkMediaStoreResult {
         val started = SystemClock.elapsedRealtime()
-        if (!hasAllFilesAccess()) {
+        if (!hasAllFilesAccess(context)) {
             return ApkMediaStoreResult(
                 candidates = emptyList(),
                 elapsedMs = SystemClock.elapsedRealtime() - started,
@@ -70,47 +88,61 @@ internal object ApkMediaStoreIndex {
         }.toTypedArray()
 
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
+        var truncated = false
+        var cancelled = false
         val error = runCatching {
+            cancellationSignal.throwIfCanceled()
             context.contentResolver.query(
                 collectionUri,
                 projection,
                 selection,
                 args,
-                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
-            )?.use { cursor ->
+                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+                cancellationSignal
+            ).let { it ?: kotlin.error("系统文件索引暂不可用，请稍后重试") }.use { cursor ->
                 val idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
                 val nameColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeColumn = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
                 val dataColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val modifiedColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                while (cursor.moveToNext() && byPath.size < 10_000) {
-                    if (idColumn < 0 || dataColumn < 0) continue
+                check(idColumn >= 0 && dataColumn >= 0 && sizeColumn >= 0 && modifiedColumn >= 0) { "系统文件索引缺少必要字段" }
+                while (cursor.moveToNext()) {
+                    cancellationSignal.throwIfCanceled()
                     val id = cursor.getLong(idColumn)
-                    val path = cursor.getString(dataColumn)?.trim().orEmpty()
-                    val name = if (nameColumn >= 0) cursor.getString(nameColumn)?.trim().orEmpty() else ""
+                    // DATA is a file identity. Whitespace is legal inside a filename.
+                    val path = cursor.getString(dataColumn).orEmpty()
+                    val name = if (nameColumn >= 0) cursor.getString(nameColumn).orEmpty() else ""
                     val safeName = name.ifBlank { path.substringAfterLast('/') }
                     val extension = safeName.substringAfterLast('.', "").lowercase()
-                    if (path.isBlank() || extension !in extensions) continue
+                    if (path.isBlank() || OrdinaryFileTrash.isPayloadPath(path) || extension !in extensions) continue
                     if (path.startsWith("/data/app/") || path.startsWith("/system/") ||
                         path.startsWith("/vendor/") || path.startsWith("/product/")) continue
                     val bytes = if (sizeColumn >= 0) cursor.getLong(sizeColumn).coerceAtLeast(0L) else 0L
                     val modified = if (modifiedColumn >= 0) cursor.getLong(modifiedColumn).coerceAtLeast(0L) else 0L
+                    if (path !in byPath && byPath.size >= 10_000) { truncated = true; break }
                     byPath[path] = IndexedApkCandidate(
                         id = id,
                         uri = ContentUris.withAppendedId(collectionUri, id).toString(),
                         path = path,
                         name = safeName,
                         bytes = bytes,
-                        modifiedSeconds = modified
+                        modifiedSeconds = modified,
+                        identity = guard.capture(path)
                     )
                 }
             }
-        }.exceptionOrNull()?.let { "${it::class.java.simpleName}: ${it.message.orEmpty()}" }
+        }.exceptionOrNull()?.let {
+            if (it is OperationCanceledException) { cancelled = true; null }
+            else "${it::class.java.simpleName}: ${it.message.orEmpty()}"
+        }
+        if (cancellationSignal.isCanceled) cancelled = true
 
         return ApkMediaStoreResult(
-            candidates = byPath.values.toList(),
+            candidates = if (cancelled || error != null) emptyList() else byPath.values.toList(),
             elapsedMs = SystemClock.elapsedRealtime() - started,
-            error = error
+            error = error,
+            truncated = truncated && !cancelled && error == null,
+            cancelled = cancelled
         )
     }
 
@@ -120,8 +152,22 @@ internal object ApkMediaStoreIndex {
         uriString: String,
         expectedPath: String,
         expectedBytes: Long,
-        expectedModifiedSeconds: Long
+        expectedModifiedSeconds: Long,
+        expectedIdentity: ApkFileIdentity?,
+        protection: () -> ApkProtectionState,
+        isCancelled: () -> Boolean = { false },
+        guard: ApkDeletionGuard = ApkDeletionGuard.forContext(context),
+        onFailure: (Throwable) -> Unit = {},
+        onMutationResult: (Int, Boolean) -> Unit = { _, _ -> },
+        contentProof: IndexedContentProof? = null,
+        verifyContent: (IndexedContentProof?, ApkFileIdentity, ApkDeletionGuard, () -> Boolean) -> Boolean = IndexedContentReview::matches
     ): ApkIndexedDeleteResult {
+        if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+        val currentProtection = try { protection() } catch (_: Exception) {
+            return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+        }
+        guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
+            expectedIdentity, currentProtection)?.let { return it }
         val itemUri = runCatching { Uri.parse(uriString) }.getOrNull()
             ?: return ApkIndexedDeleteResult.FAILED
         val projection = arrayOf(
@@ -137,14 +183,36 @@ internal object ApkMediaStoreIndex {
                 val modified = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)).coerceAtLeast(0L)
                 Triple(path, bytes, modified)
             }
-        }.getOrNull() ?: return ApkIndexedDeleteResult.CHANGED
+        }.onFailure(onFailure).getOrNull() ?: return ApkIndexedDeleteResult.CHANGED
         if (current.first != expectedPath || current.second != expectedBytes ||
-            (expectedModifiedSeconds > 0L && current.third != expectedModifiedSeconds)
+            current.third != expectedModifiedSeconds
         ) return ApkIndexedDeleteResult.CHANGED
 
         return runCatching {
-            if (context.contentResolver.delete(itemUri, null, null) > 0) ApkIndexedDeleteResult.DELETED
+            if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+            // Metadata can collide within a filesystem clock tick. The final confirmation
+            // authorizes an earlier content review, never a hash invented at deletion time.
+            if (contentProof == null) return ApkIndexedDeleteResult.UNVERIFIED
+            if (!verifyContent(contentProof, requireNotNull(expectedIdentity), guard, isCancelled)) {
+                return if (isCancelled()) ApkIndexedDeleteResult.CANCELLED else ApkIndexedDeleteResult.CHANGED
+            }
+            // Recheck after the provider query, and constrain the provider mutation to that row.
+            val finalProtection = try { protection() } catch (_: Exception) {
+                return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
+            }
+            if (isCancelled()) return ApkIndexedDeleteResult.CANCELLED
+            guard.validate(uriString, expectedPath, expectedBytes, expectedModifiedSeconds,
+                expectedIdentity, finalProtection)?.let { return it }
+            val selection = "${MediaStore.MediaColumns.DATA} = ? AND ${MediaStore.MediaColumns.SIZE} = ? AND ${MediaStore.MediaColumns.DATE_MODIFIED} = ?"
+            val rows = context.contentResolver.delete(itemUri, selection,
+                arrayOf(expectedPath, expectedBytes.toString(), expectedModifiedSeconds.toString()))
+            val missing = rows > 0 && guard.awaitDeletionConfirmation(expectedPath, requireNotNull(expectedIdentity))
+            onMutationResult(rows, missing)
+            if (missing) ApkIndexedDeleteResult.DELETED
             else ApkIndexedDeleteResult.FAILED
-        }.getOrDefault(ApkIndexedDeleteResult.FAILED)
+        }.onFailure(onFailure).getOrElse {
+            if (it is java.util.concurrent.CancellationException || isCancelled()) ApkIndexedDeleteResult.CANCELLED
+            else ApkIndexedDeleteResult.FAILED
+        }
     }
 }

@@ -70,6 +70,8 @@ run_once
 # Real runner persists success even with no scheduler process left to consume its result.
 cp "$ROOT/v2/module/scripts/worker-runner.sh" "$T/module/worker-runner.sh"
 cp "$ROOT/v2/module/scripts/task-worker.sh" "$T/module/task-worker.sh"
+mkdir -p "$T/module/config"
+cp "$ROOT/config/operation-lock.sh" "$T/module/config/"
 cat >"$T/module/cleaner.sh" <<'CLEANER'
 #!/bin/sh
 exit 0

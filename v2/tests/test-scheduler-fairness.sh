@@ -114,6 +114,8 @@ run_once
 W="$T/worker-lifecycle"
 rm -rf "$W"; mkdir -p "$W/module" "$W/state/task-results" "$W/state/logs"
 cp "$ROOT/v2/module/scripts/task-worker.sh" "$W/module/task-worker.sh"
+mkdir -p "$W/module/config"
+cp "$ROOT/config/operation-lock.sh" "$W/module/config/"
 cp "$ROOT/v2/module/scripts/worker-runner.sh" "$W/module/worker-runner.sh"
 cat > "$W/module/cleaner.sh" <<'SH2'
 #!/bin/sh

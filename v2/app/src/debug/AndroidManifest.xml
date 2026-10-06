@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".TrashBatchDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".ApkArchiveDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".ApkDeletionDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".StorageDeletionDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".StorageCollisionDeviceProbeActivity" android:exported="false" />
+        <activity android:name=".ApkPermissionDeviceProbeActivity" android:exported="false" android:launchMode="singleTop" />
+    </application>
+</manifest>
+

@@ -274,7 +274,7 @@ try:
     s, target = fixture("wrapper", 40)
     module = WORK / "module"
     module.mkdir()
-    for script in ("deep-scan-manifest.sh", "deep-manifest-clean.sh"):
+    for script in ("deep-scan-manifest.sh", "deep-manifest-clean.sh", "cleanup-media-queue.sh"):
         shutil.copy2(ROOT / "module/scripts" / script, module / script)
     scanner = module / "native-cleaner.sh"
     scanner.write_text((ROOT / "module/scripts/native-cleaner.sh").read_text().replace("#!/system/bin/sh", "#!/bin/bash", 1))

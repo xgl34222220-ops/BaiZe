@@ -185,8 +185,8 @@ class UiVisualReviewTest {
         var whitelist = 0
         render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, whitelist = { whitelist++ }))
         compose.onNodeWithText("外观与主题").performScrollTo().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("应用白名单"))
-        compose.onNodeWithText("应用白名单").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("保护名单"))
+        compose.onNodeWithText("保护名单").performScrollTo().performClick()
         assertEquals(1, appearance)
         assertEquals(1, whitelist)
     }
@@ -200,8 +200,8 @@ class UiVisualReviewTest {
         compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
         compose.onNodeWithContentDescription("仅息屏时执行").performClick()
         compose.onNodeWithText("保存").performClick()
-        assertEquals(!SchedulerUiState().screenOffOnly, updated?.screenOffOnly)
-        assertEquals(updated?.screenOffOnly, saved?.screenOffOnly)
+        assertEquals(null, updated)
+        assertEquals(!SchedulerUiState().screenOffOnly, saved?.screenOffOnly)
     }
 
     private fun render(

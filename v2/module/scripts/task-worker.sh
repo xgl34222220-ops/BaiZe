@@ -22,6 +22,18 @@ case "$TASK_ID" in ''|*[!a-zA-Z0-9_.-]*|.*) echo "任务编号无效" >&2; exit 
 case "$MODE" in clean|scan|apk-auto|cache-auto|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|deep-auto|corpse-scan|corpse-clean|apk-scan|apk-clean|organize) ;; *) echo "不支持的任务模式：$MODE" >&2; exit 2 ;; esac
 [ -x "$SHELL_BIN" ] || { echo "Shell 不可用：$SHELL_BIN" >&2; exit 4; }
 [ -f "$RUNNER" ] || { echo "Root Worker Runner 缺失" >&2; exit 5; }
+# Lock the root state even for the isolated cache lane. Descriptor 8 is inherited
+# by the detached runner and its children, so launcher exit cannot unlock a live task.
+OPERATION_LOCK="$MODDIR/config/operation-lock.sh"
+[ -f "$OPERATION_LOCK" ] || { echo "任务互斥组件缺失，请更新完整模块" >&2; exit 5; }
+. "$OPERATION_LOCK"
+baize_acquire_operation_lock "${BAIZE_ROOT_STATE_DIR:-$STATE_DIR}" shared
+operation_lock_code=$?
+case "$operation_lock_code" in
+  0) ;;
+  3) echo "已有前台清理任务运行" >&2; exit 3 ;;
+  *) echo "任务互斥工具不可用：${BAIZE_OPERATION_LOCK_ERROR:-无法打开任务锁}" >&2; exit 4 ;;
+esac
 # A persistent kernel-lock inode serializes stale-lock recovery. Never unlink this
 # guard: two contenders must not recover the same old pathname over a new owner.
 recovery_lock() {
@@ -29,13 +41,13 @@ recovery_lock() {
   # Root managers can shadow AOSP commands with applets that were compiled out.
   # Try actual providers, not merely `command -v`; every attempt locks the SAME
   # inherited fd/inode, so a busy lock remains busy across all fallbacks.
-  if command -v flock >/dev/null 2>&1; then flock -n 9 2>/dev/null && return 0; fi
-  if [ -x /system/bin/flock ]; then /system/bin/flock -n 9 2>/dev/null && return 0; fi
-  if command -v toybox >/dev/null 2>&1; then toybox flock -n 9 2>/dev/null && return 0; fi
-  if [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9 2>/dev/null && return 0; fi
-  if command -v busybox >/dev/null 2>&1; then busybox flock -n 9 2>/dev/null && return 0; fi
+  if command -v flock >/dev/null 2>&1; then flock -n 9 9>&9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/flock ]; then /system/bin/flock -n 9 9>&9 2>/dev/null && return 0; fi
+  if command -v toybox >/dev/null 2>&1; then toybox flock -n 9 9>&9 2>/dev/null && return 0; fi
+  if [ -x /system/bin/toybox ]; then /system/bin/toybox flock -n 9 9>&9 2>/dev/null && return 0; fi
+  if command -v busybox >/dev/null 2>&1; then busybox flock -n 9 9>&9 2>/dev/null && return 0; fi
   for lock_busybox in /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
-    [ -x "$lock_busybox" ] && "$lock_busybox" flock -n 9 2>/dev/null && return 0
+    [ -x "$lock_busybox" ] && "$lock_busybox" flock -n 9 9>&9 2>/dev/null && return 0
   done
   return 1
 }
@@ -135,17 +147,17 @@ tmp="$RUNNING_FILE.tmp.$$"
   echo "progress_total=0"
   echo "current_path="
   echo "task_id=$TASK_ID"
-  echo "worker=detached-root-worker-v2.0.0"
+  echo "worker=detached-root-worker-v2.2.2"
 } >"$tmp" && mv -f "$tmp" "$RUNNING_FILE"
 write_worker_marker 0
 if [ "$WAIT_MODE" = wait ]; then
-  "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+  "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" 8>&8 </dev/null >/dev/null 2>&1 &
 elif command -v setsid >/dev/null 2>&1; then
-  setsid "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+  setsid "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" 8>&8 </dev/null >/dev/null 2>&1 &
 elif command -v nohup >/dev/null 2>&1; then
-  nohup "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+  nohup "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" 8>&8 </dev/null >/dev/null 2>&1 &
 else
-  "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" </dev/null >/dev/null 2>&1 &
+  "$SHELL_BIN" "$RUNNER" "$MODE" "$TRIGGER" "$TASK_ID" 8>&8 </dev/null >/dev/null 2>&1 &
 fi
 pid=$!
 case "$pid" in ''|*[!0-9]*) cleanup_worker_marker; rm -f "$RUNNING_FILE"; echo "无法启动 Root Worker" >&2; exit 6 ;; esac
@@ -174,3 +186,4 @@ code=$(sed -n 's/^exit_code=//p' "$RESULT_FILE" 2>/dev/null | tail -n 1)
 case "$code" in ''|*[!0-9]*) code=$runner_code ;; esac
 case "$code" in ''|*[!0-9]*) code=8 ;; esac
 exit "$code"
+

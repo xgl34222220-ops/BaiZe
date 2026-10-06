@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -7,8 +8,8 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.IBinder
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -18,6 +19,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
 import io.github.xgl34222220.baize.root.IProfileRootService
@@ -29,12 +31,37 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 
 @androidx.annotation.Keep
 internal class WhitelistViewModel : ViewModel() {
     var state by mutableStateOf(WhitelistUiState())
+    var protectionGuard: ApkDeletionGuard? = null
+
+    fun save(message: String, addingPath: Boolean = false, reload: () -> WhitelistProtectionSnapshot,
+        operation: () -> Pair<WhitelistProtectionSnapshot, String>) {
+        if (state.saving) return
+        state = state.copy(saving = true, addingPath = addingPath, pathSaveError = "", message = message)
+        viewModelScope.launch {
+            val result = runCatching { withContext(Dispatchers.IO) { operation() } }
+            result.onSuccess { (snapshot, message) ->
+                val packages = snapshot.effective.packages
+                state = state.withProtection(snapshot, protectionGuard).copy(saving = false, addingPath = false,
+                    packagesLoaded = true, pathsLoaded = true, draft = WhitelistDraft(packages, packages),
+                    pathSaveRevision = state.pathSaveRevision + if (addingPath) 1 else 0,
+                    pathSaveError = "", message = message)
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                // Read back after an uncertain save; never automatically retry a mutation.
+                val latest = withContext(Dispatchers.IO) { runCatching(reload).getOrNull() }
+                val message = "修改未确认，请刷新核对；其它保护继续保留。${error.message.orEmpty()}"
+                state = (latest?.let { state.withProtection(it, protectionGuard).copy(
+                    draft = WhitelistDraft(it.effective.packages, it.effective.packages)) } ?: state)
+                    .copy(saving = false, addingPath = false, packagesLoaded = latest != null, pathsLoaded = latest != null,
+                        pathSaveError = if (addingPath) message else "", message = message)
+            }
+        }
+    }
 }
 
 /** Application and explicit-path protection share a discoverable, reversible management page. */
@@ -58,7 +85,7 @@ class WhitelistActivity : ComponentActivity() {
             loadGeneration++
             service = null
             bindingRequested = false
-            state = state.copy(connected = false, loading = false, saving = false,
+            state = state.copy(connected = false, loading = false,
                 message = "Root 服务已断开；未保存的选择已保留，请重新连接。")
         }
         override fun onNullBinding(name: ComponentName?) {
@@ -69,7 +96,9 @@ class WhitelistActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        state = state.copy(connected = false, loading = false, saving = false)
+        model.protectionGuard = ApkDeletionGuard.forContext(applicationContext)
+        state = state.copy(connected = false, loading = false,
+            focusFile = intent.getStringExtra(EXTRA_FOCUS_FILE)?.takeIf(ApkDeletionGuard::validPath))
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             val settings = appearance.settings.collectAsStateWithLifecycle().value
@@ -87,11 +116,21 @@ class WhitelistActivity : ComponentActivity() {
                         onBack = ::finish, onRefresh = { if (service == null) connect() else load() },
                         onToggle = ::toggleAppProtection,
                         onClearApps = ::clearAppProtection,
-                        onRemovePath = ::removePath)
+                        onRemovePath = ::removePath, onAddPath = ::addPath,
+                        onReviewLegacyProtection = {
+                            if (!state.saving) CleanerNavigation.openFrom(this,
+                                Intent(this, LegacyProtectionRecoveryActivity::class.java))
+                        })
                 }
             }
         }
         connect()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Recovery can change local rules without touching Root; don't retain stale effective rules.
+        if (service != null) load()
     }
 
     private fun canEditApps() = state.connected && state.packagesLoaded && !state.loading && !state.saving
@@ -105,7 +144,7 @@ class WhitelistActivity : ComponentActivity() {
                 .addCategory(RootService.CATEGORY_DAEMON_MODE), connection)
         }.onFailure {
             bindingRequested = false
-            state = state.copy(connected = false, message = "Root 连接失败：${it.message}。请确认模块已安装并授权。")
+            state = state.copy(connected = false, message = "Root 连接失败：${it.message}。请在 Root 管理器中授权白泽，再点刷新重试。")
         }
     }
 
@@ -117,8 +156,8 @@ class WhitelistActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = runCatching { withContext(Dispatchers.IO) {
                 // A failed read is not an empty whitelist and can never authorize a save.
-                val packages = stringSet(remote.getWhitelistPackages())
-                val paths = stringSet(remote.getWhitelistPaths()).sorted()
+                val snapshot = manager(remote).read()
+                val packages = snapshot.effective.packages
                 val catalog = runCatching { JSONObject(remote.getInstalledPackageCatalog()).getJSONArray("packages") }.getOrNull()
                 val entries = linkedMapOf<String, Boolean>()
                 if (catalog != null) for (i in 0 until catalog.length()) {
@@ -142,14 +181,15 @@ class WhitelistActivity : ComponentActivity() {
                     }.getOrDefault(pkg)
                     WhitelistApp(pkg, label, system)
                 }.sortedWith(compareBy<WhitelistApp> { it.system }.thenBy { it.label.lowercase() }.thenBy { it.packageName })
-                Triple(packages, paths, apps)
+                snapshot to apps
             } }
             if (generation != loadGeneration || service !== remote) return@launch
-            result.onSuccess { (packages, paths, apps) ->
+            result.onSuccess { (snapshot, apps) ->
+                val packages = snapshot.effective.packages
                 val draft = if (state.draft.dirty) state.draft.rebase(packages) else WhitelistDraft(packages, packages)
-                state = state.copy(loading = false, packagesLoaded = true, pathsLoaded = true,
-                    apps = apps, paths = paths, draft = draft,
-                    message = "已保存 ${packages.size} 个应用、${paths.size} 条手动路径保护。修改后需重新扫描。")
+                state = state.withProtection(snapshot, model.protectionGuard).copy(loading = false, packagesLoaded = true, pathsLoaded = true,
+                    apps = apps, draft = draft,
+                    message = "已保护 ${packages.size} 个应用、${snapshot.pathEntries.size} 个路径。包含旧版设置，修改后请重新扫描核对。")
             }.onFailure {
                 if (it is CancellationException) throw it
                 state = state.copy(loading = false, packagesLoaded = false, pathsLoaded = false,
@@ -171,47 +211,55 @@ class WhitelistActivity : ComponentActivity() {
     private fun saveApps(draft: WhitelistDraft) {
         val remote = service ?: return
         if (!canEditApps() || !draft.dirty) return
-        state = state.copy(saving = true, draft = draft, message = "正在自动保存应用白名单…")
-        lifecycleScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                requireSuccess(WhitelistFileClient.updatePackages(remote, applicationContext.cacheDir, draft.added, draft.removed))
-                stringSet(remote.getWhitelistPackages())
-            } }
-            if (service !== remote) return@launch
-            result.onSuccess { latest ->
-                state = state.copy(saving = false, draft = WhitelistDraft(latest, latest),
-                    message = "已自动保存应用白名单；重新扫描后按新保护范围生效。")
-                Toast.makeText(this@WhitelistActivity, "白名单已保存", Toast.LENGTH_SHORT).show()
-            }.onFailure {
-                if (it is CancellationException) throw it
-                state = state.copy(saving = false, message = operationFailure(it))
-            }
+        val repository = manager(remote)
+        state = state.copy(draft = draft)
+        model.save("正在保存应用保护…", reload = repository::read) {
+            repository.updatePackages(draft.added, draft.removed) to "应用保护已保存；重新扫描后核对新的保护范围。"
         }
     }
 
     private fun removePath(path: String) {
         val remote = service ?: return
         if (!state.pathsLoaded || state.loading || state.saving || path !in state.paths) return
-        state = state.copy(saving = true, message = "正在取消此路径保护…")
-        lifecycleScope.launch {
-            val result = runCatching { withContext(Dispatchers.IO) {
-                val response = requireSuccess(WhitelistFileClient.removePath(remote, applicationContext.cacheDir, path))
-                stringSet(remote.getWhitelistPaths()).sorted() to response.optString("message")
-            } }
-            if (service !== remote) return@launch
-            result.onSuccess { (paths, message) -> state = state.copy(saving = false, paths = paths, message = message) }
-                .onFailure { if (it is CancellationException) throw it; state = state.copy(saving = false, message = operationFailure(it)) }
+        val repository = manager(remote)
+        model.save("正在移除此路径保护…", reload = repository::read) {
+            repository.removePath(path) to "已移除此路径保护；父目录、子目录和应用保护仍按各自记录生效，文件不变。"
         }
     }
 
-    private fun requireSuccess(raw: String): JSONObject = JSONObject(raw).also {
-        check(it.optBoolean("success")) { it.optString("message", it.optString("error", "请求未确认")) }
+    private fun addPath(path: String) {
+        val remote = service ?: return
+        if (!state.pathsLoaded || state.loading || state.saving) return
+        val repository = manager(remote)
+        model.save("正在添加路径保护…", addingPath = true, reload = repository::read) {
+            val result = repository.addPath(path)
+            result.snapshot to if (result.alreadyProtected) "此路径已有保护，已合并显示相同位置的记录。"
+                else "路径保护已保存；该文件或目录内全部子项都会保留。"
+        }
     }
-    private fun stringSet(raw: String): Set<String> = JSONArray(raw).let { array ->
-        (0 until array.length()).map { array.getString(it) }.toSet()
+
+    private fun manager(remote: IProfileRootService): WhitelistManagerRepository {
+        val context = applicationContext
+        @Suppress("DEPRECATION")
+        val primary = runCatching { Environment.getExternalStorageDirectory().canonicalPath }.getOrNull()
+        return WhitelistManagerRepository(context, object : WhitelistProtectionAccess {
+            override fun read() = ApkProtectionStore.readRoot(requireNotNull(ApkProtectionStore.source(context, remote)))
+            override fun updatePackages(added: Set<String>, removed: Set<String>) {
+                requireSuccess(WhitelistFileClient.updatePackages(remote, context.cacheDir, added, removed))
+            }
+            override fun addPath(path: String) { requireSuccess(remote.addWhitelistPath(path)) }
+            override fun removePath(path: String) { requireSuccess(WhitelistFileClient.removePath(remote, context.cacheDir, path)) }
+        }, primary)
     }
-    private fun operationFailure(error: Throwable): String =
-        "操作未确认，请刷新核对；不会自动重试。${error.message.orEmpty()}。若提示不支持的请求，请刷入本版模块并重启。"
+
+    companion object {
+        private const val EXTRA_FOCUS_FILE = "io.github.xgl34222220.baize.FOCUS_PROTECTED_FILE"
+        internal fun forFile(context: Context, path: String): Intent =
+            Intent(context, WhitelistActivity::class.java).putExtra(EXTRA_FOCUS_FILE, path)
+        private fun requireSuccess(raw: String): JSONObject = JSONObject(raw).also {
+            check(it.optBoolean("success")) { it.optString("message", it.optString("error", "请求未确认")) }
+        }
+    }
 
     override fun onDestroy() {
         loadGeneration++

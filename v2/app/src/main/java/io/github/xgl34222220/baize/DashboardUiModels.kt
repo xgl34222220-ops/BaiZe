@@ -30,6 +30,7 @@ data class DashboardUiState(
     val automationAvailable: Boolean = false,
     val automationText: String = "未安装自动清理模块",
     val versionWarning: String = "",
+    val versionDetails: String = "",
     val taskPhase: String = "等待下一次清理",
     val taskOperation: String = "",
     val taskProgressCurrent: Long = 0L,
@@ -46,6 +47,7 @@ data class DashboardUiState(
     val storageFree: Long = 0,
     val storagePercent: Float = 0f,
     val lastReleased: Long = 0,
+    val lastReleasedKnown: Boolean = true,
     val scanCompleted: Boolean = false,
     val scanBytes: Long = 0,
     val scanFiles: Long = 0,
@@ -75,8 +77,8 @@ data class DashboardUiState(
         get() = when {
             running -> "执行中"
             connectionFailed -> "连接失败"
-            ready -> "已就绪"
             connecting -> "连接中"
+            ready -> "已就绪"
             connected -> "未就绪"
             else -> "未连接"
         }
@@ -133,8 +135,18 @@ data class HistoryUiItem(
     val errors: Int,
     val cleaned: Boolean,
     val categories: List<HistoryCategoryUiItem> = emptyList(),
-    val apps: List<HistoryAppUiItem> = emptyList()
-)
+    val apps: List<HistoryAppUiItem> = emptyList(),
+    val releaseState: String = "measured",
+    val recordId: String = ""
+) {
+    fun capacityText(format: (Long) -> String): String = when (releaseState) {
+        "unknown" -> "无法测量"
+        "partial" -> "已确认 ${format(bytes)} · 部分未知"
+        "retained" -> "尚未释放"
+        "not_applicable" -> "不计释放"
+        else -> format(bytes)
+    }
+}
 
 @Immutable
 data class HistoryCategoryUiItem(
@@ -196,6 +208,7 @@ data class SchedulerUiState(
     val nextTask: String = "",
     val blockedGroups: String = "",
     val nextCheckEpoch: Long = 0L,
+    val runLedger: List<String> = emptyList(),
     val runtimeGroup: String = "",
     val cacheNextEpoch: Long = 0L,
     val apkNextEpoch: Long = 0L,
@@ -307,6 +320,12 @@ data class SchedulerUiState(
                 nextTask = runtime.optString("nextTask"),
                 blockedGroups = runtime.optString("blockedGroups"),
                 nextCheckEpoch = runtime.optLong("nextCheckEpoch", 0L).coerceAtLeast(0L),
+                runLedger = runtime.optJSONArray("runLedger")?.let { rows -> (0 until minOf(rows.length(), 30)).map { index ->
+                    val row = rows.optJSONObject(index) ?: org.json.JSONObject()
+                    val stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(row.optLong("epoch") * 1000))
+                    "$stamp · ${row.optString("group")} · ${row.optString("reason")}" +
+                        if (row.has("exitCode")) "（退出码 ${row.optInt("exitCode")}）" else ""
+                } } ?: emptyList(),
                 runtimeGroup = runtime.optString("group"),
                 cacheNextEpoch = nextRuns.optLong("cache", 0L).coerceAtLeast(0L),
                 apkNextEpoch = nextRuns.optLong("apk", 0L).coerceAtLeast(0L),
@@ -353,6 +372,7 @@ data class DashboardActions(
     val theme: () -> Unit,
     val reconnect: () -> Unit,
     val resetScanPerformance: () -> Unit,
-    val crash: () -> Unit
+    val crash: () -> Unit,
+    val photoCompression: () -> Unit = {},
+    val fileTrash: () -> Unit = {}
 )
-

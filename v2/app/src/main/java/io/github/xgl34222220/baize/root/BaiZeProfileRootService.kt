@@ -12,13 +12,15 @@ import java.util.concurrent.TimeUnit
 
 /** Binder facade; repositories own validation and task coordination. */
 class BaiZeProfileRootService : RootService() {
-    private val coordinator = TaskCoordinator()
+    private val directoryCancelled = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicBoolean>()
+    private val coordinator = TaskCoordinator(acquireLease = { shared -> RootOperationLease.acquire(this, shared) })
     private val schedulerRepository = SchedulerRepository()
     private val diagnostics = DiagnosticRepository()
     private val historyRepository = HistoryRepository()
     private val auditRepository = AuditRepository()
     private val packageCatalog = PackageCatalog()
     private val whitelistRepository = WhitelistRepository()
+    private val apkFileEvidence by lazy { ApkFileEvidenceRepository(ownAppUid = { applicationInfo.uid }) }
     private val cacheSelectionRepository = CacheSelectionRepository()
     private val quarantineRepository = QuarantineRepository()
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
@@ -27,12 +29,11 @@ class BaiZeProfileRootService : RootService() {
         InstantCacheEngine(coordinator.cancelled) { coordinator.publishExternal(it) }
     }
     private val organizerController by lazy { OrganizerController(coordinator.cancelled) }
-    private val apkFastSnapshot by lazy {
-        ApkFastSnapshotRepository(
-            cancelled = coordinator.cancelled,
-            mediaRefresh = { paths -> RootMediaScanQueue.enqueueAsync(this, paths) }
-        )
-    }
+
+    private fun legacyApkSnapshotNotice(): String = JSONObject()
+        .put("success", false).put("error", "legacy_snapshot_unsupported")
+        .put("message", "旧版安装包直删计划已停用；请在新版安装包页面重新核对并选择文件")
+        .toString()
 
     override fun onCreate() {
         super.onCreate()
@@ -71,6 +72,33 @@ class BaiZeProfileRootService : RootService() {
                 require(arguments.length() == 2)
                 getQuarantinePage(arguments.getInt(0), arguments.getInt(1))
             }
+            "scanDirectoryUsage" -> {
+                require(arguments.length() == 1)
+                val token = arguments.getString(0)
+                require(Regex("[a-f0-9-]{36}").matches(token))
+                val owner = applicationInfo.uid
+                val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+                require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+                val user = caller / 100_000
+                val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+                synchronized(directoryCancelled) {
+                    check(directoryCancelled.isEmpty()) { "目录统计正在运行" }
+                    directoryCancelled[token] = cancelled
+                }
+                try {
+                    io.github.xgl34222220.baize.DirectoryUsageScanner.scan(linkedMapOf(
+                        File("/data/media/$user") to "/storage/emulated/$user",
+                        File("/data/user/$user") to "/data/user/$user",
+                        File("/data/user_de/$user") to "/data/user_de/$user"), "Root", cancelled = cancelled::get).json()
+                } finally { directoryCancelled.remove(token) }
+            }
+            "cancelDirectoryUsage" -> {
+                require(arguments.length() == 1)
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid)
+                directoryCancelled[arguments.getString(0)]?.set(true)
+                JSONObject().put("success", true).toString()
+            }
             "getModuleState" -> { require(arguments.length() == 0); getModuleState() }
             "ensureAllFilesAccess" -> {
                 require(arguments.length() == 0)
@@ -78,23 +106,11 @@ class BaiZeProfileRootService : RootService() {
             }
             "prepareApkFastSnapshot" -> {
                 require(arguments.length() == 1)
-                if (coordinator.isBusy()) coordinator.busy("apk-fast-scan") else
-                    coordinator.runExclusive(
-                        operation = "apk-fast-scan",
-                        phase = "正在校验系统文件索引",
-                        failureCode = "apk_fast_snapshot_failed"
-                    ) { apkFastSnapshot.prepare(arguments.getString(0)) }
+                legacyApkSnapshotNotice()
             }
             "cleanApkFastSnapshot" -> {
                 require(arguments.length() == 0)
-                if (coordinator.isBusy()) coordinator.busy("apk-fast-clean") else
-                    coordinator.runExclusive(
-                        operation = "apk-fast-clean",
-                        phase = "正在快速清理安装包",
-                        failureCode = "apk_fast_clean_failed"
-                    ) {
-                        apkFastSnapshot.clean()
-                    }
+                legacyApkSnapshotNotice()
             }
             "getTaskHistory" -> { require(arguments.length() == 1); getTaskHistory(arguments.getInt(0)) }
             "getTaskHistoryPage" -> {
@@ -107,6 +123,10 @@ class BaiZeProfileRootService : RootService() {
             }
             "getScanCoverage" -> { require(arguments.length() == 0); getScanCoverage() }
             "clearPackageCaches" -> { require(arguments.length() == 1); clearPackageCaches(arguments.getString(0)) }
+            "runMaintenanceTool" -> {
+                require(arguments.length() == 2)
+                runMaintenanceTool(arguments.getString(0), arguments.getString(1))
+            }
             "scanFileOrganizer" -> { require(arguments.length() == 0); scanFileOrganizer() }
             "applyFileOrganizer" -> {
                 require(arguments.length() == 2)
@@ -117,6 +137,21 @@ class BaiZeProfileRootService : RootService() {
             "getWhitelistPackages" -> { require(arguments.length() == 0); getWhitelistPackages() }
             "saveWhitelistPackages" -> { require(arguments.length() == 1); saveWhitelistPackages(arguments.getString(0)) }
             "getWhitelistPaths" -> { require(arguments.length() == 0); getWhitelistPaths() }
+            "getApkProtection" -> {
+                require(arguments.length() == 0)
+                JSONObject(whitelistRepository.apkProtectionJson()).put("uid", Process.myUid())
+                    .put("root", Process.myUid() == 0).toString()
+            }
+            "getApkFileEvidence" -> {
+                require(arguments.length() == 1)
+                JSONObject(apkFileEvidence.read(arguments.getString(0), android.os.Binder.getCallingUid()))
+                    .put("uid", Process.myUid()).put("root", Process.myUid() == 0).toString()
+            }
+            "getIndexedFileEvidence" -> {
+                require(arguments.length() == 1)
+                JSONObject(apkFileEvidence.readIndexedFile(arguments.getString(0), android.os.Binder.getCallingUid()))
+                    .put("uid", Process.myUid()).put("root", Process.myUid() == 0).toString()
+            }
             // Only edit whitelist configuration records, never the target files.
             // Reuse the App-owned FD channel; preserve existing AIDL transaction IDs.
             "removeWhitelistPath" -> {
@@ -142,6 +177,9 @@ class BaiZeProfileRootService : RootService() {
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
+                .put("apkProtectionVersion", 1)
+                .put("apkFileEvidenceVersion", 1)
+                .put("indexedFileEvidenceVersion", 1)
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)
@@ -208,7 +246,14 @@ class BaiZeProfileRootService : RootService() {
                 quarantineRepository.purgeExpired()
             }
         }
-        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String = diagnostics.runMaintenanceTool(tool, optionsJson)
+        override fun runMaintenanceTool(tool: String?, optionsJson: String?): String {
+            if (tool == "organizer_page") {
+                if (coordinator.isBusy()) return coordinator.busy("organizer-page")
+                val options = runCatching { JSONObject(optionsJson.orEmpty()) }.getOrDefault(JSONObject())
+                return organizerController.page(options.optString("snapshotId"), options.optInt("offset"), options.optInt("limit", 100))
+            }
+            return diagnostics.runMaintenanceTool(tool, optionsJson)
+        }
         override fun runModuleTask(mode: String?): String {
             val normalized = mode.orEmpty().trim().lowercase()
             if (normalized.startsWith("scheduler-")) return schedulerRepository.control(normalized)
@@ -295,8 +340,10 @@ class BaiZeProfileRootService : RootService() {
     private fun audited(operation: String, source: String = "app", block: () -> String): String {
         val started = System.currentTimeMillis()
         val result = block()
-        runCatching { auditRepository.recordResult(operation, source, result, started) }
-        return result
+        val eventId = runCatching { auditRepository.recordResult(operation, source, result, started) }.getOrNull()
+        return if (eventId == null) result else runCatching {
+            JSONObject(result).put("auditEventId", eventId).toString()
+        }.getOrDefault(result)
     }
     private fun ensureAllFilesAccessJson(): String {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {

@@ -24,7 +24,7 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 private val LocalPrimaryDialogAction = staticCompositionLocalOf { false }
 
-/** Shared dialog body scrolls independently; actions remain reachable above the keyboard. */
+/** Heading and body share a scroll viewport; arbitrary titles cannot displace the actions. */
 @Composable
 internal fun BaiZeDialog(
     onDismissRequest: () -> Unit,
@@ -58,11 +58,14 @@ internal fun BaiZeDialog(
                 shape = RoundedCornerShape(28.dp), color = BaiZeTokens.colors.surfaceRaised,
                 tonalElevation = 0.dp, shadowElevation = 6.dp) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    if (icon != null) Box(Modifier.align(Alignment.CenterHorizontally)) { icon() }
-                    if (title != null) ProvideTextStyle(MaterialTheme.typography.titleLarge) { title() }
-                    if (text != null) Box(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-                        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
-                            ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text() }
+                    if (icon != null || title != null || text != null) {
+                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            if (icon != null) Box(Modifier.align(Alignment.CenterHorizontally)) { icon() }
+                            if (title != null) ProvideTextStyle(MaterialTheme.typography.titleLarge) { title() }
+                            if (text != null) CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+                                ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text() }
+                            }
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -18,28 +18,16 @@ internal object AppRuleStore {
         "custom.rules",
         "deep.rules",
         "risk-overrides.conf",
-        "rules.meta.env"
+        "rules.meta.env",
+        "custom-preview-files.rules"
     )
 
     fun ensure(context: Context): File {
-        val root = File(RootPaths.STATE_DIR, "app-rules").apply { mkdirs() }
-        files.forEach { name ->
-            val target = File(root, name)
-            val bytes = runCatching { context.assets.open(name).use { it.readBytes() } }.getOrNull() ?: return@forEach
-            if (target.isFile && target.length() == bytes.size.toLong() &&
-                runCatching { target.readBytes().contentEquals(bytes) }.getOrDefault(false)
-            ) return@forEach
-            val temp = File(root, ".$name.${System.nanoTime()}.tmp")
-            runCatching {
-                temp.writeBytes(bytes)
-                if (!temp.renameTo(target)) {
-                    temp.copyTo(target, overwrite = true)
-                    temp.delete()
-                }
-                target.setReadable(true, true)
-                target.setWritable(true, true)
-            }.onFailure { temp.delete() }
+        val imported = runCatching { io.github.xgl34222220.baize.IndependentRuleBundles.forContext(context).active() }.getOrNull()
+        val custom = File(context.filesDir, "custom-preview-enabled.rules").takeIf { it.isFile && it.length() <= 64 * 1024 }?.readBytes()
+        return RuleBundleStore.install(File(RootPaths.STATE_DIR, "app-rules"), files) { name ->
+            if (name == "custom-preview-files.rules") custom ?: ByteArray(0)
+            else imported?.files?.get(name) ?: context.assets.open(name).use { it.readBytes() }
         }
-        return root
     }
 }

@@ -445,6 +445,8 @@ internal fun InstantCacheScreen(
                             Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                             Text("成功 ${result.succeeded} 个 · 失败 ${result.failed} 个", fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("释放量无法测量：系统只返回请求结果，没有返回字节数。", fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

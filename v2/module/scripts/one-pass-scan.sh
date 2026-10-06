@@ -53,6 +53,7 @@ CACHE_ITEMS="$STATE_DIR/$CACHE_PREFIX.items.tsv"
 CACHE_MANIFEST="$STATE_DIR/$CACHE_PREFIX.manifest0"
 CORPSE_STATE="$STATE_DIR/corpse_scan.env"
 CORPSE_TARGETS="$STATE_DIR/corpse_scan.targets"
+CORPSE_FROZEN="$STATE_DIR/corpse_scan.frozen.json"
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
@@ -430,16 +431,36 @@ write_combined_cache_summary() {
 }
 
 set_phase "正在建立所有 Android 用户的安装包共享索引"
+# A nonempty pipe output is not proof that PackageManager returned a complete list.
+read_installed_inventory() {
+  inventory_user=$1 inventory_output=$2
+  inventory_raw="$TMP_DIR/installed-$inventory_user.raw"
+  inventory_ok=0
+  for inventory_command in cmd pm; do
+    command -v "$inventory_command" >/dev/null 2>&1 || continue
+    if [ "$inventory_command" = cmd ]; then
+      cmd package list packages --user "$inventory_user" >"$inventory_raw" 2>/dev/null
+    else
+      pm list packages --user "$inventory_user" >"$inventory_raw" 2>/dev/null
+    fi
+    inventory_code=$?
+    [ "$inventory_code" -eq 0 ] || continue
+    awk 'NF { if ($0 !~ /^package:[A-Za-z0-9_]+([.][A-Za-z0-9_]+)*$/) bad=1; if ($0=="package:android") marker=1 } END { exit (bad || !marker) }' "$inventory_raw" || continue
+    sed '/^$/d;s/^package://' "$inventory_raw" | sort -u >"$inventory_output" || return 1
+    inventory_ok=1
+    break
+  done
+  rm -f "$inventory_raw"
+  [ "$inventory_ok" -eq 1 ]
+}
 if [ -z "${BAIZE_INSTALLED_ROOT:-}" ]; then
   found_users=0
-  for userdir in "$MEDIA_ROOT"/[0-9]*; do
+  for userdir in "$DATA_ROOT"/user/[0-9]*; do
     [ -d "$userdir" ] || continue
     user=${userdir##*/}
+    case "$user" in ''|*[!0-9]*) continue ;; esac
     packages="$INSTALLED_ROOT/$user.txt"
-    : >"$packages"
-    command -v cmd >/dev/null 2>&1 && cmd package list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$packages"
-    [ -s "$packages" ] || { command -v pm >/dev/null 2>&1 && pm list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$packages"; }
-    [ -s "$packages" ] || { echo "无法读取用户 $user 的安装包列表" >&2; exit 8; }
+    read_installed_inventory "$user" "$packages" || { echo "无法完整核对用户 $user 的安装包列表，停止扫描卸载残留" >&2; exit 8; }
     found_users=$((found_users + 1))
   done
   [ "$found_users" -gt 0 ] || { echo "没有找到可扫描的 Android 用户" >&2; exit 8; }
@@ -639,7 +660,7 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
   echo "targets_sha=$cache_targets_sha"
   echo "items_sha=$cache_items_sha"
   echo "manifest_sha=$cache_manifest_sha"
-  echo "manifest_format=nul-v2"
+  echo "manifest_format=nul-v3-sha256"
   echo "manifest_items=$C_FILES"
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "package_whitelist_sha=$(file_sha "$PACKAGE_WHITELIST")"
@@ -688,12 +709,24 @@ cache_snapshot_id="${scan_epoch}-$(printf '%s' "$cache_manifest_sha" | cut -c1-1
 chmod 0600 "$CACHE_STATE" "$CACHE_TARGETS" "$CACHE_ITEMS" "$CACHE_MANIFEST" 2>/dev/null
 
 mv -f "$CORPSE_TARGETS_TMP" "$CORPSE_TARGETS" || { echo "无法发布卸载残留目标快照" >&2; exit 8; }
+corpse_frozen_sha=missing
+if [ "$MODE" = corpse-scan ]; then
+  [ -f "$MODDIR/app/baize.apk" ] || { echo "卸载残留逐文件快照组件缺失" >&2; exit 8; }
+  if ! CLASSPATH="$MODDIR/app/baize.apk" app_process / io.github.xgl34222220.baize.root.ModuleCorpseSnapshot \
+      capture "$STATE_DIR" "$CORPSE_TARGETS" "$CORPSE_FROZEN"; then
+    rm -f "$CORPSE_STATE" "$CORPSE_FROZEN"
+    echo "卸载残留逐文件快照未完成，未授权清理" >&2
+    exit 8
+  fi
+  corpse_frozen_sha=$(file_sha "$CORPSE_FROZEN")
+fi
 corpse_targets_sha=$(file_sha "$CORPSE_TARGETS")
 corpse_snapshot_id="${scan_epoch}-$(printf '%s' "$corpse_targets_sha" | cut -c1-16)"
 {
   echo "epoch=$scan_epoch"
   echo "snapshot_id=$corpse_snapshot_id"
   echo "targets_sha=$corpse_targets_sha"
+  echo "frozen_sha=$corpse_frozen_sha"
   echo "whitelist_sha=$(file_sha "$WHITELIST")"
   echo "max_file_bytes=$MAX_FILE_BYTES"
   echo "bytes=$R_BYTES"

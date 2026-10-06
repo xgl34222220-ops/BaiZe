@@ -106,7 +106,7 @@ internal fun SchedulerHealthOverlay(
 }
 
 @Composable
-private fun SchedulerHealthDialog(
+internal fun SchedulerHealthDialog(
     state: SettingsUiState,
     actions: SettingsUiActions,
     onDismiss: () -> Unit
@@ -159,6 +159,14 @@ private fun SchedulerHealthDialog(
                 )
                 if (blocked.isNotBlank()) HealthLine("阻塞详情", blocked)
                 HealthLine("下次检查", nextCheckSummary(scheduler.nextCheckEpoch))
+                HealthLine("安装包下次计划", nextCheckSummary(scheduler.apkNextEpoch))
+                HealthLine("缓存下次计划", nextCheckSummary(scheduler.cacheNextEpoch))
+                Text("最近执行与跳过原因", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                if (scheduler.runLedger.isEmpty()) Text("暂无执行记录；开启自动任务并产生执行或等待事件后显示。", fontSize = 12.sp)
+                if (scheduler.runLedger.isNotEmpty()) {
+                    scheduler.runLedger.take(12).forEach { Text(it, fontSize = 12.sp, lineHeight = 17.sp) }
+                    Text("计划时间受充电、息屏、保护规则和服务状态影响；退出成功不等于删除了所有文件。", fontSize = 12.sp)
+                }
                 Text(
                     "体检与修复只检查服务、心跳、队列和陈旧锁，不会修改任何定时周期、任务开关或清理规则。",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

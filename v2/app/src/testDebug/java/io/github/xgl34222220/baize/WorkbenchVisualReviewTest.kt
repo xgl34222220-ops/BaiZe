@@ -17,6 +17,7 @@ import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,10 +66,10 @@ class WorkbenchVisualReviewTest {
                 compose.onAllNodesWithText(appCount, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
                     compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty()
             }
-            compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用 1"))
+            compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("示例应用 1"))
             compose.onNodeWithText("示例应用 1").assertIsDisplayed()
             compose.onNodeWithText("清理已选 ${minOf(count, 1800)} 项").assertIsDisplayed()
-            compose.onNode(hasScrollAction()).performScrollToIndex(0)
+            compose.onNodeWithTag("scan-workbench-list").performScrollToIndex(0)
         }
         compose.onNodeWithText("清理已选 1800 项").performClick()
         assertEquals(1, cleanRequests)
@@ -116,14 +117,23 @@ class WorkbenchVisualReviewTest {
         // Wait for asynchronous grouping, then scroll the LazyColumn to the target.
         // Offscreen rows are not required to be present in the semantics tree.
         compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("示例应用"))
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("示例应用"))
         compose.onNodeWithText("示例应用").performClick()
         compose.waitUntil(5_000) {
-            runCatching { compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
+            runCatching { compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择诊断日志")) }.isSuccess
         }
-        compose.onNodeWithContentDescription("选择诊断日志").assertIsEnabled().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("选择离线资源"))
-        compose.onNodeWithContentDescription("选择离线资源").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("选择诊断日志").assertIsDisplayed().assertIsEnabled().performClick()
+        save("medium-selected")
+        compose.runOnIdle { assertEquals(setOf("medium"), state.selectedIds) }
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择离线资源"))
+        compose.onNodeWithContentDescription("选择离线资源").assertIsDisplayed().assertIsEnabled().performClick()
+        save("high-selected-before-confirmation")
+        compose.runOnIdle { assertEquals(setOf("medium", "high"), state.selectedIds) }
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        val viewport = compose.onNodeWithTag("scan-workbench-list").fetchSemanticsNode().boundsInRoot
+        val action = compose.onNodeWithText("清理已选 2 项").fetchSemanticsNode().boundsInRoot
+        assertTrue("Scrolling results must not overlap the fixed cleanup action", viewport.bottom <= action.top)
         compose.onNodeWithText("清理已选 2 项").assertIsDisplayed().performClick()
         assertEquals(0, cleanRequests)
         compose.onNodeWithText("确认清理高风险项目").assertIsDisplayed()
@@ -139,6 +149,12 @@ class WorkbenchVisualReviewTest {
         compose.runOnIdle { state = state.copy(expiresAtRealtime = state.expiresAtRealtime + 1_000L) }
         compose.onNodeWithText("确认清理").assertIsNotEnabled()
         assertEquals(0, cleanRequests)
+    }
+
+    @Test fun restoringReviewDoesNotOfferAnEarlyReplacementScan() {
+        render(WorkbenchUiState(restoringReview = true, phase = "正在恢复扫描记录…"))
+        compose.onNodeWithText("正在恢复记录").assertIsNotEnabled()
+        assertEquals(0, scanRequests)
     }
 
     @Test fun initialScanHasOnePrimaryAction() {
@@ -160,6 +176,31 @@ class WorkbenchVisualReviewTest {
         assertEquals(1, scanRequests)
         assertEquals(0, cleanRequests)
         save("empty-failure-narrow-large-font")
+    }
+
+    @Test fun partialCoverageDoesNotClaimThatTheDeviceIsClean() {
+        render(WorkbenchUiState(profileConnected = true, cacheConnected = true, notice = WorkbenchNotice.WARNING,
+            phase = "本轮扫描未覆盖全部范围", coverageIncomplete = true,
+            coverageSummary = "缓存目录 4 / 6 已检查 · 2 处未完成"))
+        compose.onNodeWithText("扫描范围尚未完整覆盖").assertIsDisplayed()
+        compose.onNodeWithText("没有发现可清理项目").assertDoesNotExist()
+        compose.onNodeWithText("缓存目录 4 / 6 已检查 · 2 处未完成").assertIsDisplayed()
+        save("coverage-incomplete")
+    }
+
+    @Test fun historicalResultsCanStillBeExpandedInDarkMode() {
+        val single = item(1).copy(groupTitle = "历史应用", title = "上次扫描日志")
+        render(ready().copy(scanReady = false, notice = WorkbenchNotice.WARNING, items = listOf(single),
+            selectedIds = setOf(single.id)), dark = true)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("这个分类下没有项目").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("历史应用"))
+        compose.onNodeWithText("历史应用").performClick()
+        compose.waitUntil(5_000) {
+            runCatching { compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择上次扫描日志")) }.isSuccess
+        }
+        compose.onNodeWithContentDescription("选择上次扫描日志").assertIsNotEnabled()
+        compose.onNodeWithText("上次扫描日志").assertIsDisplayed()
+        save("history-readable-dark")
     }
 
     private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f) {
@@ -201,7 +242,14 @@ class WorkbenchVisualReviewTest {
     private fun save(name: String) {
         compose.waitForIdle()
         val output = File("build/reports/ui-screenshots/workbench-$name.png").apply { parentFile.mkdirs() }
-        val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
+        val bitmap = compose.runOnIdle {
+            val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()
+            val view = dialog?.takeIf { it.isShowing }?.window?.decorView
+            if (view != null && view.width > 0 && view.height > 0) {
+                android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    .also { view.draw(android.graphics.Canvas(it)) }
+            } else captureActivityContent(compose.activity)
+        }
         output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

@@ -16,6 +16,7 @@ class DashboardConnectionStateTest {
     @Test fun connectionLabelsSeparatePendingFailureAndModuleReadiness() {
         assertEquals("未连接", DashboardUiState().connectionLabel)
         assertEquals("连接中", DashboardUiState(connecting = true).connectionLabel)
+        assertEquals("连接中", DashboardUiState(connecting = true, connected = true, ready = true).connectionLabel)
         assertEquals("未就绪", DashboardUiState(connected = true).connectionLabel)
         assertEquals("已就绪", DashboardUiState(connected = true, ready = true).connectionLabel)
         assertEquals("连接失败", DashboardUiState(connected = true, ready = true, connectionFailed = true).connectionLabel)

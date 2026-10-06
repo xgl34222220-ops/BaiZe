@@ -1,0 +1,375 @@
+name: BaiZe Cleaner Workbench Test
+
+on:
+  push:
+    branches: [codex/baize-safety-scan-20260930]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: baize-cleaner-workbench-${{ github.ref }}${{ contains(github.event.head_commit.message, '[workbench-validation-only]') && '-verification-only' || contains(github.event.head_commit.message, '[device-validation-only]') && '-device-only' || contains(github.event.head_commit.message, '[30021-cache-capability]') && '-capability' || '' }}
+  cancel-in-progress: true
+
+env:
+  BAIZE_CERT_SHA256: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f
+
+jobs:
+  build-paired-test:
+    if: ${{ (!contains(github.event.head_commit.message, '[device-validation-only]') || contains(github.event.head_commit.message, '[workbench-validation-only]')) && !contains(github.event.head_commit.message, '[apk-permission-diagnostic]') && !contains(github.event.head_commit.message, '[reliability-build]') && !contains(github.event.head_commit.message, '[identity-build]') && !contains(github.event.head_commit.message, '[protection-trash-validation]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require frozen production source for verification-only continuation
+        if: contains(github.event.head_commit.message, '[workbench-validation-only]')
+        run: |
+          git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+
+      - name: Verify diagnostic source remains the delivered 30010
+        if: contains(github.event.head_commit.message, '[apk-regression-only]')
+        run: |
+          git diff --exit-code 472f0d035e57074fdab990587dcfc1d8a791ed38 HEAD -- . \
+            ':(exclude)v2/app/src/test/java/io/github/xgl34222220/baize/ApkIndexAndRecreationRegressionTest.kt' \
+            ':(exclude).github/workflows/cleaner-workbench-test.yml'
+
+      - name: Identify paired test build
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=8 HEAD)
+          echo "BAIZE_TEST_LABEL=cleaner-workbench-test+$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "BAIZE_VERSION=$(sed -n 's/^version=//p' module.prop | head -n1)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android and native toolchains
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+          sudo apt-get update
+          sudo apt-get install -y busybox-static toybox mksh
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Prepare formal signing certificate
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        env:
+          BAIZE_KEYSTORE_BASE64: ${{ secrets.BAIZE_KEYSTORE_BASE64 }}
+          BAIZE_KEYSTORE_PASSWORD: ${{ secrets.BAIZE_KEYSTORE_PASSWORD }}
+          BAIZE_KEY_ALIAS: ${{ secrets.BAIZE_KEY_ALIAS }}
+          BAIZE_KEY_PASSWORD: ${{ secrets.BAIZE_KEY_PASSWORD }}
+        run: python3 .github/scripts/prepare-formal-signing.py
+
+      - name: Verify shell and full cleaner regression
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in v2/module/*.sh v2/module/scripts/*.sh v2/scripts/*.sh; do
+            [ -f "$script" ] || continue
+            sh -n "$script"
+            busybox ash -n "$script"
+          done
+          bash v2/tests/run-all.sh
+
+      - name: Test Android logic and render UI
+        working-directory: v2
+        env:
+          APK_REGRESSION_ONLY: ${{ contains(github.event.head_commit.message, '[apk-regression-only]') }}
+          APK_FOCUSED_CHECK: ${{ contains(github.event.head_commit.message, '[apk-focused-check]') }}
+        run: |
+          if [ "$APK_REGRESSION_ONLY" = "true" ]; then
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests io.github.xgl34222220.baize.ApkIndexAndRecreationRegressionTest
+          elif [ "$APK_FOCUSED_CHECK" = "true" ]; then
+            ./gradlew --no-daemon --max-workers=2 :app:testDebugUnitTest --tests 'io.github.xgl34222220.baize.Apk*' --tests 'io.github.xgl34222220.baize.Whitelist*' --tests 'io.github.xgl34222220.baize.root.Whitelist*' --tests 'io.github.xgl34222220.baize.UiVisualReviewTest' --tests 'io.github.xgl34222220.baize.Workbench*' --tests 'io.github.xgl34222220.baize.root.Native*' --tests 'io.github.xgl34222220.baize.root.InstalledPackageInventorySafetyTest'
+          else
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:testDebugUnitTest
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:lintDebug
+            ./gradlew --no-daemon --max-workers=2 --stacktrace :app:assembleDebug
+          fi
+
+      - name: Upload debug-only Root flow probe
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-Root-Flow-Probe
+          path: v2/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
+
+      - name: Build native engines
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        working-directory: v2
+        run: sh scripts/build-native.sh
+
+      - name: Build signed App
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        working-directory: v2
+        run: ./gradlew --no-daemon --max-workers=2 :app:compileReleaseKotlin :app:assembleRelease
+
+      - name: Package matching Magisk module
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        working-directory: v2
+        run: sh scripts/package-module.sh
+
+      - name: Verify paired artifacts
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') && !contains(github.event.head_commit.message, '[workbench-validation-only]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=v2/app/build/outputs/apk/release/app-release.apk
+          ZIP="v2/dist/BaiZe-$BAIZE_VERSION-Module.zip"
+          OUT=v2/dist/cleaner-workbench-test
+          mkdir -p "$OUT"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" > "$OUT/signing-certificate.txt"
+          APK_CERT=$(awk -F': ' '/certificate SHA-256 digest/ {print tolower($NF); exit}' "$OUT/signing-certificate.txt" | tr -d ':[:space:]')
+          test "$APK_CERT" = "$BAIZE_CERT_SHA256"
+          unzip -tq "$ZIP"
+          unzip -p "$ZIP" app/baize.apk > "$RUNNER_TEMP/embedded.apk"
+          cmp "$APK" "$RUNNER_TEMP/embedded.apk"
+          cp "$APK" "$OUT/BaiZe-$BAIZE_TEST_LABEL.apk"
+          cp "$ZIP" "$OUT/BaiZe-$BAIZE_TEST_LABEL-Module.zip"
+          cd "$OUT"
+          sha256sum "BaiZe-$BAIZE_TEST_LABEL.apk" "BaiZe-$BAIZE_TEST_LABEL-Module.zip" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+      - name: Continue the exact verified signed production build
+        if: contains(github.event.head_commit.message, '[workbench-validation-only]')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = 37158958651;
+            const expectedSource = '4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2';
+            for (let attempt = 0; attempt < 80; attempt++) {
+              let run;
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
+              } catch (error) {
+                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
+                core.warning('Transient GitHub build-status response: ' + error.status);
+                await new Promise(resolve => setTimeout(resolve, 15000));
+                continue;
+              }
+              if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
+              if (run.status === 'completed') {
+                if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
+                return;
+              }
+              core.info('Waiting for the exact signed build: ' + run.status);
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            throw new Error('The exact paired build did not finish in time');
+      - uses: actions/download-artifact@v4
+        if: contains(github.event.head_commit.message, '[workbench-validation-only]')
+        with:
+          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
+          run-id: 37158958651
+          github-token: ${{ github.token }}
+          path: v2/dist/cleaner-workbench-test
+      - name: Verify reused signed package and module
+        if: contains(github.event.head_commit.message, '[workbench-validation-only]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=v2/dist/cleaner-workbench-test
+          (cd "$OUT" && sha256sum -c SHA256SUMS.txt)
+          APK_FILES=("$OUT"/*.apk)
+          ZIP_FILES=("$OUT"/*-Module.zip)
+          test "${#APK_FILES[@]}" -eq 1
+          test "${#ZIP_FILES[@]}" -eq 1
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "${APK_FILES[0]}" > "$OUT/signing-certificate.txt"
+          grep -q "SHA-256 digest: $BAIZE_CERT_SHA256" "$OUT/signing-certificate.txt"
+          unzip -tq "${ZIP_FILES[0]}"
+          unzip -p "${ZIP_FILES[0]}" app/baize.apk > "$RUNNER_TEMP/reused-paired-embedded.apk"
+          cmp "${APK_FILES[0]}" "$RUNNER_TEMP/reused-paired-embedded.apk"
+          unzip -p "${ZIP_FILES[0]}" module.prop | grep -qx 'versionCode=30022'
+          echo '4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2' > "$OUT/production-source.txt"
+
+      - name: Upload paired test bundle
+        if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-${{ env.BAIZE_TEST_LABEL }}-Paired-Test
+          path: v2/dist/cleaner-workbench-test/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BaiZe-Workbench-Verification
+          path: |
+            v2/app/build/reports/ui-screenshots/
+            v2/app/build/reports/batch-cleanup-ui/
+            v2/app/app/build/reports/batch-cleanup-ui/
+            v2/app/build/test-results/testDebugUnitTest/
+            v2/app/build/reports/lint-results-debug.html
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/baize-formal.jks" "$RUNNER_TEMP/baize-formal.der"
+
+  apk-installation-smoke:
+    if: ${{ !contains(github.event.head_commit.message, '[apk-regression-only]') && !contains(github.event.head_commit.message, '[apk-focused-check]') }}
+    needs: build-paired-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: BaiZe-*-Paired-Test
+          merge-multiple: true
+          path: candidate
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-Root-Flow-Probe
+          path: root-probe
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Download exact 30006 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+ea8f0290-Paired-Test
+          run-id: 36744532279
+          github-token: ${{ github.token }}
+          path: baseline-30006
+      - name: Download exact 30007 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+0150dfdf-Paired-Test
+          run-id: 36752722567
+          github-token: ${{ github.token }}
+          path: baseline-30007
+      - name: Download exact delivered 30008 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+bd6a70e5-Paired-Test
+          run-id: 36776344960
+          github-token: ${{ github.token }}
+          path: baseline-30008
+      - name: Download exact delivered 30009 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+23a3de1b-Paired-Test
+          run-id: 36787354759
+          github-token: ${{ github.token }}
+          path: baseline-30009
+      - name: Prepare verified upgrade baseline and emulator
+        run: |
+          curl --fail --location --retry 3 'https://github.com/xgl34222220-ops/BaiZe/releases/download/refactor-v2.0.0/BaiZe-v2.0.0.apk' -o "$RUNNER_TEMP/baize-baseline.apk"
+          echo "BAIZE_BASELINE_APK=$RUNNER_TEMP/baize-baseline.apk" >> "$GITHUB_ENV"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download exact delivered 30010 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+472f0d03-Paired-Test
+          run-id: 36829014947
+          github-token: ${{ github.token }}
+          path: baseline-30010
+      - name: Download exact delivered 30011 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+ae2a293f-Paired-Test
+          run-id: 36844329946
+          github-token: ${{ github.token }}
+          path: baseline-30011
+      - name: Download exact delivered 30012 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+d42b2616-Paired-Test
+          run-id: 36859725848
+          github-token: ${{ github.token }}
+          path: baseline-30012
+      - name: Download exact delivered 30013 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-cleaner-workbench-test+a9c85173-Paired-Test
+          run-id: 36869392062
+          github-token: ${{ github.token }}
+          path: baseline-30013
+      - name: Download exact delivered 30014 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 36884249108
+          name: BaiZe-cleaner-workbench-test+c9e26e8a-Paired-Test
+          path: baseline-30014
+
+      - name: Download exact delivered 30015 test baseline
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 36893383039
+          name: BaiZe-cleaner-workbench-test+19371a84-Paired-Test
+          path: baseline-30015
+
+      - name: Build same-package archive resource fixtures
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          python3 .github/scripts/create-apk-artwork-fixtures.py root-probe/app-debug.apk "$RUNNER_TEMP/baize-apk-fixtures"
+      - name: Verify Root cleanup then final minified APK installation and UI
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb root
+            adb wait-for-device
+            adb install root-probe/app-debug.apk
+            bash .github/scripts/probe-cleanup-entrypoints.sh root-probe/app-debug.apk candidate/*-Module.zip
+            adb uninstall io.github.xgl34222220.baize
+            python3 .github/scripts/smoke-workbench-apk.py candidate/*.apk 30022 baseline-30006/*.apk baseline-30007/*.apk baseline-30008/*.apk baseline-30009/*.apk baseline-30010/*.apk baseline-30011/*.apk baseline-30012/*.apk baseline-30013/*.apk baseline-30014/*.apk baseline-30015/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-APK-Installation-Smoke
+          path: |
+            ${{ runner.temp }}/baize-apk-startup/
+            ${{ runner.temp }}/baize-root-cache-probe/
+            ${{ runner.temp }}/baize-apk-artwork-probe/
+            ${{ runner.temp }}/baize-apk-deletion-probe/
+            ${{ runner.temp }}/baize-storage-deletion-probe/
+            ${{ runner.temp }}/baize-module-corpse-probe/
+            ${{ runner.temp }}/baize-module-media-probe/
+            ${{ runner.temp }}/baize-apk-permission-probe/
+          if-no-files-found: warn
+          retention-days: 7
+

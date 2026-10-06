@@ -253,14 +253,14 @@ private fun CurrentResultGroup(state: HistoryUiState) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (state.hasCurrentResult) "处理 ${state.currentItemCount} 项" else "任务执行后会在这里显示结果",
+                    if (state.hasCurrentResult) state.currentCountDescription else "任务执行后会在这里显示结果",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.width(10.dp))
             Text(
-                Formatter.formatFileSize(context, state.currentBytes),
+                state.currentCapacityText { Formatter.formatFileSize(context, it) },
                 style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
             )
         }
@@ -540,13 +540,22 @@ private fun RecordCard(record: HistoryUiItem) {
         .joinToString(" · ")
     val summary = sanitizeText(
         when {
+            record.releaseState == "unknown" -> "释放量无法测量 · ${record.result}"
+            record.releaseState == "retained" -> "移入回收站或隔离区，尚未释放空间"
+            record.emptyDirs > 0 -> "${record.files.coerceAtLeast(0)} 个文件 · ${record.emptyDirs} 个目录"
             visibleApps.isNotEmpty() -> "涉及 ${visibleApps.size} 个应用 · ${record.files} 项"
             visibleCategories.isNotEmpty() -> visibleCategories.take(2).joinToString(" · ") { it.name }
             record.bytes == 0L && record.files == 0 -> "未发现可清理内容"
             else -> record.result
         }
     ).ifBlank { if (record.cleaned) "清理任务已完成" else "扫描任务已完成" }
-    val statusText = if (record.cleaned) "已清理" else "扫描完成"
+    val statusText = when {
+        record.releaseState == "unknown" -> "容量未确认"
+        record.errors > 0 -> "有异常"
+        record.releaseState == "retained" -> "尚未释放"
+        record.cleaned -> "已处理"
+        else -> "扫描完成"
+    }
     val statusColor = if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.onSurfaceVariant
     val statusBackground = if (record.cleaned) {
         BaiZeTokens.colors.success.copy(alpha = .12f)
@@ -630,7 +639,7 @@ private fun RecordCard(record: HistoryUiItem) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(Formatter.formatFileSize(context, record.bytes), style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
+                    Text(record.capacityText { Formatter.formatFileSize(context, it) }, style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
                 }
             }
 

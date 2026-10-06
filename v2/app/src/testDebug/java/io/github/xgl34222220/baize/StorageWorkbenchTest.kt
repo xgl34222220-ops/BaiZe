@@ -7,8 +7,49 @@ import java.util.concurrent.CancellationException
 
 class StorageWorkbenchTest {
     private fun record(id: Long, size: Long = 10, name: String = "文件$id.pdf", modified: Long = id) =
-        StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/$name", name, size, modified, "application/pdf")
+        StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/$name", name, size, modified, "application/pdf").withVerifiedStorageIdentity()
 
+    @Test fun requestedScanRehashesContentEvenWithUnchangedPreciseIdentity() {
+        val cache = StorageDigestCache()
+        val files = listOf(record(1), record(2)).map { it.copy(identity = it.identity!!.copy(changedNanos = 10)) }
+        var reads = 0
+        val open: (StorageFileRecord) -> java.io.InputStream? = { reads++; ByteArrayInputStream(ByteArray(10)) }
+        assertEquals(1, StorageDuplicateMatcher.match(files, open, cache = cache).size)
+        val initialReads = reads
+        assertEquals(1, StorageDuplicateMatcher.match(files, open, cache = cache).size)
+        assertEquals(initialReads + 4, reads)
+        assertEquals(0, cache.hits)
+        val changed = files.map { if (it.id == 1L) it.copy(identity = it.identity!!.copy(changedNanos = 7)) else it }
+        StorageDuplicateMatcher.match(changed, open, cache = cache)
+        assertEquals(initialReads + 8, reads)
+        val coarse = files.map { it.copy(identity = it.identity!!.copy(modifiedNanos = -1, changedNanos = -1)) }
+        StorageDuplicateMatcher.match(coarse, open, cache = cache)
+        val coarseReads = reads
+        StorageDuplicateMatcher.match(coarse, open, cache = cache)
+        assertEquals(coarseReads + 4, reads)
+    }
+    @Test fun completedPartialGroupsRemainInspectableAndSingletonsDisappear() {
+        val files = listOf(record(1), record(2), record(3))
+        var partial = emptyList<DuplicateFileGroup>()
+        val groups = StorageDuplicateMatcher.match(files, { ByteArrayInputStream(ByteArray(10)) }, completed = { partial = it })
+        assertEquals(3, partial.single().records.size)
+        assertEquals(1, remainingDuplicateGroups(groups, files.take(2)).size)
+        assertTrue(remainingDuplicateGroups(groups, files.take(1)).isEmpty())
+        assertEquals(1, files.take(1).size)
+    }
+    @Test fun duplicateKeeperPreferencesAreExplainableAndManualChoiceWins() {
+        val camera = record(1, name = "camera.jpg").copy(path = "/storage/emulated/0/DCIM/Camera/camera.jpg")
+        val newest = record(2, modified = 99)
+        val group = DuplicateFileGroup("hash", 10, listOf(newest, camera))
+        assertEquals(camera, preferredDuplicateKeeper(group.records, DuplicateKeeperPreference.CAMERA))
+        assertEquals(camera, preferredDuplicateKeeper(group.records, DuplicateKeeperPreference.OLDEST))
+        assertEquals(newest, preferredDuplicateKeeper(group.records, DuplicateKeeperPreference.NEWEST))
+        assertEquals(newest, preferredDuplicateKeeper(group.records, DuplicateKeeperPreference.DIRECTORY, "/storage/emulated/0/Download"))
+        val state = StorageToolsUiState(mode = StorageToolMode.DUPLICATES, duplicateGroups = listOf(group), keeperPreference = DuplicateKeeperPreference.CAMERA)
+        assertEquals(setOf(newest.uri), state.toggleAllSelection().selected)
+        assertEquals(setOf(camera.uri), state.keepCopy(newest.uri).selected)
+        assertFalse(state.keepCopy(newest.uri).toggleSelection(newest.uri).selected.contains(newest.uri))
+    }
     @Test fun samePrefixDifferentTailIsNotDuplicate() {
         val a = ByteArray(70_000) { 1 }; val b = a.clone().also { it[it.lastIndex] = 2 }
         val files = listOf(record(1, a.size.toLong()), record(2, b.size.toLong()), record(3, a.size.toLong()))
@@ -67,6 +108,15 @@ class StorageWorkbenchTest {
         assertNull(storageOwnerPackage("/storage/emulated/0/Download/com.example.app.mp4"))
         assertFalse(StorageMediaRepository.safeSharedFile("/storage/emulated/0/../../data/file"))
     }
+    @Test fun unknownRecordsStayAvailableForDiagnosisButCannotEnterSelectionOrCapacity() {
+        val known = record(1)
+        val unknown = record(2).copy(identity = null)
+        val state = StorageToolsUiState(records = listOf(known, unknown))
+        assertEquals(2, state.visibleRecords.size)
+        assertEquals(setOf(known.uri), state.toggleAllSelection().selected)
+        assertTrue(state.toggleSelection(unknown.uri).selected.isEmpty())
+        assertEquals(known.bytes, storageBuckets(state.records).sumOf { it.bytes })
+    }
     @Test fun apkFilterSelectsOnlyMatchingVersionStatus() {
         val older = ApkScanItem("old.apk", 1, 50, 0, "/old.apk", archive = ApkArchiveInfo(status = ApkInstallStatus.OLDER))
         val current = older.copy(name = "new.apk", uri = "/new.apk", archive = ApkArchiveInfo(status = ApkInstallStatus.INSTALLED))
@@ -77,3 +127,6 @@ class StorageWorkbenchTest {
         assertEquals(ApkInstallStatus.NOT_INSTALLED, ApkArchiveMetadata.compareVersions(3, null))
     }
 }
+
+internal fun StorageFileRecord.withVerifiedStorageIdentity() = copy(identity = ApkFileIdentity(path, 1, id,
+    bytes, modifiedSeconds, modifiedSeconds, 0, 0))

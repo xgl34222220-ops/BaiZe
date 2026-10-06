@@ -51,6 +51,9 @@ internal class SchedulerRepository(
             updates[key] = value.toString()
         }
         if (updates.isEmpty()) return error("empty_config", "没有可保存的计划配置")
+        if (ModuleCleanupSafety.enablesAutomaticWork(updates)) {
+            ModuleCleanupSafety.rejection(moduleDir)?.let { return it }
+        }
 
         val file = File(RootPaths.CONFIG_FILE)
         val lines = if (file.isFile) file.readLines().toMutableList() else mutableListOf()
@@ -268,6 +271,7 @@ internal class SchedulerRepository(
     }
 
     private fun requestNow(groups: List<String>, reason: String): JSONObject {
+        ModuleCleanupSafety.rejection(moduleDir)?.let { return JSONObject(it) }
         stateDir.mkdirs()
         val requestDir = File(stateDir, "scheduler-requests").apply { mkdirs() }
         val now = System.currentTimeMillis() / 1000L
@@ -307,6 +311,7 @@ internal class SchedulerRepository(
     }
 
     fun wakeSupervisor(reason: String = "workmanager-fallback"): String = runCatching {
+        ModuleCleanupSafety.rejection(moduleDir)?.let { return it }
         stateDir.mkdirs()
         val schedulerState = RootFileStore.readEnv(File(stateDir, "scheduler.env"))
         val supervisorState = RootFileStore.readEnv(File(stateDir, "supervisor.env"))
@@ -467,6 +472,7 @@ internal class SchedulerRepository(
             .put("nextTask", scheduler.optString("next_task"))
             .put("blockedGroups", blockedGroups)
             .put("queueSchema", scheduler.optString("queue_schema"))
+            .put("runLedger", SchedulerRunLedger.read(stateDir))
             .put("nextRuns", nextRunsJsonObject(config, now))
             .put("queue", queue)
             .put("schedulerHealthy", schedulerHealthy)

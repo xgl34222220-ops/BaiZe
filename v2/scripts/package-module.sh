@@ -57,6 +57,7 @@ echo "已打包 ABI：$packed_abis"
 
 # One permissions policy replaces repeated per-script chmod lists.
 chmod 0755 "$STAGE"/*.sh "$STAGE/scripts"/*.sh
+chmod 0755 "$STAGE/config/operation-lock.sh"
 chmod 0644 "$STAGE/scripts/abi-resolve.sh" "$STAGE/module.prop" "$STAGE/skip_mount"
 
 cp -f "$APK" "$STAGE/app/baize.apk"
@@ -108,7 +109,7 @@ unzip -l "$OUTPUT" | grep -q 'abi-resolve.sh'
 unzip -l "$OUTPUT" | grep -q 'config/risk-overrides.conf'
 unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'deep-scan-manifest.sh'
 unzip -p "$OUTPUT" scripts/cleaner.sh | grep -q 'deep-manifest-clean.sh'
-unzip -p "$OUTPUT" scripts/deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-v1'
+unzip -p "$OUTPUT" scripts/deep-scan-manifest.sh | grep -q 'snapshot_schema=deep-file-manifest-sha256-v2'
 unzip -p "$OUTPUT" scripts/deep-scan-manifest.sh | grep -q 'manifest_sha='
 unzip -p "$OUTPUT" scripts/deep-manifest-clean.sh | grep -q 'deep_manifest_cursor'
 unzip -p "$OUTPUT" scripts/deep-manifest-clean.sh | grep -q 'deep_remaining_records'

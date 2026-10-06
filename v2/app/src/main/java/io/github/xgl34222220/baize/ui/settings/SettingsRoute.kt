@@ -1,5 +1,13 @@
 package io.github.xgl34222220.baize.ui.settings
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import org.json.JSONObject
+import io.github.xgl34222220.baize.RuleBundleActivity
+import io.github.xgl34222220.baize.AuditActivity
+import io.github.xgl34222220.baize.CleanerNavigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +23,7 @@ import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
 import io.github.xgl34222220.baize.ui.settings.miuix.LuoShuSettingsHub
+import io.github.xgl34222220.baize.ui.logs.LogsRoute
 
 @Composable
 fun SettingsRoute(
@@ -26,9 +35,13 @@ fun SettingsRoute(
     onDetailChanged: (Boolean) -> Unit = {},
     onOpenDetails: () -> Unit
 ) {
-    var draft by remember { mutableStateOf(scheduler.copy(saving = false)) }
-    var dirty by remember { mutableStateOf(false) }
-    var saveRequested by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showTaskHistory by rememberSaveable { mutableStateOf(false) }
+    val draftSaver = remember { Saver<SchedulerUiState, String>(
+        save = { it.toJson().toString() }, restore = { SchedulerUiState.fromJson(JSONObject(it)) }) }
+    var draft by rememberSaveable(stateSaver = draftSaver) { mutableStateOf(scheduler.copy(saving = false)) }
+    var dirty by rememberSaveable { mutableStateOf(false) }
+    var saveRequested by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(scheduler) {
         when {
@@ -55,7 +68,6 @@ fun SettingsRoute(
             draft = updated.copy(saving = false)
             dirty = true
             saveRequested = false
-            dashboardActions.updateScheduler(updated.copy(saving = false))
         },
         onSaveScheduler = { requested ->
             val cleanDraft = requested.copy(saving = false)
@@ -64,13 +76,21 @@ fun SettingsRoute(
             saveRequested = true
             dashboardActions.saveScheduler(cleanDraft)
         },
+        onDiscardSchedulerDraft = {
+            draft = scheduler.copy(saving = false)
+            dirty = false
+            saveRequested = false
+        },
         onSchedulerCommand = dashboardActions.schedulerCommand,
         onOpenAppearance = dashboardActions.theme,
         onOpenWhitelist = dashboardActions.whitelist,
         onOpenResumableScan = dashboardActions.resumableScan,
         onReconnect = dashboardActions.reconnect,
         onOpenAudit = onOpenDetails,
-        onOpenCrashDiagnostics = dashboardActions.crash
+        onOpenCrashDiagnostics = dashboardActions.crash,
+        onOpenTaskHistory = { showTaskHistory = true },
+        onOpenCleanupAudit = { CleanerNavigation.openFrom(context, Intent(context, AuditActivity::class.java)) },
+        onOpenRuleVersions = { CleanerNavigation.openFrom(context, Intent(context, RuleBundleActivity::class.java)) }
     )
 
     val skin = when (style) {
@@ -78,8 +98,14 @@ fun SettingsRoute(
         UiStyle.MIUIX -> VideoSkin.MIUIX
     }
     ProvideVideoSkin(skin) {
-        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged)
-        else VideoSettingsScreenMiuix(state, actions, onDetailChanged)
+        if (showTaskHistory) SchedulerHealthDialog(state, actions) { showTaskHistory = false }
+        val runtimeLogs: @Composable (onBack: () -> Unit) -> Unit = { back ->
+            LogsRoute(style, dashboard, dashboardActions,
+                onOpenDetails = { CleanerNavigation.openFrom(context, Intent(context, AuditActivity::class.java)) },
+                onBack = back)
+        }
+        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged, runtimeLogs)
+        else VideoSettingsScreenMiuix(state, actions, onDetailChanged, runtimeLogs)
     }
 }
 
@@ -97,6 +123,7 @@ private fun SchedulerUiState.withRuntimeFrom(remote: SchedulerUiState): Schedule
     nextTask = remote.nextTask,
     blockedGroups = remote.blockedGroups,
     nextCheckEpoch = remote.nextCheckEpoch,
+    runLedger = remote.runLedger,
     runtimeGroup = remote.runtimeGroup,
     cacheNextEpoch = remote.cacheNextEpoch,
     apkNextEpoch = remote.apkNextEpoch,

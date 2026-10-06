@@ -1,0 +1,277 @@
+name: BaiZe Access and Feature Device Validation
+
+on:
+  push:
+    branches: [codex/baize-safety-scan-20260930]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: baize-access-features-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  shizuku-device:
+    name: shizuku-${{ matrix.mode }}-device
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [shell, root]
+    if: contains(github.event.head_commit.message, '[30023-access]') || contains(github.event.head_commit.message, '[access-build]') || contains(github.event.head_commit.message, '[30023-shizuku]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require identical frozen 30023 application source
+        if: "!contains(github.event.head_commit.message, '[access-build]')"
+        run: |
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Continue the exact signed producer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const current = context.payload.head_commit?.message.includes('[access-build]');
+            const sourceSha = current ? context.sha : '3331c47ca065972311eb91858d85de16f1eb3830';
+            core.exportVariable('BAIZE_ACCESS_SOURCE', sourceSha);
+            core.exportVariable('BAIZE_EXPECTED_APK_SHA', current ? '' : '5f2046f89cc3415f95c4e637df9e86f7f8326582defd258a5559b44d1bbdae18');
+            await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core, sourceSha});
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify exact signed APK and prepare disposable packages
+        run: |
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          python3 .github/scripts/verify-access-apk.py
+          python3 .github/scripts/create-cache-only-fixtures.py "$RUNNER_TEMP/baize-cache-fixtures"
+          curl --fail --location --retry 3 'https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk' -o "$RUNNER_TEMP/shizuku.apk"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual Shizuku capability, system fallback and cache-only cleanup
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            python3 .github/scripts/smoke-shizuku-cache.py candidate/*.apk "$RUNNER_TEMP/shizuku.apk" "$RUNNER_TEMP/baize-cache-fixtures" "${{ matrix.mode }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Access-Shizuku-${{ matrix.mode }}-Device
+          path: |
+            ${{ runner.temp }}/baize-shizuku-device/
+            ${{ runner.temp }}/access-input.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  legacy-storage-device:
+    name: storage-permissions-api-${{ matrix.api }}
+    if: contains(github.event.head_commit.message, '[30023-access]') || contains(github.event.head_commit.message, '[access-build]') || contains(github.event.head_commit.message, '[30023-legacy-storage]')
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [28, 29]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require identical frozen 30023 application source
+        if: "!contains(github.event.head_commit.message, '[access-build]')"
+        run: |
+          git diff --exit-code 3331c47ca065972311eb91858d85de16f1eb3830 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Continue the exact signed producer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const current = context.payload.head_commit?.message.includes('[access-build]');
+            const sourceSha = current ? context.sha : '3331c47ca065972311eb91858d85de16f1eb3830';
+            core.exportVariable('BAIZE_ACCESS_SOURCE', sourceSha);
+            core.exportVariable('BAIZE_EXPECTED_APK_SHA', current ? '' : '5f2046f89cc3415f95c4e637df9e86f7f8326582defd258a5559b44d1bbdae18');
+            await require('./.github/scripts/wait-exact-reliability-pair.cjs')({github, context, core, sourceSha});
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BAIZE_PAIRED_NAME }}
+          run-id: ${{ env.BAIZE_PAIRED_RUN }}
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify exact signed APK and prepare emulator
+        run: |
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          sdkmanager 'build-tools;36.0.0'
+          python3 .github/scripts/verify-access-apk.py
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual denial, grant, settings fallback and read-only directory scan
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            python3 -c "import runpy; runpy.run_path('.github/scripts/smoke-release-apk.py')['settle_emulator_boot']()"
+            python3 .github/scripts/smoke-legacy-storage.py candidate/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-Access-Legacy-Storage-${{ matrix.api }}-Device
+          path: |
+            ${{ runner.temp }}/baize-legacy-storage-${{ matrix.api }}/
+            ${{ runner.temp }}/access-input.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  release-accounting-device:
+    if: contains(github.event.head_commit.message, '[30022-features]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require identical application source
+        run: |
+          git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Build debug-only probe and disposable packages
+        run: |
+          (cd v2 && ./gradlew --no-daemon --max-workers=2 :app:assembleDebug)
+          python3 .github/scripts/create-cache-only-fixtures.py "$RUNNER_TEMP/baize-cache-fixtures"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual system cache request and directory deletion capacity accounting
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            bash .github/scripts/probe-release-accounting.sh v2/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/baize-cache-fixtures"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30022-Release-Accounting-Device
+          path: ${{ runner.temp }}/baize-release-accounting-device/
+          if-no-files-found: warn
+          retention-days: 7
+
+  photo-document-device:
+    if: contains(github.event.head_commit.message, '[30022-photo-device]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require identical application source
+        run: |
+          git diff --exit-code 4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2 HEAD -- . \
+            ':(exclude).github/**' ':(exclude)v2/app/src/test/**' ':(exclude)v2/app/src/testDebug/**' ':(exclude)v2/app/src/debug/**' ':(exclude)docs/**'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Wait for the exact verified paired build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = 37158958651;
+            const expectedSource = '4bcdf8d9eaa88dd37ca8e7a6a0e5338f870038a2';
+            for (let attempt = 0; attempt < 80; attempt++) {
+              let run;
+              try {
+                ({ data: run } = await github.rest.actions.getWorkflowRun({ ...context.repo, run_id: runId }));
+              } catch (error) {
+                if (![429, 500, 502, 503, 504].includes(error.status)) throw error;
+                core.warning('Transient GitHub build-status response: ' + error.status);
+                await new Promise(resolve => setTimeout(resolve, 15000));
+                continue;
+              }
+              if (run.head_sha !== expectedSource) throw new Error('Paired application source mismatch');
+              if (run.status === 'completed') {
+                if (run.conclusion !== 'success') throw new Error('Paired application build did not pass');
+                return;
+              }
+              core.info('Waiting for the exact signed build: ' + run.status);
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+            throw new Error('The exact paired build did not finish in time');
+      - uses: actions/download-artifact@v4
+        with:
+          name: BaiZe-functional-test+4bcdf8d9-Paired-Test
+          run-id: 37158958651
+          github-token: ${{ github.token }}
+          path: candidate
+      - name: Verify exact signed APK and prepare emulator
+        run: |
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs candidate/*.apk | tee "$RUNNER_TEMP/baize-30022-certificate.txt"
+          grep -q 'SHA-256 digest: 9efa848001ccdc168ea96753d332b1713e2668ba6a2fa22d5bfd98de65db1f0f' "$RUNNER_TEMP/baize-30022-certificate.txt"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual system pickers and photo exports
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install candidate/*.apk
+            adb shell pm grant io.github.xgl34222220.baize android.permission.POST_NOTIFICATIONS
+            python3 -c "import runpy; runpy.run_path('.github/scripts/smoke-release-apk.py')['settle_emulator_boot']()"
+            python3 .github/scripts/smoke-photo-batch.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BaiZe-30022-Photo-Batch-Device
+          path: ${{ runner.temp }}/baize-photo-batch-device/
+          if-no-files-found: warn
+          retention-days: 7

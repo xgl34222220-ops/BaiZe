@@ -10,6 +10,10 @@ SCRIPTDIR="$MODDIR"
 [ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
 TRIGGER=${2:-${1:-manual}}
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# Capture a task's refresh identity once and keep records outside temporary lanes.
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+baize_cleanup_media_init
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
 CONFIG="$STATE_DIR/config.conf"
@@ -48,8 +52,8 @@ CACHE_SCAN_TARGETS="$STATE_DIR/$CACHE_PREFIX.targets"
 CACHE_SCAN_MANIFEST="$STATE_DIR/$CACHE_PREFIX.manifest0"
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
-[ -f "$WHITELIST" ] || : >"$WHITELIST"
-[ -f "$PACKAGE_WHITELIST" ] || : >"$PACKAGE_WHITELIST"
+[ -f "$WHITELIST" ] && [ -r "$WHITELIST" ] || { echo "白名单缺失或不可读，未开始删除" >&2; exit 7; }
+[ -f "$PACKAGE_WHITELIST" ] && [ -r "$PACKAGE_WHITELIST" ] || { echo "应用白名单缺失或不可读，未开始删除" >&2; exit 7; }
 
 # 架构支持由 baize_require_engine 判定，包里有对应 ABI 的引擎即可运行。
 [ -x "$NATIVE_ENGINE" ] || { echo "C 原生快照清理器不可用，请重新刷入完整模块" >&2; exit 8; }
@@ -170,7 +174,7 @@ if [ "$epoch" -le 0 ] || [ "$age" -lt 0 ] || [ "$age" -gt 1800 ] || [ -z "$snaps
   echo "缓存扫描快照已过期，请重新扫描"
   exit 6
 fi
-[ "$manifest_format" = "nul-v2" ] || { echo "缓存快照格式不受支持，请重新扫描"; exit 7; }
+[ "$manifest_format" = "nul-v3-sha256" ] || { echo "缓存快照格式不受支持，请重新扫描"; exit 7; }
 [ "$manifest_items" -eq "$authorized_files" ] || { echo "缓存快照项目计数不一致，请重新扫描"; exit 7; }
 [ "$(file_sha "$CACHE_SCAN_TARGETS")" = "$expected_targets_sha" ] || { echo "缓存目标快照校验失败，请重新扫描"; exit 7; }
 [ "$(file_sha "$CACHE_SCAN_ITEMS")" = "$expected_items_sha" ] || { echo "缓存摘要快照校验失败，请重新扫描"; exit 7; }
@@ -179,31 +183,43 @@ fi
 [ "$(file_sha "$PACKAGE_WHITELIST")" = "$expected_package_sha" ] || { echo "应用白名单已变化，请重新扫描"; exit 7; }
 
 set_phase "正在校验不可变缓存快照" 0 "$manifest_items" ""
+baize_cleanup_media_begin || { echo "无法保存删除后媒体刷新记录，未开始删除" >&2; exit 71; }
 code=0
 "$NATIVE_ENGINE" clean-cache-snapshot \
   --data-root "$DATA_ROOT" --media-root "$MEDIA_ROOT" \
   --whitelist "$WHITELIST" --package-whitelist "$PACKAGE_WHITELIST" \
   --manifest "$CACHE_SCAN_MANIFEST" --max-file-bytes "$max_file_bytes" \
-  --report "$REPORT_FILE" --summary "$SUMMARY_FILE" \
+  --report "$REPORT_FILE" --summary "$SUMMARY_FILE" --deleted-nul "$BAIZE_CLEANUP_DELETED_NUL" \
   --progress "$RUNNING_FILE" --stop "$STOP_FILE" >>"$LOG_FILE" 2>&1 || code=$?
 
+baize_cleanup_media_publish || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+[ "$code" -ne 71 ] || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+baize_cleanup_media_kick
 deleted_files=$(summary_number files)
 deleted_bytes=$(summary_number bytes)
 skipped=$(summary_number skipped)
 errors=$(summary_number errors)
 protected_items=$(summary_number protected_items)
 protected_bytes=$(summary_number protected_bytes)
-action_count() {
-  action=$1
-  awk -F '\t' -v action="$action" 'NR>1 && $1==action { count++ } END { print count+0 }' "$REPORT_FILE" 2>/dev/null
-}
-authorized_candidates=$(awk -F '\t' 'NR>1 && NF>=6 { count++ } END { print count+0 }' "$CACHE_SCAN_ITEMS" 2>/dev/null)
-cleaned_candidates=$(action_count cleaned)
-changed_candidates=$(action_count skipped)
-protected_candidates=$(action_count protected)
-partial_candidates=$(action_count partial)
-failed_candidates=$(action_count failed)
-processed_candidates=$((cleaned_candidates + changed_candidates + protected_candidates + partial_candidates + failed_candidates))
+# The native result groups raw manifest paths by cache root, the same candidate
+# unit used during scanning. Display TSV contains per-file, sanitized paths.
+authorized_candidates=$(summary_number authorized_candidates)
+processed_candidates=$(summary_number processed_candidates)
+cleaned_candidates=$(summary_number cleaned_candidates)
+changed_candidates=$(summary_number changed_candidates)
+missing_candidates=$(summary_number missing_candidates)
+protected_candidates=$(summary_number protected_candidates)
+partial_candidates=$(summary_number partial_candidates)
+failed_candidates=$(summary_number failed_candidates)
+changed_files=$(summary_number changed_files)
+missing_files=$(summary_number missing_files)
+counts_confirmed=1
+[ "$(summary_value outcome_schema)" = cache-root-outcomes-v1 ] || counts_confirmed=0
+if [ "$code" -eq 0 ]; then
+  if [ "$(summary_value outcome_schema)" != cache-root-outcomes-v1 ]; then code=71
+  elif [ "$errors" -gt 0 ]; then code=8
+  fi
+fi
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 
@@ -215,14 +231,24 @@ case "$code" in
   9)
     result="缓存不可变快照清理已停止，已清理 $(human_bytes "$deleted_bytes")"
     ;;
+  8)
+    result="缓存不可变快照清理未完成，失败 $errors 个文件，已清理 $(human_bytes "$deleted_bytes")；原快照已保留"
+    ;;
   *)
     result="缓存不可变快照清理失败（代码 $code），已清理 $(human_bytes "$deleted_bytes")"
     ;;
 esac
 
+if [ "$counts_confirmed" = 0 ]; then
+  BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+  result="缓存清理中断或记录失败（代码 $code），最终删除统计未确认；已写成功记录保留待核对"
+fi
+if [ "$BAIZE_CLEANUP_MEDIA_UNCONFIRMED" = 1 ]; then result="$result；媒体索引刷新未确认"; else result="$result；媒体索引已排队核对"; fi
 latest_tmp="$STATE_DIR/latest.env.tmp.$$"
 {
   echo "mode=cache-clean"
+  echo "media_refresh_unconfirmed=$BAIZE_CLEANUP_MEDIA_UNCONFIRMED"
+  echo "deletion_counts_confirmed=$counts_confirmed"
   echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
   echo "schema=clean-result-v1"
   echo "scanned_candidates=$authorized_candidates"
@@ -230,10 +256,13 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "processed_candidates=$processed_candidates"
   echo "cleaned_candidates=$cleaned_candidates"
   echo "changed_candidates=$changed_candidates"
+  echo "missing_candidates=$missing_candidates"
   echo "protected_candidates=$protected_candidates"
   echo "partial_candidates=$partial_candidates"
   echo "failed_candidates=$failed_candidates"
-  echo "skipped_candidates=$((changed_candidates + protected_candidates))"
+  echo "skipped_candidates=$((changed_candidates + missing_candidates + protected_candidates))"
+  echo "changed_files=$changed_files"
+  echo "missing_files=$missing_files"
   echo "files=$deleted_files"
   echo "regular_files=$deleted_files"
   echo "empty_files=0"
@@ -256,6 +285,7 @@ latest_tmp="$STATE_DIR/latest.env.tmp.$$"
   echo "category_cache_candidates=$authorized_candidates"
   echo "category_cache_cleaned=$cleaned_candidates"
   echo "category_cache_changed=$changed_candidates"
+  echo "category_cache_missing=$missing_candidates"
   echo "category_cache_protected=$protected_candidates"
   echo "category_cache_partial=$partial_candidates"
   echo "category_cache_failed=$failed_candidates"

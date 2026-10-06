@@ -90,6 +90,29 @@ valid_interval_seconds() {
 sanitize_env() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 proc_start_ticks() { [ -r "/proc/$1/stat" ] && awk '{print $22}' "/proc/$1/stat" 2>/dev/null || echo 0; }
 
+# Bounded, immutable transition records. Repeated heartbeat writes are not new runs.
+record_scheduler_transition() {
+  ledger="$STATE_DIR/auto-run-ledger"
+  mkdir -p "$ledger"
+  ledger_key="$(sanitize_env "$1|$2|$3")"
+  ledger_last=$(cat "$ledger/last-transition" 2>/dev/null)
+  [ "$ledger_key" != "$ledger_last" ] || return 0
+  printf '%s\n' "$ledger_key" >"$ledger/last-transition.tmp.$$"
+  mv -f "$ledger/last-transition.tmp.$$" "$ledger/last-transition"
+  ledger_seq=${ledger_seq:-0}; ledger_seq=$((ledger_seq+1))
+  ledger_entry="$ledger/$(date +%s)-$$-$ledger_seq.env"
+  {
+    echo "epoch=$(date +%s)"
+    echo "state=$(sanitize_env "$1")"
+    echo "group=$(sanitize_env "$2")"
+    echo "reason=$(sanitize_env "$3")"
+    echo "next_check_epoch=${NEXT_CHECK_EPOCH:-0}"
+  } >"$ledger_entry.tmp" && mv -f "$ledger_entry.tmp" "$ledger_entry"
+  chmod 0600 "$ledger_entry" 2>/dev/null || true
+  # Names are generated above, never supplied by configuration or a file path.
+  ls -1t "$ledger"/*.env 2>/dev/null | tail -n +301 | while IFS= read -r old; do rm -f -- "$old"; done
+}
+
 write_scheduler_state() {
   state=$1; group=${2:-}; reason=${3:-}; now=$(date +%s); tmp="$SCHEDULER_STATE.tmp.$$"
   {
@@ -109,6 +132,7 @@ write_scheduler_state() {
     echo "queue_schema=fixed-seven-fields-v1"
   } >"$tmp" && mv -f "$tmp" "$SCHEDULER_STATE"
   chmod 0600 "$SCHEDULER_STATE" 2>/dev/null || true
+  record_scheduler_transition "$state" "$group" "$reason"
 }
 start_active_heartbeat() {
   ah_group=$1; ah_reason=$2; shift 2
@@ -221,7 +245,7 @@ conditions_allow_task() {
   fi
   minimum=$(uint_value min_battery 25 0 100)
   level=$(printf '%s\n' "$battery" | sed -n 's/^[[:space:]]*level: //p' | head -n 1)
-  case "$level" in ''|*[!0-9]*) level=100 ;; esac
+  case "$level" in ''|*[!0-9]*) [ "$minimum" -eq 0 ] || { SCHEDULE_REASON="无法读取电量，等待系统状态恢复"; return 1; }; level=0 ;; esac
   [ "$level" -ge "$minimum" ] || { SCHEDULE_REASON="等待电量达到 ${minimum}%（当前 ${level}%）"; return 1; }
   return 0
 }

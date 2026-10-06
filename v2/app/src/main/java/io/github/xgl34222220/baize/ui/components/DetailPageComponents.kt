@@ -178,14 +178,15 @@ fun DetailResultRow(
     selected: Boolean? = null,
     selectionEnabled: Boolean = true,
     onToggle: () -> Unit = {},
-    onOpen: (() -> Unit)? = null
+    onOpen: (() -> Unit)? = null,
+    onDetails: (() -> Unit)? = null
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
     val shape = RoundedCornerShape(topStart = if (first) 16.dp else 0.dp, topEnd = if (first) 16.dp else 0.dp,
         bottomStart = if (last) 16.dp else 0.dp, bottomEnd = if (last) 16.dp else 0.dp)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)
-        .clickable(onClickLabel = "查看完整路径与详情") { showDetails = true }) {
+        .clickable(onClickLabel = "查看完整路径与详情") { if (onDetails != null) onDetails() else showDetails = true }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
             if (selected != null) Checkbox(checked = selected, onCheckedChange = { onToggle() },
                 enabled = selectionEnabled, modifier = Modifier.size(48.dp))

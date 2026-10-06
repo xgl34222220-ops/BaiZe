@@ -20,14 +20,14 @@ require('ResumeSelectableRow(' in SMART and 'title = "安装包"' in SMART and '
         "smart scan UI must show selectable APK results")
 require("async(Dispatchers.IO) { cleanApkForSmartClean() }" in SMART,
         "smart cleanup must delete APKs in parallel")
-require("ApkMediaStoreIndex.deleteIfUnchanged" in SMART,
-        "smart cleanup must delete APKs through MediaStore record validation")
+require("OrdinaryFileTrash.moveReviewed" in SMART,
+        "smart cleanup must use reviewed recoverable Trash for ordinary APKs")
 require("screenState.apkSelected" in SMART,
         "unified smart cleanup must honor APK category selection")
 require("cleanReady = snapshots.isNotEmpty()" in APK,
         "standalone APK results must expose cleanup")
-require("ApkMediaStoreIndex.deleteIfUnchanged" in APK,
-        "standalone APK cleanup must use MediaStore deletion")
+require("OrdinaryFileTrash.moveReviewed" in APK,
+        "standalone APK cleanup must use the same reviewed recoverable Trash")
 require("ContentUris.withAppendedId" in INDEX and "contentResolver.delete" in INDEX,
         "MediaStore index must retain record URI and delete through ContentResolver")
 require("Os.lstat(candidate.path)" not in APK,

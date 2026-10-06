@@ -3,6 +3,10 @@ package io.github.xgl34222220.baize.root
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.attribute.BasicFileAttributes
 
 internal class WhitelistRepository(
     private val whitelistFile: File = File(RootPaths.WHITELIST_FILE),
@@ -12,6 +16,11 @@ internal class WhitelistRepository(
     fun packagesJson(): String = synchronized(LOCK) { JSONArray(readPackages().sorted()).toString() }
 
     fun pathsJson(): String = synchronized(LOCK) { JSONArray(readManualPaths().sorted()).toString() }
+
+    fun apkProtectionJson(): String = synchronized(LOCK) {
+        JSONObject().put("version", 1).put("packages", JSONArray(readPackages().sorted()))
+            .put("paths", JSONArray(readManualPaths().sorted())).toString()
+    }
 
     fun savePackages(raw: String): String = synchronized(LOCK) {
         val array = runCatching { JSONArray(raw) }.getOrElse {
@@ -91,23 +100,25 @@ internal class WhitelistRepository(
         .put("success", false).put("error", code).put("message", message).toString()
 
     private fun readPackages(): Set<String> {
-        val sidecar = packageFile
-        if (sidecar.isFile) {
-            return sidecar.readLines()
+        val sidecar = readRulesFile(packageFile)
+        if (sidecar != null) {
+            return sidecar
                 .asSequence()
                 .map { it.trim() }
-                .filter { RootValidation.packageName.matches(it) }
+                .filter { it.isNotEmpty() }
+                .onEach { require(RootValidation.packageName.matches(it)) { "应用保护名单损坏" } }
                 .toSet()
         }
 
         val inferred = linkedSetOf<String>()
-        val managed = whitelistFile.isFile && whitelistFile.useLines { lines -> lines.any { it.trim() == APP_WHITELIST_BEGIN } }
+        val lines = readRulesFile(whitelistFile).orEmpty()
+        val managed = lines.any { it.trim() == APP_WHITELIST_BEGIN }
         var generated = false
-        whitelistFile.takeIf { it.isFile }?.forEachLine { raw ->
+        lines.forEach { raw ->
             val line = raw.trim()
-            if (line == APP_WHITELIST_BEGIN) { generated = true; return@forEachLine }
-            if (line == APP_WHITELIST_END) { generated = false; return@forEachLine }
-            if (managed && !generated) return@forEachLine
+            if (line == APP_WHITELIST_BEGIN) { generated = true; return@forEach }
+            if (line == APP_WHITELIST_END) { generated = false; return@forEach }
+            if (managed && !generated) return@forEach
             for (pattern in GENERATED_PATH_PATTERNS) {
                 val packageName = pattern.matchEntire(line)?.groupValues?.getOrNull(1)
                 if (!packageName.isNullOrBlank()) inferred += packageName
@@ -121,18 +132,40 @@ internal class WhitelistRepository(
         var generatedSection = false
         // In a managed file, everything outside the generated block is a manual
         // entry, even if it happens to equal an application's root directory.
-        val managed = whitelistFile.isFile && whitelistFile.useLines { lines -> lines.any { it.trim() == APP_WHITELIST_BEGIN } }
-        whitelistFile.takeIf { it.isFile }?.forEachLine { raw ->
+        val lines = readRulesFile(whitelistFile).orEmpty()
+        val managed = lines.any { it.trim() == APP_WHITELIST_BEGIN }
+        lines.forEach { raw ->
             val line = raw.trim()
             when (line) {
-                APP_WHITELIST_BEGIN -> generatedSection = true
-                APP_WHITELIST_END -> generatedSection = false
-                else -> if (!generatedSection && line.startsWith("/") && (managed || !isGeneratedAppPath(line))) {
-                    normalizeManualPath(line)?.let(result::add)
+                APP_WHITELIST_BEGIN -> { check(!generatedSection) { "保护名单分区损坏" }; generatedSection = true }
+                APP_WHITELIST_END -> { check(generatedSection) { "保护名单分区损坏" }; generatedSection = false }
+                else -> if (line.startsWith('/')) {
+                    val path = requireNotNull(normalizeManualPath(line)) { "路径保护名单损坏" }
+                    if (generatedSection) {
+                        check(isGeneratedAppPath(path)) { "自动保护分区包含未知路径，请在白名单页核对" }
+                    } else if (managed || !isGeneratedAppPath(path)) {
+                        result += path
+                    }
+                } else if (line.isNotBlank() && !line.startsWith('#')) {
+                    error("路径保护名单损坏")
                 }
             }
         }
+        check(!generatedSection) { "保护名单分区未结束" }
         return result
+    }
+
+    /** Only confirmed absence means empty. Permission errors, directories and links are not lists. */
+    private fun readRulesFile(file: File): List<String>? {
+        val attributes = try {
+            Files.readAttributes(file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) { return null }
+        check(attributes.isRegularFile && !attributes.isSymbolicLink && attributes.size() <= 4 * 1024 * 1024) {
+            "保护名单不是可读取的普通文件"
+        }
+        return file.readLines().also { lines ->
+            check(lines.size <= 10_000 && lines.none { it.contains('\u0000') }) { "保护名单内容无效" }
+        }
     }
 
     private fun writeWhitelistFile(packages: Set<String>, manualPaths: Set<String>) {

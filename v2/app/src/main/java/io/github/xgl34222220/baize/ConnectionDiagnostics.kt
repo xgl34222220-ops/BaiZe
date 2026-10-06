@@ -62,7 +62,7 @@ internal object ConnectionDiagnostics {
                 append("运行 Root：").append(versions.root.label).append('\n')
                 append("已安装模块（module.prop）：").append(versions.moduleName ?: "名称未知")
                     .append(' ').append(versions.module.label).append('\n')
-                append(versions.warning(app).ifBlank {
+                append(listOf(versions.warning(app), versions.compatibilityNote(app)).filter { it.isNotBlank() }.joinToString("\n").ifBlank {
                     if (currentVersions) "最近观测版本与当前 App 一致" else "缓存版本与当前 App 一致，当前运行版本未验证"
                 }).append('\n')
             }

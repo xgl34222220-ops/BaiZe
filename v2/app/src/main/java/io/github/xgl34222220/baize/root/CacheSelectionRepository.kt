@@ -46,7 +46,7 @@ internal class CacheSelectionRepository(
         if (epoch <= 0L || age !in 0L..SNAPSHOT_TTL_SECONDS) {
             return jsonError("snapshot_expired", "缓存扫描快照已过期，请重新扫描")
         }
-        if (state["manifest_format"] != "nul-v2") return jsonError("unsupported_manifest", "缓存快照格式不受支持")
+        if (state["manifest_format"] != "nul-v3-sha256") return jsonError("unsupported_manifest", "缓存快照缺少原始内容校验，请重新扫描")
 
         verifyHash(targetsFile, state["targets_sha"], "缓存目标快照")
         verifyHash(itemsFile, state["items_sha"], "缓存摘要快照")
@@ -106,7 +106,8 @@ internal class CacheSelectionRepository(
                         val record = readManifestRecord(input) ?: break
                         val packageName = record[0]
                         val category = record[1]
-                        val path = normalizePath(record[9])
+                        val path = record[9]
+                        check(path.startsWith('/') && java.nio.file.Paths.get(path).normalize().toString() == path) { "缓存快照路径无效" }
                         val allowedRoots = roots["$packageName\u0000$category"].orEmpty()
                         if (path.isNotBlank() && allowedRoots.any { root -> path == root || path.startsWith("$root/") }) {
                             record.forEach { field ->
@@ -124,7 +125,7 @@ internal class CacheSelectionRepository(
             val now = System.currentTimeMillis() / 1_000L
             val manifestSha = sha256(manifestTmp)
             val derivedId = "$now-selected-${manifestSha.take(16)}"
-            nextState["epoch"] = now.toString()
+            nextState["epoch"] = epoch.toString()
             nextState["snapshot_id"] = derivedId
             nextState["targets_sha"] = sha256(targetsTmp)
             nextState["items_sha"] = sha256(itemsTmp)
@@ -193,6 +194,7 @@ internal class CacheSelectionRepository(
         repeat(MANIFEST_FIELD_COUNT - 1) {
             fields += readNulField(input) ?: throw IllegalStateException("缓存逐文件快照记录不完整")
         }
+        check(fields[10].matches(Regex("[0-9a-f]{64}"))) { "缓存快照内容校验值无效" }
         return fields
     }
 
@@ -260,7 +262,7 @@ internal class CacheSelectionRepository(
 
     companion object {
         private const val SNAPSHOT_TTL_SECONDS = 30L * 60L
-        private const val MANIFEST_FIELD_COUNT = 10
+        private const val MANIFEST_FIELD_COUNT = 11
         private const val MAX_MANIFEST_FIELD_BYTES = 8 * 1_024
         private const val MAX_SELECTED_CANDIDATES = 20_000
     }

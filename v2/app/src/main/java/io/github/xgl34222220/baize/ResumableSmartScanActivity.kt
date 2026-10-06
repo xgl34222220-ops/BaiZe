@@ -91,12 +91,16 @@ import java.util.UUID
 
 /** Smart clean with stage checkpoints and crash-safe resume. */
 class ResumableSmartScanActivity : ComponentActivity() {
+    private val storagePermission = StoragePermissionRequest(this) { startSmartScan() }
     private val appearanceViewModel: AppearanceViewModel by viewModels()
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
 
     private var cacheService: IBaiZeRootService? = null
     private var planService: IPersistentCleanPlanService? = null
     private var resumeService: ICleanPlanResumeService? = null
+    @Volatile private var apkProtectionService: io.github.xgl34222220.baize.root.IProfileRootService? = null
+    @Volatile private var apkStopRequested = false
+    private var apkProtectionBindingRequested = false
     private var cacheBindingRequested = false
     private var planBindingRequested = false
     private var resumeBindingRequested = false
@@ -105,6 +109,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private var cacheSnapshotId = ""
     private var safeSnapshotId = ""
     private var apkSnapshot: List<SmartApkSnapshot> = emptyList()
+    private var apkContentReview: Map<String, IndexedContentProof> = emptyMap()
+    private var apkReviewMessage = ""
+    @Volatile private var contentReviewGeneration = 0L
     private var cacheCount = 0
     private var safeCount = 0
     private var apkCount = 0
@@ -151,6 +158,18 @@ class ResumableSmartScanActivity : ComponentActivity() {
         }
     }
 
+    private val apkProtectionConnection = object : RootService.Connection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (binder == null) { onServiceDisconnected(name); return }
+            apkProtectionService = RootServiceClients.profile(binder, applicationContext.cacheDir)
+        }
+        override fun onServiceDisconnected(name: ComponentName?) {
+            apkProtectionService = null; apkProtectionBindingRequested = false
+        }
+        override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) = onServiceDisconnected(name)
+        override fun onNullBinding(name: ComponentName?) = onServiceDisconnected(name)
+    }
+
     private val planConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             planService = RootServiceClients.persistent(binder, applicationContext.cacheDir)
@@ -191,7 +210,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         state = screenState,
                         onBack = ::finish,
                         onScan = ::startSmartScan,
-                        onClean = { showCleanConfirm = true },
+                        onClean = ::prepareCleanConfirmation,
                         onStop = ::stopTask,
                         onReconnect = ::bindServices,
                         onToggleCategory = ::toggleCategory,
@@ -213,6 +232,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                                         else append("剩余项目容量将在执行后确认。")
                                         append("已选择 ${screenState.selectedCount} 项。")
                                         append("清理前会再次验证白名单、路径与文件状态。")
+                                        if (apkReviewMessage.isNotEmpty()) append(apkReviewMessage)
                                         if (resumable) append(" 已完成项目不会重复处理。")
                                     }
                                 )
@@ -235,6 +255,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 
     private fun bindServices() {
+        if (apkProtectionService == null && !apkProtectionBindingRequested) {
+            apkProtectionBindingRequested = true
+            runCatching { RootService.bind(Intent(this, io.github.xgl34222220.baize.root.BaiZeProfileRootService::class.java)
+                .addCategory(RootService.CATEGORY_DAEMON_MODE), apkProtectionConnection) }.onFailure {
+                apkProtectionBindingRequested = false
+            }
+        }
         if (cacheService == null && !cacheBindingRequested) {
             runCatching {
                 RootService.bind(
@@ -287,18 +314,12 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun startSmartScan() {
         if (screenState.running) return
-        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+        apkStopRequested = false
+        if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
             screenState = screenState.copy(
-                phase = "需要“所有文件访问”才能完成安装包、大文件和存储扫描"
+                phase = "需要${SharedStorageAccess.label}才能完成安装包、大文件和存储扫描"
             )
-            runCatching {
-                startActivity(
-                    Intent(
-                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
-                )
-            }
+            storagePermission.launch()
             return
         }
         val cache = cacheService
@@ -329,8 +350,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-                val options = optionsJson()
+                val protection = withContext(Dispatchers.IO) { ApkProtectionStore.legacyRules(applicationContext) }
+                val whitelist = protection.packages
+                val options = optionsJson(protection)
                 val scanStarted = SystemClock.elapsedRealtime()
                 val scanBundle = withContext(Dispatchers.IO) {
                     coroutineScope {
@@ -407,6 +429,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                             append("$apkCount 个")
                             if (apkBytes > 0L) append(" · ").append(Formatter.formatFileSize(this@ResumableSmartScanActivity, apkBytes))
                             append(" · ${apkResult.elapsedMs} ms")
+                            if (apkResult.confirmedMissingRecords > 0) append(" · 已排除 ${apkResult.confirmedMissingRecords} 条旧记录")
                         }
                     },
                     cacheSelected = cacheCount > 0,
@@ -453,6 +476,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun cleanSnapshots() {
         if (screenState.running) return
+        apkStopRequested = false
         val totalBefore =
             (if (screenState.cacheSelected) cacheCount else 0) +
             (if (screenState.safeSelected) safeCount else 0) +
@@ -489,6 +513,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             var interrupted = false
             try {
                 val begin = JSONObject(withContext(Dispatchers.IO) {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
                     transactions.begin(cleanPlanId, cacheSnapshotId, safeSnapshotId, cacheCount, safeCount)
                 })
                 if (begin.has("error")) throw IllegalStateException(begin.optString("message", "无法启动清理事务"))
@@ -496,7 +521,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 persistCleanPlan()
 
                 val selection = JSONObject().put("__all_safe__", true).toString()
-                val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
+                withContext(Dispatchers.IO) { LegacyProtectionRecovery.requireReviewed(applicationContext) }
 
                 val apkJob = if (screenState.apkSelected && apkCount > 0 && apkSnapshot.isNotEmpty()) {
                     screenState = screenState.copy(phase = "正在并行清理安装包与其他垃圾")
@@ -510,7 +535,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                             JSONObject(cache.cleanSelected(
                                 cacheSnapshotId,
                                 selection,
-                                JSONArray(whitelist.toList().sorted()).toString()
+                                JSONArray(ApkProtectionStore.legacyRules(applicationContext).packages.sorted()).toString()
                             ))
                         }.getOrElse { throwableJson(it) }
                     }
@@ -546,8 +571,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     mergeApkMetrics(apkResult)
                     persistCleanPlan()
                     screenState = screenState.copy(
-                        apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else
-                            "安装包清理完成 · ${apkResult.elapsedMs} ms"
+                        apkSummary = if (apkResult.protectionUnavailable) "保护名单未核对，已保留 $apkCount 个安装包，请重连 Root" else if (apkCount > 0) "安装包剩余 $apkCount 个" else
+                            "安装包已移入回收站 ${apkResult.trashed} 个，未释放空间 · ${apkResult.elapsedMs} ms"
                     )
                 }
 
@@ -637,7 +662,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     safeBytes = if (safeCount == 0) 0L else null,
                     apkBytes = apkBytes,
                     cacheSummary = if (cacheCount > 0) "应用缓存剩余 $cacheCount 项" else "应用缓存清理完成",
-                    apkSummary = if (apkCount > 0) "安装包剩余 $apkCount 个" else "安装包清理完成",
+                    apkSummary = if (apkResult.protectionUnavailable) "保护名单未核对，已保留 $apkCount 个安装包，请重连 Root" else if (apkCount > 0) "安装包剩余 $apkCount 个" else "安装包已移入回收站 ${apkResult.trashed} 个，未释放空间",
                     safeSummary = if (safeCount > 0) "安全项目剩余 $safeCount 项" else "安全项目清理完成"
                 )
                 NativeNotifier.showTaskResult(
@@ -686,7 +711,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
     }
 
     private fun stopTask() {
+        apkStopRequested = true
         if (!screenState.running) return
+        if (screenState.operation == "review") {
+            contentReviewGeneration++; apkContentReview = emptyMap()
+            screenState = screenState.copy(running = false, operation = "", phase = "已停止内容核对，文件未删除")
+            return
+        }
         cacheService?.cancelCurrentTask()
         planService?.cancelCurrentTask()
         screenState = screenState.copy(phase = "正在安全停止；完成当前项目后保存进度…")
@@ -747,7 +778,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         }
         val createdAt = plan.optLong("createdAt", 0L)
         val age = System.currentTimeMillis() - createdAt
-        if (createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS || plan.optString("optionsSha") != sha256(optionsJson())) {
+        if (createdAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS || plan.optString("optionsSha") != sha256(planFingerprintOptionsJson())) {
             clearLocalPlan()
             screenState = screenState.copy(phase = "旧清理计划已过期或设置已变化，请重新扫描")
             return
@@ -963,7 +994,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
             .put("version", CLEAN_PLAN_VERSION)
             .put("planId", cleanPlanId)
             .put("createdAt", cleanPlanCreatedAt)
-            .put("optionsSha", sha256(optionsJson()))
+            .put("optionsSha", sha256(planFingerprintOptionsJson()))
             .put("cacheSnapshotId", cacheSnapshotId)
             .put("safeSnapshotId", safeSnapshotId)
             .put("cacheSelected", screenState.cacheSelected)
@@ -1010,12 +1041,18 @@ class ResumableSmartScanActivity : ComponentActivity() {
         if (cleanPlanId.isBlank() || cleanPlanCreatedAt <= 0L || age !in 0..CLEAN_PLAN_TTL_MS) return false
         val plan = runCatching { JSONObject(preferences.getString(CLEAN_PLAN_KEY, null).orEmpty()) }.getOrNull()
             ?: return false
-        return plan.optString("planId") == cleanPlanId && plan.optString("optionsSha") == sha256(optionsJson())
+        return plan.optString("planId") == cleanPlanId && plan.optString("optionsSha") == sha256(planFingerprintOptionsJson())
     }
 
-    private fun optionsJson(): String {
-        val packages = preferences.getStringSet("package_whitelist", emptySet()).orEmpty().toList().sorted()
-        val paths = preferences.getStringSet("path_whitelist", emptySet()).orEmpty().toList().sorted()
+    /** Metadata only: never pass this unchecked value to a scan or cleanup service. */
+    private fun planFingerprintOptionsJson(): String = optionsJson(ApkProtectionRules(
+        preferences.getStringSet("package_whitelist", emptySet()).orEmpty(),
+        preferences.getStringSet("path_whitelist", emptySet()).orEmpty()))
+
+    /** Called on IO before execution; unresolved recovery never becomes an empty rule list. */
+    private fun optionsJson(protection: ApkProtectionRules = ApkProtectionStore.legacyRules(applicationContext)): String {
+        val packages = protection.packages.sorted()
+        val paths = protection.paths.sorted()
         val maxMb = preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L)
         return JSONObject()
             .put("whitelistPackages", JSONArray(packages))
@@ -1028,14 +1065,14 @@ class ResumableSmartScanActivity : ComponentActivity() {
 
     private fun scanApkForSmartClean(): SmartApkScanResult {
         val started = SystemClock.elapsedRealtime()
-        if (!ApkMediaStoreIndex.hasAllFilesAccess()) {
+        if (!ApkMediaStoreIndex.hasAllFilesAccess(this)) {
             return SmartApkScanResult(
                 items = emptyList(),
                 elapsedMs = 0L,
                 error = "安装包未扫描：需要开启“所有文件访问”"
             )
         }
-        val indexed = ApkMediaStoreIndex.query(applicationContext)
+        val indexed = ApkIndexPresenceReview.query(applicationContext, remote = apkProtectionService)
         if (indexed.error != null) {
             return SmartApkScanResult(
                 items = emptyList(),
@@ -1049,14 +1086,41 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 path = candidate.path,
                 name = candidate.name,
                 bytes = candidate.bytes,
-                modifiedSeconds = candidate.modifiedSeconds
+                modifiedSeconds = candidate.modifiedSeconds,
+                identity = candidate.identity
             )
         }
         return SmartApkScanResult(
             items = items,
             elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
-            error = ""
+            error = if (indexed.truncated) "安装包索引达到 1 万项上限；结果不完整，可处理后重新扫描"
+                else if (indexed.missingCheckIncomplete) "部分安装包存在状态未核对，已保留未确认项" else "",
+            confirmedMissingRecords = indexed.confirmedMissingRecords
         )
+    }
+
+    private fun prepareCleanConfirmation() {
+        if (screenState.running) return
+        apkContentReview = emptyMap(); apkReviewMessage = ""
+        if (!screenState.apkSelected || apkSnapshot.isEmpty()) { showCleanConfirm = true; return }
+        apkStopRequested = false
+        val reviewGeneration = ++contentReviewGeneration
+        screenState = screenState.copy(running = true, operation = "review", phase = "正在核对已选安装包内容，可取消…")
+        lifecycleScope.launch {
+            try {
+                val review = withContext(Dispatchers.IO) { IndexedContentReview.prepare(apkSnapshot.map {
+                    IndexedApkCandidate(0, it.uri, it.path, it.name, it.bytes, it.modifiedSeconds, it.identity)
+                }, ApkDeletionGuard.forContext(applicationContext), { apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration }) }
+                if (apkStopRequested || isFinishing || isDestroyed || contentReviewGeneration != reviewGeneration) return@launch
+                apkContentReview = review.proofs
+                apkReviewMessage = "安装包已核对 ${review.proofs.size} 个；${review.rejected.size} 个无法核对，将保留。确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问；不立即释放空间；保留 30 天，卸载或清空白泽数据会丢失恢复记录，请先处理回收站。"
+                screenState = screenState.copy(running = false, operation = "", phase = apkReviewMessage)
+                showCleanConfirm = true
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                if (contentReviewGeneration == reviewGeneration)
+                    screenState = screenState.copy(running = false, operation = "", phase = "已取消内容核对，文件未删除")
+            }
+        }
     }
 
     private fun cleanApkForSmartClean(): SmartApkCleanResult {
@@ -1065,21 +1129,23 @@ class ResumableSmartScanActivity : ComponentActivity() {
         val remaining = ArrayList<SmartApkSnapshot>()
         var deleted = 0
         var deletedBytesNow = 0L
+        var trashed = 0
         var changed = 0
         var failed = 0
+        var protected = 0
+        var protectionUnavailable = false
         apkSnapshot.forEach { item ->
-            when (ApkMediaStoreIndex.deleteIfUnchanged(
-                context = applicationContext,
-                uriString = item.uri,
-                expectedPath = item.path,
-                expectedBytes = item.bytes,
-                expectedModifiedSeconds = item.modifiedSeconds
-            )) {
+            if (apkStopRequested) { remaining += item; return@forEach }
+            if (protectionUnavailable) { remaining += item; protected += 1; return@forEach }
+            val outcome = OrdinaryFileTrash.moveReviewed(applicationContext,
+                StorageFileRecord(0, item.uri, item.path, item.name, item.bytes, item.modifiedSeconds, "application/vnd.android.package-archive", identity = item.identity),
+                apkContentReview[item.uri], { ApkProtectionStore.refresh(applicationContext, ApkProtectionStore.source(applicationContext, apkProtectionService)) },
+                { apkStopRequested })
+            when (outcome.result) {
                 ApkIndexedDeleteResult.DELETED -> {
-                    deleted += 1
-                    deletedBytesNow += item.bytes
+                    if (outcome.trashed) trashed += 1 else { deleted += 1; deletedBytesNow += item.bytes }
                 }
-                ApkIndexedDeleteResult.CHANGED -> {
+                ApkIndexedDeleteResult.CHANGED, ApkIndexedDeleteResult.UNVERIFIED, ApkIndexedDeleteResult.INVALID -> {
                     changed += 1
                     remaining += item
                 }
@@ -1087,6 +1153,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     failed += 1
                     remaining += item
                 }
+                ApkIndexedDeleteResult.PROTECTED -> { protected += 1; remaining += item }
+                ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE -> { protected += 1; remaining += item; protectionUnavailable = true }
+                ApkIndexedDeleteResult.CANCELLED -> remaining += item
             }
         }
         apkSnapshot = remaining
@@ -1095,10 +1164,13 @@ class ResumableSmartScanActivity : ComponentActivity() {
         persistApkSnapshot()
         return SmartApkCleanResult(
             deleted = deleted,
+            trashed = trashed,
             deletedBytes = deletedBytesNow,
             changed = changed,
             failed = failed,
-            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
+            elapsedMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+            protected = protected,
+            protectionUnavailable = protectionUnavailable
         )
     }
 
@@ -1123,6 +1195,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
                         .put("path", item.path)
                         .put("name", item.name)
                         .put("bytes", item.bytes)
+                        .put("identity", item.identity?.json())
                         .put("modifiedSeconds", item.modifiedSeconds))
                 }
             })
@@ -1158,7 +1231,8 @@ class ResumableSmartScanActivity : ComponentActivity() {
                     path = path,
                     name = item.optString("name").ifBlank { path.substringAfterLast('/') },
                     bytes = item.optLong("bytes", 0L).coerceAtLeast(0L),
-                    modifiedSeconds = item.optLong("modifiedSeconds", 0L).coerceAtLeast(0L)
+                    modifiedSeconds = item.optLong("modifiedSeconds", 0L).coerceAtLeast(0L),
+                    identity = ApkFileIdentity.read(item.optJSONObject("identity"))
                 ))
             }
         }
@@ -1171,8 +1245,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
     private fun mergeApkMetrics(result: SmartApkCleanResult) {
         if (result.processed <= 0) return
         processedCandidates += result.processed
-        cleanedCandidates += result.deleted
+        cleanedCandidates += result.deleted + result.trashed
         changedCandidates += result.changed
+        protectedCandidates += result.protected
         failedCandidates += result.failed
         deletedBytes += result.deletedBytes
         deletedFiles += result.deleted.toLong()
@@ -1186,7 +1261,7 @@ class ResumableSmartScanActivity : ComponentActivity() {
         bucket.put("processed", bucket.optInt("processed") + result.processed)
             .put("cleaned", bucket.optInt("cleaned") + result.deleted)
             .put("changed", bucket.optInt("changed") + result.changed)
-            .put("protected", bucket.optInt("protected"))
+            .put("protected", bucket.optInt("protected") + result.protected)
             .put("partial", bucket.optInt("partial"))
             .put("failed", bucket.optInt("failed") + result.failed)
             .put("bytes", bucket.optLong("bytes") + result.deletedBytes)
@@ -1279,10 +1354,12 @@ class ResumableSmartScanActivity : ComponentActivity() {
         .joinToString("") { "%02x".format(it) }
 
     override fun onDestroy() {
+        apkStopRequested = true; contentReviewGeneration++
         pollJob?.cancel()
         if (cacheBindingRequested) runCatching { RootService.unbind(cacheConnection) }
         if (planBindingRequested) runCatching { RootService.unbind(planConnection) }
         if (resumeBindingRequested) runCatching { RootService.unbind(resumeConnection) }
+        if (apkProtectionBindingRequested) runCatching { RootService.unbind(apkProtectionConnection) }
         super.onDestroy()
     }
 
@@ -1301,13 +1378,15 @@ internal data class SmartApkSnapshot(
     val path: String,
     val name: String,
     val bytes: Long,
-    val modifiedSeconds: Long
+    val modifiedSeconds: Long,
+    val identity: ApkFileIdentity? = null
 )
 
 internal data class SmartApkScanResult(
     val items: List<SmartApkSnapshot>,
     val elapsedMs: Long,
-    val error: String
+    val error: String,
+    val confirmedMissingRecords: Int = 0
 )
 
 internal data class SmartApkCleanResult(
@@ -1315,9 +1394,12 @@ internal data class SmartApkCleanResult(
     val deletedBytes: Long,
     val changed: Int,
     val failed: Int,
-    val elapsedMs: Long
+    val elapsedMs: Long,
+    val protected: Int = 0,
+    val protectionUnavailable: Boolean = false,
+    val trashed: Int = 0
 ) {
-    val processed: Int get() = deleted + changed + failed
+    val processed: Int get() = deleted + changed + failed + protected + trashed
     companion object {
         val EMPTY = SmartApkCleanResult(0, 0L, 0, 0, 0L)
     }
@@ -1620,3 +1702,4 @@ private fun formatMetricBuckets(raw: String): String {
     }
     return lines.joinToString("\n")
 }
+

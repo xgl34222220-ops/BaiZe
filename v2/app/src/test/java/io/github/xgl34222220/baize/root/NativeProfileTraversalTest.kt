@@ -182,7 +182,8 @@ class NativeProfileTraversalTest {
         assertEquals(1, result.getInt("skippedCandidates"))
         assertEquals(0L, result.getLong("deletedFiles"))
         assertEquals("untouched", outside.readText())
-        assertEquals("snapshot_expired", JSONObject(engine.page(snapshotId, 0, 20)).getString("error"))
+        assertEquals(1, JSONObject(engine.page(snapshotId, 0, 20)).getJSONArray("items").length())
+        assertEquals(snapshotId, result.getString("remainingSnapshotId"))
     }
 
     @Test fun changedDeepRulesInvalidateSnapshotBeforeMutation() {
@@ -207,6 +208,8 @@ class NativeProfileTraversalTest {
             .apply { isAccessible = true }
         val candidate = method("candidate").invoke(engine, "empty", "empty_dir", "empty", "low", target,
             "", "", true, "", entry, 0)
+        candidate.javaClass.getDeclaredField("frozenTree").apply { isAccessible = true }
+            .set(candidate, FrozenReviewTree.capture(target.toPath(), AtomicBoolean(false), 5_000))
         val options = method("parseOptions").invoke(engine, "{}")
         val validate = method("validate")
         assertNull(validate.invoke(engine, candidate, options, emptySet<String>()))

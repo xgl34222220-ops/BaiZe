@@ -29,6 +29,12 @@ internal class AndroidPathIdentity(primaryStorageRoot: String?) {
         return path
     }
 
+    fun unresolvedUserAlias(raw: String): Boolean {
+        if (primary != null) return false
+        val path = normalize(raw)
+        return listOf("/sdcard", "/storage/self/primary").any { path == it || path.startsWith("$it/") }
+    }
+
     companion object {
         private val shared = Regex("^/(?:storage/emulated|data/media)/([0-9]+)(/.*)?$")
         private fun normalize(path: String): String = File(path).normalize().path.trimEnd('/').ifBlank { "/" }

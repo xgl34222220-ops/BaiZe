@@ -25,6 +25,8 @@ SHELL_BIN=${BAIZE_SHELL_BIN:-sh}
 
 case "$MODE" in
   deep-clean)
+    [ -f "$SCRIPTDIR/deep-manifest-clean.sh" ] || { echo "深度逐文件快照组件缺失" >&2; exit 8; }
+    exec "$SHELL_BIN" "$SCRIPTDIR/deep-manifest-clean.sh" "$MODE" "$TRIGGER"
     STATE_FILE="$STATE_DIR/deep_scan.env"
     TARGETS_FILE="$STATE_DIR/deep_scan.targets"
     TITLE="深度规则"
@@ -41,7 +43,7 @@ esac
 
 mkdir -p "$STATE_DIR" "$REPORT_DIR" "$LOG_DIR"
 [ -f "$CONFIG" ] || { [ -f "$MODDIR/config/default.conf" ] && cp -f "$MODDIR/config/default.conf" "$CONFIG" || : >"$CONFIG"; }
-[ -f "$WHITELIST" ] || : >"$WHITELIST"
+[ -f "$WHITELIST" ] && [ ! -L "$WHITELIST" ] || { echo "保护名单不可用，未开始清理" >&2; exit 7; }
 
 get_config_uint() {
   key=$1 fallback=$2 min=$3 max=$4
@@ -79,6 +81,7 @@ fi
 printf '%s\n' "$$" >"$LOCK_DIR/pid"
 TMP_DIR="$LOCK_DIR/tmp"
 mkdir -p "$TMP_DIR"
+ACTIVE_CHILD=""
 
 cleanup_lock() {
   rm -f "$RUNNING_FILE" 2>/dev/null
@@ -87,6 +90,14 @@ cleanup_lock() {
 handle_signal() {
   trap - EXIT INT TERM
   : >"$STOP_FILE" 2>/dev/null
+  # Keep ownership until the writer has actually stopped. Another task must not
+  # clear stop and start deleting while an orphan app_process is still active.
+  if [ -n "$ACTIVE_CHILD" ]; then
+    kill "$ACTIVE_CHILD" 2>/dev/null || true
+    sleep 1
+    kill -9 "$ACTIVE_CHILD" 2>/dev/null || true
+    wait "$ACTIVE_CHILD" 2>/dev/null || true
+  fi
   cleanup_lock
   exit 9
 }
@@ -116,7 +127,7 @@ set_phase() {
     echo "batch_current=$batch"
     echo "batch_files=$BATCH_FILES"
     printf 'current_path=%s\n' "$path" | tr '\r\n' '  '
-    echo "engine=profile-snapshot-v42.8-stream-batch"
+    echo "engine=profile-original-file-manifest-v1"
   } >"$tmp"
   mv -f "$tmp" "$RUNNING_FILE"
 }
@@ -174,6 +185,7 @@ else
   }
   path_conflicts_whitelist() {
     _wl_target=${1%/}
+    case "$_wl_target" in */.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]|*/.[bB][aA][iI][zZ][eE]-[fF][iI][lL][eE]-[tT][rR][aA][sS][hH]/*|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]|*/[aA][nN][dD][rR][oO][iI][dD]/[dD][aA][tT][aA]/[iI][oO].[gG][iI][tT][hH][uU][bB].[xX][gG][lL]34222220.[bB][aA][iI][zZ][eE]/[fF][iI][lL][eE][sS]/[rR][eE][cC][oO][vV][eE][rR][aA][bB][lL][eE]-[tT][rR][aA][sS][hH]/*) return 0;; esac
     [ -n "${BAIZE_WL_ITEMS:-}" ] || return 1
     _wl_old_ifs=$IFS
     case "$-" in *f*) _wl_had_f=1 ;; *) _wl_had_f=0 ;; esac
@@ -241,66 +253,6 @@ package_installed() {
   return 2
 }
 
-file_size() {
-  value=$(stat -c %s "$1" 2>/dev/null)
-  case "$value" in ''|*[!0-9]*) value=$(wc -c <"$1" 2>/dev/null | tr -d ' ') ;; esac
-  case "$value" in ''|*[!0-9]*) value=0 ;; esac
-  echo "$value"
-}
-
-clean_directory_files() {
-  target=$1 result_file=$2 max_bytes=$3
-  : >"$result_file"
-  (
-    find "$target" -xdev -mindepth 1 -type f ! -size "+${max_bytes}c" ! -newer "$STATE_FILE" -print0 2>/dev/null |
-      xargs -0 -n "$BATCH_FILES" "$SHELL_BIN" -c '
-        result_file=$1
-        stop_file=$2
-        state_file=$3
-        max_bytes=$4
-        shift 4
-        deleted=0
-        bytes=0
-        changed=0
-        failed=0
-        for file do
-          [ -f "$stop_file" ] && exit 9
-          if [ ! -f "$file" ] || [ -L "$file" ] || [ "$file" -nt "$state_file" ]; then
-            changed=$((changed + 1))
-            continue
-          fi
-          size=$(stat -c %s "$file" 2>/dev/null)
-          case "$size" in ""|*[!0-9]*) size=$(wc -c <"$file" 2>/dev/null | tr -d " ") ;; esac
-          case "$size" in ""|*[!0-9]*) size=0 ;; esac
-          if [ "$size" -gt "$max_bytes" ]; then
-            changed=$((changed + 1))
-            continue
-          fi
-          if rm -f -- "$file" 2>/dev/null && [ ! -e "$file" ]; then
-            deleted=$((deleted + 1))
-            bytes=$((bytes + size))
-          else
-            failed=$((failed + 1))
-          fi
-        done
-        printf "%s\t%s\t%s\t%s\n" "$deleted" "$bytes" "$changed" "$failed" >>"$result_file"
-      ' baize-deep-batch "$result_file" "$STOP_FILE" "$STATE_FILE" "$max_bytes"
-  ) &
-  child=$!
-  wait_with_progress "$child" "正在连续批量清理${TITLE}" "$current" "$total" "$target" "$result_file"
-}
-
-prune_empty_dirs() {
-  target=$1 count_file=$2
-  : >"$count_file"
-  (
-    find "$target" -xdev -depth -mindepth 1 -type d -empty -delete -print 2>/dev/null |
-      wc -l | tr -d ' ' >"$count_file"
-  ) &
-  child=$!
-  wait_with_progress "$child" "正在收尾空目录" "$current" "$total" "$target" ""
-}
-
 write_latest() {
   files=$1 dirs=$2 bytes=$3 errors=$4 skipped=$5 elapsed=$6 result=$7 batches=$8 remaining=$9 stopped=${10}
   tmp="$STATE_DIR/latest.env.tmp.$$"
@@ -331,7 +283,7 @@ write_latest() {
     echo "deep_stopped=$stopped"
     echo "deep_clean_batch_files=$BATCH_FILES"
     echo "elapsed=$elapsed"
-    echo "engine=profile-snapshot-v42.8-stream-batch"
+    echo "engine=profile-original-file-manifest-v1"
     echo "result=$result"
   } >"$tmp"
   mv -f "$tmp" "$STATE_DIR/latest.env"
@@ -342,6 +294,8 @@ write_latest() {
 epoch=$(state_value epoch)
 snapshot_id=$(state_value snapshot_id)
 expected_targets_sha=$(state_value targets_sha)
+FROZEN_FILE="$STATE_DIR/corpse_scan.frozen.json"
+expected_frozen_sha=$(state_value frozen_sha)
 expected_whitelist_sha=$(state_value whitelist_sha)
 expected_rules_sha=$(state_value rules_sha)
 allow_high=$(state_value allow_high_risk)
@@ -366,6 +320,16 @@ if [ "$MODE" = "deep-clean" ]; then
   [ "$(file_sha "$DEEP_RULES")" = "$expected_rules_sha" ] || { echo "深度规则库已变化，请重新扫描"; exit 7; }
 fi
 
+[ -n "$expected_frozen_sha" ] && [ "$expected_frozen_sha" != missing ] && \
+  [ "$(file_sha "$FROZEN_FILE")" = "$expected_frozen_sha" ] || {
+    echo "原始逐文件快照缺失或已变化，请重新扫描卸载残留" >&2; exit 7;
+  }
+[ -f "$MODDIR/app/baize.apk" ] && [ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || {
+  echo "卸载残留清理组件缺失，请更新完整模块" >&2; exit 8;
+}
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+summary_number() { value=$(sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1); case "$value" in ''|*[!0-9]*) value=0 ;; esac; echo "$value"; }
+
 total=$(wc -l <"$TARGETS_FILE" 2>/dev/null | tr -d ' ')
 case "$total" in ''|*[!0-9]*) total=0 ;; esac
 [ "$total" -gt 0 ] || { echo "${TITLE}扫描快照为空，请重新扫描"; exit 6; }
@@ -381,6 +345,7 @@ errors=0
 skipped=0
 total_batches=0
 code=0
+unconfirmed=0
 TAB=$(printf '\t')
 
 while IFS= read -r line || [ -n "$line" ]; do
@@ -410,7 +375,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 
   path_conflicts_whitelist "$target" && { skipped=$((skipped + 1)); printf 'protected\t%s\t白名单保护\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"; continue; }
-  if [ ! -e "$target" ] || [ -L "$target" ]; then
+  if [ -L "$target" ]; then
     skipped=$((skipped + 1))
     printf 'protected\t%s\t目标已变化\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
     continue
@@ -423,93 +388,74 @@ while IFS= read -r line || [ -n "$line" ]; do
   target_failed=0
   target_batches=0
 
-  if [ -f "$target" ]; then
-    if [ "$target" -nt "$STATE_FILE" ]; then
-      skipped=$((skipped + 1))
-      printf 'protected\t%s\t扫描后已修改\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
-      continue
-    fi
-    size=$(file_size "$target")
-    if [ "$size" -gt "$max_file_bytes" ]; then
-      skipped=$((skipped + 1))
-      printf 'protected\t%s\t大文件保护\t1\t%s\t%s\n' "$risk" "$size" "$target" >>"$REPORT_FILE"
-      continue
-    fi
-    set_phase "正在删除扫描快照文件" "$current" "$total" "$target" 1
-    if rm -f -- "$target" 2>/dev/null && [ ! -e "$target" ]; then
-      target_files=1
-      target_bytes=$size
-      target_batches=1
-    else
-      target_failed=1
-    fi
-  elif [ -d "$target" ]; then
-    batch_result="$TMP_DIR/$MODE.$current.batch.tsv"
-    dirs_count="$TMP_DIR/$MODE.$current.dirs.count"
-    clean_directory_files "$target" "$batch_result" "$max_file_bytes"
-    clean_code=$?
-    if [ "$clean_code" -eq 9 ]; then code=9; break; fi
-    if [ "$clean_code" -ne 0 ]; then target_failed=$((target_failed + 1)); fi
-
-    if [ -s "$batch_result" ]; then
-      aggregate=$(awk -F '\t' '{d+=$1;b+=$2;c+=$3;f+=$4;n++} END {printf "%d %d %d %d %d\n",d,b,c,f,n}' "$batch_result")
-      set -- $aggregate
-      target_files=${1:-0}
-      target_bytes=${2:-0}
-      target_changed=${3:-0}
-      target_failed=$((target_failed + ${4:-0}))
-      target_batches=${5:-0}
-    fi
-
-    should_stop && { code=9; break; }
-    prune_empty_dirs "$target" "$dirs_count"
-    prune_code=$?
-    if [ "$prune_code" -eq 9 ]; then code=9; break; fi
-    [ "$prune_code" -ne 0 ] && target_failed=$((target_failed + 1))
-    target_dirs=$(sed -n '1p' "$dirs_count" 2>/dev/null)
-    case "$target_dirs" in ''|*[!0-9]*) target_dirs=0 ;; esac
-    if [ -d "$target" ]; then
-      rmdir -- "$target" 2>/dev/null && target_dirs=$((target_dirs + 1))
-    fi
-    rm -f "$batch_result" "$dirs_count"
-  else
-    skipped=$((skipped + 1))
-    printf 'protected\t%s\t不支持的文件类型\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
-    continue
+  summary="$TMP_DIR/corpse.$current.summary"
+  if ! baize_cleanup_media_begin; then
+    errors=$((errors + 1)); skipped=$((skipped + 1)); unconfirmed=1; code=8; break
   fi
+  set_phase "正在核对并删除原始逐文件快照" "$current" "$total" "$target" 1
+  CLASSPATH="$MODDIR/app/baize.apk" app_process / io.github.xgl34222220.baize.root.ModuleCorpseSnapshot \
+    clean "$STATE_DIR" "$FROZEN_FILE" "$target" "$summary" "$STOP_FILE" "$max_file_bytes" "$BAIZE_CLEANUP_DELETED_NUL" &
+  child=$!
+  ACTIVE_CHILD=$child
+  wait_with_progress "$child" "正在核对并删除原始逐文件快照" "$current" "$total" "$target" ""
+  clean_code=$?
+  ACTIVE_CHILD=""
+  baize_cleanup_media_publish || { errors=$((errors + 1)); unconfirmed=1; }
+  target_batches=1
+  if [ -f "$summary" ]; then
+    target_files=$(summary_number "$summary" files)
+    target_bytes=$(summary_number "$summary" bytes)
+    target_dirs=$(summary_number "$summary" directories)
+    target_failed=$(summary_number "$summary" failures)
+    target_complete=$(summary_number "$summary" complete)
+    [ "$target_complete" = 1 ] || target_changed=1
+  else
+    target_failed=1; target_changed=1; unconfirmed=1
+  fi
+  if [ "$clean_code" -ne 0 ]; then
+    target_changed=1
+    [ "$clean_code" -eq 8 ] || [ "$clean_code" -eq 9 ] || target_failed=$((target_failed + 1))
+  fi
+  [ "$clean_code" -ne 9 ] || code=9
 
   total_batches=$((total_batches + target_batches))
   errors=$((errors + target_failed))
+  [ "$target_changed" -eq 0 ] && [ "$target_failed" -eq 0 ] && cleaned_targets=$((cleaned_targets + 1))
+  [ "$target_changed" -eq 0 ] || skipped=$((skipped + 1))
   if [ "$target_files" -gt 0 ] || [ "$target_dirs" -gt 0 ]; then
-    cleaned_targets=$((cleaned_targets + 1))
     deleted_files=$((deleted_files + target_files))
     deleted_dirs=$((deleted_dirs + target_dirs))
     deleted_bytes=$((deleted_bytes + target_bytes))
-    printf 'cleaned\t%s\t%s\t%s\t%s\t%s\n' "$risk" "$CATEGORY" "$target_files" "$target_bytes" "$target" >>"$REPORT_FILE"
+    action=cleaned
+    [ "$target_changed" -eq 0 ] && [ "$target_failed" -eq 0 ] || action=partial
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$action" "$risk" "$CATEGORY" "$target_files" "$target_bytes" "$target" >>"$REPORT_FILE"
   elif [ "$target_changed" -gt 0 ]; then
-    skipped=$((skipped + 1))
     printf 'protected\t%s\t扫描后已变化\t%s\t0\t%s\n' "$risk" "$target_changed" "$target" >>"$REPORT_FILE"
   elif [ "$target_failed" -gt 0 ]; then
     printf 'failed\t%s\t%s\t1\t0\t%s\n' "$risk" "$CATEGORY" "$target" >>"$REPORT_FILE"
   else
-    skipped=$((skipped + 1))
-    printf 'protected\t%s\t没有仍符合快照的内容\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
+    printf 'absent\t%s\t原始快照内容已不存在\t0\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"
   fi
+  [ "$code" -ne 9 ] || break
 done <"$TARGETS_FILE"
 
 end=$(date +%s)
 elapsed=$((end - START_EPOCH))
-remaining_targets=$((total - current))
+remaining_targets=$((total - cleaned_targets))
 [ "$remaining_targets" -lt 0 ] && remaining_targets=0
 
+baize_cleanup_media_kick
 if [ "$code" -eq 9 ]; then
-  result="${TITLE}连续清理已停止，进度已保留，已释放 $(human_bytes "$deleted_bytes")"
+  result="${TITLE}已停止，剩余原始快照已保留；已确认释放 $(human_bytes "$deleted_bytes")"
   stopped=1
+elif [ "$errors" -gt 0 ] || [ "$skipped" -gt 0 ] || [ "$unconfirmed" -ne 0 ]; then
+  code=8; stopped=0
+  result="${TITLE}部分完成，${remaining_targets} 个目标已保留；已确认释放 $(human_bytes "$deleted_bytes")"
+  [ "$unconfirmed" -eq 0 ] || result="${TITLE}操作中断，部分删除或索引结果未确认；已确认释放 $(human_bytes "$deleted_bytes")"
 else
-  result="${TITLE}连续清理完成，已释放 $(human_bytes "$deleted_bytes")"
-  stopped=0
-  remaining_targets=0
-  rm -f "$STATE_FILE" "$TARGETS_FILE"
+  result="${TITLE}清理完成，已确认释放 $(human_bytes "$deleted_bytes")"
+  stopped=0; remaining_targets=0
+  rm -f "$STATE_FILE" "$TARGETS_FILE" "$FROZEN_FILE"
 fi
 
 write_latest "$deleted_files" "$deleted_dirs" "$deleted_bytes" "$errors" "$skipped" "$elapsed" "$result" "$total_batches" "$remaining_targets" "$stopped"
@@ -530,5 +476,4 @@ tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTO
 
 echo "$result"
 echo "扫描快照: $snapshot_id | 清理目标: $cleaned_targets | 文件: $deleted_files | 目录: $deleted_dirs | 批次: $total_batches | 剩余: $remaining_targets | 跳过: $skipped | 失败: $errors"
-[ "$code" -eq 9 ] && exit 9
-exit 0
+exit "$code"

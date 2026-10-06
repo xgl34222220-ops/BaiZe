@@ -9,7 +9,31 @@ MODDIR=${0%/*}
 case "$MODDIR" in */scripts) MODDIR=${MODDIR%/scripts} ;; esac
 SCRIPTDIR="$MODDIR"
 [ ! -d "$MODDIR/scripts" ] || SCRIPTDIR="$MODDIR/scripts"
+# Legacy direct entry must use the same original per-file review as the module.
+# Route before locks, defaults, package discovery or any target traversal.
+case "${1:-scan}" in
+  deep-scan)
+    [ -f "$SCRIPTDIR/deep-scan-manifest.sh" ] || { echo "深度原始清单扫描组件缺失，未执行" >&2; exit 8; }
+    exec sh "$SCRIPTDIR/deep-scan-manifest.sh" "$@"
+    ;;
+  deep-clean)
+    [ -f "$SCRIPTDIR/deep-manifest-clean.sh" ] || { echo "深度原始清单消费组件缺失，未执行" >&2; exit 8; }
+    exec sh "$SCRIPTDIR/deep-manifest-clean.sh" "$@"
+    ;;
+  corpse-scan)
+    [ -f "$SCRIPTDIR/one-pass-scan.sh" ] || { echo "残留清单扫描组件缺失，未执行" >&2; exit 8; }
+    exec sh "$SCRIPTDIR/one-pass-scan.sh" "$@"
+    ;;
+  corpse-clean)
+    [ -f "$SCRIPTDIR/profile-cleaner.sh" ] || { echo "残留原始清单消费组件缺失，未执行" >&2; exit 8; }
+    exec sh "$SCRIPTDIR/profile-cleaner.sh" "$@"
+    ;;
+esac
 STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
+# Capture a task's refresh identity once and keep records outside temporary lanes.
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
+. "$SCRIPTDIR/cleanup-media-queue.sh"
+baize_cleanup_media_init
 # 进程匹配用的模块目录名，v1 独立安装时为 safesweep。
 MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}
 CONFIG="$STATE_DIR/config.conf"
@@ -29,10 +53,6 @@ LATEST_REPORT="$REPORT_DIR/latest.tsv"
 APP_DETAILS="$REPORT_DIR/apps-latest.tsv"
 APP_ITEMS="$REPORT_DIR/app-items-latest.tsv"
 HISTORY_FILE="$STATE_DIR/history.tsv"
-DEEP_SCAN_STATE="$STATE_DIR/deep_scan.env"
-DEEP_SCAN_TARGETS="$STATE_DIR/deep_scan.targets"
-CORPSE_SCAN_STATE="$STATE_DIR/corpse_scan.env"
-CORPSE_SCAN_TARGETS="$STATE_DIR/corpse_scan.targets"
 APK_SCAN_STATE="$STATE_DIR/apk_scan.env"
 APK_SCAN_TARGETS="$STATE_DIR/apk_scan.targets"
 
@@ -45,10 +65,6 @@ case "$REQUEST_MODE" in
   rules-clean) MODE=clean; PROFILE=rules ;;
   fragment-scan) MODE=scan; PROFILE=fragment ;;
   fragment-clean) MODE=clean; PROFILE=fragment ;;
-  deep-scan) MODE=scan; DEEP_MODE=1; PROFILE=deep ;;
-  deep-clean) MODE=clean; DEEP_MODE=1; PROFILE=deep ;;
-  corpse-scan) MODE=scan; PROFILE=corpse ;;
-  corpse-clean) MODE=clean; PROFILE=corpse ;;
   apk-scan) MODE=scan; PROFILE=apk ;;
   apk-clean) MODE=clean; PROFILE=apk ;;
   scan|clean) MODE=$REQUEST_MODE ;;
@@ -58,7 +74,11 @@ TRIGGER=${2:-manual}
 
 mkdir -p "$LOG_DIR" "$REPORT_DIR"
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG"
-[ -f "$WHITELIST" ] || cp -f "$MODDIR/config/whitelist.conf" "$WHITELIST"
+if [ "$MODE" = clean ]; then
+  [ -f "$WHITELIST" ] && [ -r "$WHITELIST" ] || { echo "白名单缺失或不可读，未开始删除" >&2; exit 7; }
+else
+  [ -f "$WHITELIST" ] || cp -f "$MODDIR/config/whitelist.conf" "$WHITELIST"
+fi
 [ -f "$CUSTOM_RULES" ] || cp -f "$MODDIR/config/custom.rules" "$CUSTOM_RULES"
 
 pid_is_safesweep() {
@@ -144,6 +164,9 @@ FRAGMENT_FILES=0
 BYTES=0
 SKIPPED=0
 ERRORS=0
+CHANGED_FILES=0
+MISSING_FILES=0
+COMPAT_DELETE_SEQ=0
 CATEGORY=""
 HIDDEN_CONTEXT=0
 LIST_SEQ=0
@@ -171,8 +194,6 @@ WATCHDOG_SEQ=0
 DEEP_PROGRESS_CURRENT=0
 DEEP_PROGRESS_TOTAL=0
 DEEP_CURRENT_PATH=""
-DEEP_SCAN_MANIFEST_TMP="$TMP_DIR/deep-scan.targets"
-CORPSE_SCAN_MANIFEST_TMP="$TMP_DIR/corpse-scan.targets"
 REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
 RULE_SEEN_FILE="$TMP_DIR/rule-targets.seen"
 : >"$RULE_SEEN_FILE"
@@ -330,24 +351,6 @@ should_stop() {
   return 1
 }
 
-existing_files_to_list() {
-  source_list=$1
-  target_list=$2
-  : >"$target_list"
-  while IFS= read -r -d '' candidate; do
-    [ -f "$candidate" ] && [ ! -L "$candidate" ] && printf '%s\0' "$candidate" >>"$target_list"
-  done <"$source_list"
-}
-
-existing_paths_to_list() {
-  source_list=$1
-  target_list=$2
-  : >"$target_list"
-  while IFS= read -r -d '' candidate; do
-    { [ -e "$candidate" ] || [ -L "$candidate" ]; } && printf '%s\0' "$candidate" >>"$target_list"
-  done <"$source_list"
-}
-
 first_nul_path() {
   source_list=$1
   while IFS= read -r -d '' candidate; do
@@ -357,8 +360,8 @@ first_nul_path() {
   return 1
 }
 
-# The optional helper only de-duplicates an already policy-filtered manifest.
-# It cannot discover or delete targets; unsupported ABIs keep the shell path.
+# Discovery and policy stay in this script. The native helper snapshots and
+# deletes only selected paths; a missing helper fails closed for clean tasks.
 COMPAT_FILTER_ENGINE=""
 RULE_SCAN_ENGINE=""
 if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
@@ -366,6 +369,113 @@ if [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
   COMPAT_FILTER_ENGINE=$(baize_resolve_engine "$MODDIR" baize_compat_filter 2>/dev/null) || COMPAT_FILTER_ENGINE=""
   RULE_SCAN_ENGINE=$(baize_resolve_engine "$MODDIR" baize_engine 2>/dev/null) || RULE_SCAN_ENGINE=""
 fi
+
+
+# Kept separately: failure of optional de-duplication must not disable identity
+# checking. This boundary is created before any candidate collection starts.
+COMPAT_SAFE_ENGINE=$COMPAT_FILTER_ENGINE
+COMPAT_BOUNDARY="$TMP_DIR/compat-boundary"
+COMPAT_BOUNDARY_READY=0
+COMPAT_BOUNDARY_ATTEMPTED=0
+compat_begin_collection() {
+  [ "$MODE" = "clean" ] || return 0
+  [ "$COMPAT_BOUNDARY_ATTEMPTED" = "0" ] || return 0
+  COMPAT_BOUNDARY_ATTEMPTED=1
+  if [ -n "$COMPAT_SAFE_ENGINE" ]; then
+    "$COMPAT_SAFE_ENGINE" --begin "$COMPAT_BOUNDARY" && COMPAT_BOUNDARY_READY=1
+  fi
+  return 0
+}
+
+
+compat_summary_uint() {
+  # A helper stopped by the watchdog may have only committed progress records.
+  # Each terminated record holds all counters together, so partial writes cannot
+  # mix fields from different operations. Final fields override this fallback.
+  awk -F= -v key="$2" '
+    $1 == "progress" && $2 ~ /^[0-9]+ [0-9]+ [0-9]+ [0-9]+ [0-9]+ [0-9]+ end$/ {
+      split($2, values, " ")
+      index_by_key["cleaned"]=1; index_by_key["bytes"]=2; index_by_key["changed"]=3
+      index_by_key["missing"]=4; index_by_key["errors"]=5; index_by_key["processed"]=6
+      if (key in index_by_key) { value=values[index_by_key[key]]; found=1 }
+    }
+    $1 == key && $2 ~ /^[0-9]+$/ { value=$2; found=1 }
+    END { print found ? value : 0 }
+  ' "$1" 2>/dev/null
+}
+
+compat_delete_list() {
+  compat_list=$1
+  compat_kind=${2:-file}
+  compat_max_bytes=${3:-$MAX_FILE_BYTES}
+  ACTUAL_COUNT=0; ACTUAL_BYTES=0; REMAINING_COUNT=0; REMAINING_BYTES=0
+  [ -s "$compat_list" ] || return 0
+  should_stop && return 9
+  COMPAT_DELETE_SEQ=$((COMPAT_DELETE_SEQ + 1))
+  compat_snapshot="$TMP_DIR/compat-delete.$COMPAT_DELETE_SEQ.snapshot"
+  compat_summary="$TMP_DIR/compat-delete.$COMPAT_DELETE_SEQ.env"
+  # Public integration contract: NUL paths, only successful native unlinkat.
+  # Consume before cleanup_lock; never infer success from missing paths.
+  COMPAT_DELETED_NUL="$TMP_DIR/compat-deleted.$COMPAT_DELETE_SEQ.nul"
+  compat_code=5
+  if [ "$COMPAT_BOUNDARY_READY" = "1" ] && [ -n "$COMPAT_SAFE_ENGINE" ]; then
+    run_limited_command 30 "$COMPAT_SAFE_ENGINE" --snapshot "$compat_list" "$compat_snapshot" \
+      "$COMPAT_BOUNDARY" "$compat_kind" "$STATE_DIR/stop" "$compat_max_bytes"
+    compat_code=$?
+    if [ "$compat_code" -eq 0 ]; then
+      # The next begin publishes the previous batch, after callers consumed its NUL list.
+      # Final cleanup publishes the last batch. A live task's .building is never claimed.
+      if baize_cleanup_media_begin; then
+        COMPAT_DELETED_NUL="$BAIZE_CLEANUP_DELETED_NUL"
+      else
+        compat_code=5
+      fi
+    fi
+    if [ "$compat_code" -eq 0 ]; then
+      run_limited_command 30 "$COMPAT_SAFE_ENGINE" --delete "$compat_snapshot" "$compat_summary" \
+        "$COMPAT_DELETED_NUL" "$STATE_DIR/stop"
+      compat_code=$?
+    fi
+  fi
+  case "$compat_code" in
+    0|8|9) ;;
+    *) BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1 ;;
+  esac
+  if [ -f "$compat_summary" ] && grep -qx 'schema=compat-delete-v1' "$compat_summary"; then
+    ACTUAL_COUNT=$(compat_summary_uint "$compat_summary" cleaned)
+    ACTUAL_BYTES=$(compat_summary_uint "$compat_summary" bytes)
+    REMAINING_COUNT=$(compat_summary_uint "$compat_summary" errors)
+    compat_changed=$(compat_summary_uint "$compat_summary" changed)
+    compat_missing=$(compat_summary_uint "$compat_summary" missing)
+    CHANGED_FILES=$((CHANGED_FILES + compat_changed))
+    MISSING_FILES=$((MISSING_FILES + compat_missing))
+    PROTECTED_ITEMS=$((PROTECTED_ITEMS + compat_changed))
+    SKIPPED=$((SKIPPED + compat_changed + compat_missing))
+    [ "$compat_changed" -eq 0 ] || report_line protected changed "$CATEGORY" "$compat_changed" 0 "候选状态已变化"
+    [ "$compat_missing" -eq 0 ] || report_line skipped missing "$CATEGORY" "$compat_missing" 0 "候选已不存在"
+  elif [ "$compat_code" -eq 0 ]; then
+    compat_code=5
+  fi
+  if [ "$compat_code" -ne 0 ] && [ "$compat_code" -ne 9 ] && [ "$REMAINING_COUNT" -eq 0 ]; then
+    REMAINING_COUNT=1
+  fi
+  ERRORS=$((ERRORS + REMAINING_COUNT))
+  if [ "$REMAINING_COUNT" -gt 0 ]; then
+    log_line "[清理未完成][$CATEGORY] 身份校验或删除失败（代码 $compat_code），未确认删除的路径已保留"
+  fi
+  if [ "$compat_code" -eq 9 ]; then
+    STOPPED=1
+    STOP_REASON="已收到停止请求"
+  fi
+  return 0
+}
+
+compat_collection_failed() {
+  ERRORS=$((ERRORS + 1))
+  PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+  log_line "[扫描未完成][$CATEGORY] 未消费本次部分候选列表"
+  report_line protected incomplete "$CATEGORY" 1 0 "$1"
+}
 
 filter_processed_list() {
   source_list=$1
@@ -517,7 +627,6 @@ send_completion_notification() {
       rules) title="白泽规则清理完成" ;;
       fragment) title="白泽碎片清理完成" ;;
       deep) title="白泽深度清理完成" ;;
-      corpse) title="白泽卸载残留清理完成" ;;
       *) title="白泽清理完成" ;;
     esac
   fi
@@ -539,8 +648,10 @@ add_bytes() {
 handle_file() {
   file=$1
   kind=${2:-regular}
-  [ -f "$file" ] || return 0
-  [ -L "$file" ] && return 0
+  if [ "$MODE" != "clean" ]; then
+    [ -f "$file" ] || return 0
+    [ -L "$file" ] && return 0
+  fi
   should_stop && return 9
 
   if is_whitelisted "$file"; then
@@ -552,6 +663,7 @@ handle_file() {
   size=$(stat -c %s "$file" 2>/dev/null)
   case "$size" in ''|*[!0-9]*) size=0 ;; esac
   if [ "$kind" = "empty" ]; then
+    [ "$size" = "0" ] || { PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1)); return 0; }
     name=${file##*/}
     case "$name" in .nomedia|.keep|.gitkeep|.placeholder|*.lock)
       SKIPPED=$((SKIPPED + 1))
@@ -567,18 +679,19 @@ handle_file() {
   fi
 
   if [ "$MODE" = "clean" ]; then
-    rm -f -- "$file" 2>/dev/null
-    if [ ! -e "$file" ]; then
-      if [ "$kind" = "empty" ]; then EMPTY_FILES=$((EMPTY_FILES + 1)); else FILES=$((FILES + 1)); fi
-      [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + 1))
-      add_bytes "$size"
-      log_line "[已清理][$CATEGORY] $file ($size bytes)"
-      report_line cleaned low "$CATEGORY" 1 "$size" "$file"
-    else
-      ERRORS=$((ERRORS + 1))
-      log_line "[失败][$CATEGORY] $file"
-      report_line failed low "$CATEGORY" 1 "$size" "$file"
-    fi
+    LIST_SEQ=$((LIST_SEQ + 1))
+    single_list="$TMP_DIR/single.$LIST_SEQ.nul"
+    printf '%s\0' "$file" >"$single_list"
+    single_kind=file
+    [ "$kind" != "empty" ] || single_kind=empty
+    compat_delete_list "$single_list" "$single_kind" || return $?
+    rm -f "$single_list"
+    if [ "$kind" = "empty" ]; then EMPTY_FILES=$((EMPTY_FILES + ACTUAL_COUNT)); else FILES=$((FILES + ACTUAL_COUNT)); fi
+    [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
+    add_bytes "$ACTUAL_BYTES"
+    [ "$ACTUAL_COUNT" -eq 0 ] || report_line cleaned low "$CATEGORY" "$ACTUAL_COUNT" "$ACTUAL_BYTES" "$file"
+    [ "$REMAINING_COUNT" -eq 0 ] || report_line failed low "$CATEGORY" "$REMAINING_COUNT" 0 "$file"
+
   else
     if [ "$kind" = "empty" ]; then EMPTY_FILES=$((EMPTY_FILES + 1)); else FILES=$((FILES + 1)); fi
     [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + 1))
@@ -650,23 +763,6 @@ count_nul() {
 bytes_from_list() {
   [ -s "$1" ] || { echo 0; return; }
   xargs -0 du -k <"$1" 2>/dev/null | awk '{sum += $1} END {printf "%.0f", sum * 1024}'
-}
-
-batch_actuals() {
-  original=$1
-  remaining=$2
-  estimated=$3
-  original_count=$(count_nul "$original")
-  remaining_count=$(count_nul "$remaining")
-  case "$original_count" in ''|*[!0-9]*) original_count=0 ;; esac
-  case "$remaining_count" in ''|*[!0-9]*) remaining_count=0 ;; esac
-  remaining_bytes=$(bytes_from_list "$remaining")
-  case "$remaining_bytes" in ''|*[!0-9]*) remaining_bytes=0 ;; esac
-  ACTUAL_COUNT=$((original_count - remaining_count))
-  [ "$ACTUAL_COUNT" -lt 0 ] && ACTUAL_COUNT=0
-  ACTUAL_BYTES=$(awk -v a="$estimated" -v b="$remaining_bytes" 'BEGIN {v=a-b; if (v<0) v=0; printf "%.0f", v}')
-  REMAINING_COUNT=$remaining_count
-  REMAINING_BYTES=$remaining_bytes
 }
 
 filter_whitelist_list() {
@@ -829,11 +925,8 @@ process_cache_candidates() {
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-cache.err.$LIST_SEQ"
     should_stop && return 9
-    xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
-    remaining="$list.remaining"
-    existing_files_to_list "$list" "$remaining"
-    batch_actuals "$list" "$remaining" "$estimated"
-    [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+    compat_delete_list "$list" file || return $?
+    remaining=""
     reason=$(tail -n 1 "$err_file" 2>/dev/null)
     [ "$REMAINING_COUNT" -gt 0 ] && log_line "[部分未清理][$CATEGORY] ${reason:-系统拒绝删除部分文件}"
     log_line "[应用清理][$app_package][$CATEGORY] $ACTUAL_COUNT 个缓存文件，$ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
@@ -855,6 +948,7 @@ process_cache_candidates() {
 }
 
 clean_dir() {
+  compat_begin_collection
   dir=$1
   days=$2
   CATEGORY=$3
@@ -893,6 +987,7 @@ clean_dir() {
     run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size +0c ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -size "-$((MAX_FILE_BYTES + 1))c" -mtime "+$((days - 1))" -print0 2>/dev/null >"$list"
   fi
   rule_collect_code=$?
+  [ "$rule_collect_code" -ne 9 ] || { rm -f "$list" "$rule_empty_list"; return 9; }
   if [ "$rule_collect_code" -ne 0 ]; then
     ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
     report_line protected incomplete "$CATEGORY" 1 0 "$dir"
@@ -911,11 +1006,8 @@ clean_dir() {
     if [ "$MODE" = "clean" ]; then
       err_file="$TMP_DIR/rm-dir.$LIST_SEQ.err"
       should_stop && return 9
-      xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
-      remaining="$list.remaining"
-      existing_files_to_list "$list" "$remaining"
-      batch_actuals "$list" "$remaining" "$estimated"
-      [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+      compat_delete_list "$list" file || return $?
+      remaining=""
       reason=$(tail -n 1 "$err_file" 2>/dev/null)
       [ "$REMAINING_COUNT" -gt 0 ] && log_line "[部分未清理][$CATEGORY] ${reason:-系统拒绝删除部分文件}"
       FILES=$((FILES + ACTUAL_COUNT))
@@ -947,6 +1039,7 @@ clean_dir() {
       run_limited_command 18 find "$dir" -xdev -mindepth 1 -type f -size 0c -mtime "+$((EMPTY_DAYS - 1))" ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' -print0 2>/dev/null >"$list"
     fi
     rule_collect_code=$?
+    [ "$rule_collect_code" -ne 9 ] || { rm -f "$list" "$rule_empty_list"; return 9; }
     if [ "$rule_collect_code" -ne 0 ]; then
       ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
       report_line protected incomplete "空文件:$CATEGORY" 1 0 "$dir"
@@ -962,11 +1055,8 @@ clean_dir() {
       if [ "$MODE" = "clean" ]; then
         err_file="$TMP_DIR/rm-empty.$LIST_SEQ.err"
         should_stop && return 9
-        xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"
-        remaining="$list.remaining"
-        existing_files_to_list "$list" "$remaining"
-        batch_actuals "$list" "$remaining" 0
-        [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+        compat_delete_list "$list" empty || return $?
+        remaining=""
         reason=$(tail -n 1 "$err_file" 2>/dev/null)
         [ "$REMAINING_COUNT" -gt 0 ] && log_line "[部分未清理][空文件:$CATEGORY] ${reason:-系统拒绝删除部分文件}"
         EMPTY_FILES=$((EMPTY_FILES + ACTUAL_COUNT))
@@ -1011,11 +1101,8 @@ clean_dir() {
     if [ "$count" -gt 0 ]; then
       if [ "$MODE" = "clean" ]; then
         should_stop && return 9
-        xargs -0 -n 100 rmdir <"$list" 2>/dev/null
-        remaining="$list.remaining"
-        existing_paths_to_list "$list" "$remaining"
-        batch_actuals "$list" "$remaining" 0
-        [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+        compat_delete_list "$list" directory || return $?
+        remaining=""
         EMPTY_DIRS=$((EMPTY_DIRS + ACTUAL_COUNT))
         [ "$HIDDEN_CONTEXT" = "1" ] && HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
         log_line "[批量清理][空目录:$CATEGORY] $dir ($ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个)"
@@ -1069,6 +1156,7 @@ is_allowed_custom_dir() {
 }
 
 scan_cache_roots() {
+  compat_begin_collection
   roots=$1
   days=$2
   category=$3
@@ -1113,6 +1201,8 @@ scan_cache_roots() {
     if [ "$code" -eq 0 ]; then
       process_cache_candidates "$candidates" "$category" "$package" "$done_count" "$total" || { rm -f "$packages"; return 9; }
     else
+      [ "$code" -ne 9 ] || { rm -f "$packages" "$candidates"; return 9; }
+      ERRORS=$((ERRORS + 1))
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
       report_line protected timeout "$category:$package" 1 0 "$package"
@@ -1130,6 +1220,7 @@ scan_cache_roots() {
 }
 
 scan_external_cache() {
+  compat_begin_collection
   days=$1
   packages="$TMP_DIR/cache-packages.external"
   : >"$packages"
@@ -1163,6 +1254,8 @@ scan_external_cache() {
     if [ "$code" -eq 0 ]; then
       process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total" || { rm -f "$packages"; return 9; }
     else
+      [ "$code" -ne 9 ] || { rm -f "$packages" "$candidates"; return 9; }
+      ERRORS=$((ERRORS + 1))
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
       report_line protected timeout "外部应用缓存:$package" 1 0 "$package"
@@ -1232,6 +1325,7 @@ rule_file_old_enough() {
 }
 
 run_app_rules() {
+  compat_begin_collection
   [ -f "$APP_RULES" ] || return 0
   run_native_relative_rules "$APP_RULES" "应用扩展规则" 0
   rule_discovery_code=$?
@@ -1268,6 +1362,7 @@ run_app_rules() {
 }
 
 run_external_rules() {
+  compat_begin_collection
   [ -f "$EXTERNAL_RULES" ] || return 0
   run_native_relative_rules "$EXTERNAL_RULES" "外部应用扩展规则" 1
   rule_discovery_code=$?
@@ -1308,6 +1403,7 @@ run_external_rules() {
 # WebView 只清理明确可重新生成的 HTTP、GPU、代码与已完成崩溃缓存。
 # 不碰 Cookies、IndexedDB、Local Storage、Web Data 或下载内容。
 run_webview_cache_rules() {
+  compat_begin_collection
   for webview_app in /data/user/[0-9]*/* /data/user_de/[0-9]*/*; do
     [ -d "$webview_app" ] && [ ! -L "$webview_app" ] || continue
     webview_package=${webview_app##*/}
@@ -1340,676 +1436,12 @@ deep_conflicts_whitelist() {
   return 1
 }
 
-is_deep_allowed() {
-  target=${1%/}
-  case "$target" in
-    ''|/|*'/../'*|*'/..'|*'/./'*|*'/.'|*'//'*|"$MODDIR"|"$MODDIR"/*|"$STATE_DIR"|"$STATE_DIR"/*) return 1 ;;
-    /data|/data/data|/data/user|/data/user_de|/data/media|/data_mirror|/data_mirror/data_ce) return 1 ;;
-    /data/adb|/data/adb/*|/data/app|/data/app/*|/data/system|/data/system/*|/data/misc|/data/misc/*|/data/dalvik-cache|/data/dalvik-cache/*) return 1 ;;
-    /system|/system/*|/vendor|/vendor/*|/product|/product/*|/apex|/apex/*) return 1 ;;
-  esac
-  case "$target" in
-    /data/user/*) rest=${target#/data/user/}; [ "$rest" = "${rest%%/*}" ] && return 1 ;;
-    /data/user_de/*) rest=${target#/data/user_de/}; [ "$rest" = "${rest%%/*}" ] && return 1 ;;
-    /data/media/*) rest=${target#/data/media/}; [ "$rest" = "${rest%%/*}" ] && return 1 ;;
-  esac
-  case "$target" in
-    /data/data/*|/data/user/*|/data/user_de/*|/data/cache/*|/data/media/[0-9]*/*|/data_mirror/data_ce/*) return 0 ;;
-  esac
-  return 1
-}
-
-deep_risk_level() {
-  target=${1%/}
-  lower=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
-  case "$lower" in
-    /data/media/[0-9]*/download|/data/media/[0-9]*/download/*|/data/media/[0-9]*/documents|/data/media/[0-9]*/documents/*|/data/media/[0-9]*/dcim|/data/media/[0-9]*/dcim/*|/data/media/[0-9]*/pictures|/data/media/[0-9]*/pictures/*|/data/media/[0-9]*/movies|/data/media/[0-9]*/movies/*|/data/media/[0-9]*/music|/data/media/[0-9]*/music/*|*/android/obb|*/android/obb/*|*/backup|*/backup/*|*/backups|*/backups/*|*/rough_draft|*/rough_draft/*|*/draft|*/draft/*|*/drafts|*/drafts/*|*/database|*/database/*|*/databases|*/databases/*|*/shared_prefs|*/shared_prefs/*) echo critical; return ;;
-    */cache|*/cache/*|*/code_cache|*/code_cache/*|*/gpucache|*/gpucache/*|*/code\ cache|*/code\ cache/*|*/crashpad/completed|*/crashpad/completed/*|*/tmp|*/tmp/*|*/temp|*/temp/*|*/logs|*/logs/*|*/log|*/log/*|*/.cache|*/.cache/*|*/.thumbnails|*/.thumbnails/*) echo low; return ;;
-    */crash*|*/tombstone*|*/debug*|*/trace*|*/dump*) echo medium; return ;;
-    */files|*/files/*|*/app_webview|*/app_webview/*|*/webview|*/webview/*|*/local\ storage|*/local\ storage/*|*/indexeddb|*/indexeddb/*|*/cookies|*/cookies/*) echo high; return ;;
-  esac
-  echo high
-}
-
-count_risk() {
-  case "$1" in
-    low) RISK_LOW=$((RISK_LOW + 1)) ;;
-    medium) RISK_MEDIUM=$((RISK_MEDIUM + 1)) ;;
-    high) RISK_HIGH=$((RISK_HIGH + 1)) ;;
-    critical) RISK_CRITICAL=$((RISK_CRITICAL + 1)) ;;
-  esac
-}
-
-deep_rules_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$DEEP_RULES" 2>/dev/null | awk 'NR == 1 {print $1}'
-  elif command -v toybox >/dev/null 2>&1; then
-    toybox sha256sum "$DEEP_RULES" 2>/dev/null | awk 'NR == 1 {print $1}'
-  fi
-}
-
-deep_scan_matches_rules() {
-  saved=$(sed -n 's/^rules_sha=//p' "$DEEP_SCAN_STATE" 2>/dev/null | tail -n 1)
-  [ -n "$saved" ] && [ -n "${DEEP_RULE_SHA:-}" ] && [ "$saved" = "$DEEP_RULE_SHA" ]
-}
-
-recent_scan_ok() {
-  file=$1
-  max_age=${2:-1800}
-  epoch=$(sed -n 's/^epoch=//p' "$file" 2>/dev/null | tail -n 1)
-  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
-  now=$(date +%s)
-  [ $((now - epoch)) -ge 0 ] && [ $((now - epoch)) -le "$max_age" ]
-}
-
-deep_high_risk_allowed() {
-  [ "$MODE" = "clean" ] || return 1
-  case "$TRIGGER" in scheduler:*|scheduled:*|daily:*) return 1 ;; esac
-  [ "$(get_bool deep_high_risk_enabled)" = "1" ] || return 1
-  recent_scan_ok "$DEEP_SCAN_STATE" 1800 || return 1
-  deep_scan_matches_rules
-}
-
-deep_risk_is_eligible() {
-  risk=$1
-  case "$risk" in
-    low|medium) return 0 ;;
-    high|critical)
-      if [ "$MODE" = "scan" ]; then
-        [ "$(get_bool deep_high_risk_enabled)" = "1" ]
-      else
-        deep_high_risk_allowed
-      fi
-      ;;
-  esac
-  return 1
-}
-
-prepare_deep_runtime() {
-  DEEP_DIR_TIMEOUT_SECONDS=$(get_uint deep_dir_timeout_seconds 8 3 60)
-  DEEP_STAGE_LIMIT_SECONDS=$(get_uint deep_stage_limit_seconds 180 30 600)
-  ensure_timeout_runtime
-  DEEP_TIMEOUT_MODE=$COMMAND_TIMEOUT_MODE
-
-  DEEP_FIND_XDEV=0
-  if find /data -xdev -maxdepth 0 -print >/dev/null 2>&1; then
-    DEEP_FIND_XDEV=1
-  fi
-  DEEP_FIND_EXEC_PLUS=0
-  if find "$TMP_DIR" -maxdepth 0 -type d -exec stat -c %s -- {} + >/dev/null 2>&1; then
-    DEEP_FIND_EXEC_PLUS=1
-  fi
-
-  DEEP_MOUNT_INDEX="$TMP_DIR/deep-mounts"
-  if [ -r /proc/self/mountinfo ]; then
-    awk '{print $5}' /proc/self/mountinfo 2>/dev/null | \
-      sed 's/\\040/ /g; s/\\011/\t/g; s/\\134/\\/g' | sort -u >"$DEEP_MOUNT_INDEX"
-  else
-    : >"$DEEP_MOUNT_INDEX"
-  fi
-}
-
-run_deep_limited() {
-  seconds=$1
-  shift
-  case "$DEEP_TIMEOUT_MODE" in
-    timeout) timeout "$seconds" "$@" ;;
-    toybox) toybox timeout "$seconds" "$@" ;;
-    busybox) busybox timeout "$seconds" "$@" ;;
-    *) run_with_watchdog "$seconds" "$@" ;;
-  esac
-}
-
-deep_mount_conflict() {
-  target=${1%/}
-  [ -d "$target" ] || return 1
-  [ -s "$DEEP_MOUNT_INDEX" ] || return 1
-  awk -v t="$target" '$0 == t || index($0, t "/") == 1 { found=1; exit } END { exit !found }' "$DEEP_MOUNT_INDEX"
-}
-
-deep_target_stats() {
-  target=$1
-  DEEP_TARGET_SIZE=0
-  DEEP_TARGET_COUNT=0
-  DEEP_TARGET_EMPTY=0
-  DEEP_REPORT_COUNT=1
-  DEEP_TARGET_OVERSIZED=0
-  DEEP_TARGET_STATUS=ok
-  DEEP_TARGET_ELAPSED=0
-
-  if [ -f "$target" ]; then
-    DEEP_TARGET_SIZE=$(stat -c %s "$target" 2>/dev/null)
-    case "$DEEP_TARGET_SIZE" in ''|*[!0-9]*) DEEP_TARGET_SIZE=0 ;; esac
-    DEEP_TARGET_COUNT=1
-    [ "$DEEP_TARGET_SIZE" -gt "$MAX_FILE_BYTES" ] && DEEP_TARGET_OVERSIZED=1
-    return 0
-  fi
-
-  [ -d "$target" ] || { DEEP_TARGET_STATUS=missing; return 2; }
-  if deep_mount_conflict "$target"; then
-    DEEP_TARGET_STATUS=mount
-    return 2
-  fi
-
-  LIST_SEQ=$((LIST_SEQ + 1))
-  file_list="$TMP_DIR/deep-files.$LIST_SEQ.nul"
-  stats_file="$TMP_DIR/deep-stats.$LIST_SEQ"
-  start_stats=$(date +%s)
-  if [ "$DEEP_FIND_XDEV" = "1" ]; then xdev_arg='-xdev'; else xdev_arg=''; fi
-  if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
-    command_body='find "$1" $4 -type f -exec stat -c %s -- {} + 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\'''
-  else
-    command_body='find "$1" $4 -type f -print0 >"$2" 2>/dev/null
-if [ -s "$2" ]; then
-  xargs -0 -n 128 stat -c %s -- <"$2" 2>/dev/null | awk -v max="$3" '\''{ n++; sum += $1; if ($1 > max) big=1 } END { printf "%d %.0f %d\\n", n+0, sum+0, big+0 }'\''
-else
-  printf "0 0 0\\n"
-fi'
-  fi
-  run_deep_limited "$DEEP_DIR_TIMEOUT_SECONDS" sh -c "$command_body" sh "$target" "$file_list" "$MAX_FILE_BYTES" "$xdev_arg" >"$stats_file" 2>/dev/null
-  stats_code=$?
-  end_stats=$(date +%s)
-  DEEP_TARGET_ELAPSED=$((end_stats - start_stats))
-
-  if [ "$stats_code" -ne 0 ]; then
-    case "$stats_code" in 124|137|143) DEEP_TARGET_STATUS=timeout ;; *) DEEP_TARGET_STATUS=error ;; esac
-    rm -f "$file_list" "$stats_file"
-    return 2
-  fi
-
-  read -r DEEP_TARGET_COUNT DEEP_TARGET_SIZE DEEP_TARGET_OVERSIZED <"$stats_file"
-  case "$DEEP_TARGET_COUNT" in ''|*[!0-9]*) DEEP_TARGET_COUNT=0 ;; esac
-  case "$DEEP_TARGET_SIZE" in ''|*[!0-9]*) DEEP_TARGET_SIZE=0 ;; esac
-  case "$DEEP_TARGET_OVERSIZED" in 1) ;; *) DEEP_TARGET_OVERSIZED=0 ;; esac
-  [ "$DEEP_TARGET_COUNT" -eq 0 ] && DEEP_TARGET_EMPTY=1
-  DEEP_REPORT_COUNT=$DEEP_TARGET_COUNT
-  [ "$DEEP_REPORT_COUNT" -gt 0 ] || DEEP_REPORT_COUNT=1
-  rm -f "$file_list" "$stats_file"
-  return 0
-}
-
-deep_progress_update() {
-  current=$1
-  total=$2
-  target=$3
-  force=${4:-0}
-  if [ "$force" = "1" ] || [ "$current" -eq 1 ] || [ $((current % 16)) -eq 0 ] || [ "$current" -eq "$total" ]; then
-    set_phase "执行深度规则（${current}/${total}）" "$current" "$total" "$target"
-  fi
-}
-
-deep_record_slowest() {
-  slow_target=$1
-  slow_seconds=${2:-0}
-  case "$slow_seconds" in ''|*[!0-9]*) slow_seconds=0 ;; esac
-  if [ "$slow_seconds" -gt "$DEEP_SLOWEST_SECONDS" ]; then
-    DEEP_SLOWEST_SECONDS=$slow_seconds
-    DEEP_SLOWEST_PATH=$(printf '%s' "$slow_target" | tr '
-' '  ')
-  fi
-}
-
-deep_keep_root() {
-  case "${1%/}" in
-    */cache|*/code_cache) return 0 ;;
-  esac
-  return 1
-}
-
-deep_process_target() {
-  target=${1%/}
-  risk=${2:-}
-  DEEP_COVER_TARGET=0
-  DEEP_COVER_MODE=""
-  [ -e "$target" ] || [ -L "$target" ] || return 0
-  if [ -L "$target" ]; then
-    log_line "[深度跳过:软链接] $target"
-    SKIPPED=$((SKIPPED + 1))
-    report_line skipped protected 深度规则 0 0 "$target"
-    return 0
-  fi
-  if ! is_deep_allowed "$target"; then
-    log_line "[深度拒绝:系统边界] $target"
-    SKIPPED=$((SKIPPED + 1))
-    report_line rejected protected 深度规则 0 0 "$target"
-    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
-    return 0
-  fi
-  if is_protected_hidden_path "$target"; then
-    log_line "[深度跳过:隐藏配置] $target"
-    SKIPPED=$((SKIPPED + 1))
-    report_line skipped protected 深度规则 0 0 "$target"
-    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
-    return 0
-  fi
-  if is_whitelisted "$target" || deep_conflicts_whitelist "$target"; then
-    log_line "[深度跳过:白名单] $target"
-    SKIPPED=$((SKIPPED + 1))
-    report_line skipped protected 深度规则 0 0 "$target"
-    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
-    return 0
-  fi
-
-  [ -n "$risk" ] || risk=$(deep_risk_level "$target")
-  count_risk "$risk"
-  if ! deep_risk_is_eligible "$risk"; then
-    # 受保护的高风险与关键风险路径只确认存在，不再递归统计整个目录。
-    # 这避免聊天、浏览器等海量小文件目录在“只扫描”阶段被无意义读取多遍。
-    PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-    log_line "[深度受保护:$risk] $target（未递归统计）"
-    report_line protected "$risk" 深度规则 1 0 "$target（受保护，未递归统计）"
-    if [ -d "$target" ]; then
-      DEEP_COVER_TARGET=1
-      DEEP_COVER_MODE=protected
-    fi
-    return 0
-  fi
-
-  if ! deep_target_stats "$target"; then
-    case "$DEEP_TARGET_STATUS" in
-      timeout)
-        deep_record_slowest "$target" "$DEEP_TARGET_ELAPSED"
-        DEEP_SLOW_ITEMS=$((DEEP_SLOW_ITEMS + 1))
-        PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-        log_line "[深度跳过:目录统计超时] $target（超过 ${DEEP_DIR_TIMEOUT_SECONDS} 秒）"
-        report_line protected slow 深度规则 1 0 "$target（目录统计超时）"
-        ;;
-      mount)
-        DEEP_MOUNT_ITEMS=$((DEEP_MOUNT_ITEMS + 1))
-        PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-        log_line "[深度跳过:挂载点保护] $target"
-        report_line protected mount 深度规则 1 0 "$target（包含挂载点）"
-        ;;
-      missing) return 0 ;;
-      *)
-        ERRORS=$((ERRORS + 1))
-        log_line "[深度跳过:无法统计] $target"
-        report_line failed "$risk" 深度规则 1 0 "$target（无法统计）"
-        ;;
-    esac
-    if [ -d "$target" ]; then DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; fi
-    return 0
-  fi
-
-  size=$DEEP_TARGET_SIZE
-  count=$DEEP_TARGET_COUNT
-  was_empty_dir=$DEEP_TARGET_EMPTY
-  report_count=$DEEP_REPORT_COUNT
-  oversized=$DEEP_TARGET_OVERSIZED
-  keep_root=0
-  [ -d "$target" ] && deep_keep_root "$target" && keep_root=1
-  if [ "$keep_root" = "1" ] && [ "$count" -eq 0 ]; then
-    log_line "[深度跳过:缓存目录为空] $target"
-    return 0
-  fi
-
-  deep_record_slowest "$target" "$DEEP_TARGET_ELAPSED"
-  if [ "$DEEP_TARGET_ELAPSED" -ge 3 ]; then
-    log_line "[深度慢目录] $target（统计 ${DEEP_TARGET_ELAPSED} 秒，${count} 个文件）"
-  fi
-
-  if [ "$oversized" = "1" ]; then
-    PROTECTED_ITEMS=$((PROTECTED_ITEMS + report_count))
-    PROTECTED_BYTES=$(awk -v a="$PROTECTED_BYTES" -v b="$size" 'BEGIN {printf "%.0f", a+b}')
-    log_line "[深度受保护:超过单文件上限] $target（上限 ${MAX_MB} MiB）"
-    report_line protected "$risk" 深度规则 "$report_count" "$size" "$target（含超过 ${MAX_MB} MiB 的文件）"
-    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=protected; }
-    return 0
-  fi
-
-  if [ "$MODE" = "clean" ] && [ "$keep_root" = "1" ]; then
-    err_file="$TMP_DIR/deep-rm.err"
-    if [ "$DEEP_FIND_EXEC_PLUS" = "1" ]; then
-      run_deep_limited 30 find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>"$err_file"
-    else
-      run_deep_limited 30 find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} \; 2>"$err_file"
-    fi
-    remove_code=$?
-    if deep_target_stats "$target"; then
-      remaining_size=$DEEP_TARGET_SIZE
-      remaining_count=$DEEP_TARGET_COUNT
-    else
-      remaining_size=0
-      remaining_count=1
-    fi
-    actual_count=$((count - remaining_count)); [ "$actual_count" -lt 0 ] && actual_count=0
-    actual_size=$(awk -v a="$size" -v b="$remaining_size" 'BEGIN {v=a-b; if (v<0) v=0; printf "%.0f", v}')
-    [ "$actual_count" -gt 0 ] && FILES=$((FILES + actual_count))
-    [ "$actual_size" -gt 0 ] && add_bytes "$actual_size"
-    if [ "$remaining_count" -eq 0 ] && [ "$remove_code" -eq 0 ]; then
-      log_line "[深度已清理:$risk] $target（保留缓存根目录，清理 $actual_count 个文件）"
-      report_line cleaned "$risk" 深度规则 "$actual_count" "$actual_size" "$target（保留根目录）"
-    else
-      reason=$(tail -n 1 "$err_file" 2>/dev/null)
-      [ "$remaining_count" -gt 0 ] || remaining_count=1
-      ERRORS=$((ERRORS + remaining_count))
-      log_line "[深度部分未清理:$risk] $target | 已清理 $actual_count 个，剩余 $remaining_count 个 | ${reason:-清理达到时限或目标仍存在}"
-      [ "$actual_count" -gt 0 ] && report_line cleaned "$risk" 深度规则 "$actual_count" "$actual_size" "$target（保留根目录）"
-      report_line failed "$risk" 深度规则 "$remaining_count" "$remaining_size" "$target"
-    fi
-    rm -f "$err_file"
-    DEEP_COVER_TARGET=1
-    DEEP_COVER_MODE=all
-    return 0
-  fi
-
-  if [ "$MODE" = "clean" ]; then
-    err_file="$TMP_DIR/deep-rm.err"
-    if [ -d "$target" ]; then rm -rf -- "$target" 2>"$err_file"; else rm -f -- "$target" 2>"$err_file"; fi
-    if [ -e "$target" ] || [ -L "$target" ]; then
-      reason=$(tail -n 1 "$err_file" 2>/dev/null)
-      if [ -d "$target" ]; then
-        if deep_target_stats "$target"; then
-          remaining_size=$DEEP_TARGET_SIZE
-          remaining_count=$DEEP_TARGET_COUNT
-        else
-          remaining_size=0
-          remaining_count=1
-        fi
-      else
-        remaining_size=$(stat -c %s "$target" 2>/dev/null)
-        case "$remaining_size" in ''|*[!0-9]*) remaining_size=0 ;; esac
-        remaining_count=1
-      fi
-      actual_count=$((count - remaining_count)); [ "$actual_count" -lt 0 ] && actual_count=0
-      actual_size=$(awk -v a="$size" -v b="$remaining_size" 'BEGIN {v=a-b; if (v<0) v=0; printf "%.0f", v}')
-      [ "$actual_count" -gt 0 ] && FILES=$((FILES + actual_count))
-      [ "$actual_size" -gt 0 ] && add_bytes "$actual_size"
-      [ "$actual_count" -gt 0 ] && report_line cleaned "$risk" 深度规则 "$actual_count" "$actual_size" "$target"
-      [ "$remaining_count" -gt 0 ] || remaining_count=1
-      ERRORS=$((ERRORS + remaining_count))
-      log_line "[深度部分未清理:$risk] $target | 已清理 $actual_count 个，剩余 $remaining_count 个 | ${reason:-目标仍然存在}"
-      report_line failed "$risk" 深度规则 "$remaining_count" "$remaining_size" "$target"
-      rm -f "$err_file"
-      return 0
-    fi
-    rm -f "$err_file"
-    if [ "$was_empty_dir" = "1" ]; then EMPTY_DIRS=$((EMPTY_DIRS + 1)); else FILES=$((FILES + count)); fi
-    add_bytes "$size"
-    log_line "[深度已清理:$risk] $target ($count 个文件，约 $size bytes)"
-    report_line cleaned "$risk" 深度规则 "$report_count" "$size" "$target"
-    DEEP_COVER_TARGET=1
-    DEEP_COVER_MODE=all
-  else
-    if [ "$was_empty_dir" = "1" ]; then EMPTY_DIRS=$((EMPTY_DIRS + 1)); else FILES=$((FILES + count)); fi
-    add_bytes "$size"
-    log_line "[深度可清理:$risk] $target ($count 个文件，约 $size bytes)"
-    report_line candidate "$risk" 深度规则 "$report_count" "$size" "$target"
-    printf '%s\t%s\n' "$target" "$risk" >>"$DEEP_SCAN_MANIFEST_TMP"
-    [ -d "$target" ] && { DEEP_COVER_TARGET=1; DEEP_COVER_MODE=all; }
-  fi
-}
-
-run_deep_rules() {
-  [ -f "$DEEP_RULES" ] || return 0
-  prepare_deep_runtime
-  deep_rules_started=$(date +%s)
-  candidates="$TMP_DIR/deep-targets"
-  sorted="$TMP_DIR/deep-targets.sorted"
-  : >"$candidates"
-
-  case "$REQUEST_MODE:$TRIGGER" in
-    deep-clean:scheduler:*|deep-clean:scheduled:*|deep-clean:daily:*) use_snapshot=0 ;;
-    deep-clean:*)
-      if ! recent_scan_ok "$DEEP_SCAN_STATE" 1800 || ! deep_scan_matches_rules || [ ! -f "$DEEP_SCAN_TARGETS" ]; then
-        log_line "[深度拒绝] 请先完成深度扫描，并在 30 分钟内按扫描候选清理"
-        return 6
-      fi
-      use_snapshot=1
-      cut -f1 "$DEEP_SCAN_TARGETS" 2>/dev/null >"$candidates"
-      ;;
-    *) use_snapshot=0 ;;
-  esac
-
-  if [ "$REQUEST_MODE" = "deep-scan" ]; then : >"$DEEP_SCAN_MANIFEST_TMP"; fi
-
-  if [ "$use_snapshot" = "0" ]; then
-    old_ifs=$IFS
-    IFS='
-'
-    rule_index=0
-    while IFS= read -r pattern || [ -n "$pattern" ]; do
-      should_stop && { IFS=$old_ifs; return 9; }
-      case "$pattern" in /*) ;; *) continue ;; esac
-      rule_index=$((rule_index + 1))
-      if [ "$rule_index" -eq 1 ] || [ $((rule_index % 256)) -eq 0 ]; then
-        set_phase "解析深度规则（${rule_index}/${DEEP_RULE_COUNT:-4746}）" "$rule_index" "${DEEP_RULE_COUNT:-4746}" "$pattern"
-      fi
-      case "$pattern" in
-        /storage/emulated/0*) pattern="/data/media/0${pattern#/storage/emulated/0}" ;;
-        /sdcard*) pattern="/data/media/0${pattern#/sdcard}" ;;
-      esac
-      case "$pattern" in
-        */cache/'*'|*/code_cache/'*')
-          cache_parent_pattern=${pattern%/*}
-          for target in $cache_parent_pattern; do
-            [ -d "$target" ] || continue
-            [ -L "$target" ] && continue
-            printf '%s\n' "${target%/}" >>"$candidates"
-          done
-          continue
-          ;;
-      esac
-      case "$pattern" in
-        *'*'*|*'?'*|*'['*)
-          for target in $pattern; do
-            [ -e "$target" ] || [ -L "$target" ] || continue
-            printf '%s\n' "${target%/}" >>"$candidates"
-          done
-          ;;
-        *)
-          [ -e "$pattern" ] || [ -L "$pattern" ] || continue
-          printf '%s\n' "${pattern%/}" >>"$candidates"
-          ;;
-      esac
-    done <"$DEEP_RULES"
-    IFS=$old_ifs
-  fi
-
-  if sort -u "$candidates" >"$sorted" 2>/dev/null; then mv -f "$sorted" "$candidates"; else rm -f "$sorted"; fi
-  deep_rules_ready=$(date +%s)
-  DEEP_RULE_PARSE_SECONDS=$((deep_rules_ready - deep_rules_started))
-  DEEP_PROGRESS_TOTAL=$(wc -l <"$candidates" 2>/dev/null | tr -d ' ')
-  case "$DEEP_PROGRESS_TOTAL" in ''|*[!0-9]*) DEEP_PROGRESS_TOTAL=0 ;; esac
-  DEEP_PROGRESS_CURRENT=0
-  deep_stage_start=$(date +%s)
-  covered_all=""
-  covered_protected=""
-
-  while IFS= read -r target || [ -n "$target" ]; do
-    should_stop && return 9
-    DEEP_PROGRESS_CURRENT=$((DEEP_PROGRESS_CURRENT + 1))
-    risk=$(deep_risk_level "$target")
-    deep_progress_update "$DEEP_PROGRESS_CURRENT" "$DEEP_PROGRESS_TOTAL" "$target"
-
-    if [ -n "$covered_all" ]; then
-      case "$target" in
-        "$covered_all"/*)
-          log_line "[深度去重:父目录已完整处理] $target"
-          continue
-          ;;
-        *) covered_all="" ;;
-      esac
-    fi
-    if [ -n "$covered_protected" ]; then
-      case "$target" in
-        "$covered_protected"/*)
-          case "$risk" in
-            high|critical)
-              log_line "[深度去重:受保护父目录覆盖] $target"
-              continue
-              ;;
-          esac
-          ;;
-        *) covered_protected="" ;;
-      esac
-    fi
-
-    deep_process_target "$target" "$risk"
-    if [ "$DEEP_COVER_TARGET" = "1" ]; then
-      case "$DEEP_COVER_MODE" in
-        all) covered_all=$target; covered_protected="" ;;
-        protected) covered_protected=$target ;;
-      esac
-    fi
-
-    if [ $((DEEP_PROGRESS_CURRENT % 16)) -eq 0 ]; then
-      deep_now=$(date +%s)
-      if [ $((deep_now - deep_stage_start)) -ge "$DEEP_STAGE_LIMIT_SECONDS" ]; then
-        DEEP_TRUNCATED=1
-        log_line "[深度扫描提前结束] 已达到 ${DEEP_STAGE_LIMIT_SECONDS} 秒安全时限，剩余规则下次继续检查"
-        report_line protected timeout 深度规则 1 0 "深度阶段达到 ${DEEP_STAGE_LIMIT_SECONDS} 秒上限"
-        break
-      fi
-    fi
-  done <"$candidates"
-
-  deep_stage_end=$(date +%s)
-  DEEP_STAGE_SECONDS=$((deep_stage_end - deep_stage_start))
-  deep_progress_update "$DEEP_PROGRESS_CURRENT" "$DEEP_PROGRESS_TOTAL" "" 1
-  log_line "[深度阶段耗时] 规则解析 ${DEEP_RULE_PARSE_SECONDS}s · 目录处理 ${DEEP_STAGE_SECONDS}s"
-  if [ "$DEEP_SLOWEST_SECONDS" -gt 0 ]; then
-    log_line "[深度最慢目录] ${DEEP_SLOWEST_SECONDS}s · $DEEP_SLOWEST_PATH"
-  fi
-  log_line "[深度引擎] 候选 $DEEP_PROGRESS_TOTAL，已处理 $DEEP_PROGRESS_CURRENT，慢目录跳过 $DEEP_SLOW_ITEMS，挂载保护 $DEEP_MOUNT_ITEMS，截断 $DEEP_TRUNCATED"
-  return 0
-}
-
-package_list_for_user() {
-  user=$1
-  output=$2
-  : >"$output"
-  if command -v cmd >/dev/null 2>&1; then
-    cmd package list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$output"
-  fi
-  if [ ! -s "$output" ] && command -v pm >/dev/null 2>&1; then
-    pm list packages --user "$user" 2>/dev/null | sed 's/^package://' | sort -u >"$output"
-  fi
-  [ -s "$output" ]
-}
-
-corpse_process_target() {
-  target=${1%/}
-  [ -d "$target" ] || return 0
-  [ -L "$target" ] && return 0
-  if is_whitelisted "$target" || deep_conflicts_whitelist "$target"; then
-    SKIPPED=$((SKIPPED + 1))
-    log_line "[残留跳过:白名单] $target"
-    report_line skipped protected 卸载残留 0 0 "$target"
-    return 0
-  fi
-  kb=$(du -sk "$target" 2>/dev/null | awk 'NR == 1 {print $1}')
-  case "$kb" in ''|*[!0-9]*) kb=0 ;; esac
-  size=$(awk -v k="$kb" 'BEGIN {printf "%.0f", k * 1024}')
-  count=$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ')
-  case "$count" in ''|*[!0-9]*) count=0 ;; esac
-  was_empty_dir=0
-  [ "$count" -eq 0 ] && was_empty_dir=1
-  report_count=$count
-  [ "$report_count" -gt 0 ] || report_count=1
-  if find "$target" -type f -size "+${MAX_FILE_BYTES}c" -print -quit 2>/dev/null | grep -q .; then
-    PROTECTED_ITEMS=$((PROTECTED_ITEMS + report_count))
-    PROTECTED_BYTES=$(awk -v a="$PROTECTED_BYTES" -v b="$size" 'BEGIN {printf "%.0f", a+b}')
-    log_line "[残留受保护:超过单文件上限] $target（上限 ${MAX_MB} MiB）"
-    report_line protected high 卸载残留 "$report_count" "$size" "$target（含超过 ${MAX_MB} MiB 的文件）"
-    return 0
-  fi
-  if [ "$MODE" = "clean" ]; then
-    rm -rf -- "$target" 2>/dev/null
-    if [ -e "$target" ]; then
-      remaining_kb=$(du -sk "$target" 2>/dev/null | awk 'NR == 1 {print $1}')
-      case "$remaining_kb" in ''|*[!0-9]*) remaining_kb=0 ;; esac
-      remaining_size=$(awk -v k="$remaining_kb" 'BEGIN {printf "%.0f", k * 1024}')
-      remaining_count=$(find "$target" -type f 2>/dev/null | wc -l | tr -d ' ')
-      case "$remaining_count" in ''|*[!0-9]*) remaining_count=0 ;; esac
-      actual_count=$((count - remaining_count)); [ "$actual_count" -lt 0 ] && actual_count=0
-      actual_size=$(awk -v a="$size" -v b="$remaining_size" 'BEGIN {v=a-b; if (v<0) v=0; printf "%.0f", v}')
-      [ "$actual_count" -gt 0 ] && FILES=$((FILES + actual_count))
-      [ "$actual_size" -gt 0 ] && add_bytes "$actual_size"
-      [ "$actual_count" -gt 0 ] && report_line cleaned high 卸载残留 "$actual_count" "$actual_size" "$target"
-      [ "$remaining_count" -gt 0 ] || remaining_count=1
-      ERRORS=$((ERRORS + remaining_count))
-      log_line "[残留部分未清理] $target（已清理 $actual_count 个，剩余 $remaining_count 个）"
-      report_line failed high 卸载残留 "$remaining_count" "$remaining_size" "$target"
-    else
-      if [ "$was_empty_dir" = "1" ]; then EMPTY_DIRS=$((EMPTY_DIRS + 1)); else FILES=$((FILES + count)); fi
-      add_bytes "$size"
-      log_line "[残留已清理] $target ($count 个文件，约 $size bytes)"
-      report_line cleaned high 卸载残留 "$report_count" "$size" "$target"
-    fi
-  else
-    if [ "$was_empty_dir" = "1" ]; then EMPTY_DIRS=$((EMPTY_DIRS + 1)); else FILES=$((FILES + count)); fi
-    add_bytes "$size"
-    log_line "[残留可清理] $target ($count 个文件，约 $size bytes)"
-    report_line candidate high 卸载残留 "$report_count" "$size" "$target"
-    printf '%s\n' "$target" >>"$CORPSE_SCAN_MANIFEST_TMP"
-  fi
-}
-
-run_corpse_cleanup() {
-  if [ "$MODE" = "clean" ]; then
-    if ! recent_scan_ok "$CORPSE_SCAN_STATE" 1800 || [ ! -f "$CORPSE_SCAN_TARGETS" ]; then
-      log_line "[残留拒绝] 请先执行卸载残留扫描，并在 30 分钟内按扫描候选清理"
-      return 6
-    fi
-    current_user=""
-    packages=""
-    while IFS= read -r target || [ -n "$target" ]; do
-      should_stop && return 9
-      case "$target" in
-        /data/media/[0-9]*/Android/data/*|/data/media/[0-9]*/Android/obb/*|/data/media/[0-9]*/Android/media/*) ;;
-        *) log_line "[残留跳过:快照路径异常] $target"; continue ;;
-      esac
-      rest=${target#/data/media/}
-      user=${rest%%/*}
-      package=${target##*/}
-      case "$user" in ''|*[!0-9]*) continue ;; esac
-      case "$package" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-      if [ "$user" != "$current_user" ]; then
-        packages="$TMP_DIR/installed-$user.txt"
-        if ! package_list_for_user "$user" "$packages"; then
-          log_line "[残留跳过] 无法读取用户 $user 的已安装包列表"
-          current_user=""
-          continue
-        fi
-        current_user=$user
-      fi
-      grep -Fxq "$package" "$packages" 2>/dev/null && { log_line "[残留跳过:应用已安装] $target"; continue; }
-      corpse_process_target "$target"
-    done <"$CORPSE_SCAN_TARGETS"
-    return 0
-  fi
-
-  : >"$CORPSE_SCAN_MANIFEST_TMP"
-  found_users=0
-  for userdir in /data/media/[0-9]*; do
-    [ -d "$userdir" ] || continue
-    user=${userdir##*/}
-    packages="$TMP_DIR/installed-$user.txt"
-    if ! package_list_for_user "$user" "$packages"; then
-      log_line "[残留跳过] 无法读取用户 $user 的已安装包列表"
-      continue
-    fi
-    found_users=$((found_users + 1))
-    for root in "$userdir/Android/data" "$userdir/Android/obb" "$userdir/Android/media"; do
-      [ -d "$root" ] || continue
-      for target in "$root"/*; do
-        should_stop && return 9
-        [ -d "$target" ] || continue
-        package=${target##*/}
-        case "$package" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
-        grep -Fxq "$package" "$packages" 2>/dev/null && continue
-        corpse_process_target "$target"
-      done
-    done
-  done
-  [ "$found_users" -gt 0 ] || { log_line "[残留失败] 未能读取任何 Android 用户的包列表"; return 7; }
-}
-
 scan_shared_empty_files() {
+  compat_begin_collection
   [ -d /data/media ] || return 0
+  CATEGORY="共享存储空项"
   list="$TMP_DIR/shared-empty-files.nul"
-  find /data/media -mindepth 2 -maxdepth 6 \
+  run_limited_command 18 find /data/media -mindepth 2 -maxdepth 6 \
     \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
        -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
        -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
@@ -2017,17 +1449,21 @@ scan_shared_empty_files() {
     -type f -size 0c \
     ! -name '.nomedia' ! -name '.keep' ! -name '.gitkeep' ! -name '.placeholder' ! -name '*.lock' \
     -print0 2>/dev/null >"$list"
+  collect_code=$?
+  [ "$collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
+  if [ "$collect_code" -ne 0 ]; then
+    compat_collection_failed /data/media
+    rm -f "$list"
+    return 0
+  fi
   filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   if [ "$count" -gt 0 ]; then
     if [ "$MODE" = "clean" ]; then
       should_stop && return 9
-      xargs -0 -n 200 rm -f -- <"$list" 2>/dev/null
-      remaining="$list.remaining"
-      existing_files_to_list "$list" "$remaining"
-      batch_actuals "$list" "$remaining" 0
-      [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+      compat_delete_list "$list" empty || return $?
+      remaining=""
       EMPTY_FILES=$((EMPTY_FILES + ACTUAL_COUNT))
       log_line "[批量清理][共享存储空文件] $ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个"
       report_line cleaned low 共享存储空文件 "$ACTUAL_COUNT" 0 /data/media
@@ -2043,9 +1479,11 @@ scan_shared_empty_files() {
 }
 
 scan_shared_empty_dirs() {
+  compat_begin_collection
   [ -d /data/media ] || return 0
+  CATEGORY="共享存储空项"
   list="$TMP_DIR/shared-empty-dirs.nul"
-  find /data/media -mindepth 2 -maxdepth 6 \
+  run_limited_command 18 find /data/media -mindepth 2 -maxdepth 6 \
     \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
        -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
        -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
@@ -2060,6 +1498,13 @@ scan_shared_empty_dirs() {
     ! -path '/data/media/[0-9]*/MIUI' ! -path '/data/media/[0-9]*/ColorOS' \
     ! -path '/data/media/[0-9]*/HeyTap' ! -path '/data/media/[0-9]*/oplus' \
     -print0 2>/dev/null >"$list"
+  collect_code=$?
+  [ "$collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
+  if [ "$collect_code" -ne 0 ]; then
+    compat_collection_failed /data/media
+    rm -f "$list"
+    return 0
+  fi
   filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
@@ -2072,48 +1517,13 @@ scan_shared_empty_dirs() {
     return 0
   fi
 
-  parents="$TMP_DIR/shared-empty-parents"
-  : >"$parents"
-  while IFS= read -r -d '' dir; do
-    parent=${dir%/*}
-    level=1
-    while [ "$level" -le 4 ]; do
-      case "$parent" in /data/media|/data/media/[0-9]*) break ;; esac
-      case "$parent" in
-        /data/media/[0-9]*/DCIM|/data/media/[0-9]*/Pictures|/data/media/[0-9]*/Movies|/data/media/[0-9]*/Music|\
-        /data/media/[0-9]*/Download|/data/media/[0-9]*/Documents|/data/media/[0-9]*/Podcasts|/data/media/[0-9]*/Ringtones|\
-        /data/media/[0-9]*/Alarms|/data/media/[0-9]*/Notifications|/data/media/[0-9]*/Audiobooks|/data/media/[0-9]*/Recordings|\
-        /data/media/[0-9]*/MIUI|/data/media/[0-9]*/ColorOS|/data/media/[0-9]*/HeyTap|/data/media/[0-9]*/oplus) ;;
-        *) printf '%s\n' "$parent" >>"$parents" ;;
-      esac
-      parent=${parent%/*}
-      level=$((level + 1))
-    done
-  done <"$list"
   should_stop && return 9
-  xargs -0 -n 200 rmdir <"$list" 2>/dev/null
-  remaining="$list.remaining"
-  existing_paths_to_list "$list" "$remaining"
-  batch_actuals "$list" "$remaining" 0
-  [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
-  initial_removed=$ACTUAL_COUNT
-  parent_count=0
-  if [ -s "$parents" ]; then
-    removed="$TMP_DIR/shared-empty-parents.removed"
-    : >"$removed"
-    awk '{p=$0; n=gsub("/", "/", p); print n "|" $0}' "$parents" | sort -t'|' -k1,1nr -k2,2r | cut -d'|' -f2- | \
-      while IFS= read -r parent; do
-        if rmdir "$parent" 2>/dev/null; then printf '%s\n' "$parent" >>"$removed"; fi
-      done
-    parent_count=$(wc -l <"$removed" 2>/dev/null | tr -d ' ')
-    case "$parent_count" in ''|*[!0-9]*) parent_count=0 ;; esac
-  fi
-  actual_total=$((initial_removed + parent_count))
-  EMPTY_DIRS=$((EMPTY_DIRS + actual_total))
-  log_line "[批量清理][共享存储空目录] $initial_removed 个，连带空父目录 $parent_count 个，未清理 $REMAINING_COUNT 个"
-  report_line cleaned low 共享存储空目录 "$actual_total" 0 /data/media
+  compat_delete_list "$list" directory || return $?
+  EMPTY_DIRS=$((EMPTY_DIRS + ACTUAL_COUNT))
+  log_line "[批量清理][共享存储空目录] $ACTUAL_COUNT 个，未清理 $REMAINING_COUNT 个"
+  report_line cleaned low 共享存储空目录 "$ACTUAL_COUNT" 0 /data/media
   [ "$REMAINING_COUNT" -gt 0 ] && report_line failed low 共享存储空目录 "$REMAINING_COUNT" 0 /data/media
-  rm -f "$list" "$remaining" "$parents" "$removed"
+  rm -f "$list"
 }
 
 is_reserved_shared_root() {
@@ -2146,6 +1556,7 @@ root_shell_effectively_empty() {
     -print -quit >"$probe" 2>/dev/null
   probe_code=$?
   if [ "$probe_code" -ne 0 ]; then
+    ERRORS=$((ERRORS + 1))
     PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
     log_line "[根目录保护:扫描超时或异常] $dir"
     report_line protected slow 根目录空壳 1 0 "$dir"
@@ -2161,6 +1572,7 @@ root_shell_effectively_empty() {
 }
 
 run_shared_root_shells() {
+  compat_begin_collection
   [ -d /data/media ] || return 0
   for userdir in /data/media/[0-9]*; do
     [ -d "$userdir" ] || continue
@@ -2184,19 +1596,33 @@ run_shared_root_shells() {
         continue
       fi
 
-      find "$dir" -type f -size 0c \
-        \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \
-        -delete 2>/dev/null
-      run_limited_command 10 find "$dir" -depth -type d -empty -exec rmdir {} \; >/dev/null 2>&1
-      if [ ! -e "$dir" ]; then
+      LIST_SEQ=$((LIST_SEQ + 1))
+      shell_list="$TMP_DIR/root-shell.$LIST_SEQ.nul"
+      run_limited_command 10 find "$dir" -depth \
+        \( -type d -o \( -type f -size 0c \( -name '.nomedia' -o -name '.keep' -o -name '.gitkeep' -o -name '.placeholder' \) \) \) \
+        -print0 >"$shell_list" 2>/dev/null
+      shell_collect_code=$?
+      [ "$shell_collect_code" -ne 9 ] || { rm -f "$shell_list"; return 9; }
+      if [ "$shell_collect_code" -ne 0 ]; then
+        compat_collection_failed "$dir"
+        rm -f "$shell_list"
+        continue
+      fi
+      CATEGORY="根目录空壳"
+      compat_delete_list "$shell_list" empty-tree || return $?
+      # A shell counts once only when its own rmdir succeeded. This NUL probe
+      # reads confirmed operations, never a failed stat or a path difference.
+      shell_removed=0
+      [ -f "$COMPAT_DELETED_NUL" ] && while IFS= read -r -d '' shell_deleted; do
+        [ "$shell_deleted" != "$dir" ] || shell_removed=1
+      done <"$COMPAT_DELETED_NUL"
+      if [ "$shell_removed" = "1" ]; then
         EMPTY_DIRS=$((EMPTY_DIRS + 1))
         log_line "[根目录空壳已清理] $dir"
         report_line cleaned medium 根目录空壳 1 0 "$dir"
-      else
-        ERRORS=$((ERRORS + 1))
-        log_line "[根目录空壳未清理] $dir（目录状态发生变化或系统拒绝）"
-        report_line failed medium 根目录空壳 1 0 "$dir"
       fi
+      rm -f "$shell_list"
+
     done
   done
   return 0
@@ -2216,20 +1642,30 @@ hidden_dir_days() {
 }
 
 run_hidden_junk() {
+  compat_begin_collection
+  CATEGORY="隐藏垃圾"
   [ -d /data/media ] && [ -f "$HIDDEN_RULES" ] || return 0
   HIDDEN_CONTEXT=1
   list="$TMP_DIR/hidden-dirs"
   : >"$list"
   for direct_hidden in /data/media/[0-9]*/DCIM/.thumbnails /data/media/[0-9]*/Pictures/.thumbnails; do
-    [ -d "$direct_hidden" ] && printf '%s\n' "$direct_hidden" >>"$list"
+    [ -d "$direct_hidden" ] && printf '%s\0' "$direct_hidden" >>"$list"
   done
-  find /data/media -mindepth 2 -maxdepth 6 \
+  run_limited_command 18 find /data/media -mindepth 2 -maxdepth 6 \
     \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
        -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
        -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
        -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-    -type d -name '.*' -print 2>/dev/null >>"$list"
-  while IFS= read -r hidden_dir || [ -n "$hidden_dir" ]; do
+    -type d -name '.*' -print0 2>/dev/null >>"$list"
+  hidden_collect_code=$?
+  [ "$hidden_collect_code" -ne 9 ] || { rm -f "$list"; HIDDEN_CONTEXT=0; return 9; }
+  if [ "$hidden_collect_code" -ne 0 ]; then
+    compat_collection_failed /data/media
+    rm -f "$list"
+    HIDDEN_CONTEXT=0
+    return 0
+  fi
+  while IFS= read -r -d '' hidden_dir; do
     [ -d "$hidden_dir" ] || continue
     [ -L "$hidden_dir" ] && continue
     is_protected_hidden_path "$hidden_dir" && { log_line "[跳过:隐藏配置] $hidden_dir"; continue; }
@@ -2241,10 +1677,13 @@ run_hidden_junk() {
       if is_whitelisted "$hidden_dir"; then
         log_line "[跳过:白名单][隐藏空目录] $hidden_dir"
       elif [ "$MODE" = "clean" ]; then
-        if rmdir "$hidden_dir" 2>/dev/null; then
-          EMPTY_DIRS=$((EMPTY_DIRS + 1)); HIDDEN_ITEMS=$((HIDDEN_ITEMS + 1))
-          log_line "[已清理][隐藏空目录] $hidden_dir"
-        fi
+        LIST_SEQ=$((LIST_SEQ + 1))
+        hidden_dir_list="$TMP_DIR/hidden-root.$LIST_SEQ.nul"
+        printf '%s\0' "$hidden_dir" >"$hidden_dir_list"
+        compat_delete_list "$hidden_dir_list" directory || { HIDDEN_CONTEXT=0; return 9; }
+        EMPTY_DIRS=$((EMPTY_DIRS + ACTUAL_COUNT)); HIDDEN_ITEMS=$((HIDDEN_ITEMS + ACTUAL_COUNT))
+        [ "$ACTUAL_COUNT" -eq 0 ] || log_line "[已清理][隐藏空目录] $hidden_dir"
+        rm -f "$hidden_dir_list"
       else
         EMPTY_DIRS=$((EMPTY_DIRS + 1)); HIDDEN_ITEMS=$((HIDDEN_ITEMS + 1))
         log_line "[可清理][隐藏空目录] $hidden_dir"
@@ -2254,22 +1693,30 @@ run_hidden_junk() {
 
   list="$TMP_DIR/hidden-files"
   if [ "$HIDDEN_DAYS" -eq 0 ]; then
-    find /data/media -mindepth 2 -maxdepth 6 \
+    run_limited_command 18 find /data/media -mindepth 2 -maxdepth 6 \
       \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
          -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
          -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
          -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-      -type f \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' -o -name 'desktop.ini' -o -name '.directory' \) -print 2>/dev/null >"$list"
+      -type f \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' -o -name 'desktop.ini' -o -name '.directory' \) -print0 2>/dev/null >"$list"
   else
-    find /data/media -mindepth 2 -maxdepth 6 \
+    run_limited_command 18 find /data/media -mindepth 2 -maxdepth 6 \
       \( -path '/data/media/[0-9]*/Android' -o -path '/data/media/[0-9]*/Android/*' \
          -o -path '/data/media/[0-9]*/DCIM' -o -path '/data/media/[0-9]*/Pictures' \
          -o -path '/data/media/[0-9]*/Movies' -o -path '/data/media/[0-9]*/Music' \
          -o -path '/data/media/[0-9]*/Download' -o -path '/data/media/[0-9]*/Documents' \) -prune -o \
-      -type f \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' -o -name 'desktop.ini' -o -name '.directory' \) -mtime "+$HIDDEN_DAYS" -print 2>/dev/null >"$list"
+      -type f \( -name '.DS_Store' -o -name '._*' -o -name 'Thumbs.db' -o -name 'desktop.ini' -o -name '.directory' \) -mtime "+$HIDDEN_DAYS" -print0 2>/dev/null >"$list"
+  fi
+  hidden_collect_code=$?
+  [ "$hidden_collect_code" -ne 9 ] || { rm -f "$list"; HIDDEN_CONTEXT=0; return 9; }
+  if [ "$hidden_collect_code" -ne 0 ]; then
+    compat_collection_failed /data/media
+    rm -f "$list"
+    HIDDEN_CONTEXT=0
+    return 0
   fi
   CATEGORY="隐藏垃圾文件"
-  while IFS= read -r hidden_file || [ -n "$hidden_file" ]; do
+  while IFS= read -r -d '' hidden_file; do
     is_protected_hidden_path "$hidden_file" && { log_line "[跳过:隐藏配置] $hidden_file"; continue; }
     handle_file "$hidden_file" regular || { HIDDEN_CONTEXT=0; return 9; }
   done <"$list"
@@ -2280,15 +1727,18 @@ run_hidden_junk() {
 # “碎片清理”指可识别的临时残留、诊断转储和中断下载片段，
 # 不是对闪存做传统磁盘碎片整理。用户媒体与文档目录不参与通用匹配。
 run_fragment_cleanup() {
+  compat_begin_collection
   [ -d /data/media ] || return 0
   list="$TMP_DIR/fragments.nul"
   : >"$list"
+  CATEGORY="残留碎片"
+  fragment_collect_failed=0
 
   for userdir in /data/media/[0-9]*; do
     [ -d "$userdir" ] || continue
 
     # 非媒体公共区域：日志、崩溃转储与临时文件，至少保留指定天数。
-    find "$userdir" -mindepth 1 -maxdepth 4 \
+    run_limited_command 18 find "$userdir" -mindepth 1 -maxdepth 4 \
       \( -path "$userdir/Android" -o -path "$userdir/DCIM" -o -path "$userdir/Pictures" \
          -o -path "$userdir/Movies" -o -path "$userdir/Music" -o -path "$userdir/Documents" \
          -o -path "$userdir/Download" -o -path "$userdir/Podcasts" -o -path "$userdir/Audiobooks" \
@@ -2300,17 +1750,28 @@ run_fragment_cleanup() {
          -o -iname '*.hprof' -o -iname '*.dmp' -o -iname '*.dump' -o -iname '*.trace' \
          -o -iname '*.traces' -o -iname '*.stacktrace' -o -iname 'hs_err_pid*.log' \) \
       -print0 2>/dev/null >>"$list"
+    fragment_collect_code=$?
+    [ "$fragment_collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
+    [ "$fragment_collect_code" -eq 0 ] || fragment_collect_failed=1
 
     # 下载目录只匹配明确的中断下载后缀，避免把普通日志或用户临时文档误删。
     if [ -d "$userdir/Download" ]; then
-      find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f \
+      run_limited_command 18 find "$userdir/Download" -mindepth 1 -maxdepth 4 -type f \
         -size "-${MAX_FILE_BYTES}c" $FRAGMENT_MTIME_ARGS \
         \( -iname '*.part' -o -iname '*.partial' -o -iname '*.crdownload' \
            -o -iname '*.filepart' -o -iname '*.download' -o -iname '*.opdownload' \) \
         -print0 2>/dev/null >>"$list"
+      fragment_collect_code=$?
+      [ "$fragment_collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
+      [ "$fragment_collect_code" -eq 0 ] || fragment_collect_failed=1
     fi
   done
 
+  if [ "$fragment_collect_failed" -ne 0 ]; then
+    compat_collection_failed /data/media
+    rm -f "$list"
+    return 0
+  fi
   filter_whitelist_list "$list" || return $?
   count=$(count_nul "$list")
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
@@ -2321,23 +1782,12 @@ run_fragment_cleanup() {
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-fragments.err"
     should_stop && return 9
-    if ! xargs -0 -n 200 rm -f -- <"$list" 2>"$err_file"; then
-      reason=$(tail -n 1 "$err_file" 2>/dev/null)
-      log_line "[部分未清理][残留碎片] ${reason:-系统拒绝删除部分文件}"
-    fi
-    rm -f "$err_file"
-    remaining="$TMP_DIR/fragments.remaining.nul"
-    : >"$remaining"
-    while IFS= read -r -d '' fragment; do
-      [ -f "$fragment" ] && printf '%s\0' "$fragment" >>"$remaining"
-    done <"$list"
-    remaining_count=$(count_nul "$remaining")
-    case "$remaining_count" in ''|*[!0-9]*) remaining_count=0 ;; esac
-    remaining_bytes=$(bytes_from_list "$remaining")
-    case "$remaining_bytes" in ''|*[!0-9]*) remaining_bytes=0 ;; esac
-    actual_count=$((count - remaining_count))
-    actual_bytes=$(awk -v a="$estimated" -v b="$remaining_bytes" 'BEGIN {v=a-b; if (v < 0) v=0; printf "%.0f", v}')
-    [ "$remaining_count" -gt 0 ] && ERRORS=$((ERRORS + remaining_count))
+    compat_delete_list "$list" file || return $?
+    actual_count=$ACTUAL_COUNT
+    actual_bytes=$ACTUAL_BYTES
+    remaining_count=$REMAINING_COUNT
+    remaining_bytes=$REMAINING_BYTES
+    remaining=""
     log_line "[批量清理][残留碎片] $actual_count 个文件，约 $actual_bytes bytes，${FRAGMENT_POLICY}，未清理 $remaining_count 个"
     report_line cleaned low 残留碎片 "$actual_count" "$actual_bytes" "${FRAGMENT_POLICY}"
     [ "$remaining_count" -gt 0 ] && report_line failed low 残留碎片 "$remaining_count" "$remaining_bytes" "仍存在的碎片文件"
@@ -2366,6 +1816,7 @@ snapshot_sha256() {
 }
 
 run_apk_packages() {
+  compat_begin_collection
   MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
   apk_helper=${BAIZE_APK_PATHS:-$SCRIPTDIR/apk-paths.sh}
   [ -f "$apk_helper" ] || apk_helper="$MODDIR/v2/module/scripts/apk-paths.sh"
@@ -2374,14 +1825,23 @@ run_apk_packages() {
   apk_load_roots
   list="$TMP_DIR/apk-packages.nul"
   raw="$TMP_DIR/apk-discovered.nul"
-  apk_collect_candidates "$raw" || return $?
+  CATEGORY="APK安装包"
+  apk_collect_candidates "$raw"
+  apk_collect_code=$?
+  [ "$apk_collect_code" -ne 9 ] || return 9
+  if [ "$apk_collect_code" -ne 0 ] || [ "${APK_SCAN_ROOT_ERRORS:-0}" -gt 0 ]; then
+    compat_collection_failed "安装包存储范围"
+    rm -f "$raw"
+    return 0
+  fi
   : >"$list"
   APK_RETAINED=0
+  apk_selection_failed=0
   cutoff=$(( $(date +%s) - APK_PACKAGE_DAYS * 86400 ))
   while IFS= read -r -d '' package; do
     should_stop && return 9
     apk_path_allowed "$package" || continue
-    metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || continue
+    metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || { apk_selection_failed=1; continue; }
     size=${metadata%% *}; modified=${metadata##* }
     [ "$size" -le "$APK_PACKAGE_MAX_BYTES" ] || continue
     if [ "$APK_PACKAGE_DAYS" -gt 0 ] && [ "$modified" -ge "$cutoff" ]; then
@@ -2390,6 +1850,11 @@ run_apk_packages() {
     fi
     printf '%s\0' "$package" >>"$list"
   done <"$raw"
+  if [ "$apk_selection_failed" -ne 0 ]; then
+    compat_collection_failed "安装包候选属性"
+    rm -f "$list"
+    return 0
+  fi
 
   filter_whitelist_list "$list" || return $?
   filter_processed_list "$list" || return $?
@@ -2423,11 +1888,8 @@ run_apk_packages() {
   if [ "$MODE" = "clean" ]; then
     err_file="$TMP_DIR/rm-apk-packages.err"
     should_stop && return 9
-    xargs -0 -n 100 rm -f -- <"$list" 2>"$err_file"
-    remaining="$TMP_DIR/apk-packages.remaining.nul"
-    existing_files_to_list "$list" "$remaining"
-    batch_actuals "$list" "$remaining" "$estimated"
-    [ "$REMAINING_COUNT" -gt 0 ] && ERRORS=$((ERRORS + REMAINING_COUNT))
+    compat_delete_list "$list" file "$APK_PACKAGE_MAX_BYTES" || return $?
+    remaining=""
     FILES=$((FILES + ACTUAL_COUNT))
     add_bytes "$ACTUAL_BYTES"
     log_line "[安装包清理] 清理 $ACTUAL_COUNT 个，释放 $ACTUAL_BYTES bytes，未清理 $REMAINING_COUNT 个"
@@ -2445,12 +1907,21 @@ run_apk_packages() {
 }
 
 run_installer_temp() {
+  compat_begin_collection
   [ -d /data/local/tmp ] || return 0
   list="$TMP_DIR/installer-temp.nul"
-  find /data/local/tmp -mindepth 1 -maxdepth 2 -type f -mtime "+$INSTALLER_TEMP_DAYS" \
+  run_limited_command 18 find /data/local/tmp -mindepth 1 -maxdepth 2 -type f -mtime "+$INSTALLER_TEMP_DAYS" \
     \( -name '*.apk.tmp' -o -name '*.apks.tmp' -o -name '*.xapk.tmp' -o -name '*.zip.tmp' \
        -o -name '*.part' -o -name '*.download' -o -name '*.crdownload' \) \
     -size "-${MAX_FILE_BYTES}c" -print0 2>/dev/null >"$list"
+  installer_collect_code=$?
+  [ "$installer_collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
+  if [ "$installer_collect_code" -ne 0 ]; then
+    CATEGORY="过期安装临时文件"
+    compat_collection_failed /data/local/tmp
+    rm -f "$list"
+    return 0
+  fi
   filter_whitelist_list "$list" || return $?
   while IFS= read -r -d '' file; do
     CATEGORY="过期安装临时文件"
@@ -2461,6 +1932,7 @@ run_installer_temp() {
 }
 
 run_custom_rules() {
+  compat_begin_collection
   while IFS='|' read -r dir days extra || [ -n "$dir$days$extra" ]; do
     dir=$(printf '%s' "$dir" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     days=$(printf '%s' "$days" | sed 's/[[:space:]]//g')
@@ -2519,9 +1991,8 @@ case "$PROFILE" in
   rules) RUN_RULES=1 ;;
   fragment) RUN_FRAGMENT=1 ;;
   apk) RUN_APK=1 ;;
-  corpse) ;;
 esac
-WHITELIST_PATHS=$(sed -n 's/[[:space:]]*$//; /^[[:space:]]*\($\|#\)/d; p' "$WHITELIST" 2>/dev/null)
+WHITELIST_PATHS=$(sed -n 's/[[:space:]]*$//; /^[[:space:]]*\($\|#\)/d; p' "$WHITELIST" 2>/dev/null) || { echo "白名单读取失败，未开始删除" >&2; exit 7; }
 # Expand package protection once, not once per candidate. Reuse the existing
 # ancestor/descendant checks for every category, including compatibility rules.
 if [ -f "$PACKAGE_WHITELIST" ]; then
@@ -2628,25 +2099,6 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_custom_
   run_custom_rules || STOPPED=1
 fi
 
-if [ "$STOPPED" = "0" ] && [ "$PROFILE" = "corpse" ]; then
-  set_phase "扫描卸载应用残留"
-  run_corpse_cleanup
-  corpse_code=$?
-  if [ "$corpse_code" -ne 0 ]; then
-    if [ "$corpse_code" -eq 9 ]; then STOPPED=1; else FATAL_CODE=$corpse_code; fi
-  fi
-fi
-
-if [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ] && [ "$DEEP_MODE" = "1" ]; then
-  DEEP_RULE_SHA=$(deep_rules_sha256)
-  DEEP_RULE_COUNT=$(awk '/^[[:space:]]*\//{n++} END{print n+0}' "$DEEP_RULES" 2>/dev/null)
-  set_phase "执行深度规则（${DEEP_RULE_COUNT:-0} 条）"
-  run_deep_rules
-  deep_code=$?
-  if [ "$deep_code" -ne 0 ]; then
-    if [ "$deep_code" -eq 9 ]; then STOPPED=1; else FATAL_CODE=$deep_code; fi
-  fi
-fi
 
 # Direct CLI runs must invalidate the shared index after any deletion attempt,
 # including partial failures; otherwise its TTL can resurrect removed entries.
@@ -2661,6 +2113,8 @@ if [ "${FATAL_CODE:-0}" -ne 0 ]; then
   RESULT="任务失败（代码 $FATAL_CODE）"
 elif [ "$STOPPED" = "1" ]; then
   RESULT="${STOP_REASON:-任务已中断}"
+elif [ "$ERRORS" -gt 0 ]; then
+  RESULT="任务未完成，已处理 $((FILES + EMPTY_FILES)) 项，失败 $ERRORS 项，释放 $SPACE"
 elif [ "$MODE" = "scan" ]; then
   if [ "$DEEP_MODE" = "1" ]; then
     if [ "$PROTECTED_BYTES" -gt 0 ]; then
@@ -2679,7 +2133,7 @@ elif [ "$MODE" = "scan" ]; then
   elif [ "$PROFILE" = "apk" ]; then
     RESULT="安装包扫描完成，可清理 $SPACE"
   else
-    if [ "$PROFILE" = "corpse" ]; then RESULT="卸载残留扫描完成，可清理 $SPACE"; else RESULT="扫描完成，可清理 $SPACE"; fi
+    RESULT="扫描完成，可清理 $SPACE"
     [ "$CACHE_SLOW_DIRS" -gt 0 ] && RESULT="$RESULT，慢缓存目录跳过 ${CACHE_SLOW_DIRS} 项"
     [ "$CACHE_TRUNCATED" = "1" ] && RESULT="$RESULT，缓存阶段已到时限"
   fi
@@ -2706,13 +2160,23 @@ else
       [ "$DEEP_MOUNT_ITEMS" -gt 0 ] && RESULT="$RESULT，挂载保护 ${DEEP_MOUNT_ITEMS} 项"
       [ "$DEEP_TRUNCATED" = "1" ] && RESULT="$RESULT，已达到深度阶段时限"
       ;;
-    corpse) RESULT="卸载残留清理完成，释放 $SPACE" ;;
     apk) RESULT="安装包清理完成，删除 $FILES 个，期限内保留 ${APK_RETAINED:-0} 个，释放 $SPACE" ;;
     *) RESULT="清理完成，释放 $SPACE" ;;
   esac
   [ "${FATAL_CODE:-0}" -eq 0 ] && date +%s >"$STATE_DIR/last_run.epoch"
 fi
 
+# Publish before composing the final result so a publication failure is visible.
+# The caller has finished reading the last batch's original NUL list here.
+if [ "$MODE" = clean ] && [ "$COMPAT_DELETE_SEQ" -gt 0 ]; then
+  baize_cleanup_media_publish || BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
+  baize_cleanup_media_kick
+  if [ "$BAIZE_CLEANUP_MEDIA_UNCONFIRMED" = 1 ]; then
+    RESULT="$RESULT；媒体索引刷新未确认"
+  else
+    RESULT="$RESULT；媒体索引已排队核对"
+  fi
+fi
 log_line "----------------------------------------"
 log_line "$RESULT"
 TOTAL_FILES=$((FILES + EMPTY_FILES))
@@ -2723,6 +2187,7 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
 
 {
   echo "mode=$REQUEST_MODE"
+  echo "media_refresh_unconfirmed=$BAIZE_CLEANUP_MEDIA_UNCONFIRMED"
   echo "time=$(date '+%Y-%m-%d %H:%M:%S')"
   echo "files=$TOTAL_FILES"
   echo "regular_files=$FILES"
@@ -2733,6 +2198,8 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
   echo "bytes=$BYTES"
   echo "skipped=$SKIPPED"
   echo "errors=$ERRORS"
+  echo "changed_files=$CHANGED_FILES"
+  echo "missing_files=$MISSING_FILES"
   echo "protected_items=$PROTECTED_ITEMS"
   echo "protected_bytes=$PROTECTED_BYTES"
   echo "risk_low=$RISK_LOW"
@@ -2755,37 +2222,6 @@ log_line "文件总计: $FILES，其中碎片: $FRAGMENT_FILES，空文件: $EMP
   echo "result=$RESULT"
 } >"$STATE_DIR/latest.env"
 
-if [ "$REQUEST_MODE" = "deep-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
-  chmod 0600 "$DEEP_SCAN_MANIFEST_TMP" 2>/dev/null
-  mv -f "$DEEP_SCAN_MANIFEST_TMP" "$DEEP_SCAN_TARGETS"
-  {
-    echo "epoch=$(date +%s)"
-    echo "bytes=$BYTES"
-    echo "items=$((FILES + EMPTY_DIRS))"
-    echo "rules_sha=$DEEP_RULE_SHA"
-    echo "slow_items=$DEEP_SLOW_ITEMS"
-    echo "mount_items=$DEEP_MOUNT_ITEMS"
-    echo "truncated=$DEEP_TRUNCATED"
-    echo "processed=$DEEP_PROGRESS_CURRENT"
-    echo "targets=$DEEP_PROGRESS_TOTAL"
-    echo "rule_parse_seconds=$DEEP_RULE_PARSE_SECONDS"
-    echo "stage_seconds=$DEEP_STAGE_SECONDS"
-    echo "slowest_seconds=$DEEP_SLOWEST_SECONDS"
-    printf 'slowest_path=%s\n' "$DEEP_SLOWEST_PATH" | tr '
-' '  '
-  } >"$DEEP_SCAN_STATE"
-fi
-if [ "$REQUEST_MODE" = "corpse-scan" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
-  chmod 0600 "$CORPSE_SCAN_MANIFEST_TMP" 2>/dev/null
-  mv -f "$CORPSE_SCAN_MANIFEST_TMP" "$CORPSE_SCAN_TARGETS"
-  { echo "epoch=$(date +%s)"; echo "bytes=$BYTES"; echo "items=$((FILES + EMPTY_DIRS))"; } >"$CORPSE_SCAN_STATE"
-fi
-if [ "$REQUEST_MODE" = "deep-clean" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
-  case "$TRIGGER" in scheduler:*|scheduled:*|daily:*) ;; *) rm -f "$DEEP_SCAN_STATE" "$DEEP_SCAN_TARGETS" ;; esac
-fi
-if [ "$REQUEST_MODE" = "corpse-clean" ] && [ "$STOPPED" = "0" ] && [ "${FATAL_CODE:-0}" -eq 0 ]; then
-  rm -f "$CORPSE_SCAN_STATE" "$CORPSE_SCAN_TARGETS"
-fi
 cp -f "$REPORT_FILE" "$LATEST_REPORT"
 
 # Persist compact category/application details with each history row. Old eight-column rows remain compatible.
@@ -2835,4 +2271,5 @@ cleanup_lock
 trap - EXIT INT TERM
 if [ "${FATAL_CODE:-0}" -ne 0 ]; then exit "$FATAL_CODE"; fi
 [ "$STOPPED" = "1" ] && exit 9
+[ "$ERRORS" -eq 0 ] || exit 8
 exit 0

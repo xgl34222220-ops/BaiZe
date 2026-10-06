@@ -29,7 +29,7 @@ for base in "$MODPATH" "/data/adb/modules/baize_v2" "/data/adb/modules_update/ba
   rm -rf "$base/webroot" "$base/webui" "$base/www" "$base/ksu-webui" 2>/dev/null || true
 done
 
-ui_print "- 正在安装白泽 v2.0.0"
+ui_print "- 正在安装白泽 v2.2.2"
 ui_print "- 白泽是 Android Root 垃圾清理与文件归类模块"
 ui_print "- 用于扫描清理缓存、安装包、卸载残留和深度垃圾"
 ui_print "- 可整理应用下载、接收、附件与导出文件"
@@ -41,6 +41,8 @@ chmod 0700 "$STATE_DIR"
 [ -f "$APK" ] || abort "! 模块包中缺少 app/baize.apk"
 [ -f "$SCRIPTDIR/cleaner.sh" ] || abort "! 模块包中缺少清理总入口"
 [ -f "$SCRIPTDIR/native-cleaner.sh" ] || abort "! 模块包中缺少原生扫描执行器"
+[ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || abort "! 模块包中缺少删除后媒体索引记录器"
+[ -f "$SCRIPTDIR/cleanup-media-worker.sh" ] || abort "! 模块包中缺少媒体索引恢复执行器"
 [ -f "$SCRIPTDIR/cache-snapshot-clean.sh" ] || abort "! 模块包中缺少缓存快照执行器"
 [ -f "$SCRIPTDIR/cache-transaction.sh" ] || abort "! 模块包中缺少自动缓存事务执行器"
 [ -f "$SCRIPTDIR/apk-scanner.sh" ] || abort "! 模块包中缺少安装包快照扫描器"
@@ -217,3 +219,4 @@ fi
 # 所有必须项在前面已经通过 abort 做硬校验；辅助状态写入不能污染最终退出码。
 ui_print "- 白泽模块安装脚本完成"
 exit 0
+

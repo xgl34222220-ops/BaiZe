@@ -65,6 +65,10 @@ internal object RootServiceClients {
                 JsonFileTransport.callInto(directory, JSONArray().put(requestJson.orEmpty())) { request, response ->
                     remote.exchangeJsonInto("clearPackageCaches", request, response)
                 }
+            override fun runMaintenanceTool(tool: String?, optionsJson: String?): String =
+                JsonFileTransport.callInto(directory, JSONArray().put(tool.orEmpty()).put(optionsJson.orEmpty())) { request, response ->
+                    remote.exchangeJsonInto("runMaintenanceTool", request, response)
+                }
             override fun scanFileOrganizer(): String =
                 JsonFileTransport.callInto(directory, JSONArray()) { request, response ->
                     remote.exchangeJsonInto("scanFileOrganizer", request, response)

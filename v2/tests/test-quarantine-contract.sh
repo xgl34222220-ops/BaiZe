@@ -20,13 +20,25 @@ grep -Fq 'String purgeQuarantineItem(String id);' "$AIDL"
 
 # UI authorizes only a candidate ID from the current profile snapshot. It never sends a new path.
 grep -Fq 'item.id.removePrefix("profile:")' "$WORKBENCH"
-grep -Fq 'service.quarantineProfileSelected(profileSnapshotId' "$WORKBENCH"
+grep -Fq 'val reviewedSnapshot = profileSnapshotId' "$WORKBENCH"
+grep -Fq 'service.quarantineProfileSelected(reviewedSnapshot' "$WORKBENCH"
 ! grep -Fq 'quarantineProfileSelected(item.path' "$WORKBENCH"
 
 # The engine must resolve the candidate from an unexpired server-side snapshot and only accept high risk.
 grep -Fq 'val snapshot = validSnapshot(snapshotId)' "$ENGINE"
 grep -Fq 'candidate.risk == "high"' "$ENGINE"
-grep -Fq 'val reason = validate(candidate, options, mounts)' "$ENGINE"
+python3 - "$ENGINE" <<'PY'
+from pathlib import Path
+import sys
+source = Path(sys.argv[1]).read_text()
+body = source[source.index('    fun quarantine('):source.index('    private fun scanEmpty(')]
+validation = body.index('validate(candidate, options, mounts)')
+move = body.index('quarantineRepository.quarantine(')
+if validation >= move:
+    raise SystemExit('quarantine target validation must run before moving any source')
+if body.index('corpsePreflight(selected)') >= move:
+    raise SystemExit('package ownership must be checked before quarantine')
+PY
 grep -Fq 'if (candidate.risk == "critical") return "关键风险只允许审计"' "$ENGINE"
 grep -Fq 'private val quarantineRepository: QuarantineRepository' "$ENGINE"
 

@@ -41,12 +41,16 @@ require('modulePurpose", "background-automation"' in PROFILE,
 require("openForegroundCleaner()" in DASH, "dashboard must have App foreground cleaner entry")
 require('scan = { openForegroundCleaner() }' in DASH, "home scan must open App cleaner")
 require('clean = { openForegroundCleaner() }' in DASH, "home clean must open App cleaner")
-require('apkScan = { startActivity(Intent(this, ApkScanActivity::class.java)) }' in DASH,
+require('apkScan = { CleanerNavigation.open(this, Intent(this, ApkScanActivity::class.java)) }' in DASH,
         "APK tool must be App-owned")
-require('organize = { startActivity(Intent(this, FileOrganizerActivity::class.java)) }' in DASH,
+require('organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java)) }' in DASH,
         "organizer tool must be App-owned")
 require("ProcessBuilder" not in CACHE_ENGINE and "cleaner.sh" not in CACHE_ENGINE,
         "App cache engine must not shell out to module")
+require("measure(File(seed.path))" in CACHE_ENGINE and "measure(seed.file)" not in CACHE_ENGINE,
+        "measure the same verified canonical cache path shown and authorized by the App, not Android's owner alias symlink")
+require('if (protected.isEmpty()) return false' in CACHE_ENGINE and 'identity.unresolvedUserAlias(raw)' in CACHE_ENGINE,
+        "Root cache scanning must tolerate unavailable Framework storage identity without ignoring unresolved whitelist aliases")
 require("FOREGROUND_STATE_DIR" in ROOT_SUPPORT and "app-foreground" in ROOT_SUPPORT,
         "foreground snapshot state must be isolated from automation module state")
 require("StorageMediaRepository" in STORAGE and "contentResolver.query" in STORAGE,
@@ -57,4 +61,3 @@ require('自动清理模块' in HOME,
         "home must label automation as an optional module capability")
 
 print("foreground App cleaner architecture contract passed")
-

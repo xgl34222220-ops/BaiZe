@@ -19,6 +19,44 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ManualReviewEngineTest {
     @get:Rule val folder = TemporaryFolder()
 
+    @Test fun partialBatchKeepsUnselectedCandidatesWithoutExtendingSnapshot() {
+        val rules = folder.newFolder("batch-rules")
+        val first = folder.newFile("first.empty")
+        val second = folder.newFile("second.empty")
+        val engine = NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false),
+            ruleDirectory = rules, sharedRootOverride = listOf(folder.root))
+        val scan = JSONObject(engine.scan("empty", "{}") {})
+        val token = scan.getString("snapshotId")
+        val page = JSONObject(engine.page(token, 0, 60)).getJSONArray("items")
+        val firstItem = (0 until page.length()).map { page.getJSONObject(it) }.single { it.getString("path") == first.canonicalPath }
+        val secondItem = (0 until page.length()).map { page.getJSONObject(it) }.single { it.getString("path") == second.canonicalPath }
+        val result = JSONObject(engine.clean(token, JSONObject().put(firstItem.getString("id"), true).toString(), "{}") {})
+        assertFalse(first.exists())
+        assertTrue(second.exists())
+        assertEquals(token, result.getString("remainingSnapshotId"))
+        assertTrue(result.getLong("snapshotExpiresInMs") <= scan.getLong("snapshotExpiresInMs"))
+        val next = JSONObject(engine.clean(token, JSONObject().put(secondItem.getString("id"), true).toString(), "{}") {})
+        assertFalse(second.exists())
+        assertEquals(1, next.getInt("cleanedCandidates"))
+    }
+
+    @Test fun replacedUnselectedTargetIsRevalidatedBeforeTheNextBatch() {
+        val rules = folder.newFolder("replacement-rules")
+        val target = folder.newFile("candidate.empty")
+        val engine = NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false),
+            ruleDirectory = rules, sharedRootOverride = listOf(folder.root))
+        val scan = JSONObject(engine.scan("empty", "{}") {})
+        val token = scan.getString("snapshotId")
+        val page = JSONObject(engine.page(token, 0, 60)).getJSONArray("items")
+        val item = (0 until page.length()).map { page.getJSONObject(it) }.single { it.getString("path") == target.canonicalPath }
+        assertTrue(target.renameTo(java.io.File(folder.root, "previous")))
+        target.writeText("")
+        val result = JSONObject(engine.clean(token, JSONObject().put(item.getString("id"), true).toString(), "{}") {})
+        assertTrue(target.exists())
+        assertEquals(0, result.getInt("cleanedCandidates"))
+        assertTrue(result.getJSONArray("details").getJSONObject(0).getString("reason").contains("目标已变化"))
+    }
+
     @Test fun protectedCandidatesRemainVisibleAndCannotBeDeletedByExplicitSelection() {
         val rules = folder.newFolder("rules")
         val critical = folder.newFolder("databases")

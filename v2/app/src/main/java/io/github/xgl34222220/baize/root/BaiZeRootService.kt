@@ -221,7 +221,8 @@ class BaiZeRootService : RootService() {
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runForegroundScan(whitelistJson.orEmpty(), started)
+                val lease = RootOperationLease.acquire(this@BaiZeRootService, shared = true) ?: return busy("cache-scan")
+                lease.use { runForegroundScan(whitelistJson.orEmpty(), started) }
             } catch (error: Throwable) {
                 JSONObject()
                     .put("error", "foreground_cache_scan_failed")
@@ -247,11 +248,12 @@ class BaiZeRootService : RootService() {
             val snapshot = synchronized(resultLock) { items }
             val end = (safeOffset + safeLimit).coerceAtMost(snapshot.size)
             val array = JSONArray()
+            val labels = foregroundSnapshot?.items?.associate { it.path to it.appName }.orEmpty()
             if (safeOffset < end) {
                 snapshot.subList(safeOffset, end).forEach { item ->
                     array.put(
                         JSONObject()
-                            .put("appName", item.packageName)
+                            .put("appName", labels[item.path] ?: item.packageName)
                             .put("packageName", item.packageName)
                             .put("categoryLabel", item.category.substringBeforeLast(':'))
                             .put("path", item.path)
@@ -277,26 +279,19 @@ class BaiZeRootService : RootService() {
             selectionJson: String?,
             whitelistJson: String?
         ): String {
-            if (!restoreForegroundSnapshot() || !snapshotValid(requestedSnapshotId.orEmpty())) {
-                return JSONObject()
-                    .put("error", "snapshot_expired")
-                    .put("message", "缓存扫描快照已失效，不会自动重新扫描")
-                    .toString()
-            }
-            val allSafe = runCatching {
-                JSONObject(selectionJson.orEmpty()).optBoolean("__all_safe__", false)
-            }.getOrDefault(false)
-            if (!allSafe) {
-                return JSONObject()
-                    .put("error", "selection_required")
-                    .put("message", "没有授权清理当前缓存快照")
-                    .toString()
-            }
             if (!running.compareAndSet(false, true)) return busy("cache-clean")
             cancelled.set(false)
             val started = SystemClock.elapsedRealtime()
             return try {
-                runForegroundClean(whitelistJson.orEmpty(), started)
+                val lease = RootOperationLease.acquire(this@BaiZeRootService, shared = false) ?: return busy("cache-clean")
+                lease.use {
+                    if (!restoreForegroundSnapshot() || !snapshotValid(requestedSnapshotId.orEmpty())) {
+                        return JSONObject().put("success", false).put("error", "snapshot_expired")
+                            .put("message", "缓存扫描快照已失效，不会自动重新扫描").toString()
+                    }
+                    val selected = selectForegroundCacheSnapshot(requireNotNull(foregroundSnapshot), selectionJson.orEmpty())
+                    runForegroundClean(whitelistJson.orEmpty(), started, selected)
+                }
             } catch (error: Throwable) {
                 JSONObject()
                     .put("error", "foreground_cache_clean_failed")
@@ -355,12 +350,17 @@ class BaiZeRootService : RootService() {
             .put("totalFiles", snapshot.totalFiles)
             .put("totalBytes", snapshot.totalBytes)
             .put("visitedDirs", snapshot.visitedDirs)
+            .put("complete", snapshot.incompleteRoots == 0 && snapshot.scannedRoots == snapshot.totalRoots && !cancelled.get())
+            .put("totalRoots", snapshot.totalRoots)
+            .put("scannedRoots", snapshot.scannedRoots)
+            .put("incompleteRoots", snapshot.incompleteRoots)
+            .put("firstResultMs", snapshot.firstResultMs)
             .put("whitelisted", 0)
             .put("engine", "app-root-foreground-cache-v1")
             .toString()
     }
 
-    private fun runForegroundClean(whitelistJson: String, started: Long): String {
+    private fun runForegroundClean(whitelistJson: String, started: Long, selected: ForegroundCacheEngine.Snapshot): String {
         val snapshot = foregroundSnapshot ?: return JSONObject()
             .put("error", "snapshot_expired")
             .put("message", "缓存扫描快照已失效，请重新扫描")
@@ -372,7 +372,7 @@ class BaiZeRootService : RootService() {
             .put("phase", "正在清理应用缓存")
             .put("elapsedMs", 0L)
             .toString()
-        val result = foregroundEngine.clean(snapshot, whitelistJson) { phase, current, total, path ->
+        val result = foregroundEngine.clean(selected, whitelistJson) { phase, current, total, path ->
             taskStateJson = JSONObject()
                 .put("running", true)
                 .put("operation", "foreground-cache-clean")
@@ -385,16 +385,18 @@ class BaiZeRootService : RootService() {
                 .toString()
         }
         writeForegroundCleanReport(result)
-        if (result.remainingItems.isEmpty() && !result.cancelled) {
+        val selectedPaths = selected.items.mapTo(hashSetOf()) { it.path }
+        val remainingItems = snapshot.items.filterNot { it.path in selectedPaths } + result.remainingItems
+        if (remainingItems.isEmpty() && !result.cancelled) {
             clearForegroundSnapshot()
         } else {
             val remaining = ForegroundCacheEngine.Snapshot(
                 id = snapshot.id,
                 createdAt = snapshot.createdAt,
-                items = result.remainingItems,
-                totalBytes = result.remainingItems.sumOf { it.bytes },
-                totalFiles = result.remainingItems.sumOf { it.files },
-                visitedDirs = result.remainingItems.sumOf { it.directories },
+                items = remainingItems,
+                totalBytes = remainingItems.sumOf { it.bytes },
+                totalFiles = remainingItems.sumOf { it.files },
+                visitedDirs = remainingItems.sumOf { it.directories },
                 elapsedMs = snapshot.elapsedMs
             )
             foregroundSnapshot = remaining
@@ -402,7 +404,11 @@ class BaiZeRootService : RootService() {
             setSnapshotState(remaining)
             persistForegroundSnapshot(remaining)
         }
-        return result.json().put("output", "App RootService 直接清理；未调用模块脚本").toString()
+        return result.json().put("output", "App RootService 直接清理；未调用模块脚本")
+            .put("remainingSnapshotId", if (remainingItems.isEmpty()) "" else snapshot.id)
+            .put("remainingCandidates", remainingItems.size)
+            .put("snapshotExpiresInMs", (SNAPSHOT_MAX_AGE_MS - (System.currentTimeMillis() - snapshot.createdAt)).coerceAtLeast(0L))
+            .toString()
     }
 
     private fun cacheItem(item: ForegroundCacheEngine.Item): CacheItem = CacheItem(
@@ -423,7 +429,7 @@ class BaiZeRootService : RootService() {
                 files = snapshot.totalFiles,
                 bytes = snapshot.totalBytes,
                 visitedDirs = snapshot.visitedDirs,
-                firstResultMs = snapshot.elapsedMs,
+                firstResultMs = snapshot.firstResultMs,
                 engineElapsedMs = snapshot.elapsedMs,
                 itemsPerSecond = if (snapshot.elapsedMs > 0L) snapshot.items.size * 1000L / snapshot.elapsedMs else snapshot.items.size.toLong(),
                 workerPolicy = "app-root",
@@ -439,6 +445,12 @@ class BaiZeRootService : RootService() {
         val itemsFile = File(stateDir, "cache_scan.items.tsv")
         val targetsFile = File(stateDir, "cache_scan.targets")
         val envFile = File(stateDir, "cache_scan.env")
+        val frozenFile = File(stateDir, "cache_scan.frozen.json")
+        val frozen = JSONObject().put("snapshotId", snapshot.id).put("items", JSONObject().apply {
+            snapshot.items.forEach { item -> put(item.path, item.frozenTree?.let(FrozenReviewTree::toJson) ?: JSONObject.NULL) }
+        }).toString()
+        check(frozen.toByteArray().size <= 64 * 1024 * 1024) { "缓存逐文件快照超过保存上限，请缩小扫描范围" }
+        atomicWrite(frozenFile, frozen)
         val itemsText = buildString {
             append("package\tcategory\tfiles\tbytes\tdirectories\tpath\n")
             snapshot.items.forEach { item ->
@@ -461,7 +473,12 @@ class BaiZeRootService : RootService() {
             appendLine("files=${snapshot.totalFiles}")
             appendLine("bytes=${snapshot.totalBytes}")
             appendLine("visited_dirs=${snapshot.visitedDirs}")
-            appendLine("first_result_ms=${snapshot.elapsedMs}")
+            appendLine("first_result_ms=${snapshot.firstResultMs}")
+            appendLine("total_roots=${snapshot.totalRoots}")
+            appendLine("scanned_roots=${snapshot.scannedRoots}")
+            appendLine("incomplete_roots=${snapshot.incompleteRoots}")
+            appendLine("root_identities=${JSONObject().apply { snapshot.items.forEach { put(it.path, it.identity) } }}")
+            appendLine("app_labels=${JSONObject().apply { snapshot.items.forEach { put(it.packageName, it.appName) } }}")
             appendLine("engine_elapsed_ms=${snapshot.elapsedMs}")
             appendLine("worker_policy=app-root")
             appendLine("worker_reason=foreground-module-independent")
@@ -477,13 +494,23 @@ class BaiZeRootService : RootService() {
         val envFile = File(stateDir, "cache_scan.env")
         val itemsFile = File(stateDir, "cache_scan.items.tsv")
         val targetsFile = File(stateDir, "cache_scan.targets")
-        if (!envFile.isFile || !itemsFile.isFile || !targetsFile.isFile) {
+        val frozenFile = File(stateDir, "cache_scan.frozen.json")
+        if (!envFile.isFile || !itemsFile.isFile || !targetsFile.isFile || !frozenFile.isFile || frozenFile.length() > 64L * 1024 * 1024) {
             clearSnapshotMemory()
             foregroundSnapshot = null
             return false
         }
         val env = readEnv(envFile)
         val id = env.optString("snapshot_id").trim()
+        val frozen = runCatching { JSONObject(frozenFile.readText()) }.getOrNull() ?: run {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
+        if (frozen.optString("snapshotId") != id) {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
+        val frozenItems = frozen.optJSONObject("items") ?: run {
+            clearSnapshotMemory(); foregroundSnapshot = null; return false
+        }
         val createdAt = env.optLong("epoch", 0L) * 1000L
         if (id.isBlank() || createdAt <= 0L || System.currentTimeMillis() - createdAt !in 0..SNAPSHOT_MAX_AGE_MS) {
             clearForegroundSnapshot()
@@ -491,16 +518,22 @@ class BaiZeRootService : RootService() {
         }
         val incompleteArray = runCatching { JSONArray(env.optString("incomplete_paths", "[]")) }.getOrNull()
         val incompletePaths = incompleteArray?.let { array -> (0 until array.length()).map { array.optString(it) }.toSet() }.orEmpty()
+        val identities = runCatching { JSONObject(env.optString("root_identities", "{}")) }.getOrDefault(JSONObject())
+        val appLabels = runCatching { JSONObject(env.optString("app_labels", "{}")) }.getOrDefault(JSONObject())
         val restoredItems = parseItems(itemsFile).map { item ->
+            val tree = FrozenReviewTree.fromJson(frozenItems.optJSONObject(item.path))?.takeIf { it.root == item.path }
             ForegroundCacheEngine.Item(
                 packageName = item.packageName,
-                appName = item.packageName,
+                appName = appLabels.optString(item.packageName, item.packageName),
                 category = item.category,
                 path = item.path,
                 bytes = item.bytes,
                 files = item.files,
                 directories = item.directories,
-                complete = incompleteArray != null && item.path !in incompletePaths
+                complete = incompleteArray != null && item.path !in incompletePaths && tree != null,
+                identity = identities.optString(item.path),
+                incompleteReason = if (tree == null) "原始逐文件快照缺失，请重新扫描" else "",
+                frozenTree = tree
             )
         }
         val snapshot = ForegroundCacheEngine.Snapshot(
@@ -510,7 +543,11 @@ class BaiZeRootService : RootService() {
             totalBytes = restoredItems.sumOf { it.bytes },
             totalFiles = restoredItems.sumOf { it.files },
             visitedDirs = env.optLong("visited_dirs", restoredItems.sumOf { it.directories }),
-            elapsedMs = env.optLong("engine_elapsed_ms", 0L)
+            elapsedMs = env.optLong("engine_elapsed_ms", 0L),
+            totalRoots = env.optInt("total_roots", restoredItems.size),
+            scannedRoots = env.optInt("scanned_roots", restoredItems.size),
+            incompleteRoots = env.optInt("incomplete_roots", incompletePaths.size),
+            firstResultMs = env.optLong("first_result_ms", 0L)
         )
         foregroundSnapshot = snapshot
         synchronized(resultLock) { items = snapshot.items.map(::cacheItem) }
@@ -538,21 +575,13 @@ class BaiZeRootService : RootService() {
     private fun clearForegroundSnapshot() {
         foregroundSnapshot = null
         clearSnapshotMemory()
-        for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv")) {
+        for (name in listOf("cache_scan.env", "cache_scan.targets", "cache_scan.items.tsv", "cache_scan.frozen.json")) {
             File(RootPaths.FOREGROUND_STATE_DIR, name).delete()
         }
     }
 
     private fun atomicWrite(target: File, content: String) {
-        target.parentFile?.mkdirs()
-        val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
-        temp.writeText(content)
-        if (!temp.renameTo(target)) {
-            temp.copyTo(target, overwrite = true)
-            temp.delete()
-        }
-        target.setReadable(true, true)
-        target.setWritable(true, true)
+        RootFileStore.writeAtomic(target, content)
     }
 
     private fun runNativeScan(whitelistJson: String, started: Long): String {

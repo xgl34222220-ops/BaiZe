@@ -13,7 +13,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
@@ -29,7 +29,7 @@ internal fun IntValueDialog(
     onDismiss: () -> Unit,
     onConfirm: (Int) -> Unit
 ) {
-    var text by remember(initialValue) { mutableStateOf(initialValue.toString()) }
+    var text by rememberSaveable(initialValue) { mutableStateOf(initialValue.toString()) }
     val value = text.toIntOrNull()
     val valid = value != null && value in range
 
@@ -73,8 +73,8 @@ internal fun TimeValueDialog(
     onDismiss: () -> Unit,
     onConfirm: (hour: Int, minute: Int) -> Unit
 ) {
-    var hourText by remember(initialHour) { mutableStateOf(initialHour.toString()) }
-    var minuteText by remember(initialMinute) { mutableStateOf(initialMinute.toString()) }
+    var hourText by rememberSaveable(initialHour) { mutableStateOf(initialHour.toString()) }
+    var minuteText by rememberSaveable(initialMinute) { mutableStateOf(initialMinute.toString()) }
     val hour = hourText.toIntOrNull()
     val minute = minuteText.toIntOrNull()
     val valid = hour != null && hour in 0..23 && minute != null && minute in 0..59

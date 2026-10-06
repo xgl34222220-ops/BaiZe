@@ -110,7 +110,7 @@ import kotlin.math.ceil
 class ProfileActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val profile by lazy { intent.getStringExtra(EXTRA_PROFILE).orEmpty() }
-    private val preferences by lazy { getSharedPreferences("baize_v2", MODE_PRIVATE) }
+    private val preferences by lazy { LegacyPreferencesAccess.preferences(this) }
 
     private var service: IProfileRootService? = null
     private var bindingRequested = false
@@ -148,49 +148,8 @@ class ProfileActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (profile !in SUPPORTED_PROFILES) {
-            finish()
-            return
-        }
-
-        screenState = initialState(profile)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-
-        setContent {
-            val appearance = appearanceViewModel.settings.collectAsStateWithLifecycle().value
-            val systemDark = isSystemInDarkTheme()
-            val dark = when (appearance.themeMode) {
-                ThemeMode.SYSTEM -> systemDark
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-            }
-            SideEffect {
-                WindowCompat.getInsetsController(window, window.decorView).apply {
-                    isAppearanceLightStatusBars = !dark
-                    isAppearanceLightNavigationBars = !dark
-                }
-            }
-            BaiZeTheme(appearance) {
-                CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-                    ProfileRoute(
-                        appearance = appearance,
-                        state = screenState,
-                        actions = ProfileUiActions(
-                            onBack = ::finish,
-                            onScan = ::scan,
-                            onStop = ::stopTask,
-                            onClean = ::quickClean,
-                            onPrevious = { loadPage(page - 1) },
-                            onNext = { loadPage(page + 1) },
-                            onReview = ::openItemReview
-                        )
-                    )
-                }
-            }
-        }
-        connect()
+        if (profile in SUPPORTED_PROFILES) CleanerNavigation.scan(this, profile)
+        finish()
     }
 
     override fun onResume() {
@@ -483,7 +442,10 @@ class ProfileActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) { root.runModuleTask(cleanMode(profile)) }
+                withContext(Dispatchers.IO) {
+                    LegacyProtectionRecovery.requireReviewed(applicationContext)
+                    root.runModuleTask(cleanMode(profile))
+                }
             }
             taskRunning = false
             pollJob?.cancel()
@@ -647,8 +609,9 @@ class ProfileActivity : ComponentActivity() {
     }
 
     private fun optionsJson(allowHighRisk: Boolean): String {
-        val whitelist = preferences.getStringSet("package_whitelist", emptySet()).orEmpty()
-        val pathWhitelist = preferences.getStringSet("path_whitelist", emptySet()).orEmpty()
+        val protection = ApkProtectionStore.legacyRules(applicationContext)
+        val whitelist = protection.packages
+        val pathWhitelist = protection.paths
         val maxMb = preferences.getFloat("large_file_mb", 512f).toLong().coerceIn(64L, 16_384L)
         val fragmentDays = preferences.getInt("fragment_days", 7).coerceIn(1, 365)
         return JSONObject()
@@ -961,3 +924,4 @@ private fun formatBytes(value: Long): String {
         else -> "${bytes.toLong()} B"
     }
 }
+

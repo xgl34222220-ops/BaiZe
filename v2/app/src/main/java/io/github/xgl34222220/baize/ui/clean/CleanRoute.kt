@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize.ui.clean
 
 import android.content.Intent
+import io.github.xgl34222220.baize.CleanerNavigation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import io.github.xgl34222220.baize.ApkScanActivity
@@ -39,7 +40,7 @@ fun CleanRoute(
     )
 
     fun applyAndSave(next: SchedulerUiState) {
-        dashboardActions.updateScheduler(next)
+        if (scheduler.saving) return
         dashboardActions.saveScheduler(next)
     }
 
@@ -66,13 +67,14 @@ fun CleanRoute(
             applyAndSave(scheduler.copy(apkPackagesEnabled = enabled))
         },
         onSave = { dashboardActions.saveScheduler(scheduler) },
-        onScan = { context.startActivity(Intent(context, ResumableSmartScanActivity::class.java)) },
-        onApkScan = { context.startActivity(Intent(context, ApkScanActivity::class.java)) },
-        onInstantCache = { context.startActivity(Intent(context, InstantCacheActivity::class.java)) },
-        onFileOrganizer = { context.startActivity(Intent(context, FileOrganizerActivity::class.java)) },
-        onLargeFiles = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.LARGE)) },
-        onDuplicates = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.DUPLICATES)) },
-        onStorageAnalysis = { context.startActivity(StorageToolsActivity.intent(context, StorageToolMode.ANALYSIS)) },
+        onScan = dashboardActions.scan,
+        onApkScan = dashboardActions.apkScan,
+        onShizukuCache = { CleanerNavigation.openFrom(context, Intent(context, io.github.xgl34222220.baize.ShizukuCacheActivity::class.java)) },
+        onInstantCache = { CleanerNavigation.openFrom(context, Intent(context, InstantCacheActivity::class.java)) },
+        onFileOrganizer = dashboardActions.organize,
+        onLargeFiles = dashboardActions.largeFiles,
+        onDuplicates = dashboardActions.duplicates,
+        onStorageAnalysis = dashboardActions.storageAnalysis,
         onDeepClean = dashboardActions.deep,
         onCorpses = dashboardActions.corpses,
         onAudit = dashboardActions.audit,

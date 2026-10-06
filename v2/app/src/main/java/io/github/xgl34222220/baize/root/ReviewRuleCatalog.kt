@@ -9,14 +9,14 @@ internal object ReviewRuleCatalog {
         val externalData: List<String> = listOf("/storage/emulated/*/Android/data", "/data/media/*/Android/data")
     )
 
-    data class Target(val pattern: String, val label: String, val risk: String? = null, val days: Int = 0, val packageRelative: String = "")
+    data class Target(val pattern: String, val label: String, val risk: String? = null, val days: Int = 0, val packageRelative: String = "", val fileOnly: Boolean = false)
     data class Hidden(val directory: Boolean, val name: String, val days: Int) {
         fun matches(value: String): Boolean = if (name == "._*") value.startsWith("._") else value == name
     }
 
     private val packageName = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,254}")
     private val metadataNames = setOf(".DS_Store", "._*", "Thumbs.db", "desktop.ini", ".directory")
-    private val protectedNames = setOf(".git", ".ssh", ".gnupg", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".baize-quarantine")
+    private val protectedNames = setOf(".git", ".ssh", ".gnupg", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".baize-quarantine", ".baize-file-trash")
 
     fun packageRules(file: File?, external: Boolean, roots: Roots = Roots()): List<Target> = lines(file).flatMap { line ->
         val fields = line.split('|').map(String::trim)

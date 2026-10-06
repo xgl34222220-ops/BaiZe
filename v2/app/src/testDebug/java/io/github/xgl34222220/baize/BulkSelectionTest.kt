@@ -90,12 +90,12 @@ class BulkSelectionTest {
             }
         }
         compose.onNodeWithText("勾选多余副本").assertIsDisplayed().performClick()
-        compose.onNodeWithText("删除已选 2 项").assertIsDisplayed()
+        compose.onNodeWithText("移入回收站 2 项").assertIsDisplayed()
         save("duplicate-selection-dark-320")
     }
 
     private fun record(id: Long) = StorageFileRecord(id, "uri$id", "/storage/emulated/0/Download/文档$id.pdf",
-        "文档$id.pdf", 100, 1, "application/pdf")
+        "文档$id.pdf", 100, 1, "application/pdf").withVerifiedStorageIdentity()
     private fun save(name: String) {
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }

@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -15,7 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
 class NativeProfilePathSafetyTest {
-    private val engine by lazy { NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false)) }
+    @get:Rule val folder = TemporaryFolder()
+    private val engine by lazy { NativeProfileEngine(RuntimeEnvironment.getApplication(), AtomicBoolean(false), ruleDirectory = folder.root) }
 
     @Test fun bindMountAliasesAreDeduplicatedWithoutRewritingTheOperationPath() {
         val out = linkedMapOf<String, Any>()
