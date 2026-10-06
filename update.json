@@ -1,6 +1,6 @@
 {
-  "version": "v2.0.0",
-  "versionCode": 30005,
-  "zipUrl": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/downloads/releases/refactor-v2.0.0/BaiZe-v2.0.0-Module.zip",
-  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/docs/releases/refactor-v2.0.0.md"
+  "version": "v2.2.2",
+  "versionCode": 30027,
+  "zipUrl": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/downloads/releases/refactor-v2.2.2/BaiZe-v2.2.2-Module.zip",
+  "changelog": "https://raw.githubusercontent.com/xgl34222220-ops/BaiZe/main/docs/releases/refactor-v2.2.2.md"
 }
