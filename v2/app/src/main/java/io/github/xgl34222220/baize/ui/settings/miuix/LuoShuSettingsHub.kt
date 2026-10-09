@@ -17,10 +17,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.BuildConfig
+import io.github.xgl34222220.baize.UninstallWatcherSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.components.DetailStatusText
 import io.github.xgl34222220.baize.ui.miuix.*
@@ -120,6 +125,8 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
         item {
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.Palette, "外观与主题", "颜色与显示效果", actions.onOpenAppearance)
+                LuoShuGroupDivider()
+                UninstallWatcherSwitchRow()
             }
         }
         item { LuoShuSection("管理与维护") }
@@ -148,6 +155,20 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
             }
         }
     }
+}
+
+/** 卸载残留提醒开关：本地偏好 + 接收器组件启用状态，无需连接清理服务。 */
+@Composable
+private fun UninstallWatcherSwitchRow() {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf<Boolean?>(null) }
+    // 偏好读取与组件状态写入都离开主线程。
+    LaunchedEffect(Unit) { enabled = withContext(Dispatchers.IO) { UninstallWatcherSettings.isEnabled(context) } }
+    LuoShuSwitchRow(Icons.Rounded.NotificationsActive, "卸载残留提醒", "卸载应用后低优先级提示扫描残留", enabled == true, { value ->
+        enabled = value
+        scope.launch(Dispatchers.IO) { UninstallWatcherSettings.setEnabled(context, value) }
+    }, enabled = enabled != null)
 }
 
 @Composable

@@ -184,6 +184,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                             rootUsage.directories + local.directories, rootUsage.inaccessible + local.inaccessible,
                             rootUsage.linksSkipped + local.linksSkipped, rootUsage.limited || local.limited, "Root + 本地")
                     } else null
+                    // 在扫描线程预建目录层级索引，钻取与环形图不在主线程遍历全部目录。
+                    usage?.tree
                     StorageScanBundle(index, duplicates, storageBuckets(index.records), growth, usage)
                 }
                 taskControl.check()

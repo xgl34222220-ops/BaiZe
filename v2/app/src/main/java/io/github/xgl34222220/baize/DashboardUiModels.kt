@@ -378,5 +378,6 @@ data class DashboardActions(
     val resetScanPerformance: () -> Unit,
     val crash: () -> Unit,
     val photoCompression: () -> Unit = {},
-    val fileTrash: () -> Unit = {}
+    val fileTrash: () -> Unit = {},
+    val swipeReview: () -> Unit = {}
 )
