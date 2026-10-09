@@ -35,4 +35,17 @@ class LastCleanupStoreTest {
         assertEquals(junk, restored.second)
         assertEquals(emptyList<AppJunkUiItem>(), LastCleanupStore.decode(JSONObject()).first)
     }
+
+    @Test fun runIdentityAndDeletionEvidenceSurviveReopenAndLegacyRecordsStayUnlinked() {
+        val apps = listOf(AppJunkUiItem("com.example.app", "测试应用", "app_bugly", 19, 22_440_000))
+        val run = LastCleanupStore.decodeRun(JSONObject(
+            LastCleanupStore.encode(apps, emptyList(), "audit-123", deletedEvidence = true).toString()))
+        assertEquals(LastCleanupStore.Run(apps, emptyList(), "audit-123", true), run)
+        val legacy = LastCleanupStore.decodeRun(JSONObject(LastCleanupStore.encode(apps, emptyList()).toString()))
+        assertEquals("", legacy.recordId)
+        assertFalse(legacy.deletedEvidence)
+        val old = LastCleanupStore.decodeRun(JSONObject().put("apps", org.json.JSONArray()))
+        assertEquals("", old.recordId)
+        assertFalse(old.deletedEvidence)
+    }
 }

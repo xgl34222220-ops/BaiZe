@@ -21,7 +21,11 @@ data class HistoryUiState(
     val recentApps: List<AppJunkUiItem>,
     val recentJunk: List<GeneralJunkUiItem>,
     val protectedItems: List<ProtectedUiItem>,
-    val records: List<HistoryUiItem>
+    val records: List<HistoryUiItem>,
+    /** History record id of the run that produced [recentApps]/[recentJunk]; blank for module/legacy lists. */
+    val recentRecordId: String = "",
+    /** True only when the recent lists carry confirmed deleted bytes (never scan estimates). */
+    val recentDeletedEvidence: Boolean = false
 ) {
     val currentDirectoryCount: Int
         get() = records.firstOrNull()?.takeIf { it.result == latestResult }?.emptyDirs?.coerceAtLeast(0) ?: 0
@@ -41,8 +45,25 @@ data class HistoryUiState(
         get() = recentApps.sumOf { it.bytes.coerceAtLeast(0L) } +
             recentJunk.sumOf { it.bytes.coerceAtLeast(0L) }
 
-    fun currentCapacityText(format: (Long) -> String): String = records.firstOrNull()
-        ?.takeIf { it.result == latestResult }?.capacityText(format) ?: "无法测量"
+    /**
+     * Deleted bytes confirmed by the per-app/per-category result of the same run as the latest record.
+     * Zero unless that result is linked to the record by id and was reported as deleted content.
+     */
+    val confirmedCurrentBytes: Long
+        get() {
+            val record = records.firstOrNull() ?: return 0L
+            if (!recentDeletedEvidence || recentRecordId.isBlank() || record.recordId != recentRecordId) return 0L
+            return currentBytes
+        }
+
+    fun currentCapacityText(format: (Long) -> String): String {
+        val record = records.firstOrNull()?.takeIf { it.result == latestResult } ?: return "无法测量"
+        // The run total was not measured, but this run's own deletion evidence was: show it as a floor.
+        if (record.releaseState == "unknown" && confirmedCurrentBytes > 0L) {
+            return "已确认 ${format(confirmedCurrentBytes)} · 部分无法测量"
+        }
+        return record.capacityText(format)
+    }
 }
 
 data class HistoryUiActions(
@@ -51,7 +72,22 @@ data class HistoryUiActions(
     val onReviewProtected: () -> Unit
 )
 
-fun DashboardUiState.toHistoryUiState(): HistoryUiState = HistoryUiState(
+fun DashboardUiState.toHistoryUiState(): HistoryUiState {
+    // A result linked to an older run than the latest record is not "this run"; never show it as such.
+    val latestRecordId = history.firstOrNull()?.recordId
+    val recentIsStale = recentRecordId.isNotBlank() && latestRecordId != null && latestRecordId != recentRecordId
+    return historyUiState(
+        apps = if (recentIsStale) emptyList() else recentApps,
+        junk = if (recentIsStale) emptyList() else recentJunk,
+        evidence = recentDeletedEvidence && !recentIsStale
+    )
+}
+
+private fun DashboardUiState.historyUiState(
+    apps: List<AppJunkUiItem>,
+    junk: List<GeneralJunkUiItem>,
+    evidence: Boolean
+): HistoryUiState = HistoryUiState(
     latestResult = history.firstOrNull()?.result.orEmpty(),
     lastTaskTime = lastTaskTime.ifBlank { history.firstOrNull()?.time.orEmpty() },
     lifetimeRuns = lifetimeRuns,
@@ -61,8 +97,10 @@ fun DashboardUiState.toHistoryUiState(): HistoryUiState = HistoryUiState(
     lifetimeEmptyDirs = lifetimeEmptyDirs,
     lifetimeFragments = lifetimeFragments,
     lifetimeElapsed = lifetimeElapsed,
-    recentApps = recentApps,
-    recentJunk = recentJunk,
+    recentApps = apps,
+    recentJunk = junk,
     protectedItems = protectedItems,
-    records = history
+    records = history,
+    recentRecordId = recentRecordId,
+    recentDeletedEvidence = evidence
 )

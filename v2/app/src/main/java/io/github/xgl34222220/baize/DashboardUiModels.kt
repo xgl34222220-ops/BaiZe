@@ -66,6 +66,10 @@ data class DashboardUiState(
     val whitelistCount: Int = 0,
     val recentApps: List<AppJunkUiItem> = emptyList(),
     val recentJunk: List<GeneralJunkUiItem> = emptyList(),
+    /** History record id of the run that produced [recentApps]/[recentJunk]; blank when unknown (module/legacy). */
+    val recentRecordId: String = "",
+    /** True only when the recent lists carry confirmed deleted bytes, never scan estimates. */
+    val recentDeletedEvidence: Boolean = false,
     val rawLogName: String = "",
     val rawLog: String = "",
     val lastTaskTime: String = "",

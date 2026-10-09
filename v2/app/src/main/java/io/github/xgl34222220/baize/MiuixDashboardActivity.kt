@@ -297,9 +297,12 @@ class MiuixDashboardActivity : ComponentActivity() {
         // App-owned history remains usable while Root/Shizuku is unavailable.
         refreshHistory()
         lifecycleScope.launch {
-            val saved = withContext(Dispatchers.IO) { LastCleanupStore.read(this@MiuixDashboardActivity) }
-            if (saved.first.isNotEmpty() || saved.second.isNotEmpty()) {
-                dashboardState.value = dashboardState.value.copy(recentApps = saved.first, recentJunk = saved.second)
+            val saved = withContext(Dispatchers.IO) { LastCleanupStore.readRun(this@MiuixDashboardActivity) }
+            // A run linked to its history record replaces the lists even when it deleted nothing,
+            // so an earlier run's per-app amounts are never shown as this run's result.
+            if (saved.apps.isNotEmpty() || saved.junk.isNotEmpty() || saved.recordId.isNotBlank()) {
+                dashboardState.value = dashboardState.value.copy(recentApps = saved.apps, recentJunk = saved.junk,
+                    recentRecordId = saved.recordId, recentDeletedEvidence = saved.deletedEvidence)
             }
         }
         if (rootService != null || cacheService != null) {
@@ -951,6 +954,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             dashboardState.value = dashboardState.value.copy(
                 running = false,
                 recentJunk = junk,
+                recentRecordId = "",
+                recentDeletedEvidence = false,
                 lastTaskTime = taskTime,
                 protectedItems = protected,
                 taskPhase = result
@@ -1048,6 +1053,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                 lastReleasedKnown = release.state == ReleaseAmount.State.MEASURED,
                 recentApps = appDetails,
                 recentJunk = otherDetails,
+                recentRecordId = "",
+                recentDeletedEvidence = false,
                 lastTaskTime = taskTime,
                 protectedItems = protected,
                 taskPhase = "$resultLine\n$detailLine"
@@ -1771,6 +1778,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                 lastReleasedKnown = latestReleasedKnown,
                 recentApps = recentDetails.first,
                 recentJunk = recentDetails.second,
+                recentRecordId = if (appDetails.isNotEmpty() || otherDetails.isNotEmpty()) "" else dashboardState.value.recentRecordId,
+                recentDeletedEvidence = if (appDetails.isNotEmpty() || otherDetails.isNotEmpty()) false
+                    else dashboardState.value.recentDeletedEvidence,
                 taskPhase = if (dashboardState.value.running) dashboardState.value.taskPhase else latestTaskText,
                 scanPerformance = ScanPerformanceUiState(
                     available = performance.optBoolean("available", false),
@@ -1924,7 +1934,9 @@ class MiuixDashboardActivity : ComponentActivity() {
                     dashboardState.value = dashboardState.value.copy(
                         history = emptyList(),
                         recentApps = emptyList(),
-                        recentJunk = emptyList()
+                        recentJunk = emptyList(),
+                        recentRecordId = "",
+                        recentDeletedEvidence = false
                     )
                     toast(if (moduleSuccess) "最近记录已清空" else "App 记录已清空，自动模块记录清理失败")
                     refreshHistory()

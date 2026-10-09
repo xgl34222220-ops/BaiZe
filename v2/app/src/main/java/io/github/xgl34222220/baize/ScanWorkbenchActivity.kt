@@ -722,7 +722,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                         }
                     }
                     currentCoroutineContext().ensureActive()
-                    runCatching {
+                    // The history row id links this run's per-app result to its record on the History card.
+                    val recordId = runCatching {
                         profile.recordNativeTask(ReleaseAmount(
                             if (bytesKnown) ReleaseAmount.State.MEASURED else if (bytes > 0L) ReleaseAmount.State.PARTIAL else ReleaseAmount.State.UNKNOWN,
                             bytes.takeIf { bytesKnown || it > 0L }).writeTo(JSONObject().put("mode", "workbench-clean")
@@ -731,7 +732,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             .put("includedAuditEventIds", includedAuditEventIds).put("files", files).put("errors", failures)
                             .put("emptyDirs", directories)
                             .put("result", "工作台清理完成，处理 $cleanedCandidates 个候选")).toString())
-                    }
+                    }.mapCatching { JSONObject(it).optString("recordId").trim() }.getOrDefault("")
                     val groupedApps = actualApps.groupBy { it.packageName }.values.map { entries ->
                         entries.first().copy(files = entries.sumOf { it.files }, bytes = entries.sumOf { it.bytes },
                             errors = entries.sumOf { it.errors }, categories = entries.map {
@@ -739,14 +740,16 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             })
                     }
                     CleanAggregate(bytes, files, directories, failures, cleanedCandidates, messages, outcomes, cancelled, incomplete || !bytesKnown,
-                        groupedApps, actualJunk, remainingCache, remainingProfile, bytesKnown)
+                        groupedApps, actualJunk, remainingCache, remainingProfile, bytesKnown, recordId)
                 }
             }
             if (closed || epoch != operationEpoch) return@launch
             pollJob?.cancel()
             response.onSuccess { result ->
                 // Publish history with the accepted review, never from an obsolete IO reply.
-                LastCleanupStore.save(this@ScanWorkbenchSession, result.apps, result.junk)
+                // Per-app amounts here are engine-reported deleted bytes (cache deletedBytes, profile
+                // detail bytes from FrozenReviewTree.delete), never scan estimates.
+                LastCleanupStore.save(this@ScanWorkbenchSession, result.apps, result.junk, result.recordId, deletedEvidence = true)
                 val now = SystemClock.elapsedRealtime()
                 val cacheRemaining = result.cacheRemaining.takeIf { it.id.isNotBlank() && it.expiresAt > now }
                 val profileRemaining = result.profileRemaining.takeIf { it.id.isNotBlank() && it.expiresAt > now }
@@ -1102,7 +1105,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
 private data class CleanAggregate(val bytes: Long, val files: Long, val directories: Long, val failures: Int, val candidates: Int,
     val messages: List<String>, val outcomes: Map<String, String>, val cancelled: Boolean, val incomplete: Boolean,
     val apps: List<AppJunkUiItem>, val junk: List<GeneralJunkUiItem>,
-    val cacheRemaining: RemainingReview, val profileRemaining: RemainingReview, val bytesKnown: Boolean)
+    val cacheRemaining: RemainingReview, val profileRemaining: RemainingReview, val bytesKnown: Boolean,
+    val recordId: String = "")
 private data class RemainingReview(val id: String, val expiresAt: Long)
 private fun remainingReview(response: JSONObject, previousExpiry: Long): RemainingReview {
     val remainingId = response.optString("remainingSnapshotId")
