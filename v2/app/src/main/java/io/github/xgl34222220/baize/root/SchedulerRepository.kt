@@ -484,6 +484,23 @@ internal class SchedulerRepository(
             .put("supervisorHeartbeatEpoch", supervisorHeartbeat)
             .put("supervisorHeartbeatAge", supervisorHeartbeatAge)
             .put("stale", stale)
+            .put("maintenance", maintenanceJsonObject())
+    }
+
+    /** Last F2FS GC / TRIM result and the state-directory file audit, both single fixed files. */
+    private fun maintenanceJsonObject(): JSONObject {
+        val maintenance = RootFileStore.readEnv(File(stateDir, "maintenance.env"))
+        val budget = RootFileStore.readEnv(File(stateDir, "state-budget.env"))
+        return JSONObject()
+            .put("lastEpoch", maintenance.optLong("last_attempt_epoch", 0L))
+            .put("result", maintenance.optString("last_result"))
+            .put("gc", maintenance.optString("gc"))
+            .put("trim", maintenance.optString("trim"))
+            .put("dirtyBefore", maintenance.optString("dirty_before"))
+            .put("dirtyAfter", maintenance.optString("dirty_after"))
+            .put("stateFiles", budget.optLong("files", -1L))
+            .put("stateFileBudget", budget.optLong("budget", 0L))
+            .put("stateOverBudget", budget.optInt("over_budget", 0) == 1)
     }
 
     private fun schedulerReasonCode(
@@ -516,6 +533,7 @@ internal class SchedulerRepository(
     private fun publicSchedulerReason(state: String, raw: String): String = when {
         state == "disabled" -> "自动任务已关闭"
         state == "running" -> "执行中"
+        raw.contains("开机") -> "开机后稍候执行"
         raw.contains("息屏") -> "等待息屏后执行"
         raw.contains("充电") -> "等待充电后执行"
         raw.contains("电量") -> "等待电量满足条件"
@@ -761,7 +779,14 @@ internal class SchedulerRepository(
             "root_shell_days" to 1..90,
             "max_file_mb" to 16..16_384,
             "shared_index_ttl_seconds" to 30..86_400,
-            "quarantine_retention_days" to 1..30
+            "quarantine_retention_days" to 1..30,
+            "app_profile_enabled" to 0..1,
+            "app_profile_tier" to 0..2,
+            "app_profile_user_media" to 0..1,
+            "app_profile_media_days" to 7..365,
+            "maintenance_enabled" to 0..1,
+            "maintenance_min_hours" to 24..168,
+            "maintenance_gc_max_seconds" to 30..1800
         )
     }
 }

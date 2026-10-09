@@ -50,7 +50,9 @@ data class SettingsUiActions(
     val onDiscardSchedulerDraft: () -> Unit = {},
     val onOpenCleanupAudit: () -> Unit = {},
     val onOpenTaskHistory: () -> Unit = {},
-    val onOpenRuleVersions: () -> Unit = {}
+    val onOpenRuleVersions: () -> Unit = {},
+    /** 只读统计微信存储构成，结果回调在主线程。 */
+    val onLoadWechatUsage: ((io.github.xgl34222220.baize.WechatUsage) -> Unit) -> Unit = {}
 )
 
 fun DashboardUiState.toSettingsUiState(

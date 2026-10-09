@@ -34,7 +34,10 @@ internal class NativeProfileEngine(
     private val ruleRoots: ReviewRuleCatalog.Roots = ReviewRuleCatalog.Roots(),
     private val sharedRootOverride: List<File>? = null,
     private val packageInventory: () -> InstalledPackageInventory = { InstalledPackageInventory.read(context) },
-    private val corpseStorageUser: (String) -> Int? = InstalledPackageInventory::storageUser
+    private val corpseStorageUser: (String) -> Int? = InstalledPackageInventory::storageUser,
+    private val appProfile: () -> ReviewRuleCatalog.AppProfile = {
+        ReviewRuleCatalog.AppProfile.read(File(RootPaths.CONFIG_FILE))
+    }
 ) {
     private val appOwnedRules = ruleDirectory == null
     private var ruleDirectory: File = ruleDirectory ?: AppRuleStore.ensure(context)
@@ -642,6 +645,7 @@ internal class NativeProfileEngine(
         val directory = rulesDirectory()
         rules += ReviewRuleCatalog.packageRules(directory?.resolve("app.rules"), false, ruleRoots)
         rules += ReviewRuleCatalog.packageRules(directory?.resolve("external.rules"), true, ruleRoots)
+        rules += ReviewRuleCatalog.profileRules(directory?.resolve("app-profiles.rules"), appProfile(), ruleRoots)
         rules += ReviewRuleCatalog.webViewRules(ruleRoots)
         rules += ReviewRuleCatalog.customRules(directory?.resolve("custom.rules"))
         rules += ReviewRuleCatalog.customRules(directory?.resolve("custom-preview-files.rules")).map { it.copy(fileOnly = true, label = "自定义文件规则（已试跑）") }

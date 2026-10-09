@@ -28,7 +28,8 @@ if [ -f "$SCRIPTDIR/state-retention.sh" ]; then
   . "$SCRIPTDIR/state-retention.sh"
   baize_prune_task_results "$STATE_DIR/task-results"
   baize_prune_task_logs "$STATE_DIR/logs"
-  echo "task-results/logs bounded"
+  baize_enforce_state_budget "$STATE_DIR"
+  echo "task-results/logs/reports bounded"
 fi
 
 COMPLETED="$STATE_DIR/cleanup-media/completed"

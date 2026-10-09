@@ -89,6 +89,7 @@ fun SettingsRoute(
         onOpenAudit = onOpenDetails,
         onOpenCrashDiagnostics = dashboardActions.crash,
         onOpenTaskHistory = { showTaskHistory = true },
+        onLoadWechatUsage = dashboardActions.wechatUsage,
         onOpenCleanupAudit = { CleanerNavigation.openFrom(context, Intent(context, AuditActivity::class.java)) },
         onOpenRuleVersions = { CleanerNavigation.openFrom(context, Intent(context, RuleBundleActivity::class.java)) }
     )
@@ -135,5 +136,6 @@ private fun SchedulerUiState.withRuntimeFrom(remote: SchedulerUiState): Schedule
     supervisorStatus = remote.supervisorStatus,
     supervisorHeartbeatAge = remote.supervisorHeartbeatAge,
     runtimeStale = remote.runtimeStale,
+    maintenanceSummary = remote.maintenanceSummary,
     saving = remote.saving
 )

@@ -79,6 +79,31 @@ run_autopilot() {
   BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" BAIZE_FORCE_AUTOPILOT="$force" \
     sh "$AUTOPILOT" >>"$STATE_DIR/logs/autopilot.log" 2>&1 || true
 }
+# Periodic, low-priority housekeeping. Storage maintenance only checks its own cheap
+# gate every MAINT_EVERY seconds (it runs at most once per day, charging + screen off);
+# the state budget caps generated files and rotates logs once per hour.
+MAINT_EVERY=${BAIZE_MAINT_CHECK_SECONDS:-600}
+BUDGET_EVERY=${BAIZE_STATE_BUDGET_SECONDS:-3600}
+last_maint_check=$(date +%s); last_budget=$last_maint_check; maint_pid=; budget_pid=
+run_state_budget() {
+  [ -f "$SCRIPTDIR/state-retention.sh" ] || return 0
+  if [ -n "$budget_pid" ] && kill -0 "$budget_pid" 2>/dev/null; then return 0; fi
+  sh "$SCRIPTDIR/state-retention.sh" budget "$STATE_DIR" </dev/null >/dev/null 2>&1 & budget_pid=$!
+}
+run_periodic_maintenance() {
+  pm_now=$(date +%s)
+  if [ $((pm_now - last_maint_check)) -ge "$MAINT_EVERY" ] || [ "$pm_now" -lt "$last_maint_check" ]; then
+    last_maint_check=$pm_now
+    if [ -f "$SCRIPTDIR/storage-maintenance.sh" ] && { [ -z "$maint_pid" ] || ! kill -0 "$maint_pid" 2>/dev/null; }; then
+      BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" sh "$SCRIPTDIR/storage-maintenance.sh" check \
+        </dev/null >/dev/null 2>&1 & maint_pid=$!
+    fi
+  fi
+  if [ $((pm_now - last_budget)) -ge "$BUDGET_EVERY" ] || [ "$pm_now" -lt "$last_budget" ]; then
+    last_budget=$pm_now
+    run_state_budget
+  fi
+}
 write_state() {
   status=$1; code=${2:-0}; reason=${3:-}; now=$(date +%s); tmp="$STATE.tmp.$$"
   { echo "status=$status"; echo "pid=$$"; echo "pid_start_ticks=$SUPERVISOR_START_TICKS"; echo "instance_id=$INSTANCE_ID"; echo "scheduler_pid=${child:-0}"; echo "scheduler_start_ticks=$([ -n "${child:-}" ] && proc_start_ticks "$child" || echo 0)"; echo "restart_count=$restart_count"; echo "last_exit_code=$code"; echo "reason=$reason"; echo "heartbeat_epoch=$now"; echo "updated=$now"; } >"$tmp" && mv -f "$tmp" "$STATE"
@@ -92,7 +117,7 @@ queue_dispatch_stalled() {
   q_updated=$(sed -n 's/^updated=//p' "$SCHEDULER_STATE" 2>/dev/null | tail -n 1)
   case "$q_count" in ''|*[!0-9]*) q_count=0 ;; esac; case "$q_updated" in ''|*[!0-9]*) q_updated=0 ;; esac
   [ "$q_count" -gt 0 ] || return 1; [ "$q_state" != running ] || return 1; [ -z "$q_blocked" ] || return 1
-  case "$q_reason" in *息屏*|*充电*|*电量*|*空闲*|*自动重试*|*自动恢复*|*当前任务*|*手动任务*) return 1 ;; esac
+  case "$q_reason" in *息屏*|*充电*|*电量*|*空闲*|*开机*|*自动重试*|*自动恢复*|*当前任务*|*手动任务*) return 1 ;; esac
   q_now=$(date +%s); RESCUE_AGE=$((q_now - q_updated)); [ "$RESCUE_AGE" -lt 0 ] && RESCUE_AGE=0
   [ "$RESCUE_AGE" -ge "$QUEUE_WAKE_AFTER_SECONDS" ]
 }
@@ -108,6 +133,7 @@ while [ ! -f "$STOP" ]; do
     if kill -0 "$child" 2>/dev/null; then
       run_autopilot 0
       run_cleanup_media
+      run_periodic_maintenance
       backoff=1
       if queue_dispatch_stalled; then
         if [ "$RESCUE_AGE" -ge "$QUEUE_RESTART_AFTER_SECONDS" ]; then write_state recovering 0 "scheduler_queue_stalled_${RESCUE_AGE}s"; kill "$child" 2>/dev/null || true
