@@ -164,4 +164,12 @@ current_id=$(sed -n 's/^task_id=//p' "$WORKER_FILE" 2>/dev/null | tail -n 1)
 if [ "$current_id" = "$TASK_ID" ]; then
   rm -f "$WORKER_FILE" "$RUNNING_FILE"
 fi
+# The launcher may give up waiting before this acknowledgement lands; never leave it behind.
+rm -f "$RESULT_DIR/$TASK_ID.started"
+# Bounded ledgers: /data/adb is relabeled file-by-file on every boot.
+if [ -f "$SCRIPTDIR/state-retention.sh" ]; then
+  . "$SCRIPTDIR/state-retention.sh"
+  baize_prune_task_results "$RESULT_DIR"
+  baize_prune_task_logs "$STATE_DIR/logs"
+fi
 exit "$code"

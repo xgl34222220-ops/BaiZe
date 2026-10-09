@@ -44,5 +44,10 @@ root_framework=Magisk; [ -n "${KSU:-}" ] && root_framework=KernelSU; [ -n "${APA
 } >"$STATE.tmp" && mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE" 2>/dev/null || true
 [ -x "$SCRIPTDIR/rules-validator.sh" ] && sh "$SCRIPTDIR/rules-validator.sh" >"$STATE_DIR/rules-validation.txt" 2>&1 || true
+# Late_start, after boot_completed: shrink legacy loose-file state in the background.
+if [ -f "$SCRIPTDIR/state-migrate.sh" ]; then
+  BAIZE_MODULE_DIR="$MODDIR" BAIZE_ROOT_STATE_DIR="$STATE_DIR" sh "$SCRIPTDIR/state-migrate.sh" \
+    </dev/null >>"$STATE_DIR/logs/state-migrate.log" 2>&1 &
+fi
 if [ -x "$SCRIPTDIR/supervisor.sh" ] && [ -x "$SCRIPTDIR/scheduler.sh" ]; then exec sh "$SCRIPTDIR/supervisor.sh"; fi
 while true; do sleep 3600; done
