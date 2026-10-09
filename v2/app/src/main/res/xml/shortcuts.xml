@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static launcher shortcuts. All of them open the dashboard, which routes the request
+     through the same guarded actions as the home screen (see LauncherShortcuts.kt). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan_short"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="io.github.xgl34222220.baize.action.SHORTCUT"
+            android:targetPackage="io.github.xgl34222220.baize"
+            android:targetClass="io.github.xgl34222220.baize.MiuixDashboardActivity">
+            <extra android:name="io.github.xgl34222220.baize.SHORTCUT" android:value="scan" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="large_files"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_large_files"
+        android:shortcutShortLabel="@string/shortcut_large_files_short"
+        android:shortcutLongLabel="@string/shortcut_large_files_long">
+        <intent
+            android:action="io.github.xgl34222220.baize.action.SHORTCUT"
+            android:targetPackage="io.github.xgl34222220.baize"
+            android:targetClass="io.github.xgl34222220.baize.MiuixDashboardActivity">
+            <extra android:name="io.github.xgl34222220.baize.SHORTCUT" android:value="large_files" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="storage_analysis"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_storage_analysis"
+        android:shortcutShortLabel="@string/shortcut_storage_analysis_short"
+        android:shortcutLongLabel="@string/shortcut_storage_analysis_long">
+        <intent
+            android:action="io.github.xgl34222220.baize.action.SHORTCUT"
+            android:targetPackage="io.github.xgl34222220.baize"
+            android:targetClass="io.github.xgl34222220.baize.MiuixDashboardActivity">
+            <extra android:name="io.github.xgl34222220.baize.SHORTCUT" android:value="storage_analysis" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="file_trash"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_file_trash"
+        android:shortcutShortLabel="@string/shortcut_file_trash_short"
+        android:shortcutLongLabel="@string/shortcut_file_trash_long">
+        <intent
+            android:action="io.github.xgl34222220.baize.action.SHORTCUT"
+            android:targetPackage="io.github.xgl34222220.baize"
+            android:targetClass="io.github.xgl34222220.baize.MiuixDashboardActivity">
+            <extra android:name="io.github.xgl34222220.baize.SHORTCUT" android:value="file_trash" />
+        </intent>
+    </shortcut>
+</shortcuts>
