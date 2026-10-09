@@ -8,6 +8,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -154,7 +155,37 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
 private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, back: () -> Unit) {
     val s = state.scheduler
     var edit by rememberSaveable { mutableStateOf("") }
-    if (edit.isNotEmpty()) IntValueDialog(
+    if (edit == "tier") AlertDialog(
+        onDismissRequest = { edit = "" },
+        title = { Text("应用专项清理档位") },
+        text = {
+            Column {
+                for (tier in 0..2) {
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = s.appProfileTier == tier, onClick = {
+                            actions.onUpdateScheduler(s.copy(appProfileTier = tier, appProfileUserMedia = s.appProfileUserMedia && tier == 2))
+                            edit = ""
+                        }).padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = s.appProfileTier == tier, onClick = null)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(appProfileTierLabel(tier), fontWeight = FontWeight.Medium)
+                            Text(appProfileTierDescription(tier), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { edit = "" }) { Text("关闭") } }
+    ) else if (edit == "media") AlertDialog(
+        onDismissRequest = { edit = "" },
+        title = { Text("清理聊天媒体？") },
+        text = { Text("将按增强档清理 30 天前的 QQ 聊天图片与短视频缓存。删除后无法在白泽中恢复，聊天记录与收到的文件不受影响。") },
+        confirmButton = { TextButton(onClick = { actions.onUpdateScheduler(s.copy(appProfileUserMedia = true)); edit = "" }) { Text("开启") } },
+        dismissButton = { TextButton(onClick = { edit = "" }) { Text("取消") } }
+    ) else if (edit.isNotEmpty()) IntValueDialog(
         title = if (edit == "battery") "最低执行电量" else "单文件自动清理上限",
         description = if (edit == "battery") "电量不足时等待，不改变清理内容。" else "大于上限的文件会保留，可在手动扫描中检查。",
         initialValue = if (edit == "battery") s.minBattery else s.maxFileMb,
@@ -184,6 +215,35 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 LuoShuNavigationRow(Icons.Rounded.BatterySaver, "最低执行电量", "${s.minBattery}%", { edit = "battery" })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Security, "单文件清理上限", "${s.maxFileMb} MB", { edit = "limit" })
+            }
+        }
+        item { LuoShuSection("应用专项清理", "微信、QQ、抖音等应用的缓存规则") }
+        item {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.Tune, "清理档位", appProfileTierLabel(s.appProfileTier), { edit = "tier" })
+                if (s.appProfileTier == 2) {
+                    LuoShuGroupDivider()
+                    LuoShuSwitchRow(Icons.Rounded.Image, "同时清理聊天媒体",
+                        "仅清理 30 天前的聊天图片与短视频缓存，默认关闭", s.appProfileUserMedia,
+                        { if (it) edit = "media" else actions.onUpdateScheduler(s.copy(appProfileUserMedia = false)) })
+                }
+            }
+        }
+        item { LuoShuSection("存储维护", "F2FS 垃圾回收与 TRIM") }
+        item {
+            LuoShuGroup {
+                LuoShuSwitchRow(Icons.Rounded.Storage, "充电息屏时整理存储",
+                    "每天最多一次，亮屏或拔电立即停止", s.maintenanceEnabled,
+                    { actions.onUpdateScheduler(s.copy(maintenanceEnabled = it)) })
+                if (s.maintenanceSummary.isNotBlank()) {
+                    LuoShuGroupDivider()
+                    Text(
+                        "最近一次：${s.maintenanceSummary}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                }
             }
         }
         item { LuoShuSection("文件归类") }
@@ -252,4 +312,16 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
             }
         }
     }
+}
+
+internal fun appProfileTierLabel(tier: Int): String = when (tier) {
+    0 -> "保守"
+    2 -> "增强"
+    else -> "标准"
+}
+
+internal fun appProfileTierDescription(tier: Int): String = when (tier) {
+    0 -> "只清理日志与崩溃记录"
+    2 -> "再加朋友圈、小程序等较大的可重下载缓存"
+    else -> "再加可自动重建的资源与图片缓存（推荐）"
 }

@@ -1,0 +1,102 @@
+# 白泽应用专项缓存规则（按档位分级，思路参考 CZero 的分应用清理配置，路径经白泽二次筛选）。
+# 格式：档位|范围|包名|相对路径|保留天数
+#   档位：conservative=保守，standard=标准，enhanced=增强，enhanced-media=增强+用户媒体
+#   范围：data=/data/user*/<包名>，ext=/data/media/<用户>/Android/data/<包名>
+# 档位逐级包含：标准 = 保守 + 标准；增强 = 保守 + 标准 + 增强。
+# enhanced-media 只在“增强”档且用户明确开启 app_profile_user_media=1 时生效，保留天数不得少于 7 天。
+# 除 enhanced-media 外，任何规则都不得触及数据库、配置、聊天记录、收到的文件或媒体（由 app-profile-rules.sh 与 CI 强制校验）。
+# 相对路径不支持通配符，同一路径被多个已选档位命中时取最短保留天数。
+
+# 微信 com.tencent.mm
+conservative|data|com.tencent.mm|app_bugly|0
+conservative|data|com.tencent.mm|app_crashrecord|0
+conservative|data|com.tencent.mm|files/tbslog|0
+conservative|ext|com.tencent.mm|MicroMsg/xlog|0
+conservative|ext|com.tencent.mm|MicroMsg/crash|0
+standard|data|com.tencent.mm|app_textures|0
+standard|ext|com.tencent.mm|cache|1
+standard|ext|com.tencent.mm|MicroMsg/CheckResUpdate|3
+standard|ext|com.tencent.mm|MicroMsg/wxacache|3
+enhanced|ext|com.tencent.mm|MicroMsg/sns|7
+enhanced|ext|com.tencent.mm|MicroMsg/wxanewfiles|7
+enhanced|ext|com.tencent.mm|cache|0
+
+# QQ com.tencent.mobileqq
+conservative|data|com.tencent.mobileqq|app_bugly|0
+conservative|data|com.tencent.mobileqq|app_crashrecord|0
+conservative|ext|com.tencent.mobileqq|Tencent/log|0
+conservative|ext|com.tencent.mobileqq|files/tencent/msflogs/com/tencent/mobileqq|0
+standard|data|com.tencent.mobileqq|app_textures|0
+standard|ext|com.tencent.mobileqq|cache|1
+standard|ext|com.tencent.mobileqq|Tencent/MobileQQ/qbosssplahAD|0
+enhanced|ext|com.tencent.mobileqq|Tencent/MobileQQ/.apollo|7
+enhanced|ext|com.tencent.mobileqq|cache|0
+enhanced-media|ext|com.tencent.mobileqq|Tencent/MobileQQ/chatpic|30
+enhanced-media|ext|com.tencent.mobileqq|Tencent/MobileQQ/shortvideo|30
+
+# TIM com.tencent.tim
+conservative|data|com.tencent.tim|app_bugly|0
+conservative|data|com.tencent.tim|app_crashrecord|0
+conservative|data|com.tencent.tim|app_tombs|0
+standard|data|com.tencent.tim|app_textures|0
+standard|ext|com.tencent.tim|cache|1
+
+# 抖音 com.ss.android.ugc.aweme
+conservative|data|com.ss.android.ugc.aweme|app_bugly|0
+conservative|data|com.ss.android.ugc.aweme|app_crashrecord|0
+conservative|ext|com.ss.android.ugc.aweme|files/log|0
+conservative|ext|com.ss.android.ugc.aweme|files/xlog|0
+conservative|ext|com.ss.android.ugc.aweme|files/perf|0
+standard|data|com.ss.android.ugc.aweme|app_textures|0
+standard|data|com.ss.android.ugc.aweme|app_webview/Default/GPUCache|0
+standard|data|com.ss.android.ugc.aweme|app_webview/Default/Code Cache|0
+standard|ext|com.ss.android.ugc.aweme|cache|1
+enhanced|ext|com.ss.android.ugc.aweme|cache|0
+enhanced|data|com.ss.android.ugc.aweme|app_webview/Default/Service Worker/CacheStorage|0
+
+# 快手 com.smile.gifmaker
+conservative|data|com.smile.gifmaker|app_bugly|0
+conservative|data|com.smile.gifmaker|app_crashrecord|0
+conservative|data|com.smile.gifmaker|files/debuglog|0
+standard|data|com.smile.gifmaker|app_textures|0
+standard|data|com.smile.gifmaker|files/image_cache|1
+standard|data|com.smile.gifmaker|files/MetaDiskCache/image_cache|1
+standard|ext|com.smile.gifmaker|cache|1
+enhanced|data|com.smile.gifmaker|files/yoda_code_cache|0
+enhanced|ext|com.smile.gifmaker|cache|0
+
+# 哔哩哔哩 tv.danmaku.bili
+conservative|data|tv.danmaku.bili|app_bugly|0
+conservative|data|tv.danmaku.bili|app_crashrecord|0
+conservative|data|tv.danmaku.bili|app_blog_v3|0
+standard|data|tv.danmaku.bili|app_textures|0
+standard|data|tv.danmaku.bili|files/res_cache|1
+standard|ext|tv.danmaku.bili|cache|1
+enhanced|data|tv.danmaku.bili|app_mod_resource/cache|0
+enhanced|ext|tv.danmaku.bili|cache|0
+
+# 小红书 com.xingin.xhs
+conservative|data|com.xingin.xhs|app_bugly|0
+conservative|data|com.xingin.xhs|app_crashrecord|0
+conservative|data|com.xingin.xhs|files/xlog|0
+standard|data|com.xingin.xhs|app_textures|0
+standard|ext|com.xingin.xhs|cache|1
+enhanced|ext|com.xingin.xhs|cache|0
+
+# 微博 com.sina.weibo
+conservative|data|com.sina.weibo|app_bugly|0
+conservative|data|com.sina.weibo|app_crashrecord|0
+conservative|data|com.sina.weibo|files/xlog|0
+standard|data|com.sina.weibo|app_textures|0
+standard|ext|com.sina.weibo|cache|1
+enhanced|ext|com.sina.weibo|cache|0
+
+# 淘宝 com.taobao.taobao / 支付宝 com.eg.android.AlipayGphone
+conservative|data|com.taobao.taobao|app_crash|0
+conservative|data|com.taobao.taobao|app_tlog_v9|0
+standard|data|com.taobao.taobao|app_textures|0
+standard|ext|com.taobao.taobao|cache|1
+conservative|data|com.eg.android.AlipayGphone|app_crash|0
+conservative|data|com.eg.android.AlipayGphone|files/tnetlogs|0
+standard|data|com.eg.android.AlipayGphone|app_textures|0
+standard|ext|com.eg.android.AlipayGphone|cache|1

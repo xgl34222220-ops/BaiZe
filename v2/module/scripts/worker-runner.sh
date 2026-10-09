@@ -171,5 +171,6 @@ if [ -f "$SCRIPTDIR/state-retention.sh" ]; then
   . "$SCRIPTDIR/state-retention.sh"
   baize_prune_task_results "$RESULT_DIR"
   baize_prune_task_logs "$STATE_DIR/logs"
+  baize_enforce_state_budget "$STATE_DIR"
 fi
 exit "$code"

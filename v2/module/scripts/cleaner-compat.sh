@@ -41,6 +41,7 @@ WHITELIST="$STATE_DIR/whitelist.conf"
 PACKAGE_WHITELIST=${BAIZE_PACKAGE_WHITELIST:-$STATE_DIR/native-cache-packages.conf}
 CUSTOM_RULES="$STATE_DIR/custom.rules"
 APP_RULES="$MODDIR/config/app.rules"
+APP_PROFILE_RULES="$MODDIR/config/app-profiles.rules"
 EXTERNAL_RULES="$MODDIR/config/external.rules"
 DEEP_RULES="$MODDIR/config/deep.rules"
 HIDDEN_RULES="$MODDIR/config/hidden.rules"
@@ -1325,9 +1326,12 @@ rule_file_old_enough() {
 }
 
 run_app_rules() {
+  app_rules_file=${1:-$APP_RULES}
+  app_rules_category=${2:-应用扩展规则}
   compat_begin_collection
-  [ -f "$APP_RULES" ] || return 0
-  run_native_relative_rules "$APP_RULES" "应用扩展规则" 0
+  [ -f "$app_rules_file" ] || return 0
+  [ -s "$app_rules_file" ] || return 0
+  run_native_relative_rules "$app_rules_file" "$app_rules_category" 0
   rule_discovery_code=$?
   case "$rule_discovery_code" in 0) return 0 ;; 9) return 9 ;; esac
   while IFS='|' read -r package relative days extra || [ -n "$package$relative$days$extra" ]; do
@@ -1346,9 +1350,9 @@ run_app_rules() {
       }
       rule_target_once "$target" || continue
       if [ -d "$target" ]; then
-        clean_dir "$target" "$days" "应用扩展规则:$package" || return $?
+        clean_dir "$target" "$days" "$app_rules_category:$package" || return $?
       elif [ -f "$target" ] && rule_file_old_enough "$target" "$days"; then
-        CATEGORY="应用扩展规则:$package"
+        CATEGORY="$app_rules_category:$package"
         size=$(stat -c %s "$target" 2>/dev/null)
         if [ "${size:-0}" = "0" ]; then
           if [ "$CLEAN_EMPTY_FILES" = "1" ]; then handle_file "$target" empty || return $?; fi
@@ -1357,14 +1361,17 @@ run_app_rules() {
         fi
       fi
     done
-  done <"$APP_RULES"
+  done <"$app_rules_file"
   return 0
 }
 
 run_external_rules() {
+  ext_rules_file=${1:-$EXTERNAL_RULES}
+  ext_rules_category=${2:-外部应用扩展规则}
   compat_begin_collection
-  [ -f "$EXTERNAL_RULES" ] || return 0
-  run_native_relative_rules "$EXTERNAL_RULES" "外部应用扩展规则" 1
+  [ -f "$ext_rules_file" ] || return 0
+  [ -s "$ext_rules_file" ] || return 0
+  run_native_relative_rules "$ext_rules_file" "$ext_rules_category" 1
   rule_discovery_code=$?
   case "$rule_discovery_code" in 0) return 0 ;; 9) return 9 ;; esac
   while IFS='|' read -r package relative days extra || [ -n "$package$relative$days$extra" ]; do
@@ -1385,9 +1392,9 @@ run_external_rules() {
       }
       rule_target_once "$target" || continue
       if [ -d "$target" ]; then
-        clean_dir "$target" "$days" "外部应用扩展规则:$package" || return $?
+        clean_dir "$target" "$days" "$ext_rules_category:$package" || return $?
       elif [ -f "$target" ] && rule_file_old_enough "$target" "$days"; then
-        CATEGORY="外部应用扩展规则:$package"
+        CATEGORY="$ext_rules_category:$package"
         size=$(stat -c %s "$target" 2>/dev/null)
         if [ "${size:-0}" = "0" ]; then
           if [ "$CLEAN_EMPTY_FILES" = "1" ]; then handle_file "$target" empty || return $?; fi
@@ -1396,7 +1403,29 @@ run_external_rules() {
         fi
       fi
     done
-  done <"$EXTERNAL_RULES"
+  done <"$ext_rules_file"
+  return 0
+}
+
+
+# 应用专项规则：按 app_profile_tier（0 保守 / 1 标准 / 2 增强）编译成临时规则，
+# 交给与 app.rules 相同的执行器；用户媒体规则只在增强档且 app_profile_user_media=1 时生效。
+# 编译结果只写在本次任务的 run.lock/tmp 中，任务结束随锁目录一起删除。
+run_app_profile_rules() {
+  [ -f "$APP_PROFILE_RULES" ] && [ -f "$SCRIPTDIR/app-profile-rules.sh" ] || return 0
+  profile_enabled=$(get_value app_profile_enabled)
+  [ "$profile_enabled" != "0" ] || return 0
+  profile_tier=$(get_uint app_profile_tier 1 0 2)
+  profile_media=$(get_bool app_profile_user_media)
+  [ "$profile_tier" = "2" ] || profile_media=0
+  profile_data="$TMP_DIR/app-profile-data.rules"
+  profile_ext="$TMP_DIR/app-profile-ext.rules"
+  profile_summary=$(sh "$SCRIPTDIR/app-profile-rules.sh" compile "$profile_tier" "$profile_media" "$APP_PROFILE_RULES" "$profile_data" "$profile_ext" 2>>"$LOG_FILE")
+  log_line "[应用专项规则] 档位 $profile_tier 用户媒体 $profile_media $profile_summary"
+  case "$profile_tier" in 0) profile_label="应用专项(保守)" ;; 2) profile_label="应用专项(增强)" ;; *) profile_label="应用专项(标准)" ;; esac
+  run_app_rules "$profile_data" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }
+  run_external_rules "$profile_ext" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }
+  rm -f "$profile_data" "$profile_ext"
   return 0
 }
 
@@ -2051,6 +2080,7 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_app_rul
   run_app_rules || STOPPED=1
   [ "$STOPPED" = "0" ] && run_external_rules || STOPPED=1
   [ "$STOPPED" = "0" ] && run_webview_cache_rules || STOPPED=1
+  [ "$STOPPED" = "0" ] && run_app_profile_rules || STOPPED=1
 fi
 
 if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_system_logs)" = "1" ]; then

@@ -33,7 +33,13 @@ if [ "$current_schema" != "$RUNTIME_SCHEMA" ]; then
 fi
 [ -f "$CONFIG" ] || cp -f "$MODDIR/config/default.conf" "$CONFIG" 2>/dev/null
 chmod 0600 "$CONFIG" 2>/dev/null || true
-count=0; while [ "$(getprop sys.boot_completed)" != 1 ] && [ "$count" -lt 180 ]; do sleep 1; count=$((count+1)); done
+# Boot safety: everything above is O(1) (fixed paths only). Nothing below may run
+# before sys.boot_completed; then wait a short settle window and drop to low CPU/IO
+# priority so the module never competes with init, restorecon or first-unlock work.
+count=0; while [ "$(getprop sys.boot_completed)" != 1 ] && [ "$count" -lt 300 ]; do sleep 2; count=$((count+1)); done
+sleep "${BAIZE_BOOT_SETTLE_SECONDS:-20}"
+renice -n 10 -p "$$" >/dev/null 2>&1 || true
+ionice -c 2 -n 7 -p "$$" >/dev/null 2>&1 || true
 install_result=missing
 if [ -x "$SCRIPTDIR/app-installer.sh" ]; then sh "$SCRIPTDIR/app-installer.sh" ensure >/dev/null 2>&1; case $? in 0) install_result=ready;; 11) install_result=signature_mismatch;; *) install_result=failed;; esac; fi
 version=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null | tail -n 1)
@@ -43,7 +49,10 @@ root_framework=Magisk; [ -n "${KSU:-}" ] && root_framework=KernelSU; [ -n "${APA
  echo "boot_epoch=$(date +%s)"; echo "app_installed=$(pm path "$APP_ID" >/dev/null 2>&1 && echo 1 || echo 0)"; echo "app_install_result=$install_result"; echo "app_version=$(dumpsys package "$APP_ID" 2>/dev/null | sed -n 's/.*versionName=//p' | head -n 1)"; echo "rules_ready=$([ -f "$MODDIR/config/deep.rules" ] && echo 1 || echo 0)"; echo "cleaner_ready=$([ -x "$SCRIPTDIR/cleaner.sh" ] && echo 1 || echo 0)"; echo "scheduler_ready=$([ -x "$SCRIPTDIR/scheduler.sh" ] && echo 1 || echo 0)"; echo "module_version=$version"; echo "module_version_code=$version_code"; echo "root_framework=$root_framework";
 } >"$STATE.tmp" && mv -f "$STATE.tmp" "$STATE"
 chmod 0600 "$STATE" 2>/dev/null || true
-[ -x "$SCRIPTDIR/rules-validator.sh" ] && sh "$SCRIPTDIR/rules-validator.sh" >"$STATE_DIR/rules-validation.txt" 2>&1 || true
+# Rule hashing reads the whole deep rule library: run it in the background.
+if [ -x "$SCRIPTDIR/rules-validator.sh" ]; then
+  sh "$SCRIPTDIR/rules-validator.sh" </dev/null >"$STATE_DIR/rules-validation.txt" 2>&1 &
+fi
 # Late_start, after boot_completed: shrink legacy loose-file state in the background.
 if [ -f "$SCRIPTDIR/state-migrate.sh" ]; then
   BAIZE_MODULE_DIR="$MODDIR" BAIZE_ROOT_STATE_DIR="$STATE_DIR" sh "$SCRIPTDIR/state-migrate.sh" \

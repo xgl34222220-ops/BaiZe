@@ -205,6 +205,13 @@ data class SchedulerUiState(
     val apkPackageDays: Int = 30,
     val apkMinutes: Int = 1_440,
     val scanRootWorkers: Int = 0,
+    /** 应用专项缓存档位：0 保守 / 1 标准 / 2 增强。 */
+    val appProfileTier: Int = 1,
+    /** 聊天图片/短视频等用户媒体，仅在增强档下生效且需用户明确开启。 */
+    val appProfileUserMedia: Boolean = false,
+    /** F2FS GC + TRIM：充电且息屏时每日最多一次。 */
+    val maintenanceEnabled: Boolean = true,
+    val maintenanceSummary: String = "",
     val runtimeState: String = "waiting",
     val runtimeReason: String = "等待调度器首次轮询",
     val queueCount: Int = 0,
@@ -270,6 +277,9 @@ data class SchedulerUiState(
         .put("schedule_apk_minutes", apkMinutes.coerceIn(5, 43_200))
         .put("schedule_apk_hours", ((apkMinutes + 59) / 60).coerceIn(1, 720))
         .put("scan_root_workers", 0)
+        .put("app_profile_tier", appProfileTier.coerceIn(0, 2))
+        .put("app_profile_user_media", (appProfileUserMedia && appProfileTier == 2).flag())
+        .put("maintenance_enabled", maintenanceEnabled.flag())
 
     companion object {
         fun fromJson(json: JSONObject): SchedulerUiState {
@@ -341,13 +351,39 @@ data class SchedulerUiState(
                 supervisorStatus = runtime.optString("supervisorStatus", "unknown"),
                 supervisorHeartbeatAge = runtime.optLong("supervisorHeartbeatAge", -1L),
                 runtimeStale = runtime.optBoolean("stale", false),
-                scanRootWorkers = 0
+                scanRootWorkers = 0,
+                appProfileTier = json.optInt("app_profile_tier", 1).coerceIn(0, 2),
+                appProfileUserMedia = json.optInt("app_profile_user_media", 0) == 1 &&
+                    json.optInt("app_profile_tier", 1) == 2,
+                maintenanceEnabled = json.optInt("maintenance_enabled", 1) == 1,
+                maintenanceSummary = maintenanceSummary(runtime.optJSONObject("maintenance"))
             )
         }
     }
 }
 
 private fun Boolean.flag() = if (this) 1 else 0
+
+/** 一行中文概括最近一次存储维护结果；从未运行时返回空串。 */
+internal fun maintenanceSummary(maintenance: JSONObject?): String {
+    if (maintenance == null) return ""
+    val epoch = maintenance.optLong("lastEpoch", 0L)
+    if (epoch <= 0L) return ""
+    val stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+        .format(java.util.Date(epoch * 1000))
+    val result = when (maintenance.optString("result")) {
+        "ok" -> "已完成"
+        "trim-only" -> "仅完成 TRIM"
+        "interrupted" -> "已中断（亮屏或拔电）"
+        "unsupported" -> "设备不支持"
+        "running" -> "进行中"
+        "killed" -> "上次被系统终止，已恢复"
+        else -> "未知"
+    }
+    val dirty = maintenance.optString("dirtyBefore").takeIf { it.isNotBlank() && it != "-" }
+        ?.let { before -> " · 脏段 $before→${maintenance.optString("dirtyAfter")}" }.orEmpty()
+    return "$stamp · $result$dirty"
+}
 
 data class DashboardActions(
     val refresh: () -> Unit,

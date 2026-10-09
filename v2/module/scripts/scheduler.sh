@@ -227,10 +227,20 @@ is_device_idle() {
   if [ "$IDLE_LOADED" = 0 ]; then IDLE_DUMP=$(dumpsys deviceidle 2>/dev/null); IDLE_LOADED=1; fi
   printf '%s\n' "$IDLE_DUMP" | grep -Eq 'mState=(IDLE|IDLE_MAINTENANCE)|mLightState=(IDLE|WAITING_FOR_NETWORK)'
 }
+# Boot safety: scheduled work never starts in the first minutes after boot, even when
+# tasks became overdue while the phone was off. Manual requests are not delayed.
+BOOT_SETTLE_SECONDS=${BAIZE_BOOT_SETTLE_UPTIME_SECONDS:-300}
+boot_settled() {
+  [ "${BAIZE_SKIP_BOOT_WAIT:-0}" = 1 ] && return 0
+  bs_up=$(sed -n '1{s/[. ].*//;p;}' /proc/uptime 2>/dev/null)
+  case "$bs_up" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$bs_up" -ge "$BOOT_SETTLE_SECONDS" ]
+}
 conditions_allow_task() {
   group=${1:-cache}; SCHEDULE_REASON=
   [ "$(bool_value enabled)" = 1 ] || { SCHEDULE_REASON="自动任务总开关已关闭"; return 1; }
   [ ! -f "$STOP_FILE" ] || { SCHEDULE_REASON="已收到停止请求"; return 1; }
+  if [ "${kind:-}" != manual ] && ! boot_settled; then SCHEDULE_REASON="开机后等待系统稳定"; return 1; fi
   screen_key=screen_off_only; idle_key=device_idle_only; charge_key=charging_only
   if [ "$group" = organize ]; then screen_key=organize_screen_off_only; idle_key=organize_device_idle_only; charge_key=organize_charging_only; fi
   if [ "$(bool_value "$screen_key")" = 1 ] && ! is_screen_off; then SCHEDULE_REASON="等待息屏"; return 1; fi

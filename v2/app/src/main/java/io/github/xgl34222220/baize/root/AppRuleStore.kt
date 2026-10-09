@@ -12,6 +12,7 @@ import java.io.File
 internal object AppRuleStore {
     private val files = listOf(
         "app.rules",
+        "app-profiles.rules",
         "external.rules",
         "hidden.rules",
         "review.rules",

@@ -29,6 +29,86 @@ internal object ReviewRuleCatalog {
         bases.map { Target("$it/$relative", if (external) "外部应用缓存与日志" else "应用缓存与日志", "medium", days, relative) }
     }.distinctBy { it.pattern }
 
+    /** Per-app profile selection read from the module configuration (module defaults when absent). */
+    data class AppProfile(val enabled: Boolean = true, val tier: Int = 1, val userMedia: Boolean = false) {
+        val effectiveTier: Int get() = tier.coerceIn(0, 2)
+        val effectiveUserMedia: Boolean get() = userMedia && effectiveTier == 2
+
+        companion object {
+            fun read(config: File?): AppProfile {
+                val values = HashMap<String, String>()
+                runCatching {
+                    config?.takeIf { it.isFile && it.length() <= 256 * 1024 }?.forEachLine { raw ->
+                        val line = raw.trim()
+                        if (line.startsWith("#") || !line.contains('=')) return@forEachLine
+                        values[line.substringBefore('=').trim()] = line.substringAfter('=').trim()
+                    }
+                }
+                return AppProfile(
+                    enabled = values["app_profile_enabled"] != "0",
+                    tier = values["app_profile_tier"]?.toIntOrNull()?.coerceIn(0, 2) ?: 1,
+                    userMedia = values["app_profile_user_media"] == "1"
+                )
+            }
+        }
+    }
+
+    private val profileRank = mapOf("conservative" to 0, "standard" to 1, "enhanced" to 2, "enhanced-media" to 3)
+    private val profileDenied = setOf(
+        "databases", "shared_prefs", "no_backup", "mmkv", "datastore", "download", "downloads", "weixin",
+        "qqfile_recv", "filerecv", "chatpic", "shortvideo", "ptt", "voice2", "image2", "video2", "emoji",
+        "favorite", "favorites", "draft", "drafts", "documents", "dcim", "pictures", "movies", "music"
+    )
+    private val accountDirectory = Regex("[0-9a-f]{32}")
+    private val databaseFile = Regex(".*\\.db(-wal|-shm|-journal)?")
+
+    /** Same guard as app-profile-rules.sh: only enhanced-media lines may touch chat or user data. */
+    fun profileTouchesUserData(relative: String): Boolean {
+        val parts = relative.lowercase().split('/')
+        return parts.withIndex().any { (index, part) ->
+            part in profileDenied || databaseFile.matches(part) || accountDirectory.matches(part) ||
+                (index + 1 < parts.size && "$part/${parts[index + 1]}" == "files/mmkv")
+        }
+    }
+
+    /**
+     * Per-app tiered rules (config/app-profiles.rules). Tiers are cumulative; enhanced-media
+     * entries are used only with tier 2 *and* the explicit user-media switch, never shorter than
+     * 7 days, and are marked high risk so the workbench never pre-selects them.
+     */
+    fun profileRules(file: File?, profile: AppProfile, roots: Roots = Roots()): List<Target> {
+        if (!profile.enabled) return emptyList()
+        val tier = profile.effectiveTier
+        val chosen = LinkedHashMap<Triple<String, String, String>, Pair<Int, Boolean>>()
+        for (line in lines(file)) {
+            val fields = line.split('|').map(String::trim)
+            if (fields.size != 5) continue
+            val rank = profileRank[fields[0]] ?: continue
+            val scope = fields[1]
+            val pkg = fields[2]
+            val relative = fields[3]
+            val days = fields[4].toIntOrNull()?.takeIf { it in 0..365 } ?: continue
+            if (scope != "data" && scope != "ext") continue
+            if (!packageName.matches(pkg) || !safeRelative(relative)) continue
+            val media = rank == 3
+            if (media) {
+                if (!profile.effectiveUserMedia || days < 7) continue
+            } else if (rank > tier || profileTouchesUserData(relative)) continue
+            val key = Triple(scope, pkg, relative)
+            val previous = chosen[key]
+            chosen[key] = if (previous == null) days to media else minOf(previous.first, days) to (previous.second || media)
+        }
+        return chosen.flatMap { (key, value) ->
+            val (scope, pkg, relative) = key
+            val (days, media) = value
+            val external = scope == "ext"
+            val bases = if (external) roots.externalData.map { "$it/$pkg" }
+                else listOf("${roots.data}/user/*/$pkg", "${roots.data}/user_de/*/$pkg", "${roots.data}/data/$pkg")
+            val label = if (media) "应用专项媒体（增强）" else "应用专项缓存"
+            bases.map { Target("$it/$relative", label, if (media) "high" else "medium", days, relative) }
+        }.distinctBy { it.pattern }
+    }
+
     fun hiddenRules(file: File?): List<Hidden> = lines(file).mapNotNull { line ->
         val fields = line.split('|').map(String::trim)
         if (fields.size != 3) return@mapNotNull null

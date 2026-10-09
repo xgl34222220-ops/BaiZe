@@ -135,5 +135,6 @@ private fun SchedulerUiState.withRuntimeFrom(remote: SchedulerUiState): Schedule
     supervisorStatus = remote.supervisorStatus,
     supervisorHeartbeatAge = remote.supervisorHeartbeatAge,
     runtimeStale = remote.runtimeStale,
+    maintenanceSummary = remote.maintenanceSummary,
     saving = remote.saving
 )
