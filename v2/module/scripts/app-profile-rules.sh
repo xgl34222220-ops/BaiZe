@@ -18,6 +18,8 @@ app_profile_awk() {
       rank["conservative"] = 0; rank["standard"] = 1; rank["enhanced"] = 2; rank["enhanced-media"] = 3
       bad = 0; kept = 0
     }
+    # index() instead of a bracket expression: busybox/BWK awk parse escaped brackets differently.
+    function wild(v) { return index(v, "*") || index(v, "?") || index(v, "[") || index(v, "]") || index(v, "\\") }
     function reject(why) { bad++; printf "[拒绝:%s] 第 %d 行：%s\n", why, NR, $0 > "/dev/stderr" }
     function user_data(rel,   parts, k, m, low, two) {
       m = split(rel, parts, "/")
@@ -38,7 +40,7 @@ app_profile_awk() {
       if (!(t in rank)) { reject("档位"); next }
       if (scope != "data" && scope != "ext") { reject("范围"); next }
       if (pkg !~ /^[A-Za-z0-9][A-Za-z0-9._-]*$/) { reject("包名"); next }
-      if (rel == "" || rel ~ /^\// || rel ~ /\/$/ || rel ~ /\/\// || rel ~ /(^|\/)\.\.?(\/|$)/ || rel ~ /[*?\[\]\\]/) { reject("相对路径"); next }
+      if (rel == "" || rel ~ /^\// || rel ~ /\/$/ || rel ~ /\/\// || rel ~ /(^|\/)\.\.?(\/|$)/ || wild(rel)) { reject("相对路径"); next }
       if (days !~ /^[0-9]+$/ || days + 0 > 365) { reject("天数"); next }
       if (t == "enhanced-media") {
         if (days + 0 < 7) { reject("媒体保留天数不足 7 天"); next }

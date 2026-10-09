@@ -128,10 +128,10 @@ write_result running
 
 # 4) TRIM：优先 fstrim（busybox 提供），否则交给系统 idle-maint（vold 内部执行 fstrim）。
 trim_data() {
-  for fb in fstrim /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
+  for fb in "${BAIZE_MAINT_FSTRIM:-fstrim}" /data/adb/magisk/busybox /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox; do
     case "$fb" in
-      fstrim) command -v fstrim >/dev/null 2>&1 || continue
-        out=$(fstrim -v /data 2>&1) && { TRIM_RESULT="fstrim:$(printf '%s' "$out" | tr -s ' \t\n' ' ' | cut -c1-80)"; return 0; } ;;
+      fstrim|*/fstrim) command -v "$fb" >/dev/null 2>&1 || continue
+        out=$("$fb" -v /data 2>&1) && { TRIM_RESULT="fstrim:$(printf '%s' "$out" | tr -s ' \t\n' ' ' | cut -c1-80)"; return 0; } ;;
       *) [ -x "$fb" ] || continue
         out=$("$fb" fstrim -v /data 2>&1) && { TRIM_RESULT="busybox:$(printf '%s' "$out" | tr -s ' \t\n' ' ' | cut -c1-80)"; return 0; } ;;
     esac

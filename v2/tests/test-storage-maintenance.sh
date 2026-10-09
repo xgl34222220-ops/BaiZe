@@ -45,7 +45,7 @@ run_maint() {
   # shellcheck disable=SC2086
   PATH="$T/bin:$PATH" FAKE="$T/fake" BAIZE_STATE_DIR="$T/state" BAIZE_MODULE_DIR="$T/module" \
     BAIZE_MAINT_F2FS_SYSFS="$T/fake/f2fs" BAIZE_MAINT_MOUNTS="$T/fake/mounts" \
-    BAIZE_MAINT_UPTIME_FILE="$T/fake/uptime" BAIZE_MAINT_POLL_SECONDS=1 \
+    BAIZE_MAINT_UPTIME_FILE="$T/fake/uptime" BAIZE_MAINT_POLL_SECONDS=1 BAIZE_MAINT_FSTRIM="$T/bin/fstrim" \
     $SHELL_UNDER_TEST "$T/module/scripts/storage-maintenance.sh" "${1:-check}"
 }
 value() { sed -n "s/^$1=//p" "$T/state/maintenance.env" | tail -n 1; }

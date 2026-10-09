@@ -217,35 +217,6 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 LuoShuNavigationRow(Icons.Rounded.Security, "单文件清理上限", "${s.maxFileMb} MB", { edit = "limit" })
             }
         }
-        item { LuoShuSection("应用专项清理", "微信、QQ、抖音等应用的缓存规则") }
-        item {
-            LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Tune, "清理档位", appProfileTierLabel(s.appProfileTier), { edit = "tier" })
-                if (s.appProfileTier == 2) {
-                    LuoShuGroupDivider()
-                    LuoShuSwitchRow(Icons.Rounded.Image, "同时清理聊天媒体",
-                        "仅清理 30 天前的聊天图片与短视频缓存，默认关闭", s.appProfileUserMedia,
-                        { if (it) edit = "media" else actions.onUpdateScheduler(s.copy(appProfileUserMedia = false)) })
-                }
-            }
-        }
-        item { LuoShuSection("存储维护", "F2FS 垃圾回收与 TRIM") }
-        item {
-            LuoShuGroup {
-                LuoShuSwitchRow(Icons.Rounded.Storage, "充电息屏时整理存储",
-                    "每天最多一次，亮屏或拔电立即停止", s.maintenanceEnabled,
-                    { actions.onUpdateScheduler(s.copy(maintenanceEnabled = it)) })
-                if (s.maintenanceSummary.isNotBlank()) {
-                    LuoShuGroupDivider()
-                    Text(
-                        "最近一次：${s.maintenanceSummary}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                    )
-                }
-            }
-        }
         item { LuoShuSection("文件归类") }
         item {
             LuoShuGroup {
@@ -274,6 +245,35 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                 )
+            }
+        }
+        item { LuoShuSection("应用专项清理", "微信、QQ、抖音等应用的缓存规则") }
+        item {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.Tune, "清理档位", appProfileTierLabel(s.appProfileTier), { edit = "tier" })
+                if (s.appProfileTier == 2) {
+                    LuoShuGroupDivider()
+                    LuoShuSwitchRow(Icons.Rounded.Image, "同时清理聊天媒体",
+                        "仅清理 30 天前的聊天图片与短视频缓存，默认关闭", s.appProfileUserMedia,
+                        { if (it) edit = "media" else actions.onUpdateScheduler(s.copy(appProfileUserMedia = false)) })
+                }
+            }
+        }
+        item { LuoShuSection("存储维护", "F2FS 垃圾回收与 TRIM") }
+        item {
+            LuoShuGroup {
+                LuoShuSwitchRow(Icons.Rounded.Storage, "充电息屏时整理存储",
+                    "每天最多一次，亮屏或拔电立即停止", s.maintenanceEnabled,
+                    { actions.onUpdateScheduler(s.copy(maintenanceEnabled = it)) })
+                if (s.maintenanceSummary.isNotBlank()) {
+                    LuoShuGroupDivider()
+                    Text(
+                        "最近一次：${s.maintenanceSummary}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                }
             }
         }
     }
