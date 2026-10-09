@@ -156,7 +156,7 @@ private fun LifetimeSummary(state: HistoryUiState) {
         }
         AnimatedVisibility(expanded) {
             Column(Modifier.padding(top = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatisticRow("累计运行时长", formatElapsed(state.lifetimeElapsed))
+                StatisticRow("累计运行时长", formatLifetimeElapsedCompact(state.lifetimeElapsed))
                 StatisticRow("空文件", state.lifetimeEmptyFiles.toString())
                 StatisticRow("空目录", state.lifetimeEmptyDirs.toString())
                 StatisticRow("残留碎片", state.lifetimeFragments.toString())
@@ -268,7 +268,12 @@ private fun HistoryTimelineRow(record: HistoryUiItem) {
     }
 }
 
-private fun formatElapsed(milliseconds: Long): String {
-    val seconds = (milliseconds / 1_000L).coerceAtLeast(0L)
+/**
+ * HistoryUiState.lifetimeElapsed is accumulated in seconds (AppTaskHistoryStore adds
+ * elapsedMs / 1000, HistoryRepository adds elapsedSeconds), as the MIUIX and Material
+ * history screens already assume. Dividing by 1000 again showed one hour as "3s".
+ */
+internal fun formatLifetimeElapsedCompact(totalSeconds: Long): String {
+    val seconds = totalSeconds.coerceAtLeast(0L)
     return when { seconds >= 3_600L -> "${seconds / 3_600L}h ${seconds % 3_600L / 60L}m"; seconds >= 60L -> "${seconds / 60L}m ${seconds % 60L}s"; else -> "${seconds}s" }
 }

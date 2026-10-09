@@ -224,7 +224,13 @@ class MiuixDashboardActivity : ComponentActivity() {
                 state = dashboardState.value,
                 scheduler = schedulerState.value,
                 actions = DashboardActions(
-                    refresh = { refreshAll() },
+                    refresh = {
+                        refreshAll()
+                        DashboardRefreshFeedback.message(
+                            serviceConnected = rootService != null,
+                            connecting = dashboardState.value.connecting
+                        )?.let(::toast)
+                    },
                     clean = { openForegroundCleaner() },
                     organize = { CleanerNavigation.open(this, Intent(this, FileOrganizerActivity::class.java)) },
                     scan = { openForegroundCleaner() },
@@ -1932,13 +1938,24 @@ class MiuixDashboardActivity : ComponentActivity() {
             DiagnosticLabels.crashRecord("App", CrashRecorder.read(this))
 
     private fun showCrashDialog() {
-        messageDialog.value = MessageDialog("运行诊断", diagnosticText(), "清除记录",
-            onConfirm = { CrashRecorder.clear(this); io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this); ConnectionDiagnostics.clear(this) },
-            cancel = "关闭", extra = "复制记录", onExtra = {
-                val clipboard = getSystemService(android.content.ClipboardManager::class.java)
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("白泽诊断", diagnosticText()))
-                toast("诊断记录已复制")
-            })
+        // Crash records are files under filesDir and the diagnostics live in preferences;
+        // read them off the main thread instead of inside the click handler.
+        lifecycleScope.launch {
+            val text = withContext(Dispatchers.IO) { diagnosticText() }
+            messageDialog.value = MessageDialog("运行诊断", text, "清除记录",
+                onConfirm = {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        CrashRecorder.clear(this@MiuixDashboardActivity)
+                        runCatching { io.github.xgl34222220.baize.root.RootCrashRecorder.clear(this@MiuixDashboardActivity) }
+                        ConnectionDiagnostics.clear(this@MiuixDashboardActivity)
+                    }
+                },
+                cancel = "关闭", extra = "复制记录", onExtra = {
+                    val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("白泽诊断", text))
+                    toast("诊断记录已复制")
+                })
+        }
     }
 
     private fun requestNotificationPermission() {

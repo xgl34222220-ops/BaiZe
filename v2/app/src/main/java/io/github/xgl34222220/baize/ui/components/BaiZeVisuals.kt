@@ -138,11 +138,11 @@ internal fun BaiZeEmptyIllustration(modifier: Modifier = Modifier) {
 
 @Composable
 internal fun <T> BaiZeIntervalPicker(options: List<T>, selected: T, label: (T) -> String,
-    onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+    onSelect: (T) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { value ->
-            FilterChip(selected = value == selected, onClick = { onSelect(value) },
+            FilterChip(selected = value == selected, onClick = { onSelect(value) }, enabled = enabled,
                 label = { Text(label(value), fontSize = 12.sp, maxLines = 1) },
                 shape = CircleShape, border = null,
                 colors = FilterChipDefaults.filterChipColors(
