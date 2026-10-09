@@ -2105,6 +2105,16 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_system_
   clean_dir /data/tombstones "$SYS_DAYS" "崩溃日志" || STOPPED=1
   clean_dir /data/vendor/tombstones "$SYS_DAYS" "厂商崩溃日志" || STOPPED=1
   clean_dir /data/system/dropbox "$SYS_DAYS" "系统DropBox日志" || STOPPED=1
+  # AOSP 诊断产物（参考 SD Maid SE SystemCleaner 的系统日志/转储过滤器）：只清理超过保留天数的
+  # 普通文件，不删除目录本身；路径固定，不做全盘遍历。
+  [ "$STOPPED" = "0" ] && { clean_dir /data/system/heapdump "$SYS_DAYS" "系统堆转储" || STOPPED=1; }
+  [ "$STOPPED" = "0" ] && { clean_dir /data/misc/perfetto-traces "$SYS_DAYS" "系统性能追踪" || STOPPED=1; }
+  [ "$STOPPED" = "0" ] && { clean_dir /data/misc/logd "$SYS_DAYS" "持久化系统日志" || STOPPED=1; }
+  for bugreport_dir in /data/user_de/[0-9]*/com.android.shell/files/bugreports; do
+    [ "$STOPPED" = "0" ] || break
+    [ -d "$bugreport_dir" ] || continue
+    clean_dir "$bugreport_dir" "$SYS_DAYS" "旧错误报告" || STOPPED=1
+  done
 fi
 
 if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_oem_logs)" = "1" ]; then
@@ -2117,6 +2127,12 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_oem_log
   clean_dir /data/oplus/log "$OEM_DAYS" "ColorOS系统日志" || STOPPED=1
   clean_dir /data/oppo/log "$OEM_DAYS" "ColorOS系统日志" || STOPPED=1
   clean_dir /data/vendor/oplus/log "$OEM_DAYS" "ColorOS厂商日志" || STOPPED=1
+  # 其他厂商的调试与异常转储：MTK AEE/DebugLogger、高通 ramdump、三星等 /data/log。默认关闭，需用户开启厂商日志。
+  for oem_entry in "/data/aee_exp|MTK异常转储" "/data/vendor/aee_exp|MTK异常转储" "/data/debuglogger|MTK调试日志" \
+    "/data/vendor/ramdump|高通内存转储" "/data/log|厂商系统日志" "/data/vendor/log|厂商系统日志"; do
+    [ "$STOPPED" = "0" ] || break
+    clean_dir "${oem_entry%%|*}" "$OEM_DAYS" "${oem_entry#*|}" || STOPPED=1
+  done
 fi
 
 

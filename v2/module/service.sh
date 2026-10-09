@@ -44,6 +44,8 @@ install_result=missing
 if [ -x "$SCRIPTDIR/app-installer.sh" ]; then sh "$SCRIPTDIR/app-installer.sh" ensure >/dev/null 2>&1; case $? in 0) install_result=ready;; 11) install_result=signature_mismatch;; *) install_result=failed;; esac; fi
 version=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null | tail -n 1)
 version_code=$(sed -n 's/^versionCode=//p' "$MODDIR/module.prop" 2>/dev/null | tail -n 1)
+# 模块列表描述：App 缺失或签名不一致时加提示，恢复后自动去掉（只改一行，O(1)，后台执行）。
+[ -f "$SCRIPTDIR/module-status.sh" ] && sh "$SCRIPTDIR/module-status.sh" description "$MODDIR/module.prop" "$install_result" </dev/null >/dev/null 2>&1 &
 root_framework=Magisk; [ -n "${KSU:-}" ] && root_framework=KernelSU; [ -n "${APATCH:-}" ] && root_framework=APatch
 {
  echo "boot_epoch=$(date +%s)"; echo "app_installed=$(pm path "$APP_ID" >/dev/null 2>&1 && echo 1 || echo 0)"; echo "app_install_result=$install_result"; echo "app_version=$(dumpsys package "$APP_ID" 2>/dev/null | sed -n 's/.*versionName=//p' | head -n 1)"; echo "rules_ready=$([ -f "$MODDIR/config/deep.rules" ] && echo 1 || echo 0)"; echo "cleaner_ready=$([ -x "$SCRIPTDIR/cleaner.sh" ] && echo 1 || echo 0)"; echo "scheduler_ready=$([ -x "$SCRIPTDIR/scheduler.sh" ] && echo 1 || echo 0)"; echo "module_version=$version"; echo "module_version_code=$version_code"; echo "root_framework=$root_framework";

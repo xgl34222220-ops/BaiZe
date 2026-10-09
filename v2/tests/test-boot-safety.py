@@ -113,6 +113,19 @@ class DeferredWork(unittest.TestCase):
         self.assertRegex(text, r'BAIZE_STATE_BUDGET_SECONDS:-(\d+)')
 
 
+class BootStatusHelpers(unittest.TestCase):
+    def test_module_status_is_constant_time_and_post_boot(self):
+        for number, line in code_lines(SCRIPTS / 'module-status.sh'):
+            self.assertIsNone(SCAN.search(line), f'module-status.sh:{number}: {line}')
+            self.assertNotIn('dumpsys', line)
+            self.assertNotIn('pm ', line)
+        lines = code_lines(MODULE / 'service.sh')
+        wait = next(i for i, (_, l) in enumerate(lines) if 'getprop sys.boot_completed' in l and 'while' in l)
+        calls = [i for i, (_, l) in enumerate(lines) if 'module-status.sh' in l]
+        self.assertTrue(calls)
+        self.assertTrue(all(i > wait for i in calls), 'module status must wait for boot_completed')
+
+
 # Generated-name families written under the state directory and the cap that bounds each.
 FAMILIES = [
     (r'\$(REPORT_DIR|STATE_DIR/reports)/\$STAMP-', "reports '20[0-9][0-9]-*.tsv'"),
