@@ -29,9 +29,8 @@ grep -Fq 'range = 0..365' "$SCREEN"
 grep -Fq '手动扫描始终显示所有安装包' "$SCREEN"
 grep -Fq '0 天表示不保留' "$SCREEN"
 grep -Fq 'onConfirm = actions.onApkPackageDaysChanged' "$SCREEN"
-# #222 added a saving-state guard to the row; keep the contract on label, value and dialog.
-grep -Fq 'ValueRow("保留时间", "${state.apkPackageDays} 天"' "$SCREEN"
-grep -Fq '{ showApkDaysDialog = true }' "$SCREEN"
+# #222 disables the row while settings are saving; the row still opens the same editor.
+grep -Fq 'ValueRow("保留时间", "${state.apkPackageDays} 天", enabled = !state.saving) { showApkDaysDialog = true }' "$SCREEN"
 # Both appearance routes use this same retention editor.
 grep -Fq 'CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)' "${SCREEN%/*}/VideoCleanScreenMiuix.kt"
 

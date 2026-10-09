@@ -12,8 +12,9 @@ import java.nio.file.attribute.BasicFileAttributes
 internal data class DirectoryUsage(val roots: List<String>, val directories: List<StorageDirectory>,
     val inaccessible: Int, val linksSkipped: Int, val limited: Boolean, val backend: String) {
     val bytes: Long get() = directories.filter { it.path in roots }.sumOf { it.bytes }
-    fun children(parent: String?) = directories.filter { if (parent == null) it.path in roots else File(it.path).parent == parent }
-        .sortedByDescending { it.bytes }
+    /** 层级索引在首次访问时构建；扫描线程会预先触发，界面只做查询。 */
+    val tree: DirectoryUsageTree by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { DirectoryUsageTree(roots, directories) }
+    fun children(parent: String?): List<StorageDirectory> = tree.children(parent)
     fun json(): String = JSONObject().put("roots", JSONArray(roots)).put("directories", JSONArray().apply {
         directories.forEach { put(JSONObject().put("path", it.path).put("files", it.files).put("bytes", it.bytes)) }
     }).put("inaccessible", inaccessible).put("linksSkipped", linksSkipped).put("limited", limited).put("backend", backend).toString()

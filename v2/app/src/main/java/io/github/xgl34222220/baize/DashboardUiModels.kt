@@ -420,5 +420,6 @@ data class DashboardActions(
     val photoCompression: () -> Unit = {},
     /** 只读统计微信各类目录占用（Root、后台线程），结果回到主线程。 */
     val wechatUsage: ((WechatUsage) -> Unit) -> Unit = { it(WechatUsage.failed("Root 服务尚未连接")) },
-    val fileTrash: () -> Unit = {}
+    val fileTrash: () -> Unit = {},
+    val swipeReview: () -> Unit = {}
 )

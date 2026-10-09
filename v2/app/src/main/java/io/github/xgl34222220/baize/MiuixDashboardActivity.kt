@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
@@ -208,6 +209,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         // Legacy launch requests are navigation, not a service callback command.
         // Consume once so recreation or two service connections cannot reopen the cleaner.
         val openRequested = CleanerNavigation.consumeLegacyRequest(intent)
+        val shortcutRequest = LauncherShortcuts.consume(intent, restored = savedInstanceState != null)
         pendingSmartClean = false
         updateStorage()
         FileOrganizerWorker.ensureWatchdog(this)
@@ -240,6 +242,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     storageAnalysis = { CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.ANALYSIS)) },
                     photoCompression = { CleanerNavigation.open(this, Intent(this, PhotoCompressionActivity::class.java)) },
                     fileTrash = { CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java)) },
+                    swipeReview = { CleanerNavigation.open(this, Intent(this, SwipeReviewActivity::class.java)) },
                     cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
@@ -281,6 +284,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         // Both engines may own a task from the previous App process.
         connectServices()
         if (openRequested) openForegroundCleaner()
+        else shortcutRequest?.let(::openLauncherShortcut)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -289,6 +293,22 @@ class MiuixDashboardActivity : ComponentActivity() {
         if (CleanerNavigation.consumeLegacyRequest(intent)) {
             pendingSmartClean = false
             openForegroundCleaner()
+        } else {
+            LauncherShortcuts.consume(intent)?.let(::openLauncherShortcut)
+        }
+    }
+
+    /** Launcher shortcuts and the Quick Settings tile reuse the home screen's guarded routes. */
+    private fun openLauncherShortcut(shortcut: LauncherShortcut) {
+        ShortcutManagerCompat.reportShortcutUsed(this, shortcut.id)
+        when (shortcut) {
+            LauncherShortcut.SCAN -> openForegroundCleaner()
+            LauncherShortcut.LARGE_FILES ->
+                CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.LARGE))
+            LauncherShortcut.STORAGE_ANALYSIS ->
+                CleanerNavigation.open(this, StorageToolsActivity.intent(this, StorageToolMode.ANALYSIS))
+            LauncherShortcut.FILE_TRASH ->
+                CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java))
         }
     }
 

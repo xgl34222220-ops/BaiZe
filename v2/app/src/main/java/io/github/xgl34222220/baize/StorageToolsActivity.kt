@@ -30,6 +30,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -177,6 +181,15 @@ internal fun StorageToolsScreen(
         onDirectory(if (current == volume) null else java.io.File(current).parent)
     }
     BackHandler(enabled = state.directory != null && !state.running) { backDirectory() }
+    // 目录钻取：子目录来自扫描线程预建的层级索引，按页展开；环形图只计算当前层与下一层。
+    val directoryRows = remember(state.directoryUsage, state.records, state.directory) {
+        state.directoryUsage?.children(state.directory) ?: storageDirectories(state.records, state.directory)
+    }
+    val sunburst = remember(state.directoryUsage, state.directory) {
+        state.directoryUsage?.tree?.sunburst(state.directory).orEmpty()
+    }
+    var directoryPages by rememberSaveable(state.directory) { mutableIntStateOf(1) }
+    val shownDirectories = directoryRows.take(directoryPages * DirectoryUsageTree.PAGE_SIZE)
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
         topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
@@ -257,7 +270,10 @@ internal fun StorageToolsScreen(
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && (state.records.isNotEmpty() || state.directoryUsage != null)) {
                 item { DetailSectionHeader("目录占用", state.directory ?: "点击存储卷逐层查看") }
                 if (state.directory != null) item { DetailGlassPanel { BaiZePathText(state.directory); TextButton(onClick = { backDirectory() }, enabled = !state.running) { Text("返回上级目录") } } }
-                items(state.directoryUsage?.children(state.directory) ?: storageDirectories(state.records, state.directory), key = { "dir-${it.path}" }) { dir ->
+                if (sunburst.isNotEmpty() && !state.running) item(key = "sunburst") {
+                    StorageSunburst(sunburst, state.directory != null, { if (!state.running) onDirectory(it) }, { if (!state.running) backDirectory() })
+                }
+                items(shownDirectories, key = { "dir-${it.path}" }) { dir ->
                     DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
                         Text(when {
                             dir.path.matches(Regex("/data/user/[0-9]+")) -> "应用私有数据"
@@ -266,6 +282,11 @@ internal fun StorageToolsScreen(
                         }, style = MaterialTheme.typography.titleMedium)
                         if (state.directory == null) BaiZePathText(dir.path)
                         Text("${dir.files} 个文件 · ${Formatter.formatFileSize(context, dir.bytes)}（含子目录）", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (directoryRows.size > shownDirectories.size) item(key = "dir-more") {
+                    TextButton(onClick = { directoryPages++ }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Text("显示更多目录（还有 ${directoryRows.size - shownDirectories.size} 个）")
                     }
                 }
                 if (state.directory == null && state.growthDescription.isNotBlank()) item { DetailGlassPanel {
@@ -403,3 +424,62 @@ private fun StorageBucketRow(bucket: StorageAnalysisBucket, selected: Boolean, o
         }
     }
 }
+
+private val sunburstPalette = listOf(Color(0xFF3978F6), Color(0xFF8A6BEF), Color(0xFFE6A13D), Color(0xFF34A88B),
+    Color(0xFFDC759B), Color(0xFF5AABC0))
+
+/** 环形占用图（参考 XClean / SD Maid SE StorageAnalyzer）：内圈子目录、外圈孙目录，点按扇区钻取，点中心返回上一层。 */
+@Composable
+private fun StorageSunburst(segments: List<SunburstSegment>, nested: Boolean, onSegment: (String) -> Unit, onCenter: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val other = Color(0xFF8A94A5)
+    val colored = remember(segments) {
+        var top = -1
+        segments.map { segment ->
+            if (segment.level == 0) top++
+            segment to if (segment.path == null) other else sunburstPalette[top.coerceAtLeast(0) % sunburstPalette.size]
+        }
+    }
+    val select by rememberUpdatedState(onSegment)
+    val back by rememberUpdatedState(onCenter)
+    val firstRing = segments.count { it.level == 0 && it.path != null }
+    DetailGlassPanel {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(6.dp)
+            .semantics { contentDescription = "目录占用环形图，点按扇区进入目录" + if (nested) "，点按中心返回上一层" else "" }
+            .pointerInput(segments, nested) {
+                detectTapGestures { position ->
+                    val cx = size.width / 2f; val cy = size.height / 2f
+                    val outer = minOf(cx, cy); val inner = outer * SUNBURST_HOLE
+                    val dx = position.x - cx; val dy = position.y - cy
+                    val hit = sunburstHit(segments, dx, dy, inner, (outer - inner) / 2f)
+                    if (hit?.path != null) select(hit.path)
+                    else if (nested && kotlin.math.sqrt(dx * dx + dy * dy) < inner) back()
+                }
+            }, contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val outer = size.minDimension / 2f
+                val inner = outer * SUNBURST_HOLE
+                val ring = (outer - inner) / 2f
+                colored.forEach { (segment, color) ->
+                    val sweep = (segment.sweep * 360.0).toFloat()
+                    if (sweep < .4f) return@forEach
+                    val gap = if (sweep > 3f) 1.2f else 0f
+                    val radius = inner + ring * segment.level + ring / 2f
+                    drawArc(color.copy(alpha = if (segment.level == 0) .92f else .5f),
+                        startAngle = -90f + (segment.start * 360.0).toFloat() + gap / 2f, sweepAngle = sweep - gap, useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(center.x - radius, center.y - radius),
+                        size = androidx.compose.ui.geometry.Size(radius * 2f, radius * 2f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = ring - 2.dp.toPx()))
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("$firstRing 个子目录", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (nested) "点中心回上层" else "点扇区逐层看", fontSize = 11.sp, color = scheme.onSurfaceVariant)
+            }
+        }
+        Text("内圈为子目录，外圈为下一层；占比过小的目录合并为灰色。", style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant)
+    }
+}
+
+private const val SUNBURST_HOLE = .38f

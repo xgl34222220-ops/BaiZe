@@ -77,6 +77,21 @@
         <activity android:name=".WhitelistActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".LegacyProtectionRecoveryActivity" android:exported="false" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
+        <activity android:name=".SwipeReviewActivity" android:exported="false" />
+
+        <!-- 卸载残留提醒（参考 SD Maid SE UninstallWatcherReceiver）。PACKAGE_FULLY_REMOVED
+             属于隐式广播豁免，接收器只发低优先级通知，不做扫描；设置中可关闭并禁用组件。 -->
+        <receiver
+            android:name=".UninstallWatcherReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".UninstallWatcherActionReceiver"
+            android:exported="false" />
 
         <activity
             android:name=".MiuixDashboardActivity"
@@ -86,7 +101,24 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
+
+        <service
+            android:name=".BaiZeScanTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_nav_scan"
+            android:label="@string/tile_scan_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
 
         <service
             android:name=".root.BaiZeRootService"
