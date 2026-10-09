@@ -63,7 +63,7 @@ class WeChatProfileClean(unittest.TestCase):
     def tearDownClass(cls):
         cls.workspace.cleanup()
 
-    def clean(self, tier, media, media_days=None):
+    def clean(self, tier, media, media_days=None, big=False):
         case = Path(tempfile.mkdtemp(dir=self.work))
         data, state, module, outside = (case / p for p in ('data', 'state', 'module', 'outside'))
         for d in (data, state, module):
@@ -85,6 +85,9 @@ class WeChatProfileClean(unittest.TestCase):
                    f'app_profile_enabled=1\napp_profile_tier={tier}\napp_profile_user_media={media}\n')
         if media_days is not None:
             config += f'app_profile_media_days={media_days}\n'
+        if big:
+            # Global single-file cap of 1 MiB; chat media below are 2 MiB.
+            config += 'max_file_mb=1\n'
         (state / 'config.conf').write_text(config)
         (state / 'whitelist.conf').write_text('')
         paths = {}
@@ -92,6 +95,9 @@ class WeChatProfileClean(unittest.TestCase):
             path = data / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'payload')
+            if big and key in ('video', 'img_data', 'cache'):
+                with open(path, 'r+b') as handle:
+                    handle.truncate(2 * 1048576)
             epoch = time.time() - age * 86400
             os.utime(path, (epoch, epoch))
             paths[key] = path
@@ -128,6 +134,12 @@ class WeChatProfileClean(unittest.TestCase):
 
     def test_enhanced_media_user_chosen_7_days(self):
         self.assertEqual(self.clean(2, 1, media_days=7), CACHES | MEDIA | {'img_recent'})
+
+    def test_enhanced_media_ignores_global_file_size_cap(self):
+        self.assertEqual(self.clean(2, 1, big=True), CACHES | MEDIA)
+
+    def test_size_cap_still_applies_without_media_opt_in(self):
+        self.assertEqual(self.clean(2, 0, big=True), CACHES - {'cache'})
 
     def test_enhanced_media_90_days_keeps_40_day_old_media(self):
         self.assertEqual(self.clean(2, 1, media_days=90), CACHES)

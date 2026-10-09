@@ -1430,10 +1430,19 @@ run_app_profile_rules() {
   [ -f "$profile_ext" ] || : >"$profile_ext"
   log_line "[应用专项规则] 档位 $profile_tier 用户媒体 $profile_media 媒体保留 ${profile_media_days} 天 $profile_summary data:$profile_data_expanded ext:$profile_ext_expanded"
   case "$profile_tier" in 0) profile_label="应用专项(保守)" ;; 2) profile_label="应用专项(增强)" ;; *) profile_label="应用专项(标准)" ;; esac
-  run_app_rules "$profile_data" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }
-  run_external_rules "$profile_ext" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }
+  # 用户已在增强档明确开启聊天媒体：微信/QQ 聊天视频常远超全局单文件上限，
+  # 这里仅对本次应用专项规则放开上限（1 TiB），结束后立即恢复全局 max_file_mb。
+  profile_saved_max=$MAX_FILE_BYTES
+  if [ "$profile_media" = "1" ]; then
+    MAX_FILE_BYTES=1099511627776
+    log_line "[应用专项规则] 聊天媒体已开启，本组规则不受单文件上限限制"
+  fi
+  profile_rc=0
+  run_app_rules "$profile_data" "$profile_label" || profile_rc=9
+  [ "$profile_rc" -ne 0 ] || run_external_rules "$profile_ext" "$profile_label" || profile_rc=9
+  MAX_FILE_BYTES=$profile_saved_max
   rm -f "$profile_data" "$profile_ext"
-  return 0
+  return "$profile_rc"
 }
 
 # WebView 只清理明确可重新生成的 HTTP、GPU、代码与已完成崩溃缓存。
