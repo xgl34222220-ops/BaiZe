@@ -33,6 +33,10 @@ public class CleanupMediaWorkerTest {
         for (String path : paths) { bytes.write(path.getBytes(StandardCharsets.UTF_8)); bytes.write(0); }
         Files.write(dir.resolve("paths.nul"), bytes.toByteArray()); return dir;
     }
+    static String progress(Path batch) throws IOException {
+        Path log = batch.resolve("progress.log");
+        return Files.exists(log) ? Files.readString(log) : "";
+    }
     static Path state(Path root, String name) throws Exception { return Files.createDirectory(root.resolve(name)); }
     public static void main(String[] args) throws Exception {
         if (args.length == 2 && args[0].equals("hold")) {
@@ -93,13 +97,17 @@ public class CleanupMediaWorkerTest {
 
         Path first = state(root, "first"); batch(first, "pending-one", "/data/media/0/a", "/data/media/10/b");
         Fake fake = new Fake(); check(new CleanupMediaWorker(first, fake).runRound() == 2, "two attempts");
-        check(Files.exists(first.resolve("cleanup-media/completed/done-one/ack-0")), "checkpoint and done");
+        check(progress(first.resolve("cleanup-media/completed/done-one")).contains("A 0 VERIFIED_ABSENT\n"), "checkpoint and done");
+        check(!Files.exists(first.resolve("cleanup-media/completed/done-one/ack-0")), "no per-item ack file");
         new CleanupMediaWorker(first, fake).runRound(); check(fake.calls.size() == 2, "no replay ack");
 
         Path partial = state(root, "partial"); Path two = batch(partial, "pending-two", "/data/media/0/a", "/data/media/0/b");
         Files.write(two.resolve("ack-0"), "VERIFIED_ABSENT\n".getBytes());
         Fake partialFake = new Fake(); new CleanupMediaWorker(partial, partialFake).runRound();
         check(partialFake.calls.size() == 1 && partialFake.calls.get(0).endsWith("/b"), "partial success survives restart");
+        Path partialDone = partial.resolve("cleanup-media/completed/done-two");
+        check(!Files.exists(partialDone.resolve("ack-0")) && progress(partialDone).contains("A 0 VERIFIED_ABSENT\n") &&
+            progress(partialDone).contains("A 16 VERIFIED_ABSENT\n"), "legacy ack compacted into progress log");
 
         Path bounded = state(root, "bounded"); String[] many = new String[40];
         for(int i=0;i<many.length;i++) many[i]="/data/media/0/"+i;
@@ -110,22 +118,74 @@ public class CleanupMediaWorkerTest {
 
         Path retry = state(root,"retry");batch(retry,"pending-retry","/data/media/0/a");
         Fake failed=new Fake();failed.fail=true;new CleanupMediaWorker(retry,failed).runRound();
-        check(Files.exists(retry.resolve("cleanup-media/inflight-retry/retry-0")),"failed retained");
+        check(progress(retry.resolve("cleanup-media/inflight-retry")).startsWith("R 0 "),"failed retained");
+        check(!Files.exists(retry.resolve("cleanup-media/inflight-retry/retry-0")),"no per-item retry file");
         check(new CleanupMediaWorker(retry,failed).runRound()==0,"backoff respected");
         batch(retry,"pending-next","/data/media/0/b");Fake next=new Fake();new CleanupMediaWorker(retry,next).runRound();
         check(next.calls.size()==1 && next.calls.get(0).endsWith("/b"),"failed batch cannot starve next");
 
         Path changed=state(root,"changed");batch(changed,"pending-changed","/data/media/0/a");
         Fake appeared=new Fake();appeared.reappear=true;new CleanupMediaWorker(changed,appeared).runRound();
-        check(!Files.exists(changed.resolve("cleanup-media/inflight-changed/ack-0")),"reappearance never acked");
-        check(Files.readString(changed.resolve("cleanup-media/inflight-changed/retry-0")).contains("CHANGED_DURING_REFRESH"),"reappearance explained");
+        check(!progress(changed.resolve("cleanup-media/inflight-changed")).contains("A 0 "),"reappearance never acked");
+        check(progress(changed.resolve("cleanup-media/inflight-changed")).contains("CHANGED_DURING_REFRESH"),"reappearance explained");
 
+
+        // Legacy retry file is honoured (backoff) and folded into the log.
+        Path legacyRetry=state(root,"legacyretry");Path lr=batch(legacyRetry,"inflight-lr","/data/media/0/a");
+        Files.writeString(lr.resolve("retry-0"),(System.currentTimeMillis()+600000)+"\n3\nINDEX_UNCONFIRMED\n");
+        Fake lrFake=new Fake();check(new CleanupMediaWorker(legacyRetry,lrFake).runRound()==0 && lrFake.calls.isEmpty(),"legacy backoff honoured");
+        check(!Files.exists(lr.resolve("retry-0")) && progress(lr).startsWith("R 0 ") && progress(lr).contains(" 3 INDEX_UNCONFIRMED"),"legacy retry compacted");
+        // Torn final line from a killed process is ignored, not fatal.
+        Path torn=state(root,"torn");Path tb=batch(torn,"inflight-torn","/data/media/0/a","/data/media/0/b");
+        Files.writeString(tb.resolve("progress.log"),"A 0 VERIFIED_ABSENT\nA 1");
+        Fake tornFake=new Fake();new CleanupMediaWorker(torn,tornFake).runRound();
+        check(tornFake.calls.size()==1 && tornFake.calls.get(0).endsWith("/b"),"torn progress line ignored");
+
+        // Completed receipts stay bounded once legacy history is migrated; never before.
+        Path keep=state(root,"keep");
+        for(int i=0;i<40;i++){
+            Path b=batch(keep,"pending-k"+i,"/data/media/0/k"+i);
+            Files.setLastModifiedTime(b,java.nio.file.attribute.FileTime.fromMillis(1000000L+i));
+        }
+        Path completedDir=Files.createDirectories(keep.resolve("cleanup-media/completed")); // legacy history, unmigrated
+        Fake keepFake=new Fake();for(int i=0;i<3;i++) new CleanupMediaWorker(keep,keepFake).runRound();
+        long unmigrated;try(var s=Files.list(completedDir)){unmigrated=s.filter(x->x.getFileName().toString().startsWith("done-")).count();}
+        check(keepFake.calls.size()==40 && unmigrated==40,"no pruning before migration marker");
+        check(Files.exists(first.resolve("cleanup-media/completed/.compacted-v1")),"fresh history needs no migration");
+        Files.createFile(completedDir.resolve(".compacted-v1"));
+        batch(keep,"pending-last","/data/media/0/last");new CleanupMediaWorker(keep,keepFake).runRound();
+        long kept;try(var s=Files.list(completedDir)){kept=s.filter(x->x.getFileName().toString().startsWith("done-")).count();}
+        check(kept==32 && Files.exists(completedDir.resolve("done-last")),"receipts capped at 32, newest kept");
+
+        // One-time migration: legacy receipts compacted losslessly, overflow archived then removed.
+        Path mig=state(root,"migrate");Path migDone=mig.resolve("cleanup-media/completed");Files.createDirectories(migDone);
+        for(int i=0;i<40;i++){
+            Path d=Files.createDirectory(migDone.resolve("done-m"+i));
+            Files.writeString(d.resolve("user"),"0\n");Files.writeString(d.resolve("owner"),"1\n1\n");
+            Files.write(d.resolve("paths.nul"),("/data/media/0/m"+i+"\0").getBytes(StandardCharsets.UTF_8));
+            for(int k=0;k<5;k++) Files.writeString(d.resolve("ack-"+(k*20)),"VERIFIED_ABSENT\n");
+            Files.setLastModifiedTime(d,java.nio.file.attribute.FileTime.fromMillis(1000000000L+i*1000L));
+        }
+        check(CleanupMediaWorker.migrate(mig)==8,"overflow receipts archived");
+        long left;try(var st=Files.list(migDone)){left=st.filter(x->x.getFileName().toString().startsWith("done-")).count();}
+        check(left==32 && Files.exists(migDone.resolve("done-m39")) && !Files.exists(migDone.resolve("done-m0")),"newest receipts kept");
+        check(!Files.exists(migDone.resolve("done-m39/ack-0")) && progress(migDone.resolve("done-m39")).contains("A 80 VERIFIED_ABSENT\n"),"kept receipt compacted losslessly");
+        check(Files.getLastModifiedTime(migDone.resolve("done-m39")).toMillis()==1000000000L+39000L,"receipt time preserved");
+        check(Files.exists(migDone.resolve(".compacted-v1")),"marker written");
+        Path archiveDir=mig.resolve("cleanup-media/archive");Path archive;
+        try(var st=Files.list(archiveDir)){archive=st.filter(x->x.toString().endsWith(".tar")).findFirst().orElseThrow();}
+        Path extract=Files.createDirectory(root.resolve("extract"));
+        Process tar=new ProcessBuilder("tar","-xf",archive.toString(),"-C",extract.toString()).inheritIO().start();
+        check(tar.waitFor()==0,"system tar reads archive");
+        check(Files.readString(extract.resolve("done-m0/paths.nul")).equals("/data/media/0/m0\0") &&
+            Files.readString(extract.resolve("done-m0/progress.log")).contains("A 40 VERIFIED_ABSENT\n"),"archived receipt restorable");
+        check(CleanupMediaWorker.migrate(mig)==0,"migration runs once");
         Path unknown=state(root,"unknown");Path invalid=batch(unknown,"pending-invalid","/mnt/media_rw/ABCD-0123/a");
         Files.writeString(invalid.resolve("user"),"unknown\n");Fake unknownFake=new Fake();new CleanupMediaWorker(unknown,unknownFake).runRound();
         check(unknownFake.calls.isEmpty(),"unknown user cannot scan user0");
         Path malformed=state(root,"malformed");Path bad=batch(malformed,"pending-bad","/data/media/0/a");
         Files.write(bad.resolve("paths.nul"),new byte[]{(byte)0xff,0});Fake malformedFake=new Fake();new CleanupMediaWorker(malformed,malformedFake).runRound();
-        check(malformedFake.calls.isEmpty() && Files.exists(malformed.resolve("cleanup-media/inflight-bad/retry-0")),"invalid UTF8 retained");
+        check(malformedFake.calls.isEmpty() && progress(malformed.resolve("cleanup-media/inflight-bad")).startsWith("R 0 "),"invalid UTF8 retained");
 
         Path orphan=state(root,"orphan");Path orphanBatch=batch(orphan,".building-dead","/data/media/0/a");
         Fake recovered=new Fake();new CleanupMediaWorker(orphan,recovered).runRound();check(recovered.calls.size()==1,"dead producer recovered");

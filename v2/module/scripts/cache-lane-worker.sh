@@ -125,5 +125,10 @@ done
 current=$(sed -n 's/^task_id=//p' "$ROOT_RUNNING" 2>/dev/null | tail -n 1)
 [ "$current" = "$TASK_ID" ] && rm -f "$ROOT_RUNNING" 2>/dev/null || true
 rm -rf -- "$TASK_STATE" "$LANE_LOCK" 2>/dev/null || true
+if [ -f "$SCRIPTDIR/state-retention.sh" ]; then
+  . "$SCRIPTDIR/state-retention.sh"
+  baize_prune_task_results "$ROOT_RESULT_DIR"
+  baize_prune_task_logs "$ROOT_STATE_DIR/logs"
+fi
 trap - EXIT INT TERM
 exit "$CODE"

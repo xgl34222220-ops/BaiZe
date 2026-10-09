@@ -61,8 +61,8 @@ try:
     shell(f'BAIZE_MODULE_DIR={q(module)} BAIZE_ROOT_STATE_DIR={q(state)} sh {q(module + "/scripts/cleanup-media-worker.sh")}', timeout=40)
     after_refresh = query(path)
     assert after_refresh == 'No result found.', after_refresh
-    ack = shell(f'find {q(state + "/cleanup-media")} -name ack-0 -exec cat {{}} \\;')
-    assert ack == 'VERIFIED_ABSENT', ack
+    ack = shell(f'find {q(state + "/cleanup-media")} -name progress.log -exec cat {{}} \\;')
+    assert 'A 0 VERIFIED_ABSENT' in ack.splitlines(), ack
     dirs = shell(f'find {q(state + "/cleanup-media")} -maxdepth 2 -type d')
     assert '/done-' in dirs and '/inflight-' not in dirs and '/pending-' not in dirs, dirs
     result.update(passed=True, api=int(shell('getprop ro.build.version.sdk')), user=int(user),
