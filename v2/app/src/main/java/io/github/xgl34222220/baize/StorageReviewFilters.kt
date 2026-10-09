@@ -204,3 +204,36 @@ internal object StorageReviewFilters {
         }.distinctBy { it.id }.take(MAX_CUSTOM_FILTERS)
     }.getOrDefault(emptyList())
 }
+
+/**
+ * 一键扫描结果里的“需要你复核”分类：安全项目在上方默认勾选，这里的内容默认不勾选，
+ * 点开后在对应视图逐项确认，删除仍走内容核对与回收站。原来的独立工具入口都收拢到这里。
+ */
+internal enum class ReviewSource(val title: String, val hint: String, val mode: StorageToolMode?) {
+    CORPSES("卸载残留", "已卸载应用留下的数据", null),
+    APK("安装包", "下载后未清理的安装包", null),
+    SCREENSHOTS("旧截图与录屏", "30 天前的截图与录屏", StorageToolMode.SCREENSHOTS),
+    OLD_DOWNLOADS("旧下载", "90 天未动的下载文件", StorageToolMode.OLD_DOWNLOADS),
+    CHAT_MEDIA("聊天媒体", "微信 / QQ 已保存的图片视频，不含聊天记录", StorageToolMode.CHAT_MEDIA),
+    DUPLICATES("重复文件", "完整内容比对，每组保留一份", StorageToolMode.DUPLICATES),
+    ROOT("根目录整理", "空文件夹与已卸载应用的文件夹", StorageToolMode.ROOT)
+}
+
+internal data class ReviewEstimate(val files: Int, val bytes: Long)
+
+internal object ReviewSourceEstimates {
+    /** 只按路径与时间估算，不读取内容、不核对文件身份；实际可处理量以打开后的核对为准。 */
+    fun estimate(records: List<StorageFileRecord>, nowSeconds: Long): Map<ReviewSource, ReviewEstimate> {
+        val result = LinkedHashMap<ReviewSource, ReviewEstimate>()
+        for (source in listOf(ReviewSource.SCREENSHOTS, ReviewSource.OLD_DOWNLOADS, ReviewSource.CHAT_MEDIA)) {
+            val mode = source.mode ?: continue
+            val age = StorageReviewFilters.defaultAgeDays(mode)
+            val matched = records.filter { StorageReviewFilters.visible(mode, it, nowSeconds, age, emptyList(), null) }
+            result[source] = ReviewEstimate(matched.size, matched.sumOf { it.bytes.coerceAtLeast(0) })
+        }
+        val apks = records.filter { storageCategory(it) == "apk" && !StorageReviewFilters.forbidden(it.path) }
+        result[ReviewSource.APK] = ReviewEstimate(apks.size, apks.sumOf { it.bytes.coerceAtLeast(0) })
+        return result
+    }
+
+}

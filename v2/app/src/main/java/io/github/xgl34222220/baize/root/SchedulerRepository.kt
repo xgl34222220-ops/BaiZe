@@ -786,7 +786,8 @@ internal class SchedulerRepository(
             "app_profile_media_days" to 7..365,
             "maintenance_enabled" to 0..1,
             "maintenance_min_hours" to 24..168,
-            "maintenance_gc_max_seconds" to 30..1800
+            "maintenance_gc_max_seconds" to 30..1800,
+            "root_tidy_auto" to 0..1
         )
     }
 }

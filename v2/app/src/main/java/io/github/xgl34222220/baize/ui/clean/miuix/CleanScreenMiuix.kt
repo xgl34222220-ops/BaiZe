@@ -119,24 +119,22 @@ fun CleanScreenMiuix(
             LuoShuPageHeader("清理")
         }
         item(key = "clean-manual-title") {
-            LuoShuSection("手动工具")
+            LuoShuSection("手动工具", "一次扫描覆盖全部安全来源，需复核的分类在结果里单独列出")
         }
         item(key = "clean-manual") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.Search, "扫描工作台", "分类管理与清理", actions.onScan)
+                // 统一入口：缓存、卸载残留与日志、空目录、应用专项（含微信档位）都在一键扫描的分类里；
+                // 原「即时缓存」「卸载残留」入口并入，见 LegacyEntryRedirects。
+                LuoShuNavigationRow(Icons.Rounded.Search, "一键扫描", "缓存 · 日志 · 空目录 · 应用专项，一次完成", actions.onScan)
                 LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Security, "深度清理", "扩展扫描范围", actions.onDeepClean)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderDelete, "卸载残留", "残留文件检查", actions.onCorpses)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载与散落文件", actions.onFileOrganizer)
+                LuoShuNavigationRow(Icons.Rounded.Security, "扩大扫描范围", "深度规则，逐项确认", actions.onDeepClean)
             }
         }
         item(key = "clean-advanced") {
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "即时缓存", "仅检查应用缓存", actions.onInstantCache)
-                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.CleaningServices, "免 Root 缓存清理", "连接 Shizuku 后清理", actions.onShizukuCache)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载与散落文件", actions.onFileOrganizer)
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Rule, "规则与保护", "规则范围、清理策略与隔离区", actions.onAudit)
             }

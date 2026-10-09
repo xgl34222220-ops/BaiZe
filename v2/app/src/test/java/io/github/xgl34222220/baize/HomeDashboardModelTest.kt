@@ -29,16 +29,14 @@ class HomeDashboardModelTest {
             largeFiles = { opened += "large" }, duplicates = { opened += "duplicates" },
             storageAnalysis = { opened += "analysis" }, cleanScan = {}, dismissScan = {}, stop = {},
             deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
-            clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
+            clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = { opened += "whitelist" }, resumableScan = {},
             theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {},
-            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, swipeReview = { opened += "swipe" },
-            storageReview = { opened += it.name.lowercase() }
+            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, swipeReview = { opened += "swipe" }
         )
-        val tools = homeTools(actions)
+        val tools = homeTools(actions) { opened += "plan" }
         assertEquals(tools.size, tools.map { it.title }.toSet().size)
         tools.forEach { it.onClick() }
-        assertEquals(listOf("photo", "duplicates", "trash", "apk", "large", "analysis", "swipe",
-            "screenshots", "old_downloads", "chat_media", "custom"), opened)
+        assertEquals(listOf("analysis", "plan", "whitelist", "trash"), opened)
         assertEquals(tools.size, opened.toSet().size)
     }
 }

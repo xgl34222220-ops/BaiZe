@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
-import io.github.xgl34222220.baize.StorageToolMode
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.home.*
 import io.github.xgl34222220.baize.ui.miuix.*
@@ -101,9 +100,9 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         item(key = "space") { SpaceHero(state, actions) }
         item(key = "shortcuts") {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("整理空间", "按文件类型，快速找到需要处理的内容")
+                LuoShuSection("整理空间", "一键扫描之外的分析、计划与保护")
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val tools = homeTools(actions)
+                    val tools = homeTools(actions, onOpenPlan)
                     // 参考 SD Maid SE 仪表盘的工具卡与 Files by Google 清理建议卡：窄屏/大字号单列，常规两列，平板三列。
                     val width = maxWidth.value / LocalDensity.current.fontScale
                     val columns = when {
@@ -166,18 +165,16 @@ private const val HERO_RING_MIN_WIDTH_DP = 280f
 @androidx.compose.runtime.Immutable
 internal data class HomeTool(val title: String, val subtitle: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val onClick: () -> Unit)
 
-internal fun homeTools(actions: DashboardActions): List<HomeTool> = listOf(
-    HomeTool("照片瘦身", "预览后另存", Icons.Rounded.Photo, actions.photoCompression),
-    HomeTool("重复文件", "保留一份", Icons.Rounded.ContentCopy, actions.duplicates),
-    HomeTool("回收站", "恢复已移入文件", Icons.Rounded.RestoreFromTrash, actions.fileTrash),
-    HomeTool("安装包", "下载遗留", Icons.Rounded.InstallMobile, actions.apkScan),
-    HomeTool("大文件", "占用排行", Icons.Rounded.FolderOpen, actions.largeFiles),
-    HomeTool("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis),
-    HomeTool("滑动整理", "左删右留", Icons.Rounded.Swipe, actions.swipeReview),
-    HomeTool("截图录屏", "旧截图与录屏", Icons.Rounded.Screenshot) { actions.storageReview(StorageToolMode.SCREENSHOTS) },
-    HomeTool("旧下载", "久未动的下载", Icons.Rounded.Download) { actions.storageReview(StorageToolMode.OLD_DOWNLOADS) },
-    HomeTool("聊天媒体", "微信/QQ 已存文件", Icons.Rounded.Forum) { actions.storageReview(StorageToolMode.CHAT_MEDIA) },
-    HomeTool("自定义规则", "按路径筛选", Icons.Rounded.FilterAlt) { actions.storageReview(StorageToolMode.CUSTOM) }
+/**
+ * 统一信息架构：首页只保留「一键扫描」主入口（存储卡片）与 4 个次级入口。
+ * 原来分散的大文件、重复文件、截图、聊天媒体、照片瘦身、滑动整理、安装包等都并入扫描结果的复核分类或存储分析视图，
+ * 映射见 [io.github.xgl34222220.baize.LegacyEntryRedirects.HOME_TOOL_DESTINATIONS]。
+ */
+internal fun homeTools(actions: DashboardActions, onOpenPlan: () -> Unit = {}): List<HomeTool> = listOf(
+    HomeTool("存储分析", "大文件 · 重复 · 截图 · 微信", Icons.Rounded.DataUsage, actions.storageAnalysis),
+    HomeTool("自动任务", "统一计划 · 系统维护", Icons.Rounded.CalendarMonth, onOpenPlan),
+    HomeTool("规则与白名单", "保护应用与路径", Icons.Rounded.Shield, actions.whitelist),
+    HomeTool("历史与回收站", "撤销已移入文件", Icons.Rounded.RestoreFromTrash, actions.fileTrash)
 )
 
 @Composable

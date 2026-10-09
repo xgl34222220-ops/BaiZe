@@ -125,6 +125,16 @@ class BootStatusHelpers(unittest.TestCase):
         self.assertTrue(calls)
         self.assertTrue(all(i > wait for i in calls), 'module status must wait for boot_completed')
 
+    def test_root_tidy_only_runs_from_the_settled_maintenance_window(self):
+        for number, line in code_lines(SCRIPTS / 'root-tidy.sh'):
+            self.assertIsNone(SCAN.search(line), f'root-tidy.sh:{number}: {line}')
+        callers = [p.name for p in MODULE.rglob('*.sh') if 'root-tidy.sh' in p.read_text(encoding='utf-8') and p.name != 'root-tidy.sh']
+        self.assertEqual(['storage-maintenance.sh'], callers)
+        text = (SCRIPTS / 'storage-maintenance.sh').read_text(encoding='utf-8')
+        settle = re.search(r'BAIZE_MAINT_BOOT_SETTLE_SECONDS:-(\d+)', text)
+        self.assertGreaterEqual(int(settle.group(1)), 300, 'no root tidy in the first 5 minutes after boot')
+        self.assertLess(text.index('BOOT_SETTLE_SECONDS'), text.index('root-tidy.sh'))
+
 
 # Generated-name families written under the state directory and the cap that bounds each.
 FAMILIES = [

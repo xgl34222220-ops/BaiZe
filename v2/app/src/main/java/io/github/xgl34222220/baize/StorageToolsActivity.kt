@@ -58,18 +58,40 @@ enum class StorageToolMode {
     /** 微信 / QQ 等聊天软件已保存到公共目录的媒体；不含任何数据库或账号目录。 */
     CHAT_MEDIA,
     /** 用户自定义路径规则（参考 SD Maid SE SystemCleaner 自定义过滤器）。 */
-    CUSTOM;
+    CUSTOM,
+    /** 根目录整理：第一层文件夹的归属、空文件夹与已卸载残留，并可禁止重建。 */
+    ROOT;
     val review: Boolean get() = this == SCREENSHOTS || this == OLD_DOWNLOADS || this == CHAT_MEDIA || this == CUSTOM
 }
 
 class StorageToolsActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
     private val model: StorageToolsViewModel by viewModels()
-    private val storagePermission = StoragePermissionRequest(this) { model.resumePermission() }
+    private val rootModel: RootTidyViewModel by viewModels()
+    private var mode = StorageToolMode.LARGE
+    private val storagePermission = StoragePermissionRequest(this) { if (mode == StorageToolMode.ROOT) rootModel.resumePermission() else model.resumePermission() }
+    /** 视图切换：同一个“存储分析”页面的不同视图，替换当前页而不是叠加新页面。 */
+    private fun switchView(next: StorageToolMode) {
+        if (next == mode) return
+        runCatching { startActivity(Companion.intent(this, next)) }.onSuccess { finish() }
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val mode = runCatching { StorageToolMode.valueOf(intent.getStringExtra(EXTRA_MODE).orEmpty()) }.getOrDefault(StorageToolMode.LARGE)
+        mode = runCatching { StorageToolMode.valueOf(intent.getStringExtra(EXTRA_MODE).orEmpty()) }.getOrDefault(StorageToolMode.LARGE)
+        if (mode == StorageToolMode.ROOT) {
+            rootModel.initialize()
+            setContent {
+                val appearance by appearanceViewModel.settings.collectAsState()
+                val state by rootModel.state.collectAsState()
+                BaiZeTheme(appearance) {
+                    RootTidyScreen(state, ::finish, ::switchView, { rootModel.scan() }, rootModel::stop, rootModel::toggle,
+                        rootModel::toggleAll, rootModel::removeSelected, rootModel::undo, rootModel::setAllowed,
+                        rootModel::block, rootModel::unblock, ::openAllFilesSettings)
+                }
+            }
+            return
+        }
         model.initialize(mode)
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
@@ -85,7 +107,7 @@ class StorageToolsActivity : ComponentActivity() {
                     onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory,
                     onAge = { model.filter(minimumAgeDays = it) }, onUndo = model::undoLastTrash,
                     onSaveFilter = model::saveCustomFilter, onDeleteFilter = model::deleteCustomFilter,
-                    onActiveFilter = model::selectCustomFilter)
+                    onActiveFilter = model::selectCustomFilter, onView = ::switchView)
                 if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
                     state.diagnosticBusy && state.diagnosticUri == detail.uri,
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
@@ -102,7 +124,7 @@ class StorageToolsActivity : ComponentActivity() {
             }
         }
     }
-    override fun onResume() { super.onResume(); model.resumePermission() }
+    override fun onResume() { super.onResume(); if (mode == StorageToolMode.ROOT) rootModel.resumePermission() else model.resumePermission() }
     private fun openAllFilesSettings() = storagePermission.launch()
     private fun openFile(record: StorageFileRecord) {
         runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(record.uri), record.mime.ifBlank { "*/*" })
@@ -193,14 +215,15 @@ internal fun StorageToolsScreen(
     onKeeperPreference: (DuplicateKeeperPreference, String) -> Unit = { _, _ -> }, onKeep: (String) -> Unit = {},
     onDirectory: (String?) -> Unit = {}, onAge: (Int) -> Unit = {}, onUndo: () -> Unit = {},
     onSaveFilter: (String, String, Int, Long) -> String = { _, _, _, _ -> "" }, onDeleteFilter: (String) -> Unit = {},
-    onActiveFilter: (String?) -> Unit = {}
+    onActiveFilter: (String?) -> Unit = {}, onView: (StorageToolMode) -> Unit = {}
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
     val title = storageToolTitle(state.mode)
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然"
         StorageToolMode.SCREENSHOTS -> "旧截图与录屏，看过再清"; StorageToolMode.OLD_DOWNLOADS -> "下载目录里久未动的文件"
-        StorageToolMode.CHAT_MEDIA -> "聊天软件已保存的图片、视频与文件 · 不碰聊天记录"; StorageToolMode.CUSTOM -> "按你的路径规则预览，再决定" }
+        StorageToolMode.CHAT_MEDIA -> "聊天软件已保存的图片、视频与文件 · 不碰聊天记录"; StorageToolMode.CUSTOM -> "按你的路径规则预览，再决定"
+        StorageToolMode.ROOT -> "根目录文件夹归属与整理" }
     fun backDirectory() {
         val current = state.directory ?: return
         val volume = state.directoryUsage?.roots?.firstOrNull { current == it || current.startsWith("$it/") } ?: storageVolume("$current/file")
@@ -230,6 +253,7 @@ internal fun StorageToolsScreen(
             cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item(key = "storage-views") { StorageViewChips(state.mode, !state.running, onView) }
             item {
                 if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running && !state.failed && !state.permissionRequired && state.records.isNotEmpty()) {
                     DetailGlassPanel {
@@ -292,6 +316,8 @@ internal fun StorageToolsScreen(
                 Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
                 Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
+                Text("滑动整理：左删右留，逐张过一遍照片", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) }, enabled = !state.running) { Text("打开滑动整理") }
             } }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {
                 item { StorageComposition(state.buckets) }
@@ -529,7 +555,7 @@ private const val SUNBURST_HOLE = .38f
 internal fun storageToolTitle(mode: StorageToolMode): String = when (mode) {
     StorageToolMode.LARGE -> "大文件"; StorageToolMode.DUPLICATES -> "重复文件"; StorageToolMode.ANALYSIS -> "存储分析"
     StorageToolMode.SCREENSHOTS -> "截图录屏"; StorageToolMode.OLD_DOWNLOADS -> "旧下载"
-    StorageToolMode.CHAT_MEDIA -> "聊天媒体"; StorageToolMode.CUSTOM -> "自定义规则"
+    StorageToolMode.CHAT_MEDIA -> "聊天媒体"; StorageToolMode.CUSTOM -> "自定义规则"; StorageToolMode.ROOT -> "根目录"
 }
 
 /** 自定义规则列表：选中一条只筛选当前结果；新增或删除规则后重新扫描。 */

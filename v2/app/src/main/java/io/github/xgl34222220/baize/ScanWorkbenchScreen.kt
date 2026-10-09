@@ -289,6 +289,10 @@ internal fun ScanWorkbenchScreen(
                     }
                 }
             }
+            // 统一结果列表：安全来源在上方（默认勾选），需要复核的来源在下方（默认不勾选），不再分散在各个工具页。
+            if (state.scanProfile == "safe" && !state.running && !state.restoringReview) item(key = "review-sources") {
+                WorkbenchReviewSources(true, state.items.size to state.cleanupCompleted)
+            }
         }
         run {
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth()

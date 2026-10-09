@@ -267,7 +267,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         StorageToolMode.LARGE -> "大文件扫描完成"
                         StorageToolMode.DUPLICATES -> "发现 ${duplicates.groups.size} 组内容相同的文件"
                         StorageToolMode.ANALYSIS -> "存储分析完成"
-                        StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA, StorageToolMode.CUSTOM ->
+                        StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA, StorageToolMode.CUSTOM, StorageToolMode.ROOT ->
                             (if (keepStatus) "$previousStatus · " else "") + "找到 ${index.records.size} 个候选文件，可按时间筛选后勾选"
                     }, nowSeconds = System.currentTimeMillis() / 1000, coverage = buildString {
                         append("分类和文件操作覆盖 ${index.records.size} 个已索引文件。回收站占用另计，移入回收站不等于设备释放空间。")

@@ -130,13 +130,13 @@ class NavigationAuditProbeTest {
         var style by mutableStateOf(UiStyle.MIUIX)
         val opened = mutableListOf<String>()
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions.copy(
-            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, duplicates = { opened += "duplicates" }), AppearanceSettings(uiStyle = style)) }
+            storageAnalysis = { opened += "analysis" }, fileTrash = { opened += "trash" }, whitelist = { opened += "whitelist" }), AppearanceSettings(uiStyle = style)) }
         for (skin in listOf(UiStyle.MIUIX, UiStyle.MATERIAL)) {
             compose.runOnIdle { style = skin }
-            compose.onNodeWithText("照片瘦身").performScrollTo().performClick()
-            compose.onNodeWithText("重复文件").performScrollTo().performClick()
-            compose.onNodeWithText("回收站").performScrollTo().performClick()
+            compose.onNodeWithText("存储分析").performScrollTo().performClick()
+            compose.onNodeWithText("规则与白名单").performScrollTo().performClick()
+            compose.onNodeWithText("历史与回收站").performScrollTo().performClick()
         }
-        assertEquals(listOf("photo", "duplicates", "trash", "photo", "duplicates", "trash"), opened)
+        assertEquals(listOf("analysis", "whitelist", "trash", "analysis", "whitelist", "trash"), opened)
     }
 }

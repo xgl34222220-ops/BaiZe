@@ -316,12 +316,17 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                     "只读统计聊天图片、视频、缓存等各类大小", { edit = "wechat" })
             }
         }
-        item { LuoShuSection("存储维护", "F2FS 垃圾回收与 TRIM") }
+        item { LuoShuSection("系统维护", "与自动清理同一计划：开机 15 分钟后、充电息屏时执行") }
         item {
             LuoShuGroup {
                 LuoShuSwitchRow(Icons.Rounded.Storage, "充电息屏时整理存储",
                     "每天最多一次，亮屏或拔电立即停止", s.maintenanceEnabled,
                     { actions.onUpdateScheduler(s.copy(maintenanceEnabled = it)) })
+                LuoShuGroupDivider()
+                LuoShuSwitchRow(Icons.Rounded.FolderOff, "根目录自动整理",
+                    if (s.maintenanceEnabled) "只删超过 1 天的空文件夹，维持禁止重建"
+                    else "需先开启“充电息屏时整理存储”", s.rootTidyAuto && s.maintenanceEnabled,
+                    { if (s.maintenanceEnabled) actions.onUpdateScheduler(s.copy(rootTidyAuto = it)) }, enabled = s.maintenanceEnabled)
                 if (s.maintenanceSummary.isNotBlank()) {
                     LuoShuGroupDivider()
                     Text(

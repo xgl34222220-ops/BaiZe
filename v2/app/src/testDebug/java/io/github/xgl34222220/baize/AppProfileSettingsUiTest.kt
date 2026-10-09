@@ -106,4 +106,15 @@ class AppProfileSettingsUiTest {
         assertFalse(saves.last().maintenanceEnabled)
         assertEquals(0, saves.last().toJson().getInt("maintenance_enabled"))
     }
+
+    @Test fun rootTidyRunsInsideSystemMaintenanceAndDefaultsOff() {
+        val saves = mutableListOf<SchedulerUiState>()
+        openTaskSettings(saves, SchedulerUiState())
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("根目录自动整理"))
+        compose.onNodeWithText("系统维护").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("根目录自动整理").performClick()
+        save()
+        assertEquals(1, saves.last().toJson().getInt("root_tidy_auto"))
+        assertEquals(0, SchedulerUiState().toJson().getInt("root_tidy_auto"))
+    }
 }
