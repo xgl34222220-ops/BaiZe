@@ -48,7 +48,7 @@ class AppProfileSettingsUiTest {
         compose.onNodeWithText("清理档位").performClick()
         compose.onNodeWithText("增强").performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("同时清理聊天媒体"))
-        compose.onNodeWithText("同时清理聊天媒体").performClick()
+        compose.onNodeWithContentDescription("同时清理聊天媒体").performClick()
         // Dismissing the warning keeps media cleanup off.
         compose.onNodeWithText("清理聊天媒体？").assertIsDisplayed()
         compose.onNodeWithText("取消").performClick()
@@ -58,7 +58,7 @@ class AppProfileSettingsUiTest {
         assertEquals(0, saves.last().toJson().getInt("app_profile_user_media"))
 
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("同时清理聊天媒体"))
-        compose.onNodeWithText("同时清理聊天媒体").performClick()
+        compose.onNodeWithContentDescription("同时清理聊天媒体").performClick()
         compose.onNodeWithText("开启").performClick()
         save()
         assertTrue(saves.last().appProfileUserMedia)
@@ -70,7 +70,7 @@ class AppProfileSettingsUiTest {
         openTaskSettings(saves, SchedulerUiState(maintenanceSummary = "10/10/26 3:00 AM · 已完成"))
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("充电息屏时整理存储"))
         compose.onNodeWithText("最近一次：10/10/26 3:00 AM · 已完成").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("充电息屏时整理存储").performClick()
+        compose.onNodeWithContentDescription("充电息屏时整理存储").performClick()
         save()
         assertFalse(saves.last().maintenanceEnabled)
         assertEquals(0, saves.last().toJson().getInt("maintenance_enabled"))
