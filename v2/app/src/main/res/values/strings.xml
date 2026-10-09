@@ -11,4 +11,14 @@
 -->
 <resources>
     <string name="app_name">白泽</string>
+    <string name="shortcut_scan_short">扫描清理</string>
+    <string name="shortcut_scan_long">扫描可清理内容</string>
+    <string name="shortcut_large_files_short">大文件</string>
+    <string name="shortcut_large_files_long">查看大文件占用排行</string>
+    <string name="shortcut_storage_analysis_short">存储分析</string>
+    <string name="shortcut_storage_analysis_long">查看存储空间构成</string>
+    <string name="shortcut_file_trash_short">回收站</string>
+    <string name="shortcut_file_trash_long">恢复已移入回收站的文件</string>
+    <string name="tile_scan_label">白泽扫描</string>
+    <string name="tile_scan_subtitle">扫描可清理内容</string>
 </resources>

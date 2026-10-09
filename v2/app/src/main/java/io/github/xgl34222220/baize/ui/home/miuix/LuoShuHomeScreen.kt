@@ -13,7 +13,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +42,10 @@ import io.github.xgl34222220.baize.ui.home.*
 import io.github.xgl34222220.baize.ui.miuix.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /** LuoShu HomeRoute -> HomeScreenCompact hierarchy, with BaiZe's real state and actions. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actions: DashboardActions,
     onOpenClean: () -> Unit, onOpenPlan: () -> Unit) {
@@ -48,6 +54,30 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Pull down to refresh, as in MIUIX PullToRefresh: same action as the "刷新状态" menu item.
+    var refreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
+    LaunchedEffect(refreshing) {
+        if (refreshing) {
+            delay(HOME_REFRESH_INDICATOR_MS)
+            refreshing = false
+        }
+    }
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { refreshing = true; actions.refresh() },
+        modifier = Modifier.fillMaxSize(),
+        state = pullState,
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = pullState,
+                isRefreshing = refreshing,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
+                containerColor = BaiZeTokens.colors.surfaceRaised,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom + 132.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item(key = "header") {
@@ -125,7 +155,10 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
             }
         }
     }
+    }
 }
+
+private const val HOME_REFRESH_INDICATOR_MS = 700L
 
 @Composable
 private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {

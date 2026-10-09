@@ -11,4 +11,14 @@
 -->
 <resources>
     <string name="app_name">BaiZe</string>
+    <string name="shortcut_scan_short">Scan</string>
+    <string name="shortcut_scan_long">Scan for cleanable files</string>
+    <string name="shortcut_large_files_short">Large files</string>
+    <string name="shortcut_large_files_long">Show largest files</string>
+    <string name="shortcut_storage_analysis_short">Storage</string>
+    <string name="shortcut_storage_analysis_long">Analyze storage usage</string>
+    <string name="shortcut_file_trash_short">Trash</string>
+    <string name="shortcut_file_trash_long">Restore files from trash</string>
+    <string name="tile_scan_label">BaiZe scan</string>
+    <string name="tile_scan_subtitle">Scan for cleanable files</string>
 </resources>
