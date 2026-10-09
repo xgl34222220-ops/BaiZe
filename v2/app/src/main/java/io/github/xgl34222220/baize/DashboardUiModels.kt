@@ -421,5 +421,7 @@ data class DashboardActions(
     /** 只读统计微信各类目录占用（Root、后台线程），结果回到主线程。 */
     val wechatUsage: ((WechatUsage) -> Unit) -> Unit = { it(WechatUsage.failed("Root 服务尚未连接")) },
     val fileTrash: () -> Unit = {},
-    val swipeReview: () -> Unit = {}
+    val swipeReview: () -> Unit = {},
+    /** 截图录屏 / 旧下载 / 聊天媒体 / 自定义规则：同一个存储工具页的不同模式，不新增页面。 */
+    val storageReview: (StorageToolMode) -> Unit = {}
 )

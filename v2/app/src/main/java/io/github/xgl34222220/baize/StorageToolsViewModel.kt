@@ -57,7 +57,10 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     fun initialize(mode: StorageToolMode) {
         if (initialized) return
         initialized = true
-        mutableState.value = StorageToolsUiState(mode = mode, minimumBytes = if (mode == StorageToolMode.LARGE) 100 * MIB else 0)
+        mutableState.value = StorageToolsUiState(mode = mode, minimumBytes = if (mode == StorageToolMode.LARGE) 100 * MIB else 0,
+            minimumAgeDays = StorageReviewFilters.defaultAgeDays(mode),
+            customFilters = if (mode == StorageToolMode.CUSTOM) customFilterPreferences().let {
+                StorageReviewFilters.decode(it.getString("filters", null)) } else emptyList())
         val prefs = context.getSharedPreferences("duplicate-preferences", 0)
         mutableState.update { it.copy(keeperPreference = runCatching { DuplicateKeeperPreference.valueOf(prefs.getString("keeper", "NEWEST")!!) }.getOrDefault(DuplicateKeeperPreference.NEWEST), keeperDirectory = prefs.getString("directory", "").orEmpty()) }
         connect()
@@ -110,9 +113,64 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     fun toggle(key: String) { if (!state.value.running) mutableState.update { it.toggleSelection(key) } }
     fun toggleAll() { if (!state.value.running) mutableState.update { it.toggleAllSelection() } }
     fun filter(query: String = state.value.query, category: String? = state.value.category,
-               sort: StorageSort = state.value.sort, minimumBytes: Long = state.value.minimumBytes) {
+               sort: StorageSort = state.value.sort, minimumBytes: Long = state.value.minimumBytes,
+               minimumAgeDays: Int = state.value.minimumAgeDays) {
         if (state.value.running) return
-        mutableState.update { it.copy(query = query, category = category, directory = if (category != null) null else it.directory, sort = sort, minimumBytes = minimumBytes, selected = emptySet()) }
+        mutableState.update { it.copy(query = query, category = category, directory = if (category != null) null else it.directory, sort = sort, minimumBytes = minimumBytes,
+            minimumAgeDays = minimumAgeDays.coerceAtLeast(0), selected = emptySet()) }
+    }
+
+    private fun customFilterPreferences() = context.getSharedPreferences("storage-custom-filters", 0)
+
+    /** 返回空字符串表示已保存；否则为给用户看的校验错误。保存后重新扫描以更新候选集。 */
+    fun saveCustomFilter(name: String, pattern: String, ageDays: Int, minMegabytes: Long): String {
+        if (state.value.running) return "正在扫描，请先停止"
+        val current = state.value.customFilters
+        if (current.size >= StorageReviewFilters.MAX_CUSTOM_FILTERS) return "最多保存 ${StorageReviewFilters.MAX_CUSTOM_FILTERS} 条规则"
+        val input = StorageReviewFilters.validate(java.util.UUID.randomUUID().toString(), name, pattern, ageDays, minMegabytes)
+        val filter = input.filter ?: return input.error
+        if (current.any { it.pattern.equals(filter.pattern, true) && it.minAgeDays == filter.minAgeDays && it.minBytes == filter.minBytes })
+            return "已有相同的规则"
+        val next = current + filter
+        if (!customFilterPreferences().edit().putString("filters", StorageReviewFilters.encode(next)).commit()) return "规则保存失败，请重试"
+        mutableState.update { it.copy(customFilters = next, activeFilterId = filter.id, selected = emptySet()) }
+        scan()
+        return ""
+    }
+    fun deleteCustomFilter(id: String) {
+        if (state.value.running) return
+        val next = state.value.customFilters.filterNot { it.id == id }
+        if (!customFilterPreferences().edit().putString("filters", StorageReviewFilters.encode(next)).commit()) return
+        mutableState.update { it.copy(customFilters = next, activeFilterId = it.activeFilterId.takeIf { active -> active != id },
+            selected = emptySet(), records = if (next.isEmpty()) emptyList() else it.records, status = "规则已删除，文件未改动") }
+        if (next.isNotEmpty()) scan()
+    }
+    fun selectCustomFilter(id: String?) {
+        if (!state.value.running) mutableState.update { it.copy(activeFilterId = id, selected = emptySet()) }
+    }
+
+    /** 只恢复本页刚移入回收站的那一批；恢复不覆盖同名新文件，失败项留在回收站。 */
+    fun undoLastTrash() {
+        val snapshot = state.value
+        if (snapshot.running || snapshot.lastTrashed.isEmpty()) return
+        val ids = snapshot.lastTrashed.toSet()
+        mutableState.update { it.copy(running = true, status = "正在从回收站恢复…") }
+        viewModelScope.launch {
+            val (restored, failed) = withContext(Dispatchers.IO) {
+                val trash = OrdinaryFileTrash.forContext(context)
+                var ok = 0; var bad = 0
+                val entries = runCatching { trash.entries().filter { it.id in ids } }.getOrDefault(emptyList())
+                for (entry in entries) {
+                    runCatching { trash.restore(entry.id, expected = entry) }.onSuccess { file ->
+                        ok++; android.media.MediaScannerConnection.scanFile(context, arrayOf(file.path), null, null)
+                    }.onFailure { bad++ }
+                }
+                ok to (bad + (ids.size - entries.size))
+            }
+            mutableState.update { it.copy(running = false, lastTrashed = emptyList(), lastTrashedBytes = 0L,
+                status = "已恢复 $restored 个文件" + if (failed > 0) " · $failed 个未恢复，可在回收站查看原因" else "") }
+            if (restored > 0) startScan(keepStatus = true)
+        }
     }
 
     fun setKeeperPreference(preference: DuplicateKeeperPreference, directory: String) {
@@ -127,8 +185,13 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     fun directory(path: String?) {
         if (!state.value.running) mutableState.update { it.copy(directory = path, category = null, selected = emptySet(), query = "") }
     }
-    fun scan() {
+    fun scan() = startScan(keepStatus = false)
+    private fun startScan(keepStatus: Boolean) {
         if (state.value.running) return
+        if (state.value.mode == StorageToolMode.CUSTOM && state.value.customFilters.isEmpty()) {
+            mutableState.update { it.copy(status = "先新建一条规则，再预览匹配的文件", records = emptyList()) }
+            return
+        }
         if (!StorageMediaRepository.hasAccess(context)) {
             mutableState.update { it.copy(permissionRequired = true, status = "开启文件访问后，开始分析共享存储") }
             return
@@ -136,8 +199,11 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         control = StorageScanControl()
         val taskControl = control
         val mode = state.value.mode
+        val filters = state.value.customFilters
+        val previousStatus = state.value.status
         contentReview = emptyMap()
         mutableState.update { it.copy(running = true, reviewRequested = false, permissionRequired = false, failed = false, status = "正在读取系统文件索引…",
+            lastTrashed = if (keepStatus) it.lastTrashed else emptyList(), nowSeconds = System.currentTimeMillis() / 1000,
             selected = emptySet(), records = emptyList(), duplicateGroups = emptyList(), buckets = emptyList(), coverage = "", progress = null,
             outcomes = emptyMap(), directoryUsage = null, diagnostic = "", diagnosticUri = "") }
         viewModelScope.launch {
@@ -154,7 +220,10 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         }
                     }
                     val rawIndex = StorageMediaRepository.scanIndex(context, if (mode == StorageToolMode.LARGE) 10 * MIB else 1, taskControl, report)
-                    val index = StorageMediaRepository.reviewPresence(context, rawIndex, remote, taskControl)
+                    // 新增工具先按来源缩小候选集，再做存在性与身份核对，避免对全部索引逐项核对。
+                    val scoped = if (mode.review) rawIndex.copy(records = rawIndex.records.filter {
+                        taskControl.check(); StorageReviewFilters.candidate(mode, it, filters) }) else rawIndex
+                    val index = StorageMediaRepository.reviewPresence(context, scoped, remote, taskControl)
                     val duplicates = if (mode == StorageToolMode.DUPLICATES)
                         StorageMediaRepository.findDuplicates(context, index.records, taskControl, report, digestCache) { groups ->
                             mutableState.update { it.copy(records = index.records, duplicateGroups = groups, coverage = "扫描进行中，仅展示已完成内容校验的重复组；操作前仍需重新核对。") }
@@ -198,7 +267,9 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         StorageToolMode.LARGE -> "大文件扫描完成"
                         StorageToolMode.DUPLICATES -> "发现 ${duplicates.groups.size} 组内容相同的文件"
                         StorageToolMode.ANALYSIS -> "存储分析完成"
-                    }, coverage = buildString {
+                        StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA, StorageToolMode.CUSTOM ->
+                            (if (keepStatus) "$previousStatus · " else "") + "找到 ${index.records.size} 个候选文件，可按时间筛选后勾选"
+                    }, nowSeconds = System.currentTimeMillis() / 1000, coverage = buildString {
                         append("分类和文件操作覆盖 ${index.records.size} 个已索引文件。回收站占用另计，移入回收站不等于设备释放空间。")
                         result.directoryUsage?.let { usage ->
                             append(" 目录统计使用${usage.backend}遍历，包含未索引文件，仅供查看；${if (usage.backend.startsWith("Root")) "包含当前用户的应用私有目录" else "不包含无权读取的应用私有目录"}。")
@@ -294,6 +365,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 results
             }
             val removed = outcomes.filterValues { it.deleted || it.trashed }.keys
+            val trashedIds = outcomes.values.filter { it.trashed && it.trashId.isNotBlank() }.map { it.trashId }
             val unconfirmed = outcomes.count { it.value.result == ApkIndexedDeleteResult.FAILED }
             val retained = selectedRecords.size - removed.size - unconfirmed
             val bytes = selectedRecords.filter { it.uri in removed }.sumOf { it.bytes }
@@ -303,7 +375,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         record.copy(identity = null) else record
                 }
                 current.copy(running = false, progress = null, records = remaining, buckets = storageBuckets(remaining), directoryUsage = null,
-                    selected = emptySet(), outcomes = current.outcomes + outcomes,
+                    selected = emptySet(), outcomes = current.outcomes + outcomes, lastTrashed = trashedIds,
+                    lastTrashedBytes = selectedRecords.filter { outcomes[it.uri]?.trashed == true }.sumOf { it.bytes },
                     duplicateGroups = remainingDuplicateGroups(current.duplicateGroups, remaining),
                     status = "${if (taskControl.cancelled) "已停止 · " else ""}" +
                         (if (removed.isEmpty()) "未确认移入回收站" else "已移入回收站 ${removed.size} 个文件，占用 ${Formatter.formatFileSize(context, bytes)}，尚未释放空间") +

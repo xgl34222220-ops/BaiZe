@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.DashboardActions
 import io.github.xgl34222220.baize.DashboardUiState
+import io.github.xgl34222220.baize.StorageToolMode
 import io.github.xgl34222220.baize.SchedulerUiState
 import io.github.xgl34222220.baize.ui.home.*
 import io.github.xgl34222220.baize.ui.miuix.*
@@ -172,7 +173,11 @@ internal fun homeTools(actions: DashboardActions): List<HomeTool> = listOf(
     HomeTool("安装包", "下载遗留", Icons.Rounded.InstallMobile, actions.apkScan),
     HomeTool("大文件", "占用排行", Icons.Rounded.FolderOpen, actions.largeFiles),
     HomeTool("存储分析", "空间构成", Icons.Rounded.DataUsage, actions.storageAnalysis),
-    HomeTool("滑动整理", "左删右留", Icons.Rounded.Swipe, actions.swipeReview)
+    HomeTool("滑动整理", "左删右留", Icons.Rounded.Swipe, actions.swipeReview),
+    HomeTool("截图录屏", "旧截图与录屏", Icons.Rounded.Screenshot) { actions.storageReview(StorageToolMode.SCREENSHOTS) },
+    HomeTool("旧下载", "久未动的下载", Icons.Rounded.Download) { actions.storageReview(StorageToolMode.OLD_DOWNLOADS) },
+    HomeTool("聊天媒体", "微信/QQ 已存文件", Icons.Rounded.Forum) { actions.storageReview(StorageToolMode.CHAT_MEDIA) },
+    HomeTool("自定义规则", "按路径筛选", Icons.Rounded.FilterAlt) { actions.storageReview(StorageToolMode.CUSTOM) }
 )
 
 @Composable

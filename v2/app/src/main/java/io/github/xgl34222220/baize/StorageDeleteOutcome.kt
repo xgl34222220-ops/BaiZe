@@ -3,7 +3,9 @@ package io.github.xgl34222220.baize
 internal data class StorageDeleteOutcome(
     val result: ApkIndexedDeleteResult,
     val detail: String = "",
-    val confirmedMissing: Boolean = false, val trashed: Boolean = false
+    val confirmedMissing: Boolean = false, val trashed: Boolean = false,
+    /** 移入回收站后的记录编号，用于“撤销本次”只恢复这一批。 */
+    val trashId: String = ""
 ) {
     val deleted: Boolean get() = result == ApkIndexedDeleteResult.DELETED && !trashed
     val reason: String get() = when {

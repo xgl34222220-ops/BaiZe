@@ -48,7 +48,18 @@ import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-enum class StorageToolMode { LARGE, DUPLICATES, ANALYSIS }
+enum class StorageToolMode {
+    LARGE, DUPLICATES, ANALYSIS,
+    /** 旧截图与录屏（参考 Files by Google「旧截图」、HyperOS 手机管家截图清理）。 */
+    SCREENSHOTS,
+    /** 下载目录中久未改动的文件（参考 Files by Google「已下载文件」）。 */
+    OLD_DOWNLOADS,
+    /** 微信 / QQ 等聊天软件已保存到公共目录的媒体；不含任何数据库或账号目录。 */
+    CHAT_MEDIA,
+    /** 用户自定义路径规则（参考 SD Maid SE SystemCleaner 自定义过滤器）。 */
+    CUSTOM;
+    val review: Boolean get() = this == SCREENSHOTS || this == OLD_DOWNLOADS || this == CHAT_MEDIA || this == CUSTOM
+}
 
 class StorageToolsActivity : ComponentActivity() {
     private val appearanceViewModel: AppearanceViewModel by viewModels()
@@ -70,12 +81,16 @@ class StorageToolsActivity : ComponentActivity() {
                     onCategory = { model.filter(category = it) }, onSort = { model.filter(sort = it) },
                     onThreshold = { model.filter(minimumBytes = it) }, onOpen = { detailUri = it.uri },
                     onReconnect = model::connect, onLocalMode = model::enableLocalMode,
-                    onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory)
+                    onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory,
+                    onAge = { model.filter(minimumAgeDays = it) }, onUndo = model::undoLastTrash,
+                    onSaveFilter = model::saveCustomFilter, onDeleteFilter = model::deleteCustomFilter,
+                    onActiveFilter = model::selectCustomFilter)
                 if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
                     state.diagnosticBusy && state.diagnosticUri == detail.uri,
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
                     onDismiss = { detailUri = null }, onOpen = { openFile(detail) },
-                    onDiagnose = { model.diagnose(detail) }, onCopy = {
+                    onDiagnose = { model.diagnose(detail) },
+                    onExclude = { detailUri = null; CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, detail.path)) }, onCopy = {
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("白泽单文件读取诊断", it))
                         Toast.makeText(this, "已复制当前文件的读取诊断", Toast.LENGTH_SHORT).show()
                     })
@@ -112,7 +127,10 @@ internal data class StorageToolsUiState(
     val outcomes: Map<String, StorageDeleteOutcome> = emptyMap(),
     val protectionMessage: String = "", val localModeAvailable: Boolean = false,
     val keeperPreference: DuplicateKeeperPreference = DuplicateKeeperPreference.NEWEST, val keeperDirectory: String = "",
-    val diagnosticBusy: Boolean = false, val diagnosticUri: String = "", val diagnostic: String = ""
+    val diagnosticBusy: Boolean = false, val diagnosticUri: String = "", val diagnostic: String = "",
+    val minimumAgeDays: Int = 0, val nowSeconds: Long = 0L,
+    val customFilters: List<StorageCustomFilter> = emptyList(), val activeFilterId: String? = null,
+    val lastTrashed: List<String> = emptyList(), val lastTrashedBytes: Long = 0L
 ) {
     val allRecords: List<StorageFileRecord> get() = if (mode == StorageToolMode.DUPLICATES) duplicateGroups.flatMap { it.records } else records
     // Keep each duplicate group intact: filtering must not hide its retained copy.
@@ -128,6 +146,9 @@ internal data class StorageToolsUiState(
         mode == StorageToolMode.DUPLICATES -> visibleGroups.flatMap { it.records }
         mode == StorageToolMode.ANALYSIS && directory != null -> filterStorageRecords(records.filter { java.io.File(it.path).parent == directory }, query, category, 0, sort)
         mode == StorageToolMode.ANALYSIS && category == null && query.isBlank() -> emptyList()
+        mode.review -> filterStorageRecords(records.filter {
+            StorageReviewFilters.visible(mode, it, nowSeconds, minimumAgeDays, customFilters, activeFilterId)
+        }, query, category, 0, sort)
         else -> filterStorageRecords(records, query, category, if (mode == StorageToolMode.LARGE) minimumBytes else 0, sort)
     }
     val recommended: Set<String> get() = if (mode == StorageToolMode.DUPLICATES) visibleGroups.flatMap { group ->
@@ -169,12 +190,16 @@ internal fun StorageToolsScreen(
     onThreshold: (Long) -> Unit = {}, onOpen: (StorageFileRecord) -> Unit = {},
     onReconnect: () -> Unit = {}, onLocalMode: () -> Unit = {},
     onKeeperPreference: (DuplicateKeeperPreference, String) -> Unit = { _, _ -> }, onKeep: (String) -> Unit = {},
-    onDirectory: (String?) -> Unit = {}
+    onDirectory: (String?) -> Unit = {}, onAge: (Int) -> Unit = {}, onUndo: () -> Unit = {},
+    onSaveFilter: (String, String, Int, Long) -> String = { _, _, _, _ -> "" }, onDeleteFilter: (String) -> Unit = {},
+    onActiveFilter: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
-    val title = when (state.mode) { StorageToolMode.LARGE -> "大文件"; StorageToolMode.DUPLICATES -> "重复文件"; StorageToolMode.ANALYSIS -> "存储分析" }
-    val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然" }
+    val title = storageToolTitle(state.mode)
+    val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然"
+        StorageToolMode.SCREENSHOTS -> "旧截图与录屏，看过再清"; StorageToolMode.OLD_DOWNLOADS -> "下载目录里久未动的文件"
+        StorageToolMode.CHAT_MEDIA -> "聊天软件已保存的图片、视频与文件 · 不碰聊天记录"; StorageToolMode.CUSTOM -> "按你的路径规则预览，再决定" }
     fun backDirectory() {
         val current = state.directory ?: return
         val volume = state.directoryUsage?.roots?.firstOrNull { current == it || current.startsWith("$it/") } ?: storageVolume("$current/file")
@@ -231,6 +256,11 @@ internal fun StorageToolsScreen(
                     if (directorySelected && currentDirectory != null)
                         Text("${currentDirectory.files} 个文件（含子目录）", style = MaterialTheme.typography.bodySmall)
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    if (!state.running && state.lastTrashed.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        GlassActionButton("撤销本次（恢复 ${state.lastTrashed.size} 个文件）", onUndo, Modifier.fillMaxWidth(),
+                            icon = Icons.AutoMirrored.Rounded.Undo, secondary = true)
+                    }
                     if (state.running) {
                         Spacer(Modifier.height(12.dp))
                         val progress = state.progress
@@ -299,8 +329,11 @@ internal fun StorageToolsScreen(
                     if (state.growth.isEmpty()) Text("暂无可比较的变化", style = MaterialTheme.typography.bodySmall)
                 } }
             }
+            if (state.mode == StorageToolMode.CUSTOM) item(key = "custom-filters") {
+                StorageCustomFilterPanel(state, onSaveFilter, onDeleteFilter, onActiveFilter)
+            }
             if (state.allRecords.isNotEmpty()) {
-                item { StorageFilters(state, onQuery, onCategory, onSort, onThreshold) }
+                item { StorageFilters(state, onQuery, onCategory, onSort, onThreshold, onAge) }
                 item { DetailSectionHeader(if (state.mode == StorageToolMode.ANALYSIS) storageCategoryLabel(state.category.orEmpty()) else "文件明细",
                     if (state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank()) "选择上方分类，或搜索文件" else "${visible.size} 个文件 · 筛选变化后重新勾选") }
             }
@@ -317,7 +350,8 @@ internal fun StorageToolsScreen(
                         }
                     }
                 }
-            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri]) }
+            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
+                StorageReviewFilters.sourceLabel(state.mode, record)) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
                     state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
@@ -332,11 +366,13 @@ internal fun StorageToolsScreen(
 
 @Composable
 private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit, onCategory: (String?) -> Unit,
-                           onSort: (StorageSort) -> Unit, onThreshold: (Long) -> Unit) {
+                           onSort: (StorageSort) -> Unit, onThreshold: (Long) -> Unit, onAge: (Int) -> Unit = {}) {
+    val ageFilter = state.mode.review && state.mode != StorageToolMode.CUSTOM
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val summary = buildList {
         if (state.mode != StorageToolMode.ANALYSIS && state.category != null) add(storageCategoryLabel(state.category))
         if (state.mode == StorageToolMode.LARGE) add("≥ ${state.minimumBytes / StorageToolsViewModel.MIB} MB")
+        if (ageFilter) add(StorageReviewFilters.ageLabel(state.minimumAgeDays))
         if (state.sort != StorageSort.SIZE) add("按${state.sort.label}排序")
     }.joinToString(" · ")
     FileQueryBar(state.query, onQuery, !state.running, "搜索文件", "筛选文件", summary) { showFilters = true }
@@ -344,7 +380,9 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
         var category by remember { mutableStateOf(state.category) }
         var sort by remember { mutableStateOf(state.sort) }
         var minimum by remember { mutableStateOf(state.minimumBytes) }
+        var age by remember { mutableStateOf(state.minimumAgeDays) }
         FileFilterDialog(onDismiss = { showFilters = false }, onApply = {
+            if (age != state.minimumAgeDays) onAge(age)
             if (category != state.category) onCategory(category)
             if (sort != state.sort) onSort(sort)
             if (minimum != state.minimumBytes) onThreshold(minimum)
@@ -354,6 +392,7 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
                 listOf<String?>(null).map { it to "全部类型" } + state.buckets.map { it.key to it.label }, category) { category = it }
             if (state.mode == StorageToolMode.LARGE) FileFilterChoices("文件大小",
                 listOf(10, 100, 500).map { it * StorageToolsViewModel.MIB to "≥ $it MB" }, minimum) { minimum = it }
+            if (ageFilter) FileFilterChoices("文件时间", StorageReviewFilters.AGE_CHOICES.map { it to StorageReviewFilters.ageLabel(it) }, age) { age = it }
             FileFilterChoices("排序", StorageSort.entries.map { it to it.label }, sort) { sort = it }
         }
     }
@@ -361,18 +400,19 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
 
 @Composable
 private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled: Boolean, keeper: Boolean, onClick: () -> Unit, onOpen: () -> Unit,
-    outcome: StorageDeleteOutcome? = null) {
+    outcome: StorageDeleteOutcome? = null, source: String? = null) {
     val size = Formatter.formatFileSize(LocalContext.current, record.bytes)
     val date = if (record.modifiedSeconds > 0) android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", record.modifiedSeconds * 1000).toString() else "时间未知"
     val reason = outcome?.reason ?: if (record.verifiedBytes == 0L) "待核对 · 文件身份未取得，不可勾选" else ""
-    val summary = if (reason.isNotBlank()) reason else "${if (keeper) "保留副本 · " else ""}${storageSource(record)} · $date"
+    val summary = if (reason.isNotBlank()) reason else "${if (keeper) "保留副本 · " else ""}${source ?: storageSource(record)} · $date"
     DetailResultRow(record.name, size, summary, record.path, "$size · ${storageCategoryLabel(storageCategory(record))}\n$summary\n\n${record.path}",
         storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && record.verifiedBytes > 0, onToggle = onClick, onDetails = onOpen)
 }
 
 @Composable
 internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDeleteOutcome?, diagnosticBusy: Boolean,
-    diagnostic: String, onDismiss: () -> Unit, onOpen: () -> Unit, onDiagnose: () -> Unit, onCopy: (String) -> Unit) {
+    diagnostic: String, onDismiss: () -> Unit, onOpen: () -> Unit, onDiagnose: () -> Unit, onCopy: (String) -> Unit,
+    onExclude: (() -> Unit)? = null) {
     val context = LocalContext.current
     BaiZeDialog(onDismissRequest = onDismiss, title = { Text("文件详情") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -383,6 +423,7 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
             Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
             if (storageCategory(record) == "image") TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
+            if (onExclude != null) TextButton(onClick = onExclude, enabled = !diagnosticBusy) { Text("加入白名单，保护此文件") }
             TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
                 Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
             }
@@ -483,3 +524,80 @@ private fun StorageSunburst(segments: List<SunburstSegment>, nested: Boolean, on
 }
 
 private const val SUNBURST_HOLE = .38f
+
+internal fun storageToolTitle(mode: StorageToolMode): String = when (mode) {
+    StorageToolMode.LARGE -> "大文件"; StorageToolMode.DUPLICATES -> "重复文件"; StorageToolMode.ANALYSIS -> "存储分析"
+    StorageToolMode.SCREENSHOTS -> "截图录屏"; StorageToolMode.OLD_DOWNLOADS -> "旧下载"
+    StorageToolMode.CHAT_MEDIA -> "聊天媒体"; StorageToolMode.CUSTOM -> "自定义规则"
+}
+
+/** 自定义规则列表：选中一条只筛选当前结果；新增或删除规则后重新扫描。 */
+@Composable
+private fun StorageCustomFilterPanel(state: StorageToolsUiState, onSave: (String, String, Int, Long) -> String,
+    onDelete: (String) -> Unit, onActive: (String?) -> Unit) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var pendingDelete by rememberSaveable { mutableStateOf<String?>(null) }
+    DetailGlassPanel {
+        Text("我的规则", style = MaterialTheme.typography.titleMedium)
+        Text("路径相对存储根目录，* 匹配一层、** 跨目录。结果先预览，勾选后才会移入回收站；Android、隐藏目录、聊天记录与数据库文件始终跳过。",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.customFilters.isEmpty()) Text("还没有规则，先新建一条。", style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 8.dp))
+        else FileFilterChoices("当前显示", listOf<String?>(null).map { it to "全部规则" } +
+            state.customFilters.map { it.id to it.name }, state.activeFilterId) { if (!state.running) onActive(it) }
+        state.customFilters.forEach { filter ->
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(filter.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    BaiZePathText(filter.summary)
+                }
+                TextButton(onClick = { pendingDelete = filter.id }, enabled = !state.running) { Text("删除") }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        GlassActionButton("新建规则", { editing = true }, Modifier.fillMaxWidth(), icon = Icons.Rounded.Add, secondary = true,
+            enabled = !state.running && state.customFilters.size < StorageReviewFilters.MAX_CUSTOM_FILTERS)
+    }
+    pendingDelete?.let { id ->
+        val filter = state.customFilters.firstOrNull { it.id == id }
+        if (filter == null) pendingDelete = null else BaiZeDialog(onDismissRequest = { pendingDelete = null },
+            title = { Text("删除规则") }, text = { Text("只删除规则“${filter.name}”，不会删除任何文件。") },
+            confirmButton = { BaiZeDialogButton(onClick = { pendingDelete = null; onDelete(id) }) { Text("删除") } },
+            dismissButton = { BaiZeDialogButton(onClick = { pendingDelete = null }) { Text("取消") } })
+    }
+    if (editing) StorageCustomFilterDialog(onDismiss = { editing = false }, onSave = onSave)
+}
+
+private val customFilterTemplates = listOf(
+    Triple("下载里的压缩包", "Download/**/*.zip", 30), Triple("下载里的视频", "Download/**/*.mp4", 90),
+    Triple("旧录音", "Recordings/**", 180)
+)
+
+@Composable
+private fun StorageCustomFilterDialog(onDismiss: () -> Unit, onSave: (String, String, Int, Long) -> String) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var pattern by rememberSaveable { mutableStateOf("") }
+    var days by rememberSaveable { mutableStateOf("0") }
+    var megabytes by rememberSaveable { mutableStateOf("0") }
+    var error by rememberSaveable { mutableStateOf("") }
+    BaiZeDialog(onDismissRequest = onDismiss, title = { Text("新建规则") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FileFilterChoices("常用模板", customFilterTemplates.map { it to it.first }, null as Triple<String, String, Int>?) { template ->
+                if (template != null) { name = template.first; pattern = template.second; days = template.third.toString(); error = "" }
+            }
+            OutlinedTextField(name, { name = it.take(24) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("名称（可选）") })
+            OutlinedTextField(pattern, { pattern = it; error = "" }, Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("路径规则") }, placeholder = { Text("Download/**/*.zip") })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(days, { value -> days = value.filter(Char::isDigit).take(4) }, Modifier.weight(1f), singleLine = true,
+                    label = { Text("超过天数") })
+                OutlinedTextField(megabytes, { value -> megabytes = value.filter(Char::isDigit).take(7) }, Modifier.weight(1f), singleLine = true,
+                    label = { Text("至少 MB") })
+            }
+            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = { BaiZeDialogButton(onClick = {
+        error = onSave(name, pattern, days.toIntOrNull() ?: 0, megabytes.toLongOrNull() ?: 0L)
+        if (error.isBlank()) onDismiss()
+    }) { Text("保存并预览") } }, dismissButton = { BaiZeDialogButton(onClick = onDismiss) { Text("取消") } })
+}

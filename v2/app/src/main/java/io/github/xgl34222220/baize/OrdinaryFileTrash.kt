@@ -208,11 +208,11 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
             return try {
                 guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, protection())?.let { return StorageDeleteOutcome(it) }
                 if (!IndexedContentReview.matches(proof, identity, guard, cancelled)) return StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED)
-                forContext(context).move(File(identity.canonicalPath), record.bytes, requireNotNull(proof).sha256, budget(context)) {
+                val entry = forContext(context).move(File(identity.canonicalPath), record.bytes, requireNotNull(proof).sha256, budget(context)) {
                     !cancelled() && guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, protection()) == null
                 }
                 MediaScannerConnection.scanFile(context, arrayOf(record.path), null, null)
-                StorageDeleteOutcome(ApkIndexedDeleteResult.DELETED, "已移入回收站，尚未释放空间", trashed = true)
+                StorageDeleteOutcome(ApkIndexedDeleteResult.DELETED, "已移入回收站，尚未释放空间", trashed = true, trashId = entry.id)
             } catch (error: Exception) {
                 StorageDeleteOutcome(if (cancelled()) ApkIndexedDeleteResult.CANCELLED else ApkIndexedDeleteResult.FAILED,
                     error.message ?: "移动失败，未执行永久删除")

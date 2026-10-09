@@ -31,12 +31,14 @@ class HomeDashboardModelTest {
             deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
             clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
             theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {},
-            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, swipeReview = { opened += "swipe" }
+            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, swipeReview = { opened += "swipe" },
+            storageReview = { opened += it.name.lowercase() }
         )
         val tools = homeTools(actions)
         assertEquals(tools.size, tools.map { it.title }.toSet().size)
         tools.forEach { it.onClick() }
-        assertEquals(listOf("photo", "duplicates", "trash", "apk", "large", "analysis", "swipe"), opened)
+        assertEquals(listOf("photo", "duplicates", "trash", "apk", "large", "analysis", "swipe",
+            "screenshots", "old_downloads", "chat_media", "custom"), opened)
         assertEquals(tools.size, opened.toSet().size)
     }
 }
