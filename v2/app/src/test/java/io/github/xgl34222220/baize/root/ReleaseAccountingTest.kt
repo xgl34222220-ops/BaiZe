@@ -118,6 +118,19 @@ class ReleaseAccountingTest {
         assertEquals(1, timeline().getInt("unmeasuredReleaseCount"))
     }
 
+    @Test fun declaredUnknownRemainderKeepsExplicitlyDeletedBytesAsPartial() {
+        val mixed = ReleaseAmount.fromResult("workbench-clean", JSONObject().put("releaseState", "unknown")
+            .put("deletedBytes", 22_465_384L))
+        assertEquals(ReleaseAmount(ReleaseAmount.State.PARTIAL, 22_465_384L), mixed)
+        // A generic size (scan estimate or moved bytes) and a PackageManager request stay unknown.
+        assertEquals(ReleaseAmount.State.UNKNOWN, ReleaseAmount.fromResult("workbench-clean",
+            JSONObject().put("releaseState", "unknown").put("bytes", 4096)).state)
+        assertEquals(ReleaseAmount.State.UNKNOWN, ReleaseAmount.fromResult("instant-cache",
+            JSONObject().put("success", true).put("releaseState", "unknown").put("releasedBytes", JSONObject.NULL)).state)
+        assertEquals(ReleaseAmount.State.UNKNOWN, ReleaseAmount.fromResult("workbench-clean",
+            JSONObject().put("releaseState", "unknown").put("deletedBytes", 0)).state)
+    }
+
     @Test fun partialMeasurementAddsKnownBytesWithoutCallingItsRemainderZero() {
         record("cache-clean", deleted(1024).put("releaseState", "partial"))
         assertEquals(1024L, timeline().getLong("releasedBytes"))

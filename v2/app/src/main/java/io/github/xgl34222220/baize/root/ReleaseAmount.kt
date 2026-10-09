@@ -24,7 +24,12 @@ internal data class ReleaseAmount(val state: State, val bytes: Long? = null, val
             val latest = result.optJSONObject("latest") ?: JSONObject()
             val declared = result.optString("releaseState").ifBlank { latest.optString("releaseState") }
                 .ifBlank { result.optString("release_state", latest.optString("release_state")) }
-            if (declared == State.UNKNOWN.wire) return ReleaseAmount(State.UNKNOWN)
+            if (declared == State.UNKNOWN.wire) {
+                // "Unknown" describes the remainder of a mixed run. Content the same result reports as
+                // actually deleted is still evidence; a generic "bytes" field (scan/move) is not.
+                val deleted = firstNumber(result, latest, "releasedBytes", "deletedBytes")
+                return if (deleted != null && deleted > 0L) ReleaseAmount(State.PARTIAL, deleted) else ReleaseAmount(State.UNKNOWN)
+            }
             val retained = result.optBoolean("trashed") || operation.contains("trash") ||
                 (operation.contains("quarantine") && !operation.contains("purge") &&
                     !operation.contains("expire") && !operation.contains("restore"))

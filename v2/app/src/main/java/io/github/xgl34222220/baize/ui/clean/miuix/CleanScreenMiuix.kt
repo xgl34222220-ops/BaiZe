@@ -34,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -182,11 +185,12 @@ fun CleanScreenMiuix(
                         title = "过期安装包",
                         subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
                         checked = state.apkPackagesEnabled,
-                        onCheckedChange = actions.onApkPackagesChanged
+                        onCheckedChange = actions.onApkPackagesChanged,
+                        enabled = !state.saving
                     )
                     if (state.apkPackagesEnabled) {
                         LuoShuGroupDivider()
-                        ValueRow("保留时间", "${state.apkPackageDays} 天") { showApkDaysDialog = true }
+                        ValueRow("保留时间", "${state.apkPackageDays} 天", enabled = !state.saving) { showApkDaysDialog = true }
                     }
                 }
             }
@@ -269,7 +273,11 @@ private fun AutomaticCleaningHero(
             }
             Switch(
                 checked = state.automaticCleaningEnabled,
-                onCheckedChange = actions.onAutomaticCleaningChanged
+                onCheckedChange = actions.onAutomaticCleaningChanged,
+                // CleanRoute drops changes while a save is in flight; show that instead of
+                // letting the switch look tappable and silently ignore the tap.
+                enabled = !state.saving,
+                modifier = Modifier.semantics { contentDescription = "自动清理" }
             )
         }
     }
@@ -305,6 +313,7 @@ private fun ScheduleGroup(
                     FilterChip(
                         selected = state.scheduleMode == mode,
                         onClick = { actions.onScheduleModeChanged(mode) },
+                        enabled = !state.saving,
                         label = { Text(mode.title, style = MaterialTheme.typography.labelSmall) },
                         trailingIcon = {
                             Icon(
@@ -329,9 +338,9 @@ private fun ScheduleGroup(
         }
         if (state.scheduleMode == CleanScheduleMode.FIXED_DAILY) {
             LuoShuGroupDivider()
-            ValueRow("执行时间", state.dailyTimeText, onEditTime)
+            ValueRow("执行时间", state.dailyTimeText, enabled = !state.saving, onClick = onEditTime)
             LuoShuGroupDivider()
-            ValueRow("补做窗口", formatMinutes(state.dailyGraceMinutes), onEditGrace)
+            ValueRow("补做窗口", formatMinutes(state.dailyGraceMinutes), enabled = !state.saving, onClick = onEditGrace)
             Text(
                 "文件自动归类继续使用独立周期。",
                 modifier = Modifier.padding(start = 74.dp, end = 18.dp, bottom = 15.dp),
@@ -361,6 +370,7 @@ private fun TaskGroup(
                 item = item,
                 expanded = expandedCategory == key,
                 dailyEnabled = state.scheduleMode == CleanScheduleMode.FIXED_DAILY && item.id != CleanCategoryId.ORGANIZE,
+                saving = state.saving,
                 onEnabledChanged = { actions.onCategoryEnabledChanged(item.id, it) },
                 onExpandedChanged = {
                     onExpandedCategoryChanged(if (expandedCategory == key) "" else key)
@@ -377,6 +387,7 @@ private fun CategoryRow(
     item: CleanCategoryUiItem,
     expanded: Boolean,
     dailyEnabled: Boolean,
+    saving: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
     onExpandedChanged: () -> Unit,
     onIntervalChanged: (Int) -> Unit
@@ -399,7 +410,12 @@ private fun CategoryRow(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Switch(checked = item.enabled, onCheckedChange = onEnabledChanged)
+            Switch(
+                checked = item.enabled,
+                onCheckedChange = onEnabledChanged,
+                enabled = !saving,
+                modifier = Modifier.semantics { contentDescription = item.title }
+            )
         }
         if (item.enabled) {
             Surface(
@@ -436,7 +452,8 @@ private fun CategoryRow(
                     modifier = Modifier.padding(start = 74.dp, end = 16.dp, bottom = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    BaiZeIntervalPicker(luoShuIntervalOptions, item.intervalMinutes, ::formatMinutes, onIntervalChanged)
+                    BaiZeIntervalPicker(luoShuIntervalOptions, item.intervalMinutes, ::formatMinutes, onIntervalChanged,
+                        enabled = !saving)
                 }
             }
         }
@@ -459,7 +476,8 @@ private fun SwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
@@ -476,14 +494,20 @@ private fun SwitchRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            modifier = Modifier.semantics { contentDescription = title }
+        )
     }
 }
 
 @Composable
-private fun ValueRow(label: String, value: String, onClick: () -> Unit) {
+private fun ValueRow(label: String, value: String, enabled: Boolean = true, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth()
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "修改$label", onClick = onClick)
             .padding(start = 74.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

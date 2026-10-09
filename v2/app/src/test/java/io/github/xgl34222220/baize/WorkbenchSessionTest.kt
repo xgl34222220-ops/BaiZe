@@ -50,6 +50,23 @@ class WorkbenchSessionTest {
         assertTrue(session.screenState.resultText.contains("目录 1"))
     }
 
+    @Test fun perAppResultIsLinkedToItsHistoryRecordAsDeletedEvidence() = withSession { session, dispatcher ->
+        val service = profileService { method -> when (method) {
+            "cleanProfileSelected" -> """{"success":true,"deletedBytes":22440000,"deletedFiles":19,"cleanedCandidates":1,"remainingCandidates":0,"details":[{"id":"sample","action":"cleaned","bytes":22440000,"files":19}]}"""
+            "recordNativeTask" -> """{"success":true,"recordId":"audit-linked"}"""
+            else -> null
+        } }
+        val original = ready(session, service)
+        state(session, session.screenState.copy(items = listOf(original.copy(packageName = "com.tencent.androidqqmail",
+            appName = "QQ邮箱", title = "app_bugly"))))
+        session.cleanSelection()
+        await(dispatcher) { session.screenState.cleanupCompleted }
+        val run = LastCleanupStore.readRun(app)
+        assertEquals("audit-linked", run.recordId)
+        assertTrue(run.deletedEvidence)
+        assertEquals(22_440_000L, run.apps.single().bytes)
+    }
+
     @Test fun lowRiskBatchKeepsHighRiskAvailableWithoutRescanningOrReplayingLowRisk() = batchRetainsUnselected(failedFirst = false)
 
     @Test fun failedBatchLocksAttemptedItemsButKeepsUnselectedHighRiskAvailable() = batchRetainsUnselected(failedFirst = true)

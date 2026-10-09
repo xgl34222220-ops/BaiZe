@@ -16,14 +16,46 @@ internal object LastCleanupStore {
     ): Pair<List<AppJunkUiItem>, List<GeneralJunkUiItem>> =
         if (apps.isNotEmpty() || junk.isNotEmpty()) apps to junk else previous
 
-    fun save(context: Context, apps: List<AppJunkUiItem>, junk: List<GeneralJunkUiItem>) {
-        ScanReviewStore.save(context, "last-clean") { encode(apps, junk) }
+    /**
+     * One run's per-app/per-category result. [recordId] links it to the history row of the same run;
+     * [deletedEvidence] is true only when every byte in it was reported as actually deleted content
+     * (never a scan estimate), so the history card may quote it when the run total is unmeasured.
+     */
+    data class Run(
+        val apps: List<AppJunkUiItem>,
+        val junk: List<GeneralJunkUiItem>,
+        val recordId: String = "",
+        val deletedEvidence: Boolean = false
+    )
+
+    fun save(
+        context: Context,
+        apps: List<AppJunkUiItem>,
+        junk: List<GeneralJunkUiItem>,
+        recordId: String = "",
+        deletedEvidence: Boolean = false
+    ) {
+        ScanReviewStore.save(context, "last-clean") { encode(apps, junk, recordId, deletedEvidence) }
     }
 
     fun read(context: Context): Pair<List<AppJunkUiItem>, List<GeneralJunkUiItem>> =
         decode(ScanReviewStore.read(context, "last-clean") ?: JSONObject())
 
-    fun encode(apps: List<AppJunkUiItem>, junk: List<GeneralJunkUiItem>): JSONObject = JSONObject()
+    fun readRun(context: Context): Run = decodeRun(ScanReviewStore.read(context, "last-clean") ?: JSONObject())
+
+    fun decodeRun(record: JSONObject): Run = decode(record).let { (apps, junk) ->
+        Run(apps, junk, record.optString("recordId").trim().take(100),
+            record.optBoolean("deletedEvidence", false))
+    }
+
+    fun encode(
+        apps: List<AppJunkUiItem>,
+        junk: List<GeneralJunkUiItem>,
+        recordId: String = "",
+        deletedEvidence: Boolean = false
+    ): JSONObject = JSONObject()
+        .put("recordId", recordId.trim().take(100))
+        .put("deletedEvidence", deletedEvidence)
         .put("apps", JSONArray().apply { apps.forEach { app -> put(JSONObject()
             .put("packageName", app.packageName).put("label", app.label).put("category", app.category)
             .put("files", app.files).put("bytes", app.bytes).put("errors", app.errors)

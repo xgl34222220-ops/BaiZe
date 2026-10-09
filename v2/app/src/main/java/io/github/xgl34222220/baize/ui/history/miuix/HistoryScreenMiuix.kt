@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,20 +51,26 @@ import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
 @Composable
 fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
-    val iconPackages = buildList {
-        addAll(state.recentApps.map { it.packageName })
-        state.records.forEach { record -> addAll(record.apps.map { it.packageName }) }
+    // Derived lists are cached per input so unrelated recompositions (scroll, expand toggles)
+    // do not rebuild the 50-record grouping and icon package list on the main thread.
+    val iconPackages = remember(state.recentApps, state.records) {
+        buildList {
+            addAll(state.recentApps.map { it.packageName })
+            state.records.forEach { record -> addAll(record.apps.map { it.packageName }) }
+        }
     }
     AppPackageIconPreloader(iconPackages)
 
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val recordGroups = state.records
-        .take(50)
-        .groupBy { record -> record.time.trim().take(10).ifBlank { "更早记录" } }
+    val recordGroups = remember(state.records) {
+        state.records
+            .take(50)
+            .groupBy { record -> record.time.trim().take(10).ifBlank { "更早记录" } }
+    }
     var showZeroApps by rememberSaveable { mutableStateOf(false) }
-    val meaningfulApps = state.recentApps.filter { it.bytes > 0L }
-    val zeroApps = state.recentApps.filter { it.bytes <= 0L }
-    val meaningfulJunk = state.recentJunk.filter { it.bytes > 0L }
+    val meaningfulApps = remember(state.recentApps) { state.recentApps.filter { it.bytes > 0L } }
+    val zeroApps = remember(state.recentApps) { state.recentApps.filter { it.bytes <= 0L } }
+    val meaningfulJunk = remember(state.recentJunk) { state.recentJunk.filter { it.bytes > 0L } }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -187,14 +194,14 @@ private fun LifetimeHero(state: HistoryUiState) {
 
 @Composable
 private fun HistoryMetricValue(value: String) {
-    val match = Regex("""^([0-9][0-9.,]*)\\s*([A-Za-z]+)$""").matchEntire(value.trim())
+    val match = remember(value) { splitHistoryMetric(value) }
     if (match == null) {
         Text(value, style = MaterialTheme.typography.headlineLarge.copy(fontFeatureSettings = "tnum"))
         return
     }
     Row(verticalAlignment = Alignment.Bottom) {
         Text(
-            match.groupValues[1],
+            match.first,
             modifier = Modifier.alignByBaseline(),
             style = MaterialTheme.typography.headlineLarge.copy(
                 fontSize = 34.sp,
@@ -204,7 +211,7 @@ private fun HistoryMetricValue(value: String) {
         )
         Spacer(Modifier.width(5.dp))
         Text(
-            match.groupValues[2],
+            match.second,
             modifier = Modifier.alignByBaseline().padding(bottom = 2.dp),
             style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -700,8 +707,20 @@ private fun RecordCard(record: HistoryUiItem) {
     }
 }
 
+/**
+ * Splits a formatted size such as "12.5 MB" into number and unit so the unit can be rendered
+ * smaller, matching BaiZeMetric on Home. Android's Formatter may emit a no-break space.
+ */
+private val historyMetricPattern = Regex("""^([0-9][0-9.,]*)[\s\u00A0]*([A-Za-z]+)$""")
+
+internal fun splitHistoryMetric(value: String): Pair<String, String>? =
+    historyMetricPattern.matchEntire(value.trim())?.let { it.groupValues[1] to it.groupValues[2] }
+
+/** Compiled once; sanitizeText runs for every visible row on each recomposition. */
+private val unsafeTextPattern = Regex("[\\p{Cc}\\p{Cf}\\s]+")
+
 private fun sanitizeText(value: String): String =
-    value.replace(Regex("[\\p{Cc}\\p{Cf}\\s]+"), " ").trim()
+    value.replace(unsafeTextPattern, " ").trim()
 
 private fun formatElapsed(seconds: Long): String = when {
     seconds >= 3_600 -> "${seconds / 3_600} 小时"
