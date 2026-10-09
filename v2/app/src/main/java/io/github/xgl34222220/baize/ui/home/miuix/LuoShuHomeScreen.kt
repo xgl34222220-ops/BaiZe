@@ -105,7 +105,8 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         Triple("回收站", Icons.Rounded.RestoreFromTrash, actions.fileTrash),
                         Triple("安装包", Icons.Rounded.InstallMobile, actions.apkScan),
                         Triple("大文件", Icons.Rounded.FolderOpen, actions.largeFiles),
-                        Triple("存储分析", Icons.Rounded.DataUsage, actions.storageAnalysis)
+                        Triple("存储分析", Icons.Rounded.DataUsage, actions.storageAnalysis),
+                        Triple("滑动整理", Icons.Rounded.Swipe, actions.swipeReview)
                     )
                     val columns = if (maxWidth.value / LocalDensity.current.fontScale < 240f) 1 else 2
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -114,9 +115,12 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                                 group.forEach { (label, icon, action) ->
                                     LuoShuShortcut(label, when (label) {
                                         "照片瘦身" -> "预览后另存"; "回收站" -> "恢复已移入文件";
-                                        "安装包" -> "下载遗留"; "大文件" -> "占用排行"; "重复文件" -> "保留一份"; else -> "空间构成"
+                                        "安装包" -> "下载遗留"; "大文件" -> "占用排行"; "重复文件" -> "保留一份";
+                                        "滑动整理" -> "左删右留"; else -> "空间构成"
                                     }, icon, action, Modifier.weight(1f))
                                 }
+                                // 奇数个工具时保持最后一格与其他格同宽。
+                                repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
                     }
