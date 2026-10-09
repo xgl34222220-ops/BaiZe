@@ -159,6 +159,7 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
 
 private const val HOME_REFRESH_INDICATOR_MS = 700L
 private const val HOME_REFRESH_INDICATOR_REDUCED_MS = 250L
+private const val HERO_RING_MIN_WIDTH_DP = 280f
 
 /** 首页工具格：顺序即优先级；副标题与入口一一对应，不再按标题字符串匹配。 */
 @androidx.compose.runtime.Immutable
@@ -260,13 +261,17 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
                         style = MaterialTheme.typography.labelMedium, color = statusColor)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                    HeroMetricValue(value)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // 窄屏或大字号时数值优先，不让存储环挤压主数值（避免「98.…」截断）。
+                val roomForRing = maxWidth.value / LocalDensity.current.fontScale >= HERO_RING_MIN_WIDTH_DP
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(label, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        HeroMetricValue(value)
+                    }
+                    // 空闲时用存储环概览占用（参考 HyperOS 手机管家 / Files by Google 清理页顶部）；运行中让位给进度条。
+                    if (roomForRing && !state.running && state.storageTotal > 0) StorageRing(state)
                 }
-                // 空闲时用存储环概览占用（参考 HyperOS 手机管家 / Files by Google 清理页顶部）；运行中让位给进度条。
-                if (!state.running && state.storageTotal > 0) StorageRing(state)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.running && state.taskProgressTotal <= 0) {
