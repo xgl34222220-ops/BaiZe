@@ -1420,8 +1420,15 @@ run_app_profile_rules() {
   [ "$profile_tier" = "2" ] || profile_media=0
   profile_data="$TMP_DIR/app-profile-data.rules"
   profile_ext="$TMP_DIR/app-profile-ext.rules"
-  profile_summary=$(sh "$SCRIPTDIR/app-profile-rules.sh" compile "$profile_tier" "$profile_media" "$APP_PROFILE_RULES" "$profile_data" "$profile_ext" 2>>"$LOG_FILE")
-  log_line "[应用专项规则] 档位 $profile_tier 用户媒体 $profile_media $profile_summary"
+  profile_media_days=$(get_uint app_profile_media_days 30 7 365)
+  profile_summary=$(sh "$SCRIPTDIR/app-profile-rules.sh" compile "$profile_tier" "$profile_media" "$APP_PROFILE_RULES" "$profile_data.in" "$profile_ext.in" "$profile_media_days" 2>>"$LOG_FILE")
+  # 微信账号目录占位符只在这里、只在清理任务中展开：仅匹配 32 位十六进制的真实目录，不跟随符号链接。
+  profile_data_expanded=$(sh "$SCRIPTDIR/app-profile-rules.sh" expand "$profile_data.in" "$profile_data" /data/user/[0-9]*/com.tencent.mm 2>>"$LOG_FILE")
+  profile_ext_expanded=$(sh "$SCRIPTDIR/app-profile-rules.sh" expand "$profile_ext.in" "$profile_ext" /data/media/[0-9]*/Android/data/com.tencent.mm 2>>"$LOG_FILE")
+  rm -f "$profile_data.in" "$profile_ext.in"
+  [ -f "$profile_data" ] || : >"$profile_data"
+  [ -f "$profile_ext" ] || : >"$profile_ext"
+  log_line "[应用专项规则] 档位 $profile_tier 用户媒体 $profile_media 媒体保留 ${profile_media_days} 天 $profile_summary data:$profile_data_expanded ext:$profile_ext_expanded"
   case "$profile_tier" in 0) profile_label="应用专项(保守)" ;; 2) profile_label="应用专项(增强)" ;; *) profile_label="应用专项(标准)" ;; esac
   run_app_rules "$profile_data" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }
   run_external_rules "$profile_ext" "$profile_label" || { rm -f "$profile_data" "$profile_ext"; return 9; }

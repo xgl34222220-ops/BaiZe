@@ -30,7 +30,7 @@ internal object ReviewRuleCatalog {
     }.distinctBy { it.pattern }
 
     /** Per-app profile selection read from the module configuration (module defaults when absent). */
-    data class AppProfile(val enabled: Boolean = true, val tier: Int = 1, val userMedia: Boolean = false) {
+    data class AppProfile(val enabled: Boolean = true, val tier: Int = 1, val userMedia: Boolean = false, val mediaDays: Int = 30) {
         val effectiveTier: Int get() = tier.coerceIn(0, 2)
         val effectiveUserMedia: Boolean get() = userMedia && effectiveTier == 2
 
@@ -47,7 +47,8 @@ internal object ReviewRuleCatalog {
                 return AppProfile(
                     enabled = values["app_profile_enabled"] != "0",
                     tier = values["app_profile_tier"]?.toIntOrNull()?.coerceIn(0, 2) ?: 1,
-                    userMedia = values["app_profile_user_media"] == "1"
+                    userMedia = values["app_profile_user_media"] == "1",
+                    mediaDays = values["app_profile_media_days"]?.toIntOrNull()?.coerceIn(7, 365) ?: 30
                 )
             }
         }
@@ -89,14 +90,17 @@ internal object ReviewRuleCatalog {
             val relative = fields[3]
             val days = fields[4].toIntOrNull()?.takeIf { it in 0..365 } ?: continue
             if (scope != "data" && scope != "ext") continue
+            // 微信账号目录占位符（{wx_account}/{hex2}）只由模块在清理任务中受限展开，工作台预览不展开。
+            if ('{' in relative || '}' in relative) continue
             if (!packageName.matches(pkg) || !safeRelative(relative)) continue
             val media = rank == 3
             if (media) {
                 if (!profile.effectiveUserMedia || days < 7) continue
             } else if (rank > tier || profileTouchesUserData(relative)) continue
+            val effectiveDays = if (media) profile.mediaDays.coerceIn(7, 365) else days
             val key = Triple(scope, pkg, relative)
             val previous = chosen[key]
-            chosen[key] = if (previous == null) days to media else minOf(previous.first, days) to (previous.second || media)
+            chosen[key] = if (previous == null) effectiveDays to media else minOf(previous.first, effectiveDays) to (previous.second || media)
         }
         return chosen.flatMap { (key, value) ->
             val (scope, pkg, relative) = key

@@ -16,6 +16,7 @@ internal class DiagnosticRepository(
             "duplicates" -> "duplicate-scanner.sh"
             "diagnostics" -> "diagnostics-export.sh"
             "rules-validate" -> "rules-validator.sh"
+            "wechat-usage" -> "app-profile-rules.sh"
             else -> return JSONObject().put("success", false).put("error", "unsupported_tool").toString()
         }
         return runCatching {
@@ -24,6 +25,12 @@ internal class DiagnosticRepository(
             val arg = JSONObject(optionsJson.orEmpty().ifBlank { "{}" }).optInt("value", 0)
             val command = mutableListOf("/system/bin/sh", file.absolutePath)
             if (normalized == "large-files" && arg > 0) command += arg.coerceIn(16, 16384).toString()
+            if (normalized == "wechat-usage") {
+                // 只读 du 统计；超大目录也不能让 Root 服务无限等待。
+                command += "wechat-usage"
+                val timeout = File("/system/bin/timeout")
+                if (timeout.canExecute()) command.addAll(0, listOf(timeout.absolutePath, "110"))
+            }
             val process = ProcessBuilder(command).redirectErrorStream(true).start()
             val output = process.inputStream.bufferedReader().use { it.readText().takeLast(16_000) }
             val code = process.waitFor()

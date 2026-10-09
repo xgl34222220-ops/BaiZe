@@ -25,10 +25,14 @@ class AppProfileSettingsUiTest {
         clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {})
 
-    private fun openTaskSettings(saves: MutableList<SchedulerUiState>, initial: SchedulerUiState) {
+    private fun openTaskSettings(
+        saves: MutableList<SchedulerUiState>,
+        initial: SchedulerUiState,
+        wechatUsage: ((WechatUsage) -> Unit) -> Unit = {}
+    ) {
         var scheduler by mutableStateOf(initial)
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
-            actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }),
+            actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }, wechatUsage = wechatUsage),
             AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
         compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
@@ -63,6 +67,33 @@ class AppProfileSettingsUiTest {
         save()
         assertTrue(saves.last().appProfileUserMedia)
         assertEquals(1, saves.last().toJson().getInt("app_profile_user_media"))
+    }
+
+    @Test fun wechatUsageBreakdownIsShownAndMediaDaysAreSelectable() {
+        val saves = mutableListOf<SchedulerUiState>()
+        var loads = 0
+        openTaskSettings(saves, SchedulerUiState(appProfileTier = 2)) { done ->
+            loads++
+            done(WechatUsage.parse("image|聊天图片|5368709120|media\nsns|朋友圈缓存|1048576|conservative\n" +
+                "received|收到的文件（不清理）|2048|protected\ntotal|微信总占用|6442450944|total\naccounts|1\n"))
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("微信占用分析"))
+        compose.onNodeWithText("微信占用分析").performClick()
+        compose.onNodeWithText("微信存储构成").assertIsDisplayed()
+        compose.onNodeWithText("共 6.0 GB · 1 个账号").assertIsDisplayed()
+        compose.onNodeWithText("聊天图片").assertIsDisplayed()
+        compose.onNodeWithText("5.0 GB").assertIsDisplayed()
+        compose.onNodeWithText("需增强档并开启聊天媒体").assertIsDisplayed()
+        compose.onNodeWithText("关闭").performClick()
+        assertEquals(1, loads)
+        assertTrue("the breakdown never saves settings", saves.isEmpty())
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("聊天媒体保留天数"))
+        compose.onNodeWithText("聊天媒体保留天数").performClick()
+        compose.onNodeWithText("90 天前").performClick()
+        save()
+        assertEquals(90, saves.last().appProfileMediaDays)
+        assertEquals(90, saves.last().toJson().getInt("app_profile_media_days"))
     }
 
     @Test fun maintenanceToggleAndLastResultAreShown() {

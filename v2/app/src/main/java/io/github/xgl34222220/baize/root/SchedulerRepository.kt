@@ -783,6 +783,7 @@ internal class SchedulerRepository(
             "app_profile_enabled" to 0..1,
             "app_profile_tier" to 0..2,
             "app_profile_user_media" to 0..1,
+            "app_profile_media_days" to 7..365,
             "maintenance_enabled" to 0..1,
             "maintenance_min_hours" to 24..168,
             "maintenance_gc_max_seconds" to 30..1800

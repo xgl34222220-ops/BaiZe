@@ -3,23 +3,59 @@
 #   档位：conservative=保守，standard=标准，enhanced=增强，enhanced-media=增强+用户媒体
 #   范围：data=/data/user*/<包名>，ext=/data/media/<用户>/Android/data/<包名>
 # 档位逐级包含：标准 = 保守 + 标准；增强 = 保守 + 标准 + 增强。
-# enhanced-media 只在“增强”档且用户明确开启 app_profile_user_media=1 时生效，保留天数不得少于 7 天。
+# enhanced-media 只在“增强”档且用户明确开启 app_profile_user_media=1 时生效，保留天数不得少于 7 天，实际天数取 app_profile_media_days（7/30/90，默认 30）。
 # 除 enhanced-media 外，任何规则都不得触及数据库、配置、聊天记录、收到的文件或媒体（由 app-profile-rules.sh 与 CI 强制校验）。
-# 相对路径不支持通配符，同一路径被多个已选档位命中时取最短保留天数。
+# 相对路径不支持通配符；唯一例外是微信的受限占位符 {wx_account}/{hex2}（见下）。同一路径被多个已选档位命中时取最短保留天数。
 
 # 微信 com.tencent.mm
+# 目录布局：/data/data/com.tencent.mm（= /data/user/0）与 /sdcard/Android/data/com.tencent.mm（= /data/media/0/Android/data）
+# 下的 MicroMsg/<32 位十六进制账号目录>/{image2,video,voice2,avatar,sns,...}；8.x 起聊天图片多在内部存储。
+# {wx_account} 只展开为真实的 32 位小写十六进制账号目录；{hex2} 只展开为 image2/voice2 下两位十六进制分桶目录。
+# 永不触碰：EnMicroMsg.db 等 *.db、WxFileIndex、shared_prefs、mmkv、账号配置（*.cfg/*.bin）、
+# 收藏 favorite、表情 emoji、收到的文件（MicroMsg/Download、attachment）。
+# 保守：纯缓存与日志
 conservative|data|com.tencent.mm|app_bugly|0
 conservative|data|com.tencent.mm|app_crashrecord|0
 conservative|data|com.tencent.mm|files/tbslog|0
+conservative|data|com.tencent.mm|files/xlog|0
+conservative|data|com.tencent.mm|files/live_log|0
+conservative|data|com.tencent.mm|cache|3
+conservative|data|com.tencent.mm|MicroMsg/webservice/codecache|0
+conservative|data|com.tencent.mm|MicroMsg/{wx_account}/avatar|7
+conservative|data|com.tencent.mm|MicroMsg/{wx_account}/sns|7
+conservative|ext|com.tencent.mm|cache|3
 conservative|ext|com.tencent.mm|MicroMsg/xlog|0
 conservative|ext|com.tencent.mm|MicroMsg/crash|0
+conservative|ext|com.tencent.mm|MicroMsg/CheckResUpdate|3
+conservative|ext|com.tencent.mm|MicroMsg/wxacache|3
+conservative|ext|com.tencent.mm|MicroMsg/.tmp|1
+conservative|ext|com.tencent.mm|MicroMsg/Cache|3
+conservative|ext|com.tencent.mm|MicroMsg/sns|7
+conservative|ext|com.tencent.mm|MicroMsg/{wx_account}/avatar|7
+conservative|ext|com.tencent.mm|MicroMsg/{wx_account}/sns|7
+# 标准：再加可自动重建的资源、网页内核插件与视频播放缓存
 standard|data|com.tencent.mm|app_textures|0
+standard|data|com.tencent.mm|app_xwalkplugin|7
+standard|data|com.tencent.mm|MicroMsg/webview_tmpl/tmpls|3
+standard|data|com.tencent.mm|cache|1
 standard|ext|com.tencent.mm|cache|1
-standard|ext|com.tencent.mm|MicroMsg/CheckResUpdate|3
-standard|ext|com.tencent.mm|MicroMsg/wxacache|3
-enhanced|ext|com.tencent.mm|MicroMsg/sns|7
-enhanced|ext|com.tencent.mm|MicroMsg/wxanewfiles|7
+standard|ext|com.tencent.mm|files/VideoCache|1
+standard|ext|com.tencent.mm|MicroMsg/wxanewfiles|7
+# 增强：缓存不再保留天数
+enhanced|data|com.tencent.mm|cache|0
 enhanced|ext|com.tencent.mm|cache|0
+enhanced|ext|com.tencent.mm|MicroMsg/sns|0
+enhanced|data|com.tencent.mm|MicroMsg/{wx_account}/sns|0
+enhanced|ext|com.tencent.mm|MicroMsg/{wx_account}/sns|0
+enhanced|data|com.tencent.mm|MicroMsg/{wx_account}/avatar|0
+enhanced|ext|com.tencent.mm|MicroMsg/{wx_account}/avatar|0
+# 增强 + 聊天媒体（app_profile_user_media=1）：聊天图片/缩略图、视频、语音，保留天数由 app_profile_media_days 决定（默认 30）
+enhanced-media|data|com.tencent.mm|MicroMsg/{wx_account}/image2/{hex2}|30
+enhanced-media|ext|com.tencent.mm|MicroMsg/{wx_account}/image2/{hex2}|30
+enhanced-media|data|com.tencent.mm|MicroMsg/{wx_account}/voice2/{hex2}|30
+enhanced-media|ext|com.tencent.mm|MicroMsg/{wx_account}/voice2/{hex2}|30
+enhanced-media|data|com.tencent.mm|MicroMsg/{wx_account}/video|30
+enhanced-media|ext|com.tencent.mm|MicroMsg/{wx_account}/video|30
 
 # QQ com.tencent.mobileqq
 conservative|data|com.tencent.mobileqq|app_bugly|0

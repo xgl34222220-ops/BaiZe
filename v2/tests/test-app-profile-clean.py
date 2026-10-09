@@ -62,7 +62,9 @@ class AppProfileClean(unittest.TestCase):
         config = (ROOT / 'config/default.conf').read_text() + '\n'
         config += ''.join(f'{key}=0\n' for key in flags)
         config += (f'enabled=1\nclean_app_rules=1\nclean_empty_files=1\nnotify_on_complete=0\n'
-                   f'app_profile_enabled={enabled}\napp_profile_tier={tier}\napp_profile_user_media={media}\n')
+                   f'app_profile_enabled={enabled}\napp_profile_tier={tier}\napp_profile_user_media={media}\n'
+                   # 用户选择的媒体保留天数覆盖规则自带天数（默认 30）；夹具媒体为 9 天前。
+                   'app_profile_media_days=7\n')
         (state / 'config.conf').write_text(config)
         (state / 'whitelist.conf').write_text('')
         for relative in (LOG, CACHE, SNS, MEDIA, DB, FRESH_MEDIA):

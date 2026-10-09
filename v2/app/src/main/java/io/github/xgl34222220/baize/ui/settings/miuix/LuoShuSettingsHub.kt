@@ -7,6 +7,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xgl34222220.baize.BuildConfig
+import io.github.xgl34222220.baize.WechatUsage
+import io.github.xgl34222220.baize.formatUsageBytes
+import io.github.xgl34222220.baize.wechatUsageTierHint
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.components.DetailStatusText
 import io.github.xgl34222220.baize.ui.miuix.*
@@ -182,10 +187,34 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
     ) else if (edit == "media") AlertDialog(
         onDismissRequest = { edit = "" },
         title = { Text("清理聊天媒体？") },
-        text = { Text("将按增强档清理 30 天前的 QQ 聊天图片与短视频缓存。删除后无法在白泽中恢复，聊天记录与收到的文件不受影响。") },
+        text = { Text("将按增强档清理 ${s.appProfileMediaDays} 天前的微信聊天图片（含缩略图）、视频、语音，以及 QQ 聊天图片与短视频。删除后无法在白泽中恢复；聊天记录数据库、收藏、表情与收到的文件不受影响。") },
         confirmButton = { TextButton(onClick = { actions.onUpdateScheduler(s.copy(appProfileUserMedia = true)); edit = "" }) { Text("开启") } },
         dismissButton = { TextButton(onClick = { edit = "" }) { Text("取消") } }
-    ) else if (edit.isNotEmpty()) IntValueDialog(
+    ) else if (edit == "mediaDays") AlertDialog(
+        onDismissRequest = { edit = "" },
+        title = { Text("聊天媒体保留天数") },
+        text = {
+            Column {
+                for (days in APP_PROFILE_MEDIA_DAY_CHOICES) {
+                    Row(
+                        Modifier.fillMaxWidth().selectable(selected = s.appProfileMediaDays == days, onClick = {
+                            actions.onUpdateScheduler(s.copy(appProfileMediaDays = days))
+                            edit = ""
+                        }).padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = s.appProfileMediaDays == days, onClick = null)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("$days 天前", fontWeight = FontWeight.Medium)
+                            Text(appProfileMediaDaysDescription(days), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { edit = "" }) { Text("关闭") } }
+    ) else if (edit == "wechat") WechatUsageDialog(actions.onLoadWechatUsage, onDismiss = { edit = "" }) else if (edit.isNotEmpty()) IntValueDialog(
         title = if (edit == "battery") "最低执行电量" else "单文件自动清理上限",
         description = if (edit == "battery") "电量不足时等待，不改变清理内容。" else "大于上限的文件会保留，可在手动扫描中检查。",
         initialValue = if (edit == "battery") s.minBattery else s.maxFileMb,
@@ -254,9 +283,15 @@ private fun TaskSettings(state: SettingsUiState, actions: SettingsUiActions, bac
                 if (s.appProfileTier == 2) {
                     LuoShuGroupDivider()
                     LuoShuSwitchRow(Icons.Rounded.Image, "同时清理聊天媒体",
-                        "仅清理 30 天前的聊天图片与短视频缓存，默认关闭", s.appProfileUserMedia,
+                        "仅清理 ${s.appProfileMediaDays} 天前的聊天图片、视频与语音，默认关闭", s.appProfileUserMedia,
                         { if (it) edit = "media" else actions.onUpdateScheduler(s.copy(appProfileUserMedia = false)) })
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.Schedule, "聊天媒体保留天数",
+                        "只清理 ${s.appProfileMediaDays} 天前的聊天媒体", { edit = "mediaDays" })
                 }
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.DataUsage, "微信占用分析",
+                    "只读统计聊天图片、视频、缓存等各类大小", { edit = "wechat" })
             }
         }
         item { LuoShuSection("存储维护", "F2FS 垃圾回收与 TRIM") }
@@ -314,6 +349,53 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
     }
 }
 
+internal val APP_PROFILE_MEDIA_DAY_CHOICES = listOf(7, 30, 90)
+
+internal fun appProfileMediaDaysDescription(days: Int): String = when (days) {
+    7 -> "只保留最近一周的聊天媒体"
+    30 -> "推荐：保留最近一个月"
+    else -> "保留最近三个月"
+}
+
+/** 只读展示微信存储构成；统计在 Root 服务后台线程执行，这里只显示结果。 */
+@Composable
+private fun WechatUsageDialog(load: ((WechatUsage) -> Unit) -> Unit, onDismiss: () -> Unit) {
+    var usage by remember { mutableStateOf<WechatUsage?>(null) }
+    LaunchedEffect(Unit) { load { usage = it } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("微信存储构成") },
+        text = {
+            val current = usage
+            when {
+                current == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("正在只读统计，目录较大时需要几十秒…")
+                }
+                current.error != null -> Text("统计失败：${current.error}")
+                else -> Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text("共 ${formatUsageBytes(current.totalBytes)} · ${current.accounts} 个账号", fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(8.dp))
+                    for (entry in current.entries) {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(entry.label)
+                                Text(wechatUsageTierHint(entry.tier), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(formatUsageBytes(entry.bytes), fontWeight = FontWeight.Medium)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("统计只读，不会删除任何文件；实际清理范围取决于档位与聊天媒体开关。",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
 internal fun appProfileTierLabel(tier: Int): String = when (tier) {
     0 -> "保守"
     2 -> "增强"
@@ -321,7 +403,7 @@ internal fun appProfileTierLabel(tier: Int): String = when (tier) {
 }
 
 internal fun appProfileTierDescription(tier: Int): String = when (tier) {
-    0 -> "只清理日志与崩溃记录"
+    0 -> "只清理日志、崩溃记录与纯缓存（含微信朋友圈、头像缓存）"
     2 -> "再加朋友圈、小程序等较大的可重下载缓存"
     else -> "再加可自动重建的资源与图片缓存（推荐）"
 }

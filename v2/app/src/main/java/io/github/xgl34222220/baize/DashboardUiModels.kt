@@ -209,6 +209,8 @@ data class SchedulerUiState(
     val appProfileTier: Int = 1,
     /** 聊天图片/短视频等用户媒体，仅在增强档下生效且需用户明确开启。 */
     val appProfileUserMedia: Boolean = false,
+    /** 聊天媒体只清理多少天之前的内容（App 提供 7/30/90，模块接受 7~365）。 */
+    val appProfileMediaDays: Int = 30,
     /** F2FS GC + TRIM：充电且息屏时每日最多一次。 */
     val maintenanceEnabled: Boolean = true,
     val maintenanceSummary: String = "",
@@ -279,6 +281,7 @@ data class SchedulerUiState(
         .put("scan_root_workers", 0)
         .put("app_profile_tier", appProfileTier.coerceIn(0, 2))
         .put("app_profile_user_media", (appProfileUserMedia && appProfileTier == 2).flag())
+        .put("app_profile_media_days", appProfileMediaDays.coerceIn(7, 365))
         .put("maintenance_enabled", maintenanceEnabled.flag())
 
     companion object {
@@ -355,6 +358,7 @@ data class SchedulerUiState(
                 appProfileTier = json.optInt("app_profile_tier", 1).coerceIn(0, 2),
                 appProfileUserMedia = json.optInt("app_profile_user_media", 0) == 1 &&
                     json.optInt("app_profile_tier", 1) == 2,
+                appProfileMediaDays = json.optInt("app_profile_media_days", 30).coerceIn(7, 365),
                 maintenanceEnabled = json.optInt("maintenance_enabled", 1) == 1,
                 maintenanceSummary = maintenanceSummary(runtime.optJSONObject("maintenance"))
             )
@@ -414,5 +418,7 @@ data class DashboardActions(
     val resetScanPerformance: () -> Unit,
     val crash: () -> Unit,
     val photoCompression: () -> Unit = {},
+    /** 只读统计微信各类目录占用（Root、后台线程），结果回到主线程。 */
+    val wechatUsage: ((WechatUsage) -> Unit) -> Unit = { it(WechatUsage.failed("Root 服务尚未连接")) },
     val fileTrash: () -> Unit = {}
 )

@@ -34,6 +34,27 @@ class SchedulerUiStateMaintenanceTest {
         assertFalse(parsed.appProfileUserMedia)
         assertTrue(parsed.maintenanceEnabled)
         assertEquals("", parsed.maintenanceSummary)
+        assertEquals(30, parsed.appProfileMediaDays)
+    }
+
+    @Test fun mediaDaysAreClampedAndSaved() {
+        assertEquals(90, SchedulerUiState(appProfileMediaDays = 90).toJson().getInt("app_profile_media_days"))
+        assertEquals(7, SchedulerUiState(appProfileMediaDays = 1).toJson().getInt("app_profile_media_days"))
+        assertEquals(7, SchedulerUiState.fromJson(JSONObject().put("app_profile_media_days", 7)).appProfileMediaDays)
+    }
+
+    @Test fun wechatUsageParsesModuleOutput() {
+        val usage = WechatUsage.parse(
+            "image|聊天图片|5368709120|media\nvideo|聊天视频|0|media\nreceived|收到的文件（不清理）|1024|protected\n" +
+                "bad line\nevil|x|notanumber|media\ntotal|微信总占用|6442450944|total\naccounts|2\n"
+        )
+        assertEquals(listOf("image", "received"), usage.entries.map { it.key })
+        assertEquals(6442450944L, usage.totalBytes)
+        assertEquals(2, usage.accounts)
+        assertTrue(usage.installed)
+        assertEquals("5.0 GB", formatUsageBytes(5368709120L))
+        assertEquals("不清理", wechatUsageTierHint("protected"))
+        assertFalse(WechatUsage.parse("").installed)
     }
 
     @Test fun maintenanceSummaryIsCompactChinese() {

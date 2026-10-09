@@ -64,6 +64,16 @@ class AppProfileRulesTest {
         assertEquals(5, ReviewRuleCatalog.profileRules(rules, ReviewRuleCatalog.AppProfile(tier = 1), roots).single().days)
     }
 
+    @Test fun wechatPlaceholdersAreNeverPreviewedAndMediaDaysApply() {
+        val all = ReviewRuleCatalog.profileRules(shipped(), ReviewRuleCatalog.AppProfile(tier = 2, userMedia = true, mediaDays = 90), roots)
+        assertFalse(all.toString(), all.any { '{' in it.pattern || '}' in it.pattern })
+        assertTrue(all.filter { it.packageRelative == "Tencent/MobileQQ/chatpic" }.all { it.days == 90 })
+        assertTrue(all.any { it.packageRelative == "MicroMsg/CheckResUpdate" })
+        val parsed = ReviewRuleCatalog.AppProfile.read(folder.newFile("days.conf").apply { writeText("app_profile_media_days=3\n") })
+        assertEquals(7, parsed.mediaDays)
+        assertEquals(30, ReviewRuleCatalog.AppProfile.read(File(folder.root, "none.conf")).mediaDays)
+    }
+
     @Test fun configDefaultsAndParsing() {
         assertEquals(ReviewRuleCatalog.AppProfile(), ReviewRuleCatalog.AppProfile.read(File(folder.root, "missing.conf")))
         val config = folder.newFile("config.conf").apply {
@@ -105,7 +115,7 @@ class AppProfileRulesTest {
         val standard = scan(ReviewRuleCatalog.AppProfile(tier = 1))
         assertTrue(standard.toString(), standard.any { it.startsWith(log.parentFile!!.canonicalPath) })
         assertFalse(standard.any { it.contains("databases") || it.contains("chatpic") })
-        val media = scan(ReviewRuleCatalog.AppProfile(tier = 2, userMedia = true))
+        val media = scan(ReviewRuleCatalog.AppProfile(tier = 2, userMedia = true, mediaDays = 7))
         assertTrue(media.toString(), media.any { it.contains(pic.parentFile!!.name) })
         assertFalse(media.any { it.startsWith(db.parentFile!!.canonicalPath) })
     }

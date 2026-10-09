@@ -55,7 +55,7 @@ for shell in "${shells[@]}"; do
   [ "$(grep -c '^com\.tencent\.mm|cache|' "$T/e20")" = 1 ] || fail "$shell: duplicate merged path"
   grep -qx 'com.tencent.mm|cache|0' "$T/e20" || fail "$shell: enhanced keeps shortest retention"
   grep -qx 'com.tencent.mm|cache|1' "$T/e10" || fail "$shell: standard retention"
-  grep -q 'com.tencent.mm|cache' "$T/e00" && fail "$shell: conservative must not clean whole caches"
+  grep -q 'com.tencent.mobileqq|cache' "$T/e00" && fail "$shell: QQ conservative must not clean whole caches"
 
   # Hostile rules are rejected by lint and skipped by compile; valid lines still compile.
   cat >"$T/bad.rules" <<'EOF'

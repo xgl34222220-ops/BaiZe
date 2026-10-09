@@ -257,7 +257,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                     theme = { CleanerNavigation.open(this, Intent(this, ThemeSettingsActivity::class.java)) },
                     reconnect = { reconnectService() },
                     resetScanPerformance = { resetScanPerformance() },
-                    crash = { showCrashDialog() }
+                    crash = { showCrashDialog() },
+                    wechatUsage = { loadWechatUsage(it) }
                 ),
                 appearance = appearance,
                 overlay = {
@@ -1689,6 +1690,23 @@ class MiuixDashboardActivity : ComponentActivity() {
             if (success) FileOrganizerWorker.ensureWatchdog(this@MiuixDashboardActivity)
             loadScheduler()
             refreshModuleState()
+        }
+    }
+
+    private fun loadWechatUsage(onResult: (WechatUsage) -> Unit) {
+        val service = rootService ?: return onResult(WechatUsage.failed("Root 服务尚未连接"))
+        lifecycleScope.launch {
+            val response = withContext(Dispatchers.IO) {
+                runCatching { JSONObject(service.runMaintenanceTool("wechat-usage", "{}")) }
+            }
+            val json = response.getOrNull()
+            onResult(
+                if (json?.optBoolean("success") == true) WechatUsage.parse(json.optString("output"))
+                else WechatUsage.failed(
+                    json?.optString("message").orEmpty().ifBlank { json?.optString("error").orEmpty() }
+                        .ifBlank { response.exceptionOrNull()?.message ?: "统计失败" }
+                )
+            )
         }
     }
 
