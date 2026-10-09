@@ -12,7 +12,9 @@ done
 
 grep -Fq 'UiStyle.MATERIAL -> VideoSkin.MATERIAL3' "$HOME_ROUTE"
 grep -Fq 'UiStyle.MIUIX -> VideoSkin.MIUIX' "$HOME_ROUTE"
-grep -Eq 'VideoHomeScreenMiuix\(state, scheduler, actions, onOpenClean([,)])' "$HOME_ROUTE"
+# Both skins render the single LuoShu home (the pass-through VideoHomeScreenMiuix was removed).
+grep -Eq 'LuoShuHomeScreen\(state, scheduler, actions, onOpenClean([,)])' "$HOME_ROUTE"
+! grep -Fq 'VideoHomeScreenMiuix' "$HOME_ROUTE"
 ! grep -Fq 'actions.copy(' "$HOME_ROUTE"
 
 # Rebuilt architecture: foreground actions belong to the App, never to module shell tasks.

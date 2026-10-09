@@ -133,7 +133,7 @@ class RulesPolicyVisualReviewTest {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    private val actions = CleanCenterActions({}, {}, {}, {}, {}, {})
+    private val actions = CleanCenterActions({}, {}, {}, {}, {})
     private val policyState = CleanupPolicyUiState(
         connected = true,
         activePolicy = CleanupPolicy.BALANCED,

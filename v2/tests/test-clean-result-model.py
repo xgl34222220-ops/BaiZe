@@ -8,7 +8,7 @@ ACTIVITY = (ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize/ResumableSm
 SHELL = (ROOT / "v2/module/scripts/cache-snapshot-clean.sh").read_text()
 CACHE_SERVICE = (APP / "root/BaiZeRootService.kt").read_text()
 WORKBENCH = (APP / "ScanWorkbenchActivity.kt").read_text()
-CACHE_ACTIVITY = (APP / "CacheActivity.kt").read_text()
+CACHE_ACTIVITY = (APP / "CacheActivity.kt").read_text()  # 旧缓存页现为重定向入口
 DASHBOARD = (APP / "MiuixDashboardActivity.kt").read_text()
 
 
@@ -55,8 +55,11 @@ require('cacheMutated' in WORKBENCH and '实际删除 $cacheDeletedFiles 个文�
         "workbench still does not gate success on real cache mutations")
 require('profile.getModuleState()).optJSONArray("appDetails")' not in WORKBENCH,
         "workbench still reuses stale scan app details as cleanup results")
-require('val mutated = deletedFiles > 0L || cleanedCandidates > 0' in CACHE_ACTIVITY,
-        "cache detail page still treats exit code as cleanup success")
+# 旧 CacheActivity 已不再有自己的清理实现，只能把 Intent 交给扫描工作台（其结果模型在上方已校验）。
+require('CleanerNavigation.scan(this, LegacyEntryRedirects.CACHE_PROFILE)' in CACHE_ACTIVITY,
+        "legacy cache page must redirect to the workbench cache profile")
+require('runModuleTask(' not in CACHE_ACTIVITY and 'cleanSelected(' not in CACHE_ACTIVITY,
+        "legacy cache page must not keep a second cleanup implementation")
 dashboard_mutation = next((line for line in DASHBOARD.splitlines() if 'val mutated =' in line), '')
 require(all(evidence in dashboard_mutation for evidence in (
     'deletedBytes > 0L', 'deletedFiles > 0L', 'deletedDirectories > 0L', 'cleanedCandidates > 0'

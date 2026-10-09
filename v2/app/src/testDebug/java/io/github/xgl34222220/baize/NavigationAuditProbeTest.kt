@@ -114,12 +114,14 @@ class NavigationAuditProbeTest {
     @Test fun rulesAndProtectionKeepUniqueActionsWithoutDuplicateDeepPages() {
         val opened = mutableListOf<String>()
         compose.setContent { BaiZeTheme(AppearanceSettings()) {
-            CleanCenterRoute(CleanCenterActions({}, { opened += "safe" }, { opened += "cache" },
+            CleanCenterRoute(CleanCenterActions({}, { opened += "safe" },
                 { opened += "policy" }, { opened += "quarantine" }, { opened += it }))
         } }
         compose.onNodeWithText("完整深度清理").assertDoesNotExist()
         compose.onNodeWithText("卸载残留").assertDoesNotExist()
         compose.onNodeWithText("扫描并选择清理").assertDoesNotExist()
+        // 应用缓存已由扫描工作台默认扫描与「即时缓存」覆盖，规则与保护页不再重复提供。
+        compose.onNodeWithText("应用缓存").assertDoesNotExist()
         compose.onNodeWithText("清理策略").performScrollTo().performClick()
         compose.onNodeWithText("隔离区").performScrollTo().performClick()
         assertEquals(listOf("policy", "quarantine"), opened)

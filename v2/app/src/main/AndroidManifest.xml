@@ -48,11 +48,19 @@
             "扫描快照持久化 + 断点续清" 子系统对用户不可达。
             ResumableSmartScanActivity 同时绑定两个服务，是 Persistent 版的后继。
         -->
-        <activity android:name=".PersistentSmartScanActivity" android:exported="false" />
         <activity android:name=".ResumableSmartScanActivity" android:exported="false" />
         <!-- 旧入口名保留为别名，路由到功能更完整的续清流程。 -->
         <activity-alias
             android:name=".SmartScanActivity"
+            android:targetActivity=".ResumableSmartScanActivity"
+            android:exported="false" />
+        <!--
+            PersistentSmartScanActivity 的实现已删除（ResumableSmartScanActivity 是它的严格后继，
+            同样绑定 PersistentCleanPlanRootService 并额外支持断点续清）。保留组件名作为别名，
+            旧 Intent / 固定快捷方式继续可用。
+        -->
+        <activity-alias
+            android:name=".PersistentSmartScanActivity"
             android:targetActivity=".ResumableSmartScanActivity"
             android:exported="false" />
         <activity android:name=".ApkScanActivity" android:exported="false" />

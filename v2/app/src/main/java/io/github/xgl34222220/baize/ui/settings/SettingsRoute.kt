@@ -21,7 +21,6 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
-import io.github.xgl34222220.baize.ui.settings.miuix.VideoSettingsScreenMiuix
 import io.github.xgl34222220.baize.ui.settings.miuix.LuoShuSettingsHub
 import io.github.xgl34222220.baize.ui.logs.LogsRoute
 
@@ -105,8 +104,8 @@ fun SettingsRoute(
                 onOpenDetails = { CleanerNavigation.openFrom(context, Intent(context, AuditActivity::class.java)) },
                 onBack = back)
         }
-        if (style == UiStyle.MIUIX) LuoShuSettingsHub(state, actions, onDetailChanged, runtimeLogs)
-        else VideoSettingsScreenMiuix(state, actions, onDetailChanged, runtimeLogs)
+        // 两种皮肤共用同一个设置中心（原 VideoSettingsScreenMiuix 只是转发包装，已删除）。
+        LuoShuSettingsHub(state, actions, onDetailChanged, runtimeLogs)
     }
 }
 

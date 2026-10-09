@@ -11,7 +11,6 @@ import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.history.miuix.HistoryScreenMiuix
 import io.github.xgl34222220.baize.ui.history.miuix.VideoHistoryScreenMiuix
-import io.github.xgl34222220.baize.ui.history.material.HistoryScreenMaterial
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -43,7 +42,6 @@ class HistoryZeroByteUiTest {
     }
 
     @Test fun directoryOnlyMiuixHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(0)
-    @Test fun directoryOnlyMaterialHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(1)
     @Test fun directoryOnlyVideoHistoryDoesNotTurnDirectoriesIntoFiles() = directoryHistory(2)
     @Test fun zeroByteFilesAndDirectoriesKeepSeparateActualHistoryCounts() = directoryHistory(0, files = 2)
 
@@ -57,7 +55,6 @@ class HistoryZeroByteUiTest {
             BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
                 when (style) {
                     0 -> HistoryScreenMiuix(state, actions)
-                    1 -> HistoryScreenMaterial(state, actions)
                     else -> VideoHistoryScreenMiuix(state, actions)
                 }
             } }

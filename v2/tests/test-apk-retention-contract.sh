@@ -31,8 +31,9 @@ grep -Fq '0 天表示不保留' "$SCREEN"
 grep -Fq 'onConfirm = actions.onApkPackageDaysChanged' "$SCREEN"
 # #222 disables the row while settings are saving; the row still opens the same editor.
 grep -Fq 'ValueRow("保留时间", "${state.apkPackageDays} 天", enabled = !state.saving) { showApkDaysDialog = true }' "$SCREEN"
-# Both appearance routes use this same retention editor.
-grep -Fq 'CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)' "${SCREEN%/*}/VideoCleanScreenMiuix.kt"
+# Both appearance routes use this same retention editor (one screen, skin only differs).
+grep -Fq 'CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)' "$ROUTE"
+test ! -e "${SCREEN%/*}/VideoCleanScreenMiuix.kt"
 
 PATHS="$ROOT/v2/module/scripts/apk-paths.sh"
 grep -Fq '_apk_base_real=$(readlink -f "$_apk_base"' "$PATHS"
