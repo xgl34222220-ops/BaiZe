@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -22,6 +23,8 @@ class BaiZeScanTileService : TileService() {
         if (isLocked) unlockAndRun { openScan() } else openScan()
     }
 
+    // The Intent overload is only reached below Android 14, where it is still supported.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openScan() {
         val intent = LauncherShortcuts.intent(this, LauncherShortcut.SCAN)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
