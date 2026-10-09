@@ -125,8 +125,6 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
         item {
             LuoShuGroup {
                 LuoShuNavigationRow(Icons.Rounded.Palette, "外观与主题", "颜色与显示效果", actions.onOpenAppearance)
-                LuoShuGroupDivider()
-                UninstallWatcherSwitchRow()
             }
         }
         item { LuoShuSection("管理与维护") }
@@ -145,6 +143,9 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务记录、原始输出与连接诊断", { open("logs") })
                 }
+                // 放在分组末尾，不改变上方既有入口的位置。
+                LuoShuGroupDivider()
+                UninstallWatcherSwitchRow()
             }
         }
         item {
