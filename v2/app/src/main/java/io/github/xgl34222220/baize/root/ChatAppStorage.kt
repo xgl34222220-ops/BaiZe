@@ -179,7 +179,7 @@ internal class ChatStorageScanner(
                             val name = child.name
                             if (name.startsWith('.') || ChatAppPaths.isLink(child)) continue
                             if (child.isDirectory) {
-                                if (depth + 1 < maxDepth) stack.add(child to depth + 1) else truncated = true
+                                if (depth + 1 < maxDepth) { stack.add(child to depth + 1) } else { truncated = true }
                                 continue
                             }
                             if (!child.isFile || skippedName(name)) continue

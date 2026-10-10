@@ -18,7 +18,7 @@ internal object UserMediaGuard {
     /** 卷根之后的相对路径；不在共享存储内时返回 null。 */
     fun relative(path: String): String? = volumePrefix.matchEntire(path)?.groupValues?.get(1)
 
-    /** DCIM/**、Pictures/**、Movies/** 以及系统录屏目录下的文件。 */
+    /** DCIM、Pictures、Movies 目录（含子目录）以及系统录屏目录下的文件。 */
     fun isUserMedia(path: String): Boolean {
         val relative = relative(path)?.lowercase() ?: return false
         if (!relative.contains('/')) return false
