@@ -57,31 +57,22 @@ internal fun LuoShuPageHeader(
 }
 
 @Composable
-internal fun LuoShuHeaderButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            Modifier.size(44.dp),
-            shape = CircleShape,
-            color = BaiZeTokens.colors.surfaceOverlay,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shadowElevation = 2.dp
-        ) {
-            IconButton(onClick = onClick, modifier = Modifier.fillMaxSize()) {
-                Icon(icon, label, Modifier.size(21.dp))
-            }
-        }
-    }
-}
+internal fun LuoShuHeaderButton(icon: ImageVector, label: String, onClick: () -> Unit) =
+    io.github.xgl34222220.baize.ui.components.BaiZeFloatingIconButton(icon, label, onClick)
 
+/** 分组标题：卡片上方的小号灰字；副标题为一行说明。 */
 @Composable
 internal fun LuoShuSection(title: String, subtitle: String = "") {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+    Column(Modifier.padding(start = 4.dp, top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (subtitle.isNotBlank()) {
             Text(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -91,10 +82,10 @@ internal fun LuoShuSection(title: String, subtitle: String = "") {
 internal fun LuoShuGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(24.dp),
         color = BaiZeTokens.colors.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 2.dp
+        shadowElevation = 0.dp
     ) {
         Column(content = content)
     }
@@ -103,7 +94,7 @@ internal fun LuoShuGroup(modifier: Modifier = Modifier, content: @Composable Col
 @Composable
 internal fun LuoShuGroupDivider() {
     HorizontalDivider(
-        Modifier.padding(start = 74.dp, end = 16.dp),
+        Modifier.padding(start = 70.dp, end = 16.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .06f)
     )
 }
@@ -178,9 +169,10 @@ internal fun LuoShuSwitchRow(
             }
         }
         Spacer(Modifier.width(8.dp))
+        val haptic = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptic()
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = { haptic(); onCheckedChange(it) },
             enabled = enabled,
             modifier = Modifier.semantics { contentDescription = title }
         )
@@ -193,32 +185,10 @@ internal fun LuoShuShortcut(
     subtitle: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = BaiZeTokens.colors.surfaceRaised,
-        shadowElevation = 2.dp
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            BaiZeIconTile(icon)
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold)
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
+    modifier: Modifier = Modifier,
+    tone: io.github.xgl34222220.baize.ui.theme.BaiZeTone = io.github.xgl34222220.baize.ui.theme.BaiZeTones.blue,
+    actionLabel: String? = null
+) = io.github.xgl34222220.baize.ui.components.BaiZeToolTile(icon, tone, title, subtitle, onClick, modifier, actionLabel)
 
 @Composable
 private fun LuoShuIconTile(icon: ImageVector) = BaiZeIconTile(icon)

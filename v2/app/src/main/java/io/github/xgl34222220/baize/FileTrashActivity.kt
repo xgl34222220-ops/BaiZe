@@ -274,6 +274,7 @@ internal fun FileTrashScreen(state: FileTrashUiState, actions: FileTrashActions)
         LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("trash-list"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { TrashAreaSwitch(enabled = !state.busy) }
             item { TrashPanel {
                 Text("${state.entries.size} 项 · ${fileSize(state.occupied)}", style = MaterialTheme.typography.titleLarge)
                 Text("记录容量 / 上限 ${fileSize(state.budget)}", style = MaterialTheme.typography.bodySmall,
@@ -352,6 +353,21 @@ private fun TrashPanel(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+/**
+ * 记录 → 回收站 的页内切换：用户只看到一个「回收站」入口。
+ * 隔离区（Root 高风险隔离）仍是独立页面与后端，恢复/永久删除的确认流程不变。
+ */
+@Composable
+private fun TrashAreaSwitch(enabled: Boolean) {
+    val context = LocalContext.current
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = true, onClick = {}, label = { Text("文件回收站") })
+        FilterChip(selected = false, enabled = enabled, onClick = {
+            CleanerNavigation.openFrom(context, android.content.Intent(context, QuarantineActivity::class.java))
+        }, label = { Text("隔离区") }, modifier = Modifier.testTag("trash-open-quarantine"))
+    }
+}
+
 @Composable
 private fun TrashHelp(state: FileTrashUiState, actions: FileTrashActions) {
     val context = LocalContext.current

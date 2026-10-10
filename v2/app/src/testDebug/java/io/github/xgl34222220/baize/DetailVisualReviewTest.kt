@@ -64,7 +64,7 @@ class DetailVisualReviewTest {
     @Test fun organizer() = render("organizer") {
         FileOrganizerScreen(
             FileOrganizerUiState(connected = true, status = "上次归类完成，可继续整理新下载的文件", lastTotal = 36, lastBytes = 612L * 1024 * 1024),
-            FileOrganizerScheduleSettings(), "", {}, {}, {}, {}, {}, {}
+            FileOrganizerScheduleSettings(), {}, {}, {}, {}, {}
         )
     }
 

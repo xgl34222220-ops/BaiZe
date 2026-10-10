@@ -38,7 +38,6 @@ class FileOrganizerActivity : ComponentActivity() {
     private val reviewHydration = ReviewHydrationGate()
     private var state by mutableStateOf(FileOrganizerUiState(restoringReview = true, status = "正在恢复归类记录…"))
     private var schedule by mutableStateOf(FileOrganizerScheduleSettings())
-    private var scheduleSavedText by mutableStateOf("")
     private var scanJob: Job? = null
     private val scanGeneration = ScanLoadGeneration()
 
@@ -81,16 +80,11 @@ class FileOrganizerActivity : ComponentActivity() {
                 FileOrganizerScreen(
                     state = state,
                     schedule = schedule,
-                    scheduleSavedText = scheduleSavedText,
                     onBack = ::finish,
                     onOneTap = ::oneTapOrganize,
                     onUndo = ::undoLast,
                     onStop = ::stopTask,
-                    onScheduleChange = {
-                        schedule = it
-                        scheduleSavedText = ""
-                    },
-                    onSaveSchedule = ::saveSchedule,
+                    onOpenAutomationSettings = ::openAutomationSettings,
                     onToggleItem = ::toggleItem,
                     onToggleCategory = ::toggleCategory,
                     onToggleAll = ::toggleAll,
@@ -157,41 +151,10 @@ class FileOrganizerActivity : ComponentActivity() {
         }
     }
 
-    private fun saveSchedule() {
-        val root = service ?: run {
-            scheduleSavedText = "Root 服务尚未连接，计划没有保存"
-            return
-        }
-        scheduleSavedText = "正在保存到 Root Supervisor…"
-        lifecycleScope.launch {
-            val payload = JSONObject()
-                .put("schedule_organize_enabled", if (schedule.enabled) 1 else 0)
-                .put("schedule_organize_minutes", schedule.intervalMinutes)
-                .put("schedule_organize_hours", ((schedule.intervalMinutes + 59) / 60).coerceAtLeast(1))
-                .put("organize_charging_only", if (schedule.chargingOnly) 1 else 0)
-                .put("organize_screen_off_only", if (schedule.screenOffOnly) 1 else 0)
-                .put("organize_device_idle_only", if (schedule.idleOnly) 1 else 0)
-                .put("organize_run_immediately", if (schedule.runImmediatelyOnEnable) 1 else 0)
-                .put("organizer_conflict_policy", schedule.conflictPolicy.coerceIn(0, 2))
-            if (schedule.enabled) payload.put("enabled", 1)
-            val saved = withContext(Dispatchers.IO) {
-                runCatching { JSONObject(root.saveSchedulerConfig(payload.toString())) }.getOrElse {
-                    JSONObject().put("error", "save_failed").put("message", it.message ?: it.javaClass.simpleName)
-                }
-            }
-            if (!saved.optBoolean("success", false)) {
-                scheduleSavedText = saved.optString("message", "Root 计划保存失败")
-                return@launch
-            }
-            FileOrganizerWorker.cacheUiSettings(this@FileOrganizerActivity, schedule)
-            FileOrganizerWorker.ensureWatchdog(this@FileOrganizerActivity)
-            val immediateText = if (schedule.enabled && schedule.runImmediatelyOnEnable) "，开启时会加入立即执行队列" else ""
-            scheduleSavedText = if (schedule.enabled) {
-                "Root 计划已保存：每 ${FileOrganizerWorker.intervalLabel(schedule.intervalMinutes)}检查一次$immediateText"
-            } else "定时归类已关闭"
-            FileOrganizerWorker.recordResult(this@FileOrganizerActivity, scheduleSavedText)
-            loadRootSchedule()
-        }
+    /** 自动归类的唯一设置位置：清理 Tab「自动清理」。只导航，不写任何配置。 */
+    private fun openAutomationSettings() {
+        startActivity(MiuixDashboardActivity.automationIntent(this))
+        finish()
     }
 
     private fun oneTapOrganize() {

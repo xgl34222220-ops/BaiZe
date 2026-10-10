@@ -457,7 +457,7 @@ private fun AuditHeader(
     onRefresh: () -> Unit,
     onClear: () -> Unit
 ) {
-    DetailPageHeader("清理记录", message, onBack) {
+    DetailPageHeader("清理审计", message, onBack) {
         IconButton(onClick = onRefresh, enabled = !loading) { Icon(Icons.Rounded.Refresh, contentDescription = "刷新") }
         IconButton(onClick = onClear, enabled = !loading) { Icon(Icons.Rounded.DeleteOutline, contentDescription = "清空审计") }
     }

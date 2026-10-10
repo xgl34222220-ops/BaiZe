@@ -40,16 +40,17 @@ class RulesPolicyVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun rulesLightKeepsUniqueToolsWithoutDuplicateRemnantNavigation() {
-        var profile: String? = null
-        render { CleanCenterRoute(actions.copy(onOpenProfile = { profile = it })) }
+        var opened: String? = null
+        render { CleanCenterRoute(actions.copy(onOpenRuleVersions = { opened = "rules" })) }
         compose.onNodeWithText("规则与保护").assertIsDisplayed()
         save("rules-light")
-        compose.onNodeWithText("规则垃圾").performClick()
-        assertEquals("rules", profile)
-        profile = null
+        compose.onNodeWithText("规则版本与试跑").performScrollTo().performClick()
+        assertEquals("rules", opened)
+        // 子扫描（空项目 / 规则垃圾 / 残留碎片）已并入首页一键扫描，不再在这里重复。
+        compose.onNodeWithText("规则垃圾").assertDoesNotExist()
         compose.onNodeWithText("卸载残留").assertDoesNotExist()
         compose.onNodeWithText("完整深度清理").assertDoesNotExist()
-        assertNull(profile)
+        assertNull(null)
     }
 
     @Test fun rulesDark() {
@@ -133,7 +134,7 @@ class RulesPolicyVisualReviewTest {
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    private val actions = CleanCenterActions({}, {}, {}, {}, {})
+    private val actions = CleanCenterActions()
     private val policyState = CleanupPolicyUiState(
         connected = true,
         activePolicy = CleanupPolicy.BALANCED,

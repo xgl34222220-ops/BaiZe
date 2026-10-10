@@ -74,6 +74,8 @@ data class DashboardUiState(
     val rawLog: String = "",
     val lastTaskTime: String = "",
     val protectedItems: List<ProtectedUiItem> = emptyList(),
+    /** 存在未过期的续清计划时，首页显示「继续上次清理」横幅（只读判断，校验仍由续清页完成）。 */
+    val resumablePlan: Boolean = false,
     val history: List<HistoryUiItem> = emptyList(),
     val scanPerformance: ScanPerformanceUiState = ScanPerformanceUiState()
 ) {
@@ -425,5 +427,11 @@ data class DashboardActions(
     /** 只读统计微信各类目录占用（Root、后台线程），结果回到主线程。 */
     val wechatUsage: ((WechatUsage) -> Unit) -> Unit = { it(WechatUsage.failed("Root 服务尚未连接")) },
     val fileTrash: () -> Unit = {},
-    val swipeReview: () -> Unit = {}
+    val swipeReview: () -> Unit = {},
+    /** 直接打开存储分析的某个视图（清理 Tab「专项清理」入口）。 */
+    val storageView: (StorageToolMode) -> Unit = {},
+    /** 清理审计（AuditActivity）。唯一入口在记录 Tab。 */
+    val cleanupAudit: () -> Unit = {},
+    /** 规则版本与试跑（RuleBundleActivity）。唯一入口在 设置 → 规则与保护。 */
+    val ruleVersions: () -> Unit = {}
 )

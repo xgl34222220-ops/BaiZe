@@ -57,6 +57,7 @@ class RecoverySmoke(base.Smoke):
 
     def pending_screen(self, name: str) -> None:
         self.tap('设置', name + '-settings')
+        self.tap('规则与保护', name + '-rules-center', scroll=True)
         self.tap('保护名单', name + '-whitelist', scroll=True)
         self.top('WhitelistActivity')
         self.tap('检查旧版保护', name + '-recovery')
@@ -90,6 +91,7 @@ class RecoverySmoke(base.Smoke):
                 base.require(raw_manifest == expected_manifest, "Relaunch rewrote the immutable quarantine record")
             expected_manifest = raw_manifest
             self.tap("设置", attempt + "-settings")
+            self.tap("规则与保护", attempt + "-rules-center", scroll=True)
             self.tap("保护名单", attempt + "-whitelist", scroll=True)
             self.tap("检查旧版保护", attempt + "-review")
             self.top("LegacyProtectionRecoveryActivity")

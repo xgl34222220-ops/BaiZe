@@ -49,29 +49,31 @@ fun DetailPageHeader(
         Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
             VideoIconButton(Icons.AutoMirrored.Rounded.ArrowBack, "返回", onBack)
             Text(title, Modifier.weight(1f).padding(horizontal = 12.dp),
-                fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface)
+                fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) { actions() }
         }
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(horizontal = 4.dp),
-            fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (extra != null) extra()
     }
 }
 
 @Composable
 fun DetailSectionHeader(title: String, subtitle: String = "", modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(top = 18.dp, bottom = 9.dp)) {
-        Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface)
-        if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(top = 3.dp),
-            fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 20.dp, bottom = 8.dp)) {
+        Text(title, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(top = 2.dp),
+            fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .8f),
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 fun DetailGlassPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(24.dp)
     val surface = BaiZeTokens.colors.surfaceRaised
     val dark = surface.luminance() < .3f
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)
@@ -152,7 +154,7 @@ fun DetailEmptyState(title: String, description: String, modifier: Modifier = Mo
 fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)
-        .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised)) {
+        .clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised)) {
         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 52.dp).padding(horizontal = 15.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -185,24 +187,26 @@ fun DetailResultRow(
     onDetails: (() -> Unit)? = null
 ) {
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
-    val shape = RoundedCornerShape(topStart = if (first) 16.dp else 0.dp, topEnd = if (first) 16.dp else 0.dp,
-        bottomStart = if (last) 16.dp else 0.dp, bottomEnd = if (last) 16.dp else 0.dp)
+    val shape = RoundedCornerShape(topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
+        bottomStart = if (last) 24.dp else 0.dp, bottomEnd = if (last) 24.dp else 0.dp)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)
         .clickable(onClickLabel = "查看完整路径与详情") { if (onDetails != null) onDetails() else showDetails = true }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-            if (selected != null) Checkbox(checked = selected, onCheckedChange = { onToggle() },
+            if (selected != null) BaiZeRoundCheck(if (selected) androidx.compose.ui.state.ToggleableState.On
+                else androidx.compose.ui.state.ToggleableState.Off, onClick = onToggle,
                 enabled = selectionEnabled, modifier = Modifier.size(48.dp))
-            else Surface(shape = RoundedCornerShape(11.dp), color = accent.copy(alpha = .08f)) {
-                Icon(icon, null, Modifier.padding(8.dp).size(20.dp), tint = accent)
+            else Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = .12f)) {
+                Icon(icon, null, Modifier.padding(9.dp).size(22.dp), tint = accent)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(title, Modifier.weight(1f), fontSize = 14.5.sp, lineHeight = 20.sp,
                         fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (value.isNotBlank()) Text(value, Modifier.widthIn(max = 94.dp), fontSize = 12.sp, lineHeight = 18.sp,
-                        fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                    if (value.isNotBlank()) Text(value, Modifier.widthIn(max = 94.dp), fontSize = 13.sp, lineHeight = 18.sp,
+                        fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
                 }
                 if (summary.isNotBlank()) Text(summary, fontSize = 12.sp, lineHeight = 17.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)

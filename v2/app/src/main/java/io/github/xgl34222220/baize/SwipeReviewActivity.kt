@@ -84,7 +84,8 @@ class SwipeReviewActivity : ComponentActivity() {
                     onBack = ::finish, onFolder = model::open, onDecide = model::decide, onUndo = model::undo,
                     onApply = model::requestApply, onConfirmApply = model::apply, onDismissApply = model::dismissApply,
                     onUndoBatch = model::undoBatch, onStop = model::stop, onPermission = storagePermission::launch,
-                    onTrash = { CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java)) }))
+                    onTrash = { CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java)) },
+                    onResetSeen = model::resetSeen))
             }
         }
     }
@@ -101,7 +102,9 @@ internal data class SwipeReviewUiState(
     val applyProgress: String = "",
     val confirmApply: Boolean = false,
     val status: String = "",
-    val lastBatch: List<TrashEntry> = emptyList()
+    val lastBatch: List<TrashEntry> = emptyList(),
+    /** 当前文件夹里已看过（保留或已移入回收站）而被排除的文件数。 */
+    val seenCount: Int = 0
 ) {
     val busy: Boolean get() = loading || applying
 }
@@ -117,7 +120,8 @@ internal data class SwipeReviewActions(
     val onUndoBatch: () -> Unit = {},
     val onStop: () -> Unit = {},
     val onPermission: () -> Unit = {},
-    val onTrash: () -> Unit = {}
+    val onTrash: () -> Unit = {},
+    val onResetSeen: () -> Unit = {}
 )
 
 internal class SwipeReviewViewModel(application: Application) : AndroidViewModel(application) {
@@ -126,6 +130,9 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
     private var loadJob: Job? = null
     private var opened = false
     private val stopRequested = AtomicBoolean(false)
+    private val memory = SwipeReviewMemory(File(application.filesDir, SwipeReviewMemory.FILE_NAME))
+    /** 「已看过」记录的读写串行化在一个 IO 线程上，避免与读取文件夹并发。 */
+    private val memoryDispatcher = Dispatchers.IO.limitedParallelism(1)
 
     fun ensureOpened() { if (!opened) open(state.value.folder) }
 
@@ -149,27 +156,53 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
         mutableState.update { it.copy(folder = folder, loading = true, permissionRequired = false,
             session = SwipeReviewSession(), confirmApply = false, status = message.ifBlank { "正在读取${folder.label}…" }) }
         loadJob = viewModelScope.launch {
-            val items = withContext(Dispatchers.IO) {
+            val (items, seen) = withContext(memoryDispatcher) {
                 runCatching {
-                    val root = Environment.getExternalStorageDirectory().canonicalFile
-                    SwipeReviewSource.list(File(root, folder.relativePath)) { !isActive }
-                }.getOrDefault(emptyList())
+                    SwipeReviewSource.listUnseen(folderDirectory(folder), memory) { !isActive }
+                }.getOrDefault(emptyList<SwipeItem>() to 0)
             }
-            mutableState.update { it.copy(loading = false, session = SwipeReviewSession(items), status = message.ifBlank {
-                if (items.isEmpty()) "${folder.label}中没有可整理的文件"
-                else "共 ${items.size} 个文件${if (items.size >= SwipeReviewSource.MAX_ITEMS) "（仅最新 ${SwipeReviewSource.MAX_ITEMS} 个）" else ""}，从最新开始"
+            mutableState.update { it.copy(loading = false, session = SwipeReviewSession(items), seenCount = seen, status = message.ifBlank {
+                val seenText = if (seen > 0) "，已跳过 $seen 个看过的文件" else ""
+                if (items.isEmpty()) "${folder.label}中没有待整理的文件$seenText"
+                else "共 ${items.size} 个文件${if (items.size >= SwipeReviewSource.MAX_ITEMS) "（仅最新 ${SwipeReviewSource.MAX_ITEMS} 个）" else ""}$seenText，从最新开始"
             }) }
         }
     }
 
+    private fun folderDirectory(folder: SwipeFolder): File =
+        File(Environment.getExternalStorageDirectory().canonicalFile, folder.relativePath)
+
     fun decide(decision: SwipeDecision) {
         if (state.value.busy) return
+        val item = state.value.session.current ?: return
         mutableState.update { it.copy(session = it.session.decide(decision)) }
+        // 「保留」立即记为已看过；「删除」只有真正移入回收站后才记录（见 apply）。
+        if (decision == SwipeDecision.KEEP) viewModelScope.launch(memoryDispatcher) {
+            memory.remember(listOf(item), SwipeDecision.KEEP)
+        }
     }
 
     fun undo() {
-        if (state.value.busy) return
+        val current = state.value
+        if (current.busy || !current.session.canUndo) return
+        val undone = current.session.items.getOrNull(current.session.decisions.lastIndex)
+        val undoneDecision = current.session.decisions.lastOrNull()
         mutableState.update { it.copy(session = it.session.undo()) }
+        if (undone != null && undoneDecision == SwipeDecision.KEEP) viewModelScope.launch(memoryDispatcher) {
+            memory.forget(listOf(undone.path))
+        }
+    }
+
+    /** 重置当前文件夹的「已看过」：只清记录，不动文件，然后重新读取。 */
+    fun resetSeen() {
+        val current = state.value
+        if (current.busy) return
+        viewModelScope.launch {
+            val removed = withContext(memoryDispatcher) {
+                runCatching { memory.reset(folderDirectory(current.folder).absolutePath) }.getOrDefault(0)
+            }
+            load(current.folder, "已重置 $removed 个看过的文件，从最新开始")
+        }
     }
 
     fun requestApply() {
@@ -200,6 +233,11 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
                     if (applied.moved.isNotEmpty()) runCatching {
                         MediaScannerConnection.scanFile(context, applied.moved.map { it.original }.toTypedArray(), null, null)
                     }
+                    // 只记录确实移入回收站的项（按原路径核对）；保留/跳过的文件下次仍会出现。
+                    val movedPaths = applied.movedPaths
+                    withContext(memoryDispatcher) {
+                        runCatching { memory.remember(items.filter { it.path in movedPaths }, SwipeDecision.DELETE) }
+                    }
                 }
             }
             val size = Formatter.formatFileSize(context, result.movedBytes)
@@ -228,6 +266,7 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
                     }
                 }
             }
+            withContext(memoryDispatcher) { runCatching { memory.forget(batch.map { it.original }) } }
             mutableState.update { it.copy(applying = false, lastBatch = emptyList()) }
             load(current.folder, if (restored.size == batch.size) "已恢复 ${restored.size} 项"
                 else "已恢复 ${restored.size} / ${batch.size} 项，其余仍在回收站")
@@ -269,6 +308,8 @@ internal fun SwipeReviewScreen(state: SwipeReviewUiState, actions: SwipeReviewAc
                     "第 ${minOf(session.position + 1, session.items.size)} / ${session.items.size} 项 · 保留 ${session.keptCount} 项",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (state.status.isNotBlank()) Text(state.status, style = MaterialTheme.typography.bodySmall)
+                if (state.seenCount > 0 && !state.busy && !state.permissionRequired) TextButton(onClick = actions.onResetSeen,
+                    modifier = Modifier.testTag("swipe-reset-seen")) { Text("重置「已看过」（${state.seenCount}）") }
                 if (state.busy) {
                     Spacer(Modifier.height(8.dp))
                     BaiZeProgress()

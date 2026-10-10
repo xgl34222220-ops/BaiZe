@@ -69,7 +69,11 @@ data class HistoryUiState(
 data class HistoryUiActions(
     val onRefresh: () -> Unit,
     val onClearHistory: () -> Unit,
-    val onReviewProtected: () -> Unit
+    val onReviewProtected: () -> Unit,
+    /** 回收站（FileTrashActivity，页内可切换到隔离区）。记录 Tab 是它的固定入口。 */
+    val onOpenTrash: () -> Unit = {},
+    /** 清理审计与规则质量（AuditActivity）。唯一入口；不在 HistoryRoute 里直接构造 Intent。 */
+    val onOpenAudit: () -> Unit = {}
 )
 
 fun DashboardUiState.toHistoryUiState(): HistoryUiState {

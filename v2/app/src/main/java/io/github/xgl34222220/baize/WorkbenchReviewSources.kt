@@ -14,7 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import io.github.xgl34222220.baize.ui.components.DetailResultRow
+import io.github.xgl34222220.baize.ui.components.BaiZeCard
+import io.github.xgl34222220.baize.ui.components.BaiZeInsetDivider
+import io.github.xgl34222220.baize.ui.components.BaiZeListRow
+import io.github.xgl34222220.baize.ui.components.BaiZeTintedIcon
+import io.github.xgl34222220.baize.ui.theme.BaiZeTones
 import io.github.xgl34222220.baize.ui.components.DetailSectionHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,6 +53,12 @@ internal fun reviewSourceIntent(context: Context, source: ReviewSource): Intent 
     else -> StorageToolsActivity.intent(context, requireNotNull(source.mode))
 }
 
+private fun reviewTone(source: ReviewSource) = when (source) {
+    ReviewSource.CORPSES, ReviewSource.ROOT -> BaiZeTones.folder; ReviewSource.APK -> BaiZeTones.green
+    ReviewSource.SCREENSHOTS -> BaiZeTones.purple; ReviewSource.OLD_DOWNLOADS -> BaiZeTones.orange
+    ReviewSource.CHAT_MEDIA -> BaiZeTones.teal; ReviewSource.DUPLICATES -> BaiZeTones.blue
+}
+
 private fun reviewIcon(source: ReviewSource): ImageVector = when (source) {
     ReviewSource.CORPSES -> Icons.Rounded.FolderDelete; ReviewSource.APK -> Icons.Rounded.InstallMobile
     ReviewSource.SCREENSHOTS -> Icons.Rounded.Screenshot; ReviewSource.OLD_DOWNLOADS -> Icons.Rounded.Download
@@ -67,19 +77,22 @@ internal fun WorkbenchReviewSources(visible: Boolean, refreshKey: Any?) {
                 .getOrDefault(emptyMap())
         }
     }
+    // HyperOS 分组卡：彩色图标 + 名称 + 估算容量 + 箭头；整组默认不勾选，点开逐项确认。
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         DetailSectionHeader("需要你复核", "默认不勾选；点开逐项确认，删除进入回收站可撤销")
-        ReviewSource.entries.forEach { source ->
-            val estimate = estimates[source]
-            val value = when {
-                estimate == null -> "打开查看"
-                estimate.files == 0 -> "暂无"
-                else -> "约 ${Formatter.formatFileSize(context, estimate.bytes)}"
+        BaiZeCard(Modifier.padding(horizontal = 16.dp)) {
+            ReviewSource.entries.forEachIndexed { index, source ->
+                val estimate = estimates[source]
+                val value = when {
+                    estimate == null -> ""
+                    estimate.files == 0 -> "暂无"
+                    else -> "约 ${Formatter.formatFileSize(context, estimate.bytes)}"
+                }
+                if (index > 0) BaiZeInsetDivider()
+                BaiZeListRow(source.title, { runCatching { context.startActivity(reviewSourceIntent(context, source)) } },
+                    subtitle = if (estimate != null && estimate.files > 0) "${estimate.files} 项 · ${source.hint}" else source.hint,
+                    value = value, leading = { BaiZeTintedIcon(reviewIcon(source), reviewTone(source)) })
             }
-            DetailResultRow(source.title, value, if (estimate != null && estimate.files > 0) "${estimate.files} 项 · ${source.hint}" else source.hint,
-                "", "", reviewIcon(source), first = true, last = true,
-                onDetails = { runCatching { context.startActivity(reviewSourceIntent(context, source)) } })
-            Spacer(Modifier.height(2.dp))
         }
     }
 }

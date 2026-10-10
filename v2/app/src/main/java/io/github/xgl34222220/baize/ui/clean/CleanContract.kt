@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize.ui.clean
 
 import androidx.compose.runtime.Immutable
 import io.github.xgl34222220.baize.SchedulerUiState
+import io.github.xgl34222220.baize.StorageToolMode
 
 /** Shared category identifiers used by both Material and Miuix skins. */
 enum class CleanCategoryId {
@@ -83,6 +84,12 @@ data class CleanUiState(
         }
 }
 
+/**
+ * 清理 Tab 的动作。去重后：
+ * - 「一键扫描」只在首页 Hero；[onScan] 保留给旧调用方（同一个前台工作台动作），清理 Tab 不再显示这一行。
+ * - 安装包自动清理只有任务计划里的一个开关（[onCategoryEnabledChanged] APK，写 apkPackagesEnabled）。
+ * - 专项清理的每个工具在清理 Tab 只出现一次，见 [cleanToolEntries]。
+ */
 data class CleanUiActions(
     val onAutomaticCleaningChanged: (Boolean) -> Unit,
     val onCategoryEnabledChanged: (CleanCategoryId, Boolean) -> Unit,
@@ -90,20 +97,42 @@ data class CleanUiActions(
     val onScheduleModeChanged: (CleanScheduleMode) -> Unit,
     val onDailyTimeChanged: (hour: Int, minute: Int) -> Unit,
     val onDailyGraceChanged: (minutes: Int) -> Unit,
-    val onApkPackagesChanged: (Boolean) -> Unit,
-    val onSave: () -> Unit,
-    val onScan: () -> Unit,
-    val onApkScan: () -> Unit,
-    val onInstantCache: () -> Unit,
-    val onFileOrganizer: () -> Unit,
-    val onLargeFiles: () -> Unit,
-    val onDuplicates: () -> Unit,
-    val onStorageAnalysis: () -> Unit,
-    val onDeepClean: () -> Unit,
-    val onCorpses: () -> Unit,
-    val onAudit: () -> Unit,
+    val onScan: () -> Unit = {},
+    val onDeepClean: () -> Unit = {},
+    val onLargeFiles: () -> Unit = {},
+    val onDuplicates: () -> Unit = {},
+    val onStorageView: (StorageToolMode) -> Unit = {},
+    val onApkScan: () -> Unit = {},
+    val onCorpses: () -> Unit = {},
+    val onFileOrganizer: () -> Unit = {},
+    val onPhotoCompression: () -> Unit = {},
+    val onSwipeReview: () -> Unit = {},
     val onShizukuCache: () -> Unit = {},
-    val onApkPackageDaysChanged: (Int) -> Unit = {}
+    val onApkPackageDaysChanged: (Int) -> Unit = {},
+    /** 打开「执行条件与高级」子页（草稿 + 保存，原 设置 → 自动任务设置）。 */
+    val onOpenAutomationSettings: () -> Unit = {},
+    /** 打开「运行状况」（原 设置 → 自动任务记录，SchedulerHealthDialog）。 */
+    val onOpenSchedulerHealth: () -> Unit = {}
+)
+
+/** 清理 Tab「专项清理」的一行：每个工具只出现一次（[cleanToolEntries] 的标题与动作都不重复）。 */
+@Immutable
+data class CleanToolEntry(val key: String, val title: String, val subtitle: String, val onClick: () -> Unit)
+
+/** 专项清理的固定入口顺序。存储分析视图下拉、扫描结果「需要你复核」属于页内切换/结果，不算入口。 */
+fun cleanToolEntries(actions: CleanUiActions): List<CleanToolEntry> = listOf(
+    CleanToolEntry("large", "大文件", "按大小排列，逐个确认", actions.onLargeFiles),
+    CleanToolEntry("duplicates", "重复文件", "保留一份，其余可移入回收站", actions.onDuplicates),
+    CleanToolEntry("screenshots", "截图与录屏", "30 天前的截图与录屏") { actions.onStorageView(StorageToolMode.SCREENSHOTS) },
+    CleanToolEntry("downloads", "旧下载", "下载目录中久未改动的文件") { actions.onStorageView(StorageToolMode.OLD_DOWNLOADS) },
+    CleanToolEntry("chat", "聊天媒体", "微信、QQ 等聊天应用保存的图片与视频") { actions.onStorageView(StorageToolMode.CHAT_MEDIA) },
+    CleanToolEntry("apk", "安装包", "已安装或重复的 APK", actions.onApkScan),
+    CleanToolEntry("corpses", "卸载残留", "已卸载应用留下的目录", actions.onCorpses),
+    CleanToolEntry("root", "根目录整理", "空文件夹与散落目录") { actions.onStorageView(StorageToolMode.ROOT) },
+    CleanToolEntry("organize", "文件归类", "整理下载与散落文件", actions.onFileOrganizer),
+    CleanToolEntry("photo", "照片瘦身", "压缩大照片，保留原图可选", actions.onPhotoCompression),
+    CleanToolEntry("swipe", "滑动整理", "左右滑动快速取舍", actions.onSwipeReview),
+    CleanToolEntry("shizuku", "免 Root 缓存清理", "连接 Shizuku 后按应用清理缓存", actions.onShizukuCache)
 )
 
 fun SchedulerUiState.toCleanUiState(

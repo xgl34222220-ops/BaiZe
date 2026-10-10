@@ -6,10 +6,13 @@ import android.content.Intent
 import android.os.Environment
 import android.os.IBinder
 import android.text.format.Formatter
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
@@ -21,7 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.topjohnwu.superuser.ipc.RootService
@@ -142,8 +148,8 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
     fun setAllowed(name: String, allowed: Boolean) {
         if (state.value.running || !RootDirectoryOrganizer.ruleName(name)) return
         val rules = state.value.rules.let { if (allowed) it.copy(allow = it.allow + name) else it.copy(allow = it.allow.filterNot { n -> n.equals(name, true) }.toSet()) }
-        mutable.update { it.copy(rules = rules, status = if (allowed) "已加入白名单：$name，自动整理不会处理" else "已移出白名单：$name") }
-        persistRules(rules); reclassify(); record(if (allowed) "白名单 + $name" else "白名单 - $name")
+        mutable.update { it.copy(rules = rules, status = if (allowed) "不再整理：$name（只影响自动整理，不是删除保护）" else "恢复整理：$name") }
+        persistRules(rules); reclassify(); record(if (allowed) "不再整理 + $name" else "不再整理 - $name")
     }
 
     /** 返回空字符串表示成功，否则为提示。 */
@@ -264,11 +270,19 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
             state.recommended.isNotEmpty() || state.selected.isNotEmpty(), onToggleAll, { confirmRemove = true },
             cleanLabel = "移除所选 ${state.selected.size} 项", selectLabel = "选中空文件夹与残留", cleanEnabled = state.selected.isNotEmpty()) }
     ) { insets ->
-        LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp)) {
             item {
                 DetailGlassPanel {
                     Text(state.status, style = MaterialTheme.typography.bodyMedium)
-                    Text("系统标准目录始终保护；有内容的文件夹移入回收站，可撤销。自动整理在“自动任务 → 系统维护”中开启，只处理空文件夹。",
+                    var info by rememberSaveable { mutableStateOf(false) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("标准目录始终保护，移除可撤销", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { info = !info }, Modifier.size(36.dp)) {
+                            Icon(Icons.Rounded.Info, "整理说明", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (info) Text("系统标准目录始终保护；有内容的文件夹移入回收站，可撤销。自动整理在“自动任务 → 系统维护”中开启，只处理空文件夹。",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.moduleSummary.isNotBlank()) Text(state.moduleSummary, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -286,20 +300,20 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
                 val rows = state.reviews.filter { it.kind == kind }
                 if (rows.isNotEmpty()) {
                     item(key = "kind-${kind.name}") { DetailSectionHeader(kind.label, "${rows.size} 项") }
-                    items(rows, key = { "root-${it.entry.name}" }) { review ->
+                    itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }) { index, review ->
                         val size = when { !review.entry.directory -> Formatter.formatFileSize(context, review.entry.bytes)
                             review.kind == RootEntryKind.STANDARD -> "受保护"; review.entry.empty -> "空"
                             else -> Formatter.formatFileSize(context, review.entry.bytes) + if (review.entry.limited) "+" else "" }
                         val owner = review.ownerLabel?.let { label -> if (review.installedOwners.isNotEmpty()) "$label（已安装）" else "$label（未安装）" } ?: "未识别归属"
                         DetailResultRow(review.entry.name, size, "$owner · ${review.kind.label}${if (review.entry.limited) " · 文件过多，仅统计部分" else ""}",
                             "/sdcard/${review.entry.name}", "", if (review.entry.directory) Icons.Rounded.Folder else Icons.Rounded.Description,
-                            first = true, last = true, selected = if (review.removable) review.entry.name in state.selected else null,
+                            first = index == 0, last = index == rows.lastIndex, selected = if (review.removable) review.entry.name in state.selected else null,
                             selectionEnabled = !state.running, onToggle = { onToggle(review.entry.name) }, onDetails = { detail = review.entry.name })
                     }
                 }
             }
             if (state.history.isNotEmpty()) item {
-                DetailGlassPanel {
+                DetailGlassPanel(Modifier.padding(top = 16.dp)) {
                     Text("整理记录", style = MaterialTheme.typography.titleMedium)
                     state.history.takeLast(8).reversed().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }
@@ -338,7 +352,7 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
             }
             if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (review.kind !in setOf(RootEntryKind.STANDARD, RootEntryKind.PROTECTED, RootEntryKind.PLACEHOLDER))
-                TextButton(onClick = { onAllow(!allowed) }, enabled = enabled) { Text(if (allowed) "移出白名单" else "加入白名单（不再整理）") }
+                TextButton(onClick = { onAllow(!allowed) }, enabled = enabled) { Text(if (allowed) "恢复整理此文件夹" else "不再整理此文件夹") }
             if (review.kind == RootEntryKind.PLACEHOLDER) TextButton(onClick = onUnblock, enabled = enabled) { Text("撤销禁止重建") }
             else if (review.canBlock && !confirmBlock) TextButton(onClick = { confirmBlock = true }, enabled = enabled) { Text("禁止重建…") }
         }
@@ -348,28 +362,58 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
     }, dismissButton = if (confirmBlock) {{ BaiZeDialogButton(onClick = { confirmBlock = false }) { Text("取消") } }} else null)
 }
 
-/** 存储分析的视图切换：大文件、重复文件、截图等都是同一页面的视图，而不是独立工具。
- *  放在页头的紧凑“视图：…”下拉里，不占用列表内容，页面只保留一个可滚动容器。 */
+/**
+ * 存储分析的视图切换：大文件、重复文件、截图等都是同一页面的视图，而不是独立工具。
+ * 页头里一个紧凑的“视图”胶囊（不进入列表，页面只保留一个可滚动容器），
+ * 点开为贴底弹层中的两列图标格，当前视图高亮。
+ */
 @Composable
 internal fun StorageViewDropdown(current: StorageToolMode, enabled: Boolean, onSelect: (StorageToolMode) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(Modifier.padding(top = 2.dp)) {
-        Row(Modifier.clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClickLabel = "切换视图") { expanded = true }
-            .padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("视图：${storageToolTitle(current)}", style = MaterialTheme.typography.labelLarge, maxLines = 1,
-                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(18.dp),
-                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
-            STORAGE_VIEWS.forEach { mode ->
-                DropdownMenuItem(text = { Text(storageToolTitle(mode)) },
-                    onClick = { expanded = false; if (mode != current) onSelect(mode) },
-                    trailingIcon = if (mode == current) {{ Icon(Icons.Rounded.Check, "当前视图") }} else null)
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val accent = MaterialTheme.colorScheme.primary
+    Row(Modifier.padding(top = 8.dp).clip(CircleShape)
+        .background(if (enabled) accent.copy(alpha = .10f) else BaiZeTokens.colors.surfaceOverlay)
+        .clickable(enabled = enabled, onClickLabel = "切换视图") { expanded = true }
+        .heightIn(min = 36.dp).padding(start = 12.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(storageViewIcon(current), null, Modifier.size(16.dp),
+            tint = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(6.dp))
+        Text("视图：${storageToolTitle(current)}", style = MaterialTheme.typography.labelLarge, maxLines = 1,
+            color = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(20.dp),
+            tint = if (enabled) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (expanded && enabled) BaiZeDialog(onDismissRequest = { expanded = false }, title = { Text("切换视图") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            STORAGE_VIEWS.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pair.forEach { mode ->
+                        val selected = mode == current
+                        Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                            .background(if (selected) accent.copy(alpha = .12f) else BaiZeTokens.colors.surfaceOverlay)
+                            .clickable(onClickLabel = storageToolTitle(mode)) { expanded = false; if (!selected) onSelect(mode) }
+                            .heightIn(min = 52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(storageViewIcon(mode), null, Modifier.size(20.dp),
+                                tint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Text(storageToolTitle(mode), Modifier.weight(1f), fontSize = 14.sp, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) accent else MaterialTheme.colorScheme.onSurface)
+                            if (selected) Icon(Icons.Rounded.Check, "当前视图", Modifier.size(18.dp), tint = accent)
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
             }
         }
-    }
+    }, confirmButton = { BaiZeDialogButton(onClick = { expanded = false }, primary = false) { Text("取消") } })
+}
+
+private fun storageViewIcon(mode: StorageToolMode) = when (mode) {
+    StorageToolMode.ANALYSIS -> Icons.Rounded.DataUsage; StorageToolMode.LARGE -> Icons.Rounded.InsertDriveFile
+    StorageToolMode.DUPLICATES -> Icons.Rounded.ContentCopy; StorageToolMode.SCREENSHOTS -> Icons.Rounded.Screenshot
+    StorageToolMode.OLD_DOWNLOADS -> Icons.Rounded.Download; StorageToolMode.CHAT_MEDIA -> Icons.Rounded.Forum
+    StorageToolMode.ROOT -> Icons.Rounded.FolderSpecial; StorageToolMode.CUSTOM -> Icons.Rounded.Rule
 }
 
 internal val STORAGE_VIEWS = listOf(StorageToolMode.ANALYSIS, StorageToolMode.LARGE, StorageToolMode.DUPLICATES,

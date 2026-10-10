@@ -116,7 +116,7 @@ class OrganizerPreviewUiTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale), LocalAppearanceSettings provides appearance) {
                 BaiZeTheme(appearance) {
-                    FileOrganizerScreen(state, FileOrganizerScheduleSettings(), "", {}, { scans++ }, {}, {}, {}, {},
+                    FileOrganizerScreen(state, FileOrganizerScheduleSettings(), {}, { scans++ }, {}, {}, {},
                         onToggleItem = { id -> toggle(setOf(id)) },
                         onToggleCategory = { category -> toggle(state.items.filter { it.category == category }.mapTo(linkedSetOf()) { it.id }) },
                         onToggleAll = { toggle(state.items.mapTo(linkedSetOf()) { it.id }) }, onApply = { moves++ })

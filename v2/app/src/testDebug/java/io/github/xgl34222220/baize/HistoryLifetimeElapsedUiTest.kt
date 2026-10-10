@@ -10,7 +10,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.history.miuix.HistoryScreenMiuix
-import io.github.xgl34222220.baize.ui.history.miuix.VideoHistoryScreenMiuix
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -29,15 +28,6 @@ class HistoryLifetimeElapsedUiTest {
     private val state = HistoryUiState("", "", 3, 0, 12, 0, 0, 0, 3_600,
         emptyList(), emptyList(), emptyList(), emptyList())
     private val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false)
-
-    @Test fun videoHistoryShowsOneHourForThirtySixHundredSeconds() {
-        compose.setContent { BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-            VideoHistoryScreenMiuix(state, HistoryUiActions({}, {}, {}))
-        } } }
-        compose.onNodeWithText("详细统计").performClick()
-        compose.onNodeWithText("1h 0m").assertIsDisplayed()
-        compose.onAllNodesWithText("3s").assertCountEquals(0)
-    }
 
     @Test fun miuixHistoryShowsTheSameHour() {
         compose.setContent { BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {

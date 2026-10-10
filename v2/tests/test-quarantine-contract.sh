@@ -7,10 +7,11 @@ ENGINE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/NativeProfil
 REPO="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/QuarantineRepository.kt"
 SERVICE="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/root/BaiZeProfileRootService.kt"
 WORKBENCH="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/ScanWorkbenchActivity.kt"
-CENTER="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/CleanCenterActivity.kt"
+# Dedup: the single quarantine entry is the in-page switch of 记录 → 回收站 (FileTrashActivity).
+TRASH="$ROOT/v2/app/src/main/java/io/github/xgl34222220/baize/FileTrashActivity.kt"
 MANIFEST="$ROOT/v2/app/src/main/AndroidManifest.xml"
 
-for file in "$AIDL" "$ENGINE" "$REPO" "$SERVICE" "$WORKBENCH" "$CENTER" "$MANIFEST"; do
+for file in "$AIDL" "$ENGINE" "$REPO" "$SERVICE" "$WORKBENCH" "$TRASH" "$MANIFEST"; do
   test -f "$file" || { echo "missing quarantine contract file: $file" >&2; exit 1; }
 done
 
@@ -76,7 +77,7 @@ grep -Fq 'if (!isStoredPayload(entry, payload)) continue' "$REPO"
 
 # Service, UI entry and manifest registration stay connected.
 grep -Fq 'override fun quarantineProfileSelected' "$SERVICE"
-grep -Fq 'QuarantineActivity::class.java' "$CENTER"
+grep -Fq 'QuarantineActivity::class.java' "$TRASH"
 grep -Fq '<activity android:name=".QuarantineActivity"' "$MANIFEST"
 
 echo "quarantine contract ok"

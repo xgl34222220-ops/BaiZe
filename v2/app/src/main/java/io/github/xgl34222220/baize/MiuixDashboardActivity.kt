@@ -94,6 +94,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     private var snapshotExpiresAtElapsed = 0L
 
     private var dashboardState = androidx.compose.runtime.mutableStateOf(DashboardUiState(connecting = true))
+    /** 一次性的页内导航请求（如「打开自动清理」）；BaiZeMiuixApp 处理后清空。 */
+    private val navigationRequest = androidx.compose.runtime.mutableStateOf<String?>(null)
     private data class MessageDialog(val title: String, val message: String, val confirm: String,
         val onConfirm: () -> Unit, val cancel: String = "取消", val extra: String = "", val onExtra: () -> Unit = {})
     private val messageDialog = androidx.compose.runtime.mutableStateOf<MessageDialog?>(null)
@@ -210,6 +212,7 @@ class MiuixDashboardActivity : ComponentActivity() {
         // Consume once so recreation or two service connections cannot reopen the cleaner.
         val openRequested = CleanerNavigation.consumeLegacyRequest(intent)
         val shortcutRequest = LauncherShortcuts.consume(intent, restored = savedInstanceState != null)
+        if (savedInstanceState == null) consumeAutomationRequest(intent)
         pendingSmartClean = false
         updateStorage()
         FileOrganizerWorker.ensureWatchdog(this)
@@ -243,6 +246,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     photoCompression = { CleanerNavigation.open(this, Intent(this, PhotoCompressionActivity::class.java)) },
                     fileTrash = { CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java)) },
                     swipeReview = { CleanerNavigation.open(this, Intent(this, SwipeReviewActivity::class.java)) },
+                    storageView = { mode -> CleanerNavigation.open(this, StorageToolsActivity.intent(this, mode)) },
                     cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },
@@ -261,8 +265,12 @@ class MiuixDashboardActivity : ComponentActivity() {
                     reconnect = { reconnectService() },
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() },
-                    wechatUsage = { loadWechatUsage(it) }
+                    wechatUsage = { loadWechatUsage(it) },
+                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) },
+                    ruleVersions = { CleanerNavigation.open(this, Intent(this, RuleBundleActivity::class.java)) }
                 ),
+                navigationRequest = navigationRequest.value,
+                onNavigationHandled = { navigationRequest.value = null },
                 appearance = appearance,
                 overlay = {
                     messageDialog.value?.let { dialog ->
@@ -290,12 +298,21 @@ class MiuixDashboardActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (consumeAutomationRequest(intent)) return
         if (CleanerNavigation.consumeLegacyRequest(intent)) {
             pendingSmartClean = false
             openForegroundCleaner()
         } else {
             LauncherShortcuts.consume(intent)?.let(::openLauncherShortcut)
         }
+    }
+
+    /** 文件归类等页面请求打开「清理 → 自动清理」（自动计划的唯一设置位置）。只导航，不改任何配置。 */
+    private fun consumeAutomationRequest(intent: Intent?): Boolean {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_AUTOMATION, false) != true) return false
+        intent.removeExtra(EXTRA_OPEN_AUTOMATION)
+        navigationRequest.value = NAVIGATION_OPEN_AUTOMATION
+        return true
     }
 
     /** Launcher shortcuts and the Quick Settings tile reuse the home screen's guarded routes. */
@@ -317,6 +334,14 @@ class MiuixDashboardActivity : ComponentActivity() {
         updateStorage()
         // App-owned history remains usable while Root/Shizuku is unavailable.
         refreshHistory()
+        lifecycleScope.launch {
+            val resumable = withContext(Dispatchers.IO) {
+                runCatching { ResumableSmartScanActivity.hasUnfinishedPlan(this@MiuixDashboardActivity) }.getOrDefault(false)
+            }
+            if (dashboardState.value.resumablePlan != resumable) {
+                dashboardState.value = dashboardState.value.copy(resumablePlan = resumable)
+            }
+        }
         lifecycleScope.launch {
             val saved = withContext(Dispatchers.IO) { LastCleanupStore.readRun(this@MiuixDashboardActivity) }
             // A run linked to its history record replaces the lists even when it deleted nothing,
@@ -2066,6 +2091,13 @@ class MiuixDashboardActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_RUN_SMART_CLEAN = "io.github.xgl34222220.baize.RUN_SMART_CLEAN"
+        const val EXTRA_OPEN_AUTOMATION = "io.github.xgl34222220.baize.OPEN_AUTOMATION"
+        const val NAVIGATION_OPEN_AUTOMATION = "automation"
+
+        fun automationIntent(context: android.content.Context): Intent =
+            Intent(context, MiuixDashboardActivity::class.java)
+                .putExtra(EXTRA_OPEN_AUTOMATION, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         private const val SNAPSHOT_TTL_MS = 30L * 60L * 1000L
         private const val RAW_LOG_LIMIT = 16_000
     }

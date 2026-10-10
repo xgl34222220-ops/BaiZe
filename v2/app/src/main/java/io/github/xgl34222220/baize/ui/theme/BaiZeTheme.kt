@@ -102,9 +102,27 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         animate = true
     ) {
         val generatedScheme = MaterialTheme.colorScheme
-        val defaultBlue = !settings.monetEnabled &&
-            settings.seedArgb == AccentOptions.first().argb && settings.kolorStyle == KolorStyle.SOFT
-        val scheme = if (defaultBlue) generatedScheme.copy(
+        val tunedSoft = !settings.monetEnabled && settings.kolorStyle == KolorStyle.SOFT
+        val defaultBlue = tunedSoft && settings.seedArgb == AccentOptions.first { it.id == "default" }.argb
+        val hyperOrange = tunedSoft && settings.seedArgb == AccentOptions.first { it.id == "hyper" }.argb
+        val neutralBase = generatedScheme.copy(
+            background = if (amoled) Color.Black else if (dark) Color(0xFF0F1012) else Color(0xFFF5F6F8),
+            surface = if (dark) Color(0xFF1C1D20) else Color.White,
+            onBackground = if (dark) Color(0xFFF5F6F8) else Color(0xFF111318),
+            onSurface = if (dark) Color(0xFFF5F6F8) else Color(0xFF111318),
+            onSurfaceVariant = if (dark) Color(0xFF9EA3AD) else Color(0xFF7A7F89),
+            outlineVariant = if (dark) Color(0xFF2E3036) else Color(0xFFE6E8EC)
+        )
+        val scheme = if (hyperOrange) neutralBase.copy(
+            primary = if (dark) Color(0xFFFF7A45) else Color(0xFFF25C26),
+            onPrimary = Color.White,
+            primaryContainer = if (dark) Color(0xFF4A2112) else Color(0xFFFFE9E0),
+            onPrimaryContainer = if (dark) Color(0xFFFFDBCD) else Color(0xFF8A2A06),
+            secondary = if (dark) Color(0xFFFF9466) else Color(0xFFE0531F),
+            secondaryContainer = if (dark) Color(0xFF3A2219) else Color(0xFFFFF0EA),
+            onSecondaryContainer = if (dark) Color(0xFFFFDBCD) else Color(0xFF8A2A06),
+            surfaceTint = if (dark) Color(0xFFFF7A45) else Color(0xFFF25C26)
+        ) else if (defaultBlue) generatedScheme.copy(
             primary = if (dark) Color(0xFF3B82F6) else Color(0xFF1E6FFF),
             onPrimary = if (dark) Color(0xFF081B39) else Color.White,
             primaryContainer = if (dark) Color(0xFF1E3A8A) else Color(0xFFEBF2FF),
@@ -122,9 +140,9 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         ) else generatedScheme
         val semantic = if (dark) DarkBaiZeColors else LightBaiZeColors
         val colors = if (settings.uiStyle == UiStyle.MIUIX) semantic.copy(
-            surfaceBase = if (amoled) Color.Black else if (dark) Color(0xFF121212) else Color(0xFFF7F8FA),
-            surfaceRaised = if (amoled) Color(0xFF111214) else if (dark) Color(0xFF1E1E1E) else Color.White,
-            surfaceOverlay = if (dark) Color(0xFF24272D) else Color(0xFFF1F5F9),
+            surfaceBase = if (amoled) Color.Black else if (dark) Color(0xFF0F1012) else Color(0xFFF5F6F8),
+            surfaceRaised = if (amoled) Color(0xFF121316) else if (dark) Color(0xFF1C1D20) else Color.White,
+            surfaceOverlay = if (dark) Color(0xFF2A2C31) else Color(0xFFF0F1F4),
             success = if (dark) Color(0xFF6ACAA6) else Color(0xFF387F66),
             warning = if (dark) Color(0xFFFBBF24) else Color(0xFFB45309),
             danger = if (dark) Color(0xFFF87171) else Color(0xFFEF4444)

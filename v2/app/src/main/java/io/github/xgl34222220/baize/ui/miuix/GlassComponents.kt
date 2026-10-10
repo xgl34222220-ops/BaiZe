@@ -38,48 +38,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
-/** Static layered light: no backdrop capture, blur or continuous animation during scanning. */
+/**
+ * 2026-10 统一设计：原“玻璃”分层光影改为 HyperOS 平面卡片（纯色、无渐变、无阴影），
+ * 避免同屏混用玻璃卡与 MIUIX 卡。保留函数名以免改动所有调用点。
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun Modifier.glassSurface(
     color: Color,
     shape: Shape,
     dark: Boolean
-): Modifier = this
-    .shadow(
-        elevation = 4.dp,
-        shape = shape,
-        clip = false,
-        ambientColor = Color(0xFF1E3558).copy(alpha = if (dark) .10f else .055f),
-        spotColor = Color(0xFF1E3558).copy(alpha = if (dark) .16f else .085f)
-    )
-    .shadow(
-        elevation = 1.dp,
-        shape = shape,
-        clip = false,
-        ambientColor = Color.Black.copy(alpha = .025f),
-        spotColor = Color.Black.copy(alpha = if (dark) .12f else .035f)
-    )
-    .clip(shape)
-    .background(
-        Brush.verticalGradient(
-            0f to lerp(color, Color.White, if (dark) .045f else .32f),
-            .20f to color,
-            1f to lerp(color, if (dark) Color.Black else Color(0xFFCEDBED), .025f)
-        )
-    )
-    .insetTopLight(if (dark) .055f else .22f)
-
-/** A six-dp internal reflection, clipped by the parent shape rather than drawn as a border. */
-private fun Modifier.insetTopLight(alpha: Float): Modifier = drawWithCache {
-    val reflection = Brush.verticalGradient(
-        colors = listOf(Color.White.copy(alpha = alpha), Color.Transparent),
-        startY = 0f,
-        endY = 6.dp.toPx()
-    )
-    onDrawWithContent {
-        drawContent()
-        drawRect(reflection)
-    }
-}
+): Modifier = this.clip(shape).background(color)
 
 /** Shared action; its reflection and press response match the floating navigation. */
 @Composable
@@ -93,12 +61,11 @@ fun GlassActionButton(
     compact: Boolean = false
 ) {
     val scheme = MaterialTheme.colorScheme
-    val dark = scheme.surface.luminance() < .3f
     val shape = RoundedCornerShape(percent = 50)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && enabled) .986f else 1f,
+        targetValue = if (pressed && enabled) .97f else 1f,
         animationSpec = tween(durationMillis = 140),
         label = "glassActionPress"
     )
@@ -112,43 +79,22 @@ fun GlassActionButton(
         secondary -> scheme.onSurface
         else -> scheme.onPrimary
     }
-    val upper = if (secondary || !enabled) {
-        lerp(base, Color.White, if (dark) .05f else .7f)
-    } else {
-        lerp(base, Color.White, if (dark) .06f else .18f)
-    }
-
-    val lower = if (enabled && !secondary) lerp(base, Color.Black, if (dark) .015f else .04f) else base
+    val haptic = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptic()
 
     Row(
         modifier = modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .heightIn(min = if (compact) 40.dp else 46.dp)
-            .shadow(
-                elevation = if (enabled) 1.dp else 0.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = scheme.primary.copy(alpha = if (secondary) .03f else .09f),
-                spotColor = scheme.primary.copy(alpha = if (secondary) .05f else .14f)
-            )
-            .shadow(
-                elevation = if (enabled) 1.dp else 0.dp,
-                shape = shape,
-                clip = false,
-                ambientColor = Color.Black.copy(alpha = .025f),
-                spotColor = Color.Black.copy(alpha = if (dark) .08f else .045f)
-            )
+            .heightIn(min = if (compact) 44.dp else 50.dp)
             .clip(shape)
-            .background(Brush.verticalGradient(listOf(upper, base, lower)))
-            .insetTopLight(if (!enabled) .06f else if (dark) .08f else if (secondary) .30f else .09f)
+            .background(base)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = androidx.compose.material3.ripple(),
                 enabled = enabled,
                 role = Role.Button,
-                onClick = onClick
+                onClick = { if (!secondary) haptic(); onClick() }
             )
-            .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 9.dp else 12.dp),
+            .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 10.dp else 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {

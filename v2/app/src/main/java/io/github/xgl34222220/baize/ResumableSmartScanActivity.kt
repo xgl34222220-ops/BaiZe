@@ -1368,6 +1368,19 @@ class ResumableSmartScanActivity : ComponentActivity() {
         private const val LEGACY_PLAN_KEY = "smart_clean_plan_v1"
         private const val CLEAN_PLAN_VERSION = 2
         private const val CLEAN_PLAN_TTL_MS = 30L * 60_000L
+
+        /**
+         * 首页「继续上次清理」横幅的只读判断：存在未过期的本地续清计划。不修改、不清除计划；
+         * 设置指纹与快照的完整校验仍由本页面 [restoreCleanPlan] 完成。需在后台线程调用。
+         */
+        internal fun hasUnfinishedPlan(context: android.content.Context, now: Long = System.currentTimeMillis()): Boolean {
+            val preferences = LegacyPreferencesAccess.preferences(context)
+            val raw = preferences.getString(CLEAN_PLAN_KEY, null).orEmpty()
+                .ifBlank { preferences.getString(LEGACY_PLAN_KEY, null).orEmpty() }
+            if (raw.isBlank()) return false
+            val createdAt = runCatching { JSONObject(raw).optLong("createdAt", 0L) }.getOrDefault(0L)
+            return createdAt > 0L && (now - createdAt) in 0..CLEAN_PLAN_TTL_MS
+        }
     }
 }
 

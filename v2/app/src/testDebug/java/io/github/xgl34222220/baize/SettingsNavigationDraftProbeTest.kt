@@ -32,15 +32,15 @@ class SettingsNavigationDraftProbeTest {
         val saves = mutableListOf<SchedulerUiState>()
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true, automationAvailable = true), scheduler,
             actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }), AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onAllNodes(isToggleable())[1].performClick()
         compose.onAllNodes(isToggleable())[1].assertIsOn()
         assertTrue(saves.isEmpty())
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
-        compose.onNodeWithText("自动清理").performScrollTo()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasContentDescription("自动清理"))
         compose.onAllNodes(isToggleable()).assertCountEquals(1)
         compose.onAllNodes(isToggleable())[0].performClick()
         assertEquals(1, saves.size)
@@ -51,9 +51,9 @@ class SettingsNavigationDraftProbeTest {
         val restore = StateRestorationTester(compose)
         restore.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
             actions.copy(updateScheduler = { scheduler = it }), AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onAllNodes(isToggleable())[1].performClick()
         compose.onAllNodes(isToggleable())[1].assertIsOn()
         // The production dashboard periodically reloads the saved module configuration.
@@ -70,9 +70,9 @@ class SettingsNavigationDraftProbeTest {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
             actions.copy(updateScheduler = { draftLeaks++; scheduler = it }, saveScheduler = { saves += it }),
             AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onAllNodes(isToggleable())[1].performClick()
         compose.onNodeWithText("保存").performClick()
         assertEquals(1, saves.size)
@@ -82,16 +82,19 @@ class SettingsNavigationDraftProbeTest {
         compose.runOnIdle { scheduler = scheduler.copy(runtimeReason = "synthetic save rejected") }
         compose.onAllNodes(isToggleable())[1].assertIsOn()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onAllNodes(isToggleable())[1].assertIsOff()
         assertEquals(1, saves.size)
     }
-    @Test fun materialSettingsFooterDocumentsDockOverlap() {
+    @Test fun materialAutomationFooterDocumentsDockOverlap() {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions, AppearanceSettings(uiStyle = UiStyle.MATERIAL)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
+        // 「执行条件与高级」是 LazyColumn，页脚说明需先滚动到可组合范围内。
+        compose.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange))
+            .performScrollToNode(hasText("修改后点右上角“保存”生效"))
         compose.onNodeWithText("修改后点右上角“保存”生效").performScrollTo().assertIsDisplayed()
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }

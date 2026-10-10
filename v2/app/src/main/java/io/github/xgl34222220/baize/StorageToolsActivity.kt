@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,6 +49,8 @@ import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.theme.BaiZeTone
+import io.github.xgl34222220.baize.ui.theme.BaiZeTones
 
 enum class StorageToolMode {
     LARGE, DUPLICATES, ANALYSIS,
@@ -219,6 +222,12 @@ internal fun StorageToolsScreen(
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
+    // 时间筛选把全部候选文件排除时，说明原因（例如都在 90 天内），而不是只显示 0 B 与通用空状态。
+    val ageHiddenCount = remember(state, visible) {
+        if (state.running || visible.isNotEmpty() || state.minimumAgeDays <= 0 || state.query.isNotBlank() || state.category != null ||
+            state.mode !in setOf(StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA)) 0
+        else state.records.count { StorageReviewFilters.visible(state.mode, it, state.nowSeconds, 0, state.customFilters, state.activeFilterId) }
+    }
     val title = storageToolTitle(state.mode)
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然"
         StorageToolMode.SCREENSHOTS -> "旧截图与录屏，看过再清"; StorageToolMode.OLD_DOWNLOADS -> "下载目录里久未动的文件"
@@ -277,7 +286,7 @@ internal fun StorageToolsScreen(
                         else if (state.mode == StorageToolMode.ANALYSIS) state.directoryUsage?.bytes ?: state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
                     Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (directorySelected) "当前目录占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else Formatter.formatFileSize(context, bytes))
+                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else if (ageHiddenCount > 0) "无匹配" else Formatter.formatFileSize(context, bytes))
                     if (directorySelected && currentDirectory != null)
                         Text("${currentDirectory.files} 个文件（含子目录）", style = MaterialTheme.typography.bodySmall)
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -313,16 +322,39 @@ internal fun StorageToolsScreen(
                 }
             }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
-                Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
-                Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
-                Text("滑动整理：左删右留，逐张过一遍照片", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) }, enabled = !state.running) { Text("打开滑动整理") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BaiZeTintedIcon(Icons.Rounded.PhotoSizeSelectLarge, BaiZeTones.purple)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
+                        Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    val swipe: @Composable (Modifier) -> Unit = { m -> BaiZeChipButton("打开滑动整理",
+                        { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) }, primary = false, modifier = m, enabled = !state.running) }
+                    val photo: @Composable (Modifier) -> Unit = { m -> BaiZeChipButton("打开照片瘦身",
+                        { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, primary = true, modifier = m, enabled = !state.running) }
+                    // 窄屏或大字号时两个按钮各占一行，避免文字折行。
+                    if (maxWidth.value / LocalDensity.current.fontScale < 260f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        photo(Modifier.fillMaxWidth()); swipe(Modifier.fillMaxWidth())
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        swipe(Modifier); photo(Modifier)
+                    }
+                }
             } }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {
                 item { StorageComposition(state.buckets) }
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
-                items(state.buckets, key = { "bucket-${it.key}" }) { bucket -> StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) } }
+                item(key = "buckets") {
+                    // 空间构成合并为一张分组卡（HyperOS「推荐清理」样式），不再一类一卡。
+                    BaiZeCard(Modifier.padding(horizontal = 16.dp)) {
+                        state.buckets.forEachIndexed { index, bucket ->
+                            if (index > 0) BaiZeInsetDivider()
+                            StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) }
+                        }
+                    }
+                }
             }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && (state.records.isNotEmpty() || state.directoryUsage != null)) {
                 item { DetailSectionHeader("目录占用", state.directory ?: "点击存储卷逐层查看") }
@@ -382,8 +414,11 @@ internal fun StorageToolsScreen(
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
                     state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
-                item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作" else "没有符合条件的文件",
-                    if (state.failed) "请检查权限并重新扫描。" else if (directoryFiles > 0)
+                item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作"
+                    else if (ageHiddenCount > 0) "$ageHiddenCount 个文件都在 ${state.minimumAgeDays} 天内" else "没有符合条件的文件",
+                    if (state.failed) "请检查权限并重新扫描。" else if (ageHiddenCount > 0)
+                        "当前筛选为「${StorageReviewFilters.ageLabel(state.minimumAgeDays)}」，可在筛选中改为更短时间或「全部时间」。"
+                    else if (directoryFiles > 0)
                         "目录统计包含 $directoryFiles 个文件。当前系统索引与筛选未提供可操作文件，仅展示目录占用；可调整筛选或稍后重新扫描。"
                     else "可调整筛选条件，或重新扫描。") }
             }
@@ -478,19 +513,10 @@ private fun StorageComposition(buckets: List<StorageAnalysisBucket>) {
 @Composable
 private fun StorageBucketRow(bucket: StorageAnalysisBucket, selected: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
-    DetailGlassPanel(Modifier.clickable(onClickLabel = "查看${bucket.label}", onClick = onClick)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(12.dp), color = storageColor(bucket.key).copy(alpha = .12f)) {
-                Icon(storageIcon(bucket.key), null, Modifier.padding(9.dp).size(22.dp), tint = storageColor(bucket.key))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(bucket.label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                Text("${bucket.files} 个文件", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(Formatter.formatFileSize(context, bucket.bytes), fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-            Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-    }
+    val color = storageColor(bucket.key)
+    BaiZeListRow(bucket.label, onClick, subtitle = "${bucket.files} 个文件",
+        value = Formatter.formatFileSize(context, bucket.bytes),
+        leading = { BaiZeTintedIcon(storageIcon(bucket.key), BaiZeTone(color, color)) }, chevron = !selected)
 }
 
 private val sunburstPalette = listOf(Color(0xFF3978F6), Color(0xFF8A6BEF), Color(0xFFE6A13D), Color(0xFF34A88B),

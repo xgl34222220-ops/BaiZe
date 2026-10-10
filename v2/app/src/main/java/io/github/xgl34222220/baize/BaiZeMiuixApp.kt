@@ -58,6 +58,8 @@ fun BaiZeMiuixApp(
     actions: DashboardActions,
     appearance: AppearanceSettings,
     initialPage: Int = 0,
+    navigationRequest: String? = null,
+    onNavigationHandled: () -> Unit = {},
     overlay: @Composable () -> Unit = {}
 ) {
     BaiZeTheme(appearance) {
@@ -73,9 +75,22 @@ fun BaiZeMiuixApp(
             val liquidSupported = blurActive && hardware && Build.VERSION.SDK_INT >= 33 && isRuntimeShaderSupported()
             val liquidBackdrop = if (liquidSupported) rememberLayerBackdrop() else null
             var settingsDetailVisible by remember { mutableStateOf(false) }
+            var cleanDetailVisible by remember { mutableStateOf(false) }
             var page by rememberSaveable { mutableStateOf(BaiZePage.entries[initialPage.coerceIn(0, BaiZePage.entries.lastIndex)]) }
             var expandedCleanCategory by rememberSaveable { mutableStateOf("") }
-            val showDock = page != BaiZePage.Settings || !settingsDetailVisible
+            val showDock = when (page) {
+                BaiZePage.Settings -> !settingsDetailVisible
+                BaiZePage.Clean -> !cleanDetailVisible
+                else -> true
+            }
+            // 其他页面（如文件归类）请求打开「清理 → 自动清理」：只切换页面并展开自动清理，不改配置。
+            LaunchedEffect(navigationRequest) {
+                if (navigationRequest == MiuixDashboardActivity.NAVIGATION_OPEN_AUTOMATION) {
+                    expandedCleanCategory = "__open_plan__"
+                    page = BaiZePage.Clean
+                    onNavigationHandled()
+                }
+            }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
             }
@@ -107,7 +122,8 @@ fun BaiZeMiuixApp(
                                         scheduler = scheduler,
                                         dashboardActions = actions,
                                         expandedCategory = expandedCleanCategory,
-                                        onExpandedCategoryChanged = { expandedCleanCategory = it }
+                                        onExpandedCategoryChanged = { expandedCleanCategory = it },
+                                        onDetailChanged = { cleanDetailVisible = it }
                                     )
                                     BaiZePage.Records -> HistoryRoute(UiStyle.MATERIAL, state.forHistoryPage(), actions)
                                     BaiZePage.Settings -> SettingsRoute(UiStyle.MATERIAL, state.forSettingsPage(), scheduler, appearance, actions,
@@ -149,7 +165,8 @@ fun BaiZeMiuixApp(
                                             scheduler = scheduler,
                                             dashboardActions = actions,
                                             expandedCategory = expandedCleanCategory,
-                                            onExpandedCategoryChanged = { expandedCleanCategory = it }
+                                            onExpandedCategoryChanged = { expandedCleanCategory = it },
+                                            onDetailChanged = { cleanDetailVisible = it }
                                         )
                                         BaiZePage.Records -> HistoryRoute(UiStyle.MIUIX, state.forHistoryPage(), actions)
                                         BaiZePage.Settings -> SettingsRoute(UiStyle.MIUIX, state.forSettingsPage(), scheduler, appearance, actions,
@@ -239,7 +256,7 @@ private fun DashboardUiState.forHomePage(): DashboardUiState = copy(
     rawLogName = "", rawLog = "", history = emptyList()
 )
 
-private fun DashboardUiState.forCleanPage(): DashboardUiState = copy(
+private fun DashboardUiState.forCleanPage(): DashboardUiState = copy(resumablePlan = false,
     rawLogName = "", rawLog = "", history = emptyList(), lifetimeRuns = 0,
     lifetimeReleased = 0, lifetimeFiles = 0, lifetimeEmptyFiles = 0,
     lifetimeEmptyDirs = 0, lifetimeFragments = 0, lifetimeElapsed = 0

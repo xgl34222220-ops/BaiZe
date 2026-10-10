@@ -1,8 +1,10 @@
 package io.github.xgl34222220.baize
 
 import io.github.xgl34222220.baize.ui.components.storageRingFractions
-import io.github.xgl34222220.baize.ui.home.miuix.homeTools
+import io.github.xgl34222220.baize.ui.clean.CleanUiActions
+import io.github.xgl34222220.baize.ui.clean.cleanToolEntries
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class HomeDashboardModelTest {
@@ -22,21 +24,25 @@ class HomeDashboardModelTest {
         assertEquals(0f, negative.used, 0f)
     }
 
-    @Test fun homeToolGridHasNoDuplicateEntries() {
+    @Test fun cleanTabToolsAreUniqueAndEachOpensItsOwnPage() {
         val opened = mutableListOf<String>()
-        val actions = DashboardActions(
-            refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = { opened += "apk" },
-            largeFiles = { opened += "large" }, duplicates = { opened += "duplicates" },
-            storageAnalysis = { opened += "analysis" }, cleanScan = {}, dismissScan = {}, stop = {},
-            deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
-            clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = { opened += "whitelist" }, resumableScan = {},
-            theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {},
-            photoCompression = { opened += "photo" }, fileTrash = { opened += "trash" }, swipeReview = { opened += "swipe" }
+        val actions = CleanUiActions(
+            onAutomaticCleaningChanged = {}, onCategoryEnabledChanged = { _, _ -> }, onCategoryIntervalChanged = { _, _ -> },
+            onScheduleModeChanged = {}, onDailyTimeChanged = { _, _ -> }, onDailyGraceChanged = {},
+            onScan = { opened += "scan" }, onLargeFiles = { opened += "large" }, onDuplicates = { opened += "duplicates" },
+            onStorageView = { opened += "view:${it.name}" }, onApkScan = { opened += "apk" }, onCorpses = { opened += "corpses" },
+            onFileOrganizer = { opened += "organize" }, onPhotoCompression = { opened += "photo" },
+            onSwipeReview = { opened += "swipe" }, onShizukuCache = { opened += "shizuku" }
         )
-        val tools = homeTools(actions) { opened += "plan" }
+        val tools = cleanToolEntries(actions)
+        // 每个专项工具在清理 Tab 只出现一次，且动作互不重复（原首页微信专清/QQ 专清两行指向同一页面）。
         assertEquals(tools.size, tools.map { it.title }.toSet().size)
+        assertEquals(tools.size, tools.map { it.key }.toSet().size)
         tools.forEach { it.onClick() }
-        assertEquals(listOf("analysis", "plan", "whitelist", "trash"), opened)
         assertEquals(tools.size, opened.toSet().size)
+        assertEquals(1, opened.count { it == "view:CHAT_MEDIA" })
+        // 一键扫描只在首页 Hero，不在清理 Tab 的工具列表里。
+        assertFalse("scan" in opened)
+        assertFalse(tools.any { it.title == "一键扫描" || it.title == "存储分析" })
     }
 }

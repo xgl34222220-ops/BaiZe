@@ -56,10 +56,11 @@ data class AccentOption(
 )
 
 /**
- * 默认使用规范主色 #245FD3；动态取色不可用或对比不足时回退到该颜色。
- * 其余低饱和色保留为手动主题选项。
+ * 默认使用澎湃橙 #F25C26（HyperOS 手机管家清理页同款橙红）；动态取色不可用时回退到该颜色。
+ * 已保存过主题色的用户不受影响；白泽蓝与其余低饱和色保留为手动主题选项。
  */
 val AccentOptions = listOf(
+    AccentOption("hyper", "澎湃橙", 0xFFF25C26.toInt()),
     AccentOption("default", "白泽蓝", 0xFF245FD3.toInt()),
     AccentOption("mist", "雾蓝", 0xFF7C93AB.toInt()),
     AccentOption("sage", "鼠尾草绿", 0xFF8FA98F.toInt()),

@@ -48,11 +48,11 @@ data class SettingsUiActions(
     val onOpenAudit: () -> Unit,
     val onOpenCrashDiagnostics: () -> Unit,
     val onDiscardSchedulerDraft: () -> Unit = {},
-    val onOpenCleanupAudit: () -> Unit = {},
     val onOpenTaskHistory: () -> Unit = {},
-    val onOpenRuleVersions: () -> Unit = {},
     /** 只读统计微信存储构成，结果回调在主线程。 */
-    val onLoadWechatUsage: ((io.github.xgl34222220.baize.WechatUsage) -> Unit) -> Unit = {}
+    val onLoadWechatUsage: ((io.github.xgl34222220.baize.WechatUsage) -> Unit) -> Unit = {},
+    /** 设置 →「规则与保护」中心（CleanCenterActivity）：保护名单、清理策略、规则版本与试跑等的唯一入口。 */
+    val onOpenRulesCenter: () -> Unit = {}
 )
 
 fun DashboardUiState.toSettingsUiState(
