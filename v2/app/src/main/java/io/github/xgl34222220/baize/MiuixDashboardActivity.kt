@@ -253,7 +253,6 @@ class MiuixDashboardActivity : ComponentActivity() {
                     deep = { openProfile("deep") },
                     corpses = { openProfile("corpses") },
                     audit = { CleanerNavigation.open(this, Intent(this, CleanCenterActivity::class.java)) },
-                    updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
                     schedulerCommand = { controlScheduler(it) },
                     clearHistory = { confirmClearHistory() },
@@ -266,8 +265,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() },
                     wechatUsage = { loadWechatUsage(it) },
-                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) },
-                    ruleVersions = { CleanerNavigation.open(this, Intent(this, RuleBundleActivity::class.java)) }
+                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) }
                 ),
                 navigationRequest = navigationRequest.value,
                 onNavigationHandled = { navigationRequest.value = null },

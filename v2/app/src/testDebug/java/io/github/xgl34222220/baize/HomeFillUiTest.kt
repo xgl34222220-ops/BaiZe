@@ -29,7 +29,7 @@ class HomeFillUiTest {
     private fun actions(calls: MutableList<String> = mutableListOf()) = DashboardActions(refresh = {}, clean = {}, organize = {},
         scan = { calls += "scan" }, apkScan = { calls += "apk" }, largeFiles = { calls += "large" },
         duplicates = { calls += "duplicates" }, storageAnalysis = {}, cleanScan = {}, dismissScan = {}, stop = { calls += "stop" },
-        deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
+        deep = {}, corpses = {}, audit = {}, saveScheduler = {}, schedulerCommand = {},
         clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {},
         fileTrash = { calls += "trash" }, storageView = { calls += "view:$it" })
