@@ -106,10 +106,25 @@ class FileOrganizerEngine(
     @Volatile
     private var snapshot: Snapshot? = null
 
+    /** 本轮扫描的下载稳定性闸（打开文件集合每轮只建一次）。 */
+    @Volatile
+    private var scanGate: DownloadStabilityGate? = null
+    private var scanSkippedRecent = 0
+    private var scanSkippedOpen = 0
+
+    private fun captureStabilityGate(): DownloadStabilityGate =
+        DownloadStabilityGate.capture(
+            configInt("organizer_min_age_minutes", DownloadStabilityGate.DEFAULT_MIN_AGE_MINUTES)
+        )
+
     fun scan(progress: (Progress) -> Unit): String {
         cancelled.set(false)
         val started = SystemClock.elapsedRealtime()
         val items = LinkedHashMap<String, PlannedMove>()
+        progress(Progress("正在检查正在下载或被占用的文件", 0, 0, ""))
+        scanGate = captureStabilityGate()
+        scanSkippedRecent = 0
+        scanSkippedOpen = 0
         val indexed = collectSharedIndex(started, items, progress)
         val sourceCount: Int
         val coverage: JSONArray
@@ -163,6 +178,9 @@ class FileOrganizerEngine(
             .put("truncated", truncated)
             .put("elapsedMs", elapsed(started))
             .put("pageSize", DEFAULT_PAGE_SIZE)
+            .put("skippedRecent", scanSkippedRecent)
+            .put("skippedBusy", scanSkippedOpen)
+            .put("minAgeMinutes", (scanGate?.minAgeSeconds ?: 600L) / 60L)
             .put("categoryCounts", categoryCounts)
             .put("sourceCounts", sourceCounts)
             .put("previewCount", preview.length())
@@ -201,6 +219,10 @@ class FileOrganizerEngine(
         }
         if (selected.isEmpty()) return error("empty_selection", "没有需要归类的文件")
 
+        // 执行阶段重新取一次打开文件集合：扫描与执行之间用户可能刚开始新的下载。
+        val gate = captureStabilityGate()
+        var skippedRecent = 0
+        var skippedBusy = 0
         val moves = JSONArray()
         val journalFile = newUndoFile()
         val details = JSONArray()
@@ -223,6 +245,9 @@ class FileOrganizerEngine(
             val source = File(item.source)
             val plannedDestination = File(item.destination)
             val reason = validatePlannedMove(item, source, plannedDestination)
+                ?: stabilityReason(gate, item.source)?.also { (verdict, _) ->
+                    if (verdict == DownloadStabilityGate.Verdict.RECENT) skippedRecent += 1 else skippedBusy += 1
+                }?.second
             if (reason != null) {
                 skipped += 1
                 appendDetail(item, "skipped", reason)
@@ -299,6 +324,8 @@ class FileOrganizerEngine(
             .put("failed", failed)
             .put("deduplicated", deduplicated)
             .put("renamed", renamed)
+            .put("skippedRecent", skippedRecent)
+            .put("skippedBusy", skippedBusy)
             .put("bytes", bytes)
             .put("conflictPolicy", selection.conflictPolicy.name.lowercase())
             .put("undoAvailable", undoRecordCount() > 0)
@@ -709,6 +736,12 @@ class FileOrganizerEngine(
         val statFingerprint = fingerprint(sourceStat)
         val category = category(file.name)
         if (category.isBlank()) return
+        // 仍在下载/写入的文件不进入计划（最近修改或仍被进程打开）。
+        when (scanGate?.check(path, sourceStat.st_mtime)) {
+            DownloadStabilityGate.Verdict.RECENT -> { scanSkippedRecent += 1; return }
+            DownloadStabilityGate.Verdict.OPEN -> { scanSkippedOpen += 1; return }
+            else -> Unit
+        }
         val destination = File(File("/data/media/$userId/BaiZe归类"), "$category/${file.name}")
         val id = sha256Text("$path\u0000$statFingerprint")
         out.putIfAbsent(
@@ -760,6 +793,13 @@ class FileOrganizerEngine(
         return null
     }
 
+    /** 执行前复核：大小/修改时间已由指纹比对；这里补最近修改与仍被打开两道闸。 */
+    private fun stabilityReason(gate: DownloadStabilityGate, path: String): Pair<DownloadStabilityGate.Verdict, String>? {
+        val stat = runCatching { Os.lstat(path) }.getOrNull() ?: return null
+        val verdict = gate.check(path, stat.st_mtime)
+        return gate.reason(verdict)?.let { verdict to it }
+    }
+
     private fun validatePlannedMove(item: PlannedMove, source: File, destination: File): String? {
         val sourcePath = canonical(source)
         if (sourcePath != item.source) return "源路径已变化"
@@ -769,7 +809,7 @@ class FileOrganizerEngine(
         if (!allowedOrganizerSource(sourcePath)) return "源文件不再属于允许的归类来源"
         // 撤销仍可把文件放回相机目录；只有新的归类不允许搬走相机与相册原件。
         if (io.github.xgl34222220.baize.UserMediaGuard.isUserMedia(sourcePath)) return "相机与相册原件不参与归类"
-        if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
+        if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化（可能仍在下载），本次跳过"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
         return null
     }

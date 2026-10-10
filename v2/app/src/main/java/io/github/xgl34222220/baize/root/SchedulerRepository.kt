@@ -744,6 +744,7 @@ internal class SchedulerRepository(
             "organizer_conflict_policy" to 0..2,
             "organizer_undo_retention" to 1..20,
             "organizer_media_scan" to 0..1,
+            "organizer_min_age_minutes" to 1..1440,
             "daily_schedule_enabled" to 0..1,
             "daily_schedule_hour" to 0..23,
             "daily_schedule_minute" to 0..59,

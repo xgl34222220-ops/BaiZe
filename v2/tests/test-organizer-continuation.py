@@ -27,7 +27,7 @@ class OrganizerContinuation(unittest.TestCase):
         self.media = self.work / 'media'
         self.config = self.state / 'config.conf'
         self.config.write_text('organizer_conflict_policy=0\norganizer_media_scan=0\n')
-        self.env = dict(os.environ, BAIZE_STATE_DIR=str(self.state), BAIZE_MEDIA_ROOT=str(self.media),
+        self.env = dict(os.environ, BAIZE_ORGANIZER_MIN_AGE_SECONDS='0', BAIZE_STATE_DIR=str(self.state), BAIZE_MEDIA_ROOT=str(self.media),
                         BAIZE_SHELL_BIN='/bin/bash', BAIZE_ORGANIZER_AUTO_MAX_FILES='1')
 
     def tearDown(self):

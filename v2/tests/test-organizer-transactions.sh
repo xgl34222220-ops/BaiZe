@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 run_case() {

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 # 端到端跑一次归类：验证分类落盘、撤销记录格式、多用户覆盖、
 # 以及索引扩展名对齐后 .m4a/.opus/.epub 这类文件确实能被归类。
 set -uo pipefail
