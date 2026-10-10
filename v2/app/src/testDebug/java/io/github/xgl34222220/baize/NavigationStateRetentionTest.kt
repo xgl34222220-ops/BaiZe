@@ -34,41 +34,42 @@ class NavigationStateRetentionTest {
     @Test fun miuixBottomTabsRetainScrollPosition() = retainTabPosition(UiStyle.MIUIX)
     @Test fun materialBottomTabsRetainScrollPosition() = retainTabPosition(UiStyle.MATERIAL)
     private fun retainTabPosition(style: UiStyle) {
+        // 去重后设置页变短，改用最长的清理 Tab 验证切换 Tab 不重置滚动位置。
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions,
-            AppearanceSettings(uiStyle = style), initialPage = 3) }
-        scrollTo("清理有据，保留有度").assertIsDisplayed()
+            AppearanceSettings(uiStyle = style), initialPage = 1) }
+        scrollTo("运行状况").assertIsDisplayed()
         val before = scrollPosition()
         assertTrue(before > 0f)
-        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
-        compose.waitForIdle()
         compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
         compose.waitForIdle()
-        assertEquals("Switching tabs must not restart the settings list", before, scrollPosition(), 1f)
-        compose.onNodeWithText("清理有据，保留有度").assertIsDisplayed()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.waitForIdle()
+        assertEquals("Switching tabs must not restart the clean list", before, scrollPosition(), 1f)
+        compose.onNodeWithText("运行状况").assertIsDisplayed()
     }
 
     @Test fun miuixDetailBackRetainsHubPosition() = retainHubPosition(UiStyle.MIUIX)
     @Test fun materialDetailBackRetainsHubPosition() = retainHubPosition(UiStyle.MATERIAL)
     private fun retainHubPosition(style: UiStyle) {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions,
-            AppearanceSettings(uiStyle = style), initialPage = 3) }
-        scrollTo("清理有据，保留有度")
-        scrollTo("自动任务设置")
+            AppearanceSettings(uiStyle = style), initialPage = 1) }
+        scrollTo("运行状况")
+        scrollTo("执行条件与高级")
         val before = scrollPosition()
         assertTrue(before > 0f)
-        compose.onNodeWithText("自动任务设置").performClick()
+        compose.onNodeWithText("执行条件与高级").performClick()
         compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         back()
-        assertEquals("Back must return to the same hub position", before, scrollPosition(), 1f)
-        compose.onNodeWithText("自动任务设置").assertIsDisplayed()
+        assertEquals("Back must return to the same clean-list position", before, scrollPosition(), 1f)
+        compose.onNodeWithText("执行条件与高级").assertIsDisplayed()
     }
 
     @Test fun numericDraftSurvivesRecreationAndCancelStillDiscardsIt() {
         val saves = mutableListOf<SchedulerUiState>()
         val restore = StateRestorationTester(compose)
         restore.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(minBattery = 20),
-            actions.copy(saveScheduler = { saves += it }), AppearanceSettings(), initialPage = 3) }
-        scrollTo("自动任务设置").performClick()
+            actions.copy(saveScheduler = { saves += it }), AppearanceSettings(), initialPage = 1) }
+        scrollTo("执行条件与高级").performClick()
         scrollTo("最低执行电量").performClick()
         compose.onNode(hasSetTextAction()).performTextReplacement("75")
         restore.emulateSavedInstanceStateRestore()
@@ -103,8 +104,8 @@ class NavigationStateRetentionTest {
         assertEquals(42, savedTimes.single().dailyMinute)
     }
 
-    @Test fun miuixLogsHaveLiveDataOneLevelBackAndGuardedAudit() = verifyLogs(UiStyle.MIUIX)
-    @Test fun materialLogsHaveLiveDataOneLevelBackAndGuardedAudit() = verifyLogs(UiStyle.MATERIAL)
+    @Test fun miuixLogsHaveLiveDataOneLevelBackAndNoDuplicateAudit() = verifyLogs(UiStyle.MIUIX)
+    @Test fun materialLogsHaveLiveDataOneLevelBackAndNoDuplicateAudit() = verifyLogs(UiStyle.MATERIAL)
     private fun verifyLogs(style: UiStyle) {
         var dashboard by mutableStateOf(DashboardUiState(rawLogName = "synthetic.log", rawLog = "synthetic first line",
             history = listOf(HistoryUiItem("合成清理记录", "2026-10-03 16:30", "手动", "合成测试结果", 10, 1, 0, 0, true))))
@@ -126,9 +127,10 @@ class NavigationStateRetentionTest {
         save("logs-${style.name.lowercase()}")
         compose.onNodeWithContentDescription("清空原始输出").performScrollTo().performClick()
         assertEquals(1, clears)
-        repeat(3) { compose.onNodeWithText("清理明细").performScrollTo().performClick() }
-        assertEquals(AuditActivity::class.java.name, shadowOf(compose.activity).nextStartedActivity.component?.className)
-        assertNull("Repeated taps must not create an audit stack", shadowOf(compose.activity).nextStartedActivity)
+        // 去重：运行日志不再有「诊断与恢复/清理明细」；清理审计唯一入口在 记录 Tab。
+        compose.onNodeWithText("清理明细").assertDoesNotExist()
+        compose.onNodeWithText("诊断与恢复").assertDoesNotExist()
+        assertNull(shadowOf(compose.activity).nextStartedActivity)
         back()
         compose.onNodeWithText("管理与维护").performScrollTo().assertIsDisplayed()
         assertFalse(compose.activity.isFinishing)

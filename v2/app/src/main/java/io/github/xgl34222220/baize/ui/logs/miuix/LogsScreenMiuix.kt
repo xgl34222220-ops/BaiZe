@@ -118,16 +118,7 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions, onBack: (() -> U
                 }
             }
         }
-        item { VideoSectionTitle("诊断与恢复") }
-        item {
-            VideoCard(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), contentPadding = 0) {
-                VideoListRow(Icons.Rounded.RestartAlt, "重新连接 Root 服务", "恢复连接并重新读取模块状态", onClick = actions.onReconnect)
-                VideoDivider()
-                VideoListRow(Icons.Rounded.Description, "清理明细", "查看最近任务的分类结果与保护项", onClick = actions.onOpenAudit)
-                VideoDivider()
-                VideoListRow(Icons.Rounded.BugReport, "崩溃诊断", "查看与清除 App 崩溃记录", onClick = actions.onOpenCrashDiagnostics)
-            }
-        }
+        // 「诊断与恢复」卡已移除：重新连接、崩溃诊断只在 设置 → 白泽状态（连接与诊断）；清理审计只在 记录 Tab。
     }
 }
 

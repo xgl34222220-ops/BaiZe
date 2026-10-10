@@ -39,9 +39,7 @@ class CleanScheduleSavingUiTest {
         onAutomaticCleaningChanged = { automaticToggles += it },
         onCategoryEnabledChanged = { id, enabled -> categoryToggles += id to enabled },
         onCategoryIntervalChanged = { _, _ -> }, onScheduleModeChanged = {}, onDailyTimeChanged = { _, _ -> },
-        onDailyGraceChanged = {}, onApkPackagesChanged = {}, onSave = {}, onScan = {}, onApkScan = {},
-        onInstantCache = {}, onFileOrganizer = {}, onLargeFiles = {}, onDuplicates = {},
-        onStorageAnalysis = {}, onDeepClean = {}, onCorpses = {}, onAudit = {}
+        onDailyGraceChanged = {}
     )
 
     private fun render(saving: Boolean): (Boolean) -> Unit {

@@ -47,16 +47,16 @@ class NavigationAuditProbeTest {
     fun landscapeDarkMaterialDetailsBackAndCancel() = landscape(UiStyle.MATERIAL)
     private fun landscape(style: UiStyle) {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions, AppearanceSettings(uiStyle = style, themeMode = ThemeMode.DARK)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onNodeWithText("最低执行电量").performScrollTo().performClick()
         compose.onNodeWithText("取消").performClick()
         compose.onAllNodes(isDialog()).assertCountEquals(0)
         save("settings-detail-landscape-dark-${style.name.lowercase()}")
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理与维护"))
-        compose.onNodeWithText("管理与维护").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("首页", useUnmergedTree = true).assertExists()
     }
     @Test fun storageTrashRepeatedClicksMustOpenOneActivity() {
@@ -83,60 +83,65 @@ class NavigationAuditProbeTest {
         save("apk-trash-entry")
         assertEquals("3 taps before lifecycle changes must create one trash Activity", 1, intentCount())
     }
-    @Test fun materialSettingsDetailMustHideDock() = settingsDetail(UiStyle.MATERIAL)
-    @Test fun miuixSettingsDetailMustHideDock() = settingsDetail(UiStyle.MIUIX)
+    @Test fun materialAutomationDetailMustHideDock() = settingsDetail(UiStyle.MATERIAL)
+    @Test fun miuixAutomationDetailMustHideDock() = settingsDetail(UiStyle.MIUIX)
     private fun settingsDetail(style: UiStyle) {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions, AppearanceSettings(uiStyle = style)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         save("settings-detail-${style.name.lowercase()}")
         compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         compose.onNodeWithText("首页", useUnmergedTree = true).assertDoesNotExist()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理与维护"))
-        compose.onNodeWithText("管理与维护").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("首页", useUnmergedTree = true).assertExists()
     }
-    @Test fun settingsDetailSurvivesSavedStateAndBackReturnsToHub() {
+    @Test fun automationDetailSurvivesSavedStateAndBackReturnsToCleanTab() {
         val restoration = StateRestorationTester(compose)
         restoration.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions, AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         restoration.emulateSavedInstanceStateRestore()
         save("settings-detail-restored-miuix")
         compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("管理与维护"))
-        compose.onNodeWithText("管理与维护").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().assertIsDisplayed()
     }
     @Test fun rulesAndProtectionKeepUniqueActionsWithoutDuplicateDeepPages() {
         val opened = mutableListOf<String>()
         compose.setContent { BaiZeTheme(AppearanceSettings()) {
-            CleanCenterRoute(CleanCenterActions({}, { opened += "safe" },
-                { opened += "policy" }, { opened += "quarantine" }, { opened += it }))
+            CleanCenterRoute(CleanCenterActions(onOpenWhitelist = { opened += "whitelist" },
+                onOpenPolicy = { opened += "policy" }, onOpenRuleVersions = { opened += "rules" }))
         } }
         compose.onNodeWithText("完整深度清理").assertDoesNotExist()
         compose.onNodeWithText("卸载残留").assertDoesNotExist()
         compose.onNodeWithText("扫描并选择清理").assertDoesNotExist()
-        // 应用缓存已由扫描工作台默认扫描与「即时缓存」覆盖，规则与保护页不再重复提供。
+        // 应用缓存已由首页一键扫描覆盖，按应用清理在 清理 →「免 Root 缓存清理」，规则与保护页不再重复提供。
         compose.onNodeWithText("应用缓存").assertDoesNotExist()
+        // 去重：三个子扫描已由一键扫描（同一次 scanSafe）覆盖；隔离区移到 记录 → 回收站 的页内切换。
+        listOf("空文件与空目录", "规则垃圾", "残留碎片", "隔离区").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
+        compose.onNodeWithText("保护名单").performScrollTo().performClick()
         compose.onNodeWithText("清理策略").performScrollTo().performClick()
-        compose.onNodeWithText("隔离区").performScrollTo().performClick()
-        assertEquals(listOf("policy", "quarantine"), opened)
+        compose.onNodeWithText("规则版本与试跑").performScrollTo().performClick()
+        assertEquals(listOf("whitelist", "policy", "rules"), opened)
     }
-    @Test fun homeShortcutRoutesAreSingleClickInBothSkins() {
+    @Test fun homeKeepsOneStorageEntryInBothSkins() {
         var style by mutableStateOf(UiStyle.MIUIX)
         val opened = mutableListOf<String>()
-        compose.setContent { BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions.copy(
+        compose.setContent { BaiZeMiuixApp(DashboardUiState(storageTotal = 100, storageUsed = 40, storageFree = 60), SchedulerUiState(), actions.copy(
             storageAnalysis = { opened += "analysis" }, fileTrash = { opened += "trash" }, whitelist = { opened += "whitelist" }), AppearanceSettings(uiStyle = style)) }
         for (skin in listOf(UiStyle.MIUIX, UiStyle.MATERIAL)) {
             compose.runOnIdle { style = skin }
+            compose.onAllNodesWithText("存储分析").assertCountEquals(1)
             compose.onNodeWithText("存储分析").performScrollTo().performClick()
-            compose.onNodeWithText("规则与白名单").performScrollTo().performClick()
-            compose.onNodeWithText("历史与回收站").performScrollTo().performClick()
+            // 去重：首页不再有工具格、存储空间卡、规则与白名单、历史与回收站。
+            listOf("规则与白名单", "历史与回收站", "整理空间", "存储空间", "推荐清理", "更多清理", "微信专清", "QQ 专清")
+                .forEach { compose.onNodeWithText(it).assertDoesNotExist() }
         }
-        assertEquals(listOf("analysis", "whitelist", "trash", "analysis", "whitelist", "trash"), opened)
+        assertEquals(listOf("analysis", "analysis"), opened)
     }
 }

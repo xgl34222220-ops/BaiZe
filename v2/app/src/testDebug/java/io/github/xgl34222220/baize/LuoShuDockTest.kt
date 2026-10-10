@@ -53,14 +53,15 @@ class LuoShuDockTest {
     }
 
     @Test fun taskDetailsHideDockAndBackRestoresSelection() {
-        render(page = 3)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        // 自动任务的高级设置现在在 清理 → 自动清理 →「执行条件与高级」。
+        render(page = 1)
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onNodeWithTag("luoshu-dock").assertDoesNotExist()
         save("dock-hidden-task-details")
         compose.onNodeWithContentDescription("返回").performClick()
         compose.onNodeWithTag("luoshu-dock").assertIsDisplayed()
-        compose.onNodeWithTag("dock-tab-3").assertIsSelected()
+        compose.onNodeWithTag("dock-tab-1").assertIsSelected()
     }
 
     @Test fun diagnosticsHideDockAndSystemBackRestoresIt() {

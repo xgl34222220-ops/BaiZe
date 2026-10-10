@@ -148,8 +148,8 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
     fun setAllowed(name: String, allowed: Boolean) {
         if (state.value.running || !RootDirectoryOrganizer.ruleName(name)) return
         val rules = state.value.rules.let { if (allowed) it.copy(allow = it.allow + name) else it.copy(allow = it.allow.filterNot { n -> n.equals(name, true) }.toSet()) }
-        mutable.update { it.copy(rules = rules, status = if (allowed) "已加入白名单：$name，自动整理不会处理" else "已移出白名单：$name") }
-        persistRules(rules); reclassify(); record(if (allowed) "白名单 + $name" else "白名单 - $name")
+        mutable.update { it.copy(rules = rules, status = if (allowed) "不再整理：$name（只影响自动整理，不是删除保护）" else "恢复整理：$name") }
+        persistRules(rules); reclassify(); record(if (allowed) "不再整理 + $name" else "不再整理 - $name")
     }
 
     /** 返回空字符串表示成功，否则为提示。 */
@@ -352,7 +352,7 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
             }
             if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             if (review.kind !in setOf(RootEntryKind.STANDARD, RootEntryKind.PROTECTED, RootEntryKind.PLACEHOLDER))
-                TextButton(onClick = { onAllow(!allowed) }, enabled = enabled) { Text(if (allowed) "移出白名单" else "加入白名单（不再整理）") }
+                TextButton(onClick = { onAllow(!allowed) }, enabled = enabled) { Text(if (allowed) "恢复整理此文件夹" else "不再整理此文件夹") }
             if (review.kind == RootEntryKind.PLACEHOLDER) TextButton(onClick = onUnblock, enabled = enabled) { Text("撤销禁止重建") }
             else if (review.canBlock && !confirmBlock) TextButton(onClick = { confirmBlock = true }, enabled = enabled) { Text("禁止重建…") }
         }

@@ -38,13 +38,12 @@ import kotlinx.coroutines.delay
 internal fun FileOrganizerScreen(
     state: FileOrganizerUiState,
     schedule: FileOrganizerScheduleSettings,
-    scheduleSavedText: String,
     onBack: () -> Unit,
     onOneTap: () -> Unit,
     onUndo: () -> Unit,
     onStop: () -> Unit,
-    onScheduleChange: (FileOrganizerScheduleSettings) -> Unit,
-    onSaveSchedule: () -> Unit,
+    /** 自动归类只在「清理 → 自动清理」修改；这里只读显示并跳转过去。 */
+    onOpenAutomationSettings: () -> Unit = {},
     onToggleItem: (String) -> Unit = {},
     onToggleCategory: (String) -> Unit = {},
     onToggleAll: () -> Unit = {},
@@ -55,7 +54,6 @@ internal fun FileOrganizerScreen(
     var barHeight by remember { mutableStateOf(96.dp) }
     var expanded by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var inspected by remember { mutableStateOf<OrganizerPreviewItem?>(null) }
-    var showSchedule by rememberSaveable { mutableStateOf(false) }
     var confirmation by remember { mutableStateOf<Triple<String, Set<String>, Int>?>(null) }
     val now by produceState(SystemClock.elapsedRealtime(), state.previewReady, state.expiresAtRealtime) {
         value = SystemClock.elapsedRealtime()
@@ -75,7 +73,7 @@ internal fun FileOrganizerScreen(
             contentPadding = PaddingValues(bottom = 16.dp)) {
             item {
                 DetailPageHeader("文件归类", "先预览，再将文件按类型归位", onBack) {
-                    IconButton(onClick = { showSchedule = true }, enabled = !state.restoringReview && !state.running) {
+                    IconButton(onClick = onOpenAutomationSettings, enabled = !state.restoringReview && !state.running) {
                         Icon(Icons.Rounded.Schedule, "自动归类设置")
                     }
                 }
@@ -120,7 +118,7 @@ internal fun FileOrganizerScreen(
                 item { DestinationCard() }
                 item { SourceCard() }
                 item { DetailSectionHeader("自动归类") }
-                item { ScheduleCard(schedule, scheduleSavedText, onScheduleChange, onSaveSchedule) }
+                item { ScheduleSummaryCard(schedule, onOpenAutomationSettings) }
             } else {
                 item { DetailSectionHeader("按类别选择", if (editable) "展开查看每个文件的来源和去向" else "历史预览可展开查看，移动操作已锁定") }
                 groups.forEach { (category, entries) ->
@@ -183,9 +181,6 @@ internal fun FileOrganizerScreen(
             } }, confirmButton = { BaiZeDialogButton({ confirmation = null; onApply() }, enabled = unchanged) { Text("确认归类") } },
             dismissButton = { BaiZeDialogButton({ confirmation = null }, primary = false) { Text("返回核对") } })
     }
-    if (showSchedule) BaiZeDialog(onDismissRequest = { showSchedule = false }, title = { Text("自动归类设置") },
-        text = { ScheduleCard(schedule, scheduleSavedText, onScheduleChange, onSaveSchedule) },
-        confirmButton = { BaiZeDialogButton({ showSchedule = false }) { Text("完成") } })
 }
 
 @Composable
@@ -251,78 +246,20 @@ private fun DestinationCard() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * 自动归类的只读摘要。开关、周期、执行条件、同名文件策略都只在「清理 → 自动清理」修改，
+ * 以免两处保存行为不同（旧弹窗保存时会顺带打开全局自动清理 enabled=1，现已不再存在）。
+ */
 @Composable
-private fun ScheduleCard(
-    schedule: FileOrganizerScheduleSettings,
-    savedText: String,
-    onChange: (FileOrganizerScheduleSettings) -> Unit,
-    onSave: () -> Unit
-) {
-    val intervals = FileOrganizerWorker.ALLOWED_INTERVALS
-    var advanced by rememberSaveable { mutableStateOf(false) }
+private fun ScheduleSummaryCard(schedule: FileOrganizerScheduleSettings, onOpenAutomationSettings: () -> Unit) {
     DetailGlassPanel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("定时归类", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("自动整理新下载的文件", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-            }
-            Switch(checked = schedule.enabled, onCheckedChange = { onChange(schedule.copy(enabled = it)) },
-                modifier = Modifier.semantics { contentDescription = "定时文件归类" })
-        }
-        BaiZeIntervalPicker(intervals.toList(), schedule.intervalMinutes, FileOrganizerWorker::intervalLabel,
-            { onChange(schedule.copy(intervalMinutes = it)) })
-        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .055f))
-        Text("同名文件", fontWeight = FontWeight.Medium, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            (0..2).forEach { policy ->
-                FilterChip(
-                    selected = schedule.conflictPolicy == policy,
-                    onClick = { onChange(schedule.copy(conflictPolicy = policy)) },
-                    label = {
-                        Text(
-                            FileOrganizerWorker.conflictPolicyLabel(policy),
-                            textAlign = TextAlign.Center,
-                            fontSize = 12.sp,
-                            maxLines = 1
-                        )
-                    },
-                    border = null,
-                    shape = RoundedCornerShape(12.dp)
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth().clickable { advanced = !advanced }.heightIn(min = 52.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("执行条件", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                val conditions = buildList {
-                    if (schedule.chargingOnly) add("充电")
-                    if (schedule.screenOffOnly) add("息屏")
-                    if (schedule.idleOnly) add("设备空闲")
-                }
-                Text(conditions.joinToString(" · ").ifBlank { "不限制执行条件" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(if (advanced) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight,
-                if (advanced) "收起执行条件" else "展开执行条件", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (advanced) {
-            SettingSwitch("仅充电时执行", schedule.chargingOnly) { onChange(schedule.copy(chargingOnly = it)) }
-            SettingSwitch("仅息屏时执行", schedule.screenOffOnly) { onChange(schedule.copy(screenOffOnly = it)) }
-            SettingSwitch("仅设备空闲时执行", schedule.idleOnly) { onChange(schedule.copy(idleOnly = it)) }
-            SettingSwitch("开启计划后立即执行一次", schedule.runImmediatelyOnEnable) { onChange(schedule.copy(runImmediatelyOnEnable = it)) }
-        }
+        Text("定时归类", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(if (schedule.enabled) "已开启 · 每 ${FileOrganizerWorker.intervalLabel(schedule.intervalMinutes)}检查一次" else "未开启",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text("同名文件：${FileOrganizerWorker.conflictPolicyLabel(schedule.conflictPolicy)}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         DetailStatusText("上次执行：${FileOrganizerWorker.lastRunText(LocalContext.current, schedule)}\n${schedule.lastResult}", Modifier.padding(top = 8.dp, bottom = 12.dp))
-        if (savedText.isNotBlank()) Text(savedText, Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-        GlassActionButton("保存定时归类", onSave, modifier = Modifier.fillMaxWidth(), secondary = true)
+        GlassActionButton("在「清理 → 自动清理」中设置", onOpenAutomationSettings, modifier = Modifier.fillMaxWidth(), secondary = true)
     }
 }
 
-@Composable
-private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f).padding(end = 10.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-        Switch(checked = checked, onCheckedChange = onCheckedChange,
-            modifier = Modifier.semantics { contentDescription = label })
-    }
-}

@@ -58,7 +58,6 @@ import kotlinx.coroutines.delay
 fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actions: DashboardActions,
     onOpenClean: () -> Unit, onOpenPlan: () -> Unit) {
     var menuOpen by rememberSaveable { mutableStateOf(false) }
-    val context = LocalContext.current
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -107,92 +106,10 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                 SpaceHero(state, actions)
             }
         }
-        item(key = "shortcuts") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                LuoShuSection("整理空间")
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val tools = homeTools(actions, onOpenPlan)
-                    // 参考 SD Maid SE 仪表盘的工具卡与 Files by Google 清理建议卡：窄屏/大字号单列，常规两列，平板三列。
-                    val width = maxWidth.value / LocalDensity.current.fontScale
-                    val columns = when {
-                        width < 240f -> 1
-                        width < 560f -> 2
-                        else -> 3
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        tools.chunked(columns).forEach { group ->
-                            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                group.forEach { tool ->
-                                    // 单列（窄屏 / 大字号）改用横向紧凑格，避免卡片过高。
-                                    if (columns == 1) CompactTile(tool, Modifier.weight(1f).fillMaxHeight(), homeToolTone(tool.title))
-                                    else LuoShuShortcut(tool.title, tool.subtitle, tool.icon, tool.onClick,
-                                        Modifier.weight(1f).fillMaxHeight(), tone = homeToolTone(tool.title))
-                                }
-                                // 最后一行不满时保持与其他格同宽。
-                                repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (state.storageTotal > 0) item(key = "storage") {
-            StorageSpaceCard(state, actions.storageAnalysis, Modifier.padding(horizontal = 16.dp))
-        }
-        item(key = "app-specific") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BaiZeCaption("应用专清")
-                BaiZeCard {
-                    BaiZeListRow("微信专清", { actions.storageView(StorageToolMode.CHAT_MEDIA) },
-                        leading = { BaiZeTintedIcon(Icons.Rounded.ChatBubble, BaiZeTones.green) }, value = "前往清理")
-                    BaiZeInsetDivider()
-                    BaiZeListRow("QQ 专清", { actions.storageView(StorageToolMode.CHAT_MEDIA) },
-                        leading = { BaiZeTintedIcon(Icons.Rounded.Forum, BaiZeTones.blue) }, value = "前往清理")
-                }
-            }
-        }
-        item(key = "recommended") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BaiZeCaption("推荐清理")
-                BaiZeCard {
-                    BaiZeListRow("大文件", actions.largeFiles, subtitle = "按大小排列，逐个确认",
-                        leading = { BaiZeTintedIcon(Icons.Rounded.InsertDriveFile, BaiZeTones.red) })
-                    BaiZeInsetDivider()
-                    BaiZeListRow("重复文件", actions.duplicates, subtitle = "保留一份，其余可移入回收站",
-                        leading = { BaiZeTintedIcon(Icons.Rounded.ContentCopy, BaiZeTones.blue) })
-                    BaiZeInsetDivider()
-                    BaiZeListRow("截图与录屏", { actions.storageView(StorageToolMode.SCREENSHOTS) }, subtitle = "30 天前的截图与录屏",
-                        leading = { BaiZeTintedIcon(Icons.Rounded.Screenshot, BaiZeTones.green) })
-                    BaiZeInsetDivider()
-                    BaiZeListRow("旧下载", { actions.storageView(StorageToolMode.OLD_DOWNLOADS) }, subtitle = "下载目录中久未改动的文件",
-                        leading = { BaiZeTintedIcon(Icons.Rounded.Download, BaiZeTones.orange) })
-                }
-            }
-        }
-        item(key = "more") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BaiZeCaption("更多清理")
-                val more = listOf(
-                    HomeTool("根目录整理", "空文件夹与卸载残留", Icons.Rounded.FolderSpecial) { actions.storageView(StorageToolMode.ROOT) },
-                    HomeTool("安装包", "已安装或重复的 APK", Icons.Rounded.InstallMobile, actions.apkScan),
-                    HomeTool("照片瘦身", "压缩大照片，保留原图可选", Icons.Rounded.PhotoSizeSelectLarge, actions.photoCompression),
-                    HomeTool("滑动整理", "左右滑动快速取舍", Icons.Rounded.Swipe, actions.swipeReview)
-                )
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    // 窄屏或大字号时单列，避免标题被截断。
-                    val columns = if (maxWidth.value / LocalDensity.current.fontScale < 300f) 1 else 2
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        more.chunked(columns).forEach { pair ->
-                            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                pair.forEach { tool ->
-                                    CompactTile(tool, Modifier.weight(1f).fillMaxHeight())
-                                }
-                                repeat(columns - pair.size) { Spacer(Modifier.weight(1f)) }
-                            }
-                        }
-                    }
-                }
-            }
+        // 去重后的首页只保留状态与一个主动作：存储空间卡是「存储分析」的唯一入口，
+        // 专项清理工具都在「清理」Tab，历史/回收站在「记录」Tab，规则与保护在「设置」。
+        if (state.resumablePlan && !state.running) item(key = "resume") {
+            ResumePlanBanner(actions.resumableScan, Modifier.padding(horizontal = 16.dp))
         }
         if (state.automationAvailable) item(key = "plan") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -207,82 +124,33 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                 }
             }
         }
-        item(key = "history") {
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LuoShuSection("清理记录")
-                LuoShuGroup {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Metric("累计释放", Formatter.formatFileSize(context, animatedBytes(state.lifetimeReleased)), Modifier.weight(1f))
-                        Metric("完成清理", "${state.lifetimeRuns} 次", Modifier.weight(1f))
-                    }
-                    if (state.lastTaskTime.isNotBlank()) Text(
-                        "上次清理 ${state.lastTaskTime} · " + if (state.lastReleasedKnown)
-                            "确认删除 ${Formatter.formatFileSize(context, state.lastReleased)} 内容" else "释放量未完整确认",
-                        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
     }
     }
 }
 
-private fun homeToolTone(title: String): BaiZeTone = when (title) {
-    "存储分析" -> BaiZeTones.blue
-    "自动任务" -> BaiZeTones.purple
-    "规则与白名单" -> BaiZeTones.green
-    else -> BaiZeTones.orange
-}
-
-/** 更多清理的紧凑两列格：图标在左，标题与一行说明在右。 */
+/** 只在存在未完成的续清计划时出现：打开续清页面，由该页面重新校验计划后才会继续。 */
 @Composable
-private fun CompactTile(tool: HomeTool, modifier: Modifier, toneOverride: BaiZeTone? = null) {
-    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val tone = toneOverride ?: when (tool.title) {
-        "根目录整理" -> BaiZeTones.folder
-        "安装包" -> BaiZeTones.green
-        "照片瘦身" -> BaiZeTones.purple
-        else -> BaiZeTones.teal
-    }
-    Row(modifier.baiZePress(interaction).clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised)
-        .clickable(interaction, ripple(), role = androidx.compose.ui.semantics.Role.Button, onClick = tool.onClick)
-        .padding(horizontal = 14.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        BaiZeTintedIcon(tool.icon, tone, size = 36.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(tool.title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                overflow = TextOverflow.Ellipsis)
-            Text(tool.subtitle, fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
+private fun ResumePlanBanner(onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    LuoShuGroup(modifier) {
+        LuoShuNavigationRow(Icons.Rounded.PlayArrow, "继续上次清理", "上次清理未完成，确认后继续剩余项目", onOpen)
     }
 }
 
-/** 存储空间卡：已用 / 总量 + 分段占用条（已占用、本次可清理、可用）。 */
+/**
+ * Hero 内的紧凑存储条：存储只显示一次（不再另放「存储空间」卡）。整行可点，是「存储分析」的唯一入口。
+ */
 @Composable
-private fun StorageSpaceCard(state: DashboardUiState, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+private fun HeroStorageLink(state: DashboardUiState, onOpen: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val fractions = storageRingFractions(state.storageUsed, state.ringCleanable(), state.storageTotal)
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    BaiZeCard(modifier.baiZePress(interaction)) {
-        Column(Modifier.fillMaxWidth().clickable(interaction, ripple(), onClickLabel = "查看存储构成", onClick = onOpen)
-            .padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("存储空间", Modifier.weight(1f), fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
-                Text("已用 ${Formatter.formatFileSize(context, state.storageUsed)} / ${Formatter.formatFileSize(context, state.storageTotal)}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), fontSize = 13.sp,
-                    color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1.4f, fill = false))
-                Icon(Icons.Rounded.ChevronRight, null, Modifier.size(20.dp), tint = scheme.onSurfaceVariant.copy(alpha = .55f))
-            }
-            BaiZeUsageBar(listOf(fractions.occupied to scheme.primary, fractions.cleanable to BaiZeTones.orange.color()))
-            if (state.ringCleanable() > 0L) Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).background(BaiZeTones.orange.color(), CircleShape))
-                Spacer(Modifier.width(6.dp))
-                Text("本次可清理 ${Formatter.formatFileSize(context, state.ringCleanable())}", fontSize = 12.sp,
-                    color = scheme.onSurfaceVariant)
-            }
+    Column(Modifier.fillMaxWidth().baiZePress(interaction).clip(RoundedCornerShape(16.dp))
+        .clickable(interaction, ripple(), onClickLabel = "查看存储构成", role = androidx.compose.ui.semantics.Role.Button, onClick = onOpen)
+        .padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        BaiZeUsageBar(listOf(fractions.occupied to scheme.primary, fractions.cleanable to BaiZeTones.orange.color()))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("存储分析", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+            Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp), tint = scheme.primary)
         }
     }
 }
@@ -290,22 +158,6 @@ private fun StorageSpaceCard(state: DashboardUiState, onOpen: () -> Unit, modifi
 private const val HOME_REFRESH_INDICATOR_MS = 700L
 private const val HOME_REFRESH_INDICATOR_REDUCED_MS = 250L
 private const val HERO_RING_MIN_WIDTH_DP = 280f
-
-/** 首页工具格：顺序即优先级；副标题与入口一一对应，不再按标题字符串匹配。 */
-@androidx.compose.runtime.Immutable
-internal data class HomeTool(val title: String, val subtitle: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val onClick: () -> Unit)
-
-/**
- * 统一信息架构：首页只保留「一键扫描」主入口（存储卡片）与 4 个次级入口。
- * 原来分散的大文件、重复文件、截图、聊天媒体、照片瘦身、滑动整理、安装包等都并入扫描结果的复核分类或存储分析视图，
- * 映射见 [io.github.xgl34222220.baize.LegacyEntryRedirects.HOME_TOOL_DESTINATIONS]。
- */
-internal fun homeTools(actions: DashboardActions, onOpenPlan: () -> Unit = {}): List<HomeTool> = listOf(
-    HomeTool("存储分析", "空间构成与 8 种视图", Icons.Rounded.DataUsage, actions.storageAnalysis),
-    HomeTool("自动任务", "统一计划 · 系统维护", Icons.Rounded.CalendarMonth, onOpenPlan),
-    HomeTool("规则与白名单", "保护应用与路径", Icons.Rounded.Shield, actions.whitelist),
-    HomeTool("历史与回收站", "撤销已移入文件", Icons.Rounded.RestoreFromTrash, actions.fileTrash)
-)
 
 @Composable
 private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
@@ -419,6 +271,7 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
             else Text(description, style = MaterialTheme.typography.bodySmall,
                 color = if (state.scanCompleted && state.scanErrors > 0) colors.warning else scheme.onSurfaceVariant)
         }
+        if (state.storageTotal > 0 && !state.running) HeroStorageLink(state, actions.storageAnalysis)
         if (state.versionWarning.isNotBlank()) {
             DetailExpandableText("版本信息需要检查", state.versionWarning, Modifier.padding(horizontal = 0.dp))
         }
@@ -438,11 +291,3 @@ private fun HeroMetricValue(value: String) = BaiZeMetric(value, large = true)
 
 private fun DashboardUiState.ringCleanable(): Long =
     if (scanCompleted) scanBytes.coerceIn(0L, storageUsed.coerceAtLeast(0L)) else 0L
-
-@Composable
-private fun Metric(label: String, value: String, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold))
-    }
-}

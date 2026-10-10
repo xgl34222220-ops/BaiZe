@@ -61,6 +61,8 @@ def main() -> None:
     smoke.launch('refactor-cold-start')
     for i, label in enumerate(['清理', '记录', '设置']):
         smoke.tap_label(label, f'refactor-tab-{i}')
+    # Dedup: 设置 →「规则与保护」中心 → 保护名单。
+    tap('规则与保护', 'rules-center-entry')
     tap('保护名单', 'whitelist-entry')
     root = smoke.ui('whitelist-apps')
     assert {'应用保护', '路径保护'}.issubset({n.attrib.get('text') for n in root.iter('node')})
@@ -68,6 +70,8 @@ def main() -> None:
     smoke.capture('whitelist-paths')
     smoke.tap_label('应用保护', 'whitelist-apps')
     smoke.adb('shell', 'input', 'keyevent', '4')
+    time.sleep(2)
+    smoke.adb('shell', 'input', 'keyevent', '4')  # 规则与保护中心 → 设置
     time.sleep(2)
     smoke.tap_label('首页', 'refactor-home-return')
     smoke.adb('shell', 'input', 'keyevent', '3')

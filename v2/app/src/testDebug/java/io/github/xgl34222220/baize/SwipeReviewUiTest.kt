@@ -71,4 +71,19 @@ class SwipeReviewUiTest {
         compose.onNodeWithText("开启${SharedStorageAccess.label}").assertIsDisplayed()
         compose.onNodeWithTag("swipe-card").assertDoesNotExist()
     }
+
+    @Test fun seenFilesCanBeResetFromThePage() {
+        var resets = 0
+        compose.setContent { BaiZeTheme(AppearanceSettings()) { SwipeReviewScreen(
+            SwipeReviewUiState(session = SwipeReviewSession(items), seenCount = 3, status = "共 2 个文件，已跳过 3 个看过的文件"),
+            SwipeReviewActions(onResetSeen = { resets++ })) } }
+        compose.onNodeWithText("重置「已看过」（3）").performScrollTo().performClick()
+        assertEquals(1, resets)
+    }
+
+    @Test fun resetIsHiddenWhenNothingWasSeen() {
+        compose.setContent { BaiZeTheme(AppearanceSettings()) { SwipeReviewScreen(
+            SwipeReviewUiState(session = SwipeReviewSession(items)), SwipeReviewActions()) } }
+        compose.onNodeWithTag("swipe-reset-seen").assertDoesNotExist()
+    }
 }

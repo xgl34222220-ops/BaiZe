@@ -34,9 +34,10 @@ class AppProfileSettingsUiTest {
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
             actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }, wechatUsage = wechatUsage),
             AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
-        compose.onNodeWithText("设置", useUnmergedTree = true).performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        // 去重后：原 设置 →「自动任务设置」整页搬到 清理 → 自动清理 →「执行条件与高级」。
+        compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
     }
 
     private fun save() {

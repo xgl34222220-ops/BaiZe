@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FactCheck
+import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -122,10 +124,12 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
             }
         }
 
-        if (state.protectedItems.isNotEmpty()) {
-            item(key = "history-protected-title") { LuoShuSection("保护") }
-            item(key = "history-protected") {
-                LuoShuGroup {
+        item(key = "history-tools-title") { LuoShuSection("回收与审计") }
+        item(key = "history-tools") {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.RestoreFromTrash, "回收站", "恢复或永久删除；页内可切换到隔离区", actions.onOpenTrash)
+                if (state.protectedItems.isNotEmpty()) {
+                    LuoShuGroupDivider()
                     LuoShuNavigationRow(
                         Icons.Rounded.Security,
                         "受保护内容",
@@ -133,6 +137,8 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                         actions.onReviewProtected
                     )
                 }
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.FactCheck, "清理审计", "清理依据、规则质量与改进建议", actions.onOpenAudit)
             }
         }
     }
@@ -731,4 +737,13 @@ private fun formatElapsed(seconds: Long): String = when {
     seconds >= 3_600 -> "${seconds / 3_600} 小时"
     seconds >= 60 -> "${seconds / 60} 分钟"
     else -> "${seconds} 秒"
+}
+/**
+ * HistoryUiState.lifetimeElapsed is accumulated in seconds (AppTaskHistoryStore adds
+ * elapsedMs / 1000, HistoryRepository adds elapsedSeconds), as the MIUIX and Material
+ * history screens already assume. Dividing by 1000 again showed one hour as "3s".
+ */
+internal fun formatLifetimeElapsedCompact(totalSeconds: Long): String {
+    val seconds = totalSeconds.coerceAtLeast(0L)
+    return when { seconds >= 3_600L -> "${seconds / 3_600L}h ${seconds % 3_600L / 60L}m"; seconds >= 60L -> "${seconds / 60L}m ${seconds % 60L}s"; else -> "${seconds}s" }
 }

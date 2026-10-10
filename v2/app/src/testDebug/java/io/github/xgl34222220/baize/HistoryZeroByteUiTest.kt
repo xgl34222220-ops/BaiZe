@@ -10,7 +10,6 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.history.HistoryUiActions
 import io.github.xgl34222220.baize.ui.history.HistoryUiState
 import io.github.xgl34222220.baize.ui.history.miuix.HistoryScreenMiuix
-import io.github.xgl34222220.baize.ui.history.miuix.VideoHistoryScreenMiuix
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import org.junit.Rule
 import org.junit.Test
@@ -35,14 +34,15 @@ class HistoryZeroByteUiTest {
             emptyList(), emptyList(), emptyList(), listOf(record))
         val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false)
         compose.setContent { BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-            VideoHistoryScreenMiuix(state, HistoryUiActions({}, {}, {}))
+            // 两种皮肤现在共用 HistoryScreenMiuix；容量诚实性断言保持不变。
+            HistoryScreenMiuix(state, HistoryUiActions({}, {}, {}))
         } } }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("容量状态夹具"))
         compose.onAllNodesWithText(expected).onLast().assertIsDisplayed()
     }
 
     @Test fun directoryOnlyMiuixHistoryDoesNotClaimNothingWasCleaned() = directoryHistory(0)
-    @Test fun directoryOnlyVideoHistoryDoesNotTurnDirectoriesIntoFiles() = directoryHistory(2)
+    @Test fun directoryOnlyMaterialSkinHistoryDoesNotTurnDirectoriesIntoFiles() = directoryHistory(2)
     @Test fun zeroByteFilesAndDirectoriesKeepSeparateActualHistoryCounts() = directoryHistory(0, files = 2)
 
     private fun directoryHistory(style: Int, files: Int = 0) {
@@ -53,10 +53,8 @@ class HistoryZeroByteUiTest {
         val actions = HistoryUiActions(onRefresh = {}, onClearHistory = {}, onReviewProtected = {})
         compose.setContent {
             BaiZeTheme(appearance) { CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-                when (style) {
-                    0 -> HistoryScreenMiuix(state, actions)
-                    else -> VideoHistoryScreenMiuix(state, actions)
-                }
+                // 记录页已统一为 HistoryScreenMiuix（原 Material 版 VideoHistoryScreenMiuix 已删除）。
+                if (style >= 0) HistoryScreenMiuix(state, actions)
             } }
         }
         compose.onAllNodesWithText("$files 个文件 · 3 个目录", substring = true).onFirst().assertIsDisplayed()

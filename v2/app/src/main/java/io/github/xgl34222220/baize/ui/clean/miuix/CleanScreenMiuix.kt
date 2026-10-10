@@ -21,6 +21,17 @@ import androidx.compose.material.icons.rounded.InstallMobile
 import androidx.compose.material.icons.rounded.Rule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.ChatBubble
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.FolderSpecial
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.PhotoSizeSelectLarge
+import androidx.compose.material.icons.rounded.Screenshot
+import androidx.compose.material.icons.rounded.Swipe
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,6 +61,7 @@ import io.github.xgl34222220.baize.ui.clean.CleanUiActions
 import io.github.xgl34222220.baize.ui.clean.CleanUiState
 import io.github.xgl34222220.baize.ui.clean.IntValueDialog
 import io.github.xgl34222220.baize.ui.clean.TimeValueDialog
+import io.github.xgl34222220.baize.ui.clean.cleanToolEntries
 import io.github.xgl34222220.baize.ui.clean.formatMinutes
 import io.github.xgl34222220.baize.ui.miuix.LuoShuGroup
 import io.github.xgl34222220.baize.ui.miuix.LuoShuGroupDivider
@@ -119,28 +131,24 @@ fun CleanScreenMiuix(
             LuoShuPageHeader("清理")
         }
         item(key = "clean-manual-title") {
-            LuoShuSection("手动工具", "一次扫描覆盖全部安全来源，需复核的分类在结果里单独列出")
+            LuoShuSection("专项清理", "每个工具只在这里出现一次；一键扫描在首页")
         }
         item(key = "clean-manual") {
             LuoShuGroup {
-                // 统一入口：缓存、卸载残留与日志、空目录、应用专项（含微信档位）都在一键扫描的分类里；
-                // 原「即时缓存」「卸载残留」入口并入，见 LegacyEntryRedirects。
-                LuoShuNavigationRow(Icons.Rounded.Search, "一键扫描", "缓存 · 日志 · 空目录 · 应用专项，一次完成", actions.onScan)
-                LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.Security, "扩大扫描范围", "深度规则，逐项确认", actions.onDeepClean)
             }
         }
-        item(key = "clean-advanced") {
+        item(key = "clean-tools") {
+            val tools = cleanToolEntries(actions)
             LuoShuGroup {
-                LuoShuNavigationRow(Icons.Rounded.CleaningServices, "免 Root 缓存清理", "连接 Shizuku 后清理", actions.onShizukuCache)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.FolderCopy, "文件归类", "整理下载与散落文件", actions.onFileOrganizer)
-                LuoShuGroupDivider()
-                LuoShuNavigationRow(Icons.Rounded.Rule, "规则与保护", "规则范围、清理策略与隔离区", actions.onAudit)
+                tools.forEachIndexed { index, tool ->
+                    LuoShuNavigationRow(cleanToolIcon(tool.key), tool.title, tool.subtitle, tool.onClick)
+                    if (index != tools.lastIndex) LuoShuGroupDivider()
+                }
             }
         }
         item(key = "clean-auto-title") {
-            LuoShuSection("自动化策略", if (automationExpanded) "执行方式与周期" else "")
+            LuoShuSection("自动清理", if (automationExpanded) "执行方式与周期" else "")
         }
         item(key = "clean-auto") {
             AutomaticCleaningHero(
@@ -149,6 +157,14 @@ fun CleanScreenMiuix(
                 expanded = automationExpanded,
                 onExpandedChanged = { automationExpanded = !automationExpanded }
             )
+        }
+        item(key = "clean-auto-more") {
+            LuoShuGroup {
+                LuoShuNavigationRow(Icons.Rounded.Tune, "执行条件与高级", "执行条件、文件归类、通知、应用专项与系统维护",
+                    actions.onOpenAutomationSettings)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.History, "运行状况", "执行、等待原因与下次计划", actions.onOpenSchedulerHealth)
+            }
         }
         if (automationExpanded) {
             item(key = "clean-schedule-title") {
@@ -170,27 +186,12 @@ fun CleanScreenMiuix(
                     state = state,
                     actions = actions,
                     expandedCategory = expandedCategory,
-                    onExpandedCategoryChanged = onExpandedCategoryChanged
-                )
-            }
-            item(key = "clean-extra-title") {
-                LuoShuSection("附加项目")
-            }
-            item(key = "clean-extra") {
-                LuoShuGroup {
-                    SwitchRow(
-                        icon = Icons.Rounded.InstallMobile,
-                        title = "过期安装包",
-                        subtitle = "保留 ${state.apkPackageDays} 天后自动清理",
-                        checked = state.apkPackagesEnabled,
-                        onCheckedChange = actions.onApkPackagesChanged,
-                        enabled = !state.saving
-                    )
-                    if (state.apkPackagesEnabled) {
-                        LuoShuGroupDivider()
+                    onExpandedCategoryChanged = onExpandedCategoryChanged,
+                    // 安装包只有这一个开关（写 apkPackagesEnabled）；保留时间放在它的展开区。
+                    apkRetentionRow = {
                         ValueRow("保留时间", "${state.apkPackageDays} 天", enabled = !state.saving) { showApkDaysDialog = true }
                     }
-                }
+                )
             }
             item(key = "clean-auto-save-note") {
                 Text(
@@ -248,7 +249,7 @@ private fun AutomaticCleaningHero(
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("自动清理", style = MaterialTheme.typography.titleMedium)
+                Text("总开关", style = MaterialTheme.typography.titleMedium)
                 Text(
                     when {
                         !state.engineReady -> state.serviceText.ifBlank { "清理服务尚未就绪" }
@@ -354,7 +355,8 @@ private fun TaskGroup(
     state: CleanUiState,
     actions: CleanUiActions,
     expandedCategory: String,
-    onExpandedCategoryChanged: (String) -> Unit
+    onExpandedCategoryChanged: (String) -> Unit,
+    apkRetentionRow: @Composable () -> Unit = {}
 ) {
     LuoShuGroup {
         state.categories.forEachIndexed { index, item ->
@@ -373,7 +375,8 @@ private fun TaskGroup(
                 onExpandedChanged = {
                     onExpandedCategoryChanged(if (expandedCategory == key) "" else key)
                 },
-                onIntervalChanged = { actions.onCategoryIntervalChanged(item.id, it) }
+                onIntervalChanged = { actions.onCategoryIntervalChanged(item.id, it) },
+                extra = if (item.id == CleanCategoryId.APK) apkRetentionRow else null
             )
             if (index != state.categories.lastIndex && state.categories.getOrNull(index + 1)?.id != CleanCategoryId.FRAGMENTS) LuoShuGroupDivider()
         }
@@ -388,7 +391,8 @@ private fun CategoryRow(
     saving: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
     onExpandedChanged: () -> Unit,
-    onIntervalChanged: (Int) -> Unit
+    onIntervalChanged: (Int) -> Unit,
+    extra: (@Composable () -> Unit)? = null
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -454,6 +458,7 @@ private fun CategoryRow(
                         enabled = !saving)
                 }
             }
+            if (extra != null) extra()
         }
     }
 }
@@ -466,39 +471,6 @@ private fun TaskGroupLabel(label: String) {
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-}
-
-@Composable
-private fun SwitchRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconTile(icon)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            modifier = Modifier.semantics { contentDescription = title }
-        )
-    }
 }
 
 @Composable
@@ -523,6 +495,21 @@ private fun ValueRow(label: String, value: String, enabled: Boolean = true, onCl
 
 @Composable
 private fun IconTile(icon: ImageVector) = BaiZeIconTile(icon)
+
+private fun cleanToolIcon(key: String): ImageVector = when (key) {
+    "large" -> Icons.Rounded.InsertDriveFile
+    "duplicates" -> Icons.Rounded.ContentCopy
+    "screenshots" -> Icons.Rounded.Screenshot
+    "downloads" -> Icons.Rounded.Download
+    "chat" -> Icons.Rounded.ChatBubble
+    "apk" -> Icons.Rounded.InstallMobile
+    "corpses" -> Icons.Rounded.DeleteSweep
+    "root" -> Icons.Rounded.FolderSpecial
+    "organize" -> Icons.Rounded.FolderCopy
+    "photo" -> Icons.Rounded.PhotoSizeSelectLarge
+    "swipe" -> Icons.Rounded.Swipe
+    else -> Icons.Rounded.CleaningServices
+}
 
 private fun categoryIcon(id: CleanCategoryId): ImageVector = when (id) {
     CleanCategoryId.APK -> Icons.Rounded.InstallMobile

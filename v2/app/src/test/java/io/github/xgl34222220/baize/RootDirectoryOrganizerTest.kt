@@ -127,11 +127,17 @@ class RootDirectoryOrganizerTest {
 
     @Test fun everyOldEntryHasADestinationInsideTheUnifiedFlow() {
         val primary = LegacyEntryRedirects.PRIMARY_ENTRIES
-        assertEquals(5, primary.size)
+        // 底部 4 个 Tab 不变：首页 / 清理 / 记录 / 设置。
+        assertEquals(listOf("首页", "清理", "记录", "设置"), primary.keys.toList())
+        // 去重：同一个入口不能出现在两个 Tab，也不能在一个 Tab 里出现两次。
+        val all = primary.values.flatten()
+        assertEquals(all.size, all.toSet().size)
         LegacyEntryRedirects.HOME_TOOL_DESTINATIONS.forEach { (old, destination) ->
-            assertTrue("$old → $destination", primary.any { destination.startsWith(it) })
+            assertTrue("$old → $destination", primary.keys.any { destination.startsWith(it) })
         }
-        for (old in listOf("即时缓存", "卸载残留", "安装包", "重复文件", "大文件", "照片瘦身", "滑动整理", "截图录屏", "旧下载", "聊天媒体", "自定义规则", "根目录整理"))
+        for (tool in listOf("大文件", "重复文件", "截图与录屏", "旧下载", "聊天媒体", "安装包", "卸载残留", "根目录整理", "照片瘦身", "滑动整理"))
+            assertTrue(tool, tool in primary.getValue("清理"))
+        for (old in listOf("首页 · 微信专清 / QQ 专清", "设置 · 自动任务设置", "设置 · 保护名单", "清理 · 一键扫描", "即时缓存（InstantCacheActivity）"))
             assertTrue(old, old in LegacyEntryRedirects.HOME_TOOL_DESTINATIONS)
     }
 

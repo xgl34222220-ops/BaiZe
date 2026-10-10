@@ -96,8 +96,8 @@ class DialogContentReachabilityTest {
             expiresAtRealtime = SystemClock.elapsedRealtime() + 600_000, items = listOf(item), totalFound = 1)
         var moves = 0
         render {
-            FileOrganizerScreen(state, FileOrganizerScheduleSettings(), "", onBack = {}, onOneTap = {},
-                onUndo = {}, onStop = {}, onScheduleChange = {}, onSaveSchedule = {}, onApply = { moves++ })
+            FileOrganizerScreen(state, FileOrganizerScheduleSettings(), onBack = {}, onOneTap = {},
+                onUndo = {}, onStop = {}, onOpenAutomationSettings = {}, onApply = { moves++ })
         }
         compose.onNodeWithTag("organizer-preview-list")
             .performScrollToNode(hasTestTag("organizer-category:文档"))

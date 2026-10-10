@@ -118,18 +118,22 @@ class UiVisualReviewTest {
         org.junit.Assert.assertTrue(entry.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
         entry.performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("手动工具").assertIsDisplayed()
-        compose.onNodeWithText("一键扫描").assertIsDisplayed()
+        // 去重：清理 Tab 不再重复「一键扫描」（首页 Hero 是唯一入口）。
+        compose.onNodeWithText("专项清理").assertIsDisplayed()
+        compose.onNodeWithText("一键扫描").assertDoesNotExist()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("任务计划"))
         compose.onNodeWithText("任务计划").assertIsDisplayed()
         save("clean-plan")
     }
 
-    @Test fun homeCleanerToolsAreVisibleBeforeAutomation() {
+    @Test fun homeShowsStatusAndOneStorageEntry() {
         render("home-cleaner-first", 0)
         compose.onNodeWithText("开始扫描").assertIsDisplayed()
-        compose.onNodeWithText("整理空间").assertIsDisplayed()
         compose.onNodeWithText("存储分析").assertIsDisplayed()
+        // 去重：存储只在 Hero 显示一次；工具格与清理记录都移出首页。
+        compose.onNodeWithText("整理空间").assertDoesNotExist()
+        compose.onNodeWithText("存储空间").assertDoesNotExist()
+        compose.onNodeWithText("清理记录").assertDoesNotExist()
     }
 
     @Test fun groupedHomeToolsKeepTheirOwnActions() {
@@ -137,7 +141,8 @@ class UiVisualReviewTest {
         render("home-tools", 0, actions = previewActions.copy(
             whitelist = { calls += "whitelist" }, fileTrash = { calls += "trash" },
             storageAnalysis = { calls += "analysis" }))
-        listOf("存储分析", "规则与白名单", "历史与回收站").forEach { title ->
+        // 规则与白名单 → 设置·规则与保护；历史与回收站 → 记录·回收站。首页只剩存储分析入口。
+        listOf("存储分析").forEach { title ->
             val list = compose.onNode(hasScrollAction())
             list.performScrollToNode(hasText(title))
             val node = compose.onNodeWithText(title).performScrollTo()
@@ -153,7 +158,7 @@ class UiVisualReviewTest {
                 node.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
             node.assertIsDisplayed().performClick()
         }
-        assertEquals(listOf("analysis", "whitelist", "trash"), calls)
+        assertEquals(listOf("analysis"), calls)
     }
 
     @Test fun disconnectedHomeOnlyReconnects() {
@@ -168,36 +173,38 @@ class UiVisualReviewTest {
         assertEquals(0, cleans)
     }
 
-    @Test fun settingsHubOpensTaskDetailsAndReturns() {
-        render("settings-hub", 3)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+    @Test fun cleanTabOpensAutomationDetailsAndReturns() {
+        render("clean-automation", 1)
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("清理执行条件").assertIsDisplayed()
         save("settings-task-details")
         compose.onNodeWithContentDescription("返回").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("你的白泽").assertIsDisplayed()
+        compose.onNodeWithText("执行条件与高级").assertIsDisplayed()
     }
 
     @Test fun settingsAppearanceAndWhitelistKeepTheirActions() {
         var appearance = 0
-        var whitelist = 0
-        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, whitelist = { whitelist++ }))
+        var rulesCenter = 0
+        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, audit = { rulesCenter++ }))
         compose.onNodeWithText("外观与主题").performScrollTo().performClick()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("保护名单"))
-        compose.onNodeWithText("保护名单").performScrollTo().performClick()
+        // 首页「规则与白名单」与设置「保护名单」合并为 设置 →「规则与保护」中心。
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("规则与保护"))
+        compose.onNodeWithText("规则与保护").performScrollTo().performClick()
+        compose.onNodeWithText("保护名单").assertDoesNotExist()
         assertEquals(1, appearance)
-        assertEquals(1, whitelist)
+        assertEquals(1, rulesCenter)
     }
 
     @Test fun taskSettingsSaveTheEditedDraft() {
         var updated: SchedulerUiState? = null
         var saved: SchedulerUiState? = null
-        render("settings-draft", 3, actions = previewActions.copy(
+        render("settings-draft", 1, actions = previewActions.copy(
             updateScheduler = { updated = it }, saveScheduler = { saved = it }))
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("自动任务设置"))
-        compose.onNodeWithText("自动任务设置").performScrollTo().performClick()
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
+        compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onNodeWithContentDescription("仅息屏时执行").performClick()
         compose.onNodeWithText("保存").performClick()
         assertEquals(null, updated)
