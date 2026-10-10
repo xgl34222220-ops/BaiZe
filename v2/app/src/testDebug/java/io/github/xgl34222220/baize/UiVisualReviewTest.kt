@@ -202,7 +202,7 @@ class UiVisualReviewTest {
         var updated: SchedulerUiState? = null
         var saved: SchedulerUiState? = null
         render("settings-draft", 1, actions = previewActions.copy(
-            updateScheduler = { updated = it }, saveScheduler = { saved = it }))
+            saveScheduler = { saved = it }))
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
         compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
         compose.onNodeWithContentDescription("仅息屏时执行").performClick()
@@ -291,7 +291,7 @@ class UiVisualReviewTest {
     private val previewActions = DashboardActions(
         refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {}, largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {},
         dismissScan = {}, stop = {}, deep = {}, corpses = {}, audit = {},
-        updateScheduler = {}, saveScheduler = {}, schedulerCommand = {}, clearHistory = {},
+        saveScheduler = {}, schedulerCommand = {}, clearHistory = {},
         clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {},
     )

@@ -26,7 +26,7 @@ class NavigationAuditProbeTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val actions = DashboardActions(refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {},
         largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {}, dismissScan = {}, stop = {},
-        deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
+        deep = {}, corpses = {}, audit = {}, saveScheduler = {}, schedulerCommand = {},
         clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {})
     private fun save(name: String) {

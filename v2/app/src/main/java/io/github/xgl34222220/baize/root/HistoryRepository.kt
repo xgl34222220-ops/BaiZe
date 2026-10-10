@@ -141,11 +141,22 @@ internal class HistoryRepository(
                 "bytes" to ReleaseAmount.addSaturated(totals.optLong("bytes", 0L).coerceAtLeast(0L), release.bytes ?: 0L),
                 "elapsed" to totals.optLong("elapsed", 0L) + elapsedSeconds
             )
+            val today = ModuleTodayStats.next(
+                totals,
+                SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
+                runs = if (success && !cancelled) 1L else 0L,
+                files = files + emptyFiles,
+                bytes = release.bytes ?: 0L
+            )
             RootFileStore.writeAtomic(totalsFile, buildString {
                 updated.forEach { (key, value) -> append(key).append('=').append(value.coerceAtLeast(0L)).append('\n') }
                 append("last_time=").append(SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())).append('\n')
+                append("today=").append(today.date).append('\n')
+                append("today_runs=").append(today.runs).append('\n')
+                append("today_files=").append(today.files).append('\n')
+                append("today_bytes=").append(today.bytes).append('\n')
             })
-            updateModuleDescription(updated)
+            updateModuleDescription(updated, today)
         }
 
         RootFileStore.writeAtomic(File(stateDir, "latest.env"), buildString {
@@ -196,11 +207,12 @@ internal class HistoryRepository(
         return result
     }
 
-    private fun updateModuleDescription(totals: Map<String, Long>) = runCatching {
+    private fun updateModuleDescription(totals: Map<String, Long>, today: ModuleTodayStats.Today) = runCatching {
         val moduleProp = File(moduleDir, "module.prop")
         if (!moduleProp.isFile) return@runCatching
         val description = buildString {
-            append("description=累计清理 ").append(humanBytes(totals["bytes"] ?: 0L))
+            append("description=").append(ModuleTodayStats.summary(today, ::humanBytes))
+            append(" | 累计清理 ").append(humanBytes(totals["bytes"] ?: 0L))
             append(" · 文件 ").append(totals["regular_files"] ?: 0L)
             append(" · 空文件 ").append(totals["empty_files"] ?: 0L)
             append(" · 空目录 ").append(totals["empty_dirs"] ?: 0L)

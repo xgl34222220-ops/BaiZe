@@ -236,6 +236,31 @@ internal fun AutomationSettingsPage(state: SettingsUiState, actions: SettingsUiA
                 }
             }
         }
+        item {
+            LuoShuSection("高级设置 · 分类定时清理",
+                if (s.maintenanceEnabled) "默认关闭；只在上面的系统维护窗口内运行，按“应用专项清理”档位处理缓存"
+                else "需先开启“充电息屏时整理存储”")
+        }
+        item {
+            LuoShuGroup {
+                val on = s.maintenanceEnabled
+                LuoShuSwitchRow(Icons.Rounded.Tune, "微信缓存",
+                    "日志、崩溃记录与可重建缓存；不碰聊天记录与收到的文件", s.maintCleanWechat && on,
+                    { if (on) actions.onUpdateScheduler(s.copy(maintCleanWechat = it)) }, enabled = on)
+                LuoShuGroupDivider()
+                LuoShuSwitchRow(Icons.Rounded.Tune, "QQ / TIM 缓存",
+                    "日志与可重建缓存；不碰 QQfile_recv 收到的文件", s.maintCleanQq && on,
+                    { if (on) actions.onUpdateScheduler(s.copy(maintCleanQq = it)) }, enabled = on)
+                LuoShuGroupDivider()
+                LuoShuSwitchRow(Icons.Rounded.Tune, "短视频应用缓存",
+                    "抖音、快手及极速版的播放与图片缓存", s.maintCleanShortVideo && on,
+                    { if (on) actions.onUpdateScheduler(s.copy(maintCleanShortVideo = it)) }, enabled = on)
+                LuoShuGroupDivider()
+                LuoShuSwitchRow(Icons.Rounded.Tune, "logcat 日志缓冲区",
+                    "只清空内存中的系统日志缓冲区，不删除文件", s.maintCleanLogcat && on,
+                    { if (on) actions.onUpdateScheduler(s.copy(maintCleanLogcat = it)) }, enabled = on)
+            }
+        }
     }
 }
 

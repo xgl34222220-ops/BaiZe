@@ -105,6 +105,7 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
         val tunedSoft = !settings.monetEnabled && settings.kolorStyle == KolorStyle.SOFT
         val defaultBlue = tunedSoft && settings.seedArgb == AccentOptions.first { it.id == "default" }.argb
         val hyperOrange = tunedSoft && settings.seedArgb == AccentOptions.first { it.id == "hyper" }.argb
+        val baizeTeal = tunedSoft && settings.seedArgb == AccentOptions.first { it.id == "teal" }.argb
         val neutralBase = generatedScheme.copy(
             background = if (amoled) Color.Black else if (dark) Color(0xFF0F1012) else Color(0xFFF5F6F8),
             surface = if (dark) Color(0xFF1C1D20) else Color.White,
@@ -113,7 +114,16 @@ fun BaiZeTheme(settings: AppearanceSettings, content: @Composable () -> Unit) {
             onSurfaceVariant = if (dark) Color(0xFF9EA3AD) else Color(0xFF7A7F89),
             outlineVariant = if (dark) Color(0xFF2E3036) else Color(0xFFE6E8EC)
         )
-        val scheme = if (hyperOrange) neutralBase.copy(
+        val scheme = if (baizeTeal) neutralBase.copy(
+            primary = if (dark) Color(0xFF4FD3DB) else Color(0xFF006B72),
+            onPrimary = if (dark) Color(0xFF00363A) else Color.White,
+            primaryContainer = if (dark) Color(0xFF0D3F43) else Color(0xFFDDF3F4),
+            onPrimaryContainer = if (dark) Color(0xFFB9EEF1) else Color(0xFF00474C),
+            secondary = if (dark) Color(0xFF6FDDE3) else Color(0xFF0A7F87),
+            secondaryContainer = if (dark) Color(0xFF173335) else Color(0xFFE8F6F7),
+            onSecondaryContainer = if (dark) Color(0xFFB9EEF1) else Color(0xFF00474C),
+            surfaceTint = if (dark) Color(0xFF4FD3DB) else Color(0xFF006B72)
+        ) else if (hyperOrange) neutralBase.copy(
             primary = if (dark) Color(0xFFFF7A45) else Color(0xFFF25C26),
             onPrimary = Color.White,
             primaryContainer = if (dark) Color(0xFF4A2112) else Color(0xFFFFE9E0),

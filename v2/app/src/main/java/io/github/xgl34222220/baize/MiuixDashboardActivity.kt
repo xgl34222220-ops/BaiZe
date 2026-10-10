@@ -27,6 +27,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.view.WindowCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.topjohnwu.superuser.ipc.RootService
 import io.github.xgl34222220.baize.root.BaiZeProfileRootService
@@ -204,6 +205,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 系统启动窗口（无额外 Activity、无保持条件），首帧后短淡出。
+        installSplashScreen().setOnExitAnimationListener(BaiZeSplashExit::play)
         super.onCreate(savedInstanceState)
         observedVersions = ConnectionDiagnostics.lastVersions(this)
         markVersionsStale()
@@ -253,7 +256,6 @@ class MiuixDashboardActivity : ComponentActivity() {
                     deep = { openProfile("deep") },
                     corpses = { openProfile("corpses") },
                     audit = { CleanerNavigation.open(this, Intent(this, CleanCenterActivity::class.java)) },
-                    updateScheduler = { schedulerState.value = it },
                     saveScheduler = { saveScheduler(it) },
                     schedulerCommand = { controlScheduler(it) },
                     clearHistory = { confirmClearHistory() },
@@ -266,8 +268,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() },
                     wechatUsage = { loadWechatUsage(it) },
-                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) },
-                    ruleVersions = { CleanerNavigation.open(this, Intent(this, RuleBundleActivity::class.java)) }
+                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) }
                 ),
                 navigationRequest = navigationRequest.value,
                 onNavigationHandled = { navigationRequest.value = null },

@@ -99,6 +99,7 @@ class StorageToolsActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             val state by model.state.collectAsState()
+            val privateState by model.privateState.collectAsState()
             var detailUri by rememberSaveable { mutableStateOf<String?>(null) }
             val detail = state.allRecords.firstOrNull { it.uri == detailUri }
             BaiZeTheme(appearance) {
@@ -110,7 +111,13 @@ class StorageToolsActivity : ComponentActivity() {
                     onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory,
                     onAge = { model.filter(minimumAgeDays = it) }, onUndo = model::undoLastTrash,
                     onSaveFilter = model::saveCustomFilter, onDeleteFilter = model::deleteCustomFilter,
-                    onActiveFilter = model::selectCustomFilter, onView = ::switchView)
+                    onActiveFilter = model::selectCustomFilter, onView = ::switchView,
+                    chatPrivate = if (mode == StorageToolMode.CHAT_MEDIA) { {
+                        ChatPrivateMediaPanel(privateState, ChatPrivateActions(onScan = { model.scanPrivate() }, onToggle = model::togglePrivateFolder,
+                            onToggleApp = model::togglePrivateApp, onAge = model::setPrivateAge, onClean = model::requestPrivateClean,
+                            onStop = model::stopPrivate), enabled = !state.running)
+                    } } else null)
+                if (privateState.confirmRequested) ChatPrivateCleanDialog(privateState, model::confirmPrivateClean, model::dismissPrivateClean)
                 if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
                     state.diagnosticBusy && state.diagnosticUri == detail.uri,
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
@@ -222,7 +229,9 @@ internal fun StorageToolsScreen(
     onKeeperPreference: (DuplicateKeeperPreference, String) -> Unit = { _, _ -> }, onKeep: (String) -> Unit = {},
     onDirectory: (String?) -> Unit = {}, onAge: (Int) -> Unit = {}, onUndo: () -> Unit = {},
     onSaveFilter: (String, String, Int, Long) -> String = { _, _, _, _ -> "" }, onDeleteFilter: (String) -> Unit = {},
-    onActiveFilter: (String?) -> Unit = {}, onView: (StorageToolMode) -> Unit = {}
+    onActiveFilter: (String?) -> Unit = {}, onView: (StorageToolMode) -> Unit = {},
+    /** 聊天媒体页：应用私有数据（Root）分区；为空时不显示。 */
+    chatPrivate: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
@@ -346,6 +355,7 @@ internal fun StorageToolsScreen(
                     if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅使用本地保护规则") }
                 }
             }
+            if (state.mode == StorageToolMode.CHAT_MEDIA && chatPrivate != null && !state.permissionRequired) item(key = "chat-private") { chatPrivate() }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     BaiZeTintedIcon(Icons.Rounded.PhotoSizeSelectLarge, BaiZeTones.purple)

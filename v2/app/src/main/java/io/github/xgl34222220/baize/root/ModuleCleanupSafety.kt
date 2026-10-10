@@ -21,6 +21,7 @@ internal object ModuleCleanupSafety {
 
     fun enablesAutomaticWork(updates: Map<String, String>): Boolean = updates.any { (key, value) ->
         value == "1" && (key == "clean_apk_packages" || key == "daily_schedule_enabled" ||
+            key.startsWith("maint_clean_") ||
             (key.startsWith("schedule_") && key.endsWith("_enabled")))
     }
 }

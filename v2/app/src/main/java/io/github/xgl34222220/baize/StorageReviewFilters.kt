@@ -104,7 +104,7 @@ internal object StorageReviewFilters {
 
     /** 聊天软件“已保存/已接收”的公共目录；数据库与账号目录已由 [forbidden] 排除。 */
     fun chatMediaSource(record: StorageFileRecord): String? =
-        if (ChatStorageRecords.isRootRecord(record)) record.ownerLabel.ifBlank { "聊天软件" } else chatMediaSource(record.path)
+        if (ChatStorageRecords.isRootRecord(record)) "${ChatStorageRecords.ROOT_LABEL} · " + record.ownerLabel.ifBlank { "聊天软件" } else chatMediaSource(record.path)
 
     fun chatMediaSource(path: String): String? {
         val lower = "/" + (relativeStoragePath(path) ?: return null).lowercase()
@@ -124,10 +124,10 @@ internal object StorageReviewFilters {
     fun candidate(mode: StorageToolMode, record: StorageFileRecord, filters: List<StorageCustomFilter>): Boolean = when (mode) {
         StorageToolMode.SCREENSHOTS -> !forbidden(record.path) && screenCaptureKind(record.path, record.name, record.mime) != null
         StorageToolMode.OLD_DOWNLOADS -> !forbidden(record.path) && inDownloads(record.path)
-        // Root 只读记录来自 QQ / 微信的 Android/data 目录（MediaStore 不索引），只用于查看。
-        StorageToolMode.CHAT_MEDIA -> (ChatStorageRecords.isRootRecord(record) ||
+        // Root 记录来自 QQ / 微信的 Android/data 目录（MediaStore 不索引），确认后由 Root 移入回收站；缓存副本无扩展名也列出。
+        StorageToolMode.CHAT_MEDIA -> ChatStorageRecords.isCache(record) || ((ChatStorageRecords.isRootRecord(record) ||
             (!forbidden(record.path) && chatMediaSource(record.path) != null)) &&
-            storageCategory(record) in setOf("image", "video", "audio", "document", "archive")
+            storageCategory(record) in setOf("image", "video", "audio", "document", "archive"))
         StorageToolMode.CUSTOM -> filters.any { it.matchesPath(record.path) }
         else -> true
     }
@@ -144,9 +144,11 @@ internal object StorageReviewFilters {
         else -> true
     }
 
-    fun sourceLabel(mode: StorageToolMode, record: StorageFileRecord): String? = when (mode) {
-        StorageToolMode.SCREENSHOTS -> screenCaptureKind(record.path, record.name, record.mime)?.label
-        StorageToolMode.CHAT_MEDIA -> chatMediaSource(record)
+    fun sourceLabel(mode: StorageToolMode, record: StorageFileRecord): String? = when {
+        // Root 读取的 QQ / 微信文件在任何视图都标明“Root”，缓存副本另标“缓存”。
+        ChatStorageRecords.isRootRecord(record) -> chatMediaSource(record) + if (ChatStorageRecords.isCache(record)) " · 缓存" else ""
+        mode == StorageToolMode.SCREENSHOTS -> screenCaptureKind(record.path, record.name, record.mime)?.label
+        mode == StorageToolMode.CHAT_MEDIA -> chatMediaSource(record)
         else -> null
     }
 
@@ -167,14 +169,17 @@ internal object StorageReviewFilters {
      * - 存储分析的分类视图（文件归类）：相机与相册原件只能查看，不能在这里删除。
      */
     fun rowLock(mode: StorageToolMode, record: StorageFileRecord): String? = when {
-        ChatStorageRecords.isRootRecord(record) -> ChatStorageRecords.READ_ONLY_LABEL
+        // Root 记录可勾选（确认后由 Root 移入回收站）；只有未取得文件身份时锁定。
+        ChatStorageRecords.isRootRecord(record) && record.identity == null -> ChatStorageRecords.IDENTITY_MISSING_LABEL
         mode == StorageToolMode.ANALYSIS && UserMediaGuard.isUserMedia(record.path) -> UserMediaGuard.READ_ONLY_LABEL
         else -> null
     }
 
     /** 是否进入“全选当前结果”/默认勾选。相机与相册原件只能逐项勾选（旧截图与录屏视图按目录识别，不受限）。 */
     fun bulkSelectable(mode: StorageToolMode, record: StorageFileRecord): Boolean =
-        rowLock(mode, record) == null && (mode == StorageToolMode.SCREENSHOTS || !UserMediaGuard.isUserMedia(record.path))
+        rowLock(mode, record) == null && (mode == StorageToolMode.SCREENSHOTS || !UserMediaGuard.isUserMedia(record.path)) &&
+            // Root 读取的聊天文件：只有 Cache_* 缓存副本是低风险，可进“全选”；其余逐项勾选。
+            (!ChatStorageRecords.isRootRecord(record) || ChatStorageRecords.isCache(record))
 
     /**
      * 通配语法：相对于存储卷根目录，`*` 匹配一层内任意字符，`**` 跨目录，`?` 匹配一个字符，不区分大小写。
