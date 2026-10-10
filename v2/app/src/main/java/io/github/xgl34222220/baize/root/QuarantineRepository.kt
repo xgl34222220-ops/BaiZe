@@ -177,7 +177,9 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         category: String,
         label: String,
         cancelled: () -> Boolean = { false },
-        recheck: (RecoverableItem) -> String? = { null }
+        recheck: (RecoverableItem) -> String? = { null },
+        /** 应用私有目录（/data/data）与模块私有隔离区同在 /data 分区，允许移入私有隔离区。 */
+        allowPrivateRoot: Boolean = false
     ): List<JSONObject> {
         val now = System.currentTimeMillis()
         purgeExpiredInternal(now)
@@ -202,7 +204,7 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
             }
             val id = UUID.randomUUID().toString()
             val destinationRoot = quarantineRootFor(sourcePath)
-            if (destinationRoot == rootDir) { keep("只允许在同一存储分区内移入回收站"); continue }
+            if (destinationRoot == rootDir && !allowPrivateRoot) { keep("只允许在同一存储分区内移入回收站"); continue }
             val destination = File(File(destinationRoot, "items"), "$id-${safeName(source.name)}")
             val destinationPath = canonicalWithoutExistence(destination)
             if (!isQuarantinePath(destinationPath) || destination.exists()) { keep("无法创建安全回收位置"); continue }
@@ -225,6 +227,36 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         }
         return results
     }
+
+    /** 隔离区剩余额度（数量 / 字节）。 */
+    data class Capacity(val entriesLeft: Int, val bytesLeft: Long) {
+        /** 按顺序能放进剩余额度的前几项。 */
+        fun fitting(sizes: List<Long>): Int {
+            var count = 0
+            var bytes = 0L
+            for (size in sizes) {
+                if (count >= entriesLeft || bytes + size.coerceAtLeast(0L) > bytesLeft) break
+                count++; bytes += size.coerceAtLeast(0L)
+            }
+            return count
+        }
+    }
+
+    @Synchronized
+    fun capacity(): Capacity {
+        purgeExpiredInternal(System.currentTimeMillis())
+        val existing = readEntries()
+        return Capacity((maxRecoverableEntries - existing.size).coerceAtLeast(0),
+            (maxRecoverableBytes - existing.sumOf { it.bytes.coerceAtLeast(0L) }).coerceAtLeast(0L))
+    }
+
+    /** [file] 与模块私有隔离区是否在同一文件系统（设备号相同）；不同则无法原子移动。 */
+    fun sameFilesystemAsPrivateRoot(file: File): Boolean = runCatching {
+        rootDir.mkdirs()
+        val target = ChatFileIdentity.read(rootDir)
+        val source = ChatFileIdentity.read(file)
+        target != null && source != null && target.device == source.device
+    }.getOrDefault(false)
 
     @Synchronized
     fun page(offset: Int, limit: Int): String {
