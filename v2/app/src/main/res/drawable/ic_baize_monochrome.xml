@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A real alpha mask: the system supplies its own foreground tint and background. -->
+<!-- A real alpha mask covering the full 108dp canvas; the silhouette stays inside the
+     66dp safe circle. The system supplies its own foreground tint and background. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/ic_baize_monochrome_art"
-    android:insetLeft="20%"
-    android:insetTop="20%"
-    android:insetRight="20%"
-    android:insetBottom="20%" />
+    android:insetLeft="0%"
+    android:insetTop="0%"
+    android:insetRight="0%"
+    android:insetBottom="0%" />
