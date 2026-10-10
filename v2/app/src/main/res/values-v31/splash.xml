@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ 原生启动页额外显示底部品牌图「白泽 / BAIZE · v3.0.0」。 -->
+    <style name="Theme.BaiZe.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/baize_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_baize_splash</item>
+        <item name="android:windowSplashScreenBrandingImage">@drawable/baize_splash_branding</item>
+        <item name="postSplashScreenTheme">@style/Theme.BaiZe</item>
+    </style>
+</resources>
