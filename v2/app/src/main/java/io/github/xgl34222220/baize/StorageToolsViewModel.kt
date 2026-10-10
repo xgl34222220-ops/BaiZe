@@ -37,6 +37,10 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     private var bound = false
     private var closed = false
     private var contentReview: Map<String, IndexedContentProof> = emptyMap()
+    private val mutablePrivate = MutableStateFlow(ChatPrivateState())
+    /** 聊天媒体页 · 应用私有数据（Root）：只在用户点按时扫描，不随页面或开机自动运行。 */
+    val privateState = mutablePrivate.asStateFlow()
+    @Volatile private var privateCancelled = false
     private val connection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (closed) return
@@ -357,6 +361,70 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             }
         }
     }
+    fun scanPrivate(note: String = "") {
+        if (mutablePrivate.value.busy) return
+        val source = remote
+        if (source == null) {
+            connect()
+            mutablePrivate.update { it.copy(scanned = true, error = true, message = "Root 服务未连接，无法读取应用私有数据，请连接后重试") }
+            return
+        }
+        val days = mutablePrivate.value.olderThanDays
+        mutablePrivate.update { it.copy(scanning = true, error = false, message = "正在由 Root 统计微信 / QQ / TIM 的媒体文件夹…") }
+        viewModelScope.launch {
+            val next = withContext(Dispatchers.IO) {
+                runCatching { ChatPrivateMedia.parse(RootServiceClients.profileExchange(source, context.cacheDir, "scanChatPrivate")) }
+                    .getOrElse { ChatPrivateState(scanned = true, error = true, message = "应用私有数据读取失败：${it.javaClass.simpleName}") }
+            }
+            if (closed) return@launch
+            val found = if (next.error) next.message else if (next.folders.isEmpty()) "未找到微信 / QQ / TIM 应用私有目录里的媒体文件"
+                else "共 ${next.folders.size} 个媒体文件夹 · ${next.folders.sumOf { it.files }} 个文件 · " +
+                    Formatter.formatFileSize(context, next.folders.sumOf { it.bytes }) + if (next.truncated) "（统计已达时间上限，结果不完整）" else ""
+            mutablePrivate.value = next.copy(olderThanDays = days, message = listOf(note, found).filter { it.isNotBlank() }.joinToString("\n"))
+        }
+    }
+    fun togglePrivateFolder(path: String) { if (!mutablePrivate.value.busy) mutablePrivate.update { it.toggle(path) } }
+    fun togglePrivateApp(app: String) { if (!mutablePrivate.value.busy) mutablePrivate.update { it.toggleApp(app) } }
+    fun setPrivateAge(days: Int) { if (!mutablePrivate.value.busy && days in ChatPrivateMedia.AGE_OPTIONS) mutablePrivate.update { it.copy(olderThanDays = days) } }
+    fun requestPrivateClean() { if (!mutablePrivate.value.busy && mutablePrivate.value.selectedFolders.isNotEmpty()) mutablePrivate.update { it.copy(confirmRequested = true) } }
+    fun dismissPrivateClean() { mutablePrivate.update { it.copy(confirmRequested = false) } }
+    fun stopPrivate() { privateCancelled = true }
+
+    /** 用户确认后：可选先结束应用进程，再分轮由 Root 处理（每轮有时间预算），直到完成或停止。 */
+    fun confirmPrivateClean(forceStop: Boolean, allowPermanent: Boolean) {
+        val snapshot = mutablePrivate.value
+        val source = remote
+        if (snapshot.busy || !snapshot.confirmRequested || snapshot.selectedFolders.isEmpty()) return
+        if (source == null) { mutablePrivate.update { it.copy(confirmRequested = false, error = true, message = "Root 服务未连接，文件未处理") }; return }
+        privateCancelled = false
+        mutablePrivate.update { it.copy(cleaning = true, confirmRequested = false, error = false, message = "正在处理所选文件夹…") }
+        viewModelScope.launch {
+            val summary = withContext(Dispatchers.IO) {
+                val totals = ChatPrivateMedia.CleanTotals()
+                runCatching {
+                    if (forceStop) snapshot.selectedFolders.map { it.packageName }.distinct().forEach { pkg ->
+                        runCatching { RootServiceClients.profileExchange(source, context.cacheDir, "forceStopChatApp", org.json.JSONArray().put(pkg)) }
+                    }
+                    val request = ChatPrivateMedia.cleanRequest(snapshot, allowPermanent)
+                    var lastDone = -1L
+                    for (round in 0 until MAX_PRIVATE_ROUNDS) {
+                        if (closed || privateCancelled) break
+                        val more = ChatPrivateMedia.accumulate(totals,
+                            RootServiceClients.profileExchange(source, context.cacheDir, "cleanChatPrivate", org.json.JSONArray().put(request)))
+                        val done = totals.quarantined + totals.deleted
+                        mutablePrivate.update { it.copy(message = "已处理 $done 个文件…") }
+                        if (!more || done == lastDone) break
+                        lastDone = done
+                    }
+                }.onFailure { totals.folderErrors += "Root 处理中断：${it.javaClass.simpleName}" }
+                ChatPrivateMedia.summary(totals) { Formatter.formatFileSize(context, it) } + if (privateCancelled) "（已停止）" else ""
+            }
+            if (closed) return@launch
+            mutablePrivate.update { it.copy(cleaning = false, selected = emptySet()) }
+            scanPrivate(summary)
+        }
+    }
+
     fun dismissDeleteReview() {
         if (!state.value.reviewRequested) return
         control.cancel(); contentReview = emptyMap(); rootReview = emptySet()
@@ -454,5 +522,5 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         remote = null; bound = false
         super.onCleared()
     }
-    companion object { const val MIB = 1024L * 1024L }
+    companion object { const val MIB = 1024L * 1024L; const val MAX_PRIVATE_ROUNDS = 400 }
 }
