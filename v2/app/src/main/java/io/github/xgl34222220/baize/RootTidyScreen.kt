@@ -6,9 +6,11 @@ import android.content.Intent
 import android.os.Environment
 import android.os.IBinder
 import android.text.format.Formatter
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.*
@@ -17,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -254,14 +257,14 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
-        topBar = { DetailPageHeader("根目录整理", "让存储根目录只留需要的文件夹", onBack) {} },
+        topBar = { DetailPageHeader("根目录整理", "让存储根目录只留需要的文件夹", onBack,
+            extra = { StorageViewDropdown(StorageToolMode.ROOT, !state.running, onView) }) {} },
         bottomBar = { if (state.removable.isNotEmpty() && !state.running) CleanSelectionBar(state.selected.size, state.removable.size,
             Formatter.formatFileSize(context, state.selectedBytes), state.recommended.isNotEmpty() && state.selected.containsAll(state.recommended),
             state.recommended.isNotEmpty() || state.selected.isNotEmpty(), onToggleAll, { confirmRemove = true },
             cleanLabel = "移除所选 ${state.selected.size} 项", selectLabel = "选中空文件夹与残留", cleanEnabled = state.selected.isNotEmpty()) }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { StorageViewChips(StorageToolMode.ROOT, !state.running, onView) }
             item {
                 DetailGlassPanel {
                     Text(state.status, style = MaterialTheme.typography.bodyMedium)
@@ -345,14 +348,26 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
     }, dismissButton = if (confirmBlock) {{ BaiZeDialogButton(onClick = { confirmBlock = false }) { Text("取消") } }} else null)
 }
 
-/** 存储分析的视图切换：大文件、重复文件、截图等都是同一页面的视图，而不是独立工具。 */
-@OptIn(ExperimentalLayoutApi::class)
+/** 存储分析的视图切换：大文件、重复文件、截图等都是同一页面的视图，而不是独立工具。
+ *  放在页头的紧凑“视图：…”下拉里，不占用列表内容，页面只保留一个可滚动容器。 */
 @Composable
-internal fun StorageViewChips(current: StorageToolMode, enabled: Boolean, onSelect: (StorageToolMode) -> Unit) {
-    // 换行排列而不是横向滚动：页面里只保留一个可滚动容器。
-    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        STORAGE_VIEWS.forEach { mode ->
-            FilterChip(mode == current, { if (enabled && mode != current) onSelect(mode) }, label = { Text(storageToolTitle(mode)) }, enabled = enabled)
+internal fun StorageViewDropdown(current: StorageToolMode, enabled: Boolean, onSelect: (StorageToolMode) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.padding(top = 2.dp)) {
+        Row(Modifier.clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClickLabel = "切换视图") { expanded = true }
+            .padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("视图：${storageToolTitle(current)}", style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Rounded.ArrowDropDown, null, Modifier.size(18.dp),
+                tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            STORAGE_VIEWS.forEach { mode ->
+                DropdownMenuItem(text = { Text(storageToolTitle(mode)) },
+                    onClick = { expanded = false; if (mode != current) onSelect(mode) },
+                    trailingIcon = if (mode == current) {{ Icon(Icons.Rounded.Check, "当前视图") }} else null)
+            }
         }
     }
 }

@@ -241,7 +241,8 @@ internal fun StorageToolsScreen(
     val shownDirectories = directoryRows.take(directoryPages * DirectoryUsageTree.PAGE_SIZE)
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
-        topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() }) {
+        topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() },
+            extra = { StorageViewDropdown(state.mode, !state.running, onView) }) {
             TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.allRecords.isNotEmpty() && !state.running && !state.permissionRequired) IconButton(onClick = onScan) {
                 Icon(Icons.Rounded.Refresh, "重新扫描")
@@ -253,7 +254,6 @@ internal fun StorageToolsScreen(
             cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item(key = "storage-views") { StorageViewChips(state.mode, !state.running, onView) }
             item {
                 if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running && !state.failed && !state.permissionRequired && state.records.isNotEmpty()) {
                     DetailGlassPanel {
