@@ -105,6 +105,8 @@ internal class ShizukuCacheViewModel(application: Application) : AndroidViewMode
         initialized = true
         Shizuku.addBinderReceivedListenerSticky(received); Shizuku.addBinderDeadListener(dead)
         Shizuku.addRequestPermissionResultListener(permission); refreshApps()
+        // Root 用户的保护名单只能由 Root 读取：进入页面即核对，避免全部应用显示「保护名单未确认」而无法勾选。
+        if (ApkProtectionStore.rootWasUsed(context)) reconnectProtection()
     }
     private fun disconnected() {
         service = null; binding = false; cancelled.set(true)

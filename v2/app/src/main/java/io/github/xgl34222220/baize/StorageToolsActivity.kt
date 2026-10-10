@@ -538,7 +538,8 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
             androidx.compose.foundation.text.selection.SelectionContainer { Text(record.path, style = MaterialTheme.typography.bodySmall) }
             Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
-            if (storageCategory(record) == "image") TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
+            // 照片瘦身只处理 JPEG（PNG / HEIC 等会在预览时报错），其它格式不显示入口。
+            if (storageCategory(record) == "image" && isJpegRecord(record)) TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
             if (onExclude != null && protection == null) TextButton(onClick = onExclude, enabled = !diagnosticBusy) { Text("加入白名单，保护此文件") }
             TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
                 Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
@@ -546,6 +547,9 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
         }
     }, confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("关闭") } })
 }
+
+internal fun isJpegRecord(record: StorageFileRecord): Boolean = record.mime.equals("image/jpeg", true) ||
+    record.name.endsWith(".jpg", true) || record.name.endsWith(".jpeg", true)
 
 /** 命中保护时的详情：精确规则 + 「临时允许本次」/「从保护名单移除该规则」；系统级保护只说明原因。 */
 @Composable

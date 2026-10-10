@@ -77,7 +77,8 @@ class ShizukuCacheActivity : ComponentActivity() {
                                     Column(Modifier.weight(1f).padding(top = 8.dp)) {
                                         Text(app.label, style = MaterialTheme.typography.titleSmall)
                                         Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                                        if (app.isProtected) Text("受保护或保护名单未确认", style = MaterialTheme.typography.labelSmall)
+                                        if (app.isProtected) Text(if (state.protectionKnown) "命中保护名单（应用保护或其数据目录的路径保护），可在 设置 › 保护名单管理 移除"
+                                            else "保护名单尚未核对，暂不可勾选；请先点上方「连接 Root，核对保护名单」", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                                 TextButton(enabled = !state.busy && !app.isProtected,

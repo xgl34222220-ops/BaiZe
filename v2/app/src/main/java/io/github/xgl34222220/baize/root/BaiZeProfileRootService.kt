@@ -243,6 +243,9 @@ class BaiZeProfileRootService : RootService() {
         override fun ping(): String {
             val appRules = AppRuleStore.ensure(this@BaiZeProfileRootService)
             val modulePresent = File(RootPaths.MODULE_DIR, "module.prop").isFile
+            // Magisk / KernelSU / APatch 停用或待移除的模块不会运行 service.sh，自动任务也就不会执行。
+            val moduleDisabled = modulePresent && (File(RootPaths.MODULE_DIR, "disable").exists() || File(RootPaths.MODULE_DIR, "remove").exists())
+            val modulePending = !modulePresent && File("/data/adb/modules_update/baize_v2/module.prop").isFile
             return JSONObject()
                 .put("uid", Process.myUid())
                 .put("root", Process.myUid() == 0)
@@ -252,6 +255,8 @@ class BaiZeProfileRootService : RootService() {
                 .put("foregroundReady", Process.myUid() == 0 && File(appRules, "deep.rules").isFile)
                 .put("appRules", File(appRules, "deep.rules").isFile)
                 .put("module", modulePresent)
+                .put("moduleDisabled", moduleDisabled)
+                .put("modulePendingReboot", modulePending)
                 .put("cleaner", RootPaths.script("cleaner.sh").isFile)
                 .put("deepRules", File(appRules, "deep.rules").isFile)
                 .put("scheduler", RootPaths.script("scheduler.sh").isFile)

@@ -792,7 +792,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             ConnectionDiagnostics.observeVersions(this@MiuixDashboardActivity, requireNotNull(observedVersions))
             val root = json.optBoolean("root")
             val foregroundReady = json.optBoolean("foregroundReady", root && json.optBoolean("appRules"))
-            val module = json.optBoolean("module")
+            val moduleState = ModuleAvailability.of(json)
+            val module = moduleState.active
             val scheduler = json.optBoolean("scheduler")
             val ready = root && foregroundReady
             val status = when {
@@ -800,7 +801,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 !foregroundReady -> "Root 已连接 · App 前台规则库未就绪"
                 module && scheduler -> "前台清理已就绪 · 自动清理模块已启用"
                 module -> "前台清理已就绪 · 自动清理调度器未就绪"
-                else -> "前台清理已就绪 · 未安装自动清理模块"
+                else -> "前台清理已就绪 · ${moduleState.inactiveText}"
             }
             lastValidationFailure = status.takeIf { !ready }
             val presentation = versionPresentation()
@@ -815,7 +816,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                 automationText = when {
                     module && scheduler -> "自动清理模块已启用"
                     module -> "模块已安装，但后台调度器未就绪"
-                    else -> "未安装自动清理模块"
+                    else -> moduleState.inactiveText
                 },
                 versionWarning = presentation.warning,
                 versionDetails = presentation.details,
