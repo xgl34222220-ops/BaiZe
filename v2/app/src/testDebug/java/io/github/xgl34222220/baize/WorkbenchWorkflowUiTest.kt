@@ -55,6 +55,32 @@ class WorkbenchWorkflowUiTest {
         assertEquals(0, scans)
     }
 
+    @Test fun allHighRiskCategoryCheckExpandsAndExplainsWithoutSelectingAndStaysAligned() {
+        val fragment = cache.copy(id = "fragment", source = "profile", profile = "fragments", category = "fragments",
+            packageName = "", appName = "", groupKey = "fragments-old", groupTitle = "旧应用残留", title = "leftover.db",
+            risk = "high", path = "/storage/emulated/0/.leftover/leftover.db", bytes = 857_088, reason = "残留数据，需核对")
+        val toggled = mutableListOf<Set<String>>()
+        render(ready().copy(items = listOf(cache, rule, fragment)), onToggleVisible = { toggled += it })
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("workbench-category:fragments").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasTestTag("workbench-category:fragments"))
+        // 所有分类的勾选位在同一列，且不越过右侧页边距。
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val rights = listOf("cache", "rules", "fragments").map {
+            compose.onNodeWithTag("workbench-category-check:$it").fetchSemanticsNode().boundsInRoot.right
+        }
+        assertTrue("category checks misaligned: $rights", rights.max() - rights.min() < 1f)
+        assertTrue("check passes page margin: $rights vs ${root.right}", rights.max() <= root.right)
+        compose.onNodeWithContentDescription("残留碎片需逐项确认").assertIsDisplayed().performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("该分类需逐项确认", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        save("fragments-review")
+        // 高风险不会被分类勾选自动选中，只展开并提示。
+        assertTrue(toggled.isEmpty())
+        assertEquals(setOf(cache.id), state.selectedIds)
+        compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasContentDescription("选择leftover.db"))
+        compose.onNodeWithContentDescription("选择leftover.db").assertIsDisplayed().assertIsOff()
+        assertEquals(0, scans)
+    }
+
     @Test fun filtersSearchAndExpandedAppSurviveSavedStateRestoration() {
         val restoration = StateRestorationTester(compose)
         render(ready(), restoration = restoration)
@@ -149,7 +175,8 @@ class WorkbenchWorkflowUiTest {
         save("complete-dark-large-font")
     }
 
-    private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f, restoration: StateRestorationTester? = null) {
+    private fun render(initial: WorkbenchUiState, dark: Boolean = false, fontScale: Float = 1f, restoration: StateRestorationTester? = null,
+                       onToggleVisible: ((Set<String>) -> Unit)? = null) {
         state = initial
         val appearance = AppearanceSettings(monetEnabled = false, blurEnabled = false,
             themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT)
@@ -157,7 +184,8 @@ class WorkbenchWorkflowUiTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale), LocalAppearanceSettings provides appearance) {
                 BaiZeTheme(appearance) {
-                    ScanWorkbenchScreen(appearance, state, WorkbenchActions({}, { scans++ }, {}, {}, {}, {}, {}, {}, {}, {}))
+                    ScanWorkbenchScreen(appearance, state, WorkbenchActions({}, { scans++ }, {}, {}, {}, {}, {}, {}, {}, {},
+                        onToggleVisibleItems = onToggleVisible))
                 }
             }
         }

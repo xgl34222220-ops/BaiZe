@@ -5,6 +5,7 @@ import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import android.os.SystemClock
 import android.text.format.Formatter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,9 +46,11 @@ import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.components.CleanSelectionBar
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.theme.BaiZeIconSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 internal enum class WorkbenchNotice { INFO, SUCCESS, WARNING, ERROR }
 
@@ -142,6 +145,8 @@ internal fun ScanWorkbenchScreen(
     var showReport by rememberSaveable { mutableStateOf(false) }
     var inspected by remember { mutableStateOf<WorkbenchItem?>(null) }
     var confirmedSelection by remember { mutableStateOf<Pair<Long, Set<String>>?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     val now by produceState(SystemClock.elapsedRealtime(), state.scanReady, state.expiresAtRealtime) {
         value = SystemClock.elapsedRealtime()
         while (state.scanReady && value < state.expiresAtRealtime) {
@@ -220,7 +225,18 @@ internal fun ScanWorkbenchScreen(
                 if (!state.running && !historicalSnapshot && (!state.cleanupCompleted || liveSnapshot)) item {
                     WorkbenchCategories(presentation.categories, activeFilter, state.items, state.selectedIds,
                         editable && actions.onToggleVisibleItems != null,
-                        onSelect = { ids -> actions.onToggleVisibleItems?.invoke(ids) }) { filter = if (filter == it) "all" else it }
+                        onSelect = { ids -> actions.onToggleVisibleItems?.invoke(ids) },
+                        onReview = { category, blockedReason ->
+                            // 只展开并提示，不改动选择：高风险仍需在明细里单独勾选并确认。
+                            filter = category.id
+                            val keys = state.items.filter { workbenchCategory(it) == category.id }.map { it.groupKey }.distinct()
+                            expandedGroupKeys = (expandedGroupKeys + keys).distinct()
+                            snackbarScope.launch {
+                                snackbar.currentSnackbarData?.dismiss()
+                                snackbar.showSnackbar(if (blockedReason != null) "${category.label}不可选：$blockedReason"
+                                    else "该分类需逐项确认，已展开，请在下方单独勾选")
+                            }
+                        }) { filter = if (filter == it) "all" else it }
                 }
                 item {
                     Column(Modifier.padding(horizontal = 16.dp).padding(top = 18.dp, bottom = 4.dp)) {
@@ -313,6 +329,8 @@ internal fun ScanWorkbenchScreen(
                 }
             }
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = bottomBarHeight)
+            .testTag("workbench-snackbar"))
     }
 
     if (showFilters) BaiZeDialog(onDismissRequest = { showFilters = false }, title = { Text("筛选结果") },
@@ -458,11 +476,14 @@ private fun WorkbenchStages(state: WorkbenchUiState, liveSnapshot: Boolean) {
 /**
  * HyperOS「垃圾清理」式分类行：粗体分类名 + 小三角，右侧容量与圆形勾选。
  * 点名称在下方只看该分类（再点恢复全部）；勾选只作用于该分类的低、中风险项目，高风险仍需逐项确认。
+ * 分类里没有可批量勾选的项目时，勾选位显示“需复核”或“不可选”标记，点按会展开该分类并提示原因，不会自动勾选高风险项目。
+ * 容量文字限宽并省略，勾选位固定 48dp，所有分类的勾选在同一列对齐。
  */
 @Composable
 private fun WorkbenchCategories(
     categories: List<WorkbenchCategorySummary>, activeFilter: String, items: List<WorkbenchItem>, selectedIds: Set<String>,
-    selectionEnabled: Boolean, onSelect: (Set<String>) -> Unit, onFilter: (String) -> Unit
+    selectionEnabled: Boolean, onSelect: (Set<String>) -> Unit, onReview: (WorkbenchCategorySummary, String?) -> Unit,
+    onFilter: (String) -> Unit
 ) {
     if (categories.isEmpty()) return
     val context = LocalContext.current
@@ -471,28 +492,59 @@ private fun WorkbenchCategories(
             fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         categories.forEach { category ->
             val active = activeFilter == category.id
-            val bulk = remember(items, category.id) {
-                reviewRiskSelection(items.filter { workbenchCategory(it) == category.id }, setOf("low", "medium"))
-            }
+            val members = remember(items, category.id) { items.filter { workbenchCategory(it) == category.id } }
+            val bulk = remember(members) { reviewRiskSelection(members, setOf("low", "medium")) }
+            val reviewOnly = bulk.isEmpty() && members.any { it.selectable && it.risk == "high" }
+            val blockedReason = if (bulk.isEmpty() && !reviewOnly)
+                members.firstNotNullOfOrNull { reviewItemRestriction(it, null) } ?: "该分类没有可勾选的项目" else null
             val chosen = bulk.count { it in selectedIds }
             val check = when { bulk.isEmpty() || chosen == 0 -> ToggleableState.Off
                 chosen == bulk.size -> ToggleableState.On; else -> ToggleableState.Indeterminate }
             Row(Modifier.fillMaxWidth().testTag("workbench-category:${category.id}")
                 .clickable(onClickLabel = if (active) "显示全部分类" else "只看${category.label}") { onFilter(category.id) }
                 .heightIn(min = 60.dp).padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(category.label, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface)
-                Icon(if (active) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown, null, Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f))
-                Spacer(Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(category.label, Modifier.weight(1f, fill = false), fontSize = 17.sp, lineHeight = 24.sp,
+                            fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Icon(if (active) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown, null, Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f))
+                    }
+                    when {
+                        reviewOnly -> Text("需逐项确认", fontSize = 12.sp, lineHeight = 16.sp, color = BaiZeTokens.colors.warning, maxLines = 1)
+                        blockedReason != null -> Text("不可选", fontSize = 12.sp, lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    }
+                }
                 Text(if (category.hasUnknownSize) "${category.count} 项 · 待统计" else Formatter.formatFileSize(context, category.bytes),
+                    Modifier.padding(start = 8.dp).widthIn(max = 140.dp).testTag("workbench-category-size:${category.id}"),
                     style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"), fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                BaiZeRoundCheck(check, onClick = if (bulk.isNotEmpty()) {{
-                    onSelect(if (check == ToggleableState.On) bulk else bulk - selectedIds)
-                }} else null, enabled = selectionEnabled && bulk.isNotEmpty(),
-                    description = "选择${category.label}的低中风险项目")
+                    fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                Box(Modifier.size(48.dp).testTag("workbench-category-check:${category.id}"), contentAlignment = Alignment.Center) {
+                    if (bulk.isNotEmpty()) BaiZeRoundCheck(check, onClick = {
+                        onSelect(if (check == ToggleableState.On) bulk else bulk - selectedIds)
+                    }, enabled = selectionEnabled, description = "选择${category.label}的低中风险项目")
+                    else CategoryReviewMark(blocked = blockedReason != null,
+                        description = if (blockedReason != null) "${category.label}不可选" else "${category.label}需逐项确认") {
+                        onReview(category, blockedReason)
+                    }
+                }
             }
+        }
+    }
+}
+
+/** 分类没有可批量勾选项时的勾选位：需复核为橙色描边 + 叹号，不可选为浅灰描边 + 禁止符号；点按给出提示。 */
+@Composable
+private fun CategoryReviewMark(blocked: Boolean, description: String, onClick: () -> Unit) {
+    val color = if (blocked) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .38f) else BaiZeTokens.colors.warning
+    Box(Modifier.size(48.dp).clip(CircleShape)
+        .clickable(onClickLabel = if (blocked) "查看不可选原因" else "展开逐项确认", role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(BaiZeIconSize.check).border(1.6.dp, color, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(if (blocked) Icons.Rounded.Block else Icons.Rounded.PriorityHigh, null, Modifier.size(13.dp), tint = color)
         }
     }
 }

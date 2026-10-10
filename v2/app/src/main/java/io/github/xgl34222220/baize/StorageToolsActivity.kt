@@ -222,6 +222,12 @@ internal fun StorageToolsScreen(
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
+    // 时间筛选把全部候选文件排除时，说明原因（例如都在 90 天内），而不是只显示 0 B 与通用空状态。
+    val ageHiddenCount = remember(state, visible) {
+        if (state.running || visible.isNotEmpty() || state.minimumAgeDays <= 0 || state.query.isNotBlank() || state.category != null ||
+            state.mode !in setOf(StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA)) 0
+        else state.records.count { StorageReviewFilters.visible(state.mode, it, state.nowSeconds, 0, state.customFilters, state.activeFilterId) }
+    }
     val title = storageToolTitle(state.mode)
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然"
         StorageToolMode.SCREENSHOTS -> "旧截图与录屏，看过再清"; StorageToolMode.OLD_DOWNLOADS -> "下载目录里久未动的文件"
@@ -280,7 +286,7 @@ internal fun StorageToolsScreen(
                         else if (state.mode == StorageToolMode.ANALYSIS) state.directoryUsage?.bytes ?: state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
                     Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (directorySelected) "当前目录占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else Formatter.formatFileSize(context, bytes))
+                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else if (ageHiddenCount > 0) "无匹配" else Formatter.formatFileSize(context, bytes))
                     if (directorySelected && currentDirectory != null)
                         Text("${currentDirectory.files} 个文件（含子目录）", style = MaterialTheme.typography.bodySmall)
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -408,8 +414,11 @@ internal fun StorageToolsScreen(
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
                     state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
-                item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作" else "没有符合条件的文件",
-                    if (state.failed) "请检查权限并重新扫描。" else if (directoryFiles > 0)
+                item { DetailEmptyState(if (state.failed) "扫描未完成" else if (directoryFiles > 0) "目录文件尚不可操作"
+                    else if (ageHiddenCount > 0) "$ageHiddenCount 个文件都在 ${state.minimumAgeDays} 天内" else "没有符合条件的文件",
+                    if (state.failed) "请检查权限并重新扫描。" else if (ageHiddenCount > 0)
+                        "当前筛选为「${StorageReviewFilters.ageLabel(state.minimumAgeDays)}」，可在筛选中改为更短时间或「全部时间」。"
+                    else if (directoryFiles > 0)
                         "目录统计包含 $directoryFiles 个文件。当前系统索引与筛选未提供可操作文件，仅展示目录占用；可调整筛选或稍后重新扫描。"
                     else "可调整筛选条件，或重新扫描。") }
             }
