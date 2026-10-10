@@ -555,7 +555,7 @@ NL='
 '
 OPEN_FILES=$NL
 build_open_file_set() {
-  bo_raw="$STATE_DIR/organizer-openfds.$$.txt"
+  bo_raw="$STATE_DIR/organizer-openfds.tmp.$$"
   : >"$bo_raw" 2>/dev/null || return 0
   # shellcheck disable=SC2086
   set -- "$PROC_ROOT"/[0-9]*/fd/

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 性能工具（实验）：白名单、后台时长、内存阈值/冷却、数据库黑名单与跳过规则、开机保护、
-# cgroup v2 冻结/解冻、不支持时停用（绝不强制停止）、Dex2oat 进度与审计记录。
+# 冻结后端探测（cgroup v2 进程级 / apps 子树 / frozen 分组 / v1 freezer / 系统 am freeze）、冻结/解冻、
+# 不支持时给出准确原因（绝不强制停止）、数据库 App 引擎（无 sqlite3 也可用）、Dex2oat 进度与审计记录。
 set -euo pipefail
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 SCRIPTS="$ROOT/v2/module/scripts"
@@ -25,8 +26,9 @@ case "$1 $2" in
                   else printf 'package:android\npackage:com.example.bg\n'; fi ;;
   "package compile") echo Success ;;
   "package resolve-activity") echo "priority=0"; echo "com.example.launcher/.Home" ;;
-  "settings get") case "$4" in enabled_input_methods) echo "com.example.ime/.Ime;123:com.other.ime/.K" ;; sms_default_application) echo com.example.sms ;; *) echo null ;; esac ;;
-  "activity send-trim-memory"|"activity kill"|"activity force-stop") : ;;
+  "settings get") case "$4" in enabled_input_methods) echo "com.example.ime/.Ime;123:com.other.ime/.K" ;; sms_default_application) echo com.example.sms ;; cached_apps_freezer) echo enabled ;; *) echo null ;; esac ;;
+  "activity send-trim-memory"|"activity kill"|"activity force-stop"|"activity freeze"|"activity unfreeze") : ;;
+  "activity help") [ -f "$FAKE/am_freeze" ] && printf '  freeze [--sticky] <PROCESS> [--user <USER_ID>]\n  unfreeze [--sticky] <PROCESS>\n' ;;
 esac
 EOF
 cat >"$T/bin/getprop" <<'EOF'
@@ -178,13 +180,92 @@ com.tencent.mm"'
   $shell "$T/module/scripts/perf-tools.sh" thaw-all >/dev/null
   [ "$(cat "$FAKE/cg/uid_10103/cgroup.freeze")" = 1 ] && [ "$(cat "$T/victim")" = keep ] || fail "$shell: 不应写入非 pid 级 cgroup 或任意文件"
 
-  # --- 不支持 cgroup v2：停用，绝不 force-stop ---
+  # --- 单个进程缺少 pid 节点：只跳过该进程，不再整体判定不支持（3.0.0 在 HyperOS 上的误判） ---
   reset_case
-  echo "0::/" >"$FAKE/proc/2001/cgroup"; echo "0::/" >"$FAKE/proc/2005/cgroup"
+  echo "0::/" >"$FAKE/proc/2001/cgroup"
   : >"$FAKE/cmd.calls"
-  lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FREEZE_SUPPORT\" >\"$T/support\""
-  [ "$(cat "$T/support")" = no ] || fail "$shell: 无 pid 级 cgroup 应判定不支持"
+  lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FREEZE_SUPPORT \$FZ_BACKEND\" >\"$T/support\"; cp \"\$FROZEN\" \"$T/frozen\""
+  [ "$(cat "$T/support")" = "yes v2-pid" ] || fail "$shell: 个别进程缺节点不应判定不支持（$(cat "$T/support")）"
+  grep -q $'\tcom.example.cached\t2005\t' "$T/frozen" || fail "$shell: 其他进程仍应正常冻结"
+  grep -q $'\tcom.example.bg\t' "$T/frozen" && fail "$shell: 缺节点的进程不应有冻结记录"
+
+  # --- 真正不支持：没有 cgroup2 / v1 freezer / am freeze，给出准确原因，绝不强制停止 ---
+  reset_case
+  : >"$FAKE/cmd.calls"; : >"$FAKE/proc/mounts"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FREEZE_SUPPORT|\$FREEZE_REASON\" >\"$T/support\"")
+  case "$(cat "$T/support")" in "no|未挂载 cgroup2，也未挂载 cgroup v1 freezer"*) ;; *) fail "$shell: 不支持时原因不准确：$(cat "$T/support")" ;; esac
   grep -q 'force-stop\|activity kill' "$FAKE/cmd.calls" && fail "$shell: 不支持时不得改用强制停止"
+  # 已挂载 cgroup2 但没有任何可用节点：原因要点名挂载点
+  mkdir -p "$FAKE/cg2empty"; echo "none $FAKE/cg2empty cgroup2 rw,nosuid 0 0" >"$FAKE/proc/mounts"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_freezer_detect; echo \"\$FZ_BACKEND|\$FZ_REASON\" >\"$T/support\"")
+  case "$(cat "$T/support")" in "none|已挂载 cgroup2（$FAKE/cg2empty）"*) ;; *) fail "$shell: cgroup2 无节点原因不准确：$(cat "$T/support")" ;; esac
+
+  # --- Android 15 apps 子树：/sys/fs/cgroup/apps/uid_N/pid_P，由 /proc/mounts 找到 cgroup2 根 ---
+  reset_case
+  mkdir -p "$FAKE/cg15/apps/uid_10103/pid_2005"; echo 0 >"$FAKE/cg15/apps/uid_10103/pid_2005/cgroup.freeze"
+  echo "0::/apps/uid_10103/pid_2005" >"$FAKE/proc/2005/cgroup"
+  echo "none $FAKE/cg15 cgroup2 rw,nosuid,nodev,noexec,relatime 0 0" >"$FAKE/proc/mounts"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FZ_BACKEND\" >\"$T/support\"")
+  [ "$(cat "$T/support")" = v2-pid ] || fail "$shell: apps 子树应识别为 v2-pid"
+  [ "$(cat "$FAKE/cg15/apps/uid_10103/pid_2005/cgroup.freeze")" = 1 ] || fail "$shell: apps 子树进程应被冻结"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" thaw-all >/dev/null)
+  [ "$(cat "$FAKE/cg15/apps/uid_10103/pid_2005/cgroup.freeze")" = 0 ] || fail "$shell: apps 子树应可解冻"
+
+  # --- cgroup v2 frozen / unfrozen 分组 ---
+  reset_case
+  mkdir -p "$FAKE/cgg/frozen" "$FAKE/cgg/unfrozen"; echo 1 >"$FAKE/cgg/frozen/cgroup.freeze"
+  : >"$FAKE/cgg/frozen/cgroup.procs"; : >"$FAKE/cgg/unfrozen/cgroup.procs"
+  for p in 2001 2005; do echo "0::/" >"$FAKE/proc/$p/cgroup"; done
+  echo "none $FAKE/cgg cgroup2 rw 0 0" >"$FAKE/proc/mounts"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FZ_BACKEND\" >\"$T/support\"")
+  [ "$(cat "$T/support")" = v2-group ] || fail "$shell: 应识别 frozen 分组（$(cat "$T/support")）"
+  grep -qx 2005 "$FAKE/cgg/frozen/cgroup.procs" || fail "$shell: 分组模式应把进程写入 frozen/cgroup.procs"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" thaw-all | grep -q 'thawed=[12]') || fail "$shell: 分组模式 thaw-all"
+  grep -qx 2005 "$FAKE/cgg/unfrozen/cgroup.procs" || fail "$shell: 分组模式解冻应写入 unfrozen"
+  # 篡改的分组记录（指向挂载点外）绝不写入
+  mkdir -p "$T/evil/frozen" "$T/evil/unfrozen"; : >"$T/evil/unfrozen/cgroup.procs"
+  printf '#boot=test-boot-1\ngroup=%s|%s\tx\t2005\t1\n' "$T/evil/frozen" "$T/evil/unfrozen" >"$T/state/perf-frozen.tsv"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" thaw-all >/dev/null)
+  [ ! -s "$T/evil/unfrozen/cgroup.procs" ] || fail "$shell: 不应写入挂载点之外的 cgroup"
+
+  # --- cgroup v1 freezer（/dev/freezer/frozen，小米 Millet） ---
+  reset_case
+  mkdir -p "$FAKE/devfreezer/frozen" "$FAKE/devfreezer/thaw"; echo FROZEN >"$FAKE/devfreezer/frozen/freezer.state"
+  : >"$FAKE/devfreezer/frozen/cgroup.procs"; : >"$FAKE/devfreezer/thaw/cgroup.procs"; : >"$FAKE/devfreezer/cgroup.procs"
+  for p in 2001 2005; do echo "0::/" >"$FAKE/proc/$p/cgroup"; done
+  echo "none $FAKE/devfreezer cgroup rw,relatime,freezer 0 0" >"$FAKE/proc/mounts"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FZ_BACKEND|\$FZ_LABEL\" >\"$T/support\"")
+  [ "$(cat "$T/support")" = "v1|cgroup v1 freezer（frozen 分组）" ] || fail "$shell: 应识别 v1 freezer（$(cat "$T/support")）"
+  # 夹具文件会被覆盖写（真实 cgroup.procs 是逐个迁入），所以检查非空 + 冻结记录。
+  grep -qx '200[15]' "$FAKE/devfreezer/frozen/cgroup.procs" || fail "$shell: v1 应把进程写入 frozen"
+  [ "$(grep -c "^group=$FAKE/devfreezer/frozen|$FAKE/devfreezer/thaw" "$T/state/perf-frozen.tsv")" = 2 ] || fail "$shell: v1 冻结记录应有 2 条"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" thaw-all >/dev/null)
+  grep -qx '200[15]' "$FAKE/devfreezer/thaw/cgroup.procs" || fail "$shell: v1 解冻应写入 thaw"
+  # freezer.state 不是 FROZEN：不可用，原因点名
+  echo THAWED >"$FAKE/devfreezer/frozen/freezer.state"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_freezer_detect; echo \"\$FZ_BACKEND|\$FZ_REASON|\$FZ_DETAIL\" >\"$T/support\"")
+  case "$(cat "$T/support")" in none*freezer.state=THAWED*) ;; *) fail "$shell: v1 未冻结分组原因不准确：$(cat "$T/support")" ;; esac
+
+  # --- 系统 am freeze：其余后端都不可用时使用；freezer-detect 写 perf-freezer.env ---
+  reset_case
+  : >"$FAKE/proc/mounts"; touch "$FAKE/am_freeze"; : >"$FAKE/cmd.calls"
+  (export BAIZE_PERF_CGROUP=; lib "$shell" "perf_frozen_init; $round; perf_freeze_round 1000 1; perf_freeze_round 1100 1; echo \"\$FZ_BACKEND\" >\"$T/support\"")
+  [ "$(cat "$T/support")" = am ] || fail "$shell: 应识别系统 am freeze"
+  grep -q '^activity freeze 2005$' "$FAKE/cmd.calls" || fail "$shell: am 后端应调用 cmd activity freeze"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" thaw-all >/dev/null)
+  grep -q '^activity unfreeze 2005$' "$FAKE/cmd.calls" || fail "$shell: am 后端应调用 cmd activity unfreeze"
+  grep -q 'force-stop' "$FAKE/cmd.calls" && fail "$shell: am 后端不得强制停止"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" freezer-detect >/dev/null)
+  grep -q '^backend=am$' "$T/state/perf-freezer.env" && grep -q '^supported=1$' "$T/state/perf-freezer.env" \
+    && grep -q '^system_freezer=enabled$' "$T/state/perf-freezer.env" || fail "$shell: freezer-detect 应写入后端与系统冻结状态"
+  # 只开进程压制且最近探测为不支持：check 不反复拉起轮询
+  rm -f "$FAKE/am_freeze"
+  (export BAIZE_PERF_CGROUP=; $shell "$T/module/scripts/perf-tools.sh" freezer-detect >/dev/null)
+  grep -q '^supported=0$' "$T/state/perf-freezer.env" || fail "$shell: 不支持时 supported=0"
+  printf 'freeze_enabled=1\n' >"$T/state/perf-tools.conf"; : >"$FAKE/detach.calls"
+  $shell "$T/module/scripts/perf-tools.sh" check
+  [ ! -s "$FAKE/detach.calls" ] || fail "$shell: 最近探测不支持时不应反复拉起轮询"
+  rm -f "$T/state/perf-tools.conf" "$T/state/perf-freezer.env"
 
   # --- 内存压制：低于阈值发送回收；kill 只在开关打开且应用为缓存状态时；冷却 ---
   reset_case
@@ -209,10 +290,37 @@ com.tencent.mm"'
   grep "性能工具·轮询" "$T/state/history.tsv" | awk -F "\t" '$11 != "not_applicable" {exit 1}' || fail "$shell: 审计记录应标记不计释放空间"
   [ ! -d "$T/state/perf-loop.lock" ] || fail "$shell: 退出后应释放锁"
 
-  # --- 数据库优化：无 sqlite3 时明确不可用 ---
+  # --- 数据库优化：模块缺 APK 且无 sqlite3 时才不可用 ---
   reset_case
   BAIZE_PERF_SQLITE="$T/none/sqlite3" $shell "$T/module/scripts/perf-tools.sh" dbopt auto
-  grep -q '^reason=设备无 sqlite3，暂不可用' "$T/state/perf-dbopt.env" || fail "$shell: 无 sqlite3 应提示不可用"
+  grep -q '^reason=模块缺少 app/baize.apk 且设备无 sqlite3' "$T/state/perf-dbopt.env" || fail "$shell: 两种引擎都没有才提示不可用"
+
+  # --- 数据库优化：无 sqlite3 也可用（App 引擎经 app_process 运行，每个应用一批） ---
+  reset_case
+  mkdir -p "$T/module/app"; printf 'apk' >"$T/module/app/baize.apk"
+  cat >"$T/bin/app_process" <<'EOF'
+#!/bin/sh
+echo "CLASSPATH=$CLASSPATH $*" >>"$FAKE/app_process.calls"
+shift 2
+for db in "$@"; do echo "ok 8208 4096 $db"; done
+EOF
+  chmod 0755 "$T/bin/app_process"; : >"$FAKE/app_process.calls"
+  for p in com.example.bg com.example.fg com.tencent.mm; do
+    mkdir -p "$FAKE/data/$p/databases"
+    { printf 'SQLite format 3\000'; head -c 8192 /dev/zero; } >"$FAKE/data/$p/databases/main.db"
+  done
+  cp "$FAKE/data/com.example.bg/databases/main.db" "$FAKE/data/com.example.bg/databases/second.db"
+  { printf 'garbage-bytes!!!'; head -c 8192 /dev/zero; } >"$FAKE/data/com.example.bg/databases/enc.db"
+  grep -v 'com.example.bg' "$FAKE/ps.txt" >"$FAKE/ps.new"; mv "$FAKE/ps.new" "$FAKE/ps.txt"
+  BAIZE_PERF_SQLITE="$T/none/sqlite3" BAIZE_PERF_APP_PROCESS="$T/bin/app_process" $shell "$T/module/scripts/perf-tools.sh" dbopt auto
+  grep -q '^engine=app$' "$T/state/perf-dbopt.env" || fail "$shell: 无 sqlite3 时应使用 App 引擎"
+  grep -q '^optimized=2$' "$T/state/perf-dbopt.env" || fail "$shell: App 引擎应优化 bg 的 2 个数据库"
+  grep -q '^saved_bytes=8224$' "$T/state/perf-dbopt.env" || fail "$shell: 节省字节统计错误"
+  [ "$(wc -l <"$FAKE/app_process.calls")" = 1 ] || fail "$shell: 每个应用只应启动一次引擎"
+  grep -q "CLASSPATH=$T/module/app/baize.apk /system/bin io.github.xgl34222220.baize.root.PerfDbVacuumMain" "$FAKE/app_process.calls" || fail "$shell: 引擎调用方式错误"
+  grep -q 'enc.db\|com.example.fg\|com.tencent.mm' "$FAKE/app_process.calls" && fail "$shell: 加密 / 运行中 / 黑名单数据库不应交给引擎"
+  rm -rf "$T/module/app"
+  reset_case
   # 有 sqlite3：完整性检查通过才 VACUUM；运行中、黑名单、加密跳过
   cat >"$T/bin/sqlite3" <<'EOF'
 #!/bin/sh
@@ -265,7 +373,7 @@ EOF
   [ ! -s "$FAKE/detach.calls" ] || fail "$shell: 每日最多一次"
 
   # 状态文件数量有上限：只有固定文件名
-  extra=$(ls "$T/state" | grep -v -E '^(perf-tools\.conf|perf-tools\.env|perf-dex2oat\.env|perf-dbopt\.env|perf-maint\.env|perf-frozen\.tsv|perf-tools\.log|history\.tsv|module\.env|logs)$' || true)
+  extra=$(ls "$T/state" | grep -v -E '^(perf-tools\.conf|perf-tools\.env|perf-dex2oat\.env|perf-dbopt\.env|perf-maint\.env|perf-freezer\.env|perf-frozen\.tsv|perf-tools\.log|history\.tsv|module\.env|logs)$' || true)
   [ -z "$extra" ] || fail "$shell: 出现未登记的状态文件: $extra"
 done
 echo "perf-tools ok"
