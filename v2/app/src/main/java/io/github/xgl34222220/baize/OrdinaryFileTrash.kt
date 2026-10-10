@@ -203,15 +203,21 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
             return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
         }
         fun moveReviewed(context: Context, record: StorageFileRecord, proof: IndexedContentProof?,
-            protection: () -> ApkProtectionState, cancelled: () -> Boolean): StorageDeleteOutcome {
+            protection: () -> ApkProtectionState, cancelled: () -> Boolean,
+            allowProtectedOnce: Boolean = false): StorageDeleteOutcome {
             val guard = ApkDeletionGuard.forContext(context)
             if (cancelled()) return StorageDeleteOutcome(ApkIndexedDeleteResult.CANCELLED)
             val identity = record.identity ?: return StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED)
             return try {
-                guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, protection())?.let { return StorageDeleteOutcome(it) }
+                val state = protection()
+                guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, state, allowProtectedOnce)?.let { result ->
+                    val details = if (result == ApkIndexedDeleteResult.PROTECTED || result == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE)
+                        guard.protectionDetails(record.path, state) else null
+                    return StorageDeleteOutcome(result, protection = details)
+                }
                 if (!IndexedContentReview.matches(proof, identity, guard, cancelled)) return StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED)
                 val entry = forContext(context).move(File(identity.canonicalPath), record.bytes, requireNotNull(proof).sha256, budget(context)) {
-                    !cancelled() && guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, protection()) == null
+                    !cancelled() && guard.validate(record.uri, record.path, record.bytes, record.modifiedSeconds, identity, protection(), allowProtectedOnce) == null
                 }
                 MediaScannerConnection.scanFile(context, arrayOf(record.path), null, null)
                 StorageDeleteOutcome(ApkIndexedDeleteResult.DELETED, "已移入回收站，尚未释放空间", trashed = true, trashId = entry.id)

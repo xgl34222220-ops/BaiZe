@@ -119,6 +119,20 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             mutableState.update { it.copy(status = "正在停止…") } } }
     fun toggle(key: String) { if (!state.value.running) mutableState.update { it.toggleSelection(key) } }
     fun toggleAll() { if (!state.value.running) mutableState.update { it.toggleAllSelection() } }
+    /**
+     * 「临时允许本次」：只对这一个文件、只对用户自己的保护规则生效；保护名单本身不变。
+     * 文件仍需在确认框里确认，仍进入回收站；回收站内部目录与未核对的保护永远不能放行。
+     */
+    fun allowProtectedOnce(uri: String) {
+        val snapshot = state.value
+        if (snapshot.running) return
+        val record = snapshot.allRecords.firstOrNull { it.uri == uri } ?: return
+        val explanation = snapshot.outcomes[uri]?.protectionExplanation ?: return
+        if (!explanation.overridable || record.verifiedBytes <= 0L) return
+        mutableState.update { it.copy(protectionOverrides = it.protectionOverrides + uri, selected = it.selected + uri,
+            outcomes = it.outcomes - uri,
+            status = "已临时允许本次：${record.name}。保护规则不变，点「移入回收站」后仍需确认，可在回收站恢复。") }
+    }
     fun filter(query: String = state.value.query, category: String? = state.value.category,
                sort: StorageSort = state.value.sort, minimumBytes: Long = state.value.minimumBytes,
                minimumAgeDays: Int = state.value.minimumAgeDays) {
@@ -208,7 +222,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         mutableState.update { it.copy(running = true, reviewRequested = false, permissionRequired = false, failed = false, status = "正在读取系统文件索引…",
             lastTrashed = if (keepStatus) it.lastTrashed else emptyList(), nowSeconds = System.currentTimeMillis() / 1000,
             selected = emptySet(), records = emptyList(), duplicateGroups = emptyList(), buckets = emptyList(), coverage = "", progress = null,
-            outcomes = emptyMap(), directoryUsage = null, diagnostic = "", diagnosticUri = "") }
+            outcomes = emptyMap(), protectionOverrides = emptySet(), directoryUsage = null, diagnostic = "", diagnosticUri = "") }
         viewModelScope.launch {
             val started = SystemClock.elapsedRealtime()
             try {
@@ -337,7 +351,33 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             try {
                 // Root 读取的聊天文件没有系统索引，内容核对由 Root 在移动前按文件身份完成。
                 val rootChosen = chosen.filter(ChatStorageRecords::isRootRecord)
-                val indexedChosen = chosen.filterNot(ChatStorageRecords::isRootRecord)
+                // 先核对保护名单：受保护的文件不读取内容、不进入确认，直接说明命中的规则。
+                val overrides = snapshot.protectionOverrides
+                val blocked = withContext(Dispatchers.IO) {
+                    val guard = ApkDeletionGuard.forContext(context)
+                    val protectionState = protection()
+                    chosen.filterNot(ChatStorageRecords::isRootRecord).mapNotNull { record ->
+                        val details = guard.protectionDetails(record.path, protectionState)
+                        when {
+                            details.unavailableReason != null -> record.uri to StorageDeleteOutcome(ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE, protection = details)
+                            details.isProtected && !(details.manageable && record.uri in overrides) ->
+                                record.uri to StorageDeleteOutcome(ApkIndexedDeleteResult.PROTECTED, protection = details)
+                            else -> null
+                        }
+                    }.toMap()
+                }
+                if (closed || task.cancelled || control !== task) return@launch
+                val indexedChosen = chosen.filterNot { ChatStorageRecords.isRootRecord(it) || it.uri in blocked }
+                if (indexedChosen.isEmpty() && rootChosen.isEmpty()) {
+                    val protectedCount = blocked.values.count { it.result == ApkIndexedDeleteResult.PROTECTED }
+                    mutableState.update { it.copy(running = false, reviewRequested = false, reviewMessage = "", selected = emptySet(),
+                        outcomes = it.outcomes + blocked, status = StorageTrashSummary.status(chosen.size, 0, "", protectedCount,
+                            blocked.size - protectedCount, 0, 0, false)) }
+                    return@launch
+                }
+                val overrideCount = indexedChosen.count { it.uri in overrides }
+                val protectionNote = (if (blocked.isEmpty()) "" else "${blocked.size} 个文件受保护，已取消勾选，点文件可查看命中的规则。") +
+                    (if (overrideCount == 0) "" else "其中 $overrideCount 个是你「临时允许本次」的受保护文件，保护名单不变。")
                 rootReview = rootChosen.map { it.uri }.toSet()
                 val rootNote = if (rootChosen.isEmpty()) "" else "其中 ${rootChosen.size} 个是 QQ / 微信应用目录文件（Root），确认后由 Root 再次核对文件身份并移入回收站（隔离区，可恢复）。"
                 val batch = if (indexedChosen.isEmpty()) IndexedReviewBatch(emptyMap(), emptyMap()) else withContext(Dispatchers.IO) { IndexedContentReview.prepare(indexedChosen.map { it.asIndexedCandidate() },
@@ -348,8 +388,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 if (closed || task.cancelled || control !== task) return@launch
                 contentReview = batch.proofs
                 mutableState.update { it.copy(running = false, selected = batch.proofs.keys + rootReview,
-                    outcomes = (it.outcomes - batch.proofs.keys) + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
-                    reviewMessage = userMediaNote + rootNote + "已核对 ${batch.proofs.size + rootReview.size} 个文件。" +
+                    outcomes = (it.outcomes - batch.proofs.keys) + blocked + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
+                    reviewMessage = protectionNote + userMediaNote + rootNote + "已核对 ${batch.proofs.size + rootReview.size} 个文件。" +
                         if (batch.rejected.isEmpty()) "确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问。保留 30 天，不立即释放空间；卸载或清空白泽数据会丢失恢复记录，请先处理回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     status = "所选内容已核对，等待确认") }
             } catch (_: CancellationException) {
@@ -459,7 +499,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         val safe = snapshot.mode != StorageToolMode.DUPLICATES ||
                             (group != null && StorageMediaRepository.duplicateStillSafe(context, record, group, snapshot.selected, taskControl, keeperProofs))
                         taskControl.check()
-                        results[record.uri] = if (safe) OrdinaryFileTrash.moveReviewed(context, record, reviewed[record.uri], ::protection, { taskControl.cancelled }) else StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED,
+                        results[record.uri] = if (safe) OrdinaryFileTrash.moveReviewed(context, record, reviewed[record.uri], ::protection, { taskControl.cancelled },
+                            allowProtectedOnce = record.uri in snapshot.protectionOverrides) else StorageDeleteOutcome(ApkIndexedDeleteResult.CHANGED,
                             "重复组没有经内容核对的保留副本，请重新扫描")
                     } catch (_: CancellationException) { break
                     } catch (error: Exception) { results[record.uri] = StorageDeleteOutcome(ApkIndexedDeleteResult.FAILED,
@@ -473,6 +514,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             val trashedIds = outcomes.values.filter { it.trashed && it.trashId.isNotBlank() }.map { it.trashId }
             val unconfirmed = outcomes.count { it.value.result == ApkIndexedDeleteResult.FAILED }
             val retained = selectedRecords.size - removed.size - unconfirmed
+            val protectedCount = outcomes.count { it.value.result == ApkIndexedDeleteResult.PROTECTED }
+            val unverifiedProtection = outcomes.count { it.value.result == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE }
             val bytes = selectedRecords.filter { it.uri in removed }.sumOf { it.bytes }
             mutableState.update { current ->
                 val remaining = current.records.filterNot { it.uri in removed }.map { record ->
@@ -483,10 +526,9 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     selected = emptySet(), outcomes = current.outcomes + outcomes, lastTrashed = trashedIds,
                     lastTrashedBytes = selectedRecords.filter { outcomes[it.uri]?.trashed == true }.sumOf { it.bytes },
                     duplicateGroups = remainingDuplicateGroups(current.duplicateGroups, remaining),
-                    status = "${if (taskControl.cancelled) "已停止 · " else ""}" +
-                        (if (removed.isEmpty()) "未确认移入回收站" else "已移入回收站 ${removed.size} 个文件，占用 ${Formatter.formatFileSize(context, bytes)}，尚未释放空间") +
-                        (if (retained > 0) " · $retained 项保留" else "") +
-                        (if (unconfirmed > 0) " · $unconfirmed 项结果未确认" else ""),
+                    protectionOverrides = emptySet(),
+                    status = StorageTrashSummary.status(selectedRecords.size, removed.size, Formatter.formatFileSize(context, bytes),
+                        protectedCount, unverifiedProtection, retained - protectedCount - unverifiedProtection, unconfirmed, taskControl.cancelled),
                     coverage = if (removed.size < selectedRecords.size) "逐项结果已显示在文件下方；点文件可查看完整路径与读取诊断。结果未确认时请重新扫描核对。" else current.coverage)
             }
             if (removed.isNotEmpty()) recordHomeSummary(mutableState.value, partial = false)

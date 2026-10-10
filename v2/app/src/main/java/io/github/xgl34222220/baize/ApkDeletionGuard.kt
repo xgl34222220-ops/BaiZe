@@ -149,13 +149,15 @@ internal class ApkDeletionGuard(
 
     fun validate(
         uri: String, path: String, bytes: Long, modifiedSeconds: Long,
-        original: ApkFileIdentity?, protection: ApkProtectionState
+        original: ApkFileIdentity?, protection: ApkProtectionState,
+        /** 「临时允许本次」：只放行用户自己的路径 / 应用保护；回收站内部与未核对状态仍拦下。 */
+        allowUserRuleOverride: Boolean = false
     ): ApkIndexedDeleteResult? {
         if (OrdinaryFileTrash.isPayloadPath(path)) return ApkIndexedDeleteResult.PROTECTED
         if (!validUri(uri) || !validPath(path)) return ApkIndexedDeleteResult.INVALID
         val details = protectionDetails(path, protection)
         if (details.unavailableReason != null) return ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE
-        if (details.isProtected) return ApkIndexedDeleteResult.PROTECTED
+        if (details.isProtected && !(allowUserRuleOverride && details.manageable)) return ApkIndexedDeleteResult.PROTECTED
         if (original == null) return ApkIndexedDeleteResult.UNVERIFIED
         val current = capture(path) ?: return ApkIndexedDeleteResult.CHANGED
         // Provider dates and filesystem dates are separate observations. Android may

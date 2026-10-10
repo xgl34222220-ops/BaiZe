@@ -7,13 +7,19 @@ internal data class StorageDeleteOutcome(
     val detail: String = "",
     val confirmedMissing: Boolean = false, val trashed: Boolean = false,
     /** 移入回收站后的记录编号，用于“撤销本次”只恢复这一批。 */
-    val trashId: String = ""
+    val trashId: String = "",
+    /** 被保护规则拦下时命中的具体规则，结果行与详情用它说明原因并提供「临时允许本次」。 */
+    val protection: ApkProtectionDetails? = null
 ) {
+    val protectionExplanation: ProtectionRuleExplanation? get() =
+        protection?.takeIf { result == ApkIndexedDeleteResult.PROTECTED || result == ApkIndexedDeleteResult.PROTECTION_UNAVAILABLE }
+            ?.let(ProtectionRuleExplanation::of)
     val deleted: Boolean get() = result == ApkIndexedDeleteResult.DELETED && !trashed
     val reason: String get() = when {
         trashed -> "已移入回收站 · 尚未释放空间"
         deleted -> "已验证删除"
         confirmedMissing -> "文件已不存在 · 旧索引未计入释放空间"
+        protectionExplanation != null -> protectionExplanation!!.rowReason
         result == ApkIndexedDeleteResult.FAILED -> if (detail.isNotBlank()) "未确认 · $detail" else result.retainedReason()
         detail.isNotBlank() -> "已保留 · $detail"
         else -> result.retainedReason()
