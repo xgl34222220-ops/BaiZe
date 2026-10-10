@@ -410,7 +410,6 @@ data class DashboardActions(
     val deep: () -> Unit,
     val corpses: () -> Unit,
     val audit: () -> Unit,
-    val updateScheduler: (SchedulerUiState) -> Unit,
     val saveScheduler: (SchedulerUiState) -> Unit,
     val schedulerCommand: (String) -> Unit,
     val clearHistory: () -> Unit,
@@ -431,7 +430,5 @@ data class DashboardActions(
     /** 直接打开存储分析的某个视图（清理 Tab「专项清理」入口）。 */
     val storageView: (StorageToolMode) -> Unit = {},
     /** 清理审计（AuditActivity）。唯一入口在记录 Tab。 */
-    val cleanupAudit: () -> Unit = {},
-    /** 规则版本与试跑（RuleBundleActivity）。唯一入口在 设置 → 规则与保护。 */
-    val ruleVersions: () -> Unit = {}
+    val cleanupAudit: () -> Unit = {}
 )

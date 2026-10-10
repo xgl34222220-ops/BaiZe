@@ -52,7 +52,9 @@ data class SettingsUiActions(
     /** 只读统计微信存储构成，结果回调在主线程。 */
     val onLoadWechatUsage: ((io.github.xgl34222220.baize.WechatUsage) -> Unit) -> Unit = {},
     /** 设置 →「规则与保护」中心（CleanCenterActivity）：保护名单、清理策略、规则版本与试跑等的唯一入口。 */
-    val onOpenRulesCenter: () -> Unit = {}
+    val onOpenRulesCenter: () -> Unit = {},
+    /** 清除扫描 worker 的自适应性能基准（Root 已有实现，之前没有入口）。 */
+    val onResetScanPerformance: () -> Unit = {}
 )
 
 fun DashboardUiState.toSettingsUiState(

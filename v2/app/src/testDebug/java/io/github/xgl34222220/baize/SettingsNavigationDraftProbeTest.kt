@@ -24,14 +24,14 @@ class SettingsNavigationDraftProbeTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val actions = DashboardActions(refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {},
         largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {}, dismissScan = {}, stop = {},
-        deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
+        deep = {}, corpses = {}, audit = {}, saveScheduler = {}, schedulerCommand = {},
         clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {})
     @Test fun leavingUnsavedDetailMustNotLeakChangesIntoOtherPageAutosave() {
         var scheduler by mutableStateOf(SchedulerUiState(chargingOnly = false))
         val saves = mutableListOf<SchedulerUiState>()
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true, automationAvailable = true), scheduler,
-            actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }), AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
+            actions.copy(saveScheduler = { saves += it }), AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
         compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
@@ -50,7 +50,7 @@ class SettingsNavigationDraftProbeTest {
         var scheduler by mutableStateOf(SchedulerUiState(chargingOnly = false))
         val restore = StateRestorationTester(compose)
         restore.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
-            actions.copy(updateScheduler = { scheduler = it }), AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
+            actions, AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
         compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
@@ -68,7 +68,7 @@ class SettingsNavigationDraftProbeTest {
         val saves = mutableListOf<SchedulerUiState>()
         var draftLeaks = 0
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
-            actions.copy(updateScheduler = { draftLeaks++; scheduler = it }, saveScheduler = { saves += it }),
+            actions.copy(saveScheduler = { saves += it }),
             AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))

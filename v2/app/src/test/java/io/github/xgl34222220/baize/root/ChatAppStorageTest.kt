@@ -181,12 +181,13 @@ class ChatAppStorageTest {
         assertEquals(parsed.records.size, parsed.ageBuckets[0])
         val video = parsed.records.first { it.name == "v1.mp4" }
         assertTrue(ChatStorageRecords.isRootRecord(video))
-        assertNull(video.identity)
-        assertEquals("微信 · 聊天视频", StorageReviewFilters.sourceLabel(StorageToolMode.CHAT_MEDIA, video))
+        assertEquals("Root · 微信 · 聊天视频", StorageReviewFilters.sourceLabel(StorageToolMode.CHAT_MEDIA, video))
         // Android/data 下的聊天媒体以前被 forbidden() 整体排除，视图永远“无匹配”。
         assertTrue(StorageReviewFilters.candidate(StorageToolMode.CHAT_MEDIA, video, emptyList()))
         assertTrue(StorageReviewFilters.candidate(StorageToolMode.CHAT_MEDIA, parsed.records.first { it.name == "th_abcdef0123" }, emptyList()))
-        assertEquals(ChatStorageRecords.READ_ONLY_LABEL, StorageReviewFilters.rowLock(StorageToolMode.CHAT_MEDIA, video))
+        // Root 记录可勾选（确认后由 Root 移入回收站）；未取得文件身份时才锁定。
+        assertEquals(if (video.identity == null) ChatStorageRecords.IDENTITY_MISSING_LABEL else null,
+            StorageReviewFilters.rowLock(StorageToolMode.CHAT_MEDIA, video))
         assertFalse(StorageReviewFilters.bulkSelectable(StorageToolMode.CHAT_MEDIA, video))
         // 安装包进入“存储分析 · 安装包”分类，包括 .apk.1。
         val renamed = parsed.records.first { it.name == "游戏.apk.1" }
