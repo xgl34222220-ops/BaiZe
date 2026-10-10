@@ -74,7 +74,8 @@ perf_log() { baize_append_capped "$LOG" "$(date '+%F %T') $*" "$LOG_LINES"; }
 perf_history() {
   # $1 操作  $2 项数  $3 失败数  $4 说明  $5 来源
   ph_msg=$(printf '%s' "$4" | tr '\t\r\n' '   ')
-  printf '%s\t%s\t0\t%s\t0\t%s\t%s\t%s\t\t\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" "$3" "$ph_msg" "$5" >>"$HISTORY" 2>/dev/null || return 0
+  # 第 11 列 releaseState=not_applicable：性能工具不释放空间，不计入清理效果统计。
+  printf '%s\t%s\t0\t%s\t0\t%s\t%s\t%s\t\t\tnot_applicable\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" "$3" "$ph_msg" "$5" >>"$HISTORY" 2>/dev/null || return 0
   tail -n 100 "$HISTORY" >"$HISTORY.tmp.$$" 2>/dev/null && mv -f "$HISTORY.tmp.$$" "$HISTORY"
   rm -f "$HISTORY.tmp.$$" 2>/dev/null
   return 0

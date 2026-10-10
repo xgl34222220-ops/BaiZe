@@ -206,6 +206,7 @@ com.tencent.mm"'
   BAIZE_PERF_ONCE=1 $shell "$T/module/scripts/perf-tools.sh" loop
   grep -q '^loop_state=stopped' "$T/state/perf-tools.env" || fail "$shell: 轮询退出应写 stopped"
   grep -q '性能工具·轮询' "$T/state/history.tsv" || fail "$shell: 轮询启动应写入审计"
+  grep "性能工具·轮询" "$T/state/history.tsv" | awk -F "\t" '$11 != "not_applicable" {exit 1}' || fail "$shell: 审计记录应标记不计释放空间"
   [ ! -d "$T/state/perf-loop.lock" ] || fail "$shell: 退出后应释放锁"
 
   # --- 数据库优化：无 sqlite3 时明确不可用 ---

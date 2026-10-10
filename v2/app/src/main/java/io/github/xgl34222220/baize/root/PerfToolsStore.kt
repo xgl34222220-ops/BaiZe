@@ -124,7 +124,7 @@ internal object PerfToolsStore {
         val file = File(stateDir, HISTORY)
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).format(Date())
         val clean = message.replace('\t', ' ').replace('\n', ' ').take(500)
-        val lines = (if (file.isFile) file.readLines().takeLast(99) else emptyList()) + "$time\t$operation\t0\t0\t0\t0\t$clean\t$source\t\t"
+        val lines = (if (file.isFile) file.readLines().takeLast(99) else emptyList()) + "$time\t$operation\t0\t0\t0\t0\t$clean\t$source\t\t\tnot_applicable"
         RootFileStore.writeAtomic(file, lines.joinToString("\n", postfix = "\n"))
     }
 
