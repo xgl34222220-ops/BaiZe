@@ -386,7 +386,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     expiresAtRealtime = snapshotExpiresAtRealtime, coverageSummary = coverage.summary, coverageIncomplete = partial,
                     resultText = warning + "读取期间仅供预览，全部读取完成后才可选择和清理。")
                 val results = ProgressiveScanResults<WorkbenchItem>({ it.id }) {
-                    it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium", it.category)
+                    it.selectable && !ReviewRiskPolicy.perItemOnly(it.category) && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium")
                 }
                 val counts = mutableMapOf<String, Pair<Int, Int>>()
                 suspend fun publish(source: String, batch: List<WorkbenchItem>, cursor: ScanPageCursor) {

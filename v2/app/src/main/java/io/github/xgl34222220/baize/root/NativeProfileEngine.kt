@@ -445,7 +445,8 @@ internal class NativeProfileEngine(
         val selectAllSafe = selection["__all_safe__"] == true
         val selected = snapshot.candidates.filter { candidate ->
             val explicit = selection[candidate.id] == true || selection[candidate.path] == true
-            explicit || (selectAllSafe && bulkSelectable(candidate.category, candidate.risk, snapshot.options.maxAutoRisk))
+            explicit || (selectAllSafe && !recoverableOnly(candidate.category) &&
+                (candidate.risk == "low" || (candidate.risk == "medium" && snapshot.options.maxAutoRisk == "medium")))
         }
         if (selected.isEmpty()) {
             return JSONObject().put("error", "empty_selection").put("message", "没有明确勾选任何项目").toString()
