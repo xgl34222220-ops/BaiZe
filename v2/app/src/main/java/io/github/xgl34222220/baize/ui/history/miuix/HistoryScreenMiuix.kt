@@ -111,7 +111,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         item(key = "history-record-title") { LuoShuSection("任务记录", "按日期排列，扫描与清理状态分开显示") }
 
         if (recordGroups.isEmpty()) {
-            item(key = "history-empty") { EmptyRecordsCard() }
+            item(key = "history-empty") { EmptyRecordsCard(state.lifetimeRuns > 0) }
         } else {
             recordGroups.forEach { (date, records) ->
                 item(key = "history-date-$date") { DateLabel(date) }
@@ -534,11 +534,11 @@ private fun DateLabel(date: String) {
 }
 
 @Composable
-private fun EmptyRecordsCard() {
+private fun EmptyRecordsCard(hasLifetimeTotals: Boolean = false) {
     LuoShuGroup {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("暂无任务记录", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("扫描或清理后，记录会按日期显示在这里", style = MaterialTheme.typography.bodySmall,
+            Text(if (hasLifetimeTotals) "上方累计数据仍保留；新的扫描或清理会按日期显示在这里" else "扫描或清理后，记录会按日期显示在这里", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
