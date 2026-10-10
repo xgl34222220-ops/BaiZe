@@ -386,7 +386,7 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                     expiresAtRealtime = snapshotExpiresAtRealtime, coverageSummary = coverage.summary, coverageIncomplete = partial,
                     resultText = warning + "读取期间仅供预览，全部读取完成后才可选择和清理。")
                 val results = ProgressiveScanResults<WorkbenchItem>({ it.id }) {
-                    it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium")
+                    it.selectable && ReviewRiskPolicy.defaultSelected(it.risk, "", policy.autoRisk == "medium", it.category)
                 }
                 val counts = mutableMapOf<String, Pair<Int, Int>>()
                 suspend fun publish(source: String, batch: List<WorkbenchItem>, cursor: ScanPageCursor) {
@@ -701,22 +701,25 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
                             val detail = details.optJSONObject(index) ?: continue
                             val status = when (detail.optString("action")) {
                                 "cleaned" -> "已清理"
+                                "quarantined" -> REVIEW_OUTCOME_RECOVERABLE
                                 "partial" -> "部分清理：${detail.optString("reason")}"
                                 else -> "未清理：${detail.optString("reason")}"
                             }
                             val id = "profile:${detail.optString("id")}"
                             outcomes[id] = status
-                            if (detail.optString("action") != "cleaned") incomplete = true
+                            val recoverable = detail.optString("action") == "quarantined"
+                            if (detail.optString("action") != "cleaned" && !recoverable) incomplete = true
                             val original = profileItems.firstOrNull { it.id == id }
                             if (original != null) {
-                                val actualBytes = detail.optLong("bytes")
+                                // 移入回收站不释放空间，不计入本次释放量。
+                                val actualBytes = if (recoverable) 0L else detail.optLong("bytes")
                                 val actualFiles = detail.optLong("files")
                                 if (original.packageName.isNotBlank()) {
                                     actualApps += AppJunkUiItem(original.packageName, original.appName, original.title,
-                                        actualFiles, actualBytes, if (detail.optString("action") == "cleaned") 0L else 1L)
+                                        actualFiles, actualBytes, if (detail.optString("action") == "cleaned" || recoverable) 0L else 1L)
                                 } else {
                                     actualJunk += GeneralJunkUiItem(original.title, actualFiles, actualBytes,
-                                        if (detail.optString("action") == "cleaned") 0L else 1L, original.path)
+                                        if (detail.optString("action") == "cleaned" || recoverable) 0L else 1L, original.path)
                                 }
                             }
                         }
@@ -934,7 +937,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
     fun toggleGroup(groupKey: String) {
         if (!selectionIsEditable()) return
-        val group = screenState.items.filter { it.groupKey == groupKey && it.selectable && it.risk in setOf("low", "medium") }
+        val group = screenState.items.filter { it.groupKey == groupKey && it.selectable && it.risk in setOf("low", "medium") &&
+            !ReviewRiskPolicy.perItemOnly(it.category) }
         if (group.isEmpty()) return
         val selected = screenState.selectedIds.toMutableSet()
         val shouldSelect = group.any { it.id !in selected }
@@ -943,7 +947,8 @@ internal class ScanWorkbenchSession(application: Application, private val lifecy
     }
     fun toggleItems(ids: Set<String>) {
         if (!selectionIsEditable()) return
-        val eligible = screenState.items.filter { it.id in ids && it.selectable && it.risk in setOf("low", "medium") }
+        val eligible = screenState.items.filter { it.id in ids && it.selectable && it.risk in setOf("low", "medium") &&
+            !ReviewRiskPolicy.perItemOnly(it.category) }
             .mapTo(linkedSetOf()) { it.id }
         if (eligible.isEmpty()) return
         val selected = screenState.selectedIds.toMutableSet()

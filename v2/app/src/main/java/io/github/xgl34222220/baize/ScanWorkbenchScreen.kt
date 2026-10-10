@@ -494,7 +494,7 @@ private fun WorkbenchCategories(
             val active = activeFilter == category.id
             val members = remember(items, category.id) { items.filter { workbenchCategory(it) == category.id } }
             val bulk = remember(members) { reviewRiskSelection(members, setOf("low", "medium")) }
-            val reviewOnly = bulk.isEmpty() && members.any { it.selectable && it.risk == "high" }
+            val reviewOnly = bulk.isEmpty() && members.any { it.selectable && (it.risk == "high" || ReviewRiskPolicy.perItemOnly(it.category)) }
             val blockedReason = if (bulk.isEmpty() && !reviewOnly)
                 members.firstNotNullOfOrNull { reviewItemRestriction(it, null) } ?: "该分类没有可勾选的项目" else null
             val chosen = bulk.count { it in selectedIds }
@@ -903,7 +903,7 @@ private fun WorkbenchGroupRow(group: WorkbenchGroup, expanded: Boolean, enabled:
                 onClick = onSelect, enabled = enabled,
                 description = "选择${group.title}的低中风险项目")
         } else TextButton(onClick = onExpand, contentPadding = PaddingValues(horizontal = 8.dp)) {
-            Text(if (group.items.any { it.selectable && it.risk == "high" }) "逐项选择" else "查看原因", fontSize = 13.sp)
+            Text(if (group.items.any { it.selectable && (it.risk == "high" || ReviewRiskPolicy.perItemOnly(it.category)) }) "逐项选择" else "查看原因", fontSize = 13.sp)
         }
     }
 }

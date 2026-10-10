@@ -436,7 +436,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                         chatApks.error.isNotBlank() -> "QQ / 微信目录读取失败（${chatApks.error}）。"
                         rootOnlyApks.isEmpty() -> "QQ / 微信 / TIM 接收目录内没有系统索引之外的安装包。"
                         else -> "另有 ${rootOnlyApks.size} 个安装包（含 .apk.1 改名副本）位于系统索引看不到的应用目录，本页不能直接删除；" +
-                            "请在一键扫描中清理（列为“聊天收到的安装包”，清理前逐文件核对身份）。"
+                            "可在一键扫描中处理（列为“聊天收到的安装包”，默认不勾选，逐项确认后移入回收站，可恢复）。"
                     } + if (chatApks.truncated) "达到读取上限，结果不完整。" else ""
                 )
             )
@@ -449,7 +449,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 phase = when {
                     indexed.truncated -> "已读取前 ${indexed.candidates.size} 个安装包 · 达到本次上限"
                     indexed.confirmedMissingRecords > 0 -> "当前 ${indexed.candidates.size} 个安装包 · 已排除 ${indexed.confirmedMissingRecords} 条不存在的旧记录"
-                    indexed.candidates.isEmpty() && rootOnlyApks.isNotEmpty() -> "系统索引未发现安装包 · QQ / 微信目录另有 ${rootOnlyApks.size} 个，可在一键扫描中清理"
+                    indexed.candidates.isEmpty() && rootOnlyApks.isNotEmpty() -> "系统索引未发现安装包 · QQ / 微信目录另有 ${rootOnlyApks.size} 个，可在一键扫描中逐项处理"
                     indexed.candidates.isEmpty() -> "快速索引完成：未发现安装包"
                     else -> "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms"
                 },

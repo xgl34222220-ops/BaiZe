@@ -374,8 +374,8 @@ internal class NativeProfileEngine(
         for (entry in result.entries) {
             val file = File(entry.path)
             if (!ChatAppPaths.isReceivedApk(canonical(file))) continue
-            val item = candidate("apk", "chat_apk", "聊天收到的安装包", "medium", file, deleteRoot = true,
-                note = "${entry.app} · ${entry.area.label}")
+            val item = candidate("apk", CHAT_APK_CATEGORY, "聊天收到的安装包", "medium", file, deleteRoot = true,
+                note = "${entry.app} · ${entry.area.label} · 默认不勾选，确认后移入回收站（隔离区），可恢复")
             item.bytes = entry.bytes
             item.files = 1L
             item.directories = 0L
@@ -445,7 +445,7 @@ internal class NativeProfileEngine(
         val selectAllSafe = selection["__all_safe__"] == true
         val selected = snapshot.candidates.filter { candidate ->
             val explicit = selection[candidate.id] == true || selection[candidate.path] == true
-            explicit || (selectAllSafe && (candidate.risk == "low" || (candidate.risk == "medium" && snapshot.options.maxAutoRisk == "medium")))
+            explicit || (selectAllSafe && bulkSelectable(candidate.category, candidate.risk, snapshot.options.maxAutoRisk))
         }
         if (selected.isEmpty()) {
             return JSONObject().put("error", "empty_selection").put("message", "没有明确勾选任何项目").toString()
@@ -454,6 +454,8 @@ internal class NativeProfileEngine(
         corpsePreflight(selected)?.let { return it }
 
         val started = SystemClock.elapsedRealtime()
+        var recoverableCandidates = 0
+        var recoverableBytes = 0L
         val deadline = started + CLEAN_TOTAL_MS
         val mounts = mountPoints()
         val hiddenPolicy = hiddenRules()
@@ -486,6 +488,23 @@ internal class NativeProfileEngine(
             }
 
             val target = File(candidate.path)
+            if (recoverableOnly(candidate.category)) {
+                // 聊天收到的安装包可能是用户想留的应用：只移入回收站（隔离区），可恢复，从不直接永久删除。
+                val moved = quarantineRepository.quarantine(snapshotId, candidate.id, candidate.path,
+                    candidate.profile, candidate.category, candidate.label, candidate.risk)
+                if (moved.success) {
+                    completedCandidates += candidate.id
+                    cleaned += 1
+                    recoverableCandidates += 1
+                    recoverableBytes += moved.bytes
+                } else {
+                    skipped += 1
+                }
+                details.put(detail(candidate, if (moved.success) "quarantined" else "protected",
+                    if (moved.success) "已移入回收站（隔离区），可恢复" else moved.message.ifBlank { "未能移入回收站，原文件已保留" },
+                    moved.bytes, moved.files, moved.directories))
+                continue
+            }
             val result = deleteCandidate(candidate, target, options.maxFileBytes, mounts, min(deadline, SystemClock.elapsedRealtime() + ITEM_CLEAN_MS), hiddenPolicy)
             // deleteCandidate already counts successful mutations exactly. Measuring the whole
             // directory before and after deletion made snapshot cleaning look like a second scan
@@ -520,6 +539,8 @@ internal class NativeProfileEngine(
             .put("deletedBytes", deletedBytes)
             .put("deletedFiles", deletedFiles)
             .put("deletedDirectories", deletedDirectories)
+            .put("quarantinedCandidates", recoverableCandidates)
+            .put("quarantinedBytes", recoverableBytes)
             .put("cancelled", wasCancelled)
             .put("timedOut", timedOut)
             .put("inventoryUnavailable", inventoryStopped)
@@ -1419,6 +1440,15 @@ internal class NativeProfileEngine(
     private fun stop(started: Long, budget: Long): Boolean = cancelled.get() || SystemClock.elapsedRealtime() - started >= budget
 
     companion object {
+        /** 聊天（QQ / 微信 / TIM）收到的安装包：默认不勾选、不进任何批量选择，处理时只移入回收站。 */
+        const val CHAT_APK_CATEGORY = "chat_apk"
+
+        fun recoverableOnly(category: String): Boolean = category == CHAT_APK_CATEGORY
+
+        /** “全选低/中风险”能带上的项目；聊天安装包必须逐项勾选。 */
+        fun bulkSelectable(category: String, risk: String, maxAutoRisk: String): Boolean =
+            !recoverableOnly(category) && (risk == "low" || (risk == "medium" && maxAutoRisk == "medium"))
+
         private val SYSTEM_LOG_ROOTS = setOf(
             "/data/anr", "/data/tombstones", "/data/system/dropbox", "/data/system/heapdump",
             "/data/misc/logd", "/data/vendor/log", "/data/log"

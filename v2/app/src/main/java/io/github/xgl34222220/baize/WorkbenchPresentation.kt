@@ -70,7 +70,7 @@ internal fun workbenchPresentation(
             "medium" -> item.risk == "medium"
             "high" -> item.risk == "high"
             "unfinished" -> item.outcome.isNotBlank() && item.outcome != "未勾选，保留" &&
-                item.outcome !in setOf("已清理", "已按所选缓存执行清理")
+                item.outcome !in setOf("已清理", "已按所选缓存执行清理", REVIEW_OUTCOME_RECOVERABLE)
             "unselected" -> item.id !in selectedIds && !item.outcome.startsWith("已清理") && !item.outcome.startsWith("已按所选")
             "blocked" -> !item.selectable
             in workbenchCategoryLabels -> workbenchCategory(item) == filter
@@ -81,8 +81,8 @@ internal fun workbenchPresentation(
         WorkbenchGroup(key, entries.first().groupTitle, entries,
             entries.sumOf { it.bytes.coerceAtLeast(0L) },
             entries.count { it.id in selectedIds },
-            entries.count { it.selectable && (it.risk == "low" || it.risk == "medium") },
-            entries.count { it.selectable && it.id in selectedIds && it.risk in setOf("low", "medium") })
+            entries.count { it.selectable && (it.risk == "low" || it.risk == "medium") && !ReviewRiskPolicy.perItemOnly(it.category) },
+            entries.count { it.selectable && it.id in selectedIds && it.risk in setOf("low", "medium") && !ReviewRiskPolicy.perItemOnly(it.category) })
     }.let { if (loading) it else it.sortedByDescending { group -> group.bytes } }
     val rows = buildList<WorkbenchRow> {
         groups.forEach { group ->

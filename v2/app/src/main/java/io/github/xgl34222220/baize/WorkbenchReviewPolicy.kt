@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+internal const val REVIEW_OUTCOME_RECOVERABLE = "已移入回收站（隔离区），可恢复"
+
 internal const val REVIEW_HISTORY_HINT = "列表和大小来自上次扫描，不代表清理后的剩余垃圾；重新扫描后才能继续选择。"
 
 /** One selection gate shared by callbacks and the visible controls. */
@@ -14,7 +16,8 @@ internal fun reviewSelectionBlockReason(state: WorkbenchUiState, now: Long): Str
 }
 
 internal fun reviewRiskSelection(items: List<WorkbenchItem>, risks: Set<String>): Set<String> =
-    items.asSequence().filter { it.selectable && it.risk in risks && it.risk in setOf("low", "medium") }
+    items.asSequence().filter { it.selectable && it.risk in risks && it.risk in setOf("low", "medium") &&
+        !ReviewRiskPolicy.perItemOnly(it.category) }
         .mapTo(linkedSetOf()) { it.id }
 
 internal fun reviewItemRestriction(item: WorkbenchItem, global: String?): String? = when {
@@ -29,6 +32,6 @@ internal fun reviewRecordTitle(state: WorkbenchUiState): String = when {
     state.phase.contains("未完成") && state.items.all { it.outcome.isBlank() } -> "结果读取未完成 · 需重新扫描"
     state.notice == WorkbenchNotice.SUCCESS -> "清理已完成 · 记录已保留"
     state.items.any { it.outcome.isNotBlank() && it.outcome != "未勾选，保留" &&
-        it.outcome !in setOf("已清理", "已按所选缓存执行清理") } -> "部分项目未完成 · 需重新扫描"
+        it.outcome !in setOf("已清理", "已按所选缓存执行清理", REVIEW_OUTCOME_RECOVERABLE) } -> "部分项目未完成 · 需重新扫描"
     else -> "历史记录 · 需重新扫描"
 }

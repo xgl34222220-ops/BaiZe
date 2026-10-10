@@ -293,7 +293,8 @@ class PersistentCleanPlanRootService : RootService() {
             val item = source.optJSONObject(index) ?: continue
             val selected = selection.optBoolean(item.optString("id"), false) ||
                 selection.optBoolean(item.optString("path"), false) ||
-                (selectAll && item.optString("risk") in SAFE_RISKS)
+                (selectAll && item.optString("risk") in SAFE_RISKS &&
+                    !NativeProfileEngine.recoverableOnly(item.optString("category")))
             if (selected) candidates += item
         }
         if (candidates.isEmpty()) {
@@ -439,7 +440,8 @@ class PersistentCleanPlanRootService : RootService() {
             ) null else "目标不再符合碎片规则"
             "rules" -> null
             // 聊天软件“接收文件”目录里的安装包（含 .apk.1），删除前再次确认路径与文件名。
-            "apk" -> if (target.isFile && ChatAppPaths.isReceivedApk(path)) null else "目标不再是聊天软件收到的安装包"
+            // 聊天收到的安装包只允许移入回收站（隔离区）；备用计划服务没有回收站，不做永久删除。
+            "apk" -> if (target.isFile && ChatAppPaths.isReceivedApk(path)) "聊天收到的安装包只移入回收站，请重新扫描后处理" else "目标不再是聊天软件收到的安装包"
             else -> "计划类型不允许清理"
         }
     }
