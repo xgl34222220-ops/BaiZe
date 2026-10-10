@@ -263,7 +263,13 @@ internal fun StorageToolsScreen(
     var directoryPages by rememberSaveable(state.directory) { mutableIntStateOf(1) }
     val shownDirectories = directoryRows.take(directoryPages * DirectoryUsageTree.PAGE_SIZE)
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
+    // 移入回收站后弹出「撤销」：只恢复刚才这一批，走回收站原有的恢复核对。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.lastTrashed.takeIf { it.isNotEmpty() },
+        TrashUndo.message(state.lastTrashed.size, if (state.lastTrashedBytes > 0) Formatter.formatFileSize(context, state.lastTrashedBytes) else ""),
+        onUndo = onUndo)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() },
             extra = { StorageViewDropdown(state.mode, !state.running, onView) }) {
             TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }

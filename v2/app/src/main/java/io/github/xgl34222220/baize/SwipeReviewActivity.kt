@@ -278,7 +278,13 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
 internal fun SwipeReviewScreen(state: SwipeReviewUiState, actions: SwipeReviewActions) {
     val context = LocalContext.current
     val session = state.session
+    // 移入回收站后弹出「撤销」：与“撤销本次移入”同一恢复流程，逐项核对回收记录与内容。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.lastBatch.takeIf { it.isNotEmpty() },
+        TrashUndo.message(state.lastBatch.size, Formatter.formatFileSize(context, state.lastBatch.sumOf { it.bytes })),
+        onUndo = actions.onUndoBatch)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("滑动整理", "左滑删除 · 右滑保留 · 随时撤销", actions.onBack) {
             TextButton(onClick = actions.onTrash, enabled = !state.busy) { Text("回收站") }
         } },

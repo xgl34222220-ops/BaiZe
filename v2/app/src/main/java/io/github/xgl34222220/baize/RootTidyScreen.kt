@@ -262,7 +262,12 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
     val context = LocalContext.current
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
+    // 移除后弹出「撤销」：与“撤销本次”按钮同一恢复流程（先重建目录，再从回收站恢复）。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.undo.takeIf { !it.empty },
+        "已移除 ${state.undo.count} 项，文件在回收站保留 30 天", onUndo = onUndo)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("根目录整理", "让存储根目录只留需要的文件夹", onBack,
             extra = { StorageViewDropdown(StorageToolMode.ROOT, !state.running, onView) }) {} },
         bottomBar = { if (state.removable.isNotEmpty() && !state.running) CleanSelectionBar(state.selected.size, state.removable.size,
