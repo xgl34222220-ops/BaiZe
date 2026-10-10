@@ -177,9 +177,9 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         category: String,
         label: String,
         cancelled: () -> Boolean = { false },
-        recheck: (RecoverableItem) -> String? = { null },
         /** 应用私有目录（/data/data）与模块私有隔离区同在 /data 分区，允许移入私有隔离区。 */
-        allowPrivateRoot: Boolean = false
+        allowPrivateRoot: Boolean = false,
+        recheck: (RecoverableItem) -> String? = { null }
     ): List<JSONObject> {
         val now = System.currentTimeMillis()
         purgeExpiredInternal(now)
