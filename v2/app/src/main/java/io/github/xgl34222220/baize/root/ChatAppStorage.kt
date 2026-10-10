@@ -114,6 +114,10 @@ internal object ChatAppPaths {
             .filter { it.name.equals(name, ignoreCase = true) && it.isDirectory && !isLink(it) }
             .singleOrNull()
 
+    /** QQ / 微信自动生成的缓存副本（如 `Cache_1a2b3c`）：可重新下载，按低风险处理。 */
+    private val cacheName = Regex("^cache_[A-Za-z0-9._-]+$", RegexOption.IGNORE_CASE)
+    fun isCacheName(name: String): Boolean = cacheName.matches(name)
+
     internal fun isLink(file: File): Boolean = runCatching { Files.isSymbolicLink(file.toPath()) }.getOrDefault(true)
 }
 
@@ -140,7 +144,11 @@ internal class ChatStorageScanner(
         val modifiedSeconds: Long,
         val app: String,
         val area: ChatAppPaths.Area,
-        val kind: String
+        val kind: String,
+        /** 文件身份（设备号 / inode / ctime 秒）；取不到时为 -1，App 侧该行不可勾选。 */
+        val device: Long = -1L,
+        val inode: Long = -1L,
+        val changedSeconds: Long = -1L
     )
 
     data class Result(
@@ -190,8 +198,10 @@ internal class ChatStorageScanner(
                             val key = canonical(child)
                             if (!seen.add(key)) continue
                             if (entries.size >= maxFiles) { truncated = true; break@outer }
+                            val identity = ChatFileIdentity.read(child)
                             entries += Entry(child.path, publicPath(child.path), name, bytes,
-                                (child.lastModified() / 1000L).coerceAtLeast(0L), location.app, location.area, kind)
+                                (child.lastModified() / 1000L).coerceAtLeast(0L), location.app, location.area, kind,
+                                identity?.device ?: -1L, identity?.inode ?: -1L, identity?.changedSeconds ?: -1L)
                         }
                     }
                 }
@@ -245,7 +255,11 @@ internal class ChatStorageScanner(
                     .put("app", entry.app)
                     .put("area", entry.area.label)
                     .put("userSaved", entry.area.userSaved)
-                    .put("kind", entry.kind))
+                    .put("kind", entry.kind)
+                    .put("cache", ChatAppPaths.isCacheName(entry.name))
+                    .put("device", entry.device)
+                    .put("inode", entry.inode)
+                    .put("changed", entry.changedSeconds))
             }
             val ages = JSONObject()
             ageBuckets(result.entries, nowSeconds).forEach { (days, count) -> ages.put(days.toString(), count) }
@@ -261,6 +275,95 @@ internal class ChatStorageScanner(
                 .put("directories", JSONArray(result.resolvedDirectories.map(ApkRootPathMapper::publicPath)))
                 .put("elapsedMs", result.elapsedMs)
                 .toString()
+        }
+    }
+}
+
+
+/** Root 进程读取的文件身份；先用 android.system.Os.lstat，JVM 测试环境回退到 NIO unix 视图。 */
+internal data class ChatFileIdentity(val device: Long, val inode: Long, val bytes: Long, val modifiedSeconds: Long, val changedSeconds: Long) {
+    companion object {
+        fun read(file: File): ChatFileIdentity? = runCatching {
+            val st = android.system.Os.lstat(file.path)
+            ChatFileIdentity(st.st_dev, st.st_ino, st.st_size, st.st_mtime, st.st_ctime)
+        }.recoverCatching {
+            val attrs = Files.readAttributes(file.toPath(), "unix:dev,ino,size,lastModifiedTime,ctime", java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            ChatFileIdentity((attrs["dev"] as Number).toLong(), (attrs["ino"] as Number).toLong(), (attrs["size"] as Number).toLong(),
+                (attrs["lastModifiedTime"] as java.nio.file.attribute.FileTime).toMillis() / 1000L,
+                (attrs["ctime"] as java.nio.file.attribute.FileTime).toMillis() / 1000L)
+        }.getOrNull()
+    }
+}
+
+/**
+ * 聊天媒体页里 Root 读取的 QQ / TIM / 微信文件：逐项核对后移入回收站（隔离区）。
+ *
+ * - 只接受调用者自己用户的 `/data/media/<user>/` 下、已知聊天目录内的普通文件；
+ * - 数据库、索引与配置文件（[ChatStorageScanner.skippedName]）永不处理；
+ * - 设备号 / inode / 大小 / 修改时间必须与扫描时一致，否则保留；
+ * - 只做同分区移动，回收站有数量与容量上限，达到上限后其余项目保留；不做任何永久删除。
+ */
+internal class ChatStorageTrash(
+    private val user: Int,
+    private val repository: QuarantineRepository,
+    private val identity: (File) -> ChatFileIdentity? = ChatFileIdentity::read,
+    private val mediaRoot: (Int) -> String = { "/data/media/$it" },
+    private val inChatDirectory: (String) -> Boolean = { ChatAppPaths.locationFor(it) != null }
+) {
+    data class Request(val path: String, val device: Long, val inode: Long, val bytes: Long, val modifiedSeconds: Long)
+
+    fun trash(requests: List<Request>, cancelled: () -> Boolean = { false }): String {
+        require(requests.size <= MAX_ITEMS) { "单次最多处理 $MAX_ITEMS 个文件" }
+        val prefix = mediaRoot(user).trimEnd('/') + "/"
+        val accepted = ArrayList<QuarantineRepository.RecoverableItem>()
+        val details = JSONArray()
+        for (request in requests) {
+            val rootPath = rootPathFor(request.path, prefix)
+            val reason = when {
+                rootPath == null -> "路径不在当前用户的存储内"
+                else -> validate(File(rootPath), rootPath, request)
+            }
+            if (reason != null) {
+                details.put(JSONObject().put("path", request.path).put("action", "protected").put("reason", reason))
+            } else accepted += QuarantineRepository.RecoverableItem(request.path, requireNotNull(rootPath))
+        }
+        val moved = repository.quarantineRecoverableBatch(accepted, CATEGORY, "聊天媒体（Root）", cancelled) { item ->
+            // 移动前最后一次核对，缩小扫描到移动之间的变化窗口。
+            val request = requests.first { it.path == item.publicPath }
+            validate(File(item.rootPath), item.rootPath, request)
+        }
+        moved.forEach { details.put(it) }
+        val trashed = (0 until details.length()).count { details.getJSONObject(it).optString("action") == "quarantined" }
+        val trashedBytes = (0 until details.length()).sumOf { details.getJSONObject(it).let { d -> if (d.optString("action") == "quarantined") d.optLong("bytes") else 0L } }
+        return JSONObject().put("success", true).put("requested", requests.size).put("trashed", trashed)
+            .put("trashedBytes", trashedBytes).put("details", details).toString()
+    }
+
+    private fun rootPathFor(path: String, prefix: String): String? =
+        ApkRootPathMapper.rootCandidates(path).firstOrNull { it.startsWith(prefix) }
+
+    private fun validate(file: File, rootPath: String, request: Request): String? {
+        if (rootPath.split('/').any { it == ".." || it == "." }) return "路径格式无效"
+        val canonical = runCatching { file.canonicalPath }.getOrNull() ?: return "无法核对路径"
+        if (canonical != rootPath || ChatAppPaths.isLink(file)) return "路径含链接或已变化"
+        if (!inChatDirectory(rootPath)) return "不在 QQ / 微信 / TIM 的聊天目录内"
+        if (ChatStorageScanner.skippedName(file.name)) return "数据库、索引或配置文件，始终保留"
+        if (!file.isFile) return "目标已不存在或不是普通文件"
+        val now = identity(file) ?: return "无法读取文件身份"
+        if (request.device < 0 || request.inode < 0) return "扫描时未取得文件身份，请重新扫描"
+        if (now.device != request.device || now.inode != request.inode || now.bytes != request.bytes ||
+            now.modifiedSeconds != request.modifiedSeconds) return "文件在扫描后已变化，请重新扫描"
+        return null
+    }
+
+    companion object {
+        const val CATEGORY = "chat_media"
+        const val MAX_ITEMS = 2_000
+
+        fun parse(raw: JSONArray): List<Request> = (0 until raw.length()).map { index ->
+            val item = raw.getJSONObject(index)
+            Request(item.getString("path"), item.optLong("device", -1L), item.optLong("inode", -1L),
+                item.getLong("bytes"), item.getLong("modified"))
         }
     }
 }

@@ -32,6 +32,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     private var directoryToken = ""
     private val context get() = getApplication<Application>()
     @Volatile private var remote: IProfileRootService? = null
+    /** 本次确认中由 Root 处理的聊天文件（无系统索引，不参与内容核对）。 */
+    private var rootReview: Set<String> = emptySet()
     private var bound = false
     private var closed = false
     private var contentReview: Map<String, IndexedContentProof> = emptyMap()
@@ -257,7 +259,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     // 在扫描线程预建目录层级索引，钻取与环形图不在主线程遍历全部目录。
                     usage?.tree
                     // QQ / 微信在 Android 11+ 把收到的文件与聊天媒体放在 Android/data，系统索引看不到。
-                    // 聊天媒体视图与分类视图（安装包）补充 Root 只读扫描结果；这些行只能查看，不能勾选。
+                    // 聊天媒体视图与分类视图（安装包）补充 Root 扫描结果；这些行勾选后由 Root 移入回收站。
                     val chat = if (mode == StorageToolMode.CHAT_MEDIA || mode == StorageToolMode.ANALYSIS) {
                         report(StorageScanProgress("正在读取 QQ / 微信目录…", 0, 0, ""))
                         taskControl.check()
@@ -293,8 +295,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         result.chat?.let { chat ->
                             val rootRows = index.records.count(ChatStorageRecords::isRootRecord)
                             when {
-                                rootRows > 0 -> append(" 另有 $rootRows 个 QQ / 微信应用目录文件由 Root 读取，系统索引不含这些文件，仅供查看；" +
-                                    "安装包可在一键扫描中清理，聊天媒体可在应用专项规则中按保留天数清理。")
+                                rootRows > 0 -> append(" 另有 $rootRows 个 QQ / 微信应用目录文件由 Root 读取（标“Root”），勾选确认后由 Root 核对身份并移入回收站；" +
+                                    "Cache_ 缓存副本可全选，其余逐项勾选。")
                                 chat.error == "root_unavailable" -> append(" Root 服务未连接，QQ / 微信的 Android/data 目录未读取。")
                                 chat.error.isNotBlank() -> append(" QQ / 微信目录读取失败（${chat.error}）。")
                             }
@@ -333,16 +335,21 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             reviewMessage = "只读取已选文件内容，可随时取消。", status = "正在核对所选文件内容…") }
         viewModelScope.launch {
             try {
-                val batch = withContext(Dispatchers.IO) { IndexedContentReview.prepare(chosen.map { it.asIndexedCandidate() },
+                // Root 读取的聊天文件没有系统索引，内容核对由 Root 在移动前按文件身份完成。
+                val rootChosen = chosen.filter(ChatStorageRecords::isRootRecord)
+                val indexedChosen = chosen.filterNot(ChatStorageRecords::isRootRecord)
+                rootReview = rootChosen.map { it.uri }.toSet()
+                val rootNote = if (rootChosen.isEmpty()) "" else "其中 ${rootChosen.size} 个是 QQ / 微信应用目录文件（Root），确认后由 Root 再次核对文件身份并移入回收站（隔离区，可恢复）。"
+                val batch = if (indexedChosen.isEmpty()) IndexedReviewBatch(emptyMap(), emptyMap()) else withContext(Dispatchers.IO) { IndexedContentReview.prepare(indexedChosen.map { it.asIndexedCandidate() },
                     ApkDeletionGuard.forContext(context), { closed || task.cancelled }) { done, total ->
                     mutableState.update { if (control === task && it.running && it.reviewRequested)
                         it.copy(reviewMessage = "正在核对 $done / $total 个文件，仅核对所选内容…") else it }
                 } }
                 if (closed || task.cancelled || control !== task) return@launch
                 contentReview = batch.proofs
-                mutableState.update { it.copy(running = false, selected = batch.proofs.keys,
+                mutableState.update { it.copy(running = false, selected = batch.proofs.keys + rootReview,
                     outcomes = (it.outcomes - batch.proofs.keys) + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
-                    reviewMessage = userMediaNote + "已核对 ${batch.proofs.size} 个文件的当前内容。" +
+                    reviewMessage = userMediaNote + rootNote + "已核对 ${batch.proofs.size + rootReview.size} 个文件。" +
                         if (batch.rejected.isEmpty()) "确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问。保留 30 天，不立即释放空间；卸载或清空白泽数据会丢失恢复记录，请先处理回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     status = "所选内容已核对，等待确认") }
             } catch (_: CancellationException) {
@@ -352,7 +359,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     }
     fun dismissDeleteReview() {
         if (!state.value.reviewRequested) return
-        control.cancel(); contentReview = emptyMap()
+        control.cancel(); contentReview = emptyMap(); rootReview = emptySet()
         mutableState.update { it.copy(running = false, reviewRequested = false, reviewMessage = "",
             status = "已取消清理确认，文件未删除") }
     }
@@ -360,9 +367,11 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
     fun deleteSelected() {
         val snapshot = state.value
         if (snapshot.running || snapshot.selected.isEmpty()) return
-        if (!snapshot.reviewRequested || contentReview.isEmpty() || contentReview.keys != snapshot.selected) return
+        if (!snapshot.reviewRequested || (contentReview.isEmpty() && rootReview.isEmpty()) ||
+            contentReview.keys + rootReview != snapshot.selected) return
         val reviewed = contentReview
-        contentReview = emptyMap()
+        val rootUris = rootReview
+        contentReview = emptyMap(); rootReview = emptySet()
         val selectedRecords = snapshot.allRecords.filter { it.uri in snapshot.selected }
         if (selectedRecords.isEmpty()) return
         control = StorageScanControl()
@@ -372,7 +381,14 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             val outcomes = withContext(Dispatchers.IO) {
                 val results = linkedMapOf<String, StorageDeleteOutcome>()
                 val keeperProofs = mutableMapOf<String, Pair<ApkFileIdentity, String>>()
+                val rootRecords = selectedRecords.filter { it.uri in rootUris && ChatStorageRecords.isRootRecord(it) }
+                if (rootRecords.isNotEmpty()) {
+                    results += ChatStorageRecords.trash(remote, context.cacheDir, rootRecords, { taskControl.cancelled }) { done ->
+                        mutableState.update { it.copy(progress = StorageScanProgress("正在由 Root 移入回收站", done, selectedRecords.size, "")) }
+                    }
+                }
                 for ((index, record) in selectedRecords.withIndex()) {
+                    if (record.uri in rootUris) continue
                     if (taskControl.cancelled) break
                     try {
                         val group = snapshot.duplicateGroups.firstOrNull { record in it.records }

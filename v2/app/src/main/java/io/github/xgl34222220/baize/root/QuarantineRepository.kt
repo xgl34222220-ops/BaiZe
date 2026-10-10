@@ -19,7 +19,11 @@ import java.util.UUID
  */
 internal class QuarantineRepository(
     private val stateDir: File = File(RootPaths.STATE_DIR),
-    private val configFile: File = File(RootPaths.CONFIG_FILE)
+    private val configFile: File = File(RootPaths.CONFIG_FILE),
+    /** 仅测试使用：模拟“存储卷根/.baize-quarantine”的共享回收目录。生产环境为空。 */
+    private val extraVolumeQuarantineRoots: List<File> = emptyList(),
+    private val maxRecoverableEntries: Int = MAX_RECOVERABLE_ENTRIES,
+    private val maxRecoverableBytes: Long = MAX_RECOVERABLE_BYTES
 ) {
     data class Result(
         val success: Boolean,
@@ -156,6 +160,70 @@ if (!moved || source.exists() || !destination.exists()) {
 }
 
 return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 $retentionDays 天内恢复")
+    }
+
+    /** 一个由调用方核对过的可恢复文件：公开路径用于结果回传，Root 路径用于移动。 */
+    data class RecoverableItem(val publicPath: String, val rootPath: String)
+
+    /**
+     * 聊天媒体（Root）批量移入隔离区（回收站页内可切换查看与恢复）。
+     *
+     * 只做同文件系统原子移动，没有复制或删除回退；整个隔离区有数量与容量上限，
+     * 达到上限后剩余项目原样保留并说明原因。元数据目录因此有界，不会让模块状态目录无限增长。
+     */
+    @Synchronized
+    fun quarantineRecoverableBatch(
+        items: List<RecoverableItem>,
+        category: String,
+        label: String,
+        cancelled: () -> Boolean = { false },
+        recheck: (RecoverableItem) -> String? = { null }
+    ): List<JSONObject> {
+        val now = System.currentTimeMillis()
+        purgeExpiredInternal(now)
+        val existing = readEntries()
+        var count = existing.size
+        var bytes = existing.sumOf { it.bytes.coerceAtLeast(0L) }
+        val retentionDays = retentionDays()
+        val snapshotId = "chat-" + UUID.randomUUID().toString()
+        val results = ArrayList<JSONObject>(items.size)
+        for (item in items) {
+            fun keep(reason: String) = results.add(JSONObject().put("path", item.publicPath).put("action", "protected").put("reason", reason))
+            if (cancelled()) { keep("已停止，未处理"); continue }
+            recheck(item)?.let { keep(it); continue }
+            val source = File(item.rootPath)
+            val sourcePath = canonical(source)
+            if (sourcePath != item.rootPath || !safeOriginalPath(sourcePath) || !source.isFile || isSymlink(source) || isQuarantinePath(sourcePath)) {
+                keep("目标已变化或超出回收站安全边界"); continue
+            }
+            val size = source.length().coerceAtLeast(0L)
+            if (count >= maxRecoverableEntries || bytes + size > maxRecoverableBytes) {
+                keep("回收站已达上限（$maxRecoverableEntries 项 / ${maxRecoverableBytes / GIB} GB），请先在回收站清理后再处理"); continue
+            }
+            val id = UUID.randomUUID().toString()
+            val destinationRoot = quarantineRootFor(sourcePath)
+            if (destinationRoot == rootDir) { keep("只允许在同一存储分区内移入回收站"); continue }
+            val destination = File(File(destinationRoot, "items"), "$id-${safeName(source.name)}")
+            val destinationPath = canonicalWithoutExistence(destination)
+            if (!isQuarantinePath(destinationPath) || destination.exists()) { keep("无法创建安全回收位置"); continue }
+            destination.parentFile?.mkdirs()
+            if (isSymlink(destination.parentFile ?: destination)) { keep("回收目录异常"); continue }
+            val entry = Entry(id, sourcePath, destinationPath, "chat", category.take(MAX_TEXT), label.take(MAX_TEXT), "medium",
+                snapshotId, now, now + retentionDays * DAY_MS, size, 1L, 0L)
+            if (runCatching { writeEntry(entry) }.isFailure) { keep("回收记录写入失败，原文件未移动"); continue }
+            val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
+            if (!moved || source.exists() || !destination.exists()) {
+                if (!destination.exists()) deleteMetadata(id)
+                results.add(JSONObject().put("path", item.publicPath).put("action", if (destination.exists()) "failed" else "protected")
+                    .put("reason", if (destination.exists()) "移动状态异常，已保留恢复记录" else "无法在同一分区原子移动；原文件未删除"))
+                continue
+            }
+            count += 1
+            bytes += size
+            results.add(JSONObject().put("path", item.publicPath).put("action", "quarantined").put("id", id).put("bytes", size)
+                .put("reason", "已移入回收站（隔离区），$retentionDays 天内可恢复"))
+        }
+        return results
     }
 
     @Synchronized
@@ -369,6 +437,10 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         .coerceIn(1, 30)
 
     private fun quarantineRootFor(path: String): File {
+        extraVolumeQuarantineRoots.firstOrNull { root ->
+            val volume = root.parentFile?.path?.trimEnd('/') ?: return@firstOrNull false
+            path.startsWith("$volume/")
+        }?.let { return it }
         val emulated = Regex("^/storage/emulated/([0-9]+)(?:/.*)?$").find(path)
         if (emulated != null) return File("/storage/emulated/${emulated.groupValues[1]}/.baize-quarantine")
         if (path == "/sdcard" || path.startsWith("/sdcard/")) return File("/sdcard/.baize-quarantine")
@@ -387,6 +459,7 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         val normalized = path.trimEnd('/')
         val privateRoot = canonicalWithoutExistence(rootDir).trimEnd('/')
         if (normalized == privateRoot || normalized.startsWith("$privateRoot/")) return true
+        if (extraVolumeQuarantineRoots.any { val r = canonicalWithoutExistence(it).trimEnd('/'); normalized == r || normalized.startsWith("$r/") }) return true
         return Regex("^/(?:storage/emulated/[0-9]+|data/media/[0-9]+|sdcard)/\\.baize-quarantine(?:/.*)?$").matches(normalized)
     }
 
@@ -439,6 +512,10 @@ return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全�
         .toString()
 
     companion object {
+        /** 整个隔离区的上限：元数据位于模块状态目录，必须有界。 */
+        const val MAX_RECOVERABLE_ENTRIES = 3_000
+        private const val GIB = 1024L * 1024L * 1024L
+        const val MAX_RECOVERABLE_BYTES = 16L * GIB
         private const val DEFAULT_RETENTION_DAYS = 7
         private const val DAY_MS = 24L * 60L * 60L * 1_000L
         private const val MEASURE_BUDGET_MS = 30_000L

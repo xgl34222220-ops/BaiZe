@@ -105,6 +105,14 @@ class BaiZeProfileRootService : RootService() {
                 val roots = if (raw.isDirectory) listOf(raw) else listOf(File("/storage/emulated/$user")).filter { it.isDirectory }
                 ChatStorageScanner.json(ChatStorageScanner(roots, apksOnly = apksOnly).scan(), System.currentTimeMillis() / 1000L)
             }
+            // 聊天媒体页：把逐项勾选的 QQ / TIM / 微信文件移入回收站（隔离区）。只做同分区移动，不永久删除。
+            "trashChatFiles" -> {
+                require(arguments.length() == 1)
+                val owner = applicationInfo.uid
+                val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+                require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+                ChatStorageTrash(caller / 100_000, quarantineRepository).trash(ChatStorageTrash.parse(arguments.getJSONArray(0)))
+            }
             "cancelDirectoryUsage" -> {
                 require(arguments.length() == 1)
                 val caller = android.os.Binder.getCallingUid()
