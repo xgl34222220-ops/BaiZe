@@ -2,10 +2,6 @@ package io.github.xgl34222220.baize.ui.settings.miuix
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.togetherWith
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -57,13 +53,7 @@ fun LuoShuSettingsHub(state: SettingsUiState, actions: SettingsUiActions,
         targetState = section,
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
-            if (targetState.isNotEmpty()) {
-                slideInHorizontally(tween(300)) { it } togetherWith
-                    slideOutHorizontally(tween(300)) { -it / 8 }
-            } else {
-                slideInHorizontally(tween(300)) { -it / 8 } togetherWith
-                    slideOutHorizontally(tween(300)) { it }
-            }
+            io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.detailTransition(forward = targetState.isNotEmpty())
         },
         label = "settingsHub"
     ) { target ->

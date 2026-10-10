@@ -227,6 +227,8 @@ class QuarantineActivity : ComponentActivity() {
     }
 }
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class QuarantineItem(
     val id: String,
     val originalPath: String,
@@ -300,7 +302,7 @@ internal fun QuarantineScreen(
                 )
             }
             if (state.items.isNotEmpty()) item { DetailSectionHeader("暂存文件", "点击条目查看完整路径与保留时间") }
-            itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
+            itemsIndexed(state.items, key = { _, item -> item.id }, contentType = { _, _ -> "quarantine-item" }) { index, item ->
                 QuarantineRow(item, first = index == 0, last = index == state.items.lastIndex,
                     enabled = state.connected && !state.loading, onDetails = { detail = item },
                     onRestore = { pending = "restore" to item }, onPurge = { pending = "purge" to item })
@@ -326,7 +328,8 @@ internal fun QuarantineScreen(
                 Text(if (restore) "将恢复到原路径；若原路径已有内容，会恢复为带 baize-restored 标记的副本。" else "永久删除后无法撤销。只会删除本次选择的隔离内容。")
             },
             confirmButton = {
-                BaiZeDialogButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
+                val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
+                BaiZeDialogButton(onClick = { if (!restore) haptics.confirmDelete(); pending = null; if (restore) onRestore(item) else onPurge(item) }) {
                     Text(if (restore) "确认恢复" else "确认永久删除",
                         color = if (restore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }

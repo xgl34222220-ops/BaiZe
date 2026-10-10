@@ -286,6 +286,8 @@ class InstantCacheActivity : ComponentActivity() {
     }
 }
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class InstantCacheApp(
     val packageName: String,
     val label: String,

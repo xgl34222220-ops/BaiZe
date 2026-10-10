@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -91,6 +92,9 @@ fun BaiZeMiuixApp(
                     onNavigationHandled()
                 }
             }
+            // 系统返回 / 预测性返回：在其他 Tab 时先回到首页（HyperOS 手机管家同款），首页再交给系统退出。
+            // 二级详情（自动清理设置、诊断等）各自的 BackHandler 注册更晚，优先处理。
+            BackHandler(enabled = page != BaiZePage.Home && showDock) { page = BaiZePage.Home }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
             }
@@ -207,8 +211,9 @@ private fun AnimatedPageHost(
         transitionSpec = {
             val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
             val degraded = io.github.xgl34222220.baize.performance.PerformanceRuntime.degraded.value
-            val enterDuration = if (degraded) 90 else if (style == UiStyle.MIUIX) 210 else 180
-            val exitDuration = if (degraded) 70 else if (style == UiStyle.MIUIX) 140 else 120
+            // 统一动效令牌：进入 250ms、退出 200ms；降级或系统关闭动画时缩短。
+            val enterDuration = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.enterMillis()
+            val exitDuration = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.exitMillis()
             val enterDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 14 else 18
             val exitDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 20 else 24
 

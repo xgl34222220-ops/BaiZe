@@ -298,7 +298,7 @@ internal fun FileTrashScreen(state: FileTrashUiState, actions: FileTrashActions)
                 }
             } }
             if (resultsExpanded) state.result?.let { result ->
-                items(result.items, key = { "result:${it.entry.id}" }) { item -> TrashPanel {
+                items(result.items, key = { "result:${it.entry.id}" }, contentType = { "trash-result" }) { item -> TrashPanel {
                     Text(if (item.succeeded) "已完成" else "未确认完成", style = MaterialTheme.typography.labelLarge,
                         color = if (item.succeeded) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
                     SelectionContainer { Text(item.entry.original, style = MaterialTheme.typography.bodySmall) }
@@ -312,7 +312,7 @@ internal fun FileTrashScreen(state: FileTrashUiState, actions: FileTrashActions)
                 Text(if (state.loaded) "手动清理的普通文件会在这里保留，便于恢复。" else "请刷新后再操作。",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
-            items(state.entries, key = { "entry:${it.id}" }) { entry -> TrashFileRow(entry, state, actions) }
+            items(state.entries, key = { "entry:${it.id}" }, contentType = { "trash-entry" }) { entry -> TrashFileRow(entry, state, actions) }
         }
     }
     state.pendingPurge?.let { reviewed ->
@@ -322,13 +322,13 @@ internal fun FileTrashScreen(state: FileTrashUiState, actions: FileTrashActions)
                     color = MaterialTheme.colorScheme.onSurface)
                 Text("仅处理本次列出的记录，之后进入回收站的文件不会包含在内。每项仍会核对路径和内容，无法安全核对的项目会保留并报告。")
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp).testTag("trash-reviewed-list"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(reviewed.entries, key = { it.id }) { entry ->
+                    items(reviewed.entries, key = { it.id }, contentType = { "trash-purge-entry" }) { entry ->
                         SelectionContainer { Text("${entry.original}\n${fileSize(entry.bytes)}", style = MaterialTheme.typography.bodySmall) }
                     }
                 }
                 Text("停止仅影响尚未开始的项目，已永久删除的内容无法恢复。实际可用空间以系统统计为准。")
             } },
-            confirmButton = { BaiZeDialogButton(actions.onConfirmPurge, enabled = !state.busy && !state.loading) { Text("永久删除这 ${reviewed.size} 项") } },
+            confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton({ haptics.confirmDelete(); actions.onConfirmPurge() }, enabled = !state.busy && !state.loading) { Text("永久删除这 ${reviewed.size} 项") } },
             dismissButton = { BaiZeDialogButton(actions.onDismissPurge) { Text("保留文件") } })
     }
     state.pendingChanged?.let { entry ->

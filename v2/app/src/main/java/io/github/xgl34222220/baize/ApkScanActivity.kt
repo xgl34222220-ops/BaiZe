@@ -49,6 +49,8 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -126,7 +128,8 @@ class ApkScanActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
-            BackHandler { requestBack() }
+            // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+            BackHandler(enabled = screenState.running) { requestBack() }
             LaunchedEffect(session) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     session.permissionEvents.collect {
@@ -150,7 +153,8 @@ class ApkScanActivity : ComponentActivity() {
                         onManageProtection = { item ->
                             session.requireProtectionRescan()
                             CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, item.samplePath))
-                        })
+                        },
+                        onUndo = session::undoLastTrash)
                     if (screenState.reviewRequested) IndexedCleanupReviewDialog(screenState.running, screenState.selected.size,
                         screenState.reviewMessage, session::cleanSnapshot, session::dismissCleanReview)
                     if (confirmStop == session.operationToken && screenState.running) BaiZeDialog(
@@ -307,6 +311,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             selected = emptySet(),
             running = true,
             operation = "scan",
+            lastTrashed = emptyList(), lastTrashedBytes = 0L,
             phase = "正在读取 Android 系统文件索引…",
             items = emptyList(),
             coverage = emptyList(),
@@ -557,6 +562,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
             operation = "clean",
             phase = "正在移入回收站 ${snapshot.size} 个安装包…"
         )
+        val trashIds = mutableListOf<String>()
         lifecycleScope.launch {
             val started = SystemClock.elapsedRealtime()
             val result = withContext(Dispatchers.IO) {
@@ -582,6 +588,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     val outcome = moveOutcome.result
                     when (outcome) {
                         ApkIndexedDeleteResult.DELETED -> {
+                            if (moveOutcome.trashed && moveOutcome.trashId.isNotBlank()) trashIds += moveOutcome.trashId
                             removed += item.uri
                             deletedFiles += 1
                             deletedBytes += item.bytes
@@ -640,8 +647,30 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     "保护名单未核对，已保留文件。可先检查旧版保护，再连接 Root 核对并重新扫描。" else screenState.protectionMessage,
                 protectionNeedsAction = result.retained.values.any { it.contains("尚未核对") },
                 localModeAvailable = !ApkProtectionStore.rootWasUsed(applicationContext),
+                lastTrashed = trashIds.toList(), lastTrashedBytes = result.deletedBytes,
                 output = "已移入回收站 ${result.deletedFiles} 个，尚未释放空间，占用 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)}；总耗时 ${elapsed} ms"
             )
+        }
+    }
+
+    /** Snackbar「撤销」：只恢复本次刚移入回收站的安装包，逐项走回收站恢复核对，随后重新扫描。 */
+    fun undoLastTrash() {
+        val ids = screenState.lastTrashed
+        if (closed || screenState.running || ids.isEmpty()) return
+        operationToken++
+        screenState = screenState.copy(running = true, operation = "undo", lastTrashed = emptyList(), lastTrashedBytes = 0L,
+            phase = "正在从回收站恢复…")
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                TrashUndo.restoreBatch(OrdinaryFileTrash.forContext(applicationContext), ids).also { undo ->
+                    if (undo.restored.isNotEmpty()) runCatching {
+                        android.media.MediaScannerConnection.scanFile(applicationContext, undo.restored.map { it.path }.toTypedArray(), null, null)
+                    }
+                }
+            }
+            if (closed) return@launch
+            screenState = screenState.copy(running = false, operation = "", phase = TrashUndo.resultMessage(result))
+            if (result.restoredCount > 0) startScan()
         }
     }
 
@@ -700,7 +729,10 @@ internal data class ApkScanUiState(
     val protectionMessage: String = "",
     val protectionNeedsAction: Boolean = false,
     val confirmedMissingRecords: Int = 0,
-    val protectionReviewRequired: Boolean = false
+    val protectionReviewRequired: Boolean = false,
+    /** 本次刚移入回收站的记录编号与占用，供 Snackbar「撤销」只恢复这一批。 */
+    val lastTrashed: List<String> = emptyList(),
+    val lastTrashedBytes: Long = 0L
 ) {
     fun afterProtectionManagement(): ApkScanUiState = copy(protectionReviewRequired = true,
         cleanReady = false, selected = emptySet(), reviewRequested = false, reviewMessage = "",
@@ -730,6 +762,8 @@ internal data class ScanCoverageItem(
     val reason: String
 )
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class ApkScanItem(
     val name: String,
     val files: Long,
@@ -760,9 +794,15 @@ internal fun ApkScanScreen(
     loadArchive: (suspend (ApkScanItem) -> ApkArchiveInfo)? = null,
     diagnoseFile: (suspend (ApkScanItem) -> String)? = null,
     onManageProtection: (ApkScanItem) -> Unit = {},
-    onReviewLegacyProtection: () -> Unit = {}
+    onReviewLegacyProtection: () -> Unit = {},
+    onUndo: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    // 移入回收站后弹出「撤销」：只恢复刚才这一批安装包。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.lastTrashed.takeIf { it.isNotEmpty() },
+        TrashUndo.message(state.lastTrashed.size, if (state.lastTrashedBytes > 0) Formatter.formatFileSize(context, state.lastTrashedBytes) else ""),
+        onUndo = onUndo)
     var showFilters by rememberSaveable { mutableStateOf(false) }
     val loader by rememberUpdatedState(loadArchive)
     val visible = state.visibleItems
@@ -776,6 +816,7 @@ internal fun ApkScanScreen(
             ApkInstallStatus.entries.map { it to it.label }, filter) { filter = it } }
     }
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("安装包", "找出下载后留在手机里的安装文件", onBack) {
             TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
             if (state.cleanReady && !state.running) IconButton(onClick = onScan) { Icon(Icons.Rounded.Refresh, "重新扫描") }
@@ -855,7 +896,7 @@ internal fun ApkScanScreen(
                     icon = Icons.Rounded.InstallMobile
                 )
             }
-        } else itemsIndexed(visible, key = { _, item -> item.previewKey }) { _, item ->
+        } else itemsIndexed(visible, key = { _, item -> item.previewKey }, contentType = { _, _ -> "apk-row" }) { _, item ->
             val archive = if (loader == null) item.archive else produceState(item.archive, item.previewKey) {
                 value = requireNotNull(loader).invoke(item)
             }.value

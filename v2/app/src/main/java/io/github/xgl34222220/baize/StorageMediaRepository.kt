@@ -15,12 +15,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 import io.github.xgl34222220.baize.root.IProfileRootService
 import org.json.JSONObject
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class StorageFileRecord(
     val id: Long, val uri: String, val path: String, val name: String,
     val bytes: Long, val modifiedSeconds: Long, val mime: String, val ownerLabel: String = "",
     val identity: ApkFileIdentity? = null
 )
 internal data class StorageAnalysisBucket(val key: String, val label: String, val files: Int, val bytes: Long)
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class DuplicateFileGroup(val key: String, val bytesEach: Long, val records: List<StorageFileRecord>) {
     val reclaimableBytes: Long get() = bytesEach * (records.count { it.verifiedBytes > 0 } - 1).coerceAtLeast(0)
 }

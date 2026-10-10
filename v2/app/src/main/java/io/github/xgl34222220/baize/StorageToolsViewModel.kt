@@ -163,20 +163,16 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         val ids = snapshot.lastTrashed.toSet()
         mutableState.update { it.copy(running = true, status = "正在从回收站恢复…") }
         viewModelScope.launch {
-            val (restored, failed) = withContext(Dispatchers.IO) {
-                val trash = OrdinaryFileTrash.forContext(context)
-                var ok = 0; var bad = 0
-                val entries = runCatching { trash.entries().filter { it.id in ids } }.getOrDefault(emptyList())
-                for (entry in entries) {
-                    runCatching { trash.restore(entry.id, expected = entry) }.onSuccess { file ->
-                        ok++; android.media.MediaScannerConnection.scanFile(context, arrayOf(file.path), null, null)
-                    }.onFailure { bad++ }
+            val result = withContext(Dispatchers.IO) {
+                TrashUndo.restoreBatch(OrdinaryFileTrash.forContext(context), ids).also { undo ->
+                    if (undo.restored.isNotEmpty()) runCatching {
+                        android.media.MediaScannerConnection.scanFile(context, undo.restored.map { it.path }.toTypedArray(), null, null)
+                    }
                 }
-                ok to (bad + (ids.size - entries.size))
             }
             mutableState.update { it.copy(running = false, lastTrashed = emptyList(), lastTrashedBytes = 0L,
-                status = "已恢复 $restored 个文件" + if (failed > 0) " · $failed 个未恢复，可在回收站查看原因" else "") }
-            if (restored > 0) startScan(keepStatus = true)
+                status = TrashUndo.resultMessage(result)) }
+            if (result.restoredCount > 0) startScan(keepStatus = true)
         }
     }
 

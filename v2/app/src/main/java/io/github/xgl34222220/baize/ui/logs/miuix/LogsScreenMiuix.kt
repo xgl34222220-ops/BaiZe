@@ -74,6 +74,8 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions, onBack: (() -> U
     var rawLinesToShow by rememberSaveable { mutableIntStateOf(80) }
     val visibleLogs = remember(state.logs, onlyErrors) { if (onlyErrors) state.logs.filter { it.level == LogLevel.ERROR || it.errors > 0 } else state.logs }
     val rawLines = remember(state.rawLog) { state.rawLog.lines() }
+    // 原始输出分块只在内容或显示行数变化时重算，滚动与重组不再重复切分。
+    val rawChunks = remember(rawLines, rawLinesToShow) { rawLines.takeLast(rawLinesToShow).chunked(20) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottomInset + if (onBack != null) 24.dp else 112.dp),
@@ -100,7 +102,7 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions, onBack: (() -> U
             if (visibleLogs.isEmpty()) item {
                 VideoEmptyState(Icons.Rounded.Description, if (onlyErrors) "没有异常任务" else "暂无任务日志",
                     if (onlyErrors) "当前记录中没有报告错误的任务。" else "执行任务后可在这里查看。", Modifier.padding(horizontal = 16.dp))
-            } else itemsIndexed(visibleLogs, key = { _, item -> item.key }) { _, item -> LogCard(item) }
+            } else itemsIndexed(visibleLogs, key = { _, item -> item.key }, contentType = { _, _ -> "log-card" }) { _, item -> LogCard(item) }
         } else {
             if (!state.hasRawLog) item {
                 VideoEmptyState(Icons.Rounded.Description, "暂无原始输出", "执行模块任务后可在这里查看。", Modifier.padding(horizontal = 16.dp))
@@ -111,7 +113,7 @@ fun LogsScreenMiuix(state: LogsUiState, actions: LogsUiActions, onBack: (() -> U
                         Text("加载更早的 120 行")
                     }
                 }
-                items(rawLines.takeLast(rawLinesToShow).chunked(20)) { lines ->
+                itemsIndexed(rawChunks, key = { index, _ -> "raw:$index" }, contentType = { _, _ -> "raw-chunk" }) { _, lines ->
                     SelectionContainer(Modifier.padding(horizontal = 24.dp).fillMaxWidth()) {
                         Text(lines.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -136,7 +138,8 @@ private fun RuntimeCard(state: LogsUiState) {
         RuntimeRow("服务", state.serviceText)
         Spacer(Modifier.height(6.dp))
         RuntimeRow("任务", state.taskPhase)
-        AnimatedVisibility(expanded) {
+        AnimatedVisibility(expanded, enter = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.expandIn(),
+            exit = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.collapseOut()) {
             Column(Modifier.padding(top = 6.dp)) { RuntimeRow("调度", state.schedulerText) }
         }
     }
