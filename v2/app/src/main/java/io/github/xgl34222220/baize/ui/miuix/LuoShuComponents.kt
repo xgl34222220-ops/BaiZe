@@ -168,8 +168,9 @@ internal fun LuoShuSwitchRow(
             if (subtitle.isNotBlank()) {
                 Text(
                     subtitle,
-                    fontSize = 12.sp,
-                    lineHeight = 18.sp,
+                    // 与 LuoShuNavigationRow 使用同一副标题字号，设置页开关行与跳转行不再一大一小。
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

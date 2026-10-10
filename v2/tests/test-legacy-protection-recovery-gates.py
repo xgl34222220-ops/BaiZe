@@ -17,8 +17,7 @@ class RecoveryCallSiteContract(unittest.TestCase):
         application = source('BaiZeApplication.kt')
         attach = application.split('override fun attachBaseContext', 1)[1].split('override fun onCreate', 1)[0]
         self.assertIn('LegacyPreferencesAccess.initialize(this)', attach)
-        for name in ['CacheActivity.kt', 'ProfileActivity.kt', 'PersistentSmartScanActivity.kt',
-                     'ProtectedReviewActivity.kt', 'MiuixDashboardActivity.kt', 'ResumableSmartScanActivity.kt', 'ThemeManager.kt']:
+        for name in ['ProtectedReviewActivity.kt', 'MiuixDashboardActivity.kt', 'ResumableSmartScanActivity.kt', 'ThemeManager.kt']:
             self.assertIn('LegacyPreferencesAccess.preferences(', source(name), name)
         self.assertNotIn('getSharedPreferences(', source('ui/appearance/AppearanceRepository.kt'))
         self.assertIn('CheckedLegacyPreferences.read(context, sourceName)', source('ui/appearance/AppearanceRepository.kt'))
@@ -45,14 +44,13 @@ class RecoveryCallSiteContract(unittest.TestCase):
         self.assertLess(text.index('LegacyProtectionRecovery.requireReviewed(context)'), text.index('getSharedPreferences'))
 
     def test_simple_foreground_options_never_read_ungated_legacy_fields(self):
-        for name in ['CacheActivity.kt', 'ProfileActivity.kt', 'ProtectedReviewActivity.kt', 'MiuixDashboardActivity.kt']:
+        for name in ['ProtectedReviewActivity.kt', 'MiuixDashboardActivity.kt']:
             text = source(name)
             self.assertNotRegex(text, r'getStringSet\("(?:path|package)_whitelist"', name)
             self.assertIn('ApkProtectionStore.legacyRules(applicationContext)', text)
 
     def test_foreground_module_clean_calls_gate_inside_io_error_handling(self):
-        for name, expression in [('CacheActivity.kt', '"cache-clean"'), ('ProfileActivity.kt', 'cleanMode(profile)'),
-                                 ('MiuixDashboardActivity.kt', '"clean"'), ('MiuixDashboardActivity.kt', 'mode')]:
+        for name, expression in [('MiuixDashboardActivity.kt', '"clean"'), ('MiuixDashboardActivity.kt', 'mode')]:
             text = source(name)
             call = text.index('runModuleTask(' + expression + ')')
             preceding = text[max(0, call - 240):call]
@@ -60,7 +58,7 @@ class RecoveryCallSiteContract(unittest.TestCase):
             self.assertIn('withContext(Dispatchers.IO)', preceding)
 
     def test_plan_metadata_raw_reads_cannot_be_passed_to_execution(self):
-        for name in ['PersistentSmartScanActivity.kt', 'ResumableSmartScanActivity.kt']:
+        for name in ['ResumableSmartScanActivity.kt']:
             text = source(name)
             # The only unchecked reads are explicitly isolated to the nonblocking checksum serializer.
             start = text.index('private fun planFingerprintOptionsJson()')
@@ -73,6 +71,16 @@ class RecoveryCallSiteContract(unittest.TestCase):
             self.assertIn('private fun optionsJson(protection: ApkProtectionRules = ApkProtectionStore.legacyRules(applicationContext))', text)
             self.assertRegex(text, r'cache\.cleanSelected\([\s\S]{0,220}ApkProtectionStore\.legacyRules\(applicationContext\)')
             self.assertIn('plans.cleanSafe(safeSnapshotId, selection, optionsJson())', text)
+
+    def test_legacy_redirect_entries_cannot_write_preferences_or_clean(self):
+        # 旧页面只剩路由：它们不能再绕过恢复闸门读写偏好或直接执行清理。
+        for name in ['CacheActivity.kt', 'ProfileActivity.kt']:
+            text = source(name)
+            self.assertNotIn('LegacyPreferencesAccess.preferences(', text, name)
+            self.assertNotIn('runModuleTask(', text, name)
+            self.assertIn('CleanerNavigation.scan(this', text, name)
+            self.assertIn('finish()', text, name)
+        self.assertFalse((SRC / 'PersistentSmartScanActivity.kt').exists())
 
     def test_resume_transaction_and_apk_clean_have_gates(self):
         text = source('ResumableSmartScanActivity.kt')

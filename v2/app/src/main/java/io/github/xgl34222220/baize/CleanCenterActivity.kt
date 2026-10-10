@@ -9,32 +9,25 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Rule
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.xgl34222220.baize.ui.appearance.AppearanceViewModel
@@ -42,6 +35,9 @@ import io.github.xgl34222220.baize.ui.appearance.LocalAppearanceSettings
 import io.github.xgl34222220.baize.ui.appearance.ThemeMode
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
+import io.github.xgl34222220.baize.ui.miuix.LuoShuGroup
+import io.github.xgl34222220.baize.ui.miuix.LuoShuGroupDivider
+import io.github.xgl34222220.baize.ui.miuix.LuoShuNavigationRow
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
 
@@ -74,7 +70,6 @@ class CleanCenterActivity : ComponentActivity() {
                         actions = CleanCenterActions(
                             onBack = ::finish,
                             onQuickClean = { CleanerNavigation.scan(this) },
-                            onOpenCache = { CleanerNavigation.scan(this, "cache") },
                             onOpenPolicy = { CleanerNavigation.open(this, Intent(this, CleanupPolicyActivity::class.java)) },
                             onOpenQuarantine = { CleanerNavigation.open(this, Intent(this, QuarantineActivity::class.java)) },
                             onOpenProfile = ::openProfile
@@ -92,7 +87,6 @@ class CleanCenterActivity : ComponentActivity() {
 internal data class CleanCenterActions(
     val onBack: () -> Unit,
     val onQuickClean: () -> Unit,
-    val onOpenCache: () -> Unit,
     val onOpenPolicy: () -> Unit,
     val onOpenQuarantine: () -> Unit,
     val onOpenProfile: (String) -> Unit
@@ -123,9 +117,8 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
         CleanCenterItem(Icons.Rounded.Tune, "清理策略", "清理范围、保留时间与风险偏好", directAction = actions.onOpenPolicy),
         CleanCenterItem(Icons.Rounded.Inventory2, "隔离区", "恢复或永久删除已隔离的内容", directAction = actions.onOpenQuarantine)
     )
-    val more = listOf(
-        CleanCenterItem(Icons.Rounded.Storage, "应用缓存", "查看应用缓存与占用明细", directAction = actions.onOpenCache)
-    )
+    // 「应用缓存」入口已移除：扫描工作台的默认扫描已包含应用缓存，「清理 → 即时缓存」提供按应用清理，
+    // 这里再放一个只扫缓存的入口属于重复功能。旧的 CacheActivity Intent 仍重定向到工作台 cache 分类。
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(BaiZeTokens.colors.surfaceBase),
@@ -136,8 +129,6 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
         item { CleanCenterGroup(rules, openItem) }
         item { DetailSectionHeader("保护与策略") }
         item { CleanCenterGroup(protection, openItem) }
-        item { DetailSectionHeader("更多清理") }
-        item { CleanCenterGroup(more, openItem) }
         item {
             DetailExpandableText("清理与保护说明",
                 "各项扫描完成后可查看明细，再选择需要处理的内容。白名单、关键路径、软链接与挂载点保护会在清理时再次核对。\n\n扫描不会删除文件，结果与选择都在同一个页面完成。高风险内容需要单独确认，不会被普通清理直接删除。")
@@ -150,28 +141,11 @@ internal fun CleanCenterRoute(actions: CleanCenterActions) {
 
 @Composable
 private fun CleanCenterGroup(items: List<CleanCenterItem>, openItem: (CleanCenterItem) -> Unit) {
-    DetailGlassPanel {
+    // 与首页、设置页共用 LuoShu 列表行：同样的图标块、字号、72dp 最小触控高度与分隔线缩进。
+    LuoShuGroup(Modifier.padding(horizontal = 16.dp)) {
         items.forEachIndexed { index, item ->
-            val accent = MaterialTheme.colorScheme.primary
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .clickable { openItem(item) }.heightIn(min = 76.dp).padding(vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(11.dp)
-            ) {
-                Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = .07f)) {
-                    Icon(item.icon, null, Modifier.padding(9.dp).size(20.dp), tint = accent)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(item.title, fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium)
-                    Text(item.description, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp, lineHeight = 18.sp)
-                }
-                Icon(Icons.Rounded.ChevronRight, null, Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f))
-            }
-            if (index != items.lastIndex) HorizontalDivider(Modifier.padding(start = 52.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .06f))
+            LuoShuNavigationRow(item.icon, item.title, item.description) { openItem(item) }
+            if (index != items.lastIndex) LuoShuGroupDivider()
         }
     }
 }

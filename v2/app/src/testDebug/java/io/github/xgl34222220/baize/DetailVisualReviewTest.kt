@@ -44,13 +44,6 @@ import org.robolectric.annotation.GraphicsMode
 class DetailVisualReviewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
-    @Test fun cacheEmpty() = render("cache-empty") {
-        CacheScreen(CacheUiState(connected = true, scanConnected = true, cleanConnected = true), {}, {}, {}, {}, {}, {}, {})
-    }
-
-    @Test fun cacheResults() = render("cache-results") { cacheResultScreen() }
-    @Test fun cacheDark() = render("cache-dark", dark = true) { cacheResultScreen() }
-
     @Test fun apkEmpty() = render("apk-empty") { ApkScanScreen(ApkScanUiState(connected = true), {}, {}, {}, {}, {}) }
 
     @Test fun apkResults() {
@@ -66,19 +59,6 @@ class DetailVisualReviewTest {
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun apkNarrowLargeFont() = render("apk-narrow-large-font", fontScale = 1.3f) {
         ApkScanScreen(apkResults, {}, {}, {}, {}, {})
-    }
-
-    @Test fun profileResults() = render("profile-results") {
-        ProfileScreenMaterial(
-            ProfileUiState(
-                profile = "rules", title = "规则垃圾", subtitle = "查看应用残留、隐藏垃圾和过期日志",
-                connected = true, serviceText = "清理服务已连接", summaryText = "扫描完成，发现 24 项可清理内容。",
-                total = 24, quickCleanReady = true, showCandidates = true, cleanButtonText = "清理 24 项规则垃圾",
-                selectionText = "24 项 · 自动保留白名单中的文件", safetyText = "清理前会核对文件变化与保护设置。",
-                items = listOf(ProfileUiItem("sample", "示例应用", "example.app", "临时文件", "low", "/storage/emulated/0/Android/data/example.app/cache", 512L * 1024 * 1024, 1024, 12, true, true, ""))
-            ),
-            ProfileUiActions({}, {}, {}, {}, {}, {}), {}
-        )
     }
 
     @Test fun organizer() = render("organizer") {
@@ -145,19 +125,6 @@ class DetailVisualReviewTest {
                 assertEquals("Wrapped filters retain single selection", listOf(R.id.filterProtected), binding.filterGroup.checkedChipIds)
             }
         }
-    }
-
-    @Composable private fun cacheResultScreen() {
-        CacheScreen(
-            CacheUiState(
-                connected = true, scanConnected = true, cleanConnected = true, phase = "扫描完成，已检查当前应用缓存。",
-                snapshotId = "visual-fixture", total = 32, totalFiles = 1682, totalBytes = 842L * 1024 * 1024, quickCleanReady = true,
-                items = listOf(
-                    CacheCandidateUi("示例浏览器", "example.browser", "应用缓存", "/data/user/0/example.browser/cache", 524L * 1024 * 1024, 1264, 24),
-                    CacheCandidateUi("示例播放器", "example.player", "外部缓存", "/storage/emulated/0/Android/data/example.player/cache", 318L * 1024 * 1024, 418, 12)
-                )
-            ), {}, {}, {}, {}, {}, {}, {}
-        )
     }
 
     private val apkResults = ApkScanUiState(

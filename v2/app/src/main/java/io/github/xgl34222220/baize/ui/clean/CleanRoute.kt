@@ -16,7 +16,6 @@ import io.github.xgl34222220.baize.StorageToolMode
 import io.github.xgl34222220.baize.StorageToolsActivity
 import io.github.xgl34222220.baize.ui.appearance.UiStyle
 import io.github.xgl34222220.baize.ui.clean.miuix.CleanScreenMiuix
-import io.github.xgl34222220.baize.ui.clean.miuix.VideoCleanScreenMiuix
 import io.github.xgl34222220.baize.ui.miuix.ProvideVideoSkin
 import io.github.xgl34222220.baize.ui.miuix.VideoSkin
 
@@ -83,21 +82,8 @@ fun CleanRoute(
         }
     )
 
-    if (style == UiStyle.MIUIX) {
-        CleanScreenMiuix(
-            state = state,
-            actions = actions,
-            expandedCategory = expandedCategory,
-            onExpandedCategoryChanged = onExpandedCategoryChanged
-        )
-    } else {
-        ProvideVideoSkin(VideoSkin.MATERIAL3) {
-            VideoCleanScreenMiuix(
-                state = state,
-                actions = actions,
-                expandedCategory = expandedCategory,
-                onExpandedCategoryChanged = onExpandedCategoryChanged
-            )
-        }
+    // 两种皮肤共用同一个清理页（原 VideoCleanScreenMiuix 只是转发包装，已删除）。
+    ProvideVideoSkin(if (style == UiStyle.MIUIX) VideoSkin.MIUIX else VideoSkin.MATERIAL3) {
+        CleanScreenMiuix(state, actions, expandedCategory, onExpandedCategoryChanged)
     }
 }

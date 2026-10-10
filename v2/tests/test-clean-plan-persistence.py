@@ -5,7 +5,8 @@ from pathlib import Path
 # never fall back to either discovery API. Runtime validation belongs inside the snapshot engines.
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "v2/app/src/main/java/io/github/xgl34222220/baize"
-ACTIVITY = (APP / "PersistentSmartScanActivity.kt").read_text(encoding="utf-8")
+# PersistentSmartScanActivity 已合并进其严格后继 ResumableSmartScanActivity（旧组件名保留为 manifest 别名）。
+ACTIVITY = (APP / "ResumableSmartScanActivity.kt").read_text(encoding="utf-8")
 SERVICE = (APP / "root/PersistentCleanPlanRootService.kt").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "v2/app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
 AIDL = (ROOT / "v2/app/src/main/aidl/io/github/xgl34222220/baize/root/IPersistentCleanPlanService.aidl").read_text(encoding="utf-8")
@@ -50,7 +51,12 @@ require("engine.scan(\"safe\"" in SERVICE, "safe discovery must use the existing
 require("engine.scan(" not in SERVICE[SERVICE.index("private fun cleanPersistedSnapshot"):],
         "persisted fallback cleaner must never rediscover candidates")
 
-require('android:name=".PersistentSmartScanActivity"' in MANIFEST, "persistent activity is not registered")
+require(not (APP / "PersistentSmartScanActivity.kt").exists(), "duplicate persistent smart-scan page came back")
+persistent_alias = MANIFEST.split('android:name=".PersistentSmartScanActivity"', 1)
+require(len(persistent_alias) == 2, "legacy persistent component name is not kept as an alias")
+require('android:targetActivity=".ResumableSmartScanActivity"' in persistent_alias[1].split("/>", 1)[0],
+        "legacy persistent entry does not route to the resumable activity")
+require('<activity android:name=".PersistentSmartScanActivity"' not in MANIFEST, "persistent activity must be an alias, not a page")
 require('android:name=".SmartScanActivity"' in MANIFEST, "legacy component alias is missing")
 # 旧入口别名现在路由到 ResumableSmartScanActivity。后者同时绑定
 # PersistentCleanPlanRootService 与 CleanPlanResumeRootService，是本 Activity
