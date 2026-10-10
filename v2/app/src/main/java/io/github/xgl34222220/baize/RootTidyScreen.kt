@@ -6,9 +6,7 @@ import android.content.Intent
 import android.os.Environment
 import android.os.IBinder
 import android.text.format.Formatter
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -348,10 +346,11 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
 }
 
 /** 存储分析的视图切换：大文件、重复文件、截图等都是同一页面的视图，而不是独立工具。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun StorageViewChips(current: StorageToolMode, enabled: Boolean, onSelect: (StorageToolMode) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 换行排列而不是横向滚动：页面里只保留一个可滚动容器。
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         STORAGE_VIEWS.forEach { mode ->
             FilterChip(mode == current, { if (enabled && mode != current) onSelect(mode) }, label = { Text(storageToolTitle(mode)) }, enabled = enabled)
         }
