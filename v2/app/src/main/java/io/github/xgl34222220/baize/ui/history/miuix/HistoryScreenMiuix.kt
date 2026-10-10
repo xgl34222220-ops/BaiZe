@@ -735,8 +735,8 @@ private fun sanitizeText(value: String): String =
 private fun formatElapsed(seconds: Long): String = when {
     seconds >= 3_600 -> "${seconds / 3_600} 小时"
     seconds >= 60 -> "${seconds / 60} 分钟"
-    // 多数任务不到 1 秒，累计仍为 0 时显示“不足 1 秒”，不显示容易误解的“0 秒”。
-    seconds <= 0L -> "不足 1 秒"
+    // 多数任务不到 1 秒，累计仍为 0 时显示“<1 秒”（窄屏大字号不换行），不显示容易误解的“0 秒”。
+    seconds <= 0L -> "<1 秒"
     else -> "${seconds} 秒"
 }
 /**
