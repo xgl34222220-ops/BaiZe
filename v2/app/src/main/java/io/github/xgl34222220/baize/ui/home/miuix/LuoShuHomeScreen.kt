@@ -60,6 +60,8 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
     var menuOpen by rememberSaveable { mutableStateOf(false) }
     val now = rememberHomeNowEpoch()
     val next = scheduler.homeTaskItems().nextTask(now)
+    val scanSummary = rememberHomeScanSummary()
+    val trashSummary = rememberHomeTrashSummary()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Pull down to refresh, as in MIUIX PullToRefresh: same action as the "刷新状态" menu item.
     var refreshing by remember { mutableStateOf(false) }
@@ -111,6 +113,13 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
         if (state.resumablePlan && !state.running) item(key = "resume") {
             ResumePlanBanner(actions.resumableScan, Modifier.padding(horizontal = 16.dp))
         }
+        // 上次扫描：四个专项工具最近一次结果的只读摘要（从未扫描显示「未扫描」）。
+        item(key = "last-scan") {
+            HomeLastScanSection(scanSummary, now * 1000L,
+                onChat = { actions.storageView(StorageToolMode.CHAT_MEDIA) },
+                onApk = actions.apkScan, onLarge = actions.largeFiles, onDuplicates = actions.duplicates,
+                onViewAll = onOpenClean, modifier = Modifier.padding(horizontal = 16.dp))
+        }
         if (state.automationAvailable) item(key = "plan") {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LuoShuSection("自动清理")
@@ -118,14 +127,31 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                     LuoShuNavigationRow(
                         Icons.Rounded.CalendarMonth,
                         "自动清理模块",
-                        if (scheduler.enabled) taskCountdownLabel(next, now, scheduler) else "模块已安装 · 自动任务已暂停",
+                        if (scheduler.enabled) planSubtitle(state, next, now, scheduler) else "模块已安装 · 自动任务已暂停",
                         onOpenPlan
                     )
                 }
             }
         }
+        item(key = "trash") {
+            HomeTrashCard(trashSummary, now * 1000L, actions.fileTrash, Modifier.padding(horizontal = 16.dp))
+        }
     }
     }
+}
+
+/**
+ * 自动清理卡副标题：能确定下次执行时间时显示「下次 <time> · 上次释放 <size>」；
+ * 执行中、排队、计算中等状态沿用原倒计时文案（[taskCountdownLabel]）。
+ */
+@Composable
+private fun planSubtitle(state: DashboardUiState, next: HomeTaskPresentation?, now: Long, scheduler: SchedulerUiState): String {
+    val context = LocalContext.current
+    val countdown = taskCountdownLabel(next, now, scheduler)
+    val released = if (state.lastReleasedKnown && (state.lastReleased > 0L || state.history.isNotEmpty()))
+        Formatter.formatFileSize(context, state.lastReleased) else null
+    return io.github.xgl34222220.baize.HomePresentation.planSubtitle(next?.nextEpoch ?: 0L, now,
+        showsCountdown = next != null && next.enabled && countdown.startsWith("还有"), lastReleased = released) ?: countdown
 }
 
 /** 只在存在未完成的续清计划时出现：打开续清页面，由该页面重新校验计划后才会继续。 */
@@ -275,8 +301,15 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
         if (state.versionWarning.isNotBlank()) {
             DetailExpandableText("版本信息需要检查", state.versionWarning, Modifier.padding(horizontal = 0.dp))
         }
-        GlassActionButton(actionLabel, action, Modifier.fillMaxWidth(),
+        HomeScanButton(actionLabel, action, Modifier.fillMaxWidth(),
             enabled = state.running || !state.connecting || state.scanCompleted,
+            running = state.running,
+            runningLabel = when {
+                state.taskOperation.contains("scan") -> "扫描中"
+                state.taskOperation.isNotBlank() -> "清理中"
+                else -> "处理中"
+            },
+            progress = if (state.running && state.taskProgressTotal > 0) progress else null,
             icon = when {
                 state.running -> Icons.Rounded.Stop
                 hasResults -> Icons.Rounded.CleaningServices
