@@ -198,6 +198,8 @@ private fun ServiceDetails(state: SettingsUiState, actions: SettingsUiActions, b
                     if (state.connecting) "等待当前连接完成" else "重新连接", { if (!state.connecting) actions.onReconnect() })
                 LuoShuGroupDivider()
                 LuoShuNavigationRow(Icons.Rounded.BugReport, "崩溃与诊断信息", "异常与故障记录", actions.onOpenCrashDiagnostics)
+                LuoShuGroupDivider()
+                LuoShuNavigationRow(Icons.Rounded.Speed, "重置扫描性能基准", "扫描明显变慢或换机后使用，下次扫描重新测量", actions.onResetScanPerformance)
             }
         }
     }
