@@ -119,7 +119,7 @@ class UiVisualReviewTest {
         entry.performClick()
         compose.waitForIdle()
         compose.onNodeWithText("手动工具").assertIsDisplayed()
-        compose.onNodeWithText("扫描工作台").assertIsDisplayed()
+        compose.onNodeWithText("一键扫描").assertIsDisplayed()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("任务计划"))
         compose.onNodeWithText("任务计划").assertIsDisplayed()
         save("clean-plan")
@@ -129,15 +129,15 @@ class UiVisualReviewTest {
         render("home-cleaner-first", 0)
         compose.onNodeWithText("开始扫描").assertIsDisplayed()
         compose.onNodeWithText("整理空间").assertIsDisplayed()
-        compose.onNodeWithText("安装包").assertIsDisplayed()
+        compose.onNodeWithText("存储分析").assertIsDisplayed()
     }
 
     @Test fun groupedHomeToolsKeepTheirOwnActions() {
         val calls = mutableListOf<String>()
         render("home-tools", 0, actions = previewActions.copy(
-            apkScan = { calls += "apk" }, largeFiles = { calls += "large" },
-            duplicates = { calls += "duplicates" }, storageAnalysis = { calls += "analysis" }))
-        listOf("安装包", "大文件", "重复文件", "存储分析").forEach { title ->
+            whitelist = { calls += "whitelist" }, fileTrash = { calls += "trash" },
+            storageAnalysis = { calls += "analysis" }))
+        listOf("存储分析", "规则与白名单", "历史与回收站").forEach { title ->
             val list = compose.onNode(hasScrollAction())
             list.performScrollToNode(hasText(title))
             val node = compose.onNodeWithText(title).performScrollTo()
@@ -153,7 +153,7 @@ class UiVisualReviewTest {
                 node.fetchSemanticsNode().boundsInRoot.center.y < dockTop)
             node.assertIsDisplayed().performClick()
         }
-        assertEquals(listOf("apk", "large", "duplicates", "analysis"), calls)
+        assertEquals(listOf("analysis", "whitelist", "trash"), calls)
     }
 
     @Test fun disconnectedHomeOnlyReconnects() {

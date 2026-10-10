@@ -105,10 +105,10 @@ try:
     m.adb("install", str(previous), timeout=120)
     m.launch("baseline-30006")
     m.tap_label("清理", "baseline-clean-tab")
-    tap("扫描工作台", "baseline-scan-entry")
+    tap("一键扫描", "baseline-scan-entry")
     old_scan_stack = expect_top("ResumableSmartScanActivity", "baseline-scan")
     back("baseline-scan-back")
-    tap("深度清理", "baseline-deep-entry")
+    tap("扩大扫描范围", "baseline-deep-entry")
     old_deep_stack = expect_top("ProfileActivity", "baseline-deep")
     back("baseline-deep-back")
     m.save_text("baseline-navigation.json", json.dumps({"scan": old_scan_stack, "deep": old_deep_stack,
@@ -130,7 +130,7 @@ try:
     assert json.loads(m.adb("shell", "cat", target))["selected"] == ["upgrade-fixture"]
     m.launch("candidate-from-30006")
     m.tap_label("清理", "candidate-clean-tab")
-    tap("扫描工作台", "candidate-workbench-repeated-tap", repeats=3)
+    tap("一键扫描", "candidate-workbench-repeated-tap", repeats=3)
     new_scan_stack = expect_top("ScanWorkbenchActivity", "candidate-scan", single_workbench=True)
     assert "ResumableSmartScanActivity" not in new_scan_stack and "ProfileActivity" not in new_scan_stack
     m.adb("shell", "input", "keyevent", "3")
@@ -138,11 +138,11 @@ try:
     time.sleep(2)
     expect_top("ScanWorkbenchActivity", "candidate-foreground", single_workbench=True)
     back("candidate-single-back")
-    tap("扫描工作台", "candidate-reopen")
+    tap("一键扫描", "candidate-reopen")
     expect_top("ScanWorkbenchActivity", "candidate-reopen", single_workbench=True)
     assert json.loads(m.adb("shell", "cat", target))["items"][0]["id"] == "upgrade-fixture"
     back("candidate-reopen-back")
-    tap("深度清理", "candidate-deep")
+    tap("扩大扫描范围", "candidate-deep")
     new_deep_stack = expect_top("ScanWorkbenchActivity", "candidate-deep", single_workbench=True)
     assert "ProfileActivity" not in new_deep_stack
     back("candidate-deep-back")
@@ -262,7 +262,7 @@ try:
     m.adb("shell", "pm", "grant", m.APP, "android.permission.POST_NOTIFICATIONS", check=False)
     m.launch("candidate-fresh-install")
     m.tap_label("清理", "fresh-clean-tab")
-    tap("扫描工作台", "fresh-workbench")
+    tap("一键扫描", "fresh-workbench")
     expect_top("ScanWorkbenchActivity", "fresh-workbench", single_workbench=True)
     back("fresh-workbench-back")
     seven_spec = importlib.util.spec_from_file_location("seven_navigation", Path(__file__).with_name("smoke-seven-improvements.py"))

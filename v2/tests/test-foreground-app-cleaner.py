@@ -55,7 +55,9 @@ require("FOREGROUND_STATE_DIR" in ROOT_SUPPORT and "app-foreground" in ROOT_SUPP
         "foreground snapshot state must be isolated from automation module state")
 require("StorageMediaRepository" in STORAGE and "contentResolver.query" in STORAGE,
         "storage tools must be App-native")
-require('actions.largeFiles' in HOME and 'actions.duplicates' in HOME and 'actions.storageAnalysis' in HOME,
+# 统一信息架构：首页只保留存储分析入口，大文件 / 重复文件是存储分析里的视图。
+VIEWS = (ROOT / 'v2/app/src/main/java/io/github/xgl34222220/baize/RootTidyScreen.kt').read_text(encoding='utf-8')
+require('actions.storageAnalysis' in HOME and 'StorageToolMode.LARGE' in VIEWS and 'StorageToolMode.DUPLICATES' in VIEWS,
         "home must expose App-native storage tools")
 require('自动清理模块' in HOME,
         "home must label automation as an optional module capability")

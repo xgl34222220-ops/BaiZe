@@ -34,13 +34,13 @@ class SevenImprovementNavigationTest {
         val opened = mutableListOf<String>()
         compose.setContent {
             BaiZeMiuixApp(DashboardUiState(), SchedulerUiState(), actions.copy(
-                photoCompression = { opened += "photo" }, duplicates = { opened += "duplicates" },
+                storageAnalysis = { opened += "analysis" }, whitelist = { opened += "whitelist" },
                 fileTrash = { opened += "trash" }), AppearanceSettings(uiStyle = UiStyle.MIUIX))
         }
-        compose.onNodeWithText("照片瘦身").performScrollTo().performClick()
-        compose.onNodeWithText("重复文件").performScrollTo().performClick()
-        compose.onNodeWithText("回收站").performScrollTo().performClick()
-        assertEquals(listOf("photo", "duplicates", "trash"), opened)
+        compose.onNodeWithText("存储分析").performScrollTo().performClick()
+        compose.onNodeWithText("规则与白名单").performScrollTo().performClick()
+        compose.onNodeWithText("历史与回收站").performScrollTo().performClick()
+        assertEquals(listOf("analysis", "whitelist", "trash"), opened)
     }
 
     private fun verifyRoutes(style: UiStyle) {

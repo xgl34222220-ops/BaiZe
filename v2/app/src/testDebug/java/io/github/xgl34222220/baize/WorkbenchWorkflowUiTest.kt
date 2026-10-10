@@ -46,6 +46,8 @@ class WorkbenchWorkflowUiTest {
         save("review-light")
         compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasTestTag("workbench-category:cache"))
         compose.onNodeWithTag("workbench-category:cache").performClick()
+        // 结果列表末尾新增“需要你复核”分类，列表变长后从顶部开始查找筛选摘要。
+        compose.onNodeWithTag("scan-workbench-list").performScrollToIndex(0)
         compose.onNodeWithTag("scan-workbench-list").performScrollToNode(hasText("显示 1 / 2 项"))
         compose.onNodeWithText("显示 1 / 2 项").assertIsDisplayed()
         assertEquals(setOf(cache.id), state.selectedIds)

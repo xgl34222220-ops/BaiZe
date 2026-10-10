@@ -39,6 +39,8 @@ fun DetailPageHeader(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     statusBarInset: Boolean = true,
+    /** 标题区下方的紧凑附加控件（如视图下拉），放在页头里而不是列表内容中。 */
+    extra: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Column(modifier.fillMaxWidth()
@@ -53,6 +55,7 @@ fun DetailPageHeader(
         }
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(horizontal = 4.dp),
             fontSize = 13.sp, lineHeight = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (extra != null) extra()
     }
 }
 

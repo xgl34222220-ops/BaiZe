@@ -213,6 +213,8 @@ data class SchedulerUiState(
     val appProfileMediaDays: Int = 30,
     /** F2FS GC + TRIM：充电且息屏时每日最多一次。 */
     val maintenanceEnabled: Boolean = true,
+    /** 系统维护的一步：根目录空文件夹与“禁止重建”占位，默认关闭。 */
+    val rootTidyAuto: Boolean = false,
     val maintenanceSummary: String = "",
     val runtimeState: String = "waiting",
     val runtimeReason: String = "等待调度器首次轮询",
@@ -283,6 +285,7 @@ data class SchedulerUiState(
         .put("app_profile_user_media", (appProfileUserMedia && appProfileTier == 2).flag())
         .put("app_profile_media_days", appProfileMediaDays.coerceIn(7, 365))
         .put("maintenance_enabled", maintenanceEnabled.flag())
+        .put("root_tidy_auto", rootTidyAuto.flag())
 
     companion object {
         fun fromJson(json: JSONObject): SchedulerUiState {
@@ -360,6 +363,7 @@ data class SchedulerUiState(
                     json.optInt("app_profile_tier", 1) == 2,
                 appProfileMediaDays = json.optInt("app_profile_media_days", 30).coerceIn(7, 365),
                 maintenanceEnabled = json.optInt("maintenance_enabled", 1) == 1,
+                rootTidyAuto = json.optInt("root_tidy_auto", 0) == 1,
                 maintenanceSummary = maintenanceSummary(runtime.optJSONObject("maintenance"))
             )
         }

@@ -188,4 +188,9 @@ esac
 write_result "$overall"
 mkdir -p "$STATE_DIR/logs" 2>/dev/null
 baize_append_capped "$LOG" "$(date '+%F %T') result=$overall trim=$TRIM_RESULT gc=$GC_RESULT gc_s=$GC_SECONDS dirty=$DIRTY_BEFORE->$DIRTY_AFTER" "$LOG_LINES"
+# 6) 根目录自动整理：同一个系统维护窗口（开机 15 分钟后、充电息屏、无清理任务、低 I/O 优先级），
+#    root_tidy_auto 默认关闭；只删空文件夹与维持“禁止重建”占位。
+if [ "$(config_value root_tidy_auto)" = 1 ] && [ -f "$SCRIPTDIR/root-tidy.sh" ] && is_screen_off; then
+  BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" BAIZE_CONFIG_PATH="$CONFIG" sh "$SCRIPTDIR/root-tidy.sh" run </dev/null >/dev/null 2>&1 || true
+fi
 exit 0

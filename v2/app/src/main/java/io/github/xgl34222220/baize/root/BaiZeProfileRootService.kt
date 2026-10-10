@@ -122,6 +122,14 @@ class BaiZeProfileRootService : RootService() {
                 getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
             }
             "getScanCoverage" -> { require(arguments.length() == 0); getScanCoverage() }
+            // 根目录整理：规则文件只含白名单与“禁止重建”名单；自动开关在 config.conf（系统维护计划）。
+            "readRootTidy" -> { require(arguments.length() == 0); RootTidyStore.read(File(RootPaths.STATE_DIR)) }
+            "writeRootTidyRules" -> {
+                require(arguments.length() == 1)
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid) { "caller_mismatch" }
+                RootTidyStore.write(File(RootPaths.STATE_DIR), arguments.getString(0))
+            }
             "clearPackageCaches" -> { require(arguments.length() == 1); clearPackageCaches(arguments.getString(0)) }
             "runMaintenanceTool" -> {
                 require(arguments.length() == 2)

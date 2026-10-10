@@ -113,6 +113,29 @@ class DeferredWork(unittest.TestCase):
         self.assertRegex(text, r'BAIZE_STATE_BUDGET_SECONDS:-(\d+)')
 
 
+class BootStatusHelpers(unittest.TestCase):
+    def test_module_status_is_constant_time_and_post_boot(self):
+        for number, line in code_lines(SCRIPTS / 'module-status.sh'):
+            self.assertIsNone(SCAN.search(line), f'module-status.sh:{number}: {line}')
+            self.assertNotIn('dumpsys', line)
+            self.assertNotIn('pm ', line)
+        lines = code_lines(MODULE / 'service.sh')
+        wait = next(i for i, (_, l) in enumerate(lines) if 'getprop sys.boot_completed' in l and 'while' in l)
+        calls = [i for i, (_, l) in enumerate(lines) if 'module-status.sh' in l]
+        self.assertTrue(calls)
+        self.assertTrue(all(i > wait for i in calls), 'module status must wait for boot_completed')
+
+    def test_root_tidy_only_runs_from_the_settled_maintenance_window(self):
+        for number, line in code_lines(SCRIPTS / 'root-tidy.sh'):
+            self.assertIsNone(SCAN.search(line), f'root-tidy.sh:{number}: {line}')
+        callers = [p.name for p in MODULE.rglob('*.sh') if 'root-tidy.sh' in p.read_text(encoding='utf-8') and p.name != 'root-tidy.sh']
+        self.assertEqual(['storage-maintenance.sh'], callers)
+        text = (SCRIPTS / 'storage-maintenance.sh').read_text(encoding='utf-8')
+        settle = re.search(r'BAIZE_MAINT_BOOT_SETTLE_SECONDS:-(\d+)', text)
+        self.assertGreaterEqual(int(settle.group(1)), 300, 'no root tidy in the first 5 minutes after boot')
+        self.assertLess(text.index('BOOT_SETTLE_SECONDS'), text.index('root-tidy.sh'))
+
+
 # Generated-name families written under the state directory and the cap that bounds each.
 FAMILIES = [
     (r'\$(REPORT_DIR|STATE_DIR/reports)/\$STAMP-', "reports '20[0-9][0-9]-*.tsv'"),
