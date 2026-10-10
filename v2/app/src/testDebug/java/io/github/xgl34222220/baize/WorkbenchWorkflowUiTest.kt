@@ -66,7 +66,7 @@ class WorkbenchWorkflowUiTest {
         // 所有分类的勾选位在同一列，且不越过右侧页边距。
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         val rights = listOf("cache", "rules", "fragments").map {
-            compose.onNodeWithTag("workbench-category-check:$it").fetchSemanticsNode().boundsInRoot.right
+            compose.onNodeWithTag("workbench-category-check:$it", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.right
         }
         assertTrue("category checks misaligned: $rights", rights.max() - rights.min() < 1f)
         assertTrue("check passes page margin: $rights vs ${root.right}", rights.max() <= root.right)
