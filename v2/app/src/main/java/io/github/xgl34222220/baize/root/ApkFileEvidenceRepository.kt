@@ -25,7 +25,7 @@ internal class ApkFileEvidenceRepository(private val ownAppUid: () -> Int,
         val user = caller / 100_000
         val publicRoot = "/storage/emulated/$user"
         if (!ApkDeletionGuard.validPath(requestedPath) || !requestedPath.startsWith("$publicRoot/") ||
-            (archiveOnly && requestedPath.substringAfterLast('.').lowercase() !in setOf("apk", "apks", "xapk", "apkm", "aab"))) return rejected("outside_current_user_storage")
+            (archiveOnly && !io.github.xgl34222220.baize.ApkNames.isApk(requestedPath))) return rejected("outside_current_user_storage")
         val backingRoot = "/data/media/$user"
         val backing = backingRoot + requestedPath.removePrefix(publicRoot)
         // This guard rejects links in every component below the trusted storage root.

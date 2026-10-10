@@ -131,7 +131,7 @@ fun CleanScreenMiuix(
             LuoShuPageHeader("清理")
         }
         item(key = "clean-manual-title") {
-            LuoShuSection("专项清理", "每个工具只在这里出现一次；一键扫描在首页")
+            LuoShuSection("专项清理", "按类型查看，逐项确认后再清理")
         }
         item(key = "clean-manual") {
             LuoShuGroup {

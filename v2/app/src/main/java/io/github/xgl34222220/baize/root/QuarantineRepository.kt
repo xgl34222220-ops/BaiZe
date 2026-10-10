@@ -92,7 +92,10 @@ internal class QuarantineRepository(
         risk: String
     ): Result {
         purgeExpiredInternal(System.currentTimeMillis())
-        if (risk != "high") return Result(false, message = "只有高风险候选可以进入隔离区")
+        // 高风险候选，以及默认不勾选、只允许可恢复处理的聊天安装包，才能进入隔离区。
+        if (risk != "high" && !(risk == "medium" && NativeProfileEngine.recoverableOnly(category))) {
+            return Result(false, message = "只有高风险候选可以进入隔离区")
+        }
         if (snapshotId.isBlank() || candidateId.isBlank()) return Result(false, message = "隔离授权无效，请重新扫描")
 
         val source = File(originalPath)

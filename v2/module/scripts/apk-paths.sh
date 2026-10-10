@@ -1,5 +1,7 @@
 #!/system/bin/sh
 # One discovery/deletion boundary for interactive and scheduled package cleanup.
+# QQ / WeChat rename received packages to *.apk.1 (and .apk.2 …); those copies are
+# packages too, so every find/allow pattern below also accepts *.apk.<1-3 digits>.
 # Installed applications (/data/app, /system) are never storage roots.
 
 apk_list_append() {
@@ -155,7 +157,7 @@ apk_collect_private_candidates() {
   for _apk_base in $APK_PRIVATE_BOUNDARIES; do
     [ -d "$_apk_base" ] || continue
     find "$_apk_base" -xdev -mindepth 3 -maxdepth 12 -type f \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
       \( -path "$_apk_base/*/cache/*" -o -path "$_apk_base/*/code_cache/*" -o -path "$_apk_base/*/files/*" \) \
       -print0 >>"$_apk_private_out" 2>/dev/null || true
   done
@@ -165,7 +167,7 @@ apk_collect_private_candidates() {
 
 apk_scan_candidate_allowed() {
   case "$1" in
-    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
+    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]|*.[aA][pP][kK].[0-9]|*.[aA][pP][kK].[0-9][0-9]|*.[aA][pP][kK].[0-9][0-9][0-9]) ;;
     *) return 1 ;;
   esac
   [ -f "$1" ] || return 1
@@ -222,7 +224,7 @@ apk_scan_candidate_allowed() {
 
 apk_path_allowed() {
   case "$1" in
-    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]) ;;
+    *.[aA][pP][kK]|*.[aA][pP][kK][sS]|*.[xX][aA][pP][kK]|*.[aA][pP][kK][mM]|*.[aA][aA][bB]|*.[aA][pP][kK].[0-9]|*.[aA][pP][kK].[0-9][0-9]|*.[aA][pP][kK].[0-9][0-9][0-9]) ;;
     *) return 1 ;;
   esac
   [ ! -L "$1" ] || return 1
@@ -250,7 +252,7 @@ apk_find_into() {
   _apk_base=$1
   _apk_out=$2
   find "$_apk_base" -xdev -type f \
-    \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+    \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
     -print0 >"$_apk_out" 2>/dev/null
 }
 
@@ -269,7 +271,7 @@ $_apk_root
     apk_list_append _apk_seen_roots "$_apk_root"
     apk_add_fallback_root "$_apk_root"
     find "$_apk_root" -type f \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
       -print0 >>"$_apk_out" 2>/dev/null || true
   done
   if [ -n "${BAIZE_BRUTE_STORAGE_ROOTS:-}" ]; then
@@ -286,7 +288,7 @@ $_apk_root
       apk_list_append _apk_seen_roots "$_apk_root"
       apk_add_fallback_root "$_apk_root"
       find "$_apk_root" -type f \
-        \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+        \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
         -print0 >>"$_apk_out" 2>/dev/null || true
     done
     IFS=$_apk_old_ifs
@@ -543,11 +545,11 @@ apk_find_into() {
   : >"$_apk_find_output"
   if [ -x /system/bin/toybox ]; then
     /system/bin/toybox find "$_apk_find_base" -type f \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
       -print0 >"$_apk_find_output" 2>/dev/null
   else
     find "$_apk_find_base" -type f \
-      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' \) \
+      \( -iname '*.apk' -o -iname '*.apks' -o -iname '*.xapk' -o -iname '*.apkm' -o -iname '*.aab' -o -iname '*.apk.[0-9]' -o -iname '*.apk.[0-9][0-9]' -o -iname '*.apk.[0-9][0-9][0-9]' \) \
       -print0 >"$_apk_find_output" 2>/dev/null
   fi
 }

@@ -111,7 +111,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
         item(key = "history-record-title") { LuoShuSection("任务记录", "按日期排列，扫描与清理状态分开显示") }
 
         if (recordGroups.isEmpty()) {
-            item(key = "history-empty") { EmptyRecordsCard() }
+            item(key = "history-empty") { EmptyRecordsCard(state.lifetimeRuns > 0) }
         } else {
             recordGroups.forEach { (date, records) ->
                 item(key = "history-date-$date") { DateLabel(date) }
@@ -192,7 +192,7 @@ private fun LifetimeHero(state: HistoryUiState) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Metric("任务", "${state.lifetimeRuns} 次", Modifier.weight(1f))
                 Metric("处理文件", state.lifetimeFiles.toString(), Modifier.weight(1f))
-                Metric("累计耗时", formatElapsed(state.lifetimeElapsed), Modifier.weight(1f))
+                Metric("累计耗时", if (state.lifetimeRuns > 0) formatElapsed(state.lifetimeElapsed) else "—", Modifier.weight(1f))
             }
         }
     }
@@ -534,14 +534,13 @@ private fun DateLabel(date: String) {
 }
 
 @Composable
-private fun EmptyRecordsCard() {
+private fun EmptyRecordsCard(hasLifetimeTotals: Boolean = false) {
     LuoShuGroup {
-        Text(
-            "暂无任务记录",
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("暂无任务记录", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(if (hasLifetimeTotals) "上方累计数据仍保留；新的扫描或清理会按日期显示在这里" else "扫描或清理后，记录会按日期显示在这里", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -736,6 +735,8 @@ private fun sanitizeText(value: String): String =
 private fun formatElapsed(seconds: Long): String = when {
     seconds >= 3_600 -> "${seconds / 3_600} 小时"
     seconds >= 60 -> "${seconds / 60} 分钟"
+    // 多数任务不到 1 秒，累计仍为 0 时显示“<1 秒”（窄屏大字号不换行），不显示容易误解的“0 秒”。
+    seconds <= 0L -> "<1 秒"
     else -> "${seconds} 秒"
 }
 /**

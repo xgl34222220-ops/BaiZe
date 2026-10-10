@@ -5,8 +5,12 @@ internal object ReviewRiskPolicy {
     fun selectable(risk: String, blockedReason: String): Boolean =
         risk != "critical" && blockedReason.isBlank()
 
-    fun defaultSelected(risk: String, blockedReason: String, includeMedium: Boolean): Boolean =
-        selectable(risk, blockedReason) && (risk == "low" || (risk == "medium" && includeMedium))
+    fun defaultSelected(risk: String, blockedReason: String, includeMedium: Boolean, category: String = ""): Boolean =
+        !perItemOnly(category) && selectable(risk, blockedReason) && (risk == "low" || (risk == "medium" && includeMedium))
+
+    /** 聊天收到的安装包：不默认勾选、不进全选/分组批量选择，只能逐项勾选，处理时移入回收站。 */
+    fun perItemOnly(category: String): Boolean =
+        io.github.xgl34222220.baize.root.NativeProfileEngine.recoverableOnly(category)
 
     fun appPackage(path: String): String {
         val match = owner.find(path) ?: return ""

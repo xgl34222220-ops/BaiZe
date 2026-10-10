@@ -259,6 +259,10 @@ category_for() {
   cf_name=${1##*/}
   cf_ext=${cf_name##*.}
   [ "$cf_ext" = "$cf_name" ] && return 0
+  # QQ / 微信把收到的安装包改名为 xxx.apk.1：数字副本后缀按安装包归类。
+  case "$cf_name" in
+    *.[aA][pP][kK].[0-9]|*.[aA][pP][kK].[0-9][0-9]|*.[aA][pP][kK].[0-9][0-9][0-9]) cf_ext=apk ;;
+  esac
   # 绝大多数扩展名本来就是小写，含大写时才走逐字符转换
   case "$cf_ext" in
     *[A-Z]*) organizer_lower "$cf_ext"; cf_ext=$OL_OUT ;;
@@ -357,6 +361,10 @@ allowed_source() {
   rest=${relative#*/}
   [ "$rest" != "$relative" ] || return 1
   case "$rest" in BaiZe归类/*|*/BaiZe归类/*) return 1 ;; esac
+  # 相机、相册与录屏原件（DCIM / Pictures / Movies / 系统录屏目录）永远不参与归类。
+  case "$rest" in
+    [dD][cC][iI][mM]/*|[pP][iI][cC][tT][uU][rR][eE][sS]/*|[mM][oO][vV][iI][eE][sS]/*|[mM][iI][uU][iI]/[sS][cC][rR][eE][eE][nN][rR][eE][cC][oO][rR][dD][eE][rR]/*|[sS][cC][rR][eE][eE][nN][rR][eE][cC][oO][rR][dD][eE][rR]/*) return 1 ;;
+  esac
   case "$rest" in */*) ;; *) return 0 ;; esac
 
   case "$rest" in

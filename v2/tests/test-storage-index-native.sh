@@ -26,6 +26,8 @@ mk "Android/data/io.github.xgl34222220.baize/files/recoverable-trash/retained.ap
 mk "Download/app.apk" 100
 mk "Download/pkg.APKS" 100          # 大小写混合，必须按大小写不敏感匹配
 mk "Download/bundle.xapk" 100
+mk "Download/QQ/received.apk.1" 100 # QQ / 微信改名后的安装包副本，必须进 APK 桶
+mk "Docs/note.apk.tmp" 5            # 不是安装包副本
 mk "Pictures/a.jpg" 500
 mk "Pictures/b.PNG" 500
 mk "Movies/clip.mp4" 900
@@ -77,7 +79,7 @@ chmod +x "$T/fake-bin/find"
     BAIZE_NATIVE_ENGINE="$ENGINE" bash ./storage-index.sh refresh manual >/dev/null 2>&1
 ) || { echo "  [FAIL] 原生索引仍依赖 shell find"; exit 1; }
 no_find_apk=$(tr -cd '\000' < "$T/state-no-find/index/apk-files.nul" | wc -c | tr -d ' ')
-[ "$no_find_apk" = 4 ] || { echo "  [FAIL] 原生单遍索引 APK 桶异常，实际 $no_find_apk"; exit 1; }
+[ "$no_find_apk" = 5 ] || { echo "  [FAIL] 原生单遍索引 APK 桶异常，实际 $no_find_apk"; exit 1; }
 grep -Fq 'engine=baize-storage-index-v6-native-one-pass' "$T/state-no-find/index/meta.env" || {
   echo "  [FAIL] 未进入原生单遍索引路径"; exit 1;
 }
@@ -98,7 +100,7 @@ s_cov=$(cut -f5,6 "$T/out-shell/coverage.tsv")
 
 # 具体分桶断言，防止两条路径同时错
 apk_n=$(tr -cd '\000' < "$T/out-native/apk-files.nul" | wc -c | tr -d ' ')
-[ "$apk_n" = 4 ] || { echo "  [FAIL] APK 桶应为 4 条（含大小写混合与中文名），实际 $apk_n"; fail=$((fail+1)); }
+[ "$apk_n" = 5 ] || { echo "  [FAIL] APK 桶应为 5 条（含大小写混合、中文名与 .apk.1），实际 $apk_n"; fail=$((fail+1)); }
 empty_n=$(tr -cd '\000' < "$T/out-native/empty-files.nul" | wc -c | tr -d ' ')
 [ "$empty_n" = 1 ] || { echo "  [FAIL] 空文件桶应为 1 条，实际 $empty_n"; fail=$((fail+1)); }
 large_n=$(tr -cd '\000' < "$T/out-native/large-files.nul" | wc -c | tr -d ' ')

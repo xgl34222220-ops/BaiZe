@@ -92,6 +92,19 @@ class BaiZeProfileRootService : RootService() {
                         File("/data/user_de/$user") to "/data/user_de/$user"), "Root", cancelled = cancelled::get).json()
                 } finally { directoryCancelled.remove(token) }
             }
+            // 只读：列出当前用户 QQ / TIM / 微信目录（含 Android/data）里的文件。
+            // Android 11+ App 进程读不到 Android/data，必须由 Root 进程读取；不删除任何文件。
+            "scanChatStorage" -> {
+                require(arguments.length() <= 1)
+                val owner = applicationInfo.uid
+                val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+                require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+                val user = caller / 100_000
+                val apksOnly = arguments.optString(0, "all") == "apk"
+                val raw = File("/data/media/$user")
+                val roots = if (raw.isDirectory) listOf(raw) else listOf(File("/storage/emulated/$user")).filter { it.isDirectory }
+                ChatStorageScanner.json(ChatStorageScanner(roots, apksOnly = apksOnly).scan(), System.currentTimeMillis() / 1000L)
+            }
             "cancelDirectoryUsage" -> {
                 require(arguments.length() == 1)
                 val caller = android.os.Binder.getCallingUid()

@@ -182,7 +182,9 @@ internal data class StorageToolsUiState(
         val keeper = if (group.records.any { it.uri in selected }) available.firstOrNull()
             else preferredDuplicateKeeper(group.records, keeperPreference, keeperDirectory)
         group.records.filter { it.uri != keeper?.uri }
-    }.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet() else visibleRecords.filter { it.verifiedBytes > 0 }.map { it.uri }.toSet()
+    }.filter { it.verifiedBytes > 0 && StorageReviewFilters.bulkSelectable(mode, it) }.map { it.uri }.toSet()
+        // 相机与相册原件、应用目录只读记录不进入默认勾选与“全选”，只能逐项勾选或仅查看。
+        else visibleRecords.filter { it.verifiedBytes > 0 && StorageReviewFilters.bulkSelectable(mode, it) }.map { it.uri }.toSet()
     val allSelected: Boolean get() = recommended.isNotEmpty() && selected.containsAll(recommended)
     val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.verifiedBytes }
     fun keepCopy(key: String): StorageToolsUiState {
@@ -199,7 +201,9 @@ internal data class StorageToolsUiState(
     fun toggleSelection(key: String): StorageToolsUiState {
         if (running) return this
         if (key in selected) return copy(selected = selected - key)
-        if (visibleRecords.none { it.uri == key && it.verifiedBytes > 0 }) return this
+        val target = visibleRecords.firstOrNull { it.uri == key } ?: return this
+        StorageReviewFilters.rowLock(mode, target)?.let { return copy(status = "$it，不能在这里勾选") }
+        if (target.verifiedBytes <= 0) return this
         if (mode == StorageToolMode.DUPLICATES) {
             val group = duplicateGroups.firstOrNull { it.records.any { r -> r.uri == key } } ?: return this
             if (group.records.count { it.uri !in selected } <= 1) return copy(status = "每组需保留一份，可先取消另一份的勾选")
@@ -227,6 +231,11 @@ internal fun StorageToolsScreen(
         if (state.running || visible.isNotEmpty() || state.minimumAgeDays <= 0 || state.query.isNotBlank() || state.category != null ||
             state.mode !in setOf(StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA)) 0
         else state.records.count { StorageReviewFilters.visible(state.mode, it, state.nowSeconds, 0, state.customFilters, state.activeFilterId) }
+    }
+    // 每个时间档位的候选数：默认“超过 90 天”为空时，用户能看到文件其实落在哪个档位。
+    val ageCounts = remember(state.records, state.nowSeconds, state.mode, state.customFilters) {
+        if (state.mode in setOf(StorageToolMode.SCREENSHOTS, StorageToolMode.OLD_DOWNLOADS, StorageToolMode.CHAT_MEDIA))
+            StorageReviewFilters.ageBucketCounts(state.mode, state.records, state.nowSeconds, state.customFilters) else emptyMap()
     }
     val title = storageToolTitle(state.mode)
     val subtitle = when (state.mode) { StorageToolMode.LARGE -> "找到占用，留下需要的"; StorageToolMode.DUPLICATES -> "完整内容比对 · 每组保留一份"; StorageToolMode.ANALYSIS -> "空间去哪了，一目了然"
@@ -260,7 +269,9 @@ internal fun StorageToolsScreen(
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
             state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected,
             state.recommended.isNotEmpty(), onToggleAll, onDelete,
-            cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果") }
+            cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果",
+            // 相机原件不进入“全选”，但逐项勾选后仍可确认删除。
+            cleanEnabled = state.selected.isNotEmpty()) }
     ) { insets ->
         LazyColumn(Modifier.fillMaxSize().padding(insets), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
@@ -286,10 +297,13 @@ internal fun StorageToolsScreen(
                         else if (state.mode == StorageToolMode.ANALYSIS) state.directoryUsage?.bytes ?: state.records.sumOf { it.verifiedBytes } else visible.sumOf { it.verifiedBytes }
                     Text(if (state.mode == StorageToolMode.DUPLICATES) "多余副本占用" else if (directorySelected) "当前目录占用" else if (state.mode == StorageToolMode.ANALYSIS && state.directoryUsage != null) "已遍历目录占用" else "已核对文件占用",
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else if (ageHiddenCount > 0) "无匹配" else Formatter.formatFileSize(context, bytes))
+                    BaiZeMetric(if (directorySelected && currentDirectory == null) "尚未统计" else if (ageHiddenCount > 0) "均在 ${state.minimumAgeDays} 天内" else Formatter.formatFileSize(context, bytes))
                     if (directorySelected && currentDirectory != null)
                         Text("${currentDirectory.files} 个文件（含子目录）", style = MaterialTheme.typography.bodySmall)
                     Text(state.status, style = MaterialTheme.typography.bodyMedium, color = if (state.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    if (!state.running && ageCounts.isNotEmpty() && (ageCounts[0] ?: 0) > 0)
+                        Text("按时间：${StorageReviewFilters.ageBucketSummary(ageCounts)}", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!state.running && state.lastTrashed.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
                         GlassActionButton("撤销本次（恢复 ${state.lastTrashed.size} 个文件）", onUndo, Modifier.fillMaxWidth(),
@@ -404,13 +418,15 @@ internal fun StorageToolsScreen(
                         val keeper = record.uri !in state.selected && group.records.count { it.uri !in state.selected } == 1
                         Column {
                             if (storageCategory(record) == "image") StorageComparisonThumbnail(record)
-                            StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri])
+                            StorageFileRow(record, record.uri in state.selected, !state.running, keeper, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
+                                lock = StorageReviewFilters.rowLock(state.mode, record))
                             TextButton(onClick = { onKeep(record.uri) }, enabled = !state.running && record.verifiedBytes > 0) { Text(if (keeper) "已保留这份" else "保留这份") }
                         }
                     }
                 }
             } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
-                StorageReviewFilters.sourceLabel(state.mode, record)) }
+                StorageReviewFilters.sourceLabel(state.mode, record) ?: if (UserMediaGuard.isUserMedia(record.path)) UserMediaGuard.INDIVIDUAL_LABEL else null,
+                lock = StorageReviewFilters.rowLock(state.mode, record)) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {
                 val directoryFiles = if (state.mode == StorageToolMode.ANALYSIS && state.directory != null)
                     state.directoryUsage?.directories?.firstOrNull { it.path == state.directory }?.files ?: 0 else 0
@@ -454,7 +470,8 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
                 listOf<String?>(null).map { it to "全部类型" } + state.buckets.map { it.key to it.label }, category) { category = it }
             if (state.mode == StorageToolMode.LARGE) FileFilterChoices("文件大小",
                 listOf(10, 100, 500).map { it * StorageToolsViewModel.MIB to "≥ $it MB" }, minimum) { minimum = it }
-            if (ageFilter) FileFilterChoices("文件时间", StorageReviewFilters.AGE_CHOICES.map { it to StorageReviewFilters.ageLabel(it) }, age) { age = it }
+            val ageCounts = if (ageFilter) StorageReviewFilters.ageBucketCounts(state.mode, state.records, state.nowSeconds, state.customFilters) else emptyMap()
+            if (ageFilter) FileFilterChoices("文件时间", StorageReviewFilters.AGE_CHOICES.map { it to "${StorageReviewFilters.ageLabel(it)} · ${ageCounts[it] ?: 0}" }, age) { age = it }
             FileFilterChoices("排序", StorageSort.entries.map { it to it.label }, sort) { sort = it }
         }
     }
@@ -462,13 +479,13 @@ private fun StorageFilters(state: StorageToolsUiState, onQuery: (String) -> Unit
 
 @Composable
 private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled: Boolean, keeper: Boolean, onClick: () -> Unit, onOpen: () -> Unit,
-    outcome: StorageDeleteOutcome? = null, source: String? = null) {
+    outcome: StorageDeleteOutcome? = null, source: String? = null, lock: String? = null) {
     val size = Formatter.formatFileSize(LocalContext.current, record.bytes)
     val date = if (record.modifiedSeconds > 0) android.text.format.DateFormat.format("yyyy-MM-dd HH:mm", record.modifiedSeconds * 1000).toString() else "时间未知"
-    val reason = outcome?.reason ?: if (record.verifiedBytes == 0L) "待核对 · 文件身份未取得，不可勾选" else ""
+    val reason = outcome?.reason ?: lock ?: if (record.verifiedBytes == 0L) "待核对 · 文件身份未取得，不可勾选" else ""
     val summary = if (reason.isNotBlank()) reason else "${if (keeper) "保留副本 · " else ""}${source ?: storageSource(record)} · $date"
     DetailResultRow(record.name, size, summary, record.path, "$size · ${storageCategoryLabel(storageCategory(record))}\n$summary\n\n${record.path}",
-        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && record.verifiedBytes > 0, onToggle = onClick, onDetails = onOpen)
+        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && lock == null && record.verifiedBytes > 0, onToggle = onClick, onDetails = onOpen)
 }
 
 @Composable

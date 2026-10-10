@@ -505,7 +505,14 @@ internal fun InstantCacheScreen(
                 }
             } else if (visible.isEmpty()) {
                 item(contentType = "empty") {
-                    DetailEmptyState("没有匹配的应用", "试试其他分类，或调整搜索内容。")
+                    val filtered = state.apps.isNotEmpty()
+                    if (filtered) DetailEmptyState(
+                        "当前筛选下没有应用",
+                        "筛选：${filter.title}" + (if (query.isNotBlank()) " · 搜索“${query.trim()}”" else "") +
+                            "。共读取 ${state.apps.size} 个应用，切换到「全部」或清空搜索即可查看。",
+                        actionLabel = "显示全部应用",
+                        onAction = { if (!state.running) { filter = InstantCacheFilter.ALL; query = "" } }
+                    ) else DetailEmptyState("还没有读取到应用", "请确认清理服务已连接，然后刷新。")
                 }
             } else {
                 itemsIndexed(items = visible, key = { _, app -> app.packageName }, contentType = { _, _ -> "app" }) { index, app ->

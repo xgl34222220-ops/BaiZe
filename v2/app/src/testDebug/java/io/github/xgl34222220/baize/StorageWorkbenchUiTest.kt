@@ -42,8 +42,10 @@ class StorageWorkbenchUiTest {
         compose.onNodeWithText("视频", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("海边日落.mp4").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("全选当前结果").performClick()
-        compose.onNodeWithText("移入回收站 2 项").assertIsDisplayed()
-        assertEquals(setOf("uri1", "uri3"), state.selected)
+        // 相机原件（DCIM/Camera）在分类视图只能查看，“全选当前结果”不会选中它。
+        compose.onNodeWithText("移入回收站 1 项").assertIsDisplayed()
+        assertEquals(setOf("uri3"), state.selected)
+        compose.onAllNodesWithText(UserMediaGuard.READ_ONLY_LABEL, substring = true, useUnmergedTree = true).onFirst().assertExists()
         save("v6-analysis-video")
     }
 
@@ -51,7 +53,7 @@ class StorageWorkbenchUiTest {
     @Config(qualifiers = "zh-rCN-w320dp-h740dp-mdpi")
     fun largeFileSearchDarkNarrowKeepsFooter() {
         var state by mutableStateOf(StorageToolsUiState(records = records, buckets = storageBuckets(records),
-            query = "海边", minimumBytes = 100 * StorageToolsViewModel.MIB, status = "大文件扫描完成"))
+            query = "旅行", minimumBytes = 100 * StorageToolsViewModel.MIB, status = "大文件扫描完成"))
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 1.3f)) {
@@ -63,7 +65,7 @@ class StorageWorkbenchUiTest {
         }
         compose.onNodeWithText("全选当前结果").performClick()
         compose.onNodeWithText("移入回收站 1 项").assertIsDisplayed()
-        compose.onNodeWithText("海边日落.mp4").performScrollTo()
+        compose.onNodeWithText("旅行照片.zip").performScrollTo()
         save("v6-large-dark-320")
     }
 
@@ -135,7 +137,9 @@ class StorageWorkbenchUiTest {
         assertEquals(500 * StorageToolsViewModel.MIB, state.minimumBytes)
         assertTrue(state.selected.isEmpty())
         compose.onNodeWithText("全选当前结果").performClick()
-        assertEquals(setOf("uri1"), state.selected)
+        // ≥ 500 MB 只剩相机原件：它不进入“全选”，只能逐项勾选。
+        assertTrue(state.selected.isEmpty())
+        compose.onNodeWithText("海边日落.mp4").performScrollTo().assertIsDisplayed()
         save("v6-filtered-selection")
     }
 

@@ -133,7 +133,7 @@ internal fun HomeLastScanSection(
             Text(when {
                 summary == null -> ""
                 summary.scanned -> HomePresentation.relativeTime(summary.latestAtMillis, nowMillis)
-                else -> "未扫描"
+                else -> "尚未扫描"
             }, fontSize = 13.sp, lineHeight = 18.sp, color = scheme.onSurfaceVariant)
         }
         LuoShuGroup {
@@ -154,7 +154,8 @@ internal fun HomeLastScanSection(
                 Text(when {
                     summary == null -> "共可清理 —"
                     summary.scanned -> "共可清理 ${format(summary.totalBytes)}"
-                    else -> "共可清理 未扫描"
+                    // 从未扫描：不显示金额，用破折号占位，避免“共可清理 未扫描”这种不通顺的组合。
+                    else -> "共可清理 —"
                 }, Modifier.weight(1f), fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("查看全部", fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = scheme.primary)
