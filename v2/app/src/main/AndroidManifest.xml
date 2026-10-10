@@ -86,6 +86,7 @@
         <activity android:name=".LegacyProtectionRecoveryActivity" android:exported="false" />
         <activity android:name=".ThemeSettingsActivity" android:exported="false" />
         <activity android:name=".SwipeReviewActivity" android:exported="false" />
+        <activity android:name=".PerfToolsActivity" android:exported="false" />
 
         <!-- 卸载残留提醒（参考 SD Maid SE UninstallWatcherReceiver）。PACKAGE_FULLY_REMOVED
              属于隐式广播豁免，接收器只发低优先级通知，不做扫描；设置中可关闭并禁用组件。 -->

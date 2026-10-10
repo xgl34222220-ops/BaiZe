@@ -143,6 +143,15 @@ class BaiZeProfileRootService : RootService() {
                 require(caller == 0 || caller == applicationInfo.uid) { "caller_mismatch" }
                 RootTidyStore.write(File(RootPaths.STATE_DIR), arguments.getString(0))
             }
+            // 性能工具（实验）：固定文件名的配置 / 状态；执行交给模块 perf-tools.sh。
+            "readPerfTools" -> { require(arguments.length() == 0); PerfToolsStore.read(File(RootPaths.STATE_DIR)) }
+            "writePerfTools", "perfToolsCommand" -> {
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid) { "caller_mismatch" }
+                if (operation == "perfToolsCommand") { require(arguments.length() == 1); PerfToolsStore.command(arguments.getString(0)) }
+                else { require(arguments.length() == 3)
+                    PerfToolsStore.write(File(RootPaths.STATE_DIR), arguments.getString(0), arguments.getString(1), arguments.getString(2)) }
+            }
             "clearPackageCaches" -> { require(arguments.length() == 1); clearPackageCaches(arguments.getString(0)) }
             "runMaintenanceTool" -> {
                 require(arguments.length() == 2)
