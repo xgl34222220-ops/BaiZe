@@ -590,10 +590,16 @@ private fun WorkbenchSummaryCard(
                     state.running -> Formatter.formatFileSize(context, state.items.sumOf { it.bytes.coerceAtLeast(0L) })
                     else -> "需重新扫描"
                 }, Modifier.padding(top = 2.dp), large = true)
-                Text("${presentation.appCount} 个应用 · " + (if (state.scanReady) "已选 $selectedCount 项" else
-                    "${state.items.size} 项") + if (presentation.protectedCount > 0) " · ${presentation.protectedCount} 项不可选" else "",
-                    fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 应用数单独成一个文本节点（等宽数字），便于读屏与测试定位。
+                    Text("${presentation.appCount}", fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"))
+                    Text(" 个应用 · " + (if (state.scanReady) "已选 $selectedCount 项" else "${state.items.size} 项") +
+                        if (presentation.protectedCount > 0) " · ${presentation.protectedCount} 项不可选" else "",
+                        fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             BaiZeGlossyBadge(
                 progress = when {

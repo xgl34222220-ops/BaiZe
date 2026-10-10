@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -323,11 +324,17 @@ internal fun StorageToolsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    BaiZeChipButton("打开滑动整理", { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) },
-                        primary = false, enabled = !state.running)
-                    BaiZeChipButton("打开照片瘦身", { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) },
-                        primary = true, enabled = !state.running)
+                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                    val swipe: @Composable (Modifier) -> Unit = { m -> BaiZeChipButton("打开滑动整理",
+                        { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) }, primary = false, modifier = m, enabled = !state.running) }
+                    val photo: @Composable (Modifier) -> Unit = { m -> BaiZeChipButton("打开照片瘦身",
+                        { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, primary = true, modifier = m, enabled = !state.running) }
+                    // 窄屏或大字号时两个按钮各占一行，避免文字折行。
+                    if (maxWidth.value / LocalDensity.current.fontScale < 260f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        photo(Modifier.fillMaxWidth()); swipe(Modifier.fillMaxWidth())
+                    } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        swipe(Modifier); photo(Modifier)
+                    }
                 }
             } }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {

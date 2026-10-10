@@ -43,9 +43,9 @@ internal fun CleanSelectionBar(
     Column(
         Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(base.copy(alpha = 0f), base.copy(alpha = .96f), base), endY = 48f))
-            .navigationBarsPadding().padding(horizontal = 16.dp).padding(top = 10.dp, bottom = 12.dp)
+            .navigationBarsPadding().padding(horizontal = 16.dp).padding(top = 6.dp, bottom = 6.dp)
     ) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("已选 $selectedCount 项 · $sizeLabel", Modifier.weight(1f).padding(end = 6.dp)
                 .semantics { contentDescription = "已选 $selectedCount / $totalCount 项，$sizeLabel" },
                 fontSize = 13.sp, lineHeight = 18.sp,
@@ -54,7 +54,7 @@ internal fun CleanSelectionBar(
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(
                 Modifier.clip(CircleShape).triStateToggleable(checkState, enabled = enabled && totalCount > 0,
-                    role = Role.Checkbox, onClick = onToggleAll).heightIn(min = 36.dp).padding(start = 8.dp),
+                    role = Role.Checkbox, onClick = onToggleAll).heightIn(min = 32.dp).padding(start = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(if (allSelected) "取消全选" else selectLabel, fontSize = 13.sp, maxLines = 1,
@@ -64,9 +64,9 @@ internal fun CleanSelectionBar(
                     modifier = Modifier.padding(end = 4.dp))
             }
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(2.dp))
         BaiZePillButton(cleanLabel, onClean, Modifier.fillMaxWidth(),
-            trailing = if (selectedCount > 0 && sizeLabel.any(Char::isDigit)) sizeLabel else "",
+            trailing = if (selectedCount > 0 && sizeLabel.any(Char::isDigit) && !sizeLabel.startsWith("0 ")) sizeLabel else "",
             enabled = cleanEnabled && selectedCount > 0)
     }
 }

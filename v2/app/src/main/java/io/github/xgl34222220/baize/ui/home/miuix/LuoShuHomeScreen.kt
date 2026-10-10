@@ -123,7 +123,9 @@ fun LuoShuHomeScreen(state: DashboardUiState, scheduler: SchedulerUiState, actio
                         tools.chunked(columns).forEach { group ->
                             Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 group.forEach { tool ->
-                                    LuoShuShortcut(tool.title, tool.subtitle, tool.icon, tool.onClick,
+                                    // 单列（窄屏 / 大字号）改用横向紧凑格，避免卡片过高。
+                                    if (columns == 1) CompactTile(tool, Modifier.weight(1f).fillMaxHeight(), homeToolTone(tool.title))
+                                    else LuoShuShortcut(tool.title, tool.subtitle, tool.icon, tool.onClick,
                                         Modifier.weight(1f).fillMaxHeight(), tone = homeToolTone(tool.title))
                                 }
                                 // 最后一行不满时保持与其他格同宽。
@@ -234,9 +236,9 @@ private fun homeToolTone(title: String): BaiZeTone = when (title) {
 
 /** 更多清理的紧凑两列格：图标在左，标题与一行说明在右。 */
 @Composable
-private fun CompactTile(tool: HomeTool, modifier: Modifier) {
+private fun CompactTile(tool: HomeTool, modifier: Modifier, toneOverride: BaiZeTone? = null) {
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val tone = when (tool.title) {
+    val tone = toneOverride ?: when (tool.title) {
         "根目录整理" -> BaiZeTones.folder
         "安装包" -> BaiZeTones.green
         "照片瘦身" -> BaiZeTones.purple

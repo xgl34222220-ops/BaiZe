@@ -269,7 +269,7 @@ private fun CurrentResultGroup(state: HistoryUiState) {
             // 没有可测量的数字时降为灰色说明字，不再用粗体数字位显示“无法测量”。
             val capacity = state.currentCapacityText { Formatter.formatFileSize(context, it) }
             val numeric = capacity.any(Char::isDigit)
-            Text(
+            if (state.hasCurrentResult) Text(
                 capacity,
                 style = if (numeric) MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
                     else MaterialTheme.typography.bodySmall,

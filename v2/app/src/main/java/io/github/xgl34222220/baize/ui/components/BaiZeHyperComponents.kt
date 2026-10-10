@@ -248,12 +248,12 @@ internal fun BaiZePillButton(
     val haptic = rememberBaiZeHaptic()
     val container = when { !enabled -> BaiZeTokens.colors.surfaceOverlay; secondary -> BaiZeTokens.colors.surfaceOverlay; else -> scheme.primary }
     val content = when { !enabled -> scheme.onSurfaceVariant.copy(alpha = .6f); secondary -> scheme.onSurface; else -> scheme.onPrimary }
-    Row(modifier.fillMaxWidth().heightIn(min = 52.dp).baiZePress(interaction, enabled).clip(CircleShape)
+    Row(modifier.fillMaxWidth().heightIn(min = 48.dp).baiZePress(interaction, enabled).clip(CircleShape)
         .background(container)
         .clickable(interaction, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button) {
             if (!secondary) haptic(); onClick()
         }
-        .padding(horizontal = 20.dp, vertical = 12.dp),
+        .padding(horizontal = 20.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, color = content,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -272,7 +272,8 @@ internal fun BaiZeChipButton(label: String, onClick: () -> Unit, primary: Boolea
         .background(if (primary) scheme.primary.copy(alpha = .12f) else BaiZeTokens.colors.surfaceOverlay)
         .clickable(interaction, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button) { if (primary) haptic(); onClick() }
         .heightIn(min = 40.dp).padding(horizontal = 18.dp, vertical = 9.dp),
-        fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center, overflow = TextOverflow.Ellipsis,
         color = (if (primary) scheme.primary else scheme.onSurface).copy(alpha = if (enabled) 1f else .4f))
 }
 
