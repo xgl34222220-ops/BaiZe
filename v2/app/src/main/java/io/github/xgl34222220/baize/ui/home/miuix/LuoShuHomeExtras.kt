@@ -234,6 +234,7 @@ internal fun HomeScanButton(
     val base = if (active) scheme.primary else BaiZeTokens.colors.surfaceOverlay
     val foreground = if (active) scheme.onPrimary else scheme.onSurfaceVariant.copy(alpha = .55f)
     val haptic = rememberBaiZeHaptic()
+    val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
     val percent = progress?.let { (it.coerceIn(0f, 1f) * 100).toInt() }
     val text = if (running) runningLabel + (percent?.let { " $it%" } ?: "…") else label
     Box(
@@ -247,7 +248,7 @@ internal fun HomeScanButton(
             .then(if (active) Modifier.border(1.dp,
                 Brush.verticalGradient(0f to Color.White.copy(alpha = .26f), .32f to Color.Transparent), shape) else Modifier)
             .clickable(interaction, ripple(color = scheme.onPrimary), enabled = active, role = Role.Button,
-                onClickLabel = if (running) "取消当前任务" else label) { haptic(); onClick() }
+                onClickLabel = if (running) "取消当前任务" else label) { if (running) haptic() else haptics.scanStart(); onClick() }
             .heightIn(min = 56.dp)
             .semantics { if (running) contentDescription = "$text，点按取消" },
         contentAlignment = Alignment.Center

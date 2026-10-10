@@ -354,7 +354,7 @@ internal fun SwipeReviewScreen(state: SwipeReviewUiState, actions: SwipeReviewAc
         title = { Text("移入回收站？") },
         text = { Text("将把 ${session.deletions.size} 项（${Formatter.formatFileSize(context, session.deleteBytes)}）移入白泽回收站。" +
             "移动前会再次核对文件未变化；30 天内可在回收站恢复，不会直接永久删除。") },
-        confirmButton = { BaiZeDialogButton(onClick = actions.onConfirmApply) { Text("移入回收站") } },
+        confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); actions.onConfirmApply() }) { Text("移入回收站") } },
         dismissButton = { BaiZeDialogButton(onClick = actions.onDismissApply) { Text("再看看") } })
 }
 

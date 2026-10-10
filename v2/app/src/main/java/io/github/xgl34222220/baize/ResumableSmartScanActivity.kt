@@ -1574,7 +1574,8 @@ internal fun ResumeSmartScreen(
                 } else if (!state.connected) {
                     GlassActionButton("重新连接", onReconnect, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true)
                 } else {
-                    GlassActionButton("开始扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Search)
+                    val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
+                    GlassActionButton("开始扫描", { haptics.scanStart(); onScan() }, Modifier.fillMaxWidth(), icon = Icons.Rounded.Search)
                 }
             }
         }

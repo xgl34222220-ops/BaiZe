@@ -328,7 +328,8 @@ internal fun QuarantineScreen(
                 Text(if (restore) "将恢复到原路径；若原路径已有内容，会恢复为带 baize-restored 标记的副本。" else "永久删除后无法撤销。只会删除本次选择的隔离内容。")
             },
             confirmButton = {
-                BaiZeDialogButton(onClick = { pending = null; if (restore) onRestore(item) else onPurge(item) }) {
+                val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
+                BaiZeDialogButton(onClick = { if (!restore) haptics.confirmDelete(); pending = null; if (restore) onRestore(item) else onPurge(item) }) {
                     Text(if (restore) "确认恢复" else "确认永久删除",
                         color = if (restore) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
                 }

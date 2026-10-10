@@ -326,7 +326,7 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
         onUnblock = { onUnblock(review.entry.name); detail = null })
     if (confirmRemove) BaiZeDialog(onDismissRequest = { confirmRemove = false }, title = { Text("移除 ${state.selected.size} 项") },
         text = { Text("文件夹内的文件逐个核对后移入回收站（保留 30 天），随后删除已清空的目录。共 ${Formatter.formatFileSize(context, state.selectedBytes)}，完成后可一键撤销。受保护或期间变化的内容会保留。") },
-        confirmButton = { BaiZeDialogButton(onClick = { confirmRemove = false; onRemove() }) { Text("移入回收站") } },
+        confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); confirmRemove = false; onRemove() }) { Text("移入回收站") } },
         dismissButton = { BaiZeDialogButton(onClick = { confirmRemove = false }) { Text("取消") } })
 }
 

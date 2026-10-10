@@ -137,7 +137,7 @@ internal fun BaiZeRoundCheck(
     val haptic = rememberBaiZeHaptic()
     val motion = rememberMotionEnabled()
     val fill by animateFloatAsState(if (state == ToggleableState.Off) 0f else 1f,
-        tween(if (motion) BaiZeMotion.SHORT else 0), label = "round-check")
+        tween(if (motion) BaiZeMotion.SELECTION else 0), label = "round-check")
     val base = if (onClick != null) modifier.minimumInteractiveComponentSize().triStateToggleable(state, enabled = enabled,
         role = Role.Checkbox, onClick = { haptic(); onClick() }) else modifier
     Box(base.then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),

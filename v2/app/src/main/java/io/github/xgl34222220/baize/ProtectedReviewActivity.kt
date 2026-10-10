@@ -447,7 +447,8 @@ internal fun ProtectedReviewScreen(
             title = { Text("清理 ${state.selected.size} 个所选项目？") },
             text = { Text("白名单、系统核心路径、挂载点、符号链接和关键风险仍会保留。高风险项目会在删除前重新校验。") },
             confirmButton = {
-                BaiZeDialogButton(onClick = { confirm = false; onClean() }) { Text("确认清理") }
+                val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
+                BaiZeDialogButton(onClick = { haptics.confirmDelete(); confirm = false; onClean() }) { Text("确认清理") }
             },
             dismissButton = { BaiZeDialogButton(onClick = { confirm = false }) { Text("取消") } }
         )

@@ -328,7 +328,7 @@ internal fun FileTrashScreen(state: FileTrashUiState, actions: FileTrashActions)
                 }
                 Text("停止仅影响尚未开始的项目，已永久删除的内容无法恢复。实际可用空间以系统统计为准。")
             } },
-            confirmButton = { BaiZeDialogButton(actions.onConfirmPurge, enabled = !state.busy && !state.loading) { Text("永久删除这 ${reviewed.size} 项") } },
+            confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton({ haptics.confirmDelete(); actions.onConfirmPurge() }, enabled = !state.busy && !state.loading) { Text("永久删除这 ${reviewed.size} 项") } },
             dismissButton = { BaiZeDialogButton(actions.onDismissPurge) { Text("保留文件") } })
     }
     state.pendingChanged?.let { entry ->
