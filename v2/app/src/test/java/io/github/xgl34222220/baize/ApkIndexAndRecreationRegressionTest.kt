@@ -82,7 +82,8 @@ class ApkIndexAndRecreationRegressionTest {
             val activity = controller.get()
             activity.call("startScan")
             await { !activity.state().running && activity.state().items.size == 10_000 }
-            val coverage = activity.state().coverage.single()
+            // 覆盖说明另含 QQ / 微信目录（Root 只读）一项；上限披露属于系统索引一项。
+            val coverage = activity.state().coverage.single { it.group == "MediaStore.Files 系统索引" }
             assertNotEquals("A capped result is partial coverage, not a completed full scan", "scanned", coverage.status)
             assertTrue("The result must explain the limit", coverage.reason.contains("上限"))
         } finally { controller.pause().stop().destroy() }
