@@ -217,6 +217,11 @@ data class SchedulerUiState(
     val maintenanceEnabled: Boolean = true,
     /** 系统维护的一步：根目录空文件夹与“禁止重建”占位，默认关闭。 */
     val rootTidyAuto: Boolean = false,
+    /** 系统维护窗口内的分类定时清理（参考 Aurora），全部默认关闭。 */
+    val maintCleanWechat: Boolean = false,
+    val maintCleanQq: Boolean = false,
+    val maintCleanShortVideo: Boolean = false,
+    val maintCleanLogcat: Boolean = false,
     val maintenanceSummary: String = "",
     val runtimeState: String = "waiting",
     val runtimeReason: String = "等待调度器首次轮询",
@@ -288,6 +293,10 @@ data class SchedulerUiState(
         .put("app_profile_media_days", appProfileMediaDays.coerceIn(7, 365))
         .put("maintenance_enabled", maintenanceEnabled.flag())
         .put("root_tidy_auto", rootTidyAuto.flag())
+        .put("maint_clean_wechat", maintCleanWechat.flag())
+        .put("maint_clean_qq", maintCleanQq.flag())
+        .put("maint_clean_shortvideo", maintCleanShortVideo.flag())
+        .put("maint_clean_logcat", maintCleanLogcat.flag())
 
     companion object {
         fun fromJson(json: JSONObject): SchedulerUiState {
@@ -366,6 +375,10 @@ data class SchedulerUiState(
                 appProfileMediaDays = json.optInt("app_profile_media_days", 30).coerceIn(7, 365),
                 maintenanceEnabled = json.optInt("maintenance_enabled", 1) == 1,
                 rootTidyAuto = json.optInt("root_tidy_auto", 0) == 1,
+                maintCleanWechat = json.optInt("maint_clean_wechat", 0) == 1,
+                maintCleanQq = json.optInt("maint_clean_qq", 0) == 1,
+                maintCleanShortVideo = json.optInt("maint_clean_shortvideo", 0) == 1,
+                maintCleanLogcat = json.optInt("maint_clean_logcat", 0) == 1,
                 maintenanceSummary = maintenanceSummary(runtime.optJSONObject("maintenance"))
             )
         }

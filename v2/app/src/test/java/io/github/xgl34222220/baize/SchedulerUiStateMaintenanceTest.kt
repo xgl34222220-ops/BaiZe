@@ -20,6 +20,18 @@ class SchedulerUiStateMaintenanceTest {
         assertEquals(0, json.getInt("maintenance_enabled"))
     }
 
+    @Test fun categoryCleanupDefaultsOffAndRoundTrips() {
+        val keys = listOf("maint_clean_wechat", "maint_clean_qq", "maint_clean_shortvideo", "maint_clean_logcat")
+        val defaults = SchedulerUiState().toJson()
+        keys.forEach { assertEquals(it, 0, defaults.getInt(it)) }
+        val parsed = SchedulerUiState.fromJson(JSONObject())
+        assertFalse(parsed.maintCleanWechat || parsed.maintCleanQq || parsed.maintCleanShortVideo || parsed.maintCleanLogcat)
+        val on = SchedulerUiState(maintCleanWechat = true, maintCleanQq = true, maintCleanShortVideo = true, maintCleanLogcat = true)
+        val back = SchedulerUiState.fromJson(on.toJson())
+        assertTrue(back.maintCleanWechat && back.maintCleanQq && back.maintCleanShortVideo && back.maintCleanLogcat)
+        keys.forEach { assertTrue(it, io.github.xgl34222220.baize.root.ModuleCleanupSafety.enablesAutomaticWork(mapOf(it to "1"))) }
+    }
+
     @Test fun userMediaIsNeverSavedBelowEnhancedTier() {
         for (tier in 0..1) {
             assertEquals(0, SchedulerUiState(appProfileTier = tier, appProfileUserMedia = true).toJson().getInt("app_profile_user_media"))

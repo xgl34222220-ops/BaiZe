@@ -193,4 +193,14 @@ baize_append_capped "$LOG" "$(date '+%F %T') result=$overall trim=$TRIM_RESULT g
 if [ "$(config_value root_tidy_auto)" = 1 ] && [ -f "$SCRIPTDIR/root-tidy.sh" ] && is_screen_off; then
   BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" BAIZE_CONFIG_PATH="$CONFIG" sh "$SCRIPTDIR/root-tidy.sh" run </dev/null >/dev/null 2>&1 || true
 fi
+# 7) 分类定时清理（微信 / QQ / 短视频应用缓存 / logcat，默认全部关闭）：同一系统维护窗口，
+#    仍要求息屏、充电且没有其他清理任务；结束时由清理任务写入今日统计与模块描述。
+category_enabled=0
+for category_key in maint_clean_wechat maint_clean_qq maint_clean_shortvideo maint_clean_logcat; do
+  [ "$(config_value "$category_key")" = 1 ] && category_enabled=1
+done
+if [ "$category_enabled" = 1 ] && [ "$ACTION" = check ] && [ -f "$SCRIPTDIR/cleaner.sh" ] && \
+  is_screen_off && is_charging && [ ! -d "$STATE_DIR/run.lock" ] && [ ! -d "$STATE_DIR/cache-lane.lock" ]; then
+  BAIZE_SHELL=${BAIZE_SHELL:-/system/bin/sh} sh "$SCRIPTDIR/cleaner.sh" category-clean maintenance </dev/null >/dev/null 2>&1 || true
+fi
 exit 0
