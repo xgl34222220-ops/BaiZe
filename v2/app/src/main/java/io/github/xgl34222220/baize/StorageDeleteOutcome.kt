@@ -1,5 +1,7 @@
 package io.github.xgl34222220.baize
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class StorageDeleteOutcome(
     val result: ApkIndexedDeleteResult,
     val detail: String = "",

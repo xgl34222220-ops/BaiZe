@@ -88,7 +88,8 @@ class ScanWorkbenchActivity : ComponentActivity() {
             }
             BaiZeTheme(appearance) {
                 CompositionLocalProvider(LocalAppearanceSettings provides appearance) {
-                    BackHandler { requestBack() }
+                    // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+                    BackHandler(enabled = session.screenState.running) { requestBack() }
                     ScanWorkbenchScreen(appearance, session.screenState, WorkbenchActions(
                         onBack = ::requestBack, onScan = session::runScan, onStop = session::stopTask,
                         onClean = session::cleanSelection, onToggleItem = session::toggleItem,

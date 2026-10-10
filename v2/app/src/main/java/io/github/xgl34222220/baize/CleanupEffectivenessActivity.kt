@@ -309,7 +309,7 @@ private fun CleanupEffectivenessScreen(
                         Text("仅提示人工检查，不会自动关闭或修改规则", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                 }
-                items(report.observations, key = { "${it.type}:${it.category}" }) { observation ->
+                items(report.observations, key = { "${it.type}:${it.category}" }, contentType = { "rule-observation" }) { observation ->
                     RuleObservationCard(observation, horizontal, shape)
                 }
             }
@@ -320,7 +320,7 @@ private fun CleanupEffectivenessScreen(
                         Text("每次扫描和清理都保留独立四维评分", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     }
                 }
-                items(report.tasks, key = { it.id.ifBlank { "${it.time}:${it.operation}" } }) { task ->
+                items(report.tasks, key = { it.id.ifBlank { "${it.time}:${it.operation}" } }, contentType = { "task-score" }) { task ->
                     TaskScoreCard(task, horizontal, shape)
                 }
             }

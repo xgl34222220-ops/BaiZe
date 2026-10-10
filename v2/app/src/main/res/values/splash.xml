@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="baize_splash_background">#0A4F55</color>
+
+    <!-- androidx core-splashscreen 启动主题：只用于系统启动窗口，首帧后由
+         installSplashScreen() 切回 postSplashScreenTheme，不新增 Activity、不加延迟。 -->
+    <style name="Theme.BaiZe.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/baize_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_baize_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.BaiZe</item>
+    </style>
+</resources>

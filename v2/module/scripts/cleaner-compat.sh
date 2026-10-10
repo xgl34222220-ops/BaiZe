@@ -68,8 +68,10 @@ case "$REQUEST_MODE" in
   fragment-clean) MODE=clean; PROFILE=fragment ;;
   apk-scan) MODE=scan; PROFILE=apk ;;
   apk-clean) MODE=clean; PROFILE=apk ;;
+  # 系统维护窗口内的分类定时清理（微信 / QQ / 短视频应用缓存 / logcat），只由 storage-maintenance.sh 调用。
+  category-clean) MODE=clean; PROFILE=category ;;
   scan|clean) MODE=$REQUEST_MODE ;;
-  *) echo "用法: cleaner.sh scan|clean|cache-clean|empty-clean|rules-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean [trigger]"; exit 2 ;;
+  *) echo "用法: cleaner.sh scan|clean|cache-clean|empty-clean|rules-clean|category-clean|fragment-scan|fragment-clean|deep-scan|deep-clean|corpse-scan|corpse-clean|apk-scan|apk-clean [trigger]"; exit 2 ;;
 esac
 TRIGGER=${2:-manual}
 
@@ -547,7 +549,7 @@ update_module_description() {
   prop="$MODDIR/module.prop"
   [ -f "$prop" ] || return 0
   total_space=$(human_bytes "$CUM_BYTES")
-  summary="累计清理 $total_space | 文件:$CUM_FILES 空文件:$CUM_EMPTY_FILES 空目录:$CUM_EMPTY_DIRS 碎片:$CUM_FRAGMENTS | $CUM_RUNS 次 累计耗时:${CUM_ELAPSED}秒 | 上次:$CUM_LAST_TIME"
+  summary="今日清理 $(human_bytes "${TODAY_BYTES:-0}") · ${TODAY_FILES:-0} 项 · ${TODAY_RUNS:-0} 次 | 累计清理 $total_space | 文件:$CUM_FILES 空文件:$CUM_EMPTY_FILES 空目录:$CUM_EMPTY_DIRS 碎片:$CUM_FRAGMENTS | $CUM_RUNS 次 累计耗时:${CUM_ELAPSED}秒 | 上次:$CUM_LAST_TIME"
   tmp="$prop.tmp.$$"
   awk -v d="$summary" '
     BEGIN { found=0 }
@@ -581,6 +583,12 @@ load_cumulative_totals() {
   CUM_ELAPSED=$(total_value elapsed)
   CUM_LAST_TIME=$(sed -n 's/^last_time=//p' "$TOTALS_FILE" 2>/dev/null | tail -n 1)
   [ -n "$CUM_LAST_TIME" ] || CUM_LAST_TIME="从未清理"
+  TODAY_DATE=$(date '+%Y-%m-%d')
+  if [ "$(sed -n 's/^today=//p' "$TOTALS_FILE" 2>/dev/null | tail -n 1)" = "$TODAY_DATE" ]; then
+    TODAY_RUNS=$(total_value today_runs); TODAY_FILES=$(total_value today_files); TODAY_BYTES=$(total_value today_bytes)
+  else
+    TODAY_RUNS=0; TODAY_FILES=0; TODAY_BYTES=0
+  fi
 }
 
 update_cumulative_totals() {
@@ -594,6 +602,15 @@ update_cumulative_totals() {
   CUM_BYTES=$(sum_uint "$(total_value bytes)" "$BYTES")
   CUM_ELAPSED=$(sum_uint "$(total_value elapsed)" "$ELAPSED")
   CUM_LAST_TIME=$(date '+%m-%d %H:%M')
+  # 今日统计：跨天自动归零，只在清理/维护任务结束时累加（开机不写）。
+  TODAY_DATE=$(date '+%Y-%m-%d')
+  if [ "$(sed -n 's/^today=//p' "$TOTALS_FILE" 2>/dev/null | tail -n 1)" = "$TODAY_DATE" ]; then
+    TODAY_RUNS=$(sum_uint "$(total_value today_runs)" 1)
+    TODAY_FILES=$(sum_uint "$(total_value today_files)" "$((FILES + EMPTY_FILES))")
+    TODAY_BYTES=$(sum_uint "$(total_value today_bytes)" "$BYTES")
+  else
+    TODAY_RUNS=1; TODAY_FILES=$((FILES + EMPTY_FILES)); TODAY_BYTES=$BYTES
+  fi
   tmp="$TOTALS_FILE.tmp.$$"
   {
     echo "runs=$CUM_RUNS"
@@ -605,6 +622,10 @@ update_cumulative_totals() {
     echo "bytes=$CUM_BYTES"
     echo "elapsed=$CUM_ELAPSED"
     echo "last_time=$CUM_LAST_TIME"
+    echo "today=$TODAY_DATE"
+    echo "today_runs=$TODAY_RUNS"
+    echo "today_files=$TODAY_FILES"
+    echo "today_bytes=$TODAY_BYTES"
   } >"$tmp"
   chmod 0600 "$tmp"
   mv -f "$tmp" "$TOTALS_FILE"
@@ -1428,6 +1449,13 @@ run_app_profile_rules() {
   rm -f "$profile_data.in" "$profile_ext.in"
   [ -f "$profile_data" ] || : >"$profile_data"
   [ -f "$profile_ext" ] || : >"$profile_ext"
+  # 分类定时清理：只保留所选应用包名的已编译规则（规则本身、档位与保护名单完全不变）。
+  if [ -n "${PROFILE_PACKAGE_FILTER:-}" ]; then
+    for profile_out in "$profile_data" "$profile_ext"; do
+      awk -F '|' -v keep=" $PROFILE_PACKAGE_FILTER " 'index(keep, " " $1 " ") > 0' "$profile_out" >"$profile_out.f" 2>/dev/null || : >"$profile_out.f"
+      mv -f "$profile_out.f" "$profile_out"
+    done
+  fi
   log_line "[应用专项规则] 档位 $profile_tier 用户媒体 $profile_media 媒体保留 ${profile_media_days} 天 $profile_summary data:$profile_data_expanded ext:$profile_ext_expanded"
   case "$profile_tier" in 0) profile_label="应用专项(保守)" ;; 2) profile_label="应用专项(增强)" ;; *) profile_label="应用专项(标准)" ;; esac
   # 用户已在增强档明确开启聊天媒体：微信/QQ 聊天视频常远超全局单文件上限，
@@ -2029,6 +2057,7 @@ RUN_CACHE=0
 RUN_RULES=0
 RUN_FRAGMENT=0
 RUN_APK=0
+RUN_CATEGORY=0
 case "$PROFILE" in
   all) RUN_EMPTY=1; RUN_CACHE=1; RUN_RULES=1; RUN_FRAGMENT=1; RUN_APK=1 ;;
   empty) RUN_EMPTY=1 ;;
@@ -2036,6 +2065,7 @@ case "$PROFILE" in
   rules) RUN_RULES=1 ;;
   fragment) RUN_FRAGMENT=1 ;;
   apk) RUN_APK=1 ;;
+  category) RUN_CATEGORY=1 ;;
 esac
 WHITELIST_PATHS=$(sed -n 's/[[:space:]]*$//; /^[[:space:]]*\($\|#\)/d; p' "$WHITELIST" 2>/dev/null) || { echo "白名单读取失败，未开始删除" >&2; exit 7; }
 # Expand package protection once, not once per candidate. Reuse the existing
@@ -2161,6 +2191,30 @@ if [ "$STOPPED" = "0" ] && [ "$RUN_RULES" = "1" ] && [ "$(get_bool clean_custom_
   run_custom_rules || STOPPED=1
 fi
 
+# 分类定时清理（参考 Aurora 的按类定时清理，默认全部关闭）：只在系统维护窗口
+# （开机 15 分钟后、充电息屏、无其他任务）由 storage-maintenance.sh 触发。
+# 应用类复用“应用专项规则”（同一档位、同一保护名单、同一执行器与白名单），只按包名筛选；
+# logcat 只清空内存中的日志缓冲区，不删除任何文件。
+if [ "$STOPPED" = "0" ] && [ "$RUN_CATEGORY" = "1" ]; then
+  category_packages=""
+  [ "$(get_bool maint_clean_wechat)" = "1" ] && category_packages="$category_packages com.tencent.mm"
+  [ "$(get_bool maint_clean_qq)" = "1" ] && category_packages="$category_packages com.tencent.mobileqq com.tencent.tim"
+  [ "$(get_bool maint_clean_shortvideo)" = "1" ] && category_packages="$category_packages com.ss.android.ugc.aweme com.ss.android.ugc.aweme.lite com.smile.gifmaker com.kuaishou.nebula"
+  if [ -n "$category_packages" ]; then
+    set_phase "分类定时清理：应用缓存"
+    PROFILE_PACKAGE_FILTER=$category_packages
+    run_app_profile_rules || STOPPED=1
+    PROFILE_PACKAGE_FILTER=""
+  fi
+  if [ "$STOPPED" = "0" ] && [ "$(get_bool maint_clean_logcat)" = "1" ]; then
+    set_phase "分类定时清理：logcat 缓冲区"
+    if logcat -b all -c >/dev/null 2>&1 || logcat -c >/dev/null 2>&1; then
+      log_line "[分类定时清理] 已清空 logcat 日志缓冲区（不删除文件）"
+    else
+      log_line "[分类定时清理] logcat 缓冲区清空失败，已跳过"
+    fi
+  fi
+fi
 
 # Direct CLI runs must invalidate the shared index after any deletion attempt,
 # including partial failures; otherwise its TTL can resurrect removed entries.
@@ -2208,6 +2262,7 @@ else
       ;;
     empty) RESULT="空文件清理完成，释放 $SPACE" ;;
     rules) RESULT="规则清理完成，释放 $SPACE" ;;
+    category) RESULT="分类定时清理完成，释放 $SPACE" ;;
     fragment) RESULT="碎片清理完成，释放 $SPACE" ;;
     deep)
       if [ "$PROTECTED_BYTES" -gt 0 ]; then
@@ -2225,7 +2280,7 @@ else
     apk) RESULT="安装包清理完成，删除 $FILES 个，期限内保留 ${APK_RETAINED:-0} 个，释放 $SPACE" ;;
     *) RESULT="清理完成，释放 $SPACE" ;;
   esac
-  [ "${FATAL_CODE:-0}" -eq 0 ] && date +%s >"$STATE_DIR/last_run.epoch"
+  [ "${FATAL_CODE:-0}" -eq 0 ] && [ "$PROFILE" != "category" ] && date +%s >"$STATE_DIR/last_run.epoch"
 fi
 
 # Publish before composing the final result so a publication failure is visible.

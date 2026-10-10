@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.history.miuix
 
+import io.github.xgl34222220.baize.ui.theme.baizeAnimateContentSize
 import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -117,7 +118,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                 item(key = "history-date-$date") { DateLabel(date) }
                 itemsIndexed(
                     items = records,
-                    key = { index, record -> "${record.time}|${record.title}|${record.trigger}|$index" }
+                    key = { index, record -> "${record.time}|${record.title}|${record.trigger}|$index" }, contentType = { _, _ -> "history-record" }
                 ) { _, record ->
                     RecordCard(record)
                 }
@@ -396,7 +397,7 @@ private fun AppResultRow(item: AppJunkUiItem) {
     var expanded by rememberSaveable(item.packageName, item.category) { mutableStateOf(false) }
     val hasDetails = item.categories.isNotEmpty()
     Column(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = hasDetails) { expanded = !expanded }
+        modifier = Modifier.fillMaxWidth().baizeAnimateContentSize().clickable(enabled = hasDetails) { expanded = !expanded }
             .padding(horizontal = 16.dp, vertical = 15.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -586,7 +587,7 @@ private fun RecordCard(record: HistoryUiItem) {
         shape = RoundedCornerShape(16.dp),
         color = BaiZeTokens.colors.surfaceRaised
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
+        Column(Modifier.baizeAnimateContentSize().padding(horizontal = 16.dp, vertical = 15.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(42.dp),

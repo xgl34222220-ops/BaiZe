@@ -1,7 +1,9 @@
 package io.github.xgl34222220.baize.ui.components
 
+import io.github.xgl34222220.baize.ui.theme.baizeAnimateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -109,8 +111,9 @@ fun DetailTaskCard(
             BaiZeProgress(Modifier.padding(bottom = 12.dp))
             GlassActionButton("停止当前任务", onStop, modifier = Modifier.fillMaxWidth(), secondary = true)
         } else if (showAction) {
+            val haptics = rememberBaiZeHaptics()
             GlassActionButton(if (ready) cleanLabel else scanLabel,
-                if (ready) onClean else onScan,
+                if (ready) onClean else { { haptics.scanStart(); onScan() } },
                 enabled = if (ready) cleanEnabled else scanEnabled,
                 modifier = Modifier.fillMaxWidth())
             if (ready || !scanEnabled || !cleanEnabled) {
@@ -161,7 +164,7 @@ fun DetailEmptyState(title: String, description: String, modifier: Modifier = Mo
 fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)
-        .clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised)) {
+        .clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised).baizeAnimateContentSize()) {
         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 52.dp).padding(horizontal = 15.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
@@ -196,9 +199,14 @@ fun DetailResultRow(
     var showDetails by rememberSaveable(title, path) { mutableStateOf(false) }
     val shape = RoundedCornerShape(topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
         bottomStart = if (last) 24.dp else 0.dp, bottomEnd = if (last) 24.dp else 0.dp)
+    // 长按勾选（参考 SD Maid SE / HyperOS）：与圆形勾选同一入口、同一启用条件，不绕过任何锁定。
+    // combinedClickable 在长按时自带系统长按触感反馈。
+    val longPressSelect: (() -> Unit)? = if (selected != null && selectionEnabled) onToggle else null
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(shape)
         .background(BaiZeTokens.colors.surfaceRaised)
-        .clickable(onClickLabel = "查看完整路径与详情") { if (onDetails != null) onDetails() else showDetails = true }) {
+        .combinedClickable(onClickLabel = "查看完整路径与详情",
+            onLongClickLabel = if (longPressSelect != null) (if (selected == true) "取消选择" else "选择") else null,
+            onLongClick = longPressSelect) { if (onDetails != null) onDetails() else showDetails = true }) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
             if (selected != null) BaiZeRoundCheck(if (selected) androidx.compose.ui.state.ToggleableState.On
                 else androidx.compose.ui.state.ToggleableState.Off, onClick = onToggle,

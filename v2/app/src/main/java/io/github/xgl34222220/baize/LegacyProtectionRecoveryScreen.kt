@@ -109,14 +109,14 @@ internal fun LegacyProtectionRecoveryScreen(
                 }
                 if (snapshot.packageReviewRequired) {
                     item { RecoverySection("历史应用候选", snapshot.pendingPackages.size, snapshot.currentPackagesPresent) }
-                    items(snapshot.pendingPackages.sorted(), key = { "package:$it" }) { candidate ->
+                    items(snapshot.pendingPackages.sorted(), key = { "package:$it" }, contentType = { "recovery-choice" }) { candidate ->
                         RecoveryChoice(candidate, candidate in state.selectedPackages, state.canReview,
                             "legacy-pending-package:$candidate") { onTogglePackage(candidate) }
                     }
                 }
                 if (snapshot.pathReviewRequired) {
                     item { RecoverySection("历史路径候选", snapshot.pendingPaths.size, snapshot.currentPathsPresent) }
-                    items(snapshot.pendingPaths.sorted(), key = { "path:$it" }) { candidate ->
+                    items(snapshot.pendingPaths.sorted(), key = { "path:$it" }, contentType = { "recovery-choice" }) { candidate ->
                         RecoveryChoice(candidate, candidate in state.selectedPaths, state.canReview,
                             "legacy-pending-path:$candidate") { onTogglePath(candidate) }
                     }

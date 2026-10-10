@@ -159,7 +159,8 @@ add_user_root() {
     add_root "共享存储" "$au_user" "$au_volume" 2 "$au_root"
     add_root "QQ接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/QQfile_recv"
     add_root "TIM接收" "$au_user" "$au_volume" 12 "$au_root/Tencent/Timfile_recv"
-    for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents "$au_root"/Bluetooth "$au_root"/UCDownloads "$au_root"/Quark/Download "$au_root"/BaiduNetdisk "$au_root"/Telegram "$au_root"/Nagram "$au_root"/NagramX; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
+    for au_path in "$au_root"/Download "$au_root"/Downloads "$au_root"/Documents "$au_root"/Bluetooth "$au_root"/UCDownloads "$au_root"/Quark/Download "$au_root"/BaiduNetdisk "$au_root"/Telegram "$au_root"/Nagram "$au_root"/NagramX \
+      "$au_root"/123云盘 "$au_root"/AliYunPan "$au_root"/微云保存的文件 "$au_root"/QQBrowser "$au_root"/UCTurbo/Download; do add_root "用户文件" "$au_user" "$au_volume" 12 "$au_path"; done
   fi
   for au_pkg in "$au_root"/Android/media/*; do [ -d "$au_pkg" ] && add_root "应用媒体:${au_pkg##*/}" "$au_user" "$au_volume" 14 "$au_pkg"; done
   for au_pkg in "$au_root"/Android/data/*; do

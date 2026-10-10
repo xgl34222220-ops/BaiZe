@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
  * - 层级：页面浅灰底 + 白色无阴影卡片；只有悬浮按钮、底部操作栏和弹层带柔和阴影（[BaiZeElevation]）。
  * - 模糊：仅底部导航与弹层背后使用，低端机或关闭动效时回退为不透明底色。
  * - 字阶：大标题 28 粗 / 页面标题 20 / 卡片标题 16 / 正文 14 / 说明 12-13；所有容量数字使用等宽数字（tnum）。
- * - 颜色：主色默认为澎湃橙（HyperOS 清理页同款橙红，可在外观中更换），语义色见 [BaiZeColors]，
+ * - 颜色：主色默认为白泽青 #006B72（与 3.0.0 图标一致，可在外观中更换为澎湃橙等），语义色见 [BaiZeColors]，
  *   图标使用 [BaiZeTones] 的彩色色调托底。
  * - 动效：短 120 / 中 220 / 长 360 ms，按压缩放 0.97；系统关闭动画或性能降级时全部为 0（rememberMotionEnabled）。
  */
@@ -170,8 +170,17 @@ object BaiZeElevation {
 
 /** 动效时长（毫秒）与按压缩放；关闭动效时调用方使用 0。 */
 object BaiZeMotion {
+    /** 按压缩放等即时反馈，保持很短。 */
     const val SHORT = 120
     const val MEDIUM = 220
+    /** 统一交互动效：页面进入、展开、详情进入（250ms）。 */
+    const val ENTER = 250
+    /** 统一交互动效：页面退出、收起、勾选/选中变化（200ms）。 */
+    const val EXIT = 200
+    /** 勾选、选中态颜色与尺寸变化。 */
+    const val SELECTION = 200
+    /** 系统关闭动画或流畅降级时使用的最短时长。 */
+    const val DEGRADED = 90
     const val LONG = 360
     const val COUNT_UP = 650
     const val PRESS_SCALE = .97f

@@ -787,7 +787,11 @@ internal class SchedulerRepository(
             "maintenance_enabled" to 0..1,
             "maintenance_min_hours" to 24..168,
             "maintenance_gc_max_seconds" to 30..1800,
-            "root_tidy_auto" to 0..1
+            "root_tidy_auto" to 0..1,
+            "maint_clean_wechat" to 0..1,
+            "maint_clean_qq" to 0..1,
+            "maint_clean_shortvideo" to 0..1,
+            "maint_clean_logcat" to 0..1
         )
     }
 }

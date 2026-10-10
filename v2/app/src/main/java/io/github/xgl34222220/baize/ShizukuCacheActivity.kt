@@ -34,10 +34,14 @@ class ShizukuCacheActivity : ComponentActivity() {
         setContent {
             val settings by appearance.settings.collectAsState()
             val state by model.state.collectAsState()
+            val shownApps = remember(state.apps, state.query) {
+                state.apps.filter { state.query.isBlank() || it.label.contains(state.query, true) || it.packageName.contains(state.query, true) }
+            }
             var confirmClean by rememberSaveable { mutableStateOf(false) }
             var confirmBack by rememberSaveable { mutableStateOf(false) }
             fun back() { if (state.busy) confirmBack = true else finish() }
-            BackHandler { back() }
+            // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+            BackHandler(enabled = state.busy) { back() }
             BaiZeTheme(settings) {
                 Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
                     topBar = { DetailPageHeader("免 Root 缓存清理", "通过 Shizuku · 逐个应用确认结果", { back() }) {} }) { padding ->
@@ -65,7 +69,7 @@ class ShizukuCacheActivity : ComponentActivity() {
                             Text("系统未返回精确释放字节数；缓存可能由应用重新生成。", style = MaterialTheme.typography.bodySmall)
                         } }
                         item { OutlinedTextField(state.query, model::query, label = { Text("搜索应用") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-                        items(state.apps.filter { state.query.isBlank() || it.label.contains(state.query, true) || it.packageName.contains(state.query, true) }, key = { it.packageName }) { app ->
+                        items(shownApps, key = { it.packageName }, contentType = { "shizuku-app" }) { app ->
                             DetailGlassPanel {
                                 Row(Modifier.fillMaxWidth().toggleable(app.packageName in state.selected,
                                     enabled = !state.busy && !app.isProtected, role = Role.Checkbox, onValueChange = { model.toggle(app.packageName) })) {
@@ -91,7 +95,7 @@ class ShizukuCacheActivity : ComponentActivity() {
                 }
                 if (confirmClean) BaiZeDialog(onDismissRequest = { confirmClean = false }, title = { Text("清除所选应用缓存？") },
                     text = { Text(state.apps.filter { it.packageName in state.selected }.joinToString("\n") { it.label } + "\n保留应用数据；缓存清理完成后无法撤回。") },
-                    confirmButton = { BaiZeDialogButton(onClick = { confirmClean = false; model.cleanSelected() }) { Text("确认清缓存") } },
+                    confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); confirmClean = false; model.cleanSelected() }) { Text("确认清缓存") } },
                     dismissButton = { BaiZeDialogButton(onClick = { confirmClean = false }) { Text("取消") } })
                 if (confirmBack) BaiZeDialog(onDismissRequest = { confirmBack = false }, title = { Text("停止清理并返回？") },
                     text = { Text("已经完成的缓存清理会保留。") },

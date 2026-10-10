@@ -35,6 +35,14 @@ class BaiZeProfileRootService : RootService() {
         .put("message", "旧版安装包直删计划已停用；请在新版安装包页面重新核对并选择文件")
         .toString()
 
+    /** 调用者必须是白泽自身；返回其 Android 用户号。 */
+    private fun chatCallerUser(): Int {
+        val owner = applicationInfo.uid
+        val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+        require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+        return caller / 100_000
+    }
+
     override fun onCreate() {
         super.onCreate()
         RootCrashRecorder.install(this)
@@ -104,6 +112,37 @@ class BaiZeProfileRootService : RootService() {
                 val raw = File("/data/media/$user")
                 val roots = if (raw.isDirectory) listOf(raw) else listOf(File("/storage/emulated/$user")).filter { it.isDirectory }
                 ChatStorageScanner.json(ChatStorageScanner(roots, apksOnly = apksOnly).scan(), System.currentTimeMillis() / 1000L)
+            }
+            // 聊天媒体页：把逐项勾选的 QQ / TIM / 微信文件移入回收站（隔离区）。只做同分区移动，不永久删除。
+            "trashChatFiles" -> {
+                require(arguments.length() == 1)
+                val owner = applicationInfo.uid
+                val caller = android.os.Binder.getCallingUid().let { if (it == 0) owner else it }
+                require(owner >= 10_000 && caller == owner) { "caller_mismatch" }
+                ChatStorageTrash(caller / 100_000, quarantineRepository).trash(ChatStorageTrash.parse(arguments.getJSONArray(0)))
+            }
+            // 聊天媒体页 · 应用私有数据：只读统计微信 / QQ / TIM 私有目录里白名单媒体文件夹（目录级汇总）。
+            "scanChatPrivate" -> {
+                require(arguments.length() == 0)
+                val user = chatCallerUser()
+                val dataRoot = ChatPrivatePaths.dataRoot(user)
+                val result = ChatPrivateScanner(dataRoot).scan()
+                val sameFs = ChatPrivatePaths.PACKAGES.associateWith { pkg ->
+                    quarantineRepository.sameFilesystemAsPrivateRoot(ChatPrivatePaths.packageDir(dataRoot, pkg))
+                }
+                ChatPrivateScanner.json(result, quarantineRepository.capacity(), sameFs)
+            }
+            // 按所选目录与时间档位处理：先移入隔离区（可恢复），超出上限的只有 allowPermanent 才永久删除。
+            "cleanChatPrivate" -> {
+                require(arguments.length() == 1)
+                val user = chatCallerUser()
+                ChatPrivateCleaner(ChatPrivatePaths.dataRoot(user), quarantineRepository)
+                    .clean(ChatPrivateCleaner.parse(arguments.getJSONObject(0)))
+            }
+            // 用户确认后结束微信 / QQ / TIM 进程，避免清理时文件正被写入。
+            "forceStopChatApp" -> {
+                require(arguments.length() == 1)
+                ChatAppStopper.stop(chatCallerUser(), arguments.getString(0))
             }
             "cancelDirectoryUsage" -> {
                 require(arguments.length() == 1)

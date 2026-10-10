@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.theme.baizeAnimateContentSize
 import io.github.xgl34222220.baize.root.RootServiceClients
 import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
@@ -371,7 +372,7 @@ private fun RuleImprovementDraftsScreen(
             if (filtered.isEmpty() && !state.loading) {
                 item { DraftEmpty(horizontal, shape, state.report.available) }
             } else {
-                items(filtered, key = { it.key }) { draft ->
+                items(filtered, key = { it.key }, contentType = { "draft" }) { draft ->
                     DraftCard(draft, horizontal, shape)
                 }
             }
@@ -473,7 +474,7 @@ private fun DraftCard(draft: RuleImprovementDraft, horizontal: androidx.compose.
         modifier = Modifier
             .padding(horizontal = horizontal)
             .fillMaxWidth()
-            .animateContentSize()
+            .baizeAnimateContentSize()
             .clickable(enabled = canExpand) { expanded = !expanded },
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)

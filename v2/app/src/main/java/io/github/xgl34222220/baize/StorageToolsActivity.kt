@@ -99,6 +99,7 @@ class StorageToolsActivity : ComponentActivity() {
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
             val state by model.state.collectAsState()
+            val privateState by model.privateState.collectAsState()
             var detailUri by rememberSaveable { mutableStateOf<String?>(null) }
             val detail = state.allRecords.firstOrNull { it.uri == detailUri }
             BaiZeTheme(appearance) {
@@ -110,7 +111,13 @@ class StorageToolsActivity : ComponentActivity() {
                     onKeeperPreference = model::setKeeperPreference, onKeep = model::keepCopy, onDirectory = model::directory,
                     onAge = { model.filter(minimumAgeDays = it) }, onUndo = model::undoLastTrash,
                     onSaveFilter = model::saveCustomFilter, onDeleteFilter = model::deleteCustomFilter,
-                    onActiveFilter = model::selectCustomFilter, onView = ::switchView)
+                    onActiveFilter = model::selectCustomFilter, onView = ::switchView,
+                    chatPrivate = if (mode == StorageToolMode.CHAT_MEDIA) { {
+                        ChatPrivateMediaPanel(privateState, ChatPrivateActions(onScan = { model.scanPrivate() }, onToggle = model::togglePrivateFolder,
+                            onToggleApp = model::togglePrivateApp, onAge = model::setPrivateAge, onClean = model::requestPrivateClean,
+                            onStop = model::stopPrivate), enabled = !state.running)
+                    } } else null)
+                if (privateState.confirmRequested) ChatPrivateCleanDialog(privateState, model::confirmPrivateClean, model::dismissPrivateClean)
                 if (detail != null) StorageFileDialog(detail, state.outcomes[detail.uri],
                     state.diagnosticBusy && state.diagnosticUri == detail.uri,
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
@@ -222,10 +229,17 @@ internal fun StorageToolsScreen(
     onKeeperPreference: (DuplicateKeeperPreference, String) -> Unit = { _, _ -> }, onKeep: (String) -> Unit = {},
     onDirectory: (String?) -> Unit = {}, onAge: (Int) -> Unit = {}, onUndo: () -> Unit = {},
     onSaveFilter: (String, String, Int, Long) -> String = { _, _, _, _ -> "" }, onDeleteFilter: (String) -> Unit = {},
-    onActiveFilter: (String?) -> Unit = {}, onView: (StorageToolMode) -> Unit = {}
+    onActiveFilter: (String?) -> Unit = {}, onView: (StorageToolMode) -> Unit = {},
+    /** 聊天媒体页：应用私有数据（Root）分区；为空时不显示。 */
+    chatPrivate: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
+    // 底栏与重复组列表的派生值每次状态变化只算一次，避免一次重组里多次遍历全部结果。
+    val recommended = remember(state) { state.recommended }
+    val allSelected = recommended.isNotEmpty() && state.selected.containsAll(recommended)
+    val selectedBytes = remember(state.selected, state.records, state.duplicateGroups, state.mode) { state.selectedBytes }
+    val visibleGroups = remember(state) { if (state.mode == StorageToolMode.DUPLICATES) state.visibleGroups else emptyList() }
     // 时间筛选把全部候选文件排除时，说明原因（例如都在 90 天内），而不是只显示 0 B 与通用空状态。
     val ageHiddenCount = remember(state, visible) {
         if (state.running || visible.isNotEmpty() || state.minimumAgeDays <= 0 || state.query.isNotBlank() || state.category != null ||
@@ -258,7 +272,13 @@ internal fun StorageToolsScreen(
     var directoryPages by rememberSaveable(state.directory) { mutableIntStateOf(1) }
     val shownDirectories = directoryRows.take(directoryPages * DirectoryUsageTree.PAGE_SIZE)
     BackHandler(enabled = state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) { onCategory(null) }
+    // 移入回收站后弹出「撤销」：只恢复刚才这一批，走回收站原有的恢复核对。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.lastTrashed.takeIf { it.isNotEmpty() },
+        TrashUndo.message(state.lastTrashed.size, if (state.lastTrashedBytes > 0) Formatter.formatFileSize(context, state.lastTrashedBytes) else ""),
+        onUndo = onUndo)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader(title, subtitle, { if (state.directory != null && !state.running) backDirectory() else if (state.mode == StorageToolMode.ANALYSIS && state.category != null && !state.running) onCategory(null) else onBack() },
             extra = { StorageViewDropdown(state.mode, !state.running, onView) }) {
             TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, FileTrashActivity::class.java)) }, enabled = !state.running) { Text("回收站") }
@@ -267,8 +287,8 @@ internal fun StorageToolsScreen(
             }
         } },
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
-            state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected,
-            state.recommended.isNotEmpty(), onToggleAll, onDelete,
+            state.selected.size, visible.size, Formatter.formatFileSize(context, selectedBytes), allSelected,
+            recommended.isNotEmpty(), onToggleAll, onDelete,
             cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果",
             // 相机原件不进入“全选”，但逐项勾选后仍可确认删除。
             cleanEnabled = state.selected.isNotEmpty()) }
@@ -335,6 +355,7 @@ internal fun StorageToolsScreen(
                     if (state.localModeAvailable) TextButton(onClick = onLocalMode) { Text("仅使用本地保护规则") }
                 }
             }
+            if (state.mode == StorageToolMode.CHAT_MEDIA && chatPrivate != null && !state.permissionRequired) item(key = "chat-private") { chatPrivate() }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     BaiZeTintedIcon(Icons.Rounded.PhotoSizeSelectLarge, BaiZeTones.purple)
@@ -376,7 +397,7 @@ internal fun StorageToolsScreen(
                 if (sunburst.isNotEmpty() && !state.running) item(key = "sunburst") {
                     StorageSunburst(sunburst, state.directory != null, { if (!state.running) onDirectory(it) }, { if (!state.running) backDirectory() })
                 }
-                items(shownDirectories, key = { "dir-${it.path}" }) { dir ->
+                items(shownDirectories, key = { "dir-${it.path}" }, contentType = { "storage-directory" }) { dir ->
                     DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
                         Text(when {
                             dir.path.matches(Regex("/data/user/[0-9]+")) -> "应用私有数据"
@@ -412,9 +433,9 @@ internal fun StorageToolsScreen(
             }
             if (state.mode == StorageToolMode.DUPLICATES) {
                 item { DuplicateKeeperControls(state, onKeeperPreference) }
-                state.visibleGroups.forEachIndexed { index, group ->
+                visibleGroups.forEachIndexed { index, group ->
                     item(key = "group-${group.key}-${group.bytesEach}") { DetailSectionHeader("重复组 ${index + 1}", "${group.records.size} 个 · 多余副本占用 ${Formatter.formatFileSize(context, group.reclaimableBytes)}") }
-                    items(group.records, key = { "dup-${it.uri}" }) { record ->
+                    items(group.records, key = { "dup-${it.uri}" }, contentType = { "storage-duplicate" }) { record ->
                         val keeper = record.uri !in state.selected && group.records.count { it.uri !in state.selected } == 1
                         Column {
                             if (storageCategory(record) == "image") StorageComparisonThumbnail(record)
@@ -424,7 +445,7 @@ internal fun StorageToolsScreen(
                         }
                     }
                 }
-            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
+            } else items(visible, key = { it.uri }, contentType = { "storage-file" }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
                 StorageReviewFilters.sourceLabel(state.mode, record) ?: if (UserMediaGuard.isUserMedia(record.path)) UserMediaGuard.INDIVIDUAL_LABEL else null,
                 lock = StorageReviewFilters.rowLock(state.mode, record)) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {

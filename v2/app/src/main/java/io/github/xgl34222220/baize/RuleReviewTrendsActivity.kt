@@ -352,7 +352,7 @@ private fun RuleReviewTrendsScreen(
         if (filtered.isEmpty() && !state.loading) {
             item { RuleReviewTrendEmpty(state.report.available, filter, horizontal, shape) }
         } else {
-            items(filtered, key = { it.key }) { item ->
+            items(filtered, key = { it.key }, contentType = { "rule-trend" }) { item ->
                 RuleReviewTrendItemCard(item, horizontal, shape)
             }
         }

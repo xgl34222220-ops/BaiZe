@@ -262,7 +262,12 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
     val context = LocalContext.current
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
+    // 移除后弹出「撤销」：与“撤销本次”按钮同一恢复流程（先重建目录，再从回收站恢复）。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.undo.takeIf { !it.empty },
+        "已移除 ${state.undo.count} 项，文件在回收站保留 30 天", onUndo = onUndo)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("根目录整理", "让存储根目录只留需要的文件夹", onBack,
             extra = { StorageViewDropdown(StorageToolMode.ROOT, !state.running, onView) }) {} },
         bottomBar = { if (state.removable.isNotEmpty() && !state.running) CleanSelectionBar(state.selected.size, state.removable.size,
@@ -300,7 +305,7 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
                 val rows = state.reviews.filter { it.kind == kind }
                 if (rows.isNotEmpty()) {
                     item(key = "kind-${kind.name}") { DetailSectionHeader(kind.label, "${rows.size} 项") }
-                    itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }) { index, review ->
+                    itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }, contentType = { _, _ -> "root-entry" }) { index, review ->
                         val size = when { !review.entry.directory -> Formatter.formatFileSize(context, review.entry.bytes)
                             review.kind == RootEntryKind.STANDARD -> "受保护"; review.entry.empty -> "空"
                             else -> Formatter.formatFileSize(context, review.entry.bytes) + if (review.entry.limited) "+" else "" }
@@ -326,7 +331,7 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
         onUnblock = { onUnblock(review.entry.name); detail = null })
     if (confirmRemove) BaiZeDialog(onDismissRequest = { confirmRemove = false }, title = { Text("移除 ${state.selected.size} 项") },
         text = { Text("文件夹内的文件逐个核对后移入回收站（保留 30 天），随后删除已清空的目录。共 ${Formatter.formatFileSize(context, state.selectedBytes)}，完成后可一键撤销。受保护或期间变化的内容会保留。") },
-        confirmButton = { BaiZeDialogButton(onClick = { confirmRemove = false; onRemove() }) { Text("移入回收站") } },
+        confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); confirmRemove = false; onRemove() }) { Text("移入回收站") } },
         dismissButton = { BaiZeDialogButton(onClick = { confirmRemove = false }) { Text("取消") } })
 }
 

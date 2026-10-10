@@ -278,7 +278,13 @@ internal class SwipeReviewViewModel(application: Application) : AndroidViewModel
 internal fun SwipeReviewScreen(state: SwipeReviewUiState, actions: SwipeReviewActions) {
     val context = LocalContext.current
     val session = state.session
+    // 移入回收站后弹出「撤销」：与“撤销本次移入”同一恢复流程，逐项核对回收记录与内容。
+    val undoSnackbar = remember { SnackbarHostState() }
+    TrashUndoSnackbarEffect(undoSnackbar, state.lastBatch.takeIf { it.isNotEmpty() },
+        TrashUndo.message(state.lastBatch.size, Formatter.formatFileSize(context, state.lastBatch.sumOf { it.bytes })),
+        onUndo = actions.onUndoBatch)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
+        snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("滑动整理", "左滑删除 · 右滑保留 · 随时撤销", actions.onBack) {
             TextButton(onClick = actions.onTrash, enabled = !state.busy) { Text("回收站") }
         } },
@@ -354,7 +360,7 @@ internal fun SwipeReviewScreen(state: SwipeReviewUiState, actions: SwipeReviewAc
         title = { Text("移入回收站？") },
         text = { Text("将把 ${session.deletions.size} 项（${Formatter.formatFileSize(context, session.deleteBytes)}）移入白泽回收站。" +
             "移动前会再次核对文件未变化；30 天内可在回收站恢复，不会直接永久删除。") },
-        confirmButton = { BaiZeDialogButton(onClick = actions.onConfirmApply) { Text("移入回收站") } },
+        confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); actions.onConfirmApply() }) { Text("移入回收站") } },
         dismissButton = { BaiZeDialogButton(onClick = actions.onDismissApply) { Text("再看看") } })
 }
 

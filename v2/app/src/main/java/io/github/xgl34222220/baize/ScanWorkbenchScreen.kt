@@ -7,6 +7,7 @@ import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,6 +55,8 @@ import kotlinx.coroutines.launch
 
 internal enum class WorkbenchNotice { INFO, SUCCESS, WARNING, ERROR }
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class WorkbenchItem(
     val id: String,
     val source: String,
@@ -319,12 +322,13 @@ internal fun ScanWorkbenchScreen(
                 } else Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(
                     BaiZeTokens.colors.surfaceBase.copy(alpha = 0f), BaiZeTokens.colors.surfaceBase), endY = 40f))
                     .padding(horizontal = 16.dp).padding(top = 12.dp, bottom = inset + 12.dp)) {
+                    val scanHaptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics()
                     BaiZePillButton(
                         label = when { state.restoringReview -> "正在恢复记录"; state.running -> "停止当前任务";
                             historicalSnapshot -> "重新完整扫描"; state.cleanupCompleted -> "重新扫描";
                             !state.connected -> "重新连接并扫描";
                             state.items.isNotEmpty() || state.notice in setOf(WorkbenchNotice.ERROR, WorkbenchNotice.WARNING) -> "重新扫描"; else -> "开始扫描" },
-                        onClick = if (state.running) actions.onStop else actions.onScan,
+                        onClick = if (state.running) actions.onStop else { { scanHaptics.scanStart(); actions.onScan() } },
                         modifier = Modifier.fillMaxWidth(), enabled = !state.restoringReview, secondary = state.running)
                 }
             }
@@ -389,7 +393,7 @@ internal fun ScanWorkbenchScreen(
                 } }
                 if (!unchanged) Text("扫描状态或选择已变化，请返回重新核对。", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             } },
-            confirmButton = { BaiZeDialogButton(onClick = { confirmedSelection = null; actions.onClean() }, enabled = unchanged) { Text("确认清理") } },
+            confirmButton = { val haptics = io.github.xgl34222220.baize.ui.components.rememberBaiZeHaptics(); BaiZeDialogButton(onClick = { haptics.confirmDelete(); confirmedSelection = null; actions.onClean() }, enabled = unchanged) { Text("确认清理") } },
             dismissButton = { BaiZeDialogButton({ confirmedSelection = null }) { Text("返回核对") } })
     }
 }
@@ -915,10 +919,15 @@ private fun WorkbenchCandidateRow(item: WorkbenchItem, selected: Boolean, enable
     Row(Modifier.fillMaxWidth().padding(start = 64.dp, end = 16.dp).padding(bottom = 6.dp)
         .clip(RoundedCornerShape(16.dp)).background(BaiZeTokens.colors.surfaceRaised)
         .padding(start = 2.dp, end = 3.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.Top) {
+        val selectable = enabled && item.selectable && item.risk != "critical"
         BaiZeRoundCheck(if (selected) ToggleableState.On else ToggleableState.Off, onClick = onToggle,
-            enabled = enabled && item.selectable && item.risk != "critical",
+            enabled = selectable,
             description = "选择${item.title}")
-        Column(Modifier.weight(1f).clickable(onClickLabel = "查看文件明细", onClick = onDetails).padding(top = 7.dp, bottom = 5.dp),
+        // 长按勾选与圆形勾选同一启用条件；关键风险与锁定项不可长按选中。长按自带系统触感反馈。
+        Column(Modifier.weight(1f).combinedClickable(onClickLabel = "查看文件明细",
+                onLongClickLabel = if (selectable) (if (selected) "取消选择" else "选择") else null,
+                onLongClick = if (selectable) onToggle else null,
+                onClick = onDetails).padding(top = 7.dp, bottom = 5.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text(item.title, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
