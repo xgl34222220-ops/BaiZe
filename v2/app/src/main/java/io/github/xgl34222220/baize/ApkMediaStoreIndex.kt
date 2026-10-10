@@ -45,7 +45,8 @@ internal fun ApkIndexedDeleteResult.retainedReason(): String = when (this) {
 
 internal object ApkMediaStoreIndex {
     private const val APK_MIME = "application/vnd.android.package-archive"
-    private val extensions = setOf("apk", "apks", "xapk", "apkm", "aab")
+    /** 含 QQ / 微信改名的 `.apk.1` 副本；只看最后一个扩展名会漏掉这些安装包。 */
+    private val namePatterns = ApkNames.MEDIA_STORE_PATTERNS
 
     fun hasAllFilesAccess(context: Context): Boolean = SharedStorageAccess.granted(context)
 
@@ -77,14 +78,14 @@ internal object ApkMediaStoreIndex {
         val selection = buildString {
             append("(")
             append(MediaStore.MediaColumns.MIME_TYPE).append(" = ?")
-            repeat(extensions.size) {
+            repeat(namePatterns.size) {
                 append(" OR ").append(MediaStore.MediaColumns.DISPLAY_NAME).append(" LIKE ?")
             }
             append(") AND ").append(MediaStore.MediaColumns.SIZE).append(" > 0")
         }
         val args = buildList {
             add(APK_MIME)
-            extensions.forEach { add("%.$it") }
+            namePatterns.forEach { add(it) }
         }.toTypedArray()
 
         val byPath = LinkedHashMap<String, IndexedApkCandidate>()
@@ -113,8 +114,7 @@ internal object ApkMediaStoreIndex {
                     val path = cursor.getString(dataColumn).orEmpty()
                     val name = if (nameColumn >= 0) cursor.getString(nameColumn).orEmpty() else ""
                     val safeName = name.ifBlank { path.substringAfterLast('/') }
-                    val extension = safeName.substringAfterLast('.', "").lowercase()
-                    if (path.isBlank() || OrdinaryFileTrash.isPayloadPath(path) || extension !in extensions) continue
+                    if (path.isBlank() || OrdinaryFileTrash.isPayloadPath(path) || !ApkNames.isApk(safeName)) continue
                     if (path.startsWith("/data/app/") || path.startsWith("/system/") ||
                         path.startsWith("/vendor/") || path.startsWith("/product/")) continue
                     val bytes = if (sizeColumn >= 0) cursor.getLong(sizeColumn).coerceAtLeast(0L) else 0L

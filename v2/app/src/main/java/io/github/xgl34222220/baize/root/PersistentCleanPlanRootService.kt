@@ -419,7 +419,9 @@ class PersistentCleanPlanRootService : RootService() {
         if (!rawPath.startsWith("/") || rawPath.length > 4096 || rawPath.contains('\u0000')) return "路径格式无效"
         val target = File(rawPath)
         val path = canonical(target)
-        if (path != rawPath || hardProtected(path) || !mutationRoot(path)) return "路径超出安全边界"
+        // 聊天收到的安装包由 Root 在 /data/media 下发现；只为这一类放开该根，且路径必须仍在聊天“接收文件”目录。
+        val chatApk = candidate.optString("profile") == "apk" && ChatAppPaths.isReceivedApk(path)
+        if (path != rawPath || hardProtected(path) || !(mutationRoot(path) || chatApk)) return "路径超出安全边界"
         if (!target.exists()) return "目标已不存在"
         if (isSymlink(target)) return "符号链接受保护"
         if (path in mounts) return "挂载点受保护"
@@ -436,6 +438,8 @@ class PersistentCleanPlanRootService : RootService() {
                 target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * DAY_MS
             ) null else "目标不再符合碎片规则"
             "rules" -> null
+            // 聊天软件“接收文件”目录里的安装包（含 .apk.1），删除前再次确认路径与文件名。
+            "apk" -> if (target.isFile && ChatAppPaths.isReceivedApk(path)) null else "目标不再是聊天软件收到的安装包"
             else -> "计划类型不允许清理"
         }
     }

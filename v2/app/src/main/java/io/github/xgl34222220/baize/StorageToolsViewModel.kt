@@ -22,7 +22,8 @@ import io.github.xgl34222220.baize.root.RootServiceClients
 import org.json.JSONObject
 
 internal class StorageToolsViewModel(application: Application) : AndroidViewModel(application) {
-    private data class StorageScanBundle(val index: StorageIndexResult, val duplicates: StorageDuplicateResult, val buckets: List<StorageAnalysisBucket>, val growth: StorageGrowthResult, val directoryUsage: DirectoryUsage?)
+    private data class StorageScanBundle(val index: StorageIndexResult, val duplicates: StorageDuplicateResult, val buckets: List<StorageAnalysisBucket>, val growth: StorageGrowthResult, val directoryUsage: DirectoryUsage?,
+        val chat: ChatStorageRecords.Scan? = null)
     private val mutableState = MutableStateFlow(StorageToolsUiState())
     val state = mutableState.asStateFlow()
     private val digestCache = StorageDigestCache()
@@ -255,7 +256,17 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                     } else null
                     // 在扫描线程预建目录层级索引，钻取与环形图不在主线程遍历全部目录。
                     usage?.tree
-                    StorageScanBundle(index, duplicates, storageBuckets(index.records), growth, usage)
+                    // QQ / 微信在 Android 11+ 把收到的文件与聊天媒体放在 Android/data，系统索引看不到。
+                    // 聊天媒体视图与分类视图（安装包）补充 Root 只读扫描结果；这些行只能查看，不能勾选。
+                    val chat = if (mode == StorageToolMode.CHAT_MEDIA || mode == StorageToolMode.ANALYSIS) {
+                        report(StorageScanProgress("正在读取 QQ / 微信目录…", 0, 0, ""))
+                        taskControl.check()
+                        ChatStorageRecords.fetch(remote, context.cacheDir, apksOnly = mode == StorageToolMode.ANALYSIS)
+                    } else null
+                    taskControl.check()
+                    val merged = if (chat == null || chat.records.isEmpty()) index
+                        else index.copy(records = ChatStorageRecords.merge(index.records, chat.records))
+                    StorageScanBundle(merged, duplicates, storageBuckets(merged.records), growth, usage, chat)
                 }
                 taskControl.check()
                 val index = result.index
@@ -279,8 +290,18 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                             append(" 数值为文件逻辑大小，目录包含子目录，不代表可释放容量。")
                         }
                         if (index.truncated) append(" 本次达到 12 万项上限，结果不完整。")
+                        result.chat?.let { chat ->
+                            val rootRows = index.records.count(ChatStorageRecords::isRootRecord)
+                            when {
+                                rootRows > 0 -> append(" 另有 $rootRows 个 QQ / 微信应用目录文件由 Root 读取，系统索引不含这些文件，仅供查看；" +
+                                    "安装包可在一键扫描中清理，聊天媒体可在应用专项规则中按保留天数清理。")
+                                chat.error == "root_unavailable" -> append(" Root 服务未连接，QQ / 微信的 Android/data 目录未读取。")
+                                chat.error.isNotBlank() -> append(" QQ / 微信目录读取失败（${chat.error}）。")
+                            }
+                            if (chat.truncated) append(" QQ / 微信目录达到读取上限，结果不完整。")
+                        }
                         if (index.confirmedMissing > 0) append(" 已排除 ${index.confirmedMissing} 条不存在文件的旧索引，未计入占用或释放空间。")
-                        val unknown = index.records.count { it.verifiedBytes == 0L }
+                        val unknown = index.records.count { it.verifiedBytes == 0L && !ChatStorageRecords.isRootRecord(it) }
                         if (unknown > 0) append(" $unknown 项尚未核对文件身份，不能勾选，不计入可处理容量；点文件查看诊断。")
                         if (index.presenceIncomplete) append(" 文件存在性核对未全部完成，可连接服务后重新扫描。")
                         if (duplicates.reusedHashes > 0) append(" 按当前文件身份复用 ${duplicates.reusedHashes} 次内容摘要；删除授权仍逐次重新核对。")
@@ -304,6 +325,9 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
         control = StorageScanControl()
         val task = control
         contentReview = emptyMap()
+        // 相机与相册原件只能逐项勾选；确认前再单独点明，避免被当作普通文件一并删除。
+        val userMedia = chosen.count { UserMediaGuard.isUserMedia(it.path) && snapshot.mode != StorageToolMode.SCREENSHOTS }
+        val userMediaNote = if (userMedia > 0) "其中 $userMedia 个是相机与相册原件（DCIM / Pictures / Movies），均为你逐项勾选，请确认不再需要。" else ""
         mutableState.update { it.copy(running = true, reviewRequested = true,
             reviewMessage = "只读取已选文件内容，可随时取消。", status = "正在核对所选文件内容…") }
         viewModelScope.launch {
@@ -317,7 +341,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                 contentReview = batch.proofs
                 mutableState.update { it.copy(running = false, selected = batch.proofs.keys,
                     outcomes = (it.outcomes - batch.proofs.keys) + batch.rejected.mapValues { entry -> StorageDeleteOutcome(ApkIndexedDeleteResult.UNVERIFIED, entry.value) },
-                    reviewMessage = "已核对 ${batch.proofs.size} 个文件的当前内容。" +
+                    reviewMessage = userMediaNote + "已核对 ${batch.proofs.size} 个文件的当前内容。" +
                         if (batch.rejected.isEmpty()) "确认后移入回收站，共享文件进入同卷隐藏目录，仍可能被其他有文件权限的应用访问。保留 30 天，不立即释放空间；卸载或清空白泽数据会丢失恢复记录，请先处理回收站。内容再变化会保留。" else "${batch.rejected.size} 个无法核对，已保留并取消勾选，原因见列表。",
                     status = "所选内容已核对，等待确认") }
             } catch (_: CancellationException) {

@@ -18,8 +18,9 @@ internal fun storageCategory(record: StorageFileRecord): String {
     return when {
         mime.startsWith("image/") || ext in setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif", "dng") -> "image"
         mime.startsWith("video/") || ext in setOf("mp4", "mkv", "mov", "avi", "webm", "m4v", "3gp") -> "video"
-        mime.startsWith("audio/") || ext in setOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape") -> "audio"
-        ext in setOf("apk", "apks", "xapk", "apkm", "aab") -> "apk"
+        mime.startsWith("audio/") || ext in setOf("mp3", "flac", "wav", "m4a", "aac", "ogg", "opus", "ape", "amr", "silk", "slk") -> "audio"
+        // QQ / 微信会把收到的安装包改名为 .apk.1，只看最后一个扩展名会漏掉。
+        ApkNames.isApk(record.name) || mime == "application/vnd.android.package-archive" -> "apk"
         ext in setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst") -> "archive"
         ext in setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "csv", "rtf", "epub") -> "document"
         else -> "other"
@@ -33,7 +34,9 @@ internal fun storageCategoryLabel(key: String): String = when (key) {
 
 internal fun storageBuckets(files: List<StorageFileRecord>): List<StorageAnalysisBucket> =
     files.groupBy(::storageCategory).map { (key, records) ->
-        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf { it.verifiedBytes })
+        // Root 只读记录（应用目录内的聊天文件）没有文件身份，按逻辑大小计入分类占用，仅供查看。
+        StorageAnalysisBucket(key, storageCategoryLabel(key), records.size, records.sumOf {
+            if (ChatStorageRecords.isRootRecord(it)) it.bytes.coerceAtLeast(0L) else it.verifiedBytes })
     }.sortedByDescending { it.bytes }
 
 /** Only Android's package-owned directory convention establishes an app association. */

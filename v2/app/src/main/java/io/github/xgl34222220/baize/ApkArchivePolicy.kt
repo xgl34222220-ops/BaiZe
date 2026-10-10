@@ -43,7 +43,7 @@ internal object ApkArchivePolicy {
     private const val MAX_ZIP_ENTRIES = 50_000
 
     fun inputFailure(path: String, bytes: Long): ApkArchiveFailure? = when {
-        !path.endsWith(".apk", ignoreCase = true) -> ApkArchiveFailure.UNSUPPORTED_FORMAT
+        !ApkNames.isPlainApk(path) -> ApkArchiveFailure.UNSUPPORTED_FORMAT
         !path.startsWith('/') || '\u0000' in path || path.split('/').any { it == ".." || it == "." } -> ApkArchiveFailure.INVALID_PATH
         bytes > MAX_APK_BYTES -> ApkArchiveFailure.TOO_LARGE
         bytes <= 0 -> ApkArchiveFailure.FILE_CHANGED

@@ -2025,9 +2025,24 @@ static bool is_partial(const char *name) {
     return ext_matches(name, partial, sizeof(partial) / sizeof(partial[0]));
 }
 
+/*
+ * QQ / 微信会把收到的安装包改名为 xxx.apk.1（或 .apk.2 …）以防误装。
+ * 只认“.apk + 1~3 位数字”，不认 .apk.tmp 之类的中间态。
+ */
+static bool is_apk_copy(const char *name) {
+    const char *dot = strrchr(name, '.');
+    if (!dot || dot == name) return false;
+    size_t digits = strlen(dot + 1);
+    if (digits < 1U || digits > 3U) return false;
+    for (const char *p = dot + 1; *p; p++) if (*p < '0' || *p > '9') return false;
+    size_t stem = (size_t)(dot - name);
+    return stem > 4U && strncasecmp(dot - 4, ".apk", 4) == 0;
+}
+
 static bool is_apk(const char *name) {
     static const char *const apk[] = { ".apk", ".apks", ".xapk", ".apkm" };
     if (ext_matches(name, apk, sizeof(apk) / sizeof(apk[0]))) return true;
+    if (is_apk_copy(name)) return true;
     size_t len = strlen(name);
     return len >= 8U && strcasecmp(name + len - 8, ".zip.apk") == 0;
 }
@@ -2074,6 +2089,8 @@ static bool is_organizer(const char *name) {
     if (g_organizer_exts.n == 0U) return false;
     const char *dot = strrchr(name, '.');
     if (!dot) return false;
+    /* xxx.apk.1 按 .apk 归类（与 organizer-worker.sh 的 category_for 一致）。 */
+    if (is_apk_copy(name)) dot = ".apk";
     for (size_t i = 0; i < g_organizer_exts.n; i++) {
         if (strcasecmp(dot, g_organizer_exts.v[i]) == 0) return true;
     }

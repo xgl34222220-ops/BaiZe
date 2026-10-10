@@ -720,6 +720,8 @@ class FileOrganizerEngine(
         out: MutableMap<String, PlannedMove>
     ) {
         val path = canonical(file)
+        // 相机、相册与录屏原件（DCIM / Pictures / Movies）永远不进入归类计划。
+        if (io.github.xgl34222220.baize.UserMediaGuard.isUserMedia(path)) return
         val sourceStat = runCatching { Os.lstat(file.path) }.getOrNull() ?: return
         val statFingerprint = fingerprint(sourceStat)
         val category = category(file.name)
@@ -782,6 +784,8 @@ class FileOrganizerEngine(
         if (!source.isFile) return "文件已不存在"
         if (isSymlink(source)) return "符号链接受保护"
         if (!allowedOrganizerSource(sourcePath)) return "源文件不再属于允许的归类来源"
+        // 撤销仍可把文件放回相机目录；只有新的归类不允许搬走相机与相册原件。
+        if (io.github.xgl34222220.baize.UserMediaGuard.isUserMedia(sourcePath)) return "相机与相册原件不参与归类"
         if (fingerprint(source) != item.fingerprint) return "文件在扫描后发生变化"
         if (!destination.path.startsWith("/data/media/")) return "目标路径超出公共归类目录"
         return null
@@ -1200,6 +1204,8 @@ class FileOrganizerEngine(
     }
 
     private fun category(name: String): String {
+        // QQ / 微信把收到的安装包改名为 .apk.1；按安装包归类，否则这些文件永远不进归类计划。
+        if (io.github.xgl34222220.baize.ApkNames.hasCopySuffix(name)) return categoryByExtension[io.github.xgl34222220.baize.ApkNames.COPY_BASE_EXTENSION].orEmpty()
         val extension = name.substringAfterLast('.', "").lowercase()
         if (extension.isEmpty()) return ""
         return categoryByExtension[extension].orEmpty()

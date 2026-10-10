@@ -330,6 +330,10 @@ internal class NativeProfileEngine(
             }
         }
 
+        // QQ / TIM / 微信收到的安装包（含 .apk.1 改名副本）。Android 11+ 它们位于 Android/data，
+        // 系统索引看不到，App 侧安装包页因此一个也找不到；这里由 Root 在受限目录内补充。
+        collectChatApks(roots, options, out, progress, started)
+
         // System/OEM log roots are outside shared storage, so only these small trees need a
         // separate fragment pass.
         val systemLogRoots = logRoots()
@@ -353,6 +357,33 @@ internal class NativeProfileEngine(
                 }
             }
         }
+    }
+
+    private fun collectChatApks(
+        roots: List<File>,
+        options: Options,
+        out: MutableMap<String, Candidate>,
+        progress: (Progress) -> Unit,
+        started: Long
+    ) {
+        val remaining = SCAN_TOTAL_MS - (SystemClock.elapsedRealtime() - started)
+        if (remaining <= 0L || cancelled.get()) return
+        progress(Progress("补充扫描 QQ / 微信收到的安装包", 0, 0))
+        val result = ChatStorageScanner(roots, cancelled = { cancelled.get() }, budgetMs = min(remaining, CHAT_APK_BUDGET_MS),
+            apksOnly = true, publicPath = { it }).scan()
+        for (entry in result.entries) {
+            val file = File(entry.path)
+            if (!ChatAppPaths.isReceivedApk(canonical(file))) continue
+            val item = candidate("apk", "chat_apk", "聊天收到的安装包", "medium", file, deleteRoot = true,
+                note = "${entry.app} · ${entry.area.label}")
+            item.bytes = entry.bytes
+            item.files = 1L
+            item.directories = 0L
+            item.measured = true
+            item.complete = true
+            add(out, item, options, true)
+        }
+        if (result.truncated) options.coverage.depthLimitedDirectories++
     }
 
     fun page(snapshotId: String, offset: Int, limit: Int): String {
@@ -901,6 +932,7 @@ internal class NativeProfileEngine(
                 target.lastModified() <= System.currentTimeMillis() - options.fragmentDays * 86_400_000L &&
                 fragmentNameMatches(target.name)
             "corpses" -> corpsePath(canonical(target))
+            "apk" -> target.isFile && ChatAppPaths.isReceivedApk(canonical(target))
             "rules", "deep" -> ruleMutationAllowed(canonical(target), candidate.deleteRoot, target.isDirectory)
             else -> false
         }
@@ -1409,6 +1441,7 @@ internal class NativeProfileEngine(
         private val READ_ONLY = setOf(
             "/system", "/vendor", "/product", "/odm", "/apex", "/proc", "/sys", "/dev", "/metadata"
         )
+        private const val CHAT_APK_BUDGET_MS = 15_000L
         private val HIDDEN_PROTECTED = setOf(
             ".git", ".ssh", ".termux", ".config", ".local", ".obsidian", ".android", ".vscode", ".gnupg", ".baize-quarantine", ".baize-file-trash"
         )

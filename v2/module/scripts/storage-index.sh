@@ -327,7 +327,11 @@ while IFS="$TAB" read -r group user volume depth root || [ -n "${root:-}" ]; do
       case "$size" in ''|*[!0-9]*) continue ;; esac
       printf '%s\0' "$file" >>"$RECORDS"; files=$((files + 1)); bytes=$((bytes + size))
       ext_lower=${lower##*.}; [ "$ext_lower" = "$lower" ] && ext_lower=""
-      case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk) printf '%s\0' "$file" >>"$TMP/apk.nul" ;; esac
+      # *.apk.1 …：QQ / 微信改名后的安装包副本。
+      case "$lower" in *.apk|*.apks|*.xapk|*.apkm|*.zip.apk|*.apk.[0-9]|*.apk.[0-9][0-9]|*.apk.[0-9][0-9][0-9])
+        printf '%s\0' "$file" >>"$TMP/apk.nul"
+        case "$lower" in *.apk.[0-9]|*.apk.[0-9][0-9]|*.apk.[0-9][0-9][0-9]) ext_lower=apk ;; esac ;;
+      esac
       [ "$size" -ne 0 ] || printf '%s\0' "$file" >>"$TMP/empty.nul"
       [ "$size" -lt "$large_bytes" ] || printf '%s\0' "$file" >>"$TMP/large.nul"
       if [ -n "$ext_lower" ]; then

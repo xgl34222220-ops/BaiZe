@@ -17,7 +17,7 @@ internal enum class SwipeFolder(val label: String, val relativePath: String) {
 }
 
 internal data class SwipeItem(val path: String, val name: String, val bytes: Long, val modifiedMs: Long) {
-    val kind: String get() = when (name.substringAfterLast('.', "").lowercase()) {
+    val kind: String get() = if (ApkNames.isApk(name)) "apk" else when (name.substringAfterLast('.', "").lowercase()) {
         "jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "bmp", "dng" -> "image"
         "mp4", "mkv", "webm", "3gp", "mov", "avi" -> "video"
         "apk", "apks", "xapk" -> "apk"

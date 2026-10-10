@@ -77,19 +77,22 @@ internal object StorageReviewFilters {
 
     private fun ext(name: String) = name.substringAfterLast('.', "").lowercase()
 
+    /**
+     * 只按截图 / 录屏目录识别。此前文件名以 Screenshot、录屏 开头就算截图，
+     * 会把相机目录、聊天导出等目录里同名开头的用户原件拉进“旧截图与录屏”的批量删除；
+     * 相机目录（DCIM/Camera）里的任何文件都不算截图。
+     */
     fun screenCaptureKind(path: String, name: String, mime: String): ScreenCaptureKind? {
         val lower = path.lowercase()
         val file = name.lowercase()
+        if ("/dcim/camera/" in lower) return null
         val image = mime.lowercase().startsWith("image/") || ext(file) in imageExt
         val video = mime.lowercase().startsWith("video/") || ext(file) in videoExt
         val shotDirectory = Regex("/(screenshots?|截屏|截图|屏幕截图)/").containsMatchIn(lower)
         val recordDirectory = Regex("/(screenrecorder|screen ?recordings?|screenrecords?|screen_records?|录屏|屏幕录制)/").containsMatchIn(lower)
-        val shotName = file.startsWith("screenshot") || file.startsWith("截屏") || file.startsWith("截图")
-        val recordName = file.startsWith("screenrecord") || file.startsWith("screen_record") || file.startsWith("screen-recording") ||
-            file.startsWith("record_screen") || file.startsWith("录屏") || file.startsWith("屏幕录制")
         return when {
-            image && (shotDirectory || shotName) -> ScreenCaptureKind.SCREENSHOT
-            video && (recordDirectory || recordName || shotDirectory) -> ScreenCaptureKind.RECORDING
+            image && shotDirectory -> ScreenCaptureKind.SCREENSHOT
+            video && (recordDirectory || shotDirectory) -> ScreenCaptureKind.RECORDING
             else -> null
         }
     }
@@ -100,6 +103,9 @@ internal object StorageReviewFilters {
     } ?: false
 
     /** 聊天软件“已保存/已接收”的公共目录；数据库与账号目录已由 [forbidden] 排除。 */
+    fun chatMediaSource(record: StorageFileRecord): String? =
+        if (ChatStorageRecords.isRootRecord(record)) record.ownerLabel.ifBlank { "聊天软件" } else chatMediaSource(record.path)
+
     fun chatMediaSource(path: String): String? {
         val lower = "/" + (relativeStoragePath(path) ?: return null).lowercase()
         return when {
@@ -118,7 +124,9 @@ internal object StorageReviewFilters {
     fun candidate(mode: StorageToolMode, record: StorageFileRecord, filters: List<StorageCustomFilter>): Boolean = when (mode) {
         StorageToolMode.SCREENSHOTS -> !forbidden(record.path) && screenCaptureKind(record.path, record.name, record.mime) != null
         StorageToolMode.OLD_DOWNLOADS -> !forbidden(record.path) && inDownloads(record.path)
-        StorageToolMode.CHAT_MEDIA -> !forbidden(record.path) && chatMediaSource(record.path) != null &&
+        // Root 只读记录来自 QQ / 微信的 Android/data 目录（MediaStore 不索引），只用于查看。
+        StorageToolMode.CHAT_MEDIA -> (ChatStorageRecords.isRootRecord(record) ||
+            (!forbidden(record.path) && chatMediaSource(record.path) != null)) &&
             storageCategory(record) in setOf("image", "video", "audio", "document", "archive")
         StorageToolMode.CUSTOM -> filters.any { it.matchesPath(record.path) }
         else -> true
@@ -138,9 +146,35 @@ internal object StorageReviewFilters {
 
     fun sourceLabel(mode: StorageToolMode, record: StorageFileRecord): String? = when (mode) {
         StorageToolMode.SCREENSHOTS -> screenCaptureKind(record.path, record.name, record.mime)?.label
-        StorageToolMode.CHAT_MEDIA -> chatMediaSource(record.path)
+        StorageToolMode.CHAT_MEDIA -> chatMediaSource(record)
         else -> null
     }
+
+    /** 每个时间档位（0 = 全部时间）下的候选数，让“超过 90 天”为空时能看到文件其实在哪个档位。 */
+    fun ageBucketCounts(mode: StorageToolMode, records: List<StorageFileRecord>, nowSeconds: Long,
+                        filters: List<StorageCustomFilter> = emptyList()): Map<Int, Int> {
+        val candidates = records.filter { candidate(mode, it, filters) }
+        return AGE_CHOICES.associateWith { days -> candidates.count { olderThan(it.modifiedSeconds, nowSeconds, days) } }
+    }
+
+    fun ageBucketSummary(counts: Map<Int, Int>): String = AGE_CHOICES.mapNotNull { days ->
+        counts[days]?.let { "${ageLabel(days)} $it" }
+    }.joinToString(" · ")
+
+    /**
+     * 行级只读原因；null 表示可以勾选。
+     * - Root 只读记录：应用目录内的文件，没有系统索引与文件身份，只能查看。
+     * - 存储分析的分类视图（文件归类）：相机与相册原件只能查看，不能在这里删除。
+     */
+    fun rowLock(mode: StorageToolMode, record: StorageFileRecord): String? = when {
+        ChatStorageRecords.isRootRecord(record) -> ChatStorageRecords.READ_ONLY_LABEL
+        mode == StorageToolMode.ANALYSIS && UserMediaGuard.isUserMedia(record.path) -> UserMediaGuard.READ_ONLY_LABEL
+        else -> null
+    }
+
+    /** 是否进入“全选当前结果”/默认勾选。相机与相册原件只能逐项勾选（旧截图与录屏视图按目录识别，不受限）。 */
+    fun bulkSelectable(mode: StorageToolMode, record: StorageFileRecord): Boolean =
+        rowLock(mode, record) == null && (mode == StorageToolMode.SCREENSHOTS || !UserMediaGuard.isUserMedia(record.path))
 
     /**
      * 通配语法：相对于存储卷根目录，`*` 匹配一层内任意字符，`**` 跨目录，`?` 匹配一个字符，不区分大小写。

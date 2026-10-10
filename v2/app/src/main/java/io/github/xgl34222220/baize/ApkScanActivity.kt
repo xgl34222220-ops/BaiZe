@@ -406,6 +406,12 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 screenState = screenState.copy(running = false, operation = "", phase = "安装包扫描已停止")
                 return@launch
             }
+            // QQ / 微信在 Android 11+ 把收到的安装包放在 Android/data（常改名为 .apk.1），
+            // 系统索引看不到；由 Root 只读列出数量，清理走一键扫描里带身份快照的“聊天收到的安装包”。
+            val chatApks = withContext(Dispatchers.IO) { ChatStorageRecords.fetch(service, applicationContext.cacheDir, apksOnly = true) }
+            if (closed) return@launch
+            val indexedPaths = indexed.candidates.mapTo(HashSet()) { it.path }
+            val rootOnlyApks = chatApks.records.filter { it.path !in indexedPaths }
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L)
             val coverage = listOf(
                 ScanCoverageItem(
@@ -418,6 +424,20 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                         (if (indexed.truncated) "达到 1 万项上限，结果不完整；处理已选后重新扫描可继续查看。" else "已读完本次系统索引。") +
                         (if (indexed.confirmedMissingRecords > 0) "已排除 ${indexed.confirmedMissingRecords} 条文件已不存在的旧记录，未删除文件，也不计入容量。" else "") +
                         (if (indexed.missingCheckIncomplete) "部分文件存在状态尚未核对，已保留这些项目。" else "")
+                ),
+                ScanCoverageItem(
+                    status = if (chatApks.error.isNotBlank() || chatApks.truncated) "partial" else "scanned",
+                    group = "QQ / 微信应用目录（Root 只读）",
+                    files = rootOnlyApks.size.toLong(),
+                    bytes = rootOnlyApks.sumOf { it.bytes },
+                    path = "Android/data/com.tencent.mobileqq · com.tencent.mm · com.tencent.tim",
+                    reason = when {
+                        chatApks.error == "root_unavailable" -> "Root 服务未连接，未读取 QQ / 微信的 Android/data 目录。"
+                        chatApks.error.isNotBlank() -> "QQ / 微信目录读取失败（${chatApks.error}）。"
+                        rootOnlyApks.isEmpty() -> "QQ / 微信 / TIM 接收目录内没有系统索引之外的安装包。"
+                        else -> "另有 ${rootOnlyApks.size} 个安装包（含 .apk.1 改名副本）位于系统索引看不到的应用目录，本页不能直接删除；" +
+                            "请在一键扫描中清理（列为“聊天收到的安装包”，清理前逐文件核对身份）。"
+                    } + if (chatApks.truncated) "达到读取上限，结果不完整。" else ""
                 )
             )
             screenState = screenState.copy(
@@ -426,6 +446,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 phase = when {
                     indexed.truncated -> "已读取前 ${indexed.candidates.size} 个安装包 · 达到本次上限"
                     indexed.confirmedMissingRecords > 0 -> "当前 ${indexed.candidates.size} 个安装包 · 已排除 ${indexed.confirmedMissingRecords} 条不存在的旧记录"
+                    indexed.candidates.isEmpty() && rootOnlyApks.isNotEmpty() -> "系统索引未发现安装包 · QQ / 微信目录另有 ${rootOnlyApks.size} 个，可在一键扫描中清理"
                     indexed.candidates.isEmpty() -> "快速索引完成：未发现安装包"
                     else -> "快速索引完成：发现 ${indexed.candidates.size} 个安装包 · ${elapsed} ms"
                 },
@@ -444,7 +465,7 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     is ApkProtectionState.LocalOnly -> "本地模式 · 删除前核对文件身份与本地保护规则"
                     is ApkProtectionState.Unknown -> protection.reason
                 },
-                output = "MediaStore.Files ${indexed.elapsedMs} ms · 清理快照 ${snapshots.size} 条 · Root 未参与前台扫描"
+                output = "MediaStore.Files ${indexed.elapsedMs} ms · 清理快照 ${snapshots.size} 条 · QQ / 微信目录 Root 只读 ${rootOnlyApks.size} 个"
             )
         }
     }
