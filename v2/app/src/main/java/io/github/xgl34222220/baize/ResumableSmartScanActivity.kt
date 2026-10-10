@@ -884,7 +884,9 @@ class ResumableSmartScanActivity : ComponentActivity() {
                 }
                 cacheCount = cachePage?.takeIf { !it.has("error") }?.optInt("total", 0)?.coerceAtLeast(0) ?: 0
                 safeCount = safePage?.takeIf { !it.has("error") }?.optInt("total", 0)?.coerceAtLeast(0) ?: 0
-                apkSnapshot = loadApkSnapshot(cleanPlanId)
+                // 安装包快照是磁盘 JSON，校验阶段在 IO 线程读取，避免主线程读文件。
+                val planForSnapshot = cleanPlanId
+                apkSnapshot = withContext(Dispatchers.IO) { loadApkSnapshot(planForSnapshot) }
                 apkCount = apkSnapshot.size
                 apkBytes = apkSnapshot.sumOf { it.bytes }
                 if (cacheCount <= 0) cacheSnapshotId = ""
