@@ -134,6 +134,9 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
                 UninstallWatcherSwitchRow()
             }
         }
+        // 性能工具（实验）：独立页面，全部默认关闭。
+        item { LuoShuSection("性能工具（实验）", "Dex2oat、数据库、进程与内存压制，默认全部关闭") }
+        item { LuoShuGroup { io.github.xgl34222220.baize.PerfToolsEntryRow() } }
         item {
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -469,6 +469,8 @@ internal class AuditRepository(
     }
 
     private fun kindFor(operation: String): String = when {
+        // 性能工具（实验）的执行记录：单独归类，不计入清理效果与策略建议。
+        operation.startsWith("性能工具") -> "perf"
         operation.contains("rule-review") -> "review"
         operation.contains("quarantine") || operation.contains("restore") || operation.contains("purge") || operation.contains("expire") -> "safety"
         operation.contains("scan") -> "scan"
