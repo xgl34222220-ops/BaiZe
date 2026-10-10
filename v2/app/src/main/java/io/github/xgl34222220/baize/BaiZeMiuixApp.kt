@@ -207,8 +207,9 @@ private fun AnimatedPageHost(
         transitionSpec = {
             val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
             val degraded = io.github.xgl34222220.baize.performance.PerformanceRuntime.degraded.value
-            val enterDuration = if (degraded) 90 else if (style == UiStyle.MIUIX) 210 else 180
-            val exitDuration = if (degraded) 70 else if (style == UiStyle.MIUIX) 140 else 120
+            // 统一动效令牌：进入 250ms、退出 200ms；降级或系统关闭动画时缩短。
+            val enterDuration = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.enterMillis()
+            val exitDuration = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.exitMillis()
             val enterDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 14 else 18
             val exitDivisor = if (degraded) Int.MAX_VALUE else if (style == UiStyle.MIUIX) 20 else 24
 

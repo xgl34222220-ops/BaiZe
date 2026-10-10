@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize.ui.components
 
+import io.github.xgl34222220.baize.ui.theme.baizeAnimateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -161,7 +162,7 @@ fun DetailEmptyState(title: String, description: String, modifier: Modifier = Mo
 fun DetailExpandableText(title: String, text: String, modifier: Modifier = Modifier) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)
-        .clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised)) {
+        .clip(RoundedCornerShape(24.dp)).background(BaiZeTokens.colors.surfaceRaised).baizeAnimateContentSize()) {
         Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 52.dp).padding(horizontal = 15.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)

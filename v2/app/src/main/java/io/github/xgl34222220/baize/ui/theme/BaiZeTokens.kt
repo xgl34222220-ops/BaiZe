@@ -170,8 +170,17 @@ object BaiZeElevation {
 
 /** 动效时长（毫秒）与按压缩放；关闭动效时调用方使用 0。 */
 object BaiZeMotion {
+    /** 按压缩放等即时反馈，保持很短。 */
     const val SHORT = 120
     const val MEDIUM = 220
+    /** 统一交互动效：页面进入、展开、详情进入（250ms）。 */
+    const val ENTER = 250
+    /** 统一交互动效：页面退出、收起、勾选/选中变化（200ms）。 */
+    const val EXIT = 200
+    /** 勾选、选中态颜色与尺寸变化。 */
+    const val SELECTION = 200
+    /** 系统关闭动画或流畅降级时使用的最短时长。 */
+    const val DEGRADED = 90
     const val LONG = 360
     const val COUNT_UP = 650
     const val PRESS_SCALE = .97f

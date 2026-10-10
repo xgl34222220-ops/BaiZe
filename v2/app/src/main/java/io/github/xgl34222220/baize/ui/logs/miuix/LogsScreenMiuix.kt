@@ -136,7 +136,8 @@ private fun RuntimeCard(state: LogsUiState) {
         RuntimeRow("服务", state.serviceText)
         Spacer(Modifier.height(6.dp))
         RuntimeRow("任务", state.taskPhase)
-        AnimatedVisibility(expanded) {
+        AnimatedVisibility(expanded, enter = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.expandIn(),
+            exit = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.collapseOut()) {
             Column(Modifier.padding(top = 6.dp)) { RuntimeRow("调度", state.schedulerText) }
         }
     }

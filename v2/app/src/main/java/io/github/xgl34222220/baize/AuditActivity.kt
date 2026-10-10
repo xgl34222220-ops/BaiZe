@@ -1,5 +1,6 @@
 package io.github.xgl34222220.baize
 
+import io.github.xgl34222220.baize.ui.theme.baizeAnimateContentSize
 import io.github.xgl34222220.baize.ui.components.BaiZeDialog
 import io.github.xgl34222220.baize.ui.components.BaiZeDialogButton
 import io.github.xgl34222220.baize.root.RootServiceClients
@@ -746,7 +747,7 @@ private fun AuditEventCard(
         modifier = Modifier
             .padding(horizontal = horizontal)
             .fillMaxWidth()
-            .animateContentSize()
+            .baizeAnimateContentSize()
             .clickable(enabled = hasMore) { expanded = !expanded },
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = BaiZeTokens.colors.surfaceRaised)

@@ -383,7 +383,9 @@ private fun PolicyAdvicePanel(
             Icon(if (expanded) Icons.Rounded.ExpandMore else Icons.Rounded.ChevronRight,
                 null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (expanded) {
+        androidx.compose.animation.AnimatedVisibility(expanded,
+            enter = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.expandIn(),
+            exit = io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.collapseOut()) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("基于最近 30 天的 ${advice.sampleCount} 条有效记录；建议不会自动应用。",
                     fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

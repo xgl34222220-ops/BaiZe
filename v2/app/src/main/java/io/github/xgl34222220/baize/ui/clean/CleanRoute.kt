@@ -2,10 +2,6 @@ package io.github.xgl34222220.baize.ui.clean
 
 import android.content.Intent
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -110,8 +106,7 @@ fun CleanRoute(
             targetState = detail == CLEAN_DETAIL_AUTOMATION,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (targetState) slideInHorizontally(tween(300)) { it } togetherWith slideOutHorizontally(tween(300)) { -it / 8 }
-                else slideInHorizontally(tween(300)) { -it / 8 } togetherWith slideOutHorizontally(tween(300)) { it }
+                io.github.xgl34222220.baize.ui.theme.BaiZeMotionSpecs.detailTransition(forward = targetState)
             },
             label = "cleanDetail"
         ) { showAutomation ->
