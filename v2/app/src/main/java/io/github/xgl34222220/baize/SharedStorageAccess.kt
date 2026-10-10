@@ -51,3 +51,20 @@ internal class StoragePermissionRequest(private val activity: ComponentActivity,
     }
     private fun unavailable() { Toast.makeText(activity, "请在系统设置中开启${SharedStorageAccess.label}", Toast.LENGTH_LONG).show() }
 }
+
+/**
+ * 已授权 Root 的设备上，由 Root 服务执行 `cmd appops set <包名> MANAGE_EXTERNAL_STORAGE allow`
+ * 开启「所有文件访问」（安装包页 3.0.0 起已这样做）。只改白泽自己的权限，不碰任何文件；失败时仍显示系统设置按钮。
+ */
+internal object RootStorageGrant {
+    fun request(context: Context, remote: io.github.xgl34222220.baize.root.IProfileRootService,
+        pause: (Long) -> Unit = { Thread.sleep(it) }): Boolean {
+        if (SharedStorageAccess.granted(context)) return true
+        runCatching { io.github.xgl34222220.baize.root.RootServiceClients.profileExchange(remote, context.cacheDir, "ensureAllFilesAccess") }
+        repeat(10) {
+            if (SharedStorageAccess.granted(context)) return true
+            pause(50)
+        }
+        return SharedStorageAccess.granted(context)
+    }
+}

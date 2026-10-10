@@ -58,12 +58,14 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
     private var closed = false
     private val cancelled = AtomicBoolean(false)
     private var initialized = false
+    private var rootGrantAttempted = false
     private val connection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (closed || binder == null) return
             remote = RootServiceClients.profile(binder, context.cacheDir); bound = true
             mutable.update { it.copy(rootConnected = true) }
             syncFromModule()
+            if (state.value.permissionRequired && !state.value.running) scan()
         }
         override fun onServiceDisconnected(name: ComponentName?) { remote = null; bound = false; mutable.update { it.copy(rootConnected = false) } }
         override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) { remote = null; bound = false }
@@ -112,7 +114,19 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
 
     fun scan(keepStatus: Boolean = false) {
         if (state.value.running) return
-        if (!SharedStorageAccess.granted(context)) { mutable.update { it.copy(permissionRequired = true, status = "开启文件访问后，查看根目录") }; return }
+        if (!SharedStorageAccess.granted(context)) {
+            mutable.update { it.copy(permissionRequired = true, status = "开启文件访问后，查看根目录") }
+            val source = remote
+            if (source != null && !rootGrantAttempted) {
+                // 已授权 Root：先由 Root 开启所有文件访问（只改白泽自身权限），成功后直接读取根目录。
+                rootGrantAttempted = true
+                viewModelScope.launch {
+                    if (withContext(Dispatchers.IO) { RootStorageGrant.request(context, source) }) scan()
+                    else mutable.update { it.copy(status = "Root 未能自动开启所有文件访问，请点按钮在系统设置中开启") }
+                }
+            }
+            return
+        }
         cancelled.set(false)
         val previous = state.value.status
         mutable.update { it.copy(running = true, permissionRequired = false, status = "正在读取根目录…", selected = emptySet()) }

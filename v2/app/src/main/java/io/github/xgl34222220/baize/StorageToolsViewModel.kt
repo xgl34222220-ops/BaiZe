@@ -48,6 +48,8 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             remote = RootServiceClients.profile(binder, context.cacheDir)
             bound = true
             refreshProtection()
+            // 首次扫描时 Root 可能尚未连上：连上后再尝试由 Root 开启所有文件访问。
+            if (state.value.permissionRequired) tryRootStorageGrant()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             if (closed) return
@@ -90,6 +92,19 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             if (closed || remote !== source) return@launch
             mutableState.update { it.copy(protectionMessage = (state as? ApkProtectionState.Unknown)?.reason.orEmpty(),
                 localModeAvailable = state is ApkProtectionState.Unknown && !ApkProtectionStore.rootWasUsed(context)) }
+        }
+    }
+    private var rootGrantAttempted = false
+    /** 每个页面只自动尝试一次；失败后保留「开启所有文件访问」按钮，由用户去系统设置授权。 */
+    private fun tryRootStorageGrant() {
+        val source = remote ?: return
+        if (rootGrantAttempted) return
+        rootGrantAttempted = true
+        viewModelScope.launch {
+            val granted = withContext(Dispatchers.IO) { RootStorageGrant.request(context, source) }
+            if (closed) return@launch
+            if (granted) startScan(keepStatus = false)
+            else mutableState.update { it.copy(status = "Root 未能自动开启所有文件访问，请点下方按钮在系统设置中开启") }
         }
     }
     fun enableLocalMode() {
@@ -210,7 +225,9 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
             return
         }
         if (!StorageMediaRepository.hasAccess(context)) {
-            mutableState.update { it.copy(permissionRequired = true, status = "开启文件访问后，开始分析共享存储") }
+            mutableState.update { it.copy(permissionRequired = true, status = if (remote != null) "正在通过 Root 开启所有文件访问…"
+                else "开启文件访问后，开始分析共享存储") }
+            tryRootStorageGrant()
             return
         }
         control = StorageScanControl()
