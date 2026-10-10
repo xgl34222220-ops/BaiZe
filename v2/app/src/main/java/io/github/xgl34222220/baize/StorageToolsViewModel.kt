@@ -307,6 +307,7 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         if (duplicates.reusedHashes > 0) append(" 按当前文件身份复用 ${duplicates.reusedHashes} 次内容摘要；删除授权仍逐次重新核对。")
                         if (duplicates.skipped > 0) append(" ${duplicates.skipped} 次文件校验因不可读或文件变化而跳过。")
                     }) }
+                recordHomeSummary(mutableState.value, partial = index.truncated || index.presenceIncomplete)
             } catch (error: Exception) {
                 directoryToken = ""
                 val stopped = taskControl.cancelled || error is CancellationException || error is android.os.OperationCanceledException
@@ -408,8 +409,29 @@ internal class StorageToolsViewModel(application: Application) : AndroidViewMode
                         (if (unconfirmed > 0) " · $unconfirmed 项结果未确认" else ""),
                     coverage = if (removed.size < selectedRecords.size) "逐项结果已显示在文件下方；点文件可查看完整路径与读取诊断。结果未确认时请重新扫描核对。" else current.coverage)
             }
+            if (removed.isNotEmpty()) recordHomeSummary(mutableState.value, partial = false)
         }
     }
+    /**
+     * 首页「上次扫描」摘要：只在本页扫描完成或处理后写入，容量口径与本页默认视图一致
+     * （大文件 ≥100 MB、聊天媒体默认时间条件、重复文件只计多余副本），只计已核对身份的文件。
+     */
+    private fun recordHomeSummary(snapshot: StorageToolsUiState, partial: Boolean) {
+        val (key, bytes, count) = when (snapshot.mode) {
+            StorageToolMode.LARGE -> snapshot.records.filter { it.bytes >= 100 * MIB && it.verifiedBytes > 0 }
+                .let { Triple(HomeScanSummaryStore.LARGE, it.sumOf { record -> record.verifiedBytes }, it.size.toLong()) }
+            StorageToolMode.DUPLICATES -> Triple(HomeScanSummaryStore.DUPLICATES,
+                snapshot.duplicateGroups.sumOf { it.reclaimableBytes },
+                snapshot.duplicateGroups.sumOf { group -> (group.records.count { it.verifiedBytes > 0 } - 1).coerceAtLeast(0).toLong() })
+            StorageToolMode.CHAT_MEDIA -> snapshot.records.filter {
+                it.verifiedBytes > 0 && StorageReviewFilters.visible(StorageToolMode.CHAT_MEDIA, it, snapshot.nowSeconds,
+                    StorageReviewFilters.defaultAgeDays(StorageToolMode.CHAT_MEDIA), emptyList(), null)
+            }.let { Triple(HomeScanSummaryStore.CHAT, it.sumOf { record -> record.verifiedBytes }, it.size.toLong()) }
+            else -> return
+        }
+        runCatching { HomeScanSummaryStore.record(context, key, bytes, count, partial) }
+    }
+
     override fun onCleared() {
         closed = true; control.cancel()
         if (bound) runCatching { RootService.unbind(connection) }

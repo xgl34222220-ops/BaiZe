@@ -440,6 +440,9 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                     } + if (chatApks.truncated) "达到读取上限，结果不完整。" else ""
                 )
             )
+            // 首页「上次扫描 · 安装包」摘要：完整扫描结果才写入，截断/未核对完时标记为部分结果。
+            runCatching { HomeScanSummaryStore.record(applicationContext, HomeScanSummaryStore.APK, totalBytes,
+                indexed.candidates.size.toLong(), partial = indexed.truncated || indexed.missingCheckIncomplete) }
             screenState = screenState.copy(
                 running = false,
                 operation = "",
@@ -619,6 +622,8 @@ internal class ApkScanSession(application: Application, private val lifecycleSco
                 else ->
                     "移入回收站 ${result.deletedFiles} 个，尚未释放空间，占用 ${Formatter.formatFileSize(this@ApkScanSession, result.deletedBytes)} · ${elapsed} ms"
             }
+            if (result.deletedFiles > 0) runCatching { HomeScanSummaryStore.record(applicationContext, HomeScanSummaryStore.APK,
+                directSnapshot.sumOf { it.bytes }, directSnapshot.size.toLong()) }
             screenState = screenState.copy(
                 running = false,
                 operation = "",
