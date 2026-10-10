@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -139,14 +140,20 @@ fun DetailStatusText(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DetailEmptyState(title: String, description: String, modifier: Modifier = Modifier, icon: ImageVector = Icons.Rounded.Search) {
+fun DetailEmptyState(title: String, description: String, modifier: Modifier = Modifier, icon: ImageVector = Icons.Rounded.Search,
+    actionLabel: String? = null, onAction: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BaiZeEmptyIllustration()
         Text(title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface)
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
         Text(description, fontSize = 12.sp, lineHeight = 17.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 筛选把结果全部隐藏时，直接给出改回的入口，不让用户误以为“没有内容”。
+        if (actionLabel != null && onAction != null) {
+            androidx.compose.material3.TextButton(onClick = onAction,
+                modifier = Modifier.testTag("detail-empty-action")) { Text(actionLabel) }
+        }
     }
 }
 

@@ -37,7 +37,8 @@ class HomeFillUiTest {
     @Test fun neverScannedShowsPlaceholdersAndRoutesToExistingPages() {
         val calls = mutableListOf<String>()
         compose.setContent { BaiZeMiuixApp(base, SchedulerUiState(), actions(calls), appearance()) }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("共可清理 未扫描").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("尚未扫描").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("共可清理 —").assertExists()
         compose.onNodeWithText("上次扫描").assertExists()
         assertTrue(compose.onAllNodesWithText("未扫描").fetchSemanticsNodes().size >= 4)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("聊天媒体"))

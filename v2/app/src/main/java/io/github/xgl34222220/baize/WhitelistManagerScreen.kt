@@ -120,7 +120,19 @@ internal fun WhitelistManagerScreen(
                         FilterChip(selected = protectedOnly, onClick = { protectedOnly = true }, label = { Text("已保护 ${state.draft.selected.size}") })
                         if (state.focusFile == null) TextButton({ showClear = true }, enabled = edit && state.draft.selected.isNotEmpty()) { Text("取消全部应用保护") }
                     } }
-                    if (visible.isEmpty() && !state.loading) item { Text("没有匹配的应用", style = MaterialTheme.typography.bodyMedium) }
+                    if (visible.isEmpty() && !state.loading) item { LuoShuGroup {
+                        val filters = listOfNotNull("已保护".takeIf { protectedOnly }, "此文件匹配".takeIf { focusOnly },
+                            query.takeIf { it.isNotBlank() }?.let { "搜索“$it”" })
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(if (filters.isEmpty()) (if (state.packagesLoaded) "没有可显示的应用" else "应用列表尚未读取，原保护不变")
+                                else "当前筛选下没有应用", style = MaterialTheme.typography.bodyMedium)
+                            if (filters.isNotEmpty()) {
+                                Text("筛选：${filters.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton({ protectedOnly = false; focusOnly = false; query = "" }) { Text("显示全部应用") }
+                            }
+                        }
+                    } }
                     items(visible, key = { "app:${it.packageName}" }) { app ->
                         LuoShuGroup {
                             Row(Modifier.fillMaxWidth().clickable(enabled = edit, role = Role.Checkbox) { onToggle(app.packageName) }
@@ -151,8 +163,15 @@ internal fun WhitelistManagerScreen(
                         }
                     } }
                     if (visiblePaths.isEmpty() && !state.loading) item { LuoShuGroup {
-                        Text(if (state.pathsLoaded) "没有匹配的保护路径" else "路径名单尚未读取，原保护不变",
-                            Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                        val pathFiltered = state.pathsLoaded && state.paths.isNotEmpty() && (query.isNotBlank() || focusOnly)
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(when {
+                                !state.pathsLoaded -> "路径名单尚未读取，原保护不变"
+                                pathFiltered -> "当前筛选下没有保护路径"
+                                else -> "还没有保护路径"
+                            }, style = MaterialTheme.typography.bodyMedium)
+                            if (pathFiltered) TextButton({ focusOnly = false; query = "" }) { Text("显示全部 ${state.paths.size} 条路径") }
+                        }
                     } }
                     items(visiblePaths, key = { "path:$it" }) { path -> LuoShuGroup {
                         Column(Modifier.padding(16.dp).testTag("whitelist-path:$path")) {

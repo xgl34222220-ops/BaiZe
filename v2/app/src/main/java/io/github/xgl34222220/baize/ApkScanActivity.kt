@@ -841,7 +841,15 @@ internal fun ApkScanScreen(
         }
         if (visible.isEmpty()) {
             item {
-                DetailEmptyState(
+                val hiddenByFilter = !state.scanFailed && state.items.isNotEmpty() && (state.filter != null || state.query.isNotBlank())
+                val filterText = listOfNotNull(state.filter?.label, state.query.takeIf { it.isNotBlank() }?.let { "搜索“$it”" }).joinToString(" · ")
+                if (hiddenByFilter) DetailEmptyState(
+                    title = "当前筛选隐藏了全部 ${state.items.size} 个安装包",
+                    description = "筛选：$filterText。清除筛选后可查看全部结果。",
+                    icon = Icons.Rounded.InstallMobile,
+                    actionLabel = "清除筛选",
+                    onAction = { onQuery(""); onFilter(null) }
+                ) else DetailEmptyState(
                     title = when { state.scanFailed -> "扫描未完成"; state.items.isNotEmpty() -> "没有符合筛选条件的安装包"; state.running -> "正在查找安装包"; state.coverage.isNotEmpty() -> "没有发现安装包"; else -> "还没有扫描结果" },
                     description = when { state.scanFailed -> "文件索引暂不可用，这不代表存储中没有安装包。请检查权限后重试。"; state.running -> "正在读取系统文件索引。"; state.confirmedMissingRecords > 0 -> "已确认 ${state.confirmedMissingRecords} 条旧记录对应的文件不存在，已从结果和容量中排除；没有删除文件。"; completedScan -> "当前结果没有安装包，可在扫描详情查看本次扫描范围。"; else -> "完成扫描后，文件名称、位置和大小会显示在这里。" },
                     icon = Icons.Rounded.InstallMobile
