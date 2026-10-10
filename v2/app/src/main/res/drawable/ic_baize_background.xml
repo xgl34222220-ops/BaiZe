@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 3.0.0 品牌底色：深青微竖向渐变，与磨砂白玻璃白泽前景相配。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#007D70" />
+    <gradient
+        android:angle="270"
+        android:startColor="#0A5A60"
+        android:endColor="#06404A"
+        android:type="linear" />
     <size android:width="108dp" android:height="108dp" />
 </shape>

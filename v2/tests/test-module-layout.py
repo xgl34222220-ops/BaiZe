@@ -45,9 +45,9 @@ class ModuleLayoutTest(unittest.TestCase):
     def test_confirmed_icon_is_the_launcher_source(self):
         # Pin the actual build inputs, exported from the approved design. Large
         # editing masters are kept locally and are not required to build the app.
-        self.assertEqual('9cd466477c318cf6b86caf8fb02ddab79b63e1e93e594165758dc46771bef84c',
+        self.assertEqual('2919f8df4e40b8473d1afd1f3a9d4d3467dd0ccc94d076659dd12e2839e10450',
                          hashlib.sha256((ROOT / 'v2/app/src/main/res/drawable-nodpi/ic_baize_art.webp').read_bytes()).hexdigest())
-        self.assertEqual('9816d33e789ee230e36a1d4a7e4ceeaf292a4bb0cefec22ef0724be8665e64b4',
+        self.assertEqual('117894978819c43b03ce9e2be5d4b0d4165500140da40ff3088ebbb5b5ccce0a',
                          hashlib.sha256((ROOT / 'v2/app/src/main/res/drawable-nodpi/ic_baize_monochrome_art.png').read_bytes()).hexdigest())
         icon = (ROOT / 'design/app-icons/official-icon.webp').read_bytes()
         self.assertEqual(icon, (ROOT / 'v2/app/src/main/res/mipmap-xxxhdpi/ic_baize.webp').read_bytes())
@@ -63,7 +63,7 @@ class ModuleLayoutTest(unittest.TestCase):
             self.assertEqual('@drawable/ic_baize_foreground', adaptive.find('foreground').attrib[android + 'drawable'])
         foreground = ET.parse(res / 'drawable/ic_baize_foreground.xml').getroot()
         self.assertEqual('@drawable/ic_baize_art', foreground.attrib[android + 'drawable'])
-        self.assertEqual('9cd466477c318cf6b86caf8fb02ddab79b63e1e93e594165758dc46771bef84c',
+        self.assertEqual('2919f8df4e40b8473d1afd1f3a9d4d3467dd0ccc94d076659dd12e2839e10450',
                          hashlib.sha256((res / 'drawable-nodpi/ic_baize_art.webp').read_bytes()).hexdigest())
 
     def test_upgrade_stops_flat_and_grouped_compatibility_workers(self):

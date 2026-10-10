@@ -482,29 +482,8 @@ class FileOrganizerEngine(
     }
 
 
-    private fun allowedIndexedPublicPath(relative: String): Boolean {
-        val normalized = relative.replace('\\', '/').lowercase()
-        return when {
-            normalized.startsWith("download/") || normalized.startsWith("downloads/") -> true
-            normalized.startsWith("documents/") || normalized.startsWith("bluetooth/") -> true
-            normalized.startsWith("ucdownloads/") || normalized.startsWith("quark/download/") || normalized.startsWith("baidunetdisk/") -> true
-            normalized.startsWith("tencent/qqfile_recv/") || normalized.startsWith("tencent/timfile_recv/") -> true
-            normalized.startsWith("telegram/telegram documents/") ||
-                normalized.startsWith("telegram/telegram images/") ||
-                normalized.startsWith("telegram/telegram video/") ||
-                normalized.startsWith("telegram/telegram audio/") ||
-                normalized.startsWith("telegram/telegram files/") -> true
-            normalized.startsWith("nagram/nagram documents/") ||
-                normalized.startsWith("nagram/nagram images/") ||
-                normalized.startsWith("nagram/nagram video/") ||
-                normalized.startsWith("nagram/nagram audio/") -> true
-            normalized.startsWith("nagramx/nagramx documents/") ||
-                normalized.startsWith("nagramx/nagramx images/") ||
-                normalized.startsWith("nagramx/nagramx video/") ||
-                normalized.startsWith("nagramx/nagramx audio/") -> true
-            else -> false
-        }
-    }
+    private fun allowedIndexedPublicPath(relative: String): Boolean =
+        OrganizerPublicSources.allows(relative)
 
     private fun forEachNulPath(file: File, block: (String) -> Boolean) {
         FileInputStream(file).use { input ->
@@ -562,6 +541,10 @@ class FileOrganizerEngine(
         val mediaRoots = mediaUserRoots()
         mediaRoots.forEach { mediaRoot ->
             add(mediaRoot, "内部存储根目录", SourcePolicy.TOP_LEVEL_ONLY)
+            OrganizerPublicSources.ROOTS.forEach { relative ->
+                val root = File(mediaRoot, relative)
+                add(root, sourceGroup(root.path), SourcePolicy.FULL_DOWNLOAD_TREE)
+            }
 
             val androidMedia = File(mediaRoot, "Android/media")
             androidMedia.listFiles()
@@ -1117,13 +1100,20 @@ class FileOrganizerEngine(
         if (MEDIA_ROOT_FILE.matches(path)) return true
         if (APP_MEDIA_FILE.matches(path)) return true
         if (APP_EXTERNAL_FILES_FILE.matches(path)) return true
+        MEDIA_RELATIVE.matchEntire(path)?.groupValues?.get(1)?.let { relative ->
+            if (OrganizerPublicSources.allows(relative)) return true
+            APP_DATA_TAIL.matchEntire(relative)?.let { app ->
+                if (OrganizerPublicSources.allowsAppPath(app.groupValues[1], app.groupValues[2])) return true
+            }
+        }
         return allowedDownloadRoot(path.substringBeforeLast('/', path))
     }
 
     private fun isAppUserFile(file: File, path: String): Boolean {
         if (category(file.name).isBlank()) return false
         return path.split('/').any { segment ->
-            normalizeDirectoryName(segment) in APP_USER_DIRECTORY_NAMES
+            val normalized = normalizeDirectoryName(segment)
+            normalized in APP_USER_DIRECTORY_NAMES || normalized.endsWith("file_recv")
         }
     }
 
@@ -1323,6 +1313,8 @@ class FileOrganizerEngine(
         private val MEDIA_ROOT_FILE = Regex("^/data/media/\\d+/[^/]+$")
         private val APP_MEDIA_FILE = Regex("^/data/media/\\d+/Android/media/[^/]+/.+")
         private val APP_EXTERNAL_FILES_FILE = Regex("^/data/media/\\d+/Android/data/[^/]+/files/.+")
+        private val MEDIA_RELATIVE = Regex("^/data/media/\\d+/(.+)$")
+        private val APP_DATA_TAIL = Regex("^Android/data/([^/]+)/(.+)$")
         private val DOWNLOAD_DIRECTORY_NAMES = setOf(
             "download", "downloads", "downloaded", "下载",
             "received", "receive", "recv", "file_recv",
@@ -1338,6 +1330,8 @@ class FileOrganizerEngine(
             "qqfile_recv", "qqmy_file_recv", "timfile_recv", "tim_file_recv",
             "export", "exports", "attachment", "attachments",
             "transfer", "transfers", "offline", "saved", "shared",
+            // 应用宝下载的安装包：Android/data/com.tencent.android.qqdownloader/files/tassistant/apk
+            "tassistant",
             "telegram_documents", "telegram_images", "telegram_video", "telegram_audio", "telegram_files",
             "nagram_documents", "nagram_images", "nagram_video", "nagram_audio", "nagram_files",
             "nagramx_documents", "nagramx_images", "nagramx_video", "nagramx_audio", "nagramx_files"

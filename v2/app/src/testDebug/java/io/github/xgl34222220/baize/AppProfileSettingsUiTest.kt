@@ -118,4 +118,18 @@ class AppProfileSettingsUiTest {
         assertEquals(1, saves.last().toJson().getInt("root_tidy_auto"))
         assertEquals(0, SchedulerUiState().toJson().getInt("root_tidy_auto"))
     }
+
+    @Test fun categoryCleanupLivesInAdvancedSettingsAndDefaultsOff() {
+        val saves = mutableListOf<SchedulerUiState>()
+        openTaskSettings(saves, SchedulerUiState())
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("logcat 日志缓冲区"))
+        compose.onNodeWithText("高级设置 · 分类定时清理").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("微信缓存").performScrollTo().performClick()
+        save()
+        val json = saves.last().toJson()
+        assertEquals(1, json.getInt("maint_clean_wechat"))
+        assertEquals(0, json.getInt("maint_clean_qq"))
+        assertEquals(0, json.getInt("maint_clean_shortvideo"))
+        assertEquals(0, json.getInt("maint_clean_logcat"))
+    }
 }

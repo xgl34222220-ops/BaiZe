@@ -114,6 +114,30 @@ for SHELL_UNDER_TEST in "${shells[@]}"; do
   [ "$(value last_result)" = trim-only ] || fail "$SHELL_UNDER_TEST J result"
   [ "$(wc -l <"$T/state/logs/maintenance.log")" -le 30 ] || fail "$SHELL_UNDER_TEST J log cap"
   tail -n 1 "$T/state/logs/maintenance.log" | grep -q 'result=trim-only' || fail "$SHELL_UNDER_TEST J newest line kept"
+
+  # K: 分类定时清理（默认关闭）——只有开关打开且仍在维护窗口内才调用 cleaner.sh category-clean。
+  printf '#!/bin/sh\necho "$*" >>"$FAKE/cleaner.calls"\n' >"$T/module/scripts/cleaner.sh"
+  reset_case
+  run_maint
+  [ ! -e "$T/fake/cleaner.calls" ] || fail "$SHELL_UNDER_TEST K default off must not clean"
+  reset_case
+  echo maint_clean_wechat=1 >>"$T/state/config.conf"
+  run_maint
+  [ "$(cat "$T/fake/cleaner.calls" 2>/dev/null)" = "category-clean maintenance" ] || fail "$SHELL_UNDER_TEST K category not run"
+  run_maint
+  [ "$(wc -l <"$T/fake/cleaner.calls")" = 1 ] || fail "$SHELL_UNDER_TEST K must honour daily rate limit"
+  for gate in screen lock disabled; do
+    reset_case
+    echo maint_clean_logcat=1 >>"$T/state/config.conf"
+    case "$gate" in
+      screen) echo on >"$T/fake/screen" ;;
+      lock) mkdir "$T/state/run.lock" ;;
+      disabled) echo maintenance_enabled=0 >>"$T/state/config.conf" ;;
+    esac
+    run_maint
+    [ ! -e "$T/fake/cleaner.calls" ] || fail "$SHELL_UNDER_TEST K gate $gate must skip category cleanup"
+  done
+  rm -f "$T/module/scripts/cleaner.sh"
 done
 
 # Supervisor wiring: only a cheap periodic gate, always backgrounded.

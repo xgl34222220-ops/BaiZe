@@ -55,11 +55,16 @@ data class AccentOption(
     val argb: Int
 )
 
+/** 3.0.0 起的默认主题色：与新图标底色一致的白泽青 #006B72。 */
+const val DEFAULT_ACCENT_ARGB: Int = 0xFF006B72.toInt()
+
 /**
- * 默认使用澎湃橙 #F25C26（HyperOS 手机管家清理页同款橙红）；动态取色不可用时回退到该颜色。
- * 已保存过主题色的用户不受影响；白泽蓝与其余低饱和色保留为手动主题选项。
+ * 默认使用白泽青 #006B72（与 3.0.0 图标底色一致）；动态取色不可用时回退到该颜色。
+ * 已保存过主题色的用户不受影响（含选过澎湃橙的用户）；澎湃橙、白泽蓝与其余低饱和色
+ * 保留为手动主题选项。列表首项即默认项。
  */
 val AccentOptions = listOf(
+    AccentOption("teal", "白泽青", DEFAULT_ACCENT_ARGB),
     AccentOption("hyper", "澎湃橙", 0xFFF25C26.toInt()),
     AccentOption("default", "白泽蓝", 0xFF245FD3.toInt()),
     AccentOption("mist", "雾蓝", 0xFF7C93AB.toInt()),

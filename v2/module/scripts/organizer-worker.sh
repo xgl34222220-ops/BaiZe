@@ -169,6 +169,12 @@ append_known_app_roots() {
       append_tree_files "$package_root/$suffix"
     done
   done
+  append_tree_files "$user_root/Android/data/com.tencent.android.qqdownloader/files/tassistant/apk"
+  append_tree_files "$user_root/Android/data/com.coolapk.market/files/Download"
+  append_tree_files "$user_root/Android/data/com.baidu.searchbox/files/downloads"
+  for telegram_files in "$user_root"/Android/data/*/files/Telegram/Telegram\ Files; do
+    append_tree_files "$telegram_files"
+  done
   for package in com.google.android.gm com.tencent.androidqqmail com.microsoft.office.outlook com.android.email com.netease.mail com.netease.mobimail; do
     package_root="$user_root/Android/data/$package"
     for suffix in attachments Attachments files/attachments files/Attachments data/attachments files/download files/Download; do
@@ -184,7 +190,8 @@ build_fallback_index() {
   for fb_user_root in "$MEDIA_ROOT"/[0-9]*; do
     [ -d "$fb_user_root" ] || continue
     find "$fb_user_root" -xdev -mindepth 1 -maxdepth 1 -type f -print0 2>/dev/null >>"$INDEX_FILE"
-    for fb_public in       "$fb_user_root/Download" "$fb_user_root/Downloads" "$fb_user_root/Documents"       "$fb_user_root/Bluetooth" "$fb_user_root/UCDownloads" "$fb_user_root/Quark/Download" "$fb_user_root/BaiduNetdisk" "$fb_user_root/Telegram" "$fb_user_root/Nagram" "$fb_user_root/NagramX" "$fb_user_root/Tencent/QQfile_recv" "$fb_user_root/Tencent/TIMfile_recv" "$fb_user_root/Tencent/Timfile_recv"; do
+    for fb_public in       "$fb_user_root/Download" "$fb_user_root/Downloads" "$fb_user_root/Documents"       "$fb_user_root/Bluetooth" "$fb_user_root/UCDownloads" "$fb_user_root/Quark/Download" "$fb_user_root/BaiduNetdisk" "$fb_user_root/Telegram" "$fb_user_root/Nagram" "$fb_user_root/NagramX" "$fb_user_root/Tencent/QQfile_recv" "$fb_user_root/Tencent/TIMfile_recv" "$fb_user_root/Tencent/Timfile_recv" \
+      "$fb_user_root/123云盘" "$fb_user_root/AliYunPan" "$fb_user_root/微云保存的文件" "$fb_user_root/QQBrowser" "$fb_user_root/UCTurbo/Download"; do
       append_tree_files "$fb_public"
     done
     append_known_app_roots "$fb_user_root"
@@ -315,7 +322,23 @@ allowed_app_source() {
 
   case "$package:$tail" in
     com.tencent.mobileqq:Tencent/QQfile_recv/*|com.tencent.mobileqq:files/QQfile_recv/*|com.tencent.tim:Tencent/TIMfile_recv/*|com.tencent.tim:files/TIMfile_recv/*) return 0 ;;
+    # 3.0.0 参考 Aurora 补齐的默认下载来源（只移动，不删除）。
+    com.tencent.android.qqdownloader:files/tassistant/apk/*) return 0 ;;
+    com.coolapk.market:files/Download/*|com.baidu.searchbox:files/downloads/*|com.baidu.searchbox:files/Download/*) return 0 ;;
   esac
+  # 腾讯系应用（QQ / TIM / 轻聊版等）Tencent/<xxx>file_recv 接收目录；只认 Tencent 下一层。
+  case "$package:$tail" in
+    com.tencent.*:Tencent/*/*)
+      tencent_dir=${tail#Tencent/}; tencent_dir=${tencent_dir%%/*}
+      case "$tencent_dir" in *[fF][iI][lL][eE]_[rR][eE][cC][vV]) return 0 ;; esac
+      ;;
+  esac
+  # Telegram 及其分支把下载放在 Android/data/<包名>/files/Telegram/Telegram Files。
+  if [ "$root_kind" = data ]; then
+    case "$tail" in
+      files/Telegram/Telegram\ Files/*) return 0 ;;
+    esac
+  fi
 
   if is_browser_package "$package"; then
     case "$tail" in
@@ -341,6 +364,7 @@ allowed_app_source() {
 is_public_user_path() {
   case "$1" in
     Download/*|Downloads/*|Documents/*|Bluetooth/*|UCDownloads/*|Quark/Download/*|BaiduNetdisk/*|Tencent/QQfile_recv/*|Tencent/TIMfile_recv/*) return 0 ;;
+    123云盘/*|AliYunPan/*|微云保存的文件/*|QQBrowser/*|UCTurbo/Download/*) return 0 ;;
     Telegram/Telegram\ Documents/*|Telegram/Telegram\ Images/*|Telegram/Telegram\ Video/*|Telegram/Telegram\ Audio/*|Telegram/Telegram\ Files/*) return 0 ;;
     Nagram/Nagram\ Documents/*|Nagram/Nagram\ Images/*|Nagram/Nagram\ Video/*|Nagram/Nagram\ Audio/*) return 0 ;;
     NagramX/NagramX\ Documents/*|NagramX/NagramX\ Images/*|NagramX/NagramX\ Video/*|NagramX/NagramX\ Audio/*) return 0 ;;
