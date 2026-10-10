@@ -75,7 +75,17 @@ def main() -> None:
     time.sleep(2)
     smoke.tap_label('首页', 'refactor-home-return')
     smoke.adb('shell', 'input', 'keyevent', '3')
-    smoke.adb('shell', 'am', 'start', '-W', '-n', smoke.ACTIVITY)
+    # 等 HOME 真正切到桌面再热启动；否则 am start -W 会落在仍可见的顶部 Activity 上，
+    # 没有启动事件可等而超时（3.0.0 首次发布运行 38087393701 即为此竞态）。
+    at_home = False
+    for _ in range(10):
+        time.sleep(1)
+        top = smoke.adb('shell', 'dumpsys', 'activity', 'activities', check=False).split('topResumedActivity=', 1)[-1].split('\n', 1)[0]
+        if smoke.APP not in top:
+            at_home = True
+            break
+    smoke.save_text('warm-start-home.txt', f'at_home={at_home}')
+    smoke.adb('shell', 'am', 'start', *(['-W'] if at_home else []), '-n', smoke.ACTIVITY, timeout=90)
     time.sleep(3)
     smoke.alive()
     # Uninstall is only for the disposable emulator's fresh-install test, never a user's device.
