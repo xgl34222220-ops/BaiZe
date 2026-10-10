@@ -37,7 +37,8 @@ class PhotoCompressionScreenUiTest {
 class FileTrashScreenUiTest {
     @get:Rule val compose = createAndroidComposeRule<FileTrashActivity>()
     @Test fun trashScreenDoesNotOfferSilentAutomaticPurge() {
-        compose.onNodeWithText("文件回收站").assertIsDisplayed()
+        // 页头与「文件回收站 / 隔离区」页内切换各有一个「文件回收站」文字。
+        compose.onAllNodesWithText("文件回收站").onFirst().assertIsDisplayed()
         compose.onNodeWithText("1 GiB").assertDoesNotExist()
         compose.onNodeWithText("回收站为空").assertIsDisplayed()
         compose.onNodeWithText("永久删除").assertDoesNotExist()

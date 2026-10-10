@@ -90,6 +90,8 @@ class NavigationStateRetentionTest {
         restore.setContent { BaiZeMiuixApp(DashboardUiState(ready = true, automationAvailable = true),
             SchedulerUiState(scheduleMode = 2, dailyEnabled = true, dailyHour = 3, dailyMinute = 15),
             actions.copy(saveScheduler = { savedTimes += it }), AppearanceSettings(uiStyle = style), initialPage = 1) }
+        // 专项清理列表位于自动清理之前，总开关卡片初始不在 LazyColumn 的组合范围内。
+        compose.onNodeWithTag("clean-scroll").performScrollToNode(hasContentDescription("展开自动清理设置"))
         compose.onNodeWithContentDescription("展开自动清理设置").performScrollTo().performClick()
         scrollTo("执行时间").performClick()
         compose.onAllNodes(hasSetTextAction())[0].performTextReplacement("21")

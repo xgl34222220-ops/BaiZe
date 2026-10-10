@@ -2,6 +2,7 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import io.github.xgl34222220.baize.ui.appearance.AppearanceSettings
@@ -40,7 +41,8 @@ class SevenImprovementNavigationTest {
         for (title in listOf("照片瘦身", "重复文件", "滑动整理")) {
             compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText(title))
             compose.onAllNodesWithText(title).assertCountEquals(1)
-            compose.onNodeWithText(title).performScrollTo().performClick()
+            // 行可能停在浮动 Dock 下方；直接触发该行的点击语义，验证入口接线而不是坐标命中。
+            compose.onNodeWithText(title).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         }
         compose.onNodeWithText("一键扫描").assertDoesNotExist()
         assertEquals(listOf("photo", "duplicates", "swipe"), opened)

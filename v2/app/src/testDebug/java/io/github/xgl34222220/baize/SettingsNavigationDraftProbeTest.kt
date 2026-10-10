@@ -92,6 +92,9 @@ class SettingsNavigationDraftProbeTest {
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()
         compose.onNodeWithTag("clean-scroll").performScrollToNode(hasText("执行条件与高级"))
         compose.onNodeWithText("执行条件与高级").performScrollTo().performClick()
+        // 「执行条件与高级」是 LazyColumn，页脚说明需先滚动到可组合范围内。
+        compose.onNode(hasScrollAction() and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange))
+            .performScrollToNode(hasText("修改后点右上角“保存”生效"))
         compose.onNodeWithText("修改后点右上角“保存”生效").performScrollTo().assertIsDisplayed()
         compose.waitForIdle()
         val bitmap = compose.runOnIdle { captureActivityContent(compose.activity) }
