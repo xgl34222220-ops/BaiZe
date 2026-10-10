@@ -402,7 +402,7 @@ private fun RuleQualityScreen(
         if (filtered.isEmpty() && !state.loading) {
             item { RuleQualityEmpty(horizontal, shape, state.report.available, stateFilter, typeFilter) }
         } else {
-            items(filtered, key = { it.key }) { item ->
+            items(filtered, key = { it.key }, contentType = { "rule-quality" }) { item ->
                 RuleQualityCard(
                     item = item,
                     horizontal = horizontal,

@@ -17,6 +17,8 @@ internal data class RootEntry(
 
 internal data class RootOwnerRule(val label: String, val packages: List<String>, val sensitive: Boolean = false)
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class RootEntryReview(
     val entry: RootEntry, val kind: RootEntryKind, val ownerLabel: String?, val ownerPackages: List<String>,
     val installedOwners: List<String>, val sensitive: Boolean

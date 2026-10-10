@@ -118,7 +118,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                 item(key = "history-date-$date") { DateLabel(date) }
                 itemsIndexed(
                     items = records,
-                    key = { index, record -> "${record.time}|${record.title}|${record.trigger}|$index" }
+                    key = { index, record -> "${record.time}|${record.title}|${record.trigger}|$index" }, contentType = { _, _ -> "history-record" }
                 ) { _, record ->
                     RecordCard(record)
                 }

@@ -133,7 +133,7 @@ internal fun WhitelistManagerScreen(
                             }
                         }
                     } }
-                    items(visible, key = { "app:${it.packageName}" }) { app ->
+                    items(visible, key = { "app:${it.packageName}" }, contentType = { "whitelist-app" }) { app ->
                         LuoShuGroup {
                             Row(Modifier.fillMaxWidth().clickable(enabled = edit, role = Role.Checkbox) { onToggle(app.packageName) }
                                 .padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +173,7 @@ internal fun WhitelistManagerScreen(
                             if (pathFiltered) TextButton({ focusOnly = false; query = "" }) { Text("显示全部 ${state.paths.size} 条路径") }
                         }
                     } }
-                    items(visiblePaths, key = { "path:$it" }) { path -> LuoShuGroup {
+                    items(visiblePaths, key = { "path:$it" }, contentType = { "whitelist-path" }) { path -> LuoShuGroup {
                         Column(Modifier.padding(16.dp).testTag("whitelist-path:$path")) {
                             SelectionContainer { Text(path, style = MaterialTheme.typography.bodyMedium) }
                             if (path in matchingPaths) Text(

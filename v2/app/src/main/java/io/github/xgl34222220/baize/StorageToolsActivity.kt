@@ -226,6 +226,11 @@ internal fun StorageToolsScreen(
 ) {
     val context = LocalContext.current
     val visible = remember(state) { state.visibleRecords }
+    // 底栏与重复组列表的派生值每次状态变化只算一次，避免一次重组里多次遍历全部结果。
+    val recommended = remember(state) { state.recommended }
+    val allSelected = recommended.isNotEmpty() && state.selected.containsAll(recommended)
+    val selectedBytes = remember(state.selected, state.records, state.duplicateGroups, state.mode) { state.selectedBytes }
+    val visibleGroups = remember(state) { if (state.mode == StorageToolMode.DUPLICATES) state.visibleGroups else emptyList() }
     // 时间筛选把全部候选文件排除时，说明原因（例如都在 90 天内），而不是只显示 0 B 与通用空状态。
     val ageHiddenCount = remember(state, visible) {
         if (state.running || visible.isNotEmpty() || state.minimumAgeDays <= 0 || state.query.isNotBlank() || state.category != null ||
@@ -267,8 +272,8 @@ internal fun StorageToolsScreen(
             }
         } },
         bottomBar = { if (visible.isNotEmpty() && !state.running && !state.permissionRequired) CleanSelectionBar(
-            state.selected.size, visible.size, Formatter.formatFileSize(context, state.selectedBytes), state.allSelected,
-            state.recommended.isNotEmpty(), onToggleAll, onDelete,
+            state.selected.size, visible.size, Formatter.formatFileSize(context, selectedBytes), allSelected,
+            recommended.isNotEmpty(), onToggleAll, onDelete,
             cleanLabel = "移入回收站 ${state.selected.size} 项", selectLabel = if (state.mode == StorageToolMode.DUPLICATES) "勾选多余副本" else "全选当前结果",
             // 相机原件不进入“全选”，但逐项勾选后仍可确认删除。
             cleanEnabled = state.selected.isNotEmpty()) }
@@ -376,7 +381,7 @@ internal fun StorageToolsScreen(
                 if (sunburst.isNotEmpty() && !state.running) item(key = "sunburst") {
                     StorageSunburst(sunburst, state.directory != null, { if (!state.running) onDirectory(it) }, { if (!state.running) backDirectory() })
                 }
-                items(shownDirectories, key = { "dir-${it.path}" }) { dir ->
+                items(shownDirectories, key = { "dir-${it.path}" }, contentType = { "storage-directory" }) { dir ->
                     DetailGlassPanel(Modifier.clickable(enabled = !state.running, onClickLabel = "打开目录 ${dir.path}") { onDirectory(dir.path) }) {
                         Text(when {
                             dir.path.matches(Regex("/data/user/[0-9]+")) -> "应用私有数据"
@@ -412,9 +417,9 @@ internal fun StorageToolsScreen(
             }
             if (state.mode == StorageToolMode.DUPLICATES) {
                 item { DuplicateKeeperControls(state, onKeeperPreference) }
-                state.visibleGroups.forEachIndexed { index, group ->
+                visibleGroups.forEachIndexed { index, group ->
                     item(key = "group-${group.key}-${group.bytesEach}") { DetailSectionHeader("重复组 ${index + 1}", "${group.records.size} 个 · 多余副本占用 ${Formatter.formatFileSize(context, group.reclaimableBytes)}") }
-                    items(group.records, key = { "dup-${it.uri}" }) { record ->
+                    items(group.records, key = { "dup-${it.uri}" }, contentType = { "storage-duplicate" }) { record ->
                         val keeper = record.uri !in state.selected && group.records.count { it.uri !in state.selected } == 1
                         Column {
                             if (storageCategory(record) == "image") StorageComparisonThumbnail(record)
@@ -424,7 +429,7 @@ internal fun StorageToolsScreen(
                         }
                     }
                 }
-            } else items(visible, key = { it.uri }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
+            } else items(visible, key = { it.uri }, contentType = { "storage-file" }) { record -> StorageFileRow(record, record.uri in state.selected, !state.running, false, { onToggle(record.uri) }, { onOpen(record) }, state.outcomes[record.uri],
                 StorageReviewFilters.sourceLabel(state.mode, record) ?: if (UserMediaGuard.isUserMedia(record.path)) UserMediaGuard.INDIVIDUAL_LABEL else null,
                 lock = StorageReviewFilters.rowLock(state.mode, record)) }
             if (!state.running && !state.permissionRequired && visible.isEmpty() && !(state.mode == StorageToolMode.ANALYSIS && state.directory == null && state.category == null && state.query.isBlank() && state.buckets.isNotEmpty())) {

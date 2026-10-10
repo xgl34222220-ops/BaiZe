@@ -730,6 +730,8 @@ internal data class ScanCoverageItem(
     val reason: String
 )
 
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class ApkScanItem(
     val name: String,
     val files: Long,
@@ -855,7 +857,7 @@ internal fun ApkScanScreen(
                     icon = Icons.Rounded.InstallMobile
                 )
             }
-        } else itemsIndexed(visible, key = { _, item -> item.previewKey }) { _, item ->
+        } else itemsIndexed(visible, key = { _, item -> item.previewKey }, contentType = { _, _ -> "apk-row" }) { _, item ->
             val archive = if (loader == null) item.archive else produceState(item.archive, item.previewKey) {
                 value = requireNotNull(loader).invoke(item)
             }.value

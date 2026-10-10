@@ -410,7 +410,7 @@ internal fun ProtectedReviewScreen(
                 )
             }
             if (state.items.isNotEmpty()) item { DetailSectionHeader("项目明细", "勾选要处理的项目，点击条目查看完整信息") }
-            itemsIndexed(state.items, key = { _, item -> item.id.ifBlank { item.path } }) { index, item ->
+            itemsIndexed(state.items, key = { _, item -> item.id.ifBlank { item.path } }, contentType = { _, _ -> "protected-item" }) { index, item ->
                 ProtectedItemRow(
                     item, item.id in state.selected, !state.running,
                     first = index == 0, last = index == state.items.lastIndex,

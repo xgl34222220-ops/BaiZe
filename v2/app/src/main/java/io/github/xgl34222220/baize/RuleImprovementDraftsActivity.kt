@@ -372,7 +372,7 @@ private fun RuleImprovementDraftsScreen(
             if (filtered.isEmpty() && !state.loading) {
                 item { DraftEmpty(horizontal, shape, state.report.available) }
             } else {
-                items(filtered, key = { it.key }) { draft ->
+                items(filtered, key = { it.key }, contentType = { "draft" }) { draft ->
                     DraftCard(draft, horizontal, shape)
                 }
             }

@@ -142,7 +142,7 @@ internal fun FileOrganizerScreen(
                             }
                         }
                     }
-                    if (category in expanded) items(entries, key = { "file:${it.id}" }) { item ->
+                    if (category in expanded) items(entries, key = { "file:${it.id}" }, contentType = { "organizer-file" }) { item ->
                         OrganizerPreviewRow(item, item.id in state.selectedIds, editable, { onToggleItem(item.id) }, { inspected = item })
                     }
                 }

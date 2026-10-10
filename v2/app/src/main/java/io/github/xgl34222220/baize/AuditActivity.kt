@@ -426,7 +426,7 @@ private fun AuditScreen(
             if (filtered.isEmpty() && !state.loading) {
                 item { AuditEmptyCard(horizontal, cardShape, filter) }
             } else {
-                items(filtered, key = { it.id }) { event ->
+                items(filtered, key = { it.id }, contentType = { "audit-event" }) { event ->
                     AuditEventCard(event, horizontal, cardShape)
                 }
             }

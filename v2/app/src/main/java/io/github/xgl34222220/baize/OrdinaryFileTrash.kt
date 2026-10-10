@@ -16,6 +16,8 @@ internal enum class TrashPayloadState(val label: String) {
     READABLE("路径可读，恢复前仍需核对内容"), MISSING("回收内容未找到，恢复记录仍保留"),
     PATH_CHANGED("回收路径已变化或含链接，操作已阻止"), UNAVAILABLE("存储卷或回收目录暂不可用，恢复记录仍保留")
 }
+/** 列表行模型：只读字段，供 Compose 跳过未变化的行。 */
+@androidx.compose.runtime.Immutable
 internal data class TrashEntry(val id: String, val original: String, val stored: String, val bytes: Long,
     val hash: String, val created: Long, val expires: Long, val payloadState: TrashPayloadState = TrashPayloadState.READABLE) {
     fun json() = JSONObject().put("id", id).put("original", original).put("stored", stored).put("bytes", bytes)

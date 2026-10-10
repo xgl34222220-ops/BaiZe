@@ -300,7 +300,7 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
                 val rows = state.reviews.filter { it.kind == kind }
                 if (rows.isNotEmpty()) {
                     item(key = "kind-${kind.name}") { DetailSectionHeader(kind.label, "${rows.size} 项") }
-                    itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }) { index, review ->
+                    itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }, contentType = { _, _ -> "root-entry" }) { index, review ->
                         val size = when { !review.entry.directory -> Formatter.formatFileSize(context, review.entry.bytes)
                             review.kind == RootEntryKind.STANDARD -> "受保护"; review.entry.empty -> "空"
                             else -> Formatter.formatFileSize(context, review.entry.bytes) + if (review.entry.limited) "+" else "" }

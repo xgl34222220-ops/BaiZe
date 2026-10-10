@@ -34,6 +34,9 @@ class ShizukuCacheActivity : ComponentActivity() {
         setContent {
             val settings by appearance.settings.collectAsState()
             val state by model.state.collectAsState()
+            val shownApps = remember(state.apps, state.query) {
+                state.apps.filter { state.query.isBlank() || it.label.contains(state.query, true) || it.packageName.contains(state.query, true) }
+            }
             var confirmClean by rememberSaveable { mutableStateOf(false) }
             var confirmBack by rememberSaveable { mutableStateOf(false) }
             fun back() { if (state.busy) confirmBack = true else finish() }
@@ -65,7 +68,7 @@ class ShizukuCacheActivity : ComponentActivity() {
                             Text("系统未返回精确释放字节数；缓存可能由应用重新生成。", style = MaterialTheme.typography.bodySmall)
                         } }
                         item { OutlinedTextField(state.query, model::query, label = { Text("搜索应用") }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
-                        items(state.apps.filter { state.query.isBlank() || it.label.contains(state.query, true) || it.packageName.contains(state.query, true) }, key = { it.packageName }) { app ->
+                        items(shownApps, key = { it.packageName }, contentType = { "shizuku-app" }) { app ->
                             DetailGlassPanel {
                                 Row(Modifier.fillMaxWidth().toggleable(app.packageName in state.selected,
                                     enabled = !state.busy && !app.isProtected, role = Role.Checkbox, onValueChange = { model.toggle(app.packageName) })) {
