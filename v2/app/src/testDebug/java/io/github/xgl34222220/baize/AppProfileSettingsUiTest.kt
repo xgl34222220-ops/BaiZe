@@ -21,7 +21,7 @@ class AppProfileSettingsUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val actions = DashboardActions(refresh = {}, clean = {}, organize = {}, scan = {}, apkScan = {},
         largeFiles = {}, duplicates = {}, storageAnalysis = {}, cleanScan = {}, dismissScan = {}, stop = {},
-        deep = {}, corpses = {}, audit = {}, updateScheduler = {}, saveScheduler = {}, schedulerCommand = {},
+        deep = {}, corpses = {}, audit = {}, saveScheduler = {}, schedulerCommand = {},
         clearHistory = {}, clearRawLog = {}, reviewProtected = {}, whitelist = {}, resumableScan = {},
         theme = {}, reconnect = {}, resetScanPerformance = {}, crash = {})
 
@@ -32,7 +32,7 @@ class AppProfileSettingsUiTest {
     ) {
         var scheduler by mutableStateOf(initial)
         compose.setContent { BaiZeMiuixApp(DashboardUiState(ready = true), scheduler,
-            actions.copy(updateScheduler = { scheduler = it }, saveScheduler = { saves += it }, wechatUsage = wechatUsage),
+            actions.copy(saveScheduler = { saves += it }, wechatUsage = wechatUsage),
             AppearanceSettings(uiStyle = UiStyle.MIUIX)) }
         // 去重后：原 设置 →「自动任务设置」整页搬到 清理 → 自动清理 →「执行条件与高级」。
         compose.onNodeWithText("清理", useUnmergedTree = true).performClick()

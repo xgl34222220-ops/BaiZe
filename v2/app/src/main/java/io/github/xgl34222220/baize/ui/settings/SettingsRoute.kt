@@ -47,7 +47,8 @@ fun SettingsRoute(
         onReconnect = dashboardActions.reconnect,
         onOpenAudit = onOpenDetails,
         onOpenCrashDiagnostics = dashboardActions.crash,
-        onOpenRulesCenter = dashboardActions.audit
+        onOpenRulesCenter = dashboardActions.audit,
+        onResetScanPerformance = dashboardActions.resetScanPerformance
     )
 
     val skin = when (style) {
