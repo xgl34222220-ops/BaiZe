@@ -243,6 +243,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                     photoCompression = { CleanerNavigation.open(this, Intent(this, PhotoCompressionActivity::class.java)) },
                     fileTrash = { CleanerNavigation.open(this, Intent(this, FileTrashActivity::class.java)) },
                     swipeReview = { CleanerNavigation.open(this, Intent(this, SwipeReviewActivity::class.java)) },
+                    storageView = { mode -> CleanerNavigation.open(this, StorageToolsActivity.intent(this, mode)) },
                     cleanScan = { openForegroundCleaner() },
                     dismissScan = { clearScanResult() },
                     stop = { stopTask() },

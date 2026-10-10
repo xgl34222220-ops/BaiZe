@@ -91,22 +91,9 @@ fun VideoTopBar(
 }
 
 @Composable
-fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit, primary: Boolean = false) {
-    val scheme = MaterialTheme.colorScheme
-    val color = if (primary) scheme.primaryContainer else BaiZeTokens.colors.surfaceOverlay
-    Surface(
-        modifier = Modifier.size(48.dp)
-            .clip(CircleShape).clickable(role = Role.Button, onClickLabel = description, onClick = onClick)
-            .padding(2.dp),
-        shape = CircleShape,
-        color = color,
-        contentColor = if (LocalVideoSkin.current == VideoSkin.MIUIX || primary) scheme.primary else scheme.onSurface
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(icon, description, Modifier.size(21.dp))
-        }
-    }
-}
+@Suppress("UNUSED_PARAMETER")
+fun VideoIconButton(icon: ImageVector, description: String, onClick: () -> Unit, primary: Boolean = false) =
+    io.github.xgl34222220.baize.ui.components.BaiZeFloatingIconButton(icon, description, onClick)
 
 @Composable
 fun VideoTabs(labels: List<String>, selectedIndex: Int, onSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
@@ -181,7 +168,7 @@ fun VideoCard(
     } else {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
             Surface(modifier = modifier, shape = shape, color = color,
-                contentColor = scheme.onSurface, shadowElevation = 2.dp, tonalElevation = 0.dp) {
+                contentColor = scheme.onSurface, shadowElevation = 0.dp, tonalElevation = 0.dp) {
                 Column(Modifier.padding(contentPadding.dp), content = content)
             }
         }

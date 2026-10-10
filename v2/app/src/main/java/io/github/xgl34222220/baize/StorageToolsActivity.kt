@@ -48,6 +48,8 @@ import io.github.xgl34222220.baize.ui.components.*
 import io.github.xgl34222220.baize.ui.miuix.GlassActionButton
 import io.github.xgl34222220.baize.ui.theme.BaiZeTheme
 import io.github.xgl34222220.baize.ui.theme.BaiZeTokens
+import io.github.xgl34222220.baize.ui.theme.BaiZeTone
+import io.github.xgl34222220.baize.ui.theme.BaiZeTones
 
 enum class StorageToolMode {
     LARGE, DUPLICATES, ANALYSIS,
@@ -313,16 +315,33 @@ internal fun StorageToolsScreen(
                 }
             }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && state.directory == null) item { DetailGlassPanel {
-                Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
-                Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) }, enabled = !state.running) { Text("打开照片瘦身") }
-                Text("滑动整理：左删右留，逐张过一遍照片", style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) }, enabled = !state.running) { Text("打开滑动整理") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BaiZeTintedIcon(Icons.Rounded.PhotoSizeSelectLarge, BaiZeTones.purple)
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("照片瘦身", style = MaterialTheme.typography.titleMedium)
+                        Text("预览 JPEG 压缩效果，原图始终保留", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                    BaiZeChipButton("打开滑动整理", { CleanerNavigation.openFrom(context, Intent(context, SwipeReviewActivity::class.java)) },
+                        primary = false, enabled = !state.running)
+                    BaiZeChipButton("打开照片瘦身", { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java)) },
+                        primary = true, enabled = !state.running)
+                }
             } }
             if (state.mode == StorageToolMode.ANALYSIS && state.buckets.isNotEmpty() && state.category == null && state.directory == null) {
                 item { StorageComposition(state.buckets) }
                 item { DetailSectionHeader("空间构成", "点击分类，查看具体文件") }
-                items(state.buckets, key = { "bucket-${it.key}" }) { bucket -> StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) } }
+                item(key = "buckets") {
+                    // 空间构成合并为一张分组卡（HyperOS「推荐清理」样式），不再一类一卡。
+                    BaiZeCard(Modifier.padding(horizontal = 16.dp)) {
+                        state.buckets.forEachIndexed { index, bucket ->
+                            if (index > 0) BaiZeInsetDivider()
+                            StorageBucketRow(bucket, state.category == bucket.key) { onCategory(if (state.category == bucket.key) null else bucket.key) }
+                        }
+                    }
+                }
             }
             if (state.mode == StorageToolMode.ANALYSIS && state.category == null && (state.records.isNotEmpty() || state.directoryUsage != null)) {
                 item { DetailSectionHeader("目录占用", state.directory ?: "点击存储卷逐层查看") }
@@ -478,19 +497,10 @@ private fun StorageComposition(buckets: List<StorageAnalysisBucket>) {
 @Composable
 private fun StorageBucketRow(bucket: StorageAnalysisBucket, selected: Boolean, onClick: () -> Unit) {
     val context = LocalContext.current
-    DetailGlassPanel(Modifier.clickable(onClickLabel = "查看${bucket.label}", onClick = onClick)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(12.dp), color = storageColor(bucket.key).copy(alpha = .12f)) {
-                Icon(storageIcon(bucket.key), null, Modifier.padding(9.dp).size(22.dp), tint = storageColor(bucket.key))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(bucket.label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                Text("${bucket.files} 个文件", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(Formatter.formatFileSize(context, bucket.bytes), fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-            Icon(if (selected) Icons.Rounded.CheckCircle else Icons.Rounded.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-        }
-    }
+    val color = storageColor(bucket.key)
+    BaiZeListRow(bucket.label, onClick, subtitle = "${bucket.files} 个文件",
+        value = Formatter.formatFileSize(context, bucket.bytes),
+        leading = { BaiZeTintedIcon(storageIcon(bucket.key), BaiZeTone(color, color)) }, chevron = !selected)
 }
 
 private val sunburstPalette = listOf(Color(0xFF3978F6), Color(0xFF8A6BEF), Color(0xFFE6A13D), Color(0xFF34A88B),

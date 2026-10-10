@@ -145,7 +145,7 @@ private fun LifetimeHero(state: HistoryUiState) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(24.dp),
         color = colors.surfaceRaised,
         shadowElevation = 0.dp
     ) {
@@ -154,7 +154,7 @@ private fun LifetimeHero(state: HistoryUiState) {
                 .background(
                     Brush.linearGradient(
                         listOf(
-                            scheme.primaryContainer.copy(alpha = .46f),
+                            scheme.primaryContainer.copy(alpha = .38f),
                             colors.surfaceRaised
                         )
                     )
@@ -266,9 +266,14 @@ private fun CurrentResultGroup(state: HistoryUiState) {
                 )
             }
             Spacer(Modifier.width(10.dp))
+            // 没有可测量的数字时降为灰色说明字，不再用粗体数字位显示“无法测量”。
+            val capacity = state.currentCapacityText { Formatter.formatFileSize(context, it) }
+            val numeric = capacity.any(Char::isDigit)
             Text(
-                state.currentCapacityText { Formatter.formatFileSize(context, it) },
-                style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
+                capacity,
+                style = if (numeric) MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum")
+                    else MaterialTheme.typography.bodySmall,
+                color = if (numeric) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (state.lastTaskTime.isNotBlank()) {

@@ -2,6 +2,8 @@ package io.github.xgl34222220.baize.ui.components
 
 import android.os.Build
 import android.view.WindowManager
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,10 +55,18 @@ internal fun BaiZeDialog(
             }
             onDispose { if (Build.VERSION.SDK_INT >= 31) window?.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND) }
         }
-        Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp).imePadding(), contentAlignment = Alignment.Center) {
+        // HyperOS 风格：手机竖屏时弹层贴底（拇指可达），横屏 / 平板仍居中。
+        val portrait = LocalConfiguration.current.let { it.screenHeightDp > it.screenWidthDp && it.screenWidthDp < 600 }
+        Box(Modifier.fillMaxSize()) {
+        // 点击弹层外部关闭；独立的背景层，不会拦截弹层内部的点击。
+        Box(Modifier.matchParentSize().pointerInput(onDismissRequest) { detectTapGestures { onDismissRequest() } })
+        Box(Modifier.fillMaxSize()
+            .navigationBarsPadding().imePadding()
+            .padding(horizontal = if (portrait) 12.dp else 24.dp, vertical = if (portrait) 12.dp else 0.dp),
+            contentAlignment = if (portrait) Alignment.BottomCenter else Alignment.Center) {
             Surface(modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = maxHeight),
-                shape = RoundedCornerShape(28.dp), color = BaiZeTokens.colors.surfaceRaised,
-                tonalElevation = 0.dp, shadowElevation = 6.dp) {
+                shape = RoundedCornerShape(32.dp), color = BaiZeTokens.colors.surfaceRaised,
+                tonalElevation = 0.dp, shadowElevation = 12.dp) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     if (icon != null || title != null || text != null) {
                         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -80,6 +90,7 @@ internal fun BaiZeDialog(
             }
         }
         }
+        }
     }
 }
 
@@ -87,7 +98,8 @@ internal fun BaiZeDialog(
 internal fun BaiZeDialogButton(onClick: () -> Unit, modifier: Modifier = Modifier,
     enabled: Boolean = true, primary: Boolean = LocalPrimaryDialogAction.current,
     content: @Composable RowScope.() -> Unit) {
-    Button(onClick = onClick, modifier = modifier.fillMaxWidth().heightIn(min = 46.dp), enabled = enabled,
+    val haptic = rememberBaiZeHaptic()
+    Button(onClick = { if (primary) haptic(); onClick() }, modifier = modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = enabled,
         shape = CircleShape, elevation = null, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (primary) MaterialTheme.colorScheme.primary else BaiZeTokens.colors.surfaceOverlay,

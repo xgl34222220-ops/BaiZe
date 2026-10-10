@@ -425,5 +425,7 @@ data class DashboardActions(
     /** 只读统计微信各类目录占用（Root、后台线程），结果回到主线程。 */
     val wechatUsage: ((WechatUsage) -> Unit) -> Unit = { it(WechatUsage.failed("Root 服务尚未连接")) },
     val fileTrash: () -> Unit = {},
-    val swipeReview: () -> Unit = {}
+    val swipeReview: () -> Unit = {},
+    /** 直接打开存储分析的某个视图（首页“推荐清理 / 更多清理”入口）。 */
+    val storageView: (StorageToolMode) -> Unit = {}
 )

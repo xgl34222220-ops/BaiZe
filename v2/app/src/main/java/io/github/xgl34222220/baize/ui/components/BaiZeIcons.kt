@@ -58,7 +58,7 @@ internal fun baiZeLineIcon(icon: ImageVector): ImageVector = when (icon.name.sub
 @Composable
 internal fun BaiZeIconTile(icon: ImageVector, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
-    Surface(modifier.size(40.dp), shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = .07f)) {
+    Surface(modifier.size(40.dp), shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = .12f)) {
         Box(contentAlignment = Alignment.Center) { Icon(baiZeLineIcon(icon), null, Modifier.size(24.dp), tint = accent) }
     }
 }
