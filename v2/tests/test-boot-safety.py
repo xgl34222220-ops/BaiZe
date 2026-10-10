@@ -136,6 +136,76 @@ class BootStatusHelpers(unittest.TestCase):
         self.assertLess(text.index('BOOT_SETTLE_SECONDS'), text.index('root-tidy.sh'))
 
 
+class PerfToolsLoop(unittest.TestCase):
+    """性能工具（实验）：默认全关，开机不运行，轮询低优先级、≥30 秒，且只在 boot_completed + 120 秒后启动。"""
+
+    def setUp(self):
+        self.text = (SCRIPTS / 'perf-tools.sh').read_text(encoding='utf-8')
+
+    def body(self, name):
+        start = self.text.index(f'{name}() {{')
+        return self.text[start:self.text.index('\n}\n', start)]
+
+    def test_never_started_from_boot_path(self):
+        self.assertNotIn('perf-tools', (MODULE / 'service.sh').read_text(encoding='utf-8'))
+        callers = sorted(p.name for p in MODULE.rglob('*.sh')
+                         if 'perf-tools.sh' in p.read_text(encoding='utf-8') and p.name != 'perf-tools.sh')
+        self.assertEqual(['supervisor.sh'], callers)
+        self.assertRegex((MODULE / 'customize.sh').read_text(encoding='utf-8'), r'supervisor perf-tools; do')
+
+    def test_supervisor_spawns_only_when_configured_and_in_background(self):
+        text = (SCRIPTS / 'supervisor.sh').read_text(encoding='utf-8')
+        body = text[text.index('run_perf_tools() {'):]
+        body = body[:body.index('\n}\n')]
+        self.assertLess(body.index('perf-tools.conf'), body.index('perf-tools.sh" check'))
+        self.assertRegex(body, r'perf-tools\.sh" check \\\n\s+</dev/null >/dev/null 2>&1 & perf_pid=\$!')
+        self.assertRegex(text, r'\[ "\$PERF_EVERY" -ge 30 \] \|\| PERF_EVERY=30')
+
+    def test_everything_defaults_off(self):
+        for key in ('freeze_enabled', 'mem_enabled', 'dex2oat_auto', 'dbopt_auto'):
+            self.assertRegex(self.text, r'perf_(?:flag|conf) %s\b' % key)
+            defaults = re.findall(r'perf_conf %s ([^\s)]+)' % key, self.text)
+            self.assertTrue(all(v == '0' for v in defaults), f'{key} must default to 0: {defaults}')
+        self.assertIn('perf_flag() { [ "$(perf_conf "$1" 0)" = 1 ]; }', self.text)
+        for key in ('mem_kill', 'dbopt_force_stop', 'dex2oat_force'):
+            self.assertRegex(self.text, r'perf_conf %s 0' % key)
+
+    def test_check_waits_for_boot_settle_before_any_work(self):
+        check = self.body('perf_check')
+        settle = check.index('perf_settled || exit 0')
+        for work in ('perf_detach', 'perf_maint_check'):
+            self.assertLess(settle, check.index(work))
+        settled = self.body('perf_settled')
+        self.assertLess(settled.index('sys.boot_completed'), settled.index('boot_epoch'))
+        self.assertGreaterEqual(int(re.search(r'BAIZE_PERF_SETTLE_SECONDS:-(\d+)', self.text).group(1)), 120)
+        self.assertGreaterEqual(int(re.search(r'BAIZE_PERF_MIN_UPTIME:-(\d+)', self.text).group(1)), 120)
+        self.assertGreaterEqual(int(re.search(r'BAIZE_PERF_MAINT_MIN_UPTIME:-(\d+)', self.text).group(1)), 600)
+        maint = self.body('perf_maint_check')
+        self.assertLess(maint.index('MAINT_MIN_UPTIME'), maint.index('perf_in_window'))
+        self.assertLess(maint.index('perf_in_window'), maint.index('perf_detach'))
+
+    def test_loop_is_low_priority_slow_and_settled(self):
+        loop = self.body('perf_loop')
+        first_work = loop.index('perf_snapshot')
+        for needle in ('perf_low_priority', 'until perf_settled'):
+            self.assertLess(loop.index(needle), first_work)
+        self.assertRegex(loop, r'perf_uint poll_seconds \d+ (\d+) ')
+        self.assertGreaterEqual(int(re.search(r'perf_uint poll_seconds \d+ (\d+) ', loop).group(1)), 30)
+        low = self.body('perf_low_priority')
+        self.assertIn('renice -n 19', low)
+        self.assertIn('ionice -c 3', low)
+
+    def test_never_force_stops_instead_of_freezing_and_never_scans(self):
+        freeze = self.text[self.text.index('# ---------- 冻结'):self.text.index('# ---------- Dex2oat')]
+        self.assertNotIn('force-stop', freeze)
+        dbopt = self.body('perf_dbopt')
+        for number, line in code_lines(SCRIPTS / 'perf-tools.sh'):
+            match = SCAN.search(line)
+            if match and match.group(2) == 'chcon' and line.strip() in dbopt:
+                continue  # 数据库优化后恢复单个文件的 SELinux 标签（维护窗口内）
+            self.assertIsNone(match, f'perf-tools.sh:{number}: {line}')
+
+
 # Generated-name families written under the state directory and the cap that bounds each.
 FAMILIES = [
     (r'\$(REPORT_DIR|STATE_DIR/reports)/\$STAMP-', "reports '20[0-9][0-9]-*.tsv'"),

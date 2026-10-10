@@ -103,6 +103,21 @@ run_periodic_maintenance() {
     last_budget=$pm_now
     run_state_budget
   fi
+  run_perf_tools "$pm_now"
+}
+# 性能工具（实验，默认全部关闭）：只有用户在 App 里保存过 perf-tools.conf 才每分钟做一次廉价检查；
+# 开机保护（boot_completed + 120 秒）、各开关与维护窗口都在 perf-tools.sh check 内判断，这里只负责拉起。
+PERF_EVERY=${BAIZE_PERF_CHECK_SECONDS:-60}
+case "$PERF_EVERY" in ''|*[!0-9]*) PERF_EVERY=60 ;; esac
+[ "$PERF_EVERY" -ge 30 ] || PERF_EVERY=30
+last_perf_check=$last_maint_check; perf_pid=
+run_perf_tools() {
+  [ -f "$STATE_DIR/perf-tools.conf" ] && [ -f "$SCRIPTDIR/perf-tools.sh" ] || return 0
+  if [ $(($1 - last_perf_check)) -lt "$PERF_EVERY" ] && [ "$1" -ge "$last_perf_check" ]; then return 0; fi
+  last_perf_check=$1
+  if [ -n "$perf_pid" ] && kill -0 "$perf_pid" 2>/dev/null; then return 0; fi
+  BAIZE_MODULE_DIR="$MODDIR" BAIZE_STATE_DIR="$STATE_DIR" sh "$SCRIPTDIR/perf-tools.sh" check \
+    </dev/null >/dev/null 2>&1 & perf_pid=$!
 }
 write_state() {
   status=$1; code=${2:-0}; reason=${3:-}; now=$(date +%s); tmp="$STATE.tmp.$$"
