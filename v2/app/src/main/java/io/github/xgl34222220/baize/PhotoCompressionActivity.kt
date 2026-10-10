@@ -36,7 +36,8 @@ class PhotoCompressionActivity : ComponentActivity() {
             var confirmBack by rememberSaveable { mutableStateOf(false) }
             var confirmRecovery by rememberSaveable { mutableStateOf(false) }
             fun back() { if (state.busy) confirmBack = true else finish() }
-            BackHandler { back() }
+            // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+            BackHandler(enabled = state.busy) { back() }
             BaiZeTheme(settings) {
                 Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
                     topBar = { DetailPageHeader("照片瘦身", "先预览 · 始终保留原图", { back() }) {} }) { padding ->

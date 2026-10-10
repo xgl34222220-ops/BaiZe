@@ -1,6 +1,7 @@
 package io.github.xgl34222220.baize
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -91,6 +92,9 @@ fun BaiZeMiuixApp(
                     onNavigationHandled()
                 }
             }
+            // 系统返回 / 预测性返回：在其他 Tab 时先回到首页（HyperOS 手机管家同款），首页再交给系统退出。
+            // 二级详情（自动清理设置、诊断等）各自的 BackHandler 注册更晚，优先处理。
+            BackHandler(enabled = page != BaiZePage.Home && showDock) { page = BaiZePage.Home }
             val miuixNavItems = remember {
                 BaiZePage.entries.map { MiuixLiquidNavItem(it.title, it.icon) }
             }

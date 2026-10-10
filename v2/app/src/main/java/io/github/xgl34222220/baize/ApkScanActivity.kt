@@ -128,7 +128,8 @@ class ApkScanActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
             val appearance by appearanceViewModel.settings.collectAsState()
-            BackHandler { requestBack() }
+            // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+            BackHandler(enabled = screenState.running) { requestBack() }
             LaunchedEffect(session) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     session.permissionEvents.collect {

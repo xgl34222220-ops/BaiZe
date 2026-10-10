@@ -28,7 +28,7 @@
         android:roundIcon="@mipmap/ic_baize"
         android:supportsRtl="true"
         android:theme="@style/Theme.BaiZe"
-        android:enableOnBackInvokedCallback="false"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false">
 
         <activity

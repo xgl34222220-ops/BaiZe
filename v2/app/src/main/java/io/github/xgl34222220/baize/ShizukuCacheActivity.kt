@@ -40,7 +40,8 @@ class ShizukuCacheActivity : ComponentActivity() {
             var confirmClean by rememberSaveable { mutableStateOf(false) }
             var confirmBack by rememberSaveable { mutableStateOf(false) }
             fun back() { if (state.busy) confirmBack = true else finish() }
-            BackHandler { back() }
+            // 空闲时交给系统返回，保留预测性返回动画；任务进行中才拦截并确认。
+            BackHandler(enabled = state.busy) { back() }
             BaiZeTheme(settings) {
                 Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
                     topBar = { DetailPageHeader("免 Root 缓存清理", "通过 Shizuku · 逐个应用确认结果", { back() }) {} }) { padding ->
