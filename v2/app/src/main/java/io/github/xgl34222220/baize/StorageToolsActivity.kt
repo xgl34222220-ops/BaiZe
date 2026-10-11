@@ -91,7 +91,8 @@ class StorageToolsActivity : ComponentActivity() {
                 BaiZeTheme(appearance) {
                     RootTidyScreen(state, ::finish, ::switchView, { rootModel.scan() }, rootModel::stop, rootModel::toggle,
                         rootModel::toggleAll, rootModel::removeSelected, rootModel::undo, rootModel::setAllowed,
-                        rootModel::block, rootModel::unblock, ::openAllFilesSettings)
+                        rootModel::block, rootModel::unblock, ::openAllFilesSettings, rootModel::ignore,
+                        { CleanerNavigation.openFrom(this, Intent(this, FileTrashActivity::class.java)) })
                 }
             }
             return

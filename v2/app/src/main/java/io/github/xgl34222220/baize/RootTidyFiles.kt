@@ -28,8 +28,8 @@ internal object RootTidyFiles {
             when {
                 attrs.isSymbolicLink -> RootEntry(name, directory = false, empty = false, modifiedSeconds = modified, link = true)
                 attrs.isDirectory -> {
-                    if (RootDirectoryOrganizer.standard(name) || name.equals(OrdinaryFileTrash.DIRECTORY, true)) {
-                        // 标准目录与回收站不统计，避免遍历大量相册文件。
+                    if (RootDirectoryOrganizer.standard(name)) {
+                        // 标准目录不统计，避免遍历大量相册文件。
                         RootEntry(name, directory = true, empty = false, modifiedSeconds = modified)
                     } else {
                         val walk = walk(file, fileCap, cancelled)
@@ -69,6 +69,12 @@ internal object RootTidyFiles {
         }
         visit(directory, 0)
         return Walk(files, directories, bytes, limited, links)
+    }
+
+    /** 根目录下这个名称已不存在（不跟随链接）：用来核对“移除”是否真的生效。 */
+    fun gone(root: File, name: String): Boolean {
+        val target = child(root, name) ?: return false
+        return attributes(target) == null && !Files.exists(target.toPath(), LinkOption.NOFOLLOW_LINKS)
     }
 
     /** 删除空文件夹（rmdir 语义，非空时失败，不会删除任何文件）。 */

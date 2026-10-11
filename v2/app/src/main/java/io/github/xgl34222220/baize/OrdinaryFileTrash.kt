@@ -68,11 +68,16 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         require(expectedBytes > 0 && expectedHash.matches(Regex("[0-9a-f]{64}"))) { "文件内容证明无效" }
         check(!isPayloadPath(source.path) && source.isFile && !Files.isSymbolicLink(source.toPath()) && source.canonicalPath == source.absolutePath) { "文件路径已变化" }
         check(occupiedBytes() <= budget - expectedBytes) { "回收站容量不足，请先恢复或手动清空；原文件保留" }
+        // 回收目录按需创建：只有真正用来存放这次文件的目录才保留，试探时新建但不适用的目录立即撤回，
+        // 避免在存储根目录留下空的 .baize-file-trash。
         val targetRoot = roots.firstOrNull { root ->
-            runCatching {
-                root.canonicalPath == root.absolutePath && (root.isDirectory || root.mkdirs()) &&
+            val created = createdDirectories(root)
+            val usable = runCatching {
+                root.canonicalPath == root.absolutePath && root.isDirectory &&
                     !Files.isSymbolicLink(root.toPath()) && sameFileSystem(root, source)
             }.getOrDefault(false)
+            if (!usable) created.forEach { dir -> runCatching { Files.deleteIfExists(dir.toPath()) } }
+            usable
         } ?: error("此存储卷无法安全移动到回收站，原文件保留")
         val marker = File(targetRoot, ".nomedia")
         check(!Files.isSymbolicLink(marker.toPath())) { "回收目录标记异常，原文件保留" }
@@ -104,6 +109,40 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         entry
     }
 
+    /** mkdirs 并返回本次新建的目录（子先父后），失败时返回已建部分，便于撤回。 */
+    private fun createdDirectories(root: File): List<File> {
+        if (Files.exists(root.toPath(), LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val missing = generateSequence(root) { it.parentFile }.takeWhile { Files.notExists(it.toPath(), LinkOption.NOFOLLOW_LINKS) }.toList()
+        runCatching { root.mkdirs() }
+        return missing.filter { it.isDirectory }
+    }
+
+    /**
+     * 回收站清空后收起空目录：某个回收目录里只剩 .nomedia（或什么都没有），且没有任何恢复记录指向它时，
+     * 删除 .nomedia 与该目录；若其上一层是 .baize-file-trash 且已空，也一并删除。
+     * 只要目录里还有任何其他条目或记录，就保持原样（.nomedia 也保留）。返回删除的目录数。
+     */
+    fun releaseEmptyRoots(): Int = synchronized(LOCK) {
+        val referenced = runCatching { entries().map { File(it.stored).parentFile?.absolutePath } }.getOrNull() ?: return@synchronized 0
+        var released = 0
+        for (root in roots.distinct()) {
+            runCatching {
+                if (Files.isSymbolicLink(root.toPath()) || !root.isDirectory || root.canonicalPath != root.absolutePath) return@runCatching
+                if (root.absolutePath in referenced) return@runCatching
+                val children = root.listFiles() ?: return@runCatching
+                if (children.any { it.name != ".nomedia" }) return@runCatching
+                val marker = File(root, ".nomedia")
+                if (children.isNotEmpty() && (Files.isSymbolicLink(marker.toPath()) || !marker.isFile || marker.length() != 0L)) return@runCatching
+                if (children.isNotEmpty()) Files.delete(marker.toPath())
+                Files.delete(root.toPath()); released++
+                val parent = root.parentFile
+                if (parent != null && parent.name.equals(DIRECTORY, true) && !Files.isSymbolicLink(parent.toPath()) &&
+                    parent.list()?.isEmpty() == true) { Files.delete(parent.toPath()); released++ }
+            }
+        }
+        released
+    }
+
     /** Exclusive creation prevents overwriting a newly created original. Trash stays until full verification. */
     fun restore(id: String, allowChanged: Boolean = false, expected: TrashEntry? = null): File = synchronized(LOCK) {
         val entry = entries().firstOrNull { it.id == id } ?: error("恢复记录不存在")
@@ -128,6 +167,7 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         syncDirectory(payload.parentFile!!)
         File(metadata, "$id.json").delete()
         syncDirectory(metadata)
+        runCatching { releaseEmptyRoots() }
         destination
     }
 
@@ -139,6 +179,7 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         syncDirectory(payload.parentFile!!)
         File(metadata, "$id.json").delete()
         syncDirectory(metadata)
+        runCatching { releaseEmptyRoots() }
         entry.bytes
     }
     /** Removes only a journal whose payload is conclusively absent on an available volume. */
@@ -149,6 +190,8 @@ internal class OrdinaryFileTrash(private val metadata: File, private val roots: 
         check(safePayload(file) && file.parentFile?.isDirectory == true && Files.notExists(file.toPath(), LinkOption.NOFOLLOW_LINKS)) { "内容仍存在或存储卷不可用，未清理记录" }
         check(File(metadata, "$id.json").delete()) { "无法清理记录" }
         syncDirectory(metadata)
+        runCatching { releaseEmptyRoots() }
+        Unit
     }
     /** A reviewed batch cannot act on a rewritten journal, even if its ID was reused. */
     private fun checkReviewedEntry(current: TrashEntry, expected: TrashEntry?) {

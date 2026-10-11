@@ -6,7 +6,9 @@ package io.github.xgl34222220.baize
  */
 internal enum class RootEntryKind(val label: String) {
     STANDARD("系统标准目录"), PROTECTED("受保护"), PLACEHOLDER("已禁止重建"), WHITELISTED("白名单"),
-    EMPTY("空文件夹"), ORPHAN("应用已卸载"), OWNED("应用在用"), UNKNOWN("来源未知")
+    EMPTY("空文件夹"), ORPHAN("应用已卸载"), OWNED("应用在用"), UNKNOWN("来源未知"),
+    /** 白泽自己的内部目录（回收站、隔离区）：不是整理候选，也不归入「受保护」，单独以内部目录展示。 */
+    INTERNAL("白泽内部目录")
 }
 
 /** 扫描到的一个根目录条目；[files]/[bytes] 在达到上限时为已统计部分，[limited] 标记不完整。 */
@@ -76,6 +78,14 @@ internal object RootDirectoryOrganizer {
         rule("WhatsApp", "com.whatsapp", names = listOf("WhatsApp"))
     }
 
+    /** 白泽自身在存储根目录可能用到的内部目录 → 展示名。它们不参与整理，也不算「受保护」。 */
+    val INTERNAL_DIRS: Map<String, String> = linkedMapOf(
+        OrdinaryFileTrash.DIRECTORY.lowercase() to "白泽回收站（内部）",
+        ".baize-quarantine" to "白泽隔离区（内部）")
+
+    fun internalLabel(name: String): String? = INTERNAL_DIRS[name.lowercase()]
+    fun isInternal(name: String): Boolean = internalLabel(name) != null
+
     /** 名称合法：单层、非空、无控制字符、不是 . 或 ..，长度有上限。 */
     fun validName(name: String): Boolean = name.isNotEmpty() && name.length <= 128 && name != "." && name != ".." &&
         '/' !in name && '\\' !in name && name.none { it.code < 32 || it.code == 127 }
@@ -102,8 +112,8 @@ internal object RootDirectoryOrganizer {
         val sensitive = owner?.sensitive == true || packages.any { it in sensitivePackages }
         fun review(kind: RootEntryKind) = RootEntryReview(entry, kind, owner?.label, packages, live, sensitive)
         return when {
-            !validName(entry.name) || entry.link || OrdinaryFileTrash.isPayloadPath("/" + entry.name) ||
-                entry.name.equals(OrdinaryFileTrash.DIRECTORY, true) -> review(RootEntryKind.PROTECTED)
+            isInternal(entry.name) && !entry.link -> RootEntryReview(entry, RootEntryKind.INTERNAL, internalLabel(entry.name), emptyList(), emptyList(), false)
+            !validName(entry.name) || entry.link || OrdinaryFileTrash.isPayloadPath("/" + entry.name) -> review(RootEntryKind.PROTECTED)
             standard(entry.name) -> review(RootEntryKind.STANDARD)
             !entry.directory && entry.bytes == 0L && rules.block.any { it.equals(entry.name, true) } -> review(RootEntryKind.PLACEHOLDER)
             rules.allow.any { it.equals(entry.name, true) } -> review(RootEntryKind.WHITELISTED)
@@ -142,25 +152,101 @@ internal object RootDirectoryOrganizer {
     }
 
     /** 规则名不能是标准目录、回收站或含分隔符；`|` 会破坏行格式。 */
-    fun ruleName(name: String): Boolean = validName(name) && '|' !in name && !standard(name) &&
-        !name.equals(OrdinaryFileTrash.DIRECTORY, true)
+    fun ruleName(name: String): Boolean = validName(name) && '|' !in name && !standard(name) && !isInternal(name)
+
+    /** 移除过的根目录文件夹：名称 → 累计移除次数与最近一次移除时间（秒）。行格式 `name|times|epoch`。 */
+    fun encodeRemoved(removed: Map<String, RemovedFolder>): String = removed.values
+        .filter { ruleName(it.name) && it.times > 0 }.sortedByDescending { it.lastRemovedSeconds }.take(MAX_RULE_NAMES)
+        .joinToString("\n") { "${it.name}|${it.times}|${it.lastRemovedSeconds}" }
+
+    fun decodeRemoved(raw: String?): Map<String, RemovedFolder> {
+        val result = LinkedHashMap<String, RemovedFolder>()
+        raw.orEmpty().lineSequence().map { it.trimEnd('\r') }.forEach { line ->
+            val parts = line.split('|')
+            if (parts.size != 3 || !ruleName(parts[0])) return@forEach
+            val times = parts[1].toIntOrNull()?.takeIf { it > 0 } ?: return@forEach
+            val at = parts[2].toLongOrNull()?.takeIf { it >= 0 } ?: return@forEach
+            if (result.size < MAX_RULE_NAMES) result[parts[0].lowercase()] = RemovedFolder(parts[0], times, at)
+        }
+        return result
+    }
+
+    /** 记录本次确实已从根目录消失的名称；键为小写名称。 */
+    fun recordRemoved(removed: Map<String, RemovedFolder>, names: Collection<String>, nowSeconds: Long): Map<String, RemovedFolder> {
+        val next = LinkedHashMap(removed)
+        names.filter(::ruleName).forEach { name ->
+            val key = name.lowercase(); val old = next[key]
+            next[key] = RemovedFolder(name, (old?.times ?: 0) + 1, nowSeconds)
+        }
+        return next
+    }
+
+    /** 撤销本次移除：对应名称的次数减一，减到 0 时删除记录。 */
+    fun forgetRemoved(removed: Map<String, RemovedFolder>, names: Collection<String>): Map<String, RemovedFolder> {
+        val next = LinkedHashMap(removed)
+        names.forEach { name ->
+            val key = name.lowercase(); val old = next[key] ?: return@forEach
+            if (old.times <= 1) next.remove(key) else next[key] = old.copy(times = old.times - 1)
+        }
+        return next
+    }
+
+    /** 本次选中的名称里，之前已移除过（又被重新创建）的个数。 */
+    fun previouslyRemoved(removed: Map<String, RemovedFolder>, names: Collection<String>): List<String> =
+        names.filter { removed.containsKey(it.lowercase()) }
+
+    fun removalMessage(count: Int, repeated: Int): String = "已移除 $count 项，文件在回收站保留 30 天" +
+        if (repeated > 0) "。其中 $repeated 个之前删过又被应用重建了，可以设为禁止重建" else ""
+
+    /** 已移除过、现在又出现在根目录、且仍可整理（未加入白名单 / 未禁止重建）的条目。 */
+    fun recreated(reviews: List<RootEntryReview>, removed: Map<String, RemovedFolder>): List<RecreatedFolder> = reviews.mapNotNull { review ->
+        val record = removed[review.entry.name.lowercase()] ?: return@mapNotNull null
+        if (review.kind !in RECREATABLE_KINDS) return@mapNotNull null
+        // 修改时间早于记录的移除时间：文件夹其实没有被删掉（移除未生效），而不是被应用重建。
+        val stale = review.entry.modifiedSeconds in 1 until record.lastRemovedSeconds
+        val owner = review.ownerLabel?.let { label ->
+            val pkg = review.installedOwners.firstOrNull()
+            if (pkg != null && pkg != label) "$label（$pkg）" else label
+        }
+        RecreatedFolder(review, record.times + 1, owner, stale)
+    }
+
+    private val RECREATABLE_KINDS = setOf(RootEntryKind.EMPTY, RootEntryKind.ORPHAN, RootEntryKind.UNKNOWN, RootEntryKind.OWNED)
+}
+
+internal data class RemovedFolder(val name: String, val times: Int, val lastRemovedSeconds: Long)
+
+/** 「被重新创建」分组的一行：[appearance] 为第几次出现（首次出现 + 每次被移除后再出现）。 */
+@androidx.compose.runtime.Immutable
+internal data class RecreatedFolder(val review: RootEntryReview, val appearance: Int, val owner: String?, val removalIneffective: Boolean) {
+    val summary: String get() = if (removalIneffective) "第 $appearance 次出现 · 上次移除未生效（文件夹修改时间早于移除时间）"
+        else "第 $appearance 次出现 · " + (owner?.let { "可能由 $it 创建" } ?: "无法识别是哪个应用创建的")
 }
 
 /** 一次移除可撤销：回收站记录、被删除的空目录、被删除的零字节文件。 */
 internal data class RootTidyUndo(val trashIds: List<String> = emptyList(), val directories: List<String> = emptyList(),
-    val emptyFiles: List<String> = emptyList()) {
+    val emptyFiles: List<String> = emptyList(), val names: List<String> = emptyList(), val repeated: Int = 0) {
     val empty: Boolean get() = trashIds.isEmpty() && directories.isEmpty() && emptyFiles.isEmpty()
+    /** 恢复动作数（文件 + 目录 + 空文件），只用于内部；面向用户的数字用 [entries]。 */
     val count: Int get() = trashIds.size + directories.size + emptyFiles.size
+    /** 本次移除的根目录条目数（与列表中勾选的项数一致，不把子目录算进去）。 */
+    val entries: Int get() = if (names.isNotEmpty()) names.size else count
 }
 
 internal data class RootTidyUiState(
     val running: Boolean = false, val permissionRequired: Boolean = false, val status: String = "准备扫描根目录",
     val reviews: List<RootEntryReview> = emptyList(), val selected: Set<String> = emptySet(),
     val rules: RootTidyRules = RootTidyRules(), val undo: RootTidyUndo = RootTidyUndo(),
-    val history: List<String> = emptyList(), val moduleSummary: String = "", val rootConnected: Boolean = false
+    val history: List<String> = emptyList(), val moduleSummary: String = "", val rootConnected: Boolean = false,
+    val removedFolders: Map<String, RemovedFolder> = emptyMap()
 ) {
+    /** 白泽内部目录（只展示，不参与整理）。 */
+    val internalDirs: List<RootEntryReview> get() = reviews.filter { it.kind == RootEntryKind.INTERNAL }
+    val recreated: List<RecreatedFolder> get() = RootDirectoryOrganizer.recreated(reviews, removedFolders)
     val selectedBytes: Long get() = reviews.filter { it.entry.name in selected }.sumOf { it.entry.bytes }
     val removable: List<RootEntryReview> get() = reviews.filter { it.removable }
+    /** 「被重新创建」分组里的名称；它们不再在原分类里重复出现。 */
+    val recreatedNames: Set<String> get() = recreated.map { it.review.entry.name }.toSet()
     /** 全选只选空文件夹与已卸载应用的残留；来源未知的需要逐项勾选。 */
     val recommended: Set<String> get() = reviews.filter { it.removable && it.kind != RootEntryKind.UNKNOWN }.map { it.entry.name }.toSet()
     fun toggle(name: String): RootTidyUiState = when {
