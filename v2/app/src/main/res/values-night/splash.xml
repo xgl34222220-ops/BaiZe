@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 深色模式启动底：深青；品牌图用 drawable-night-*/ 的白字版本。 -->
-    <color name="baize_splash_background">#0A4F55</color>
-</resources>

@@ -3,11 +3,12 @@
 
 一份图形定义同时生成：
   tools/icon/baize-icon.svg                              SVG 源（108×108 视口，背景 + 前景）
-  v2/app/src/main/res/drawable/ic_baize_background.xml   自适应图标背景（浅青渐变 + 左上柔光）
-  v2/app/src/main/res/drawable/ic_baize_foreground.xml   自适应图标前景（磨砂玻璃文档卡 + 存储环 + 星光 + 祥云）
+  tools/icon/baize-icon-monochrome.svg                   主题图标 SVG
+  v2/app/src/main/res/drawable/ic_baize_background.xml   自适应图标背景（白泽青渐变 + 左上柔光）
+  v2/app/src/main/res/drawable/ic_baize_foreground.xml   自适应图标前景（白泽晶：磨砂六棱晶石 + 内框 + 白泽角 + 星光）
   v2/app/src/main/res/drawable/ic_baize_monochrome.xml   Android 13 主题图标（单色）
-  v2/app/src/main/res/drawable/ic_baize_splash_mark.xml  启动页图标（背景裁成 72 视口内的圆 + 前景）
-设计稿里的旋转、缩放全部在这里预先烘焙进绝对坐标路径（渐变端点、描边宽度同步变换），
+启动页 drawable/ic_baize_splash.xml 直接 inset 前景矢量，不另存图形。
+设计稿里的平移、缩放全部在这里预先烘焙进绝对坐标路径（渐变端点、描边宽度同步变换），
 SVG 与 Android 矢量都不含任何 transform，因此两者几何逐字一致。图形为白泽原创手写矢量。
 
 用法：
@@ -23,10 +24,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 RES = ROOT / 'v2/app/src/main/res'
 W = '#FFFFFF'
-SHADOW = '#0B5E63'
-LINE = '#3DB7B2'
+SHADOW = '#003C40'
 K = '#000000'
-
 
 # ---------------------------------------------------------------- 仿射变换（仅相似变换：平移 / 等比缩放 / 旋转）
 class T:
@@ -119,80 +118,50 @@ def bake(d, t):
     return ''.join(out)
 
 
-def rrect(x, y, w, h, r):
-    return (f'M{x + r},{y}H{x + w - r}A{r},{r} 0 0 1 {x + w},{y + r}V{y + h - r}A{r},{r} 0 0 1 {x + w - r},{y + h}'
-            f'H{x + r}A{r},{r} 0 0 1 {x},{y + h - r}V{y + r}A{r},{r} 0 0 1 {x + r},{y}Z')
-
-
-def glass(t, x1, y1, x2, y2, *alphas):
-    (X1, Y1), (X2, Y2) = t.pt(x1, y1), t.pt(x2, y2)
-    k = len(alphas) - 1
-    return ('linear', X1, Y1, X2, Y2, [(i / k, W, al) for i, al in enumerate(alphas)])
-
-
-# ---------------------------------------------------------------- 设计稿（work/baize-icon-vector/baize-v2-C.svg）
-PLACE = translate(54, 54) @ scale(0.87) @ translate(-53, -56)   # 主体等比缩到 66dp 安全圆内（设计稿 0.88，单色描边留余量）
-CARD = PLACE @ rotate(-9, 38, 52)                                  # 文档卡倾斜 -9°
-CLOUD_T = PLACE @ translate(27, 78) @ scale(0.7)
+# ---------------------------------------------------------------- 设计稿（方案 4「白泽晶」：work/baize-icon-vector/baize-v3-4.svg）
+PLACE = translate(54, 54) @ scale(0.93) @ translate(-54, -54)   # 主体以画布中心等比缩到 0.93，右上星光也落进 66dp 安全圆
 S = PLACE.scale
 
-CARD_RECT = rrect(23, 33, 30, 36, 4)
-CARD_SHADOW = rrect(24, 35, 30, 36, 4)
-CARD_LINES = 'M29,42h12M29,48h9M29,54h11M29,60h7'
-RING = ('M63,42.5a16.5,16.5 0 1 1 0,33a16.5,16.5 0 1 1 0,-33z'
-        'M63,50.5a8.5,8.5 0 1 0 0,17a8.5,8.5 0 1 0 0,-17z')
-RING_SHADOW = ('M64,44.1a16.5,16.5 0 1 1 0,33a16.5,16.5 0 1 1 0,-33z'
-               'M64,52.1a8.5,8.5 0 1 0 0,17a8.5,8.5 0 1 0 0,-17z')
-RING_GLINT = 'M49.5,53A13.5,13.5 0 0 1 59,45.5'
-RING_ARC = 'M67.28,47.25A12.5,12.5 0 0 1 72.58,67.03'      # 存储环上 20°→130° 的「已清理」进度弧
-SPARK_BIG = 'M78,35Q78.8,38.2 82,39Q78.8,39.8 78,43Q77.2,39.8 74,39Q77.2,38.2 78,35Z'
-SPARK_SMALL = 'M83.5,44.1Q83.88,45.62 85.4,46Q83.88,46.38 83.5,47.9Q83.12,46.38 81.6,46Q83.12,45.62 83.5,44.1Z'
-CLOUD = 'M0,0h10a2.6,2.6 0 0 0 0,-5.2a3.7,3.7 0 0 0 -6.8,-1.3a2.8,2.8 0 0 0 -3.2,3.4a1.6,1.6 0 0 0 0,3.1z'
-# 单色版：文档卡在存储环外 2 单位处断开（外框顺时针 + 圆逆时针，非零环绕即镂空，VectorDrawable clip-path 可用）
-KNOCK = 'M-50,-50H160V160H-50ZM63,40.5a18.5,18.5 0 1 0 0,37a18.5,18.5 0 1 0 0,-37z'
+GEM = 'M54,29.5L76.08,42.25L76.08,67.75L54,80.5L31.92,67.75L31.92,42.25Z'          # 六棱晶石（顺时针）
+FRAME = 'M54,34.5L71.75,44.75L71.75,65.25L54,75.5L36.25,65.25L36.25,44.75Z'        # 内刻框
+FACET = 'M31.92,42.25L54,29.5L76.08,42.25L71.75,44.75L54,34.5L36.25,44.75Z'        # 顶部两面受光
+HORN = 'M50.2,67C48.6,57.5 51.8,48.2 61.8,41.2C56.4,48.4 54.6,57 55.6,67Z'         # 白泽角
+SPARK = 'M78.5,29.7Q79.26,32.74 82.3,33.5Q79.26,34.26 78.5,37.3Q77.74,34.26 74.7,33.5Q77.74,32.74 78.5,29.7Z'
+# 投影 = 晶石右下平移 (1.2, 2) 后减去晶石本身，只剩外露的月牙边；预先求好多边形，不用 clip-path
+GEM_SHADOW = 'M33.12,69.75L55.2,82.5L77.28,69.75L77.28,44.25L76.08,43.56L76.08,67.75L54,80.5L33.12,68.44Z'
 
-# ---- 背景：浅青 → 青 斜向渐变，左上一块柔光 ----
-BG_GRADIENT = ('linear', 20, 0, 88, 108, [(0, '#ABF0EA', 1), (0.55, '#84DFDA', 1), (1, '#5BCAC6', 1)])
-BG_GLOW = ('radial', 30, 22, 60, [(0, W, 0.4), (1, W, 0)])
+# ---- 背景：白泽青 斜向渐变，左上一块柔光 ----
+BG_GRADIENT = ('linear', 20, 0, 88, 108, [(0, '#0E8F94', 1), (0.55, '#0A7E84', 1), (1, '#006B72', 1)])
+BG_GLOW = ('radial', 30, 22, 62, [(0, W, 0.22), (1, W, 0)])
 BACKGROUND = [
-    {'d': 'M0,0h108v108h-108z', 'fill': BG_GRADIENT, 'note': '浅青斜向渐变'},
+    {'d': 'M0,0h108v108h-108z', 'fill': BG_GRADIENT, 'note': '白泽青斜向渐变'},
     {'d': 'M0,0h108v108h-108z', 'fill': BG_GLOW, 'note': '左上柔光'},
 ]
 
+
+def glass(x1, y1, x2, y2, stops):
+    (X1, Y1), (X2, Y2) = PLACE.pt(x1, y1), PLACE.pt(x2, y2)
+    return ('linear', X1, Y1, X2, Y2, [(o, W, al) for o, al in stops])
+
+
 # ---- 前景：全部落在 66dp 安全圆（中心 54,54，半径 33）内 ----
 FOREGROUND = [
-    {'d': bake(CARD_SHADOW, CARD), 'fill': ('solid', SHADOW, 0.08), 'note': '文档卡投影'},
-    {'d': bake(CARD_RECT, CARD), 'fill': glass(CARD, 23, 33, 53, 69, 0.55, 0.25),
-     'stroke': (W, 0.9, 0.9 * S), 'note': '磨砂玻璃文档卡（倾斜 -9°）'},
-    {'d': bake(CARD_LINES, CARD), 'stroke': (W, 0.85, 2 * S), 'note': '文档卡文字行'},
-    {'d': bake(RING_SHADOW, PLACE), 'fill': ('solid', SHADOW, 0.15), 'evenodd': True, 'note': '存储环投影'},
-    {'d': bake(RING, PLACE), 'fill': glass(PLACE, 46, 42, 80, 76, 0.88, 0.7, 0.56), 'evenodd': True,
-     'stroke': (W, 0.95, 1 * S), 'note': '磨砂玻璃存储环'},
-    {'d': bake(RING_GLINT, PLACE), 'stroke': (W, 0.5, 1.2 * S), 'note': '存储环左上高光'},
-    {'d': bake(RING_ARC, PLACE), 'stroke': (LINE, 0.8, 3 * S), 'note': '青色进度弧'},
-    {'d': bake(SPARK_BIG, PLACE), 'fill': ('solid', W, 0.95), 'note': '星光'},
-    {'d': bake(SPARK_SMALL, PLACE), 'fill': ('solid', W, 0.85)},
-    {'d': bake(CLOUD, CLOUD_T), 'fill': ('solid', W, 0.85), 'note': '祥云'},
+    {'d': bake(GEM_SHADOW, PLACE), 'fill': ('solid', SHADOW, 0.28), 'note': '晶石投影（只露在晶石右下外沿）'},
+    {'d': bake(GEM, PLACE), 'fill': glass(28.5, 29.5, 79.5, 80.5, [(0, 0.46), (0.5, 0.3), (1, 0.2)]),
+     'stroke': (W, 0.9, 1.0 * S), 'note': '磨砂玻璃六棱晶石'},
+    {'d': bake(FRAME, PLACE), 'stroke': (W, 0.39, 0.7 * S), 'note': '内刻框'},
+    {'d': bake(FACET, PLACE), 'fill': ('solid', W, 0.16), 'note': '顶部受光面'},
+    {'d': bake(HORN, PLACE), 'fill': ('solid', W, 0.95), 'note': '白泽角'},
+    {'d': bake(SPARK, PLACE), 'fill': ('solid', W, 0.95), 'note': '星光'},
 ]
 
-# ---- 单色：同一组图形；文档卡在存储环外断开 ----
+# ---- 单色：同一组图形 ----
 MONOCHROME = [
-    {'clip': bake(KNOCK, PLACE), 'note': '文档卡在存储环处断开', 'children': [
-        {'d': bake(CARD_RECT, CARD), 'fill': ('solid', K, 0.35), 'stroke': (K, 1, 1.4 * S), 'note': '文档卡'},
-        {'d': bake(CARD_LINES, CARD), 'stroke': (K, 1, 2 * S)},
-    ]},
-    {'d': bake(RING, PLACE), 'fill': ('solid', K, 0.35), 'evenodd': True, 'stroke': (K, 1, 1.4 * S), 'note': '存储环'},
-    {'d': bake(RING_ARC, PLACE), 'stroke': (K, 1, 3 * S), 'note': '进度弧'},
-    {'d': bake(SPARK_BIG, PLACE), 'fill': ('solid', K, 1), 'note': '星光'},
-    {'d': bake(SPARK_SMALL, PLACE), 'fill': ('solid', K, 1)},
-    {'d': bake(CLOUD, CLOUD_T), 'fill': ('solid', K, 1), 'note': '祥云'},
+    {'d': bake(GEM, PLACE), 'fill': ('solid', K, 0.35), 'stroke': (K, 1, 1.4 * S), 'note': '晶石'},
+    {'d': bake(FRAME, PLACE), 'stroke': (K, 1, 0.9 * S), 'note': '内刻框'},
+    {'d': bake(HORN, PLACE), 'fill': ('solid', K, 1), 'note': '白泽角'},
+    {'d': bake(SPARK, PLACE), 'fill': ('solid', K, 1), 'note': '星光'},
 ]
-
-# ---- 启动页：系统把 288dp 图标裁成 192dp 圆（= 108 视口中间 72）。浅色启动底上白玻璃会看不清，
-#      所以带上图标背景并裁成半径 35.5 的圆盘，前景与桌面图标逐字相同。 ----
-DISC = 'M54,18.5a35.5,35.5 0 1 1 0,71a35.5,35.5 0 1 1 0,-71z'
-SPLASH = [{'d': DISC, 'fill': BG_GRADIENT, 'note': '图标背景圆盘'},
-          {'d': DISC, 'fill': BG_GLOW}] + FOREGROUND
 
 
 def _argb(color, alpha=1.0):
@@ -307,15 +276,12 @@ OUTPUTS = {
     ROOT / 'tools/icon/baize-icon-monochrome.svg': lambda: svg(
         MONOCHROME, '白泽 3.0.1 主题图标 SVG：与 res/drawable/ic_baize_monochrome.xml 同一套几何。' + GEN),
     RES / 'drawable/ic_baize_background.xml': lambda: vector(
-        BACKGROUND, '白泽 3.0.1 图标背景：浅青斜向渐变 + 左上柔光。' + GEN),
+        BACKGROUND, '白泽 3.0.1 图标背景：白泽青斜向渐变（#0E8F94→#006B72）+ 左上柔光。' + GEN),
     RES / 'drawable/ic_baize_foreground.xml': lambda: vector(
-        FOREGROUND, '白泽 3.0.1 图标前景：磨砂玻璃文档卡 + 玻璃存储环（青色进度弧）+ 星光 + 祥云，'
-                    '全部在 66dp 安全圆内。' + GEN),
+        FOREGROUND, '白泽 3.0.1 图标前景「白泽晶」：磨砂玻璃六棱晶石 + 内刻框 + 白泽角 + 星光，'
+                    '全部在 66dp 安全圆内；启动页 ic_baize_splash.xml 也直接用它。' + GEN),
     RES / 'drawable/ic_baize_monochrome.xml': lambda: vector(
         MONOCHROME, '白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色版。' + GEN),
-    RES / 'drawable/ic_baize_splash_mark.xml': lambda: vector(
-        SPLASH, '白泽 3.0.1 启动页图标：图标背景裁成半径 35.5 的圆盘（落在系统 192dp 可见圆内）+ 与桌面图标相同的前景。'
-                + GEN),
 }
 
 

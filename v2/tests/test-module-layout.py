@@ -48,14 +48,13 @@ class ModuleLayoutTest(unittest.TestCase):
         # 旧式 mipmap / 正式图标 / 品牌图由 tools/icon/render_legacy.py 从 SVG 渲染。钉住实际构建输入。
         res = ROOT / 'v2/app/src/main/res'
         pinned = {
-            'drawable/ic_baize_background.xml': '7041a13400c8ddc20661e723d0c6b8c2e163e7e8e7d233a2d5ce5fb41f4bf754',
-            'drawable/ic_baize_foreground.xml': '4e1414db33ed55562b8f9e3776f260e31e76a06cba28c668934313136be97052',
-            'drawable/ic_baize_monochrome.xml': '66744530911c8cb72b8c84848f4aeb3858b98a03691b66c5f3383f305cb86b03',
-            'drawable/ic_baize_splash_mark.xml': '2f99c67704e339d35308a7308d71b1dc3746ab5caa29f22df1e8d44373b1cf86',
+            'drawable/ic_baize_background.xml': '42a4f681dbba732dca90cabda434d80ca397e123aa040d7ef0dcc30c0d52e38c',
+            'drawable/ic_baize_foreground.xml': '19b57b2ff863ff1a7b05afb519f84a6870e37d69621dc9a358b467da8b57bfc3',
+            'drawable/ic_baize_monochrome.xml': 'a912638ecaaf1588c21eb0530338ca02bca36cda9bb494d10f48cccbbb23b04d',
         }
         for name, digest in pinned.items():
             self.assertEqual(digest, hashlib.sha256((res / name).read_bytes()).hexdigest(), name)
-        self.assertEqual('3936041f221ba90e9ef7c4fd0fe5b64c5715ffcaaa15e8a8233aefce1151bb19',
+        self.assertEqual('817676cd200dc7a3f7c84e3225da47d6fc568a07d362c61e0879d864a1baf653',
                          hashlib.sha256((ROOT / 'design/app-icons/official-icon.webp').read_bytes()).hexdigest())
         icon = (ROOT / 'design/app-icons/official-icon.webp').read_bytes()
         self.assertEqual(icon, (res / 'mipmap-xxxhdpi/ic_baize.webp').read_bytes())
@@ -71,10 +70,10 @@ class ModuleLayoutTest(unittest.TestCase):
             self.assertEqual('@drawable/ic_baize_foreground', adaptive.find('foreground').attrib[android + 'drawable'])
         monochrome = ET.parse(res / 'mipmap-anydpi-v33/ic_baize.xml').getroot().find('monochrome')
         self.assertEqual('@drawable/ic_baize_monochrome', monochrome.attrib[android + 'drawable'])
-        for layer in ('background', 'foreground', 'monochrome', 'splash_mark'):
+        for layer in ('background', 'foreground', 'monochrome'):
             self.assertEqual('vector', ET.parse(res / f'drawable/ic_baize_{layer}.xml').getroot().tag, layer)
         # 不再有位图图层。
-        for stale in ('drawable-nodpi/ic_baize_art.webp', 'drawable-nodpi/ic_baize_monochrome_art.png'):
+        for stale in ('drawable-nodpi/ic_baize_art.webp', 'drawable-nodpi/ic_baize_monochrome_art.png', 'drawable/ic_baize_splash_mark.xml'):
             self.assertFalse((res / stale).exists(), stale)
 
     def test_icon_vectors_match_svg_source(self):

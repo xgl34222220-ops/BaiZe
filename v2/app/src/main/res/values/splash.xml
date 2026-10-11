@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 浅青启动底，与新图标同色系；深色模式见 values-night/splash.xml。 -->
-    <color name="baize_splash_background">#E6F7F6</color>
+    <!-- 白泽青启动底，与图标背景渐变的深端同色；浅色、深色模式共用，品牌图为白字。 -->
+    <color name="baize_splash_background">#006B72</color>
 
     <!-- androidx core-splashscreen 启动主题：只用于系统启动窗口，首帧后由
          installSplashScreen() 切回 postSplashScreenTheme，不新增 Activity、不加延迟。 -->

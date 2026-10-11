@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动页图标：复用图标同一套矢量（tools/icon/baize_icon.py 生成的 ic_baize_splash_mark）。
-     系统把 288dp 图标裁成 192dp 圆（= 108 视口中间的 72）；启动底是浅青，白色玻璃前景单独放会看不清，
-     所以带上图标背景圆盘（半径 35.5，落在可见圆内）。纯矢量，不解码位图。 -->
+<!-- 启动页图标：直接复用桌面图标前景矢量 ic_baize_foreground（tools/icon/baize_icon.py 生成）。
+     系统把 288dp 图标裁成 192dp 圆（= 108 视口中间的 72）；前景整体在 66dp 安全圆内，
+     磨砂玻璃晶石直接落在与图标同色的白泽青启动底（#006B72）上。纯矢量，不解码位图。 -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_baize_splash_mark"
+    android:drawable="@drawable/ic_baize_foreground"
     android:inset="0dp" />

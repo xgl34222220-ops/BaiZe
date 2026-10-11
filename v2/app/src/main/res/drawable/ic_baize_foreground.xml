@@ -1,70 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 白泽 3.0.1 图标前景：磨砂玻璃文档卡 + 玻璃存储环（青色进度弧）+ 星光 + 祥云，全部在 66dp 安全圆内。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<!-- 白泽 3.0.1 图标前景「白泽晶」：磨砂玻璃六棱晶石 + 内刻框 + 白泽角 + 星光，全部在 66dp 安全圆内；启动页 ic_baize_splash.xml 也直接用它。由 tools/icon/baize_icon.py 生成，勿手改。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 文档卡投影 -->
-    <path android:pathData="M30.04,37.27L48.95,34.28A3.48,3.48 0 0,1 52.93,37.17L56.74,61.23A3.48,3.48 0 0,1 53.85,65.21L34.94,68.21A3.48,3.48 0 0,1 30.96,65.31L27.15,41.25A3.48,3.48 0 0,1 30.04,37.27Z"
-        android:fillColor="#140B5E63" />
-    <!-- 磨砂玻璃文档卡（倾斜 -9°） -->
-    <path android:pathData="M28.91,35.69L47.82,32.7A3.48,3.48 0 0,1 51.8,35.59L55.61,59.65A3.48,3.48 0 0,1 52.72,63.63L33.81,66.62A3.48,3.48 0 0,1 29.83,63.73L26.02,39.67A3.48,3.48 0 0,1 28.91,35.69Z"
-        android:strokeWidth="0.78"
+    <!-- 晶石投影（只露在晶石右下外沿） -->
+    <path android:pathData="M34.58,68.65L55.12,80.5L75.65,68.65L75.65,44.93L74.53,44.29L74.53,66.79L54,78.65L34.58,67.43Z"
+        android:fillColor="#47003C40" />
+    <!-- 磨砂玻璃六棱晶石 -->
+    <path android:pathData="M54,31.21L74.53,43.07L74.53,66.79L54,78.65L33.47,66.79L33.47,43.07Z"
+        android:strokeWidth="0.93"
         android:strokeColor="#E6FFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round">
         <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="25.47" android:startY="36.23" android:endX="56.15" android:endY="63.09">
-                <item android:offset="0" android:color="#8CFFFFFF" />
-                <item android:offset="1" android:color="#40FFFFFF" />
+            <gradient android:type="linear" android:startX="30.28" android:startY="31.21" android:endX="77.72" android:endY="78.65">
+                <item android:offset="0" android:color="#75FFFFFF" />
+                <item android:offset="0.5" android:color="#4CFFFFFF" />
+                <item android:offset="1" android:color="#33FFFFFF" />
             </gradient>
         </aapt:attr>
     </path>
-    <!-- 文档卡文字行 -->
-    <path android:pathData="M31.86,43.15L42.17,41.52M32.67,48.31L40.41,47.08M33.49,53.46L42.94,51.97M34.31,58.62L40.32,57.67"
-        android:strokeWidth="1.74"
-        android:strokeColor="#D9FFFFFF"
+    <!-- 内刻框 -->
+    <path android:pathData="M54,35.86L70.51,45.4L70.51,64.46L54,74L37.49,64.46L37.49,45.4Z"
+        android:strokeWidth="0.65"
+        android:strokeColor="#63FFFFFF"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
-    <!-- 存储环投影 -->
-    <path android:pathData="M63.57,43.65A14.36,14.36 0 1,1 63.57,72.36A14.36,14.36 0 1,1 63.57,43.65ZM63.57,50.61A7.39,7.39 0 1,0 63.57,65.4A7.39,7.39 0 1,0 63.57,50.61Z"
-        android:fillColor="#260B5E63"
-        android:fillType="evenOdd" />
-    <!-- 磨砂玻璃存储环 -->
-    <path android:pathData="M62.7,42.26A14.36,14.36 0 1,1 62.7,70.97A14.36,14.36 0 1,1 62.7,42.26ZM62.7,49.22A7.39,7.39 0 1,0 62.7,64A7.39,7.39 0 1,0 62.7,49.22Z"
-        android:fillType="evenOdd"
-        android:strokeWidth="0.87"
-        android:strokeColor="#F2FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="47.91" android:startY="41.82" android:endX="77.49" android:endY="71.4">
-                <item android:offset="0" android:color="#E0FFFFFF" />
-                <item android:offset="0.5" android:color="#B2FFFFFF" />
-                <item android:offset="1" android:color="#8FFFFFFF" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <!-- 存储环左上高光 -->
-    <path android:pathData="M50.95,51.39A11.74,11.74 0 0,1 59.22,44.87"
-        android:strokeWidth="1.04"
-        android:strokeColor="#80FFFFFF"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <!-- 青色进度弧 -->
-    <path android:pathData="M66.42,46.39A10.88,10.88 0 0,1 71.03,63.6"
-        android:strokeWidth="2.61"
-        android:strokeColor="#CC3DB7B2"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <!-- 星光 -->
-    <path android:pathData="M75.75,35.73Q76.45,38.51 79.23,39.21Q76.45,39.91 75.75,42.69Q75.05,39.91 72.27,39.21Q75.05,38.51 75.75,35.73Z"
+    <!-- 顶部受光面 -->
+    <path android:pathData="M33.47,43.07L54,31.21L74.53,43.07L70.51,45.4L54,35.86L37.49,45.4Z"
+        android:fillColor="#29FFFFFF" />
+    <!-- 白泽角 -->
+    <path android:pathData="M50.47,66.09C48.98,57.25 51.95,48.61 61.25,42.1C56.23,48.79 54.56,56.79 55.49,66.09Z"
         android:fillColor="#F2FFFFFF" />
-    <path android:pathData="M80.53,43.65Q80.87,44.97 82.19,45.3Q80.87,45.63 80.53,46.95Q80.2,45.63 78.88,45.3Q80.2,44.97 80.53,43.65Z"
-        android:fillColor="#D9FFFFFF" />
-    <!-- 祥云 -->
-    <path android:pathData="M31.38,73.14L37.47,73.14A1.58,1.58 0 0,0 37.47,69.97A2.25,2.25 0 0,0 33.33,69.18A1.71,1.71 0 0,0 31.38,71.25A0.97,0.97 0 0,0 31.38,73.14Z"
-        android:fillColor="#D9FFFFFF" />
+    <!-- 星光 -->
+    <path android:pathData="M76.78,31.4Q77.49,34.23 80.32,34.93Q77.49,35.64 76.78,38.47Q76.08,35.64 73.25,34.93Q76.08,34.23 76.78,31.4Z"
+        android:fillColor="#F2FFFFFF" />
 </vector>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致、图标为矢量白泽、浅青启动底（3.0.1）。"""
+"""启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致、图标为矢量白泽晶、白泽青启动底（3.0.1）。"""
 from pathlib import Path
 import re
 import unittest
@@ -50,17 +50,16 @@ class BrandSplashContract(unittest.TestCase):
         items, _ = style(RES / 'values-v31/splash.xml', 'Theme.BaiZe.Starting')
         self.assertEqual('@drawable/baize_splash_branding', items['android:windowSplashScreenBrandingImage'])
         color = ET.parse(RES / 'values/splash.xml').getroot().find("color[@name='baize_splash_background']").text
-        # 3.0.1：浅色模式启动底是与图标同色系的浅青，深色模式保留深青。
-        self.assertEqual('#E6F7F6', color)
-        night = ET.parse(RES / 'values-night/splash.xml').getroot().find("color[@name='baize_splash_background']").text
-        self.assertEqual('#0A4F55', night)
+        # 3.0.1：启动底是图标背景渐变深端的白泽青，浅色、深色模式共用一份，不再有 values-night 覆盖。
+        self.assertEqual('#006B72', color)
+        self.assertFalse((RES / 'values-night/splash.xml').exists())
         for d in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
             self.assertFalse((RES / f'drawable-{d}/ic_baize_splash_art.webp').exists())
             self.assertTrue((RES / f'drawable-{d}/baize_splash_branding.png').is_file())
-            self.assertTrue((RES / f'drawable-night-{d}/baize_splash_branding.png').is_file())
+            self.assertFalse((RES / f'drawable-night-{d}/baize_splash_branding.png').exists())
 
     def test_branding_text_contrasts_with_its_splash_background(self):
-        # 浅底配深青字、深底配白字：品牌图主笔画颜色与启动底的亮度差要足够大。
+        # 深青启动底配白字：品牌图主笔画颜色与启动底的亮度差要足够大。
         import struct, zlib
         def ink(path):
             data = path.read_bytes()
@@ -89,21 +88,17 @@ class BrandSplashContract(unittest.TestCase):
             solid = [sum(r[x:x + 3]) / 3 for r in rows for x in range(0, stride, 4) if r[x + 3] >= 240]
             self.assertTrue(solid, path)
             return sum(solid) / len(solid)
-        for folder, bg in (('drawable-mdpi', 0xE6F7F6), ('drawable-night-mdpi', 0x0A4F55)):
+        for folder, bg in (('drawable-mdpi', 0x006B72), ('drawable-xxxhdpi', 0x006B72)):
             luma = sum((bg >> s) & 255 for s in (16, 8, 0)) / 3
             self.assertGreater(abs(ink(RES / folder / 'baize_splash_branding.png') - luma), 120, folder)
 
     def test_splash_icon_is_the_launcher_vector_mark(self):
-        # 3.0.1：启动页图标是 tools/icon/baize_icon.py 生成的同一套矢量（图标背景圆盘 + 前景），不另存位图。
+        # 3.0.1：启动页图标直接 inset 桌面图标前景矢量（tools/icon/baize_icon.py 生成），不另存位图或副本。
         splash = ET.parse(RES / 'drawable/ic_baize_splash.xml').getroot()
         self.assertEqual('inset', splash.tag)
-        self.assertEqual('@drawable/ic_baize_splash_mark', splash.attrib[A + 'drawable'])
-        mark = (RES / 'drawable/ic_baize_splash_mark.xml').read_text(encoding='utf-8')
-        foreground = (RES / 'drawable/ic_baize_foreground.xml').read_text(encoding='utf-8')
-        self.assertEqual('vector', ET.fromstring(mark.encode()).tag)
-        # 前景的每一条路径都原样出现在启动页图标里。
-        for d in re.findall(r'android:pathData="([^"]+)"', foreground):
-            self.assertIn(f'android:pathData="{d}"', mark)
+        self.assertEqual('@drawable/ic_baize_foreground', splash.attrib[A + 'drawable'])
+        self.assertEqual('vector', ET.parse(RES / 'drawable/ic_baize_foreground.xml').getroot().tag)
+        self.assertFalse((RES / 'drawable/ic_baize_splash_mark.xml').exists())
 
     def test_static_branding_matches_version(self):
         # 品牌图把「BAIZE · v3.0.0」烘焙进位图；改版本号时必须同步重新导出品牌图。

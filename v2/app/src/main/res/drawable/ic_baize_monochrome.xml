@@ -5,42 +5,23 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 文档卡在存储环处断开 -->
-    <group>
-        <clip-path android:pathData="M-35.61,-38.22L147.09,-38.22L147.09,144.48L-35.61,144.48ZM62.7,40.52A16.09,16.09 0 1,0 62.7,72.7A16.09,16.09 0 1,0 62.7,40.52Z" />
-        <!-- 文档卡 -->
-        <path android:pathData="M28.91,35.69L47.82,32.7A3.48,3.48 0 0,1 51.8,35.59L55.61,59.65A3.48,3.48 0 0,1 52.72,63.63L33.81,66.62A3.48,3.48 0 0,1 29.83,63.73L26.02,39.67A3.48,3.48 0 0,1 28.91,35.69Z"
-            android:fillColor="#59000000"
-            android:strokeWidth="1.22"
-            android:strokeColor="#FF000000"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
-        <path android:pathData="M31.86,43.15L42.17,41.52M32.67,48.31L40.41,47.08M33.49,53.46L42.94,51.97M34.31,58.62L40.32,57.67"
-            android:strokeWidth="1.74"
-            android:strokeColor="#FF000000"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
-    </group>
-    <!-- 存储环 -->
-    <path android:pathData="M62.7,42.26A14.36,14.36 0 1,1 62.7,70.97A14.36,14.36 0 1,1 62.7,42.26ZM62.7,49.22A7.39,7.39 0 1,0 62.7,64A7.39,7.39 0 1,0 62.7,49.22Z"
+    <!-- 晶石 -->
+    <path android:pathData="M54,31.21L74.53,43.07L74.53,66.79L54,78.65L33.47,66.79L33.47,43.07Z"
         android:fillColor="#59000000"
-        android:fillType="evenOdd"
-        android:strokeWidth="1.22"
+        android:strokeWidth="1.3"
         android:strokeColor="#FF000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
-    <!-- 进度弧 -->
-    <path android:pathData="M66.42,46.39A10.88,10.88 0 0,1 71.03,63.6"
-        android:strokeWidth="2.61"
+    <!-- 内刻框 -->
+    <path android:pathData="M54,35.86L70.51,45.4L70.51,64.46L54,74L37.49,64.46L37.49,45.4Z"
+        android:strokeWidth="0.84"
         android:strokeColor="#FF000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
+    <!-- 白泽角 -->
+    <path android:pathData="M50.47,66.09C48.98,57.25 51.95,48.61 61.25,42.1C56.23,48.79 54.56,56.79 55.49,66.09Z"
+        android:fillColor="#FF000000" />
     <!-- 星光 -->
-    <path android:pathData="M75.75,35.73Q76.45,38.51 79.23,39.21Q76.45,39.91 75.75,42.69Q75.05,39.91 72.27,39.21Q75.05,38.51 75.75,35.73Z"
-        android:fillColor="#FF000000" />
-    <path android:pathData="M80.53,43.65Q80.87,44.97 82.19,45.3Q80.87,45.63 80.53,46.95Q80.2,45.63 78.88,45.3Q80.2,44.97 80.53,43.65Z"
-        android:fillColor="#FF000000" />
-    <!-- 祥云 -->
-    <path android:pathData="M31.38,73.14L37.47,73.14A1.58,1.58 0 0,0 37.47,69.97A2.25,2.25 0 0,0 33.33,69.18A1.71,1.71 0 0,0 31.38,71.25A0.97,0.97 0 0,0 31.38,73.14Z"
+    <path android:pathData="M76.78,31.4Q77.49,34.23 80.32,34.93Q77.49,35.64 76.78,38.47Q76.08,35.64 73.25,34.93Q76.08,34.23 76.78,31.4Z"
         android:fillColor="#FF000000" />
 </vector>
