@@ -69,3 +69,8 @@
 
 # Shizuku reflects this Context constructor in its UID 2000/0 process.
 -keep class io.github.xgl34222220.baize.shizuku.** { *; }
+
+# 3.0.1：性能工具·数据库优化的 Root 引擎，由模块 perf-tools.sh 经 app_process 调用。
+-keep class io.github.xgl34222220.baize.root.PerfDbVacuumMain {
+    public static void main(java.lang.String[]);
+}

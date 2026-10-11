@@ -6,10 +6,12 @@
 #   start-dex2oat 手动「立即编译」：后台独立运行，进度写 perf-dex2oat.env。
 #   stop-dex2oat  请求停止正在进行的编译。
 #   dex2oat|dbopt [manual|auto]  直接运行（调试/内部使用）。
+#   start-dbopt   手动「立即优化数据库」：后台独立运行，进度写 perf-dbopt.env。
 #   thaw-all      立即解冻白泽冻结的全部进程。
+#   freezer-detect 重新探测冻结后端（cgroup v2 进程级 / v2 分组 / v1 freezer / 系统 am freeze），写 perf-freezer.env。
 #   status        输出状态文件。
 # 只写固定文件名：perf-tools.conf / perf-whitelist.conf / perf-db-blacklist.conf / perf-tools.env /
-# perf-dex2oat.env / perf-dbopt.env / perf-maint.env / perf-frozen.tsv / perf-tools.log（最多 200 行）
+# perf-dex2oat.env / perf-dbopt.env / perf-maint.env / perf-freezer.env / perf-frozen.tsv / perf-tools.log（最多 200 行）
 # 以及 perf-loop.lock、perf-dex2oat.lock、perf-dbopt.lock 三个单实例锁目录。
 # 绝不在开机阶段运行；绝不使用 am force-stop 代替冻结。
 set -u
@@ -28,6 +30,7 @@ DEX_STATUS="$STATE_DIR/perf-dex2oat.env"
 DB_STATUS="$STATE_DIR/perf-dbopt.env"
 MAINT_STATE="$STATE_DIR/perf-maint.env"
 FROZEN="$STATE_DIR/perf-frozen.tsv"
+FREEZER_ENV="$STATE_DIR/perf-freezer.env"
 LOG="$STATE_DIR/perf-tools.log"
 LOOP_LOCK="$STATE_DIR/perf-loop.lock"
 DEX_LOCK="$STATE_DIR/perf-dex2oat.lock"
@@ -35,7 +38,12 @@ DB_LOCK="$STATE_DIR/perf-dbopt.lock"
 DEX_STOP="$STATE_DIR/perf-dex2oat.stop"
 HISTORY="$STATE_DIR/history.tsv"
 PROC=${BAIZE_PERF_PROC:-/proc}
-CGROOT=${BAIZE_PERF_CGROUP:-/sys/fs/cgroup}
+# BAIZE_PERF_CGROUP：测试用的 cgroup2 根（优先于 /proc/mounts 探测结果）。
+CGROOT=${BAIZE_PERF_CGROUP:-}
+MOUNTS_FILE=${BAIZE_PERF_MOUNTS:-$PROC/mounts}
+# 数据库优化引擎：模块自带的 App（app_process + Android SQLiteDatabase），sqlite3 二进制只作兜底。
+PERF_APK=${BAIZE_PERF_APK:-$MODDIR/app/baize.apk}
+APP_PROCESS=${BAIZE_PERF_APP_PROCESS:-/system/bin/app_process}
 DATA_ROOT=${BAIZE_PERF_DATA_ROOT:-/data/data}
 UPTIME_FILE=${BAIZE_PERF_UPTIME_FILE:-$PROC/uptime}
 BOOT_ID_FILE=${BAIZE_PERF_BOOT_ID_FILE:-$PROC/sys/kernel/random/boot_id}
@@ -241,17 +249,152 @@ perf_detach() {
 }
 perf_env_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1; }
 
-# ---------- 冻结（cgroup v2 freezer） ----------
+# ---------- 冻结（多后端探测） ----------
+# 3.0.1：此前只认 /sys/fs/cgroup/uid_x/pid_y/cgroup.freeze，且在第一个应用缺少 pid 节点时就判定
+# 「不支持」，HyperOS（Android 14/15）上常见误判。现在按实际挂载探测，依次支持：
+#   v2-pid   cgroup2 进程级：<cgroup2>/uid_N/pid_P/cgroup.freeze 或 <cgroup2>/apps/uid_N/pid_P/cgroup.freeze
+#   v2-group cgroup2 分组：<cgroup2>/frozen/{cgroup.procs,cgroup.freeze} + unfrozen（Android 11/12 早期 v2 freezer）
+#   v1       cgroup v1 freezer：<freezer 挂载点>/frozen/{cgroup.procs,freezer.state=FROZEN}（如 /dev/freezer，小米 Millet）
+#   am       系统 cmd activity freeze/unfreeze（Android 14+ 自带命令；只在前三者都不可用时使用）
+# 探测只读：读 /proc/mounts、目录是否存在、节点是否可读写与当前值，绝不写入任何 cgroup，也绝不改用强制停止。
 perf_boot_id() { cat "$BOOT_ID_FILE" 2>/dev/null | tr -cd '0-9a-f-'; }
-# 只接受 Android 应用 pid 级 cgroup：…/uid_<uid>/pid_<pid>/cgroup.freeze，绝不写 uid 级或根 cgroup。
+perf_cgroup2_roots() {
+  [ -n "$CGROOT" ] && printf '%s\n' "$CGROOT"
+  awk '$3 == "cgroup2" {print $2}' "$MOUNTS_FILE" 2>/dev/null
+}
+perf_freezer_v1_roots() {
+  awk '$3 == "cgroup" && ("," $4 ",") ~ /,freezer,/ {print $2}' "$MOUNTS_FILE" 2>/dev/null
+  [ -n "${BAIZE_PERF_FREEZER_V1:-}" ] && printf '%s\n' "$BAIZE_PERF_FREEZER_V1"
+}
+FZ_BACKEND=; FZ_ROOT=; FZ_FROZEN_DIR=; FZ_THAW_DIR=; FZ_LABEL=; FZ_REASON=; FZ_DETAIL=
+perf_fz_set() { FZ_BACKEND=$1; FZ_ROOT=$2; FZ_FROZEN_DIR=$3; FZ_THAW_DIR=$4; FZ_LABEL=$5; FZ_REASON=; }
+perf_v2_pid_probe() {
+  # $1 cgroup2 根：找到一个可读写、值为 0/1 的进程级 cgroup.freeze 即可（不写入）。
+  for ppp_f in "$1"/uid_[0-9]*/pid_[0-9]*/cgroup.freeze "$1"/apps/uid_[0-9]*/pid_[0-9]*/cgroup.freeze; do
+    [ -f "$ppp_f" ] && [ -r "$ppp_f" ] && [ -w "$ppp_f" ] || continue
+    ppp_v=; read -r ppp_v <"$ppp_f" 2>/dev/null
+    case "$ppp_v" in 0|1) return 0 ;; esac
+  done
+  return 1
+}
+perf_freezer_detect() {
+  FZ_BACKEND=none; FZ_ROOT=; FZ_FROZEN_DIR=; FZ_THAW_DIR=; FZ_LABEL=; FZ_DETAIL=
+  pfd_v2=$(perf_cgroup2_roots | awk '!seen[$0]++')
+  pfd_v1=$(perf_freezer_v1_roots | awk '!seen[$0]++')
+  pfd_seen=
+  for pfd_r in $pfd_v2; do
+    [ -d "$pfd_r" ] || continue
+    pfd_seen="$pfd_seen cgroup2:$pfd_r"
+    if perf_v2_pid_probe "$pfd_r"; then
+      perf_fz_set v2-pid "$pfd_r" "" "" "cgroup v2（进程级 cgroup.freeze）"; FZ_DETAIL=$pfd_r; return 0
+    fi
+  done
+  for pfd_r in $pfd_v2; do
+    for pfd_g in "$pfd_r/frozen" "$pfd_r/freezer/frozen"; do
+      [ -f "$pfd_g/cgroup.procs" ] && [ -w "$pfd_g/cgroup.procs" ] && [ -f "$pfd_g/cgroup.freeze" ] || continue
+      pfd_fv=; read -r pfd_fv <"$pfd_g/cgroup.freeze" 2>/dev/null
+      [ "$pfd_fv" = 1 ] || { pfd_seen="$pfd_seen $pfd_g(cgroup.freeze=${pfd_fv:-?})"; continue; }
+      pfd_t=${pfd_g%/frozen}/unfrozen
+      [ -w "$pfd_t/cgroup.procs" ] || pfd_t=${pfd_g%/frozen}
+      [ -w "$pfd_t/cgroup.procs" ] || continue
+      perf_fz_set v2-group "$pfd_r" "$pfd_g" "$pfd_t" "cgroup v2（frozen / unfrozen 分组）"; FZ_DETAIL=$pfd_g; return 0
+    done
+  done
+  for pfd_r in $pfd_v1; do
+    [ -d "$pfd_r" ] || continue
+    pfd_seen="$pfd_seen freezer-v1:$pfd_r"
+    pfd_g="$pfd_r/frozen"
+    [ -f "$pfd_g/cgroup.procs" ] && [ -w "$pfd_g/cgroup.procs" ] && [ -f "$pfd_g/freezer.state" ] || continue
+    pfd_st=; read -r pfd_st <"$pfd_g/freezer.state" 2>/dev/null
+    [ "$pfd_st" = FROZEN ] || { pfd_seen="$pfd_seen $pfd_g(freezer.state=${pfd_st:-?})"; continue; }
+    pfd_t=
+    for pfd_c in "$pfd_r/unfrozen" "$pfd_r/thaw" "$pfd_r"; do [ -w "$pfd_c/cgroup.procs" ] && { pfd_t=$pfd_c; break; }; done
+    [ -n "$pfd_t" ] || continue
+    perf_fz_set v1 "$pfd_r" "$pfd_g" "$pfd_t" "cgroup v1 freezer（frozen 分组）"; FZ_DETAIL=$pfd_g; return 0
+  done
+  if cmd activity help 2>/dev/null | grep -Eq '^[[:space:]]+freeze( |$)'; then
+    perf_fz_set am "" "" "" "系统 cmd activity freeze"; FZ_DETAIL="cmd activity freeze/unfreeze"; return 0
+  fi
+  if [ -z "$pfd_v2" ] && [ -z "$pfd_v1" ]; then
+    FZ_REASON="未挂载 cgroup2，也未挂载 cgroup v1 freezer，系统 cmd activity 也不支持 freeze"
+  elif [ -n "$pfd_v2" ]; then
+    FZ_REASON="已挂载 cgroup2（$(printf '%s' "$pfd_v2" | tr '\n' ' ' | sed 's/ $//')），但没有可写的进程级 cgroup.freeze 或 frozen 分组"
+    [ -n "$pfd_v1" ] && FZ_REASON="$FZ_REASON；cgroup v1 freezer 缺少可用的 frozen 分组"
+  else
+    FZ_REASON="已挂载 cgroup v1 freezer（$(printf '%s' "$pfd_v1" | tr '\n' ' ' | sed 's/ $//')），但没有 freezer.state=FROZEN 的 frozen 分组"
+  fi
+  FZ_DETAIL=${pfd_seen# }
+  return 1
+}
+# 系统自带冻结（CachedAppOptimizer）状态，仅展示，不依赖它。
+perf_system_freezer() {
+  psf_v=$(cmd settings get global cached_apps_freezer 2>/dev/null | tr -d '\r')
+  [ -n "$psf_v" ] || psf_v=$(settings get global cached_apps_freezer 2>/dev/null | tr -d '\r')
+  case "$psf_v" in enabled|disabled|default) printf '%s' "$psf_v" ;; *) printf 'unknown' ;; esac
+}
+perf_freezer_write() {
+  pfw_tmp="$FREEZER_ENV.tmp.$$"
+  { echo "schema=perf-freezer-v1"
+    echo "backend=$FZ_BACKEND"
+    echo "supported=$([ "$FZ_BACKEND" != none ] && echo 1 || echo 0)"
+    echo "label=$FZ_LABEL"
+    echo "reason=$(printf '%s' "$FZ_REASON" | tr '\r\n' '  ')"
+    echo "detail=$(printf '%s' "$FZ_DETAIL" | tr '\r\n' '  ')"
+    echo "root=$FZ_ROOT"
+    echo "frozen_dir=$FZ_FROZEN_DIR"
+    echo "thaw_dir=$FZ_THAW_DIR"
+    echo "system_freezer=$(perf_system_freezer)"
+    echo "detected_epoch=$(perf_now)"
+  } >"$pfw_tmp" && mv -f "$pfw_tmp" "$FREEZER_ENV"
+  chmod 0600 "$FREEZER_ENV" 2>/dev/null || true
+}
+# v2-pid：只接受 Android 应用 pid 级 cgroup：…/uid_<uid>/pid_<pid>/cgroup.freeze，绝不写 uid 级或根 cgroup。
 perf_freeze_path() {
   pfp_cg=$(sed -n 's/^0:://p' "$PROC/$1/cgroup" 2>/dev/null | head -n 1)
   case "$pfp_cg" in */uid_[0-9]*/pid_"$1") ;; *) return 1 ;; esac
   case "$pfp_cg" in *..*) return 1 ;; esac
-  printf '%s/cgroup.freeze\n' "$CGROOT$pfp_cg"
+  printf '%s/cgroup.freeze\n' "$FZ_ROOT$pfp_cg"
 }
-perf_valid_freeze_file() { case "$1" in "$CGROOT"/*uid_[0-9]*/pid_[0-9]*/cgroup.freeze) case "$1" in *..*) return 1 ;; esac; return 0 ;; esac; return 1; }
-perf_thaw_file() { perf_valid_freeze_file "$1" && [ -f "$1" ] && printf '0\n' >"$1" 2>/dev/null; }
+perf_under_roots() {
+  for pur_r in $2; do case "$1" in "$pur_r"/*) return 0 ;; esac; done
+  return 1
+}
+perf_valid_freeze_file() {
+  case "$1" in */uid_[0-9]*/pid_[0-9]*/cgroup.freeze) ;; *) return 1 ;; esac
+  case "$1" in *..*) return 1 ;; esac
+  perf_under_roots "$1" "$(perf_cgroup2_roots)"
+}
+# 分组后端记录：group=<frozen 目录>|<解冻目录>；两者都必须位于 cgroup 挂载点下且名字固定。
+perf_valid_group() {
+  pvg_f=${1%%|*}; pvg_t=${1#*|}
+  case "$pvg_f$pvg_t" in *..*) return 1 ;; esac
+  case "$pvg_f" in */frozen) ;; *) return 1 ;; esac
+  pvg_roots="$(perf_cgroup2_roots) $(perf_freezer_v1_roots)"
+  perf_under_roots "$pvg_f" "$pvg_roots" || return 1
+  case "$pvg_t" in */unfrozen|*/thaw) perf_under_roots "$pvg_t" "$pvg_roots" ;; *) perf_in_list "$pvg_t" "$(printf '%s\n' $pvg_roots)" ;; esac
+}
+# $1 记录首列 $2 pid
+perf_thaw_file() {
+  case "$1" in
+    group=*)
+      pvg=${1#group=}; perf_valid_group "$pvg" || return 1
+      case "$2" in ''|*[!0-9]*) return 1 ;; esac
+      printf '%s\n' "$2" >"${pvg#*|}/cgroup.procs" 2>/dev/null ;;
+    am:*)
+      pta=${1#am:}; case "$pta" in ''|*[!0-9]*) return 1 ;; esac
+      [ -d "$PROC/$pta" ] || return 0
+      cmd activity unfreeze "$pta" >/dev/null 2>&1 ;;
+    *) perf_valid_freeze_file "$1" && [ -f "$1" ] && printf '0\n' >"$1" 2>/dev/null ;;
+  esac
+}
+# 记录对应的进程是否仍被白泽冻结：0 是；1 已被外部解冻
+perf_record_frozen() {
+  case "$1" in
+    group=*) prf=${1#group=}; prf=${prf%%|*}; grep -qx "$2" "$prf/cgroup.procs" 2>/dev/null ;;
+    am:*) return 0 ;;
+    *) prf_v=; read -r prf_v <"$1" 2>/dev/null; [ "$prf_v" = 1 ] ;;
+  esac
+}
 perf_frozen_init() {
   pfi_boot=$(perf_boot_id)
   if [ -f "$FROZEN" ] && [ "$(sed -n '1s/^#boot=//p' "$FROZEN")" != "$pfi_boot" ]; then rm -f "$FROZEN"; fi
@@ -264,7 +407,7 @@ perf_thaw() {
   pt_n=0; pt_keep=
   while IFS="$TAB" read -r pt_f pt_pkg pt_pid pt_ts; do
     case "$pt_f" in '#'*) pt_keep="$pt_f"; continue ;; '') continue ;; esac
-    if [ -z "$1" ] || [ "$pt_pkg" = "$1" ]; then perf_thaw_file "$pt_f" && pt_n=$((pt_n + 1))
+    if [ -z "$1" ] || [ "$pt_pkg" = "$1" ]; then perf_thaw_file "$pt_f" "$pt_pid" && pt_n=$((pt_n + 1))
     else pt_keep="$pt_keep$NL$pt_f$TAB$pt_pkg$TAB$pt_pid$TAB$pt_ts"; fi
   done <"$FROZEN"
   printf '%s\n' "$pt_keep" >"$FROZEN.tmp.$$" && mv -f "$FROZEN.tmp.$$" "$FROZEN"
@@ -279,9 +422,8 @@ perf_frozen_prune() {
   pfp_keep=; pfp_ext=
   while IFS="$TAB" read -r pfp_f pfp_pkg pfp_pid pfp_ts; do
     case "$pfp_f" in '#'*) pfp_keep="$pfp_f"; continue ;; '') continue ;; esac
-    pfp_v=; read -r pfp_v <"$pfp_f" 2>/dev/null || continue
     [ -d "$PROC/$pfp_pid" ] || continue
-    if [ "$pfp_v" != 1 ]; then pfp_ext="$pfp_ext$pfp_pkg$NL"; continue; fi
+    if ! perf_record_frozen "$pfp_f" "$pfp_pid"; then pfp_ext="$pfp_ext$pfp_pkg$NL"; continue; fi
     pfp_keep="$pfp_keep$NL$pfp_f$TAB$pfp_pkg$TAB$pfp_pid$TAB$pfp_ts"
   done <"$FROZEN"
   printf '%s\n' "$pfp_keep" >"$FROZEN.tmp.$$" && mv -f "$FROZEN.tmp.$$" "$FROZEN"
@@ -289,11 +431,22 @@ perf_frozen_prune() {
 }
 # $1 pid $2 包名：0 已冻结；2 不支持；3 已被系统冻结（不接管）
 perf_freeze_pid() {
-  pfz_f=$(perf_freeze_path "$1") || return 2
-  [ -f "$pfz_f" ] && [ -w "$pfz_f" ] || return 2
-  pfz_v=; read -r pfz_v <"$pfz_f" 2>/dev/null
-  [ "$pfz_v" = 0 ] || return 3
-  printf '1\n' >"$pfz_f" 2>/dev/null || return 2
+  case "$FZ_BACKEND" in
+    v2-pid)
+      pfz_f=$(perf_freeze_path "$1") || return 2
+      [ -f "$pfz_f" ] && [ -w "$pfz_f" ] || return 2
+      pfz_v=; read -r pfz_v <"$pfz_f" 2>/dev/null
+      [ "$pfz_v" = 0 ] || return 3
+      printf '1\n' >"$pfz_f" 2>/dev/null || return 2 ;;
+    v2-group|v1)
+      grep -qx "$1" "$FZ_FROZEN_DIR/cgroup.procs" 2>/dev/null && return 3
+      printf '%s\n' "$1" >"$FZ_FROZEN_DIR/cgroup.procs" 2>/dev/null || return 2
+      pfz_f="group=$FZ_FROZEN_DIR|$FZ_THAW_DIR" ;;
+    am)
+      cmd activity freeze "$1" >/dev/null 2>&1 || return 2
+      pfz_f="am:$1" ;;
+    *) return 2 ;;
+  esac
   printf '%s\t%s\t%s\t%s\n' "$pfz_f" "$2" "$1" "$(perf_now)" >>"$FROZEN"
   FROZEN_TOTAL=$((FROZEN_TOTAL + 1))
   return 0
@@ -311,7 +464,7 @@ perf_watch() {
       case "$pw_f" in '#'*|'') continue ;; esac
       case "$pw_line" in
         *"$pw_pkg/"*|*"$pw_pkg:"*|*"$pw_pkg,"*|*"$pw_pkg]"*|*"$pw_pkg "*)
-          perf_thaw_file "$pw_f" && printf '%s 前台唤醒解冻 %s\n' "$(date '+%F %T')" "$pw_pkg" >>"$LOG" ;;
+          perf_thaw_file "$pw_f" "$pw_pid" && printf '%s 前台唤醒解冻 %s\n' "$(date '+%F %T')" "$pw_pkg" >>"$LOG" ;;
       esac
     done <"$FROZEN"
   done
@@ -352,6 +505,10 @@ perf_bg_due() { printf '%s\n' "$BG_LIST" | awk -v now="$1" -v after="$2" 'NF == 
 
 perf_freeze_round() {
   pfr_now=$1; pfr_after=$2
+  if [ -z "$FZ_BACKEND" ]; then
+    if perf_freezer_detect; then FREEZE_SUPPORT=yes; FREEZE_REASON=; else FREEZE_SUPPORT=no; FREEZE_REASON=$FZ_REASON; return 0; fi
+  fi
+  [ "$FZ_BACKEND" != none ] || { FREEZE_SUPPORT=no; FREEZE_REASON=$FZ_REASON; return 0; }
   pfr_ext=$(perf_frozen_prune)
   for pfr_p in $pfr_ext; do THAWED_TOTAL=$((THAWED_TOTAL + 1)); done
   BG_LIST=$(perf_bg_update "$pfr_now" "$pfr_ext")
@@ -369,8 +526,8 @@ perf_freeze_round() {
       perf_whitelisted "$pfr_name" && continue
       perf_in_list "$pfr_pid" "$FROZEN_PIDS" && continue
       perf_freeze_pid "$pfr_pid" "$pfr_pkg"; pfr_rc=$?
-      if [ "$pfr_rc" = 0 ]; then pfr_done=$((pfr_done + 1)); FREEZE_SUPPORT=yes
-      elif [ "$pfr_rc" = 2 ] && [ "$FREEZE_SUPPORT" != yes ]; then FREEZE_SUPPORT=no; FREEZE_REASON="未找到可写的 cgroup v2 进程冻结节点"; return 0; fi
+      # 单个进程缺少节点（刚退出、尚未迁入 uid/pid cgroup 等）只跳过该进程，不再整体判定不支持。
+      if [ "$pfr_rc" = 0 ]; then pfr_done=$((pfr_done + 1)); FREEZE_SUPPORT=yes; fi
     done <<EOF
 $SNAPSHOT
 EOF
@@ -428,6 +585,8 @@ perf_write_status() {
     echo "freeze_enabled=$FREEZE_ON"
     echo "freeze_support=$FREEZE_SUPPORT"
     echo "freeze_reason=$FREEZE_REASON"
+    echo "freeze_backend=${FZ_BACKEND:-}"
+    echo "freeze_label=${FZ_LABEL:-}"
     echo "frozen_count=$(perf_frozen_count)"
     echo "frozen_total=$FROZEN_TOTAL"
     echo "thawed_total=$THAWED_TOTAL"
@@ -469,8 +628,22 @@ perf_loop() {
   # 上次异常退出遗留的冻结记录：先全部解冻再开始。
   perf_thaw ""
   perf_log "轮询启动"
+  # 冻结后端在轮询开始时按实际挂载探测一次；App「重新检测」会刷新 perf-freezer.env，轮询随之重新探测。
+  pl_fz_prev=$(perf_env_value "$FREEZER_ENV" supported)
+  if perf_freezer_detect; then FREEZE_SUPPORT=yes; FREEZE_REASON=; else FREEZE_SUPPORT=no; FREEZE_REASON=$FZ_REASON; fi
+  perf_freezer_write
+  pl_fz_epoch=$(perf_env_value "$FREEZER_ENV" detected_epoch)
+  if [ "$FREEZE_SUPPORT" = no ] && perf_flag freeze_enabled && [ "$pl_fz_prev" != 0 ]; then
+    perf_log "进程压制不可用：$FREEZE_REASON"
+    perf_history "性能工具·进程压制" 0 1 "未找到可用的冻结方式，进程压制暂停（不会改用强制停止）：$FREEZE_REASON" "scheduled:perf-tools"
+  fi
   pl_started=0
   while :; do
+    pl_fz_now=$(perf_env_value "$FREEZER_ENV" detected_epoch)
+    if [ -n "$pl_fz_now" ] && [ "$pl_fz_now" != "$pl_fz_epoch" ]; then
+      pl_fz_epoch=$pl_fz_now
+      if perf_freezer_detect; then FREEZE_SUPPORT=yes; FREEZE_REASON=; else FREEZE_SUPPORT=no; FREEZE_REASON=$FZ_REASON; fi
+    fi
     [ -f "$CONF" ] || break
     # 模块被禁用 / 卸载 / 守护进程停止：解冻全部后退出。
     [ ! -f "$MODDIR/disable" ] && [ ! -f "$MODDIR/remove" ] && [ ! -f "$STATE_DIR/supervisor.stop" ] || break
@@ -486,8 +659,6 @@ perf_loop() {
       pl_th_before=$THAWED_TOTAL
       if [ "$FREEZE_ON" = 1 ] && [ "$FREEZE_SUPPORT" != no ]; then
         perf_freeze_round "$pl_now" "$(perf_uint freeze_after_minutes 15 1 240)"
-        [ "$FREEZE_SUPPORT" != no ] || { perf_thaw ""; perf_log "进程压制已停用：$FREEZE_REASON"
-          perf_history "性能工具·进程压制" 0 1 "设备不支持 cgroup v2 进程冻结，已停用（不会改用强制停止）" "scheduled:perf-tools"; }
       elif [ "$FREEZE_ON" != 1 ]; then
         [ "$(perf_frozen_count)" -gt 0 ] && perf_thaw ""
       fi
@@ -552,15 +723,44 @@ perf_dex2oat() {
 # ---------- 数据库优化 ----------
 perf_db_status() {
   pdb_tmp="$DB_STATUS.tmp.$$"
-  { echo "state=$1"; echo "sqlite=${DB_SQLITE:-}"; echo "optimized=${DB_OK:-0}"; echo "skipped=${DB_SKIP:-0}"; echo "failed=${DB_FAIL:-0}"
+  { echo "state=$1"; echo "engine=${DB_ENGINE:-}"; echo "sqlite=${DB_SQLITE:-}"; echo "optimized=${DB_OK:-0}"; echo "skipped=${DB_SKIP:-0}"; echo "failed=${DB_FAIL:-0}"
     echo "apps_skipped_running=${DB_RUNNING:-0}"; echo "saved_bytes=${DB_SAVED:-0}"; echo "reason=${2:-}"; echo "updated=$(perf_now)"; } >"$pdb_tmp" && mv -f "$pdb_tmp" "$DB_STATUS"
+}
+# 3.0.1：不再依赖 sqlite3 二进制（HyperOS 等量产系统没有）。首选模块自带 App 的 Root 引擎：
+# 以 root 身份 app_process 运行 PerfDbVacuumMain，直接用 Android SQLiteDatabase 做完整性检查 + REINDEX + VACUUM，
+# 并恢复属主 / 权限 / SELinux 标签——与 App 的 RootService 同一套执行方式（libsu RootService 本身也是 app_process），
+# 但维护窗口里 App 往往不在运行，因此由模块直接拉起，不依赖 App 进程存活。sqlite3 二进制只作兜底。
+perf_db_engine() {
+  if [ -f "$PERF_APK" ] && [ -x "$APP_PROCESS" ]; then DB_ENGINE=app; DB_SQLITE="Android SQLite（Root 引擎）"; return 0; fi
+  if DB_SQLITE=$(perf_find_sqlite); then DB_ENGINE=sqlite3; return 0; fi
+  DB_ENGINE=; DB_SQLITE=; return 1
+}
+# 用 App 引擎处理一个应用的一批数据库；输出逐行 ok <前> <后> <路径> / skip <原因> <路径> / fail <原因> <路径>。
+perf_db_app_batch() {
+  pab_t=; command -v timeout >/dev/null 2>&1 && pab_t="timeout 900"
+  pab_out=$(CLASSPATH="$PERF_APK" $pab_t "$APP_PROCESS" /system/bin io.github.xgl34222220.baize.root.PerfDbVacuumMain "$@" 2>/dev/null)
+  pab_rc=$?
+  pab_seen=0
+  while IFS=' ' read -r pab_kind pab_a pab_b pab_rest; do
+    case "$pab_kind" in
+      ok) pab_seen=$((pab_seen + 1)); DB_OK=$((DB_OK + 1))
+          case "$pab_a:$pab_b" in *[!0-9:]*) ;; *) [ "$pab_b" -lt "$pab_a" ] && DB_SAVED=$((DB_SAVED + pab_a - pab_b)) ;; esac ;;
+      skip) pab_seen=$((pab_seen + 1)); DB_SKIP=$((DB_SKIP + 1)); perf_log "数据库跳过（$pab_a）：$pab_b${pab_rest:+ $pab_rest}" ;;
+      fail) pab_seen=$((pab_seen + 1)); DB_FAIL=$((DB_FAIL + 1)); perf_log "数据库优化失败（$pab_a）：$pab_b${pab_rest:+ $pab_rest}" ;;
+    esac
+  done <<EOF
+$pab_out
+EOF
+  # 引擎崩溃 / 超时：本批未报告的数据库记为失败（引擎内 VACUUM 是事务，失败不会留下半成品）。
+  [ "$pab_seen" -lt "$#" ] && { DB_FAIL=$((DB_FAIL + $# - pab_seen)); perf_log "数据库引擎退出码 $pab_rc，$(( $# - pab_seen )) 个未完成"; }
+  return 0
 }
 perf_dbopt() {
   pdo_trigger=${1:-auto}
-  DB_OK=0; DB_SKIP=0; DB_FAIL=0; DB_RUNNING=0; DB_SAVED=0; DB_SQLITE=
-  if ! DB_SQLITE=$(perf_find_sqlite); then
-    DB_SQLITE=; perf_db_status unavailable "设备无 sqlite3，暂不可用"
-    perf_log "数据库优化跳过：设备无 sqlite3，暂不可用"
+  DB_OK=0; DB_SKIP=0; DB_FAIL=0; DB_RUNNING=0; DB_SAVED=0; DB_SQLITE=; DB_ENGINE=
+  if ! perf_db_engine; then
+    perf_db_status unavailable "模块缺少 app/baize.apk 且设备无 sqlite3，暂不可用"
+    perf_log "数据库优化跳过：模块缺少 app/baize.apk 且设备无 sqlite3"
     exit 0
   fi
   perf_lock "$DB_LOCK" || exit 3
@@ -583,13 +783,15 @@ perf_dbopt() {
       fi
       perf_pkg_running "$pdo_pkg" && { DB_RUNNING=$((DB_RUNNING + 1)); continue; }
     fi
+    pdo_batch=
     for pdo_db in "$DATA_ROOT/$pdo_pkg/databases/"*.db; do
       [ -f "$pdo_db" ] || continue
-      [ "$pdo_count" -lt 300 ] || { pdo_result=count-limit; break 2; }
+      [ "$pdo_count" -lt 300 ] || { pdo_result=count-limit; break; }
       pdo_reason=$(perf_db_skip_reason "$pdo_pkg" "$pdo_db")
       if [ -n "$pdo_reason" ]; then DB_SKIP=$((DB_SKIP + 1)); continue; fi
-      perf_pkg_running "$pdo_pkg" && { DB_RUNNING=$((DB_RUNNING + 1)); continue 2; }
       pdo_count=$((pdo_count + 1))
+      if [ "$DB_ENGINE" = app ]; then pdo_batch="$pdo_batch$pdo_db$NL"; continue; fi
+      perf_pkg_running "$pdo_pkg" && { DB_RUNNING=$((DB_RUNNING + 1)); continue 2; }
       pdo_owner=$(stat -c '%u:%g' "$pdo_db" 2>/dev/null)
       pdo_ctx=$(ls -Zd "$pdo_db" 2>/dev/null | awk '{print $1}')
       pdo_before=$(wc -c <"$pdo_db" | tr -d ' ')
@@ -605,11 +807,23 @@ perf_dbopt() {
       pdo_after=$(wc -c <"$pdo_db" | tr -d ' ')
       case "$pdo_before:$pdo_after" in *[!0-9:]*) ;; *) [ "$pdo_after" -lt "$pdo_before" ] && DB_SAVED=$((DB_SAVED + pdo_before - pdo_after)) ;; esac
     done
+    if [ -n "$pdo_batch" ]; then
+      # 交给引擎前最后确认应用仍未运行。
+      if perf_pkg_running "$pdo_pkg"; then DB_RUNNING=$((DB_RUNNING + 1))
+      else
+        pdo_old_ifs=$IFS; IFS=$NL; set -f
+        # shellcheck disable=SC2086
+        set -- $pdo_batch
+        set +f; IFS=$pdo_old_ifs
+        perf_db_app_batch "$@"
+      fi
+    fi
+    [ "$pdo_result" = count-limit ] && break
   done
   perf_db_status "$pdo_result"
   pdo_src=app; [ "$pdo_trigger" = auto ] && pdo_src=scheduled:perf-tools
   perf_history "性能工具·数据库优化" "$DB_OK" "$DB_FAIL" "数据库优化（$pdo_result）：优化 $DB_OK 个，跳过 $DB_SKIP 个，运行中跳过 $DB_RUNNING 个应用，节省 $((DB_SAVED / 1024)) KB" "$pdo_src"
-  perf_log "数据库优化 $pdo_result：优化 $DB_OK 跳过 $DB_SKIP 失败 $DB_FAIL 运行中 $DB_RUNNING 节省 ${DB_SAVED}B"
+  perf_log "数据库优化 $pdo_result：优化 $DB_OK 跳过 $DB_SKIP 失败 $DB_FAIL 运行中 $DB_RUNNING 节省 ${DB_SAVED}B（$DB_SQLITE）"
   exit 0
 }
 
@@ -643,6 +857,12 @@ perf_check() {
   [ "$pck_loop" = 1 ] || [ "$pck_maint" = 1 ] || exit 0
   # 开机保护：boot_completed 之后 120 秒内什么都不做。
   perf_settled || exit 0
+  # 只开了进程压制、且最近 6 小时探测为不支持：不反复拉起轮询（「重新检测」会刷新探测时间）。
+  if [ "$pck_loop" = 1 ] && ! perf_flag mem_enabled && [ "$(perf_env_value "$FREEZER_ENV" supported)" = 0 ]; then
+    pck_fz=$(perf_env_value "$FREEZER_ENV" detected_epoch); case "$pck_fz" in ''|*[!0-9]*) pck_fz=0 ;; esac
+    pck_now=$(perf_now)
+    [ "$pck_now" -ge "$pck_fz" ] && [ $((pck_now - pck_fz)) -lt 21600 ] && pck_loop=0
+  fi
   if [ "$pck_loop" = 1 ] && ! perf_lock_alive "$LOOP_LOCK"; then perf_detach loop; fi
   [ "$pck_maint" = 1 ] && perf_maint_check
   exit 0
@@ -667,6 +887,11 @@ case "$ACTION" in
     exit 0 ;;
   thaw-all)
     THAWED_TOTAL=0; perf_thaw ""; echo "thawed=$THAWED_TOTAL"; exit 0 ;;
-  status) cat "$STATUS" "$DEX_STATUS" "$DB_STATUS" 2>/dev/null; exit 0 ;;
-  *) echo "用法: perf-tools.sh check|loop|start-dex2oat|stop-dex2oat|dex2oat|dbopt|thaw-all|status" >&2; exit 2 ;;
+  freezer-detect)
+    perf_freezer_detect; perf_freezer_write; cat "$FREEZER_ENV"; exit 0 ;;
+  start-dbopt)
+    perf_lock_alive "$DB_LOCK" && { echo busy; exit 3; }
+    perf_detach dbopt manual; echo started; exit 0 ;;
+  status) cat "$STATUS" "$DEX_STATUS" "$DB_STATUS" "$FREEZER_ENV" 2>/dev/null; exit 0 ;;
+  *) echo "用法: perf-tools.sh check|loop|start-dex2oat|stop-dex2oat|start-dbopt|dex2oat|dbopt|thaw-all|freezer-detect|status" >&2; exit 2 ;;
 esac

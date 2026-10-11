@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 # 真机回归（HyperOS，Root）：
 #   1. QQ / 微信收到的安装包常被改名为 xxx.apk.1，且 Android 11+ 位于 Android/data；
 #      安装包扫描、共享索引与文件归类都只认最后一个扩展名，一个也找不到。

@@ -91,4 +91,27 @@ class PerfToolsPolicyTest {
         assertEquals("encrypted-or-not-sqlite", reason("com.example.notes", header = "\u0012\u0034garbage"))
         assertEquals("too-large", reason("com.example.notes", size = 300L * 1024 * 1024))
     }
+
+    @Test
+    fun freezerStatusShowsBackendOrPreciseReasonNeverForceStop() {
+        assertEquals("冻结方式：cgroup v2（进程级 cgroup.freeze）",
+            PerfToolsPolicy.freezerStatusLine(true, "cgroup v2（进程级 cgroup.freeze）", ""))
+        assertEquals("冻结方式：cgroup v1 freezer（frozen 分组）",
+            PerfToolsPolicy.freezerStatusLine(true, "cgroup v1 freezer（frozen 分组）", "ignored"))
+        val unsupported = PerfToolsPolicy.freezerStatusLine(false, "", "已挂载 cgroup2（/sys/fs/cgroup），但没有可写的进程级 cgroup.freeze 或 frozen 分组")
+        assertTrue(unsupported.contains("不会改用强制停止"))
+        assertTrue(unsupported.contains("/sys/fs/cgroup"))
+        assertFalse(unsupported.contains("设备不支持 cgroup v2"))
+        assertTrue(PerfToolsPolicy.freezerStatusLine(false, "", "").contains("重新检测"))
+        assertEquals("系统自带冻结：已启用", PerfToolsPolicy.systemFreezerLabel("enabled"))
+        assertEquals("", PerfToolsPolicy.systemFreezerLabel("unknown"))
+    }
+
+    @Test
+    fun staleUnsupportedLoopStatusNoLongerHidesDetectedFreezer() {
+        val state = PerfToolsUiState(loaded = true, connected = true, freezerSupported = true,
+            freezerLabel = "cgroup v2（进程级 cgroup.freeze）", runtimeFreezeSupport = "no")
+        assertTrue(state.freezeAvailable)
+        assertEquals("冻结方式：cgroup v2（进程级 cgroup.freeze）", state.freezerLine)
+    }
 }

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 # allowed_source 的用户 ID 与来源判定。
 #
 # 历史缺陷：判定写的是 "$MEDIA_ROOT"/[0-9]/*，[0-9] 只匹配一个字符，

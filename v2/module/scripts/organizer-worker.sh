@@ -122,6 +122,10 @@ write_result() {
     echo "skipped=$wr_skipped"
     echo "failed=$wr_failed"
     echo "renamed=${RENAMED:-0}"
+    echo "skippedRecent=${SKIPPED_RECENT:-0}"
+    echo "skippedBusy=${SKIPPED_BUSY:-0}"
+    echo "skippedChanged=${SKIPPED_CHANGED:-0}"
+    echo "minAgeMinutes=${MIN_AGE_MINUTES:-10}"
     echo "deduplicated=${DEDUPLICATED:-0}"
     echo "bytes=$wr_bytes"
     echo "conflictPolicy=${CONFLICT_POLICY:-1}"
@@ -442,6 +446,20 @@ STARTED=$(date +%s)
 CONFLICT_POLICY=$(uint_config organizer_conflict_policy 1 0 2)
 UNDO_RETENTION=$(uint_config organizer_undo_retention 10 1 20)
 MEDIA_SCAN=$(uint_config organizer_media_scan 1 0 1)
+# 3.0.1：正在下载的文件不能被搬走。很多下载器（网盘、部分浏览器、迅雷类）直接写最终文件名，
+# 不用 .part/.crdownload，于是定时归类可能在写入中途把视频搬走，留下截断、无法播放的文件。
+# 三道闸：最近 N 分钟内修改过的不动；任何进程仍打开着的不动；移动前再比对一次大小与修改时间。
+MIN_AGE_MINUTES=$(uint_config organizer_min_age_minutes 10 1 1440)
+MIN_AGE_SECONDS=$((MIN_AGE_MINUTES * 60))
+# 仅供宿主测试使用：允许把年龄门槛降到 0 秒；生产调用方从不设置该变量。
+case "${BAIZE_ORGANIZER_MIN_AGE_SECONDS:-}" in
+  ''|*[!0-9]*) ;;
+  *) MIN_AGE_SECONDS=$(limit_value "$BAIZE_ORGANIZER_MIN_AGE_SECONDS" 600 0 86400) ;;
+esac
+PROC_ROOT=${BAIZE_PROC_ROOT:-/proc}
+SKIPPED_RECENT=0
+SKIPPED_BUSY=0
+SKIPPED_CHANGED=0
 AUTO_TRIGGER=0
 case "$TRIGGER" in scheduler:*) AUTO_TRIGGER=1 ;; esac
 AUTO_MAX_SECONDS=$(limit_value "${BAIZE_ORGANIZER_AUTO_MAX_SECONDS:-180}" 180 30 1800)
@@ -528,8 +546,43 @@ resolve_destination() {
   COLLISION_ACTION=renamed
   return 0
 }
+# 打开文件集合：每轮只扫描一次 /proc/*/fd（ls -ln 一次 fork），只保留媒体存储下的路径，
+# 存成以换行包围的字符串，逐文件用 case 子串匹配，零 fork。FUSE 视图
+# （/storage/emulated/N、/mnt/user/U/emulated/N、/mnt/pass_through/U/emulated/N）
+# 统一折算回 $MEDIA_ROOT/N，MediaProvider 持有的下层 /data/media 句柄天然命中。
+# 保守起见不区分读写模式：被任何进程打开着的文件本轮都不搬（下次再归类即可）。
+NL='
+'
+OPEN_FILES=$NL
+build_open_file_set() {
+  bo_raw="$STATE_DIR/organizer-openfds.tmp.$$"
+  : >"$bo_raw" 2>/dev/null || return 0
+  # shellcheck disable=SC2086
+  set -- "$PROC_ROOT"/[0-9]*/fd/
+  [ -d "${1:-}" ] || { rm -f "$bo_raw"; return 0; }
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 8 ls -ln "$@" >"$bo_raw" 2>/dev/null || true
+  else
+    ls -ln "$@" >"$bo_raw" 2>/dev/null || true
+  fi
+  OPEN_FILES=$NL$(sed -n 's/^l.* -> //p' "$bo_raw" | sed \
+      -e 's/ (deleted)$//' \
+      -e 's#^/storage/emulated/\([0-9][0-9]*\)/#@MEDIA@/\1/#' \
+      -e 's#^/mnt/user/[0-9][0-9]*/emulated/\([0-9][0-9]*\)/#@MEDIA@/\1/#' \
+      -e 's#^/mnt/pass_through/[0-9][0-9]*/emulated/\([0-9][0-9]*\)/#@MEDIA@/\1/#' \
+      -e 's#^/data/media/\([0-9][0-9]*\)/#@MEDIA@/\1/#' |
+    awk -v root="$MEDIA_ROOT" 'index($0, "@MEDIA@/") == 1 { print root substr($0, 8) }' | sort -u)$NL
+  rm -f "$bo_raw"
+}
+file_is_open() {
+  case "$OPEN_FILES" in *"$NL$1$NL"*) return 0 ;; esac
+  return 1
+}
+
 queue_media_scan() { [ "$MEDIA_SCAN" = 1 ] && { printf '%s\0' "$1" >>"$MEDIA_QUEUE"; } || true; }
 
+build_open_file_set
+NOW_EPOCH=$(date +%s)
 exec 3<"$INDEX_FILE"
 while IFS= read -r -d '' FILE_PATH <&3; do
   if [ "$AUTO_TRIGGER" = 1 ]; then
@@ -549,6 +602,7 @@ while IFS= read -r -d '' FILE_PATH <&3; do
   [ -f "$STOP_FILE" ] && break
   if [ $((CURRENT % 200)) -eq 0 ]; then
     write_running "正在检查可归类文件" "$CURRENT" "$TOTAL" "$FILE_PATH"
+    NOW_EPOCH=$(date +%s)
   fi
   [ -f "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   [ ! -L "$FILE_PATH" ] && [ "$(readlink -f "$FILE_PATH" 2>/dev/null)" = "$FILE_PATH" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
@@ -556,6 +610,30 @@ while IFS= read -r -d '' FILE_PATH <&3; do
   category_for "$FILE_PATH"
   [ -n "$CATEGORY" ] || { SKIPPED=$((SKIPPED + 1)); continue; }
   allowed_source "$FILE_PATH" "$CATEGORY" || continue
+
+  # 一次 stat 取回大小、属主、权限与修改时间（取代此前四次独立调用）。
+  SIZE=0; SRC_UID=0; SRC_GID=0; SRC_MODE_OCT=644; SRC_MTIME=0
+  SRC_STAT=$(stat -c '%s %u %g %a %Y' "$FILE_PATH" 2>/dev/null) || SRC_STAT=""
+  if [ -n "$SRC_STAT" ]; then
+    SIZE=${SRC_STAT%% *};              SRC_STAT=${SRC_STAT#* }
+    SRC_UID=${SRC_STAT%% *};           SRC_STAT=${SRC_STAT#* }
+    SRC_GID=${SRC_STAT%% *};           SRC_STAT=${SRC_STAT#* }
+    SRC_MODE_OCT=${SRC_STAT%% *};      SRC_MTIME=${SRC_STAT#* }
+  fi
+  case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
+  case "$SRC_UID" in ''|*[!0-9]*) SRC_UID=0 ;; esac
+  case "$SRC_GID" in ''|*[!0-9]*) SRC_GID=0 ;; esac
+  case "$SRC_MODE_OCT" in ''|*[!0-7]*) SRC_MODE_OCT=644 ;; esac
+  case "$SRC_MTIME" in ''|*[!0-9]*) SRC_MTIME=$NOW_EPOCH ;; esac
+  SRC_MODE=$((8#$SRC_MODE_OCT))
+  # 闸一：最近修改过（含时钟偏差导致的未来时间）一律视为可能仍在写入。
+  if [ $((NOW_EPOCH - SRC_MTIME)) -lt "$MIN_AGE_SECONDS" ]; then
+    SKIPPED_RECENT=$((SKIPPED_RECENT + 1)); SKIPPED=$((SKIPPED + 1)); continue
+  fi
+  # 闸二：仍被任何进程打开（下载器、播放器、MediaProvider FUSE 下层句柄）。
+  if file_is_open "$FILE_PATH"; then
+    SKIPPED_BUSY=$((SKIPPED_BUSY + 1)); SKIPPED=$((SKIPPED + 1)); continue
+  fi
   REQUESTED=$((REQUESTED + 1))
   write_running "正在归类 $CATEGORY" "$CURRENT" "$TOTAL" "$FILE_PATH"
 
@@ -589,19 +667,12 @@ while IFS= read -r -d '' FILE_PATH <&3; do
   [ "$(readlink -f "$DEST_DIR" 2>/dev/null)" = "$DEST_DIR" ] || { FAILED=$((FAILED + 1)); continue; }
   [ "$COLLISION_ACTION" = renamed ] && RENAMED=$((RENAMED + 1))
 
-  # 四个字段一次 stat 取回，取代此前四次独立调用（每次两个进程）。
-  SIZE=0; SRC_UID=0; SRC_GID=0; SRC_MODE_OCT=644
-  SRC_STAT=$(stat -c '%s %u %g %a' "$FILE_PATH" 2>/dev/null) || SRC_STAT=""
-  if [ -n "$SRC_STAT" ]; then
-    SIZE=${SRC_STAT%% *};              SRC_STAT=${SRC_STAT#* }
-    SRC_UID=${SRC_STAT%% *};           SRC_STAT=${SRC_STAT#* }
-    SRC_GID=${SRC_STAT%% *};           SRC_MODE_OCT=${SRC_STAT#* }
+  # 闸三：移动前最后一次比对大小与修改时间；与发现时不同说明仍在写入，本轮跳过。
+  RECHECK=$(stat -c '%s %Y' "$FILE_PATH" 2>/dev/null) || RECHECK=""
+  if [ "$RECHECK" != "$SIZE $SRC_MTIME" ]; then
+    [ "$COLLISION_ACTION" = renamed ] && RENAMED=$((RENAMED - 1))
+    SKIPPED_CHANGED=$((SKIPPED_CHANGED + 1)); SKIPPED=$((SKIPPED + 1)); continue
   fi
-  case "$SIZE" in ''|*[!0-9]*) SIZE=0 ;; esac
-  case "$SRC_UID" in ''|*[!0-9]*) SRC_UID=0 ;; esac
-  case "$SRC_GID" in ''|*[!0-9]*) SRC_GID=0 ;; esac
-  case "$SRC_MODE_OCT" in ''|*[!0-7]*) SRC_MODE_OCT=644 ;; esac
-  SRC_MODE=$((8#$SRC_MODE_OCT))
 
   # -n also protects a destination created after conflict resolution; mv -n can
   # report success when it skipped, so verify the source was actually removed.

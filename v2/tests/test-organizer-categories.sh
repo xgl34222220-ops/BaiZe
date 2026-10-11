@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 # 归类分类表必须四处同源，且归类器与索引器覆盖同一组扩展名。
 #
 # 历史缺陷：这份清单在 organizer-worker.sh、storage-index.sh、

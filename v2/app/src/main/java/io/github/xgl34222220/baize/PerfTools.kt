@@ -161,6 +161,21 @@ object PerfToolsPolicy {
         else -> null
     }
 
+    /** 冻结方式的一行说明：支持时「冻结方式：…」，不支持时给出模块探测到的准确原因。 */
+    fun freezerStatusLine(supported: Boolean, label: String, reason: String): String = when {
+        supported -> "冻结方式：${label.ifBlank { "已检测到可用的冻结方式" }}"
+        reason.isNotBlank() -> "未找到可用的冻结方式（不会改用强制停止）：$reason"
+        else -> "尚未完成冻结方式检测，可点「重新检测」"
+    }
+
+    /** 系统自带冻结（cached_apps_freezer）状态，仅作说明。 */
+    fun systemFreezerLabel(value: String): String = when (value) {
+        "enabled" -> "系统自带冻结：已启用"
+        "disabled" -> "系统自带冻结：已关闭"
+        "default" -> "系统自带冻结：跟随系统默认"
+        else -> ""
+    }
+
     fun dex2oatStateLabel(state: String): String = when (state) {
         "running" -> "正在编译"
         "completed" -> "已完成"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# 3.0.1 起归类默认跳过 10 分钟内修改过的文件；夹具文件刚创建，测试显式关闭年龄门槛。
+export BAIZE_ORGANIZER_MIN_AGE_SECONDS=0
 # 媒体刷新必须是 durable pending/inflight 事务，不能回退到逐文件 am 或 Activity 直读 /data/adb。
 set -uo pipefail
 
