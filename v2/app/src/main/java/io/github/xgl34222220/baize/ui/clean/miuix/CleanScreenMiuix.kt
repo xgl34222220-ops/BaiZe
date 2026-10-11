@@ -254,6 +254,8 @@ private fun AutomaticCleaningHero(
                     when {
                         !state.engineReady -> state.serviceText.ifBlank { "清理服务尚未就绪" }
                         state.running -> "正在执行清理任务"
+                        // 未装模块或调度器未就绪时，开关能保存但不会执行：直接说明原因，而不是显示「N 项任务已启用」。
+                        !state.automationAvailable -> automationUnavailableText(state.automationText)
                         state.automaticCleaningEnabled -> "${state.enabledCategoryCount} 项任务已启用"
                         else -> "所有自动任务已暂停"
                     },
@@ -495,6 +497,9 @@ private fun ValueRow(label: String, value: String, enabled: Boolean = true, onCl
 
 @Composable
 private fun IconTile(icon: ImageVector) = BaiZeIconTile(icon)
+
+internal fun automationUnavailableText(automationText: String): String =
+    automationText.ifBlank { "自动清理模块未就绪" } + "，自动任务暂不会执行；请在 Root 管理器中安装 / 启用白泽模块后重启"
 
 private fun cleanToolIcon(key: String): ImageVector = when (key) {
     "large" -> Icons.Rounded.InsertDriveFile
