@@ -131,9 +131,9 @@ class BrandSplashContract(unittest.TestCase):
                       (JAVA / 'MiuixDashboardActivity.kt').read_text(encoding='utf-8'))
 
     def test_static_branding_matches_version(self):
-        # 品牌图把「BAIZE · v3.0.0」烘焙进位图；改版本号时必须同步重新导出品牌图。
+        # 品牌图把「BAIZE · v3.3.3」烘焙进位图；改版本号时必须同步重新导出品牌图。
         gradle = (APP / 'build.gradle.kts').read_text(encoding='utf-8')
-        self.assertIn('versionName = "3.0.0"', gradle)
+        self.assertIn('versionName = "3.3.3"', gradle)
         self.assertIn('core-splashscreen', gradle)
 
 
