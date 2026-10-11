@@ -83,8 +83,14 @@ data class PerfToolsUiState(
     val whitelist: List<String> = emptyList(),
     val dbBlacklist: List<String> = emptyList(),
     val sqlite3: String = "",
+    val dbEngineAvailable: Boolean = false,
+    val dbEngineLabel: String = "",
+    val dbEngineReason: String = "",
     val freezerSupported: Boolean = false,
+    val freezerDetected: Boolean = false,
+    val freezerLabel: String = "",
     val freezerReason: String = "",
+    val systemFreezer: String = "",
     val loopState: String = "",
     val frozenCount: Int = 0,
     val frozenTotal: Int = 0,
@@ -108,7 +114,9 @@ data class PerfToolsUiState(
     val message: String = ""
 ) {
     val dexRunning: Boolean get() = dexState == "running"
-    val freezeAvailable: Boolean get() = freezerSupported && runtimeFreezeSupport != "no"
+    /** 以模块按实际挂载探测的结果为准；不再沿用旧轮询留下的 freeze_support=no（3.0.0 误判）。 */
+    val freezeAvailable: Boolean get() = freezerSupported
+    val freezerLine: String get() = PerfToolsPolicy.freezerStatusLine(freezerSupported, freezerLabel, freezerReason)
 }
 
 class PerfToolsViewModel(application: Application) : AndroidViewModel(application) {
@@ -178,6 +186,7 @@ class PerfToolsViewModel(application: Application) : AndroidViewModel(applicatio
         val dex = json.optJSONObject("dex2oat") ?: JSONObject()
         val db = json.optJSONObject("dbopt") ?: JSONObject()
         val freezer = json.optJSONObject("freezer") ?: JSONObject()
+        val engine = json.optJSONObject("dbEngine") ?: JSONObject()
         val log = json.optJSONArray("log")?.let { a -> (0 until a.length()).map(a::optString) }.orEmpty()
         return current.copy(
             loaded = true,
@@ -186,8 +195,15 @@ class PerfToolsViewModel(application: Application) : AndroidViewModel(applicatio
             whitelist = PerfToolsPolicy.normalizeList(json.optString("whitelist")),
             dbBlacklist = PerfToolsPolicy.normalizeList(json.optString("dbBlacklist")),
             sqlite3 = json.optString("sqlite3"),
+            // 旧版 Root 服务没有 dbEngine 字段时退回旧判断（有 sqlite3 才可用）。
+            dbEngineAvailable = if (json.has("dbEngine")) engine.optBoolean("available") else json.optString("sqlite3").isNotBlank(),
+            dbEngineLabel = engine.optString("label").ifBlank { json.optString("sqlite3") },
+            dbEngineReason = engine.optString("reason"),
             freezerSupported = freezer.optBoolean("supported"),
+            freezerDetected = freezer.optBoolean("detected", true),
+            freezerLabel = freezer.optString("label"),
             freezerReason = freezer.optString("reason"),
+            systemFreezer = freezer.optString("systemFreezer"),
             loopState = status.optString("loop_state"),
             frozenCount = status.optInt("frozen_count"),
             frozenTotal = status.optInt("frozen_total"),
@@ -316,13 +332,19 @@ internal fun PerfToolsScreen(
             item { LuoShuSection("数据库优化", "风险：VACUUM 期间应用启动可能短暂卡顿；损坏、加密与使用中的数据库自动跳过") }
             item {
                 LuoShuGroup {
-                    val noSqlite = state.loaded && state.sqlite3.isBlank()
+                    // 3.0.1：Root 引擎（Android SQLite）不需要 sqlite3；只有引擎完全不可用时才禁用。
+                    val noEngine = state.loaded && state.connected && !state.dbEngineAvailable
                     LuoShuSwitchRow(Icons.Rounded.Storage, "充电息屏时优化应用数据库",
-                        if (noSqlite) "设备无 sqlite3，暂不可用" else dbSummary(state),
-                        c.dbOptimizeAuto && !noSqlite, { onUpdate(c.copy(dbOptimizeAuto = it)) }, enabled = ready && !noSqlite)
+                        if (noEngine) state.dbEngineReason.ifBlank { "数据库优化引擎不可用" } else dbSummary(state),
+                        c.dbOptimizeAuto && !noEngine, { onUpdate(c.copy(dbOptimizeAuto = it)) }, enabled = ready && !noEngine)
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.PlayArrow, "立即优化",
+                        if (noEngine) "不可用" else "引擎：${state.dbEngineLabel.ifBlank { "Root" }} · 只处理未运行的应用") {
+                        if (ready && !noEngine && state.dbState != "running") onCommand("dbopt-start")
+                    }
                     LuoShuGroupDivider()
                     LuoShuSwitchRow(Icons.Rounded.Block, "优化前强制停止应用", "关闭时只处理未在运行的应用（推荐关闭）",
-                        c.dbForceStop, { onUpdate(c.copy(dbForceStop = it)) }, enabled = ready && !noSqlite)
+                        c.dbForceStop, { onUpdate(c.copy(dbForceStop = it)) }, enabled = ready && !noEngine)
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Shield, "数据库黑名单",
                         "内置微信、QQ、TIM 与系统应用；自定义 ${state.dbBlacklist.size} 个") { if (ready) dialog = PerfDialog.DB_BLACKLIST }
@@ -335,9 +357,14 @@ internal fun PerfToolsScreen(
                 LuoShuGroup {
                     val unsupported = state.loaded && state.connected && !state.freezeAvailable
                     LuoShuSwitchRow(Icons.Rounded.AcUnit, "冻结后台应用",
-                        if (unsupported) "设备不支持 cgroup v2 冻结，已停用（不会改用强制停止）${state.freezerReason.takeIf { it.isNotBlank() }?.let { "：$it" }.orEmpty()}"
-                        else freezeSummary(state),
+                        if (unsupported) state.freezerLine else freezeSummary(state),
                         c.freezeEnabled && !unsupported, { onUpdate(c.copy(freezeEnabled = it)) }, enabled = ready && !unsupported)
+                    LuoShuGroupDivider()
+                    LuoShuNavigationRow(Icons.Rounded.Refresh, "重新检测",
+                        listOf(state.freezerLine, PerfToolsPolicy.systemFreezerLabel(state.systemFreezer))
+                            .filter { it.isNotBlank() }.joinToString(" · ")) {
+                        if (state.connected && !state.busy) onCommand("freezer-detect")
+                    }
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Timer, "后台时长", "进入后台 ${c.freezeAfterMinutes} 分钟后冻结") {
                         if (ready) dialog = PerfDialog.FREEZE_MINUTES
@@ -403,16 +430,17 @@ private fun dexSummary(s: PerfToolsUiState): String = when (s.dexState) {
     else -> "上次：${PerfToolsPolicy.dex2oatStateLabel(s.dexState)} · ${s.dexMode} · 成功 ${s.dexOk}，失败 ${s.dexFailed}（${s.dexCurrent}/${s.dexTotal}）"
 }
 
-private fun dbSummary(s: PerfToolsUiState): String = when (s.dbState) {
-    "" -> "只处理未运行的用户应用，先做完整性检查"
-    "unavailable" -> s.dbReason.ifBlank { "设备无 sqlite3，暂不可用" }
-    "running" -> "正在优化…"
+private fun dbSummary(s: PerfToolsUiState): String = when {
+    // 3.0.0 留下的「设备无 sqlite3」状态在 Root 引擎可用后不再展示。
+    s.dbState == "" || (s.dbState == "unavailable" && s.dbEngineAvailable) -> "只处理未运行的用户应用，先做完整性检查"
+    s.dbState == "unavailable" -> s.dbReason.ifBlank { "数据库优化引擎不可用" }
+    s.dbState == "running" -> "正在优化…"
     else -> "上次：优化 ${s.dbOptimized} 个，跳过 ${s.dbSkipped} 个"
 }
 
 private fun freezeSummary(s: PerfToolsUiState): String = when {
-    !s.config.freezeEnabled -> "使用 cgroup v2 冻结，不会强制停止应用"
-    s.loopState == "running" -> "已冻结 ${s.frozenCount} 个进程 · 累计冻结 ${s.frozenTotal}，解冻 ${s.thawedTotal}"
+    !s.config.freezeEnabled -> "${s.freezerLine}，不会强制停止应用"
+    s.loopState == "running" -> "${s.freezerLine} · 已冻结 ${s.frozenCount} 个进程 · 累计冻结 ${s.frozenTotal}，解冻 ${s.thawedTotal}"
     else -> "开机完成 2 分钟后开始，约 1 分钟内生效"
 }
 

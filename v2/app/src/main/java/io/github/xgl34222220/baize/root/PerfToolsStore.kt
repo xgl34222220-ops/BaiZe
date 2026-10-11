@@ -21,6 +21,7 @@ internal object PerfToolsStore {
     private const val STATUS = "perf-tools.env"
     private const val DEX = "perf-dex2oat.env"
     private const val DB = "perf-dbopt.env"
+    private const val FREEZER = "perf-freezer.env"
     private const val LOG = "perf-tools.log"
     private const val HISTORY = "history.tsv"
     private val SQLITE_PATHS = listOf("/system/bin/sqlite3", "/system/xbin/sqlite3", "/vendor/bin/sqlite3",
@@ -37,8 +38,9 @@ internal object PerfToolsStore {
             .put("dex2oat", RootFileStore.readEnv(File(stateDir, DEX)))
             .put("dbopt", RootFileStore.readEnv(File(stateDir, DB)))
             .put("log", JSONArray(log))
-            .put("sqlite3", SQLITE_PATHS.firstOrNull { File(it).let { f -> f.isFile && f.canExecute() } }.orEmpty())
-            .put("freezer", freezerSupport())
+            .put("sqlite3", sqlite3Path())
+            .put("dbEngine", dbEngine())
+            .put("freezer", freezerSupport(stateDir))
             .put("moduleReady", script.isFile)
             .toString()
     }
@@ -67,10 +69,12 @@ internal object PerfToolsStore {
             "dex2oat-start" -> "start-dex2oat"
             "dex2oat-stop" -> "stop-dex2oat"
             "thaw-all" -> "thaw-all"
+            "dbopt-start" -> "start-dbopt"
+            "freezer-detect" -> "freezer-detect"
             else -> throw IllegalArgumentException("unsupported_command")
         }
         val process = ProcessBuilder("/system/bin/sh", script.absolutePath, action)
-            .redirectErrorStream(true).start()
+            .redirectErrorStream(true).apply { environment()["BAIZE_MODULE_DIR"] = RootPaths.MODULE_DIR }.start()
         val output = process.inputStream.bufferedReader().use { it.readText().take(2_000) }
         if (!process.waitFor(15, TimeUnit.SECONDS)) {
             process.destroyForcibly()
@@ -82,26 +86,54 @@ internal object PerfToolsStore {
             action == "start-dex2oat" && code == 0 -> "已开始编译，关闭 App 也会继续"
             action == "stop-dex2oat" -> "已请求停止，当前应用编译完成后结束"
             action == "thaw-all" -> "已解冻 ${output.substringAfter("thawed=", "0").trim().toIntOrNull() ?: 0} 个进程"
+            action == "start-dbopt" && code == 3 -> "数据库优化已在进行"
+            action == "start-dbopt" && code == 0 -> "已开始优化数据库（只处理未运行的应用），关闭 App 也会继续"
+            action == "freezer-detect" -> RootFileStore.readEnv(File(RootPaths.STATE_DIR, FREEZER)).let { env ->
+                PerfToolsPolicy.freezerStatusLine(env.optString("supported") == "1", env.optString("label"), env.optString("reason"))
+            }
             else -> output.trim()
         }
         if (action == "thaw-all") appendHistory(File(RootPaths.STATE_DIR), "性能工具·进程压制", "手动解冻全部：$message", "app")
         return JSONObject().put("success", code == 0 || code == 3).put("exitCode", code).put("message", message).toString()
     }
 
-    /** cgroup v2 进程冻结是否可用：存在 /sys/fs/cgroup/uid_x/pid_y/cgroup.freeze（只看前几个目录）。 */
-    private fun freezerSupport(): JSONObject {
-        val root = File("/sys/fs/cgroup")
-        val v2 = File(root, "cgroup.controllers").isFile
-        val sample = if (!v2) null else root.listFiles { f -> f.isDirectory && f.name.startsWith("uid_") }
-            ?.asSequence()?.take(8)
-            ?.flatMap { uid -> uid.listFiles { f -> f.isDirectory && f.name.startsWith("pid_") }?.asSequence()?.take(2).orEmpty() }
-            ?.firstOrNull { File(it, "cgroup.freeze").isFile }
-        return JSONObject().put("cgroupV2", v2).put("supported", sample != null)
-            .put("reason", when {
-                !v2 -> "内核未挂载 cgroup v2"
-                sample == null -> "未找到应用级 cgroup.freeze 节点"
-                else -> ""
-            })
+    private fun sqlite3Path(): String = SQLITE_PATHS.firstOrNull { File(it).let { f -> f.isFile && f.canExecute() } }.orEmpty()
+
+    /**
+     * 数据库优化引擎：首选模块自带 APK 经 root app_process 运行 PerfDbVacuumMain（Android SQLiteDatabase），
+     * 不需要 sqlite3 二进制；sqlite3 只作兜底。两者都没有才不可用。
+     */
+    private fun dbEngine(): JSONObject {
+        val apk = File(RootPaths.MODULE_DIR, "app/baize.apk")
+        val appProcess = File("/system/bin/app_process")
+        val sqlite = sqlite3Path()
+        return when {
+            apk.isFile && appProcess.exists() -> JSONObject().put("available", true).put("engine", "app")
+                .put("label", "Android SQLite（Root 引擎）").put("reason", "")
+            sqlite.isNotEmpty() -> JSONObject().put("available", true).put("engine", "sqlite3")
+                .put("label", "sqlite3（$sqlite）").put("reason", "")
+            else -> JSONObject().put("available", false).put("engine", "")
+                .put("label", "").put("reason", "模块缺少 app/baize.apk 且设备无 sqlite3，请重新刷入完整模块")
+        }
+    }
+
+    /**
+     * 冻结后端由模块 perf-tools.sh 按实际挂载探测（cgroup v2 进程级 / v2 分组 / v1 freezer / 系统 am freeze），
+     * 结果写在 perf-freezer.env；尚未探测过时这里触发一次（只读探测，毫秒级）。「重新检测」走 freezer-detect 命令。
+     */
+    private fun freezerSupport(stateDir: File): JSONObject {
+        val file = File(stateDir, FREEZER)
+        if (!file.isFile) runCatching { command("freezer-detect") }
+        val env = RootFileStore.readEnv(file)
+        val supported = env.optString("supported") == "1"
+        return JSONObject().put("supported", supported)
+            .put("detected", file.isFile)
+            .put("backend", env.optString("backend"))
+            .put("label", env.optString("label"))
+            .put("reason", env.optString("reason").ifBlank { if (file.isFile) "" else "尚未完成冻结方式检测" })
+            .put("detail", env.optString("detail"))
+            .put("systemFreezer", env.optString("system_freezer"))
+            .put("detectedEpoch", env.optString("detected_epoch").toLongOrNull() ?: 0L)
     }
 
     private fun describeChanges(old: PerfToolsConfig, new: PerfToolsConfig): List<String> = buildList {
