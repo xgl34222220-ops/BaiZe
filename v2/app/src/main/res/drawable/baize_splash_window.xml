@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8–11 启动窗口背景（Theme.BaiZe.Starting 的 windowBackground）：弥散渐变底 + 居中 288dp 启动图标，
+     与 core-splashscreen 兼容启动视图的图标位置、尺寸一致（BaiZeSplashExit 把兼容视图的底也换成同一张渐变）。
+     Android 12+ 系统启动页只认纯色底，见 values-v31/splash.xml。纯矢量。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/baize_splash_mesh" />
+    <item
+        android:width="288dp"
+        android:height="288dp"
+        android:gravity="center"
+        android:drawable="@drawable/ic_baize_splash" />
+</layer-list>

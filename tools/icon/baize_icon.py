@@ -164,6 +164,39 @@ MONOCHROME = [
 ]
 
 
+# ---- 启动页（弥散渐变玻璃）----
+# 启动图标：系统把 288dp 图标裁成 192dp 圆（= 108 视口中间的 72，半径 36）。前景后面垫一圈玻璃光晕：
+# 柔光径向渐变（到半径 36 处完全透明）+ 一枚极淡的磨砂玻璃圆片，全部在可见圆内。
+HALO_DISC = 'M54,20.5a33.5,33.5 0 1 1 0,67a33.5,33.5 0 1 1 0,-67z'
+SPLASH_HALO = [
+    {'d': 'M54,18a36,36 0 1 1 0,72a36,36 0 1 1 0,-72z',
+     'fill': ('radial', 54, 54, 36, [(0, W, 0.16), (0.5, W, 0.09), (0.8, W, 0.03), (1, W, 0)]), 'note': '光晕'},
+    {'d': HALO_DISC, 'fill': ('linear', 30, 30, 78, 78, [(0, W, 0.09), (0.6, W, 0.03), (1, W, 0.015)]),
+     'stroke': (W, 0.13, 0.45), 'note': '磨砂玻璃圆片'},
+]
+SPLASH = SPLASH_HALO + FOREGROUND
+
+# 启动底：360×800dp 视口（108×240），白泽青底色上叠几团大而虚的色斑，边缘全部渐隐到 0，没有硬边。
+MESH_W, MESH_H = 108, 240
+FULL = f'M0,0h{MESH_W}v{MESH_H}h-{MESH_W}z'
+
+
+def blob(cx, cy, r, color, alpha):
+    # 近似高斯衰减的径向渐变
+    return ('radial', cx, cy, r, [(o, color, alpha * k) for o, k in
+                                  ((0, 1), (0.25, 0.86), (0.5, 0.52), (0.75, 0.18), (1, 0))])
+
+
+MESH = [
+    {'d': FULL, 'fill': ('linear', 0, 0, 108, 240, [(0, '#0E8F94', 1), (0.5, '#0A7880', 1), (1, '#005A62', 1)]),
+     'note': '白泽青底色'},
+    {'d': FULL, 'fill': blob(16, 44, 78, '#5CCBC6', 0.5), 'note': '左上浅青色斑'},
+    {'d': FULL, 'fill': blob(108, 168, 78, '#2E98C4', 0.38), 'note': '右下一抹湖蓝'},
+    {'d': FULL, 'fill': blob(4, 240, 80, '#004750', 0.55), 'note': '左下沉一点深青'},
+    {'d': FULL, 'fill': blob(54, 120, 50, '#8FE3DC', 0.14), 'note': '中心托住晶石的微光'},
+]
+
+
 def _argb(color, alpha=1.0):
     return '#%02X%s' % (round(alpha * 255), color.lstrip('#').upper())
 
@@ -200,7 +233,7 @@ def _svg_path(s, gid, defs):
     return '<path ' + ' '.join(attrs) + '/>'
 
 
-def svg(layers, comment):
+def svg(layers, comment, w=108, h=108):
     defs, body = [], []
     for i, s in enumerate(layers):
         if s.get('note'):
@@ -212,7 +245,7 @@ def svg(layers, comment):
         else:
             body.append('  ' + _svg_path(s, f'g{i}', defs))
     head = ['<?xml version="1.0" encoding="UTF-8"?>', f'<!-- {comment} -->',
-            '<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">']
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">']
     if defs:
         head.append('  <defs>\n    ' + '\n    '.join(defs) + '\n  </defs>')
     return '\n'.join(head + body + ['</svg>']) + '\n'
@@ -244,13 +277,13 @@ def _vd_path(s, pad):
     return f'{pad}<path ' + f'\n{pad}    '.join(attrs) + ' />'
 
 
-def vector(layers, comment):
+def vector(layers, comment, w=108, h=108, dp=None):
     gradients = any(s.get('fill') and s['fill'][0] != 'solid' for s in _flat(layers))
     out = ['<?xml version="1.0" encoding="utf-8"?>', f'<!-- {comment} -->',
            '<vector xmlns:android="http://schemas.android.com/apk/res/android"'
            + ('\n    xmlns:aapt="http://schemas.android.com/aapt"' if gradients else '')
-           + '\n    android:width="108dp"\n    android:height="108dp"'
-             '\n    android:viewportWidth="108"\n    android:viewportHeight="108">']
+           + f'\n    android:width="{(dp or (w, h))[0]}dp"\n    android:height="{(dp or (w, h))[1]}dp"'
+             f'\n    android:viewportWidth="{w}"\n    android:viewportHeight="{h}">']
     for s in layers:
         if s.get('note'):
             out.append(f'    <!-- {s["note"]} -->')
@@ -282,6 +315,12 @@ OUTPUTS = {
                     '全部在 66dp 安全圆内；启动页 ic_baize_splash.xml 也直接用它。' + GEN),
     RES / 'drawable/ic_baize_monochrome.xml': lambda: vector(
         MONOCHROME, '白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色版。' + GEN),
+    RES / 'drawable/ic_baize_splash_mark.xml': lambda: vector(
+        SPLASH, '白泽 3.0.1 启动页图标：玻璃光晕（落在系统 192dp 可见圆内）+ 与桌面图标逐字相同的前景。' + GEN),
+    RES / 'drawable/baize_splash_mesh.xml': lambda: vector(
+        MESH, '白泽 3.0.1 启动底「弥散渐变」：白泽青底色 + 三团柔和色斑，按窗口拉伸。' + GEN, MESH_W, MESH_H, (360, 800)),
+    ROOT / 'tools/icon/baize-splash-mesh.svg': lambda: svg(
+        MESH, '白泽 3.0.1 启动底 SVG：与 res/drawable/baize_splash_mesh.xml 同一套几何。' + GEN, MESH_W, MESH_H),
 }
 
 

@@ -50,6 +50,8 @@ class ModuleLayoutTest(unittest.TestCase):
         pinned = {
             'drawable/ic_baize_background.xml': '42a4f681dbba732dca90cabda434d80ca397e123aa040d7ef0dcc30c0d52e38c',
             'drawable/ic_baize_foreground.xml': '19b57b2ff863ff1a7b05afb519f84a6870e37d69621dc9a358b467da8b57bfc3',
+            'drawable/ic_baize_splash_mark.xml': '8988197bb3d4a2cfeb69bf215d3bba5c989f8b7c2b4e78f4f1daef8b05afe40b',
+            'drawable/baize_splash_mesh.xml': '11367f7754df38c9896b807748d6a5cbe265dd237956a608c9af72501924f332',
             'drawable/ic_baize_monochrome.xml': 'a912638ecaaf1588c21eb0530338ca02bca36cda9bb494d10f48cccbbb23b04d',
         }
         for name, digest in pinned.items():
@@ -70,10 +72,10 @@ class ModuleLayoutTest(unittest.TestCase):
             self.assertEqual('@drawable/ic_baize_foreground', adaptive.find('foreground').attrib[android + 'drawable'])
         monochrome = ET.parse(res / 'mipmap-anydpi-v33/ic_baize.xml').getroot().find('monochrome')
         self.assertEqual('@drawable/ic_baize_monochrome', monochrome.attrib[android + 'drawable'])
-        for layer in ('background', 'foreground', 'monochrome'):
-            self.assertEqual('vector', ET.parse(res / f'drawable/ic_baize_{layer}.xml').getroot().tag, layer)
+        for layer in ('ic_baize_background', 'ic_baize_foreground', 'ic_baize_monochrome', 'ic_baize_splash_mark', 'baize_splash_mesh'):
+            self.assertEqual('vector', ET.parse(res / f'drawable/{layer}.xml').getroot().tag, layer)
         # 不再有位图图层。
-        for stale in ('drawable-nodpi/ic_baize_art.webp', 'drawable-nodpi/ic_baize_monochrome_art.png', 'drawable/ic_baize_splash_mark.xml'):
+        for stale in ('drawable-nodpi/ic_baize_art.webp', 'drawable-nodpi/ic_baize_monochrome_art.png'):
             self.assertFalse((res / stale).exists(), stale)
 
     def test_icon_vectors_match_svg_source(self):

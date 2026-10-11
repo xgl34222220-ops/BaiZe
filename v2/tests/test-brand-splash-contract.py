@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致、图标为矢量白泽晶、白泽青启动底（3.0.1）。"""
+"""启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致、图标为矢量白泽晶、弥散渐变玻璃启动底（3.0.1）。"""
 from pathlib import Path
 import re
 import unittest
@@ -50,8 +50,8 @@ class BrandSplashContract(unittest.TestCase):
         items, _ = style(RES / 'values-v31/splash.xml', 'Theme.BaiZe.Starting')
         self.assertEqual('@drawable/baize_splash_branding', items['android:windowSplashScreenBrandingImage'])
         color = ET.parse(RES / 'values/splash.xml').getroot().find("color[@name='baize_splash_background']").text
-        # 3.0.1：启动底是图标背景渐变深端的白泽青，浅色、深色模式共用一份，不再有 values-night 覆盖。
-        self.assertEqual('#006B72', color)
+        # 3.0.1：Android 12+ 纯色启动底 = 弥散渐变中心色；浅色、深色模式共用一份，不再有 values-night 覆盖。
+        self.assertEqual('#1D888E', color)
         self.assertFalse((RES / 'values-night/splash.xml').exists())
         for d in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
             self.assertFalse((RES / f'drawable-{d}/ic_baize_splash_art.webp').exists())
@@ -88,17 +88,47 @@ class BrandSplashContract(unittest.TestCase):
             solid = [sum(r[x:x + 3]) / 3 for r in rows for x in range(0, stride, 4) if r[x + 3] >= 240]
             self.assertTrue(solid, path)
             return sum(solid) / len(solid)
-        for folder, bg in (('drawable-mdpi', 0x006B72), ('drawable-xxxhdpi', 0x006B72)):
+        for folder, bg in (('drawable-mdpi', 0x1D888E), ('drawable-xxxhdpi', 0x1D888E)):
             luma = sum((bg >> s) & 255 for s in (16, 8, 0)) / 3
             self.assertGreater(abs(ink(RES / folder / 'baize_splash_branding.png') - luma), 120, folder)
 
     def test_splash_icon_is_the_launcher_vector_mark(self):
-        # 3.0.1：启动页图标直接 inset 桌面图标前景矢量（tools/icon/baize_icon.py 生成），不另存位图或副本。
+        # 3.0.1：启动图标是 tools/icon/baize_icon.py 生成的 ic_baize_splash_mark（玻璃光晕 + 与桌面图标逐字相同的前景）。
         splash = ET.parse(RES / 'drawable/ic_baize_splash.xml').getroot()
         self.assertEqual('inset', splash.tag)
-        self.assertEqual('@drawable/ic_baize_foreground', splash.attrib[A + 'drawable'])
-        self.assertEqual('vector', ET.parse(RES / 'drawable/ic_baize_foreground.xml').getroot().tag)
-        self.assertFalse((RES / 'drawable/ic_baize_splash_mark.xml').exists())
+        self.assertEqual('@drawable/ic_baize_splash_mark', splash.attrib[A + 'drawable'])
+        mark = (RES / 'drawable/ic_baize_splash_mark.xml').read_text(encoding='utf-8')
+        foreground = (RES / 'drawable/ic_baize_foreground.xml').read_text(encoding='utf-8')
+        self.assertEqual('vector', ET.fromstring(mark.encode()).tag)
+        for d in re.findall(r'android:pathData="([^"]+)"', foreground):
+            self.assertIn(f'android:pathData="{d}"', mark)
+        # 光晕落在系统 192dp 可见圆（108 视口内半径 36）内。
+        for r in re.findall(r'android:gradientRadius="([\d.]+)"', mark):
+            self.assertLessEqual(float(r), 36)
+
+    def test_splash_background_is_diffuse_mesh_gradient(self):
+        # 弥散渐变：白泽青底色 + 至少三团径向色斑，色斑最外圈完全透明（无硬边）；纯矢量。
+        mesh = ET.parse(RES / 'drawable/baize_splash_mesh.xml').getroot()
+        self.assertEqual('vector', mesh.tag)
+        grads = list(mesh.iter('gradient'))
+        radial = [g for g in grads if g.attrib[A + 'type'] == 'radial']
+        self.assertEqual('linear', grads[0].attrib[A + 'type'])
+        self.assertGreaterEqual(len(radial), 3)
+        for g in radial:
+            self.assertEqual('#00', g.findall('item')[-1].attrib[A + 'color'][:3])
+        # Android 8–11：启动窗口 windowBackground = 渐变 + 居中 288dp 启动图标。
+        items, _ = style(RES / 'values/splash.xml', 'Theme.BaiZe.Starting')
+        self.assertEqual('@drawable/baize_splash_window', items['android:windowBackground'])
+        layers = ET.parse(RES / 'drawable/baize_splash_window.xml').getroot().findall('item')
+        self.assertEqual('@drawable/baize_splash_mesh', layers[0].attrib[A + 'drawable'])
+        self.assertEqual('@drawable/ic_baize_splash', layers[1].attrib[A + 'drawable'])
+        self.assertEqual(('288dp', '288dp', 'center'),
+                         tuple(layers[1].attrib[A + k] for k in ('width', 'height', 'gravity')))
+        # Android 12+ 只能纯色：首帧时由 BaiZeSplashExit 把同一张渐变淡入；8–11 的兼容视图也换成这张渐变。
+        exit_src = (JAVA / 'BaiZeSplashExit.kt').read_text(encoding='utf-8')
+        self.assertIn('R.drawable.baize_splash_mesh', exit_src)
+        self.assertIn('BaiZeSplashExit.attach(this, installSplashScreen())',
+                      (JAVA / 'MiuixDashboardActivity.kt').read_text(encoding='utf-8'))
 
     def test_static_branding_matches_version(self):
         # 品牌图把「BAIZE · v3.0.0」烘焙进位图；改版本号时必须同步重新导出品牌图。
