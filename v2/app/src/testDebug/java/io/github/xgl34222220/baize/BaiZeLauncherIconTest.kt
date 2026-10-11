@@ -101,7 +101,7 @@ class BaiZeLauncherIconTest {
         assertTrue("Foreground must be a vector", icon.foreground is VectorDrawable)
         if (Build.VERSION.SDK_INT >= 33) assertTrue("Monochrome must be a vector", icon.monochrome is VectorDrawable)
         val splash = resources.getDrawable(R.drawable.ic_baize_splash, null)
-        assertTrue("Splash icon reuses the foreground vector", splash is InsetDrawable && splash.drawable is VectorDrawable)
+        assertTrue("Splash icon is the generated vector mark (icon disc + foreground)", splash is InsetDrawable && splash.drawable is VectorDrawable)
         // The splash crops the 288dp icon to its 192dp circle: the mark must sit inside it.
         val art = render(splash, 288)
         var inked = 0

@@ -1,21 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色剪影。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<!-- 白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色版。由 tools/icon/baize_icon.py 生成，勿手改。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 鬃 -->
-    <path android:pathData="M55.6,37.8C49,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39,82.3 42.6,83C40.8,75 41.8,65.5 46,57C49,49 52,43 55.6,37.8Z"
+    <!-- 文档卡在存储环处断开 -->
+    <group>
+        <clip-path android:pathData="M-35.61,-38.22L147.09,-38.22L147.09,144.48L-35.61,144.48ZM62.7,40.52A16.09,16.09 0 1,0 62.7,72.7A16.09,16.09 0 1,0 62.7,40.52Z" />
+        <!-- 文档卡 -->
+        <path android:pathData="M28.91,35.69L47.82,32.7A3.48,3.48 0 0,1 51.8,35.59L55.61,59.65A3.48,3.48 0 0,1 52.72,63.63L33.81,66.62A3.48,3.48 0 0,1 29.83,63.73L26.02,39.67A3.48,3.48 0 0,1 28.91,35.69Z"
+            android:fillColor="#59000000"
+            android:strokeWidth="1.22"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path android:pathData="M31.86,43.15L42.17,41.52M32.67,48.31L40.41,47.08M33.49,53.46L42.94,51.97M34.31,58.62L40.32,57.67"
+            android:strokeWidth="1.74"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+    <!-- 存储环 -->
+    <path android:pathData="M62.7,42.26A14.36,14.36 0 1,1 62.7,70.97A14.36,14.36 0 1,1 62.7,42.26ZM62.7,49.22A7.39,7.39 0 1,0 62.7,64A7.39,7.39 0 1,0 62.7,49.22Z"
+        android:fillColor="#59000000"
+        android:fillType="evenOdd"
+        android:strokeWidth="1.22"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 进度弧 -->
+    <path android:pathData="M66.42,46.39A10.88,10.88 0 0,1 71.03,63.6"
+        android:strokeWidth="2.61"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 星光 -->
+    <path android:pathData="M75.75,35.73Q76.45,38.51 79.23,39.21Q76.45,39.91 75.75,42.69Q75.05,39.91 72.27,39.21Q75.05,38.51 75.75,35.73Z"
         android:fillColor="#FF000000" />
-    <!-- 头颈（眼睛镂空） -->
-    <path android:pathData="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5ZM69.5,46.5C71.5,44.5 74.5,43.8 77,44.5C75.5,46.5 72.5,47.5 69.5,46.5Z"
-        android:fillColor="#FF000000"
-        android:fillType="evenOdd" />
-    <!-- 独角 -->
-    <path android:pathData="M62.6,37.6C61.5,31 63.5,27 68,24.5C66.5,28.5 66.6,32.5 69,36.8C67,36 64.5,36.4 62.6,37.6Z"
+    <path android:pathData="M80.53,43.65Q80.87,44.97 82.19,45.3Q80.87,45.63 80.53,46.95Q80.2,45.63 78.88,45.3Q80.2,44.97 80.53,43.65Z"
         android:fillColor="#FF000000" />
-    <!-- 卷须 -->
-    <path android:pathData="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z"
+    <!-- 祥云 -->
+    <path android:pathData="M31.38,73.14L37.47,73.14A1.58,1.58 0 0,0 37.47,69.97A2.25,2.25 0 0,0 33.33,69.18A1.71,1.71 0 0,0 31.38,71.25A0.97,0.97 0 0,0 31.38,73.14Z"
         android:fillColor="#FF000000" />
 </vector>
