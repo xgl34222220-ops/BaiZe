@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -528,7 +527,8 @@ internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDelete
     val context = LocalContext.current
     val protection = outcome?.protectionExplanation
     BaiZeDialog(onDismissRequest = onDismiss, title = { Text("文件详情") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // BaiZeDialog 已提供唯一的滚动容器，这里不能再嵌套 verticalScroll。
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(record.name, style = MaterialTheme.typography.titleMedium)
             Text("${Formatter.formatFileSize(LocalContext.current, record.bytes)} · ${storageCategoryLabel(storageCategory(record))}")
             Text(if (allowedOnce) "已临时允许本次：确认后移入回收站，保护名单不变"
