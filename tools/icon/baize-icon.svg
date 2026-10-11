@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 白泽 3.0.1 图标 SVG 源：与 res/drawable/ic_baize_{background,foreground}.xml 同一套几何（108×108 视口）。由 tools/icon/baize_icon.py 生成；白泽原创手写矢量。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="g0" x1="22" y1="0" x2="86" y2="108" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7FE3E0" stop-opacity="1"/><stop offset="0.55" stop-color="#2BB5B8" stop-opacity="1"/><stop offset="1" stop-color="#0F8F96" stop-opacity="1"/></linearGradient>
+    <radialGradient id="g1" cx="30" cy="22" r="62" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.42"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="g2" x1="28" y1="30" x2="48" y2="85" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.66"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.28"/></linearGradient>
+    <linearGradient id="g4" x1="62" y1="25" x2="68" y2="38" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.85"/></linearGradient>
+    <linearGradient id="g5" x1="70" y1="66" x2="78" y2="77" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.6"/></linearGradient>
+    <linearGradient id="g8" x1="46" y1="36" x2="80" y2="86" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.94"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.72"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.5"/></linearGradient>
+  </defs>
+  <!-- 青色斜向渐变 -->
+  <path d="M0,0h108v108h-108z" fill="url(#g0)"/>
+  <!-- 左上柔光 -->
+  <path d="M0,0h108v108h-108z" fill="url(#g1)"/>
+  <!-- 鬃：三缕卷云，较淡的后层磨砂玻璃 -->
+  <path d="M58,40C50,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39.5,82.5 45,83.5C43,75 44,66 48,58C51,50 54,44 58,40Z" fill="url(#g2)"/>
+  <!-- 鬃外缘高光 -->
+  <path d="M58,40C50,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39.5,82.5 45,83.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 独角（根部压在头部轮廓之下） -->
+  <path d="M62.6,37.6C61.5,31 63.5,27 68,24.5C66.5,28.5 66.6,32.5 69,36.8C67,36 64.5,36.4 62.6,37.6Z" fill="url(#g4)"/>
+  <!-- 卷须 -->
+  <path d="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z" fill="url(#g5)"/>
+  <path d="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 头颈柔和投影 -->
+  <g transform="translate(1 1.5)"><path d="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z" fill="#0B5F66" fill-opacity="0.16"/></g>
+  <!-- 头与颈：主磨砂玻璃 -->
+  <path d="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z" fill="url(#g8)"/>
+  <!-- 头颈外缘高光 -->
+  <path d="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.95" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 眼 -->
+  <path d="M69.5,46.5C71.5,44.5 74.5,43.8 77,44.5C75.5,46.5 72.5,47.5 69.5,46.5Z" fill="#0F7F86" fill-opacity="0.9"/>
+  <!-- 眉 -->
+  <path d="M67,42.5C70,40 74,40.5 77,43" fill="none" stroke="#1A9CA2" stroke-opacity="0.45" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 颈侧祥云纹 -->
+  <path d="M50,77C46,70 49,62 56,62C61,62 62,68 58,69.5C55.5,70.2 54,67.8 55.6,66.6" fill="none" stroke="#1A9CA2" stroke-opacity="0.5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

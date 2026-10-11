@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""3.0.0 启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致。"""
+"""启动页契约：core-splashscreen、无额外 Activity、无延迟、品牌图与版本一致、图标为矢量白泽（3.0.1）。"""
 from pathlib import Path
 import re
 import unittest
@@ -52,8 +52,15 @@ class BrandSplashContract(unittest.TestCase):
         color = ET.parse(RES / 'values/splash.xml').getroot().find("color[@name='baize_splash_background']").text
         self.assertEqual('#0A4F55', color)
         for d in ('mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'):
-            self.assertTrue((RES / f'drawable-{d}/ic_baize_splash_art.webp').is_file())
+            self.assertFalse((RES / f'drawable-{d}/ic_baize_splash_art.webp').exists())
             self.assertTrue((RES / f'drawable-{d}/baize_splash_branding.png').is_file())
+
+    def test_splash_icon_is_the_launcher_vector_mark(self):
+        # 3.0.1：启动页图标直接复用自适应图标前景的同一个矢量白泽，不再另存位图。
+        splash = ET.parse(RES / 'drawable/ic_baize_splash.xml').getroot()
+        self.assertEqual('inset', splash.tag)
+        self.assertEqual('@drawable/ic_baize_foreground', splash.attrib[A + 'drawable'])
+        self.assertEqual('vector', ET.parse(RES / 'drawable/ic_baize_foreground.xml').getroot().tag)
 
     def test_static_branding_matches_version(self):
         # 品牌图把「BAIZE · v3.0.0」烘焙进位图；改版本号时必须同步重新导出品牌图。

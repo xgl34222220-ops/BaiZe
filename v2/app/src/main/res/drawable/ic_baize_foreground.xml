@@ -1,10 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 3.0.0：ic_baize_art 是覆盖整张 108dp 画布的透明抠图（432px = xxxhdpi），
-     白泽主体（不含柔光）落在 66dp 安全圆内，柔光可越出安全区被系统遮罩自然裁掉。
-     不再烘焙底色或圆角框，底色由 ic_baize_background 渐变提供。 -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_baize_art"
-    android:insetLeft="0%"
-    android:insetTop="0%"
-    android:insetRight="0%"
-    android:insetBottom="0%" />
+<!-- 白泽 3.0.1 图标前景：磨砂白玻璃侧首白泽（独角、卷云鬃、卷须），全部在 66dp 安全圆内。同一矢量也用作启动页图标。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 鬃：三缕卷云，较淡的后层磨砂玻璃 -->
+    <path android:pathData="M58,40C50,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39.5,82.5 45,83.5C43,75 44,66 48,58C51,50 54,44 58,40Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="28" android:startY="30" android:endX="48" android:endY="85">
+                <item android:offset="0" android:color="#A8FFFFFF" />
+                <item android:offset="1" android:color="#47FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 鬃外缘高光 -->
+    <path android:pathData="M58,40C50,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39.5,82.5 45,83.5"
+        android:strokeWidth="0.8"
+        android:strokeColor="#D9FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 独角（根部压在头部轮廓之下） -->
+    <path android:pathData="M62.6,37.6C61.5,31 63.5,27 68,24.5C66.5,28.5 66.6,32.5 69,36.8C67,36 64.5,36.4 62.6,37.6Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="62" android:startY="25" android:endX="68" android:endY="38">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#D9FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 卷须 -->
+    <path android:pathData="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="70" android:startY="66" android:endX="78" android:endY="77">
+                <item android:offset="0" android:color="#E6FFFFFF" />
+                <item android:offset="1" android:color="#99FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z"
+        android:strokeWidth="0.8"
+        android:strokeColor="#CCFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 头颈柔和投影 -->
+    <group android:translateX="1" android:translateY="1.5">
+        <path android:pathData="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z"
+            android:fillColor="#290B5F66" />
+    </group>
+    <!-- 头与颈：主磨砂玻璃 -->
+    <path android:pathData="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="46" android:startY="36" android:endX="80" android:endY="86">
+                <item android:offset="0" android:color="#F0FFFFFF" />
+                <item android:offset="0.5" android:color="#B8FFFFFF" />
+                <item android:offset="1" android:color="#80FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 头颈外缘高光 -->
+    <path android:pathData="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5Z"
+        android:strokeWidth="1"
+        android:strokeColor="#F2FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 眼 -->
+    <path android:pathData="M69.5,46.5C71.5,44.5 74.5,43.8 77,44.5C75.5,46.5 72.5,47.5 69.5,46.5Z"
+        android:fillColor="#E60F7F86" />
+    <!-- 眉 -->
+    <path android:pathData="M67,42.5C70,40 74,40.5 77,43"
+        android:strokeWidth="1.1"
+        android:strokeColor="#731A9CA2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 颈侧祥云纹 -->
+    <path android:pathData="M50,77C46,70 49,62 56,62C61,62 62,68 58,69.5C55.5,70.2 54,67.8 55.6,66.6"
+        android:strokeWidth="1.6"
+        android:strokeColor="#801A9CA2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

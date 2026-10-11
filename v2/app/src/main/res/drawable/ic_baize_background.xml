@@ -1,10 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 3.0.0 品牌底色：深青微竖向渐变，与磨砂白玻璃白泽前景相配。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#0A5A60"
-        android:endColor="#06404A"
-        android:type="linear" />
-    <size android:width="108dp" android:height="108dp" />
-</shape>
+<!-- 白泽 3.0.1 图标背景：薄青到深青的斜向渐变 + 左上柔光。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 青色斜向渐变 -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="22" android:startY="0" android:endX="86" android:endY="108">
+                <item android:offset="0" android:color="#FF7FE3E0" />
+                <item android:offset="0.55" android:color="#FF2BB5B8" />
+                <item android:offset="1" android:color="#FF0F8F96" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 左上柔光 -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="30" android:centerY="22" android:gradientRadius="62">
+                <item android:offset="0" android:color="#6BFFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

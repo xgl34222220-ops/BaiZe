@@ -2,7 +2,6 @@ package io.github.xgl34222220.baize
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Path
@@ -10,6 +9,8 @@ import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.VectorDrawable
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
@@ -41,8 +42,8 @@ class BaiZeLauncherIconTest {
                 assertEquals("The two OEM masks must produce different corner geometry", if (circle) 0 else 255,
                     Color.alpha(bitmap.getPixel(size / 10, size / 10)))
                 assertEquals(255, Color.alpha(bitmap.getPixel(size / 2, size / 2)))
-                val emeraldEdge = bitmap.getPixel(size / 2, size / 16)
-                assertTrue("The masked top edge must be emerald, with no white tile margin", Color.green(emeraldEdge) > Color.red(emeraldEdge) + 10)
+                val tealEdge = bitmap.getPixel(size / 2, size / 16)
+                assertTrue("The masked top edge must be the teal background, with no white tile margin", Color.green(tealEdge) > Color.red(tealEdge) + 10)
                 save(bitmap, "launcher-${maskName(circle)}-${size}dp-api${Build.VERSION.SDK_INT}")
             }
         }
@@ -76,7 +77,7 @@ class BaiZeLauncherIconTest {
     }
 
     @Test
-    fun notificationUsesTransparentWhiteGlyphAndRasterDecodeBudgetStaysSmall() {
+    fun notificationUsesTransparentWhiteGlyph() {
         val notification = render(requireNotNull(resources.getDrawable(R.drawable.ic_baize_notification, null)), 24)
         var visible = 0
         for (y in 0 until 24) for (x in 0 until 24) {
@@ -89,13 +90,29 @@ class BaiZeLauncherIconTest {
         assertTrue("The small icon must contain a face, not a solid tile", visible in 80..320)
         assertEquals(0, Color.alpha(notification.getPixel(0, 0)))
         save(notification, "notification-24dp")
-        val pixels = listOf(R.drawable.ic_baize_art, R.drawable.ic_baize_monochrome_art).sumOf { id ->
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true; inScaled = false }
-            resources.openRawResource(id).use { BitmapFactory.decodeStream(it, null, bounds) }
-            assertTrue(bounds.outWidth in 1..432 && bounds.outHeight in 1..432)
-            bounds.outWidth.toLong() * bounds.outHeight
+    }
+
+    @Test
+    @Config(sdk = [26, 35])
+    fun launcherAndSplashLayersAreVectorsSoNothingIsDecodedAsBitmap() {
+        // 3.0.1: the icon is hand-authored vector art (tools/icon/baize_icon.py); no raster layer remains.
+        val icon = launcher()
+        assertTrue("Background must be a vector", icon.background is VectorDrawable)
+        assertTrue("Foreground must be a vector", icon.foreground is VectorDrawable)
+        if (Build.VERSION.SDK_INT >= 33) assertTrue("Monochrome must be a vector", icon.monochrome is VectorDrawable)
+        val splash = resources.getDrawable(R.drawable.ic_baize_splash, null)
+        assertTrue("Splash icon reuses the foreground vector", splash is InsetDrawable && splash.drawable is VectorDrawable)
+        // The splash crops the 288dp icon to its 192dp circle: the mark must sit inside it.
+        val art = render(splash, 288)
+        var inked = 0
+        for (y in 0 until 288) for (x in 0 until 288) {
+            if (Color.alpha(art.getPixel(x, y)) > 32) {
+                inked++
+                assertTrue("Splash mark exceeds the 192dp circle at $x,$y", hypot(x + .5 - 144, y + .5 - 144) <= 96.0)
+            }
         }
-        assertTrue(pixels < ApkArchivePolicy.MAX_RASTER_PIXELS)
+        assertTrue(inked > 8_000)
+        save(art, "splash-icon-288dp-api${Build.VERSION.SDK_INT}")
     }
 
     private fun launcher(): AdaptiveIconDrawable {

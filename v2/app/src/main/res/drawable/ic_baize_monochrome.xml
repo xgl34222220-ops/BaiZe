@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A real alpha mask covering the full 108dp canvas; the silhouette stays inside the
-     66dp safe circle. The system supplies its own foreground tint and background. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_baize_monochrome_art"
-    android:insetLeft="0%"
-    android:insetTop="0%"
-    android:insetRight="0%"
-    android:insetBottom="0%" />
+<!-- 白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色剪影。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 鬃 -->
+    <path android:pathData="M55.6,37.8C49,30 38,27 32,33C28,37 31,43 36,41C39,40 41,42 42,45C34,44 27,49 26,56C25,62 31,65 34,61C36,59 39,60 41,63C35,66 31.5,71.5 33.5,77C35,81 39,82.3 42.6,83C40.8,75 41.8,65.5 46,57C49,49 52,43 55.6,37.8Z"
+        android:fillColor="#FF000000" />
+    <!-- 头颈（眼睛镂空） -->
+    <path android:pathData="M45,83.5C43,75 44,66 48,58C51,50 54,44 58,40C62,36 68,35 72,37.5C75,39.5 76.5,42 77,44.5C79.5,45.5 82,47 84,49C86.5,51.5 86.5,55.5 84,56.5C82.5,57 81,57 80,57.5C81.5,60.5 80,64.5 76.5,65.5C73,66.5 70,66.5 67.5,68.5C65,71 64.5,75 65.5,83C60,85 50,85 45,83.5ZM69.5,46.5C71.5,44.5 74.5,43.8 77,44.5C75.5,46.5 72.5,47.5 69.5,46.5Z"
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd" />
+    <!-- 独角 -->
+    <path android:pathData="M62.6,37.6C61.5,31 63.5,27 68,24.5C66.5,28.5 66.6,32.5 69,36.8C67,36 64.5,36.4 62.6,37.6Z"
+        android:fillColor="#FF000000" />
+    <!-- 卷须 -->
+    <path android:pathData="M76.5,65.5C73,66.5 70,66.5 67.5,68.5C69,71 71,72.5 73,73C71,74.5 71.5,77 74,76.5C77.5,75.5 79.5,71 78.5,66.5C78,66 77.3,65.7 76.5,65.5Z"
+        android:fillColor="#FF000000" />
+</vector>

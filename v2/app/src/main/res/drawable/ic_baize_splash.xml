@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动页图标：无底板的白泽抠图 + 柔光。系统把 288dp 图标裁成 192dp 圆，
-     这里四周各留 1/6，使位图只覆盖可见的 192dp 区域，解码尺寸最小。 -->
+<!-- 启动页图标：直接复用自适应图标前景的同一个矢量白泽（无底板）。
+     系统把 288dp 图标裁成 192dp 圆（= 108 视口中间的 72）；白泽主体在 66 安全圆内，不会被裁到。
+     纯矢量，不再解码位图。 -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_baize_splash_art"
-    android:insetLeft="16.6667%"
-    android:insetTop="16.6667%"
-    android:insetRight="16.6667%"
-    android:insetBottom="16.6667%" />
+    android:drawable="@drawable/ic_baize_foreground"
+    android:inset="0dp" />
