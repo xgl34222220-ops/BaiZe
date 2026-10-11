@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 白泽 3.0.1 启动底 SVG：与 res/drawable/baize_splash_mesh.xml 同一套几何。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="240" viewBox="0 0 108 240">
+  <defs>
+    <linearGradient id="g0" x1="0" y1="0" x2="108" y2="240" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0E8F94" stop-opacity="1"/><stop offset="0.5" stop-color="#0A7880" stop-opacity="1"/><stop offset="1" stop-color="#005A62" stop-opacity="1"/></linearGradient>
+    <radialGradient id="g1" cx="16" cy="44" r="78" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5CCBC6" stop-opacity="0.5"/><stop offset="0.25" stop-color="#5CCBC6" stop-opacity="0.43"/><stop offset="0.5" stop-color="#5CCBC6" stop-opacity="0.26"/><stop offset="0.75" stop-color="#5CCBC6" stop-opacity="0.09"/><stop offset="1" stop-color="#5CCBC6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g2" cx="108" cy="168" r="78" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#2E98C4" stop-opacity="0.38"/><stop offset="0.25" stop-color="#2E98C4" stop-opacity="0.3268"/><stop offset="0.5" stop-color="#2E98C4" stop-opacity="0.1976"/><stop offset="0.75" stop-color="#2E98C4" stop-opacity="0.0684"/><stop offset="1" stop-color="#2E98C4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g3" cx="4" cy="240" r="80" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#004750" stop-opacity="0.55"/><stop offset="0.25" stop-color="#004750" stop-opacity="0.473"/><stop offset="0.5" stop-color="#004750" stop-opacity="0.286"/><stop offset="0.75" stop-color="#004750" stop-opacity="0.099"/><stop offset="1" stop-color="#004750" stop-opacity="0"/></radialGradient>
+    <radialGradient id="g4" cx="54" cy="120" r="50" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8FE3DC" stop-opacity="0.14"/><stop offset="0.25" stop-color="#8FE3DC" stop-opacity="0.1204"/><stop offset="0.5" stop-color="#8FE3DC" stop-opacity="0.0728"/><stop offset="0.75" stop-color="#8FE3DC" stop-opacity="0.0252"/><stop offset="1" stop-color="#8FE3DC" stop-opacity="0"/></radialGradient>
+  </defs>
+  <!-- 白泽青底色 -->
+  <path d="M0,0h108v240h-108z" fill="url(#g0)"/>
+  <!-- 左上浅青色斑 -->
+  <path d="M0,0h108v240h-108z" fill="url(#g1)"/>
+  <!-- 右下一抹湖蓝 -->
+  <path d="M0,0h108v240h-108z" fill="url(#g2)"/>
+  <!-- 左下沉一点深青 -->
+  <path d="M0,0h108v240h-108z" fill="url(#g3)"/>
+  <!-- 中心托住晶石的微光 -->
+  <path d="M0,0h108v240h-108z" fill="url(#g4)"/>
+</svg>

@@ -8,5 +8,6 @@ class BaiZeSplashExitTest {
     fun exitAnimationIsShortFadeAndScale() {
         assertTrue("启动页退出动画不得超过 250ms", BaiZeSplashExit.DURATION_MS in 1..250)
         assertTrue("图标只做轻微放大", BaiZeSplashExit.ICON_END_SCALE in 1.0f..1.15f)
+        assertTrue("渐变淡入只占退出动画前段", BaiZeSplashExit.BLOOM_MS in 1 until BaiZeSplashExit.DURATION_MS)
     }
 }

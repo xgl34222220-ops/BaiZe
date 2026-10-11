@@ -205,8 +205,8 @@ class MiuixDashboardActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 系统启动窗口（无额外 Activity、无保持条件），首帧后短淡出。
-        installSplashScreen().setOnExitAnimationListener(BaiZeSplashExit::play)
+        // 系统启动窗口（无额外 Activity、无保持条件），弥散渐变底，首帧后短淡出。
+        BaiZeSplashExit.attach(this, installSplashScreen())
         super.onCreate(savedInstanceState)
         observedVersions = ConnectionDiagnostics.lastVersions(this)
         markVersionsStale()

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 白泽 3.0.1 启动页图标：玻璃光晕（落在系统 192dp 可见圆内）+ 与桌面图标逐字相同的前景。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 光晕 -->
+    <path android:pathData="M54,18a36,36 0 1 1 0,72a36,36 0 1 1 0,-72z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="54" android:gradientRadius="36">
+                <item android:offset="0" android:color="#29FFFFFF" />
+                <item android:offset="0.5" android:color="#17FFFFFF" />
+                <item android:offset="0.8" android:color="#08FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 磨砂玻璃圆片 -->
+    <path android:pathData="M54,20.5a33.5,33.5 0 1 1 0,67a33.5,33.5 0 1 1 0,-67z"
+        android:strokeWidth="0.45"
+        android:strokeColor="#21FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="30" android:startY="30" android:endX="78" android:endY="78">
+                <item android:offset="0" android:color="#17FFFFFF" />
+                <item android:offset="0.6" android:color="#08FFFFFF" />
+                <item android:offset="1" android:color="#04FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 晶石投影（只露在晶石右下外沿） -->
+    <path android:pathData="M34.58,68.65L55.12,80.5L75.65,68.65L75.65,44.93L74.53,44.29L74.53,66.79L54,78.65L34.58,67.43Z"
+        android:fillColor="#47003C40" />
+    <!-- 磨砂玻璃六棱晶石 -->
+    <path android:pathData="M54,31.21L74.53,43.07L74.53,66.79L54,78.65L33.47,66.79L33.47,43.07Z"
+        android:strokeWidth="0.93"
+        android:strokeColor="#E6FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="30.28" android:startY="31.21" android:endX="77.72" android:endY="78.65">
+                <item android:offset="0" android:color="#75FFFFFF" />
+                <item android:offset="0.5" android:color="#4CFFFFFF" />
+                <item android:offset="1" android:color="#33FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 内刻框 -->
+    <path android:pathData="M54,35.86L70.51,45.4L70.51,64.46L54,74L37.49,64.46L37.49,45.4Z"
+        android:strokeWidth="0.65"
+        android:strokeColor="#63FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 顶部受光面 -->
+    <path android:pathData="M33.47,43.07L54,31.21L74.53,43.07L70.51,45.4L54,35.86L37.49,45.4Z"
+        android:fillColor="#29FFFFFF" />
+    <!-- 白泽角 -->
+    <path android:pathData="M50.47,66.09C48.98,57.25 51.95,48.61 61.25,42.1C56.23,48.79 54.56,56.79 55.49,66.09Z"
+        android:fillColor="#F2FFFFFF" />
+    <!-- 星光 -->
+    <path android:pathData="M76.78,31.4Q77.49,34.23 80.32,34.93Q77.49,35.64 76.78,38.47Q76.08,35.64 73.25,34.93Q76.08,34.23 76.78,31.4Z"
+        android:fillColor="#F2FFFFFF" />
+</vector>

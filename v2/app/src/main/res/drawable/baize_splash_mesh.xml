@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 白泽 3.0.1 启动底「弥散渐变」：白泽青底色 + 三团柔和色斑，按窗口拉伸。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp"
+    android:height="800dp"
+    android:viewportWidth="108"
+    android:viewportHeight="240">
+    <!-- 白泽青底色 -->
+    <path android:pathData="M0,0h108v240h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="108" android:endY="240">
+                <item android:offset="0" android:color="#FF0E8F94" />
+                <item android:offset="0.5" android:color="#FF0A7880" />
+                <item android:offset="1" android:color="#FF005A62" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 左上浅青色斑 -->
+    <path android:pathData="M0,0h108v240h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="16" android:centerY="44" android:gradientRadius="78">
+                <item android:offset="0" android:color="#805CCBC6" />
+                <item android:offset="0.25" android:color="#6E5CCBC6" />
+                <item android:offset="0.5" android:color="#425CCBC6" />
+                <item android:offset="0.75" android:color="#175CCBC6" />
+                <item android:offset="1" android:color="#005CCBC6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 右下一抹湖蓝 -->
+    <path android:pathData="M0,0h108v240h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="108" android:centerY="168" android:gradientRadius="78">
+                <item android:offset="0" android:color="#612E98C4" />
+                <item android:offset="0.25" android:color="#532E98C4" />
+                <item android:offset="0.5" android:color="#322E98C4" />
+                <item android:offset="0.75" android:color="#112E98C4" />
+                <item android:offset="1" android:color="#002E98C4" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 左下沉一点深青 -->
+    <path android:pathData="M0,0h108v240h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="4" android:centerY="240" android:gradientRadius="80">
+                <item android:offset="0" android:color="#8C004750" />
+                <item android:offset="0.25" android:color="#79004750" />
+                <item android:offset="0.5" android:color="#49004750" />
+                <item android:offset="0.75" android:color="#19004750" />
+                <item android:offset="1" android:color="#00004750" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 中心托住晶石的微光 -->
+    <path android:pathData="M0,0h108v240h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="54" android:centerY="120" android:gradientRadius="50">
+                <item android:offset="0" android:color="#248FE3DC" />
+                <item android:offset="0.25" android:color="#1F8FE3DC" />
+                <item android:offset="0.5" android:color="#138FE3DC" />
+                <item android:offset="0.75" android:color="#068FE3DC" />
+                <item android:offset="1" android:color="#008FE3DC" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

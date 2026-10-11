@@ -5,6 +5,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -43,16 +44,23 @@ class ModuleLayoutTest(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_confirmed_icon_is_the_launcher_source(self):
-        # Pin the actual build inputs, exported from the approved design. Large
-        # editing masters are kept locally and are not required to build the app.
-        self.assertEqual('2919f8df4e40b8473d1afd1f3a9d4d3467dd0ccc94d076659dd12e2839e10450',
-                         hashlib.sha256((ROOT / 'v2/app/src/main/res/drawable-nodpi/ic_baize_art.webp').read_bytes()).hexdigest())
-        self.assertEqual('117894978819c43b03ce9e2be5d4b0d4165500140da40ff3088ebbb5b5ccce0a',
-                         hashlib.sha256((ROOT / 'v2/app/src/main/res/drawable-nodpi/ic_baize_monochrome_art.png').read_bytes()).hexdigest())
-        icon = (ROOT / 'design/app-icons/official-icon.webp').read_bytes()
-        self.assertEqual(icon, (ROOT / 'v2/app/src/main/res/mipmap-xxxhdpi/ic_baize.webp').read_bytes())
-        self.assertEqual(icon, (ROOT / 'branding/baize-app-icon.webp').read_bytes())
+        # 3.0.1 矢量图标：tools/icon/baize_icon.py 是唯一几何来源，生成 SVG 与三层矢量；
+        # 旧式 mipmap / 正式图标 / 品牌图由 tools/icon/render_legacy.py 从 SVG 渲染。钉住实际构建输入。
         res = ROOT / 'v2/app/src/main/res'
+        pinned = {
+            'drawable/ic_baize_background.xml': '42a4f681dbba732dca90cabda434d80ca397e123aa040d7ef0dcc30c0d52e38c',
+            'drawable/ic_baize_foreground.xml': '19b57b2ff863ff1a7b05afb519f84a6870e37d69621dc9a358b467da8b57bfc3',
+            'drawable/ic_baize_splash_mark.xml': '8988197bb3d4a2cfeb69bf215d3bba5c989f8b7c2b4e78f4f1daef8b05afe40b',
+            'drawable/baize_splash_mesh.xml': '11367f7754df38c9896b807748d6a5cbe265dd237956a608c9af72501924f332',
+            'drawable/ic_baize_monochrome.xml': 'a912638ecaaf1588c21eb0530338ca02bca36cda9bb494d10f48cccbbb23b04d',
+        }
+        for name, digest in pinned.items():
+            self.assertEqual(digest, hashlib.sha256((res / name).read_bytes()).hexdigest(), name)
+        self.assertEqual('817676cd200dc7a3f7c84e3225da47d6fc568a07d362c61e0879d864a1baf653',
+                         hashlib.sha256((ROOT / 'design/app-icons/official-icon.webp').read_bytes()).hexdigest())
+        icon = (ROOT / 'design/app-icons/official-icon.webp').read_bytes()
+        self.assertEqual(icon, (res / 'mipmap-xxxhdpi/ic_baize.webp').read_bytes())
+        self.assertEqual(icon, (ROOT / 'branding/baize-app-icon.webp').read_bytes())
         android = '{http://schemas.android.com/apk/res/android}'
         manifest = ET.parse(ROOT / 'v2/app/src/main/AndroidManifest.xml').getroot().find('application')
         self.assertEqual('@mipmap/ic_baize', manifest.attrib[android + 'icon'])
@@ -60,11 +68,21 @@ class ModuleLayoutTest(unittest.TestCase):
         for variant in ('mipmap-anydpi-v26', 'mipmap-anydpi-v33'):
             adaptive = ET.parse(res / variant / 'ic_baize.xml').getroot()
             self.assertEqual('adaptive-icon', adaptive.tag)
+            self.assertEqual('@drawable/ic_baize_background', adaptive.find('background').attrib[android + 'drawable'])
             self.assertEqual('@drawable/ic_baize_foreground', adaptive.find('foreground').attrib[android + 'drawable'])
-        foreground = ET.parse(res / 'drawable/ic_baize_foreground.xml').getroot()
-        self.assertEqual('@drawable/ic_baize_art', foreground.attrib[android + 'drawable'])
-        self.assertEqual('2919f8df4e40b8473d1afd1f3a9d4d3467dd0ccc94d076659dd12e2839e10450',
-                         hashlib.sha256((res / 'drawable-nodpi/ic_baize_art.webp').read_bytes()).hexdigest())
+        monochrome = ET.parse(res / 'mipmap-anydpi-v33/ic_baize.xml').getroot().find('monochrome')
+        self.assertEqual('@drawable/ic_baize_monochrome', monochrome.attrib[android + 'drawable'])
+        for layer in ('ic_baize_background', 'ic_baize_foreground', 'ic_baize_monochrome', 'ic_baize_splash_mark', 'baize_splash_mesh'):
+            self.assertEqual('vector', ET.parse(res / f'drawable/{layer}.xml').getroot().tag, layer)
+        # 不再有位图图层。
+        for stale in ('drawable-nodpi/ic_baize_art.webp', 'drawable-nodpi/ic_baize_monochrome_art.png'):
+            self.assertFalse((res / stale).exists(), stale)
+
+    def test_icon_vectors_match_svg_source(self):
+        # SVG 源与 Android 矢量出自同一份几何定义（纯 Python 校验，不需要 CairoSVG）。
+        result = subprocess.run([sys.executable, str(ROOT / 'tools/icon/baize_icon.py'), '--check'],
+                                capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_upgrade_stops_flat_and_grouped_compatibility_workers(self):
         source = (MODULE / 'customize.sh').read_text()

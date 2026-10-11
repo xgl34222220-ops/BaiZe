@@ -1,9 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A real alpha mask covering the full 108dp canvas; the silhouette stays inside the
-     66dp safe circle. The system supplies its own foreground tint and background. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_baize_monochrome_art"
-    android:insetLeft="0%"
-    android:insetTop="0%"
-    android:insetRight="0%"
-    android:insetBottom="0%" />
+<!-- 白泽 3.0.1 主题图标（Android 13 起随壁纸着色）：前景同一组图形的单色版。由 tools/icon/baize_icon.py 生成，勿手改。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 晶石 -->
+    <path android:pathData="M54,31.21L74.53,43.07L74.53,66.79L54,78.65L33.47,66.79L33.47,43.07Z"
+        android:fillColor="#59000000"
+        android:strokeWidth="1.3"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 内刻框 -->
+    <path android:pathData="M54,35.86L70.51,45.4L70.51,64.46L54,74L37.49,64.46L37.49,45.4Z"
+        android:strokeWidth="0.84"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- 白泽角 -->
+    <path android:pathData="M50.47,66.09C48.98,57.25 51.95,48.61 61.25,42.1C56.23,48.79 54.56,56.79 55.49,66.09Z"
+        android:fillColor="#FF000000" />
+    <!-- 星光 -->
+    <path android:pathData="M76.78,31.4Q77.49,34.23 80.32,34.93Q77.49,35.64 76.78,38.47Q76.08,35.64 73.25,34.93Q76.08,34.23 76.78,31.4Z"
+        android:fillColor="#FF000000" />
+</vector>
