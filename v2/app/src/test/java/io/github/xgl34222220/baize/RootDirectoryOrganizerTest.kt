@@ -23,7 +23,10 @@ class RootDirectoryOrganizerTest {
             assertEquals(name, RootEntryKind.STANDARD, review.kind)
             assertFalse(review.removable); assertFalse(review.canBlock)
         }
-        assertEquals(RootEntryKind.PROTECTED, RootDirectoryOrganizer.classify(dir(".baize-file-trash"), installed, RootTidyRules()).kind)
+        // 白泽自己的回收站 / 隔离区是内部目录：既不是整理候选，也不归入「受保护」。
+        val trash = RootDirectoryOrganizer.classify(dir(".baize-file-trash"), installed, RootTidyRules())
+        assertEquals(RootEntryKind.INTERNAL, trash.kind); assertEquals("白泽回收站（内部）", trash.ownerLabel)
+        assertEquals(RootEntryKind.INTERNAL, RootDirectoryOrganizer.classify(dir(".BAIZE-QUARANTINE"), installed, RootTidyRules()).kind)
         assertEquals(RootEntryKind.PROTECTED, RootDirectoryOrganizer.classify(RootEntry("link", false, false, link = true), installed, RootTidyRules()).kind)
     }
 
@@ -155,5 +158,75 @@ class RootDirectoryOrganizerTest {
         assertEquals(ReviewEstimate(1, 100), estimates[ReviewSource.OLD_DOWNLOADS])
         assertEquals(ReviewEstimate(1, 100), estimates[ReviewSource.CHAT_MEDIA])
         assertEquals(ReviewEstimate(1, 500), estimates[ReviewSource.APK])
+    }
+
+    @Test fun internalDirectoriesAreNeverCandidatesNorProtectedRows() {
+        val reviews = listOf(dir(".baize-file-trash", bytes = 2048), dir(".baize-quarantine", empty = true), dir("baidu"))
+            .map { RootDirectoryOrganizer.classify(it, installed, RootTidyRules()) }
+        val state = RootTidyUiState(reviews = reviews)
+        assertFalse(RootEntryKind.INTERNAL in ROOT_KIND_ORDER)
+        assertEquals(listOf(".baize-file-trash", ".baize-quarantine"), state.internalDirs.map { it.entry.name })
+        assertTrue(state.internalDirs.none { it.removable || it.canBlock })
+        assertTrue(state.reviews.none { it.kind == RootEntryKind.PROTECTED })
+        assertEquals(setOf("baidu"), state.toggleAll().selected)
+        assertTrue(state.toggle(".baize-file-trash").selected.isEmpty())
+        assertFalse(RootDirectoryOrganizer.ruleName(".baize-file-trash")); assertFalse(RootDirectoryOrganizer.ruleName(".Baize-Quarantine"))
+        // 规则文件里出现内部目录也会被丢弃，模块不会对它放占位。
+        assertTrue(RootDirectoryOrganizer.decodeRules("block|.baize-file-trash\nallow|.baize-quarantine").let { it.block.isEmpty() && it.allow.isEmpty() })
+    }
+
+    @Test fun internalTrashIsMeasuredInsteadOfShownAsZeroBytes() {
+        val root = temp.newFolder("sd-internal")
+        File(root, ".baize-file-trash/pkg").mkdirs(); File(root, ".baize-file-trash/pkg/.nomedia").createNewFile()
+        File(root, ".baize-file-trash/pkg/payload").writeBytes(ByteArray(9))
+        val entry = RootTidyFiles.scan(root).single { it.name == ".baize-file-trash" }
+        assertEquals(9L, entry.bytes); assertFalse(entry.empty)
+    }
+
+    @Test fun removedFoldersRoundTripAndRecreatedGroupNeedsNoAutoAction() {
+        var removed = RootDirectoryOrganizer.recordRemoved(emptyMap(), listOf("MiDrive", "baidu", "DCIM", ".baize-file-trash"), 1_000)
+        assertEquals(setOf("midrive", "baidu"), removed.keys)
+        removed = RootDirectoryOrganizer.recordRemoved(removed, listOf("midrive"), 2_000)
+        assertEquals(2, removed.getValue("midrive").times)
+        assertEquals(removed, RootDirectoryOrganizer.decodeRemoved(RootDirectoryOrganizer.encodeRemoved(removed)))
+        assertTrue(RootDirectoryOrganizer.decodeRemoved("a|b|c\nDCIM|1|5\nx|0|5\n|1|1").isEmpty())
+
+        val reviews = listOf(dir("MiDrive", empty = true).copy(modifiedSeconds = 3_000), dir("baidu").copy(modifiedSeconds = 500),
+            dir("Random").copy(modifiedSeconds = 3_000), dir("DCIM"))
+            .map { RootDirectoryOrganizer.classify(it, installed, RootTidyRules()) }
+        val state = RootTidyUiState(reviews = reviews, removedFolders = removed)
+        val recreated = state.recreated.associateBy { it.review.entry.name }
+        assertEquals(setOf("MiDrive", "baidu"), recreated.keys)
+        assertEquals(3, recreated.getValue("MiDrive").appearance)
+        assertTrue(recreated.getValue("MiDrive").summary.startsWith("第 3 次出现 · "))
+        assertEquals("百度系应用", recreated.getValue("baidu").owner)
+        assertTrue(recreated.getValue("baidu").summary.contains("上次移除未生效"))
+        assertTrue(RecreatedFolder(recreated.getValue("baidu").review, 2, "百度系应用", false).summary.contains("可能由 百度系应用 创建"))
+        // 修改时间早于上次移除：说明移除没有真正生效，而不是被应用重建。
+        assertTrue(recreated.getValue("baidu").removalIneffective)
+        assertFalse(recreated.getValue("MiDrive").removalIneffective)
+        // 忽略（加入不再整理）后不再出现在「被重新创建」里；只读计算不会选中或改动任何条目。
+        val ignored = RootTidyUiState(reviews = reviews.map { RootDirectoryOrganizer.classify(it.entry, installed, RootTidyRules(allow = setOf("MiDrive"))) },
+            removedFolders = removed)
+        assertEquals(setOf("baidu"), ignored.recreatedNames)
+        assertTrue(state.selected.isEmpty()); assertEquals(state.rules, RootTidyRules())
+
+        assertEquals(listOf("baidu"), RootDirectoryOrganizer.previouslyRemoved(removed, listOf("BAIDU", "new")).map { it.lowercase() })
+        assertEquals("已移除 3 项，文件在回收站保留 30 天。其中 2 个之前删过又被应用重建了，可以设为禁止重建", RootDirectoryOrganizer.removalMessage(3, 2))
+        assertEquals("已移除 1 项，文件在回收站保留 30 天", RootDirectoryOrganizer.removalMessage(1, 0))
+        val undone = RootDirectoryOrganizer.forgetRemoved(removed, listOf("MiDrive", "baidu"))
+        assertEquals(1, undone.getValue("midrive").times); assertFalse("baidu" in undone)
+    }
+
+    @Test fun removalIsVerifiedOnDiskAndUndoCountsTopLevelEntries() {
+        val root = temp.newFolder("sd-gone")
+        File(root, "gone").mkdir(); File(root, "kept/sub").mkdirs()
+        assertTrue(RootTidyFiles.removeEmptyDirectory(root, "gone"))
+        assertTrue(RootTidyFiles.gone(root, "gone"))
+        assertFalse(RootTidyFiles.gone(root, "kept"))
+        assertFalse(RootTidyFiles.gone(root, "../x"))
+        // 一个文件夹含子目录时，提示数字按根目录条目算，而不是把子目录也算进去。
+        val undo = RootTidyUndo(directories = listOf("/a/sub", "/a", "/b"), names = listOf("a", "b"))
+        assertEquals(2, undo.entries); assertEquals(3, undo.count)
     }
 }

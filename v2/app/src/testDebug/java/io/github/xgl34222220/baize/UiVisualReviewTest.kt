@@ -188,14 +188,19 @@ class UiVisualReviewTest {
     @Test fun settingsAppearanceAndWhitelistKeepTheirActions() {
         var appearance = 0
         var rulesCenter = 0
-        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, audit = { rulesCenter++ }))
+        var whitelist = 0
+        render("settings-action-routing", 3, actions = previewActions.copy(theme = { appearance++ }, audit = { rulesCenter++ }, whitelist = { whitelist++ }))
         compose.onNodeWithText("外观与主题").performScrollTo().performClick()
         // 首页「规则与白名单」与设置「保护名单」合并为 设置 →「规则与保护」中心。
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("规则与保护"))
         compose.onNodeWithText("规则与保护").performScrollTo().performClick()
         compose.onNodeWithText("保护名单").assertDoesNotExist()
+        // 3.0.1：设置页直达「保护名单管理」（真机反馈找不到取消保护的地方）。
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("保护名单管理"))
+        compose.onNodeWithText("保护名单管理").performScrollTo().performClick()
         assertEquals(1, appearance)
         assertEquals(1, rulesCenter)
+        assertEquals(1, whitelist)
     }
 
     @Test fun taskSettingsSaveTheEditedDraft() {

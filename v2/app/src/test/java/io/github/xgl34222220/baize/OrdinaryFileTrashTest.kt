@@ -162,5 +162,45 @@ class OrdinaryFileTrashTest {
         assertEquals(1, future.entries().size)
         assertEquals(4L, future.purge(entry.id)); assertTrue(future.entries().isEmpty())
     }
-}
 
+    @Test fun trashDirectoryIsCreatedLazilyAndReleasedWhenEmpty() {
+        val root = Files.createTempDirectory("baize-trash-lazy").toFile()
+        try {
+            val shared = File(root, "sd/.baize-file-trash/pkg"); val private = File(root, "private/.baize-file-trash")
+            val trash = OrdinaryFileTrash(File(root, "metadata"), listOf(shared, private),
+                sameFileSystem = { target, _ -> target == private })
+            assertFalse(File(root, "sd/.baize-file-trash").exists())
+            val source = File(root, "file").apply { writeText("data") }
+            val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+            // 试探过但不适用的共享目录不会被留下。
+            assertFalse(File(root, "sd/.baize-file-trash").exists())
+            assertTrue(File(private, ".nomedia").isFile)
+            // 还有内容时不收起，.nomedia 也保留。
+            assertEquals(0, trash.releaseEmptyRoots()); assertTrue(File(private, ".nomedia").isFile)
+            trash.purge(entry.id)
+            assertFalse(private.exists())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun releaseKeepsRootWithForeignFilesOrJournalAndRemovesEmptyParent() {
+        val root = Files.createTempDirectory("baize-trash-release").toFile()
+        try {
+            val shared = File(root, "sd/.baize-file-trash/pkg")
+            val trash = OrdinaryFileTrash(File(root, "metadata"), listOf(shared))
+            val source = File(root, "file").apply { writeText("data") }
+            val entry = trash.move(source, 4, OrdinaryFileTrash.digest(source), 100) { true }
+            // 记录仍在、但内容暂时不见：仍保留目录，不丢记录。
+            File(entry.stored).renameTo(File(root, "aside"))
+            assertEquals(0, trash.releaseEmptyRoots()); assertTrue(shared.isDirectory)
+            File(root, "aside").renameTo(File(entry.stored))
+            trash.restore(entry.id)
+            assertFalse(shared.exists()); assertFalse(File(root, "sd/.baize-file-trash").exists())
+            assertTrue(File(root, "sd").isDirectory)
+            // 有别的文件时永不删除。
+            shared.mkdirs(); File(shared, ".nomedia").createNewFile(); File(shared, "unknown").writeText("x")
+            assertEquals(0, trash.releaseEmptyRoots()); assertTrue(File(shared, "unknown").isFile)
+            File(shared, "unknown").delete()
+            assertEquals(2, trash.releaseEmptyRoots()); assertFalse(File(root, "sd/.baize-file-trash").exists())
+        } finally { root.deleteRecursively() }
+    }
+}

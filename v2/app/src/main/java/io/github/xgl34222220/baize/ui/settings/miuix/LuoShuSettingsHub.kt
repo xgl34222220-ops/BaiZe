@@ -126,6 +126,9 @@ private fun SettingsHome(state: SettingsUiState, actions: SettingsUiActions, ope
             LuoShuGroup {
                 // 唯一的规则与保护中心：保护名单、清理策略、规则版本与试跑、自定义路径规则、检查旧版保护。
                 LuoShuNavigationRow(Icons.Rounded.Shield, "规则与保护", "保护名单、清理策略与规则版本", actions.onOpenRulesCenter)
+                LuoShuGroupDivider()
+                // 直达保护名单管理：查看全部规则、移除自己添加的规则、添加路径；系统级保护只读说明。
+                LuoShuNavigationRow(Icons.Rounded.Lock, "保护名单管理", "查看、添加或移除保护规则", actions.onOpenWhitelist)
                 if (runtimeLogsAvailable) {
                     LuoShuGroupDivider()
                     LuoShuNavigationRow(Icons.Rounded.Description, "运行日志", "任务日志与原始输出", { open("logs") })

@@ -58,12 +58,14 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
     private var closed = false
     private val cancelled = AtomicBoolean(false)
     private var initialized = false
+    private var rootGrantAttempted = false
     private val connection = object : RootService.Connection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (closed || binder == null) return
             remote = RootServiceClients.profile(binder, context.cacheDir); bound = true
             mutable.update { it.copy(rootConnected = true) }
             syncFromModule()
+            if (state.value.permissionRequired && !state.value.running) scan()
         }
         override fun onServiceDisconnected(name: ComponentName?) { remote = null; bound = false; mutable.update { it.copy(rootConnected = false) } }
         override fun onBindingFailed(name: ComponentName?, reason: RootService.BindingFailure) { remote = null; bound = false }
@@ -74,6 +76,7 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
         if (initialized) return
         initialized = true
         mutable.update { it.copy(rules = RootDirectoryOrganizer.decodeRules(prefs.getString("rules", null)),
+            removedFolders = RootDirectoryOrganizer.decodeRemoved(prefs.getString("removed", null)),
             history = prefs.getString("history", null)?.let { raw -> runCatching { JSONArray(raw).let { a -> (0 until a.length()).map(a::getString) } }.getOrNull() }.orEmpty()) }
         runCatching { RootService.bind(Intent(context, BaiZeProfileRootService::class.java).addCategory(RootService.CATEGORY_DAEMON_MODE), connection) }
         scan()
@@ -112,18 +115,36 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
 
     fun scan(keepStatus: Boolean = false) {
         if (state.value.running) return
-        if (!SharedStorageAccess.granted(context)) { mutable.update { it.copy(permissionRequired = true, status = "开启文件访问后，查看根目录") }; return }
+        if (!SharedStorageAccess.granted(context)) {
+            mutable.update { it.copy(permissionRequired = true, status = "开启文件访问后，查看根目录") }
+            val source = remote
+            if (source != null && !rootGrantAttempted) {
+                // 已授权 Root：先由 Root 开启所有文件访问（只改白泽自身权限），成功后直接读取根目录。
+                rootGrantAttempted = true
+                viewModelScope.launch {
+                    if (withContext(Dispatchers.IO) { RootStorageGrant.request(context, source) }) scan()
+                    else mutable.update { it.copy(status = "Root 未能自动开启所有文件访问，请点按钮在系统设置中开启") }
+                }
+            }
+            return
+        }
         cancelled.set(false)
         val previous = state.value.status
         mutable.update { it.copy(running = true, permissionRequired = false, status = "正在读取根目录…", selected = emptySet()) }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { RootTidyFiles.scan(root(), cancelled::get) to installed() } }
+            val result = withContext(Dispatchers.IO) {
+                // 回收站已清空时收起空的 .baize-file-trash（只剩 .nomedia 也算空；有任何内容或记录都保留）。
+                runCatching { OrdinaryFileTrash.forContext(context).releaseEmptyRoots() }
+                runCatching { RootTidyFiles.scan(root(), cancelled::get) to installed() }
+            }
             result.onSuccess { (entries, packages) ->
                 lastEntries = entries; lastInstalled = packages
                 reclassify()
                 val reviews = state.value.reviews
+                val recreated = state.value.recreated.size
                 mutable.update { it.copy(running = false, status = (if (keepStatus) "$previous · " else "") +
-                    "根目录 ${entries.size} 项 · 空文件夹 ${reviews.count { r -> r.kind == RootEntryKind.EMPTY }} · 已卸载残留 ${reviews.count { r -> r.kind == RootEntryKind.ORPHAN }}") }
+                    "根目录 ${entries.size} 项 · 空文件夹 ${reviews.count { r -> r.kind == RootEntryKind.EMPTY }} · 已卸载残留 ${reviews.count { r -> r.kind == RootEntryKind.ORPHAN }}" +
+                    if (recreated > 0) " · 被重新创建 $recreated" else "") }
             }.onFailure { error -> mutable.update { it.copy(running = false, status = if (error is java.util.concurrent.CancellationException) "已停止" else "读取失败：${error.message ?: error.javaClass.simpleName}") } }
         }
     }
@@ -144,6 +165,14 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
         prefs.edit().putString("history", JSONArray(history).toString()).apply()
         mutable.update { it.copy(history = history) }
     }
+
+    private fun persistRemoved(removed: Map<String, RemovedFolder>) {
+        prefs.edit().putString("removed", RootDirectoryOrganizer.encodeRemoved(removed)).apply()
+        mutable.update { it.copy(removedFolders = removed) }
+    }
+
+    /** 「忽略此文件夹」：加入不再整理名单，之后不再建议移除（与详情里的“不再整理此文件夹”相同）。 */
+    fun ignore(name: String) = setAllowed(name, true)
 
     fun setAllowed(name: String, allowed: Boolean) {
         if (state.value.running || !RootDirectoryOrganizer.ruleName(name)) return
@@ -181,48 +210,67 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
         mutable.update { it.copy(running = true, status = "正在移入回收站…") }
         val source = remote
         viewModelScope.launch {
-            val (undo, kept) = withContext(Dispatchers.IO) {
+            val (undo, keptAndFailed) = withContext(Dispatchers.IO) {
                 val protection = ApkProtectionStore.refresh(context, ApkProtectionStore.source(context, source))
                 val guard = ApkDeletionGuard.forContext(context)
                 val trash = OrdinaryFileTrash.forContext(context)
                 val budget = OrdinaryFileTrash.budget(context)
                 val trashIds = ArrayList<String>(); val dirs = ArrayList<String>(); val zero = ArrayList<String>(); val kept = ArrayList<String>()
+                val failed = ArrayList<String>(); val processed = ArrayList<String>()
                 fun protectedPath(path: String): Boolean = guard.protectionDetails(path, protection).let { it.isProtected || it.unavailableReason != null }
                 for (review in chosen) {
                     if (cancelled.get()) break
                     val base = File(root(), review.entry.name)
                     if (protectedPath(base.path)) { kept += review.entry.name; continue }
+                    processed += review.entry.name
                     try {
                         if (review.entry.directory) {
                             val walk = RootTidyFiles.walk(base, RootDirectoryOrganizer.MAX_FILES_PER_FOLDER, cancelled::get)
                             if (walk.limited || walk.links > 0) { kept += review.entry.name; continue }
-                            var failed = false
+                            var aborted = false
                             for (file in walk.files) {
-                                if (cancelled.get() || protectedPath(file.path)) { failed = true; break }
+                                if (cancelled.get() || protectedPath(file.path)) { aborted = true; break }
                                 val length = file.length(); val modified = file.lastModified()
-                                if (length == 0L) { if (file.delete()) zero += file.path else { failed = true; break }; continue }
+                                if (length == 0L) { if (file.delete()) zero += file.path else { aborted = true; break }; continue }
                                 val hash = OrdinaryFileTrash.digest(file)
                                 trashIds += trash.move(file, length, hash, budget) { file.length() == length && file.lastModified() == modified && !protectedPath(file.path) }.id
                             }
-                            if (failed) { kept += review.entry.name; continue }
+                            if (aborted) { kept += review.entry.name; continue }
                             val removed = walk.directories.filter { java.nio.file.Files.isDirectory(it.toPath()) }
                             RootTidyFiles.pruneEmptyDirectories(walk.directories)
                             dirs += removed.filterNot { it.exists() }.map { it.path }
+                            // 以根目录下是否真的不存在为准；rmdir 失败（例如期间又有应用写入）不能报告为已移除。
+                            if (!RootTidyFiles.gone(root(), review.entry.name)) failed += review.entry.name
                         } else if (review.entry.bytes == 0L) {
                             if (base.delete()) zero += base.path else kept += review.entry.name
+                            if (base.exists() && review.entry.name !in kept) failed += review.entry.name
                         } else {
                             val length = base.length(); val modified = base.lastModified()
                             trashIds += trash.move(base, length, OrdinaryFileTrash.digest(base), budget) { base.length() == length && base.lastModified() == modified && !protectedPath(base.path) }.id
+                            if (!RootTidyFiles.gone(root(), review.entry.name)) failed += review.entry.name
                         }
                     } catch (_: java.util.concurrent.CancellationException) { kept += review.entry.name; break
                     } catch (_: Exception) { kept += review.entry.name }
                 }
-                RootTidyUndo(trashIds, dirs, zero) to kept
-            }
-            val done = chosen.size - kept.size
-            record("移除 $done 项${if (kept.isNotEmpty()) "，保留 ${kept.size} 项" else ""}")
-            mutable.update { it.copy(running = false, undo = undo, selected = emptySet(),
-                status = "已移除 $done 项（文件在回收站保留 30 天）" + if (kept.isNotEmpty()) " · ${kept.size} 项受保护或已变化，已保留" else "") }
+                // 结果以根目录实际状态为准：处理过且确实已不存在的才算“已移除”，仍在的计为未能删除。
+                val attempted = processed.filter { it !in kept }
+                val removedNames = attempted.filter { RootTidyFiles.gone(root(), it) }
+                attempted.filterNot { it in removedNames || it in failed }.forEach { failed += it }
+                Triple(RootTidyUndo(trashIds, dirs, zero, removedNames), kept, failed.toList())
+            }.let { (undo, kept, failed) -> undo to (kept to failed) }
+            val (kept, failed) = keptAndFailed
+            val removedNames = undo.names
+            val repeated = RootDirectoryOrganizer.previouslyRemoved(state.value.removedFolders, removedNames)
+            persistRemoved(RootDirectoryOrganizer.recordRemoved(state.value.removedFolders, removedNames, System.currentTimeMillis() / 1000))
+            val finalUndo = undo.copy(repeated = repeated.size)
+            record("移除 ${removedNames.size} 项" + (if (removedNames.isNotEmpty()) "：${removedNames.take(6).joinToString("、")}" +
+                (if (removedNames.size > 6) " 等" else "") else "") +
+                (if (repeated.isNotEmpty()) "（${repeated.size} 个曾被删过又被重建）" else "") +
+                (if (kept.isNotEmpty()) "，保留 ${kept.size} 项" else "") + (if (failed.isNotEmpty()) "，${failed.size} 项未能删除" else ""))
+            mutable.update { it.copy(running = false, undo = finalUndo, selected = emptySet(),
+                status = RootDirectoryOrganizer.removalMessage(removedNames.size, repeated.size) +
+                    (if (kept.isNotEmpty()) " · ${kept.size} 项受保护或已变化，已保留" else "") +
+                    (if (failed.isNotEmpty()) " · ${failed.size} 项未能删除，文件夹仍在：${failed.take(3).joinToString("、")}" else "")) }
             scan(keepStatus = true)
         }
     }
@@ -243,6 +291,7 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
                 ok + undo.directories.size
             }
             record("撤销 $restored 项")
+            persistRemoved(RootDirectoryOrganizer.forgetRemoved(state.value.removedFolders, undo.names))
             mutable.update { it.copy(running = false, undo = RootTidyUndo(), status = "已撤销，恢复 $restored 项") }
             scan(keepStatus = true)
         }
@@ -258,14 +307,16 @@ internal class RootTidyViewModel(application: Application) : AndroidViewModel(ap
 @Composable
 internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: (StorageToolMode) -> Unit, onScan: () -> Unit,
     onStop: () -> Unit, onToggle: (String) -> Unit, onToggleAll: () -> Unit, onRemove: () -> Unit, onUndo: () -> Unit,
-    onAllow: (String, Boolean) -> Unit, onBlock: (String, Boolean) -> String, onUnblock: (String) -> Unit, onPermission: () -> Unit) {
+    onAllow: (String, Boolean) -> Unit, onBlock: (String, Boolean) -> String, onUnblock: (String) -> Unit, onPermission: () -> Unit,
+    onIgnore: (String) -> Unit = { onAllow(it, true) }, onOpenTrash: () -> Unit = {}) {
     val context = LocalContext.current
+    var recreatedMessage by rememberSaveable { mutableStateOf("") }
     var detail by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
     // 移除后弹出「撤销」：与“撤销本次”按钮同一恢复流程（先重建目录，再从回收站恢复）。
     val undoSnackbar = remember { SnackbarHostState() }
     TrashUndoSnackbarEffect(undoSnackbar, state.undo.takeIf { !it.empty },
-        "已移除 ${state.undo.count} 项，文件在回收站保留 30 天", onUndo = onUndo)
+        RootDirectoryOrganizer.removalMessage(state.undo.entries, state.undo.repeated), onUndo = onUndo)
     Scaffold(containerColor = BaiZeTokens.colors.surfaceBase,
         snackbarHost = { SnackbarHost(undoSnackbar) },
         topBar = { DetailPageHeader("根目录整理", "让存储根目录只留需要的文件夹", onBack,
@@ -295,14 +346,44 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
                     when {
                         state.permissionRequired -> GlassActionButton("开启${SharedStorageAccess.label}", onPermission, Modifier.fillMaxWidth())
                         state.running -> GlassActionButton("停止", onStop, Modifier.fillMaxWidth(), secondary = true)
-                        !state.undo.empty -> GlassActionButton("撤销本次（${state.undo.count} 项）", onUndo, Modifier.fillMaxWidth(),
+                        !state.undo.empty -> GlassActionButton("撤销本次（${state.undo.entries} 项）", onUndo, Modifier.fillMaxWidth(),
                             icon = Icons.AutoMirrored.Rounded.Undo, secondary = true)
                         else -> GlassActionButton("重新扫描", onScan, Modifier.fillMaxWidth(), icon = Icons.Rounded.Refresh, secondary = true)
                     }
                 }
             }
+            val recreated = state.recreated
+            if (recreated.isNotEmpty()) {
+                item(key = "kind-recreated") { DetailSectionHeader("被重新创建", "${recreated.size} 项") }
+                item(key = "recreated-hint") {
+                    Text(if (recreatedMessage.isNotBlank()) recreatedMessage else "这些文件夹之前移除过，又出现了。可设为禁止重建，或忽略不再建议；不会自动处理。",
+                        Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall,
+                        color = if (recreatedMessage.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                itemsIndexed(recreated, key = { _, it -> "recreated-${it.review.entry.name}" }, contentType = { _, _ -> "root-recreated" }) { index, item ->
+                    val review = item.review
+                    val size = if (!review.entry.directory || !review.entry.empty) Formatter.formatFileSize(context, review.entry.bytes) else "空"
+                    Column {
+                        DetailResultRow(review.entry.name, size, item.summary, "/sdcard/${review.entry.name}", "",
+                            if (review.entry.directory) Icons.Rounded.Folder else Icons.Rounded.Description,
+                            first = index == 0, last = false, selected = if (review.removable) review.entry.name in state.selected else null,
+                            selectionEnabled = !state.running, onToggle = { onToggle(review.entry.name) }, onDetails = { detail = review.entry.name })
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).background(BaiZeTokens.colors.surfaceRaised,
+                            RoundedCornerShape(bottomStart = if (index == recreated.lastIndex) 24.dp else 0.dp,
+                                bottomEnd = if (index == recreated.lastIndex) 24.dp else 0.dp)).padding(start = 8.dp, bottom = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                // 敏感目录（微信 / QQ 等）仍走详情里的风险确认；其余一键创建占位，失败时说明原因。
+                                if (review.sensitive) detail = review.entry.name
+                                else recreatedMessage = onBlock(review.entry.name, false).let { if (it.isBlank()) "" else "${review.entry.name}：$it" }
+                            }, enabled = !state.running && review.canBlock) { Text("禁止重建") }
+                            TextButton(onClick = { recreatedMessage = ""; onIgnore(review.entry.name) }, enabled = !state.running) { Text("忽略此文件夹") }
+                        }
+                    }
+                }
+            }
             ROOT_KIND_ORDER.forEach { kind ->
-                val rows = state.reviews.filter { it.kind == kind }
+                val rows = state.reviews.filter { it.kind == kind && it.entry.name !in state.recreatedNames }
                 if (rows.isNotEmpty()) {
                     item(key = "kind-${kind.name}") { DetailSectionHeader(kind.label, "${rows.size} 项") }
                     itemsIndexed(rows, key = { _, it -> "root-${it.entry.name}" }, contentType = { _, _ -> "root-entry" }) { index, review ->
@@ -315,6 +396,18 @@ internal fun RootTidyScreen(state: RootTidyUiState, onBack: () -> Unit, onView: 
                             first = index == 0, last = index == rows.lastIndex, selected = if (review.removable) review.entry.name in state.selected else null,
                             selectionEnabled = !state.running, onToggle = { onToggle(review.entry.name) }, onDetails = { detail = review.entry.name })
                     }
+                }
+            }
+            val internalDirs = state.internalDirs
+            if (internalDirs.isNotEmpty()) {
+                item(key = "kind-internal") { DetailSectionHeader("白泽内部", "不参与整理") }
+                itemsIndexed(internalDirs, key = { _, it -> "internal-${it.entry.name}" }, contentType = { _, _ -> "root-internal" }) { index, review ->
+                    val size = if (review.entry.empty) "空" else Formatter.formatFileSize(context, review.entry.bytes) + if (review.entry.limited) "+" else ""
+                    val isTrash = review.entry.name.equals(OrdinaryFileTrash.DIRECTORY, true)
+                    DetailResultRow(review.ownerLabel ?: review.entry.name, size,
+                        if (isTrash) "白泽自己的回收站，移入回收站的文件在这里保留 30 天 · 点按打开回收站" else "白泽自己的内部目录，不参与整理",
+                        "/sdcard/${review.entry.name}", "", Icons.Rounded.Delete, first = index == 0, last = index == internalDirs.lastIndex,
+                        onDetails = if (isTrash) onOpenTrash else null)
                 }
             }
             if (state.history.isNotEmpty()) item {
@@ -356,7 +449,7 @@ private fun RootEntryDialog(review: RootEntryReview, rules: RootTidyRules, enabl
                 }
             }
             if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            if (review.kind !in setOf(RootEntryKind.STANDARD, RootEntryKind.PROTECTED, RootEntryKind.PLACEHOLDER))
+            if (review.kind !in setOf(RootEntryKind.STANDARD, RootEntryKind.PROTECTED, RootEntryKind.PLACEHOLDER, RootEntryKind.INTERNAL))
                 TextButton(onClick = { onAllow(!allowed) }, enabled = enabled) { Text(if (allowed) "恢复整理此文件夹" else "不再整理此文件夹") }
             if (review.kind == RootEntryKind.PLACEHOLDER) TextButton(onClick = onUnblock, enabled = enabled) { Text("撤销禁止重建") }
             else if (review.canBlock && !confirmBlock) TextButton(onClick = { confirmBlock = true }, enabled = enabled) { Text("禁止重建…") }

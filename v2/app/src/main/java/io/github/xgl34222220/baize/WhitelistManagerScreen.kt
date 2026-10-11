@@ -86,7 +86,7 @@ internal fun WhitelistManagerScreen(
                 TextButton(onReviewLegacyProtection, enabled = !state.saving,
                     modifier = Modifier.testTag("whitelist-legacy-recovery")) { Text("检查旧版保护") }
             }
-            VideoTabs(listOf("应用保护", "路径保护"), tab, { tab = it; query = "" })
+            VideoTabs(listOf("应用保护", "路径保护", "系统保护"), tab, { tab = it; query = "" })
             LazyColumn(Modifier.weight(1f).navigationBarsPadding().imePadding().testTag("whitelist-list"),
                 contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 state.focusFile?.let { file -> item {
@@ -106,7 +106,7 @@ internal fun WhitelistManagerScreen(
                         }
                     } }
                 } }
-                item {
+                if (tab != 2) item {
                     OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                         shape = RoundedCornerShape(18.dp), leadingIcon = { Icon(Icons.Rounded.Search, null) },
                         placeholder = { Text(if (tab == 0) "搜索应用名称或包名" else "搜索保护路径") })
@@ -114,7 +114,23 @@ internal fun WhitelistManagerScreen(
                 item { Text(state.message, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 if (state.loading || state.saving) item { BaiZeProgress(Modifier.fillMaxWidth()) }
-                if (tab == 0) {
+                if (tab == 2) {
+                    item(key = "system-protection-intro") { Text("以下保护内置在白泽里，不属于保护名单，" + ProtectionRuleExplanation.SYSTEM_LOCK_PREFIX.removeSuffix("：") +
+                        "。它们保证照片、聊天记录和回收站副本不会被误删。", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    items(SystemProtections.all, key = { "system:${it.title}" }, contentType = { "system-protection" }) { rule ->
+                        LuoShuGroup { Column(Modifier.fillMaxWidth().padding(16.dp).testTag("system-protection:${rule.title}"),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Rounded.Lock, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                                Text(rule.title, style = MaterialTheme.typography.titleSmall)
+                            }
+                            Text(rule.scope, style = MaterialTheme.typography.bodySmall)
+                            Text("系统级保护，无法解除。" + rule.why, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } }
+                    }
+                } else if (tab == 0) {
                     item { FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !protectedOnly, onClick = { protectedOnly = false }, label = { Text("全部应用") })
                         FilterChip(selected = protectedOnly, onClick = { protectedOnly = true }, label = { Text("已保护 ${state.draft.selected.size}") })

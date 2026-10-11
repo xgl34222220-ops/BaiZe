@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -90,7 +91,8 @@ class StorageToolsActivity : ComponentActivity() {
                 BaiZeTheme(appearance) {
                     RootTidyScreen(state, ::finish, ::switchView, { rootModel.scan() }, rootModel::stop, rootModel::toggle,
                         rootModel::toggleAll, rootModel::removeSelected, rootModel::undo, rootModel::setAllowed,
-                        rootModel::block, rootModel::unblock, ::openAllFilesSettings)
+                        rootModel::block, rootModel::unblock, ::openAllFilesSettings, rootModel::ignore,
+                        { CleanerNavigation.openFrom(this, Intent(this, FileTrashActivity::class.java)) })
                 }
             }
             return
@@ -123,7 +125,10 @@ class StorageToolsActivity : ComponentActivity() {
                     state.diagnostic.takeIf { state.diagnosticUri == detail.uri }.orEmpty(),
                     onDismiss = { detailUri = null }, onOpen = { openFile(detail) },
                     onDiagnose = { model.diagnose(detail) },
-                    onExclude = { detailUri = null; CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, detail.path)) }, onCopy = {
+                    onExclude = { detailUri = null; CleanerNavigation.openFrom(this, WhitelistActivity.forFile(this, detail.path)) },
+                    onAllowOnce = { detailUri = null; model.allowProtectedOnce(detail.uri) },
+                    onReconnect = { detailUri = null; model.connect() },
+                    allowedOnce = detail.uri in state.protectionOverrides, onCopy = {
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("白泽单文件读取诊断", it))
                         Toast.makeText(this, "已复制当前文件的读取诊断", Toast.LENGTH_SHORT).show()
                     })
@@ -163,7 +168,9 @@ internal data class StorageToolsUiState(
     val diagnosticBusy: Boolean = false, val diagnosticUri: String = "", val diagnostic: String = "",
     val minimumAgeDays: Int = 0, val nowSeconds: Long = 0L,
     val customFilters: List<StorageCustomFilter> = emptyList(), val activeFilterId: String? = null,
-    val lastTrashed: List<String> = emptyList(), val lastTrashedBytes: Long = 0L
+    val lastTrashed: List<String> = emptyList(), val lastTrashedBytes: Long = 0L,
+    /** 「临时允许本次」的文件：只放行用户自己的保护规则一次，仍需确认、仍进回收站；处理或重新扫描后清空。 */
+    val protectionOverrides: Set<String> = emptySet()
 ) {
     val allRecords: List<StorageFileRecord> get() = if (mode == StorageToolMode.DUPLICATES) duplicateGroups.flatMap { it.records } else records
     // Keep each duplicate group intact: filtering must not hide its retained copy.
@@ -191,7 +198,8 @@ internal data class StorageToolsUiState(
         group.records.filter { it.uri != keeper?.uri }
     }.filter { it.verifiedBytes > 0 && StorageReviewFilters.bulkSelectable(mode, it) }.map { it.uri }.toSet()
         // 相机与相册原件、应用目录只读记录不进入默认勾选与“全选”，只能逐项勾选或仅查看。
-        else visibleRecords.filter { it.verifiedBytes > 0 && StorageReviewFilters.bulkSelectable(mode, it) }.map { it.uri }.toSet()
+        else visibleRecords.filter { it.verifiedBytes > 0 && StorageReviewFilters.bulkSelectable(mode, it) &&
+            outcomes[it.uri]?.protectionExplanation == null }.map { it.uri }.toSet()
     val allSelected: Boolean get() = recommended.isNotEmpty() && selected.containsAll(recommended)
     val selectedBytes: Long get() = allRecords.filter { it.uri in selected }.sumOf { it.verifiedBytes }
     fun keepCopy(key: String): StorageToolsUiState {
@@ -211,6 +219,7 @@ internal data class StorageToolsUiState(
         val target = visibleRecords.firstOrNull { it.uri == key } ?: return this
         StorageReviewFilters.rowLock(mode, target)?.let { return copy(status = "$it，不能在这里勾选") }
         if (target.verifiedBytes <= 0) return this
+        outcomes[key]?.protectionExplanation?.let { return copy(status = "${it.rowReason.removePrefix("已保留 · ")}。点文件查看规则，可选择「临时允许本次」") }
         if (mode == StorageToolMode.DUPLICATES) {
             val group = duplicateGroups.firstOrNull { it.records.any { r -> r.uri == key } } ?: return this
             if (group.records.count { it.uri !in selected } <= 1) return copy(status = "每组需保留一份，可先取消另一份的勾选")
@@ -341,7 +350,7 @@ internal fun StorageToolsScreen(
                         Spacer(Modifier.height(8.dp))
                         Text(state.coverage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (state.elapsedMs > 0) Text("用时 ${"%.1f".format(state.elapsedMs / 1000.0)} 秒", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (state.elapsedMs > 0) Text(StorageTrashSummary.elapsedLabel(state.elapsedMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.permissionRequired || state.running || state.allRecords.isEmpty()) Spacer(Modifier.height(14.dp))
                     when { state.permissionRequired -> GlassActionButton("开启${SharedStorageAccess.label}", onOpenPermission, Modifier.fillMaxWidth())
                         state.running -> GlassActionButton("停止", onStop, Modifier.fillMaxWidth(), secondary = true)
@@ -506,29 +515,64 @@ private fun StorageFileRow(record: StorageFileRecord, selected: Boolean, enabled
     val reason = outcome?.reason ?: lock ?: if (record.verifiedBytes == 0L) "待核对 · 文件身份未取得，不可勾选" else ""
     val summary = if (reason.isNotBlank()) reason else "${if (keeper) "保留副本 · " else ""}${source ?: storageSource(record)} · $date"
     DetailResultRow(record.name, size, summary, record.path, "$size · ${storageCategoryLabel(storageCategory(record))}\n$summary\n\n${record.path}",
-        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && lock == null && record.verifiedBytes > 0, onToggle = onClick, onDetails = onOpen)
+        storageIcon(storageCategory(record)), first = true, last = true, selected = selected, selectionEnabled = enabled && lock == null && record.verifiedBytes > 0 &&
+            // 命中保护的行先点开详情查看规则，可「临时允许本次」后再勾选。
+            outcome?.protectionExplanation == null, onToggle = onClick, onDetails = onOpen)
 }
 
 @Composable
 internal fun StorageFileDialog(record: StorageFileRecord, outcome: StorageDeleteOutcome?, diagnosticBusy: Boolean,
     diagnostic: String, onDismiss: () -> Unit, onOpen: () -> Unit, onDiagnose: () -> Unit, onCopy: (String) -> Unit,
-    onExclude: (() -> Unit)? = null) {
+    onExclude: (() -> Unit)? = null, onAllowOnce: (() -> Unit)? = null, onReconnect: (() -> Unit)? = null,
+    allowedOnce: Boolean = false) {
     val context = LocalContext.current
+    val protection = outcome?.protectionExplanation
     BaiZeDialog(onDismissRequest = onDismiss, title = { Text("文件详情") }, text = {
+        // BaiZeDialog 已提供唯一的滚动容器，这里不能再嵌套 verticalScroll。
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(record.name, style = MaterialTheme.typography.titleMedium)
             Text("${Formatter.formatFileSize(LocalContext.current, record.bytes)} · ${storageCategoryLabel(storageCategory(record))}")
-            Text(outcome?.reason ?: if (record.verifiedBytes > 0) "扫描时已核对文件身份，删除前会再次验证" else "文件身份尚未核对，未计入可处理容量")
+            Text(if (allowedOnce) "已临时允许本次：确认后移入回收站，保护名单不变"
+                else outcome?.reason ?: if (record.verifiedBytes > 0) "扫描时已核对文件身份，删除前会再次验证" else "文件身份尚未核对，未计入可处理容量")
+            if (protection != null && !allowedOnce) ProtectionRuleSection(protection, record.verifiedBytes > 0, diagnosticBusy,
+                onAllowOnce, onExclude, onReconnect)
             androidx.compose.foundation.text.selection.SelectionContainer { Text(record.path, style = MaterialTheme.typography.bodySmall) }
             Text("诊断仅包含这一个文件的路径、读取结果、权限和版本；复制后可发来排查。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onOpen, enabled = !diagnosticBusy) { Text("打开文件") }
-            if (storageCategory(record) == "image") TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
-            if (onExclude != null) TextButton(onClick = onExclude, enabled = !diagnosticBusy) { Text("加入白名单，保护此文件") }
+            // 照片瘦身只处理 JPEG（PNG / HEIC 等会在预览时报错），其它格式不显示入口。
+            if (storageCategory(record) == "image" && isJpegRecord(record)) TextButton(onClick = { CleanerNavigation.openFrom(context, Intent(context, PhotoCompressionActivity::class.java).putExtra("photo_uri", record.uri)) }, enabled = !diagnosticBusy) { Text("照片瘦身预览") }
+            if (onExclude != null && protection == null) TextButton(onClick = onExclude, enabled = !diagnosticBusy) { Text("加入白名单，保护此文件") }
             TextButton(onClick = if (diagnostic.isBlank()) onDiagnose else { { onCopy(diagnostic) } }, enabled = !diagnosticBusy) {
                 Text(if (diagnosticBusy) "正在核对…" else if (diagnostic.isBlank()) "核对读取诊断" else "复制读取诊断")
             }
         }
     }, confirmButton = { BaiZeDialogButton(onClick = onDismiss) { Text("关闭") } })
+}
+
+internal fun isJpegRecord(record: StorageFileRecord): Boolean = record.mime.equals("image/jpeg", true) ||
+    record.name.endsWith(".jpg", true) || record.name.endsWith(".jpeg", true)
+
+/** 命中保护时的详情：精确规则 + 「临时允许本次」/「从保护名单移除该规则」；系统级保护只说明原因。 */
+@Composable
+private fun ProtectionRuleSection(protection: ProtectionRuleExplanation, verified: Boolean, busy: Boolean,
+    onAllowOnce: (() -> Unit)?, onRemoveRule: (() -> Unit)?, onReconnect: (() -> Unit)?) {
+    DetailGlassPanel(Modifier.testTag("protection-rule-detail")) {
+        Text("命中的保护规则", style = MaterialTheme.typography.titleSmall)
+        protection.lines.forEach { line ->
+            Text(line.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.text.selection.SelectionContainer { BaiZePathText(line.pattern) }
+        }
+        protection.unavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        protection.lockedText?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        if (protection.overridable) {
+            Text("「临时允许本次」只放行这一个文件一次，仍需确认并进入回收站；规则本身保留。", style = MaterialTheme.typography.bodySmall)
+            if (onAllowOnce != null) TextButton(onClick = onAllowOnce, enabled = !busy && verified,
+                modifier = Modifier.testTag("protection-allow-once")) { Text(if (verified) "临时允许本次" else "临时允许本次（需先重新扫描核对文件）") }
+        }
+        if (protection.removable && onRemoveRule != null) TextButton(onClick = onRemoveRule, enabled = !busy,
+            modifier = Modifier.testTag("protection-remove-rule")) { Text("从保护名单移除该规则") }
+        if (protection.unavailableReason != null && onReconnect != null) TextButton(onClick = onReconnect, enabled = !busy) { Text("重新连接 Root 并核对") }
+    }
 }
 
 private fun storageIcon(key: String): ImageVector = when (key) { "image" -> Icons.Rounded.Image; "video" -> Icons.Rounded.Movie
