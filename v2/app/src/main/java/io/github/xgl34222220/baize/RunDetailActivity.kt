@@ -20,6 +20,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
@@ -395,18 +396,18 @@ internal fun RunDetailScreen(state: RunDetailUiState, actions: RunDetailActions)
                         icon = Icons.Rounded.SkipNext)
                 }
                 if (state.groups.isNotEmpty()) item(key = "groups-title") { DetailSectionHeader("汇总") }
-                items(state.groups, key = { "${it.failed}|${it.label}|${it.samplePath}" }) { group -> RunDetailGroupRow(group) }
+                itemsIndexed(state.groups, key = { index, _ -> "g$index" }, contentType = { _, _ -> "run-detail-group" }) { _, group -> RunDetailGroupRow(group) }
             } else {
                 if (state.failedItems.isNotEmpty()) {
                     item(key = "failed-title") { DetailSectionHeader("删除失败 ${state.failedItems.size} 项", "白泽尝试删除，但系统拒绝了") }
-                    items(state.failedItems, key = { "f${it.index}" }) { item ->
+                    items(state.failedItems, key = { "f${it.index}" }, contentType = { "run-detail-item" }) { item ->
                         RunDetailRow(item, item.index in state.selected, !state.busy && state.connected, actions,
                             onDelete = { confirmDelete = listOf(item) }, onIgnore = { confirmIgnore = item }, onUnprotect = { confirmUnprotect = item })
                     }
                 }
                 state.skippedGroups.forEach { (reason, rows) ->
                     item(key = "s-title-$reason") { DetailSectionHeader("已跳过 · $reason", "${rows.size} 项，白泽有意保留，不是错误") }
-                    items(rows, key = { "s${it.index}" }) { item ->
+                    items(rows, key = { "s${it.index}" }, contentType = { "run-detail-item" }) { item ->
                         RunDetailRow(item, item.index in state.selected, !state.busy && state.connected, actions,
                             onDelete = { confirmDelete = listOf(item) }, onIgnore = { confirmIgnore = item }, onUnprotect = { confirmUnprotect = item })
                     }
