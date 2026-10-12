@@ -712,6 +712,17 @@ static void report_row(FILE *file, const char *action, const char *risk, uint64_
             action, risk, bytes, clean);
 }
 
+static char g_failure_path[PATH_MAX];
+static char g_failure_reason[128];
+/* First real failure of this run, for the task record ("which item, and why"). */
+static void note_failure(int error, const char *path) {
+    if (g_failure_path[0]) return;
+    snprintf(g_failure_path, sizeof(g_failure_path), "%s", path ? path : "");
+    snprintf(g_failure_reason, sizeof(g_failure_reason), "%s", strerror(error ? error : EIO));
+    sanitize_text(g_failure_path);
+    sanitize_text(g_failure_reason);
+}
+
 static int clean_manifest(void) {
     if (!g_options.manifest || !g_options.cursor || !g_options.report || !g_options.summary) die("missing clean paths");
     load_whitelist();
@@ -793,6 +804,7 @@ static int clean_manifest(void) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
             } else {
+                note_failure(parent_error, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
@@ -806,6 +818,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -818,6 +831,7 @@ static int clean_manifest(void) {
                     summary.skipped++;
                     report_row(report, "changed", risk, size, path);
                 } else {
+                    if (hash_code != 9) note_failure(hash_code == 124 ? ETIMEDOUT : EIO, path);
                     attempt_errors++; result = hash_code == 9 ? 9 : 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -830,6 +844,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -842,7 +857,12 @@ static int clean_manifest(void) {
                 summary.files++;
                 summary.bytes += size;
                 report_row(report, "cleaned", risk, size, path);
+            } else if (errno == ENOENT) {
+                /* Removed by its owner between the identity check and unlink: nothing failed. */
+                summary.skipped++;
+                report_row(report, "missing", risk, 0U, path);
             } else {
+                note_failure(errno, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, size, path);
             }
@@ -855,6 +875,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) summary.uncertain++;
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -870,7 +891,11 @@ static int clean_manifest(void) {
             } else if (errno == ENOTEMPTY || errno == EEXIST) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
+            } else if (errno == ENOENT) {
+                summary.skipped++;
+                report_row(report, "missing", risk, 0U, path);
             } else {
+                note_failure(errno, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
@@ -932,6 +957,7 @@ static int clean_manifest(void) {
             summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors + attempt_errors,
             g_options.checkpoint_records);
     fprintf(summary_file, "pending_errors=%" PRIu64 "\n", attempt_errors);
+    if (g_failure_path[0]) fprintf(summary_file, "failure_reason=%s\nfailure_path=%s\n", g_failure_reason, g_failure_path);
     if (ferror(summary_file)) result = 71;
     if (fclose(summary_file) != 0) result = 71;
     return result;

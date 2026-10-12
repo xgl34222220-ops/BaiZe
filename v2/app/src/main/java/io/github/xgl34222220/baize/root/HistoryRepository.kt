@@ -25,7 +25,7 @@ internal class HistoryRepository(
         }.getOrDefault(emptyList())
 
         lines.forEach { raw ->
-            val columns = raw.split('\t', limit = 12)
+            val columns = raw.split('\t', limit = HistoryFailureDetails.SPLIT_LIMIT)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
             val rawBytes = columns[2].toLongOrNull()?.takeIf { it >= 0L }
@@ -52,6 +52,7 @@ internal class HistoryRepository(
                     .put("trigger", columns.getOrNull(7)?.trim().orEmpty())
                     .put("categoryDetails", parseHistoryCategoryDetails(columns.getOrNull(8).orEmpty()))
                     .put("appDetails", parseHistoryAppDetails(columns.getOrNull(9).orEmpty()))
+                    .put("failureDetails", HistoryFailureDetails.toJson(columns.getOrNull(HistoryFailureDetails.COLUMN).orEmpty()))
                     .put("cleaned", cleaned)
             )
         }

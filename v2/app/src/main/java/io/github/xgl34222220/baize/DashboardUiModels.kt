@@ -143,7 +143,8 @@ data class HistoryUiItem(
     val categories: List<HistoryCategoryUiItem> = emptyList(),
     val apps: List<HistoryAppUiItem> = emptyList(),
     val releaseState: String = "measured",
-    val recordId: String = ""
+    val recordId: String = "",
+    val failures: List<HistoryFailureUiItem> = emptyList()
 ) {
     fun capacityText(format: (Long) -> String): String = when (releaseState) {
         "unknown" -> "无法测量"
@@ -153,6 +154,14 @@ data class HistoryUiItem(
         else -> format(bytes)
     }
 }
+
+@Immutable
+data class HistoryFailureUiItem(
+    val category: String,
+    val count: Long,
+    val reason: String,
+    val samplePath: String = ""
+)
 
 @Immutable
 data class HistoryCategoryUiItem(

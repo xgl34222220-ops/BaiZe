@@ -1901,7 +1901,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                             releaseState = item.optString("releaseState", "unknown"),
                             recordId = item.optString("recordId"),
                             categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
-                            apps = parseHistoryApps(item.optJSONArray("appDetails"))
+                            apps = parseHistoryApps(item.optJSONArray("appDetails")),
+                            failures = parseHistoryFailures(item.optJSONArray("failureDetails"))
                         )
                     )
                 }
@@ -1932,6 +1933,19 @@ class MiuixDashboardActivity : ComponentActivity() {
                 lifetimeFragments = moduleFragments,
                 lifetimeElapsed = moduleElapsed + appHistory.lifetimeElapsed
             )
+        }
+    }
+
+    private fun parseHistoryFailures(array: JSONArray?): List<HistoryFailureUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(HistoryFailureUiItem(
+                category = item.optString("category").trim(),
+                count = item.optLong("count", 0L).coerceAtLeast(0L),
+                reason = item.optString("reason").trim(),
+                samplePath = item.optString("samplePath").trim()
+            ))
         }
     }
 

@@ -179,6 +179,8 @@ elif [ "$code" -eq 0 ]; then
 elif [ "$code" -eq 8 ]; then
   stopped=0
   result="深度不可变快照清理未完成，本次失败 $run_errors 项，进度保留在 ${cursor}/${records}；可重试原快照"
+  deep_failure_reason=$(summary_value "$SUMMARY_FILE" failure_reason)
+  [ -z "$deep_failure_reason" ] || result="$result；原因：$deep_failure_reason"
 else
   stopped=0
   result="深度不可变快照清理失败，代码 $code，进度保留在 ${cursor}/${records}"
@@ -239,9 +241,16 @@ if [ -f "$HISTORY_FILE" ]; then
 else
   : >"$history_tmp" || exit 71
 fi
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+# Column 13 (index 12): category|count|reason|sample for items this run could not remove.
+failure_details=
+if [ "$run_errors" -gt 0 ]; then
+  failure_reason=$(summary_value "$SUMMARY_FILE" failure_reason | tr '\t\r\n|;' '     ')
+  failure_path=$(summary_value "$SUMMARY_FILE" failure_path | tr '\t\r\n|;' '     ')
+  failure_details="深度清理|$run_errors|${failure_reason:-系统拒绝删除}|$failure_path"
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" deep-clean "$total_bytes" "$total_files" "$total_dirs" "$total_errors" \
-  "$result" "$TRIGGER" "深度不可变快照|$total_bytes|$total_files" "$snapshot_id" >>"$history_tmp" || exit 71
+  "$result" "$TRIGGER" "深度不可变快照|$total_bytes|$total_files" "$snapshot_id" "$failure_details" >>"$history_tmp" || exit 71
 tail -n 100 "$history_tmp" >"$history_tmp.last" && mv -f "$history_tmp.last" "$HISTORY_FILE" || exit 71
 rm -f "$history_tmp"
 if [ "$code" -eq 0 ]; then

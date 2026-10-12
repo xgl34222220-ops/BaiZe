@@ -422,14 +422,39 @@ mark_group_completed() {
     [ -n "$cycle" ] && printf '%s\n' "$cycle" >"$STATE_DIR/last_${group}_daily.date"
   fi
 }
+# Exit 10 = the task ran to the end but some items could not be removed. It is a
+# completed run for scheduling: the next attempt waits for the configured interval.
+# Retrying it immediately re-ran the same tasks every minute (3.3.3 device report).
+TASK_PARTIAL_EXIT=10
+# A group that keeps failing inside one cycle is retried a bounded number of times and
+# then moved to its next interval. It never loops for the rest of the day.
+MAX_CYCLE_RETRIES=${BAIZE_MAX_CYCLE_RETRIES:-3}
+retry_budget_exhausted() {
+  rb_count=$(sed -n '1p' "$(retry_count_file "$1")" 2>/dev/null); case "$rb_count" in ''|*[!0-9]*) rb_count=0 ;; esac
+  [ "$rb_count" -ge "$MAX_CYCLE_RETRIES" ]
+}
+finish_cycle_after_retries() {
+  group=$1; kind=$2; cycle=$3; request=$4; log=$5; code=$6
+  [ -n "$request" ] && rm -f "$request"
+  if [ "$kind" = daily ]; then mark_group_completed "$group" "$kind" "$cycle"; else defer_group_cycle "$group"; fi
+  clear_group_retry "$group"
+  echo "$(date '+%F %T') task=$group exit=$code retries=$MAX_CYCLE_RETRIES next=interval" >>"$log"
+  write_scheduler_state waiting "$group" "本周期多次未完成（代码 $code），已顺延到下一周期"
+}
 handle_task_result() {
   code=$1; group=$2; kind=$3; cycle=$4; request=$5; log=$6
   case "$code" in
     0) mark_group_completed "$group" "$kind" "$cycle"; clear_group_retry "$group"; [ -n "$request" ] && rm -f "$request"; write_scheduler_state completed "$group" "任务已完成，继续检查队列";;
+    "$TASK_PARTIAL_EXIT") mark_group_completed "$group" "$kind" "$cycle"; clear_group_retry "$group"; [ -n "$request" ] && rm -f "$request"; write_scheduler_state completed "$group" "任务已完成，部分项目未清理，详见记录";;
     3) write_scheduler_state waiting "$group" "已有其他任务运行，稍后继续";;
     9) [ -n "$request" ] && rm -f "$request"; defer_group_cycle "$group"; clear_group_retry "$group"; write_scheduler_state waiting "$group" "任务已停止，等待下一周期";;
-    4|5|6|7|8|127) clear_stale_task_markers; record_group_retry "$group" 2; echo "$(date '+%F %T') task=$group launch_exit=$code recovery=${RETRY_DELAY_SECONDS}s" >>"$log"; write_scheduler_state waiting "$group" "后台任务正在重新拉起";;
-    *) record_group_retry "$group" 15; echo "$(date '+%F %T') task=$group exit=$code recovery=${RETRY_DELAY_SECONDS}s" >>"$log"; write_scheduler_state waiting "$group" "后台正在自动恢复";;
+    4|5|6|7|8|127)
+      clear_stale_task_markers
+      if retry_budget_exhausted "$group"; then finish_cycle_after_retries "$group" "$kind" "$cycle" "$request" "$log" "$code"; return 0; fi
+      record_group_retry "$group" 2; echo "$(date '+%F %T') task=$group launch_exit=$code recovery=${RETRY_DELAY_SECONDS}s" >>"$log"; write_scheduler_state waiting "$group" "后台任务正在重新拉起";;
+    *)
+      if retry_budget_exhausted "$group"; then finish_cycle_after_retries "$group" "$kind" "$cycle" "$request" "$log" "$code"; return 0; fi
+      record_group_retry "$group" 15; echo "$(date '+%F %T') task=$group exit=$code recovery=${RETRY_DELAY_SECONDS}s" >>"$log"; write_scheduler_state waiting "$group" "后台正在自动恢复";;
   esac
 }
 

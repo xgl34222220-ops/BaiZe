@@ -399,7 +399,7 @@ internal class AuditRepository(
         if (!historyFile.isFile) return@runCatching emptyList()
         val occurrences = mutableMapOf<String, Int>()
         historyFile.readLines().takeLast(MAX_LEGACY).mapNotNull { raw ->
-            val columns = raw.split('\t', limit = 12)
+            val columns = raw.split('\t', limit = HistoryFailureDetails.SPLIT_LIMIT)
             if (columns.size < 7) return@mapNotNull null
             val time = sanitize(columns[0], 40)
             val epoch = runCatching { TIME_FORMAT.get().parse(time)?.time ?: 0L }.getOrDefault(0L)

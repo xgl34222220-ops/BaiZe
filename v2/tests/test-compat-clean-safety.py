@@ -224,7 +224,7 @@ class CompatSafety(unittest.TestCase):
         fixture = self.fixture('apk', 'denied')
         result, fields = self.execute(fixture)
         self.assertEqual(fields['files'], '0', result.stdout)
-        self.assertEqual(result.returncode, 8, result.stdout)
+        self.assertEqual(result.returncode, 10, result.stdout)
         self.assertGreater(int(fields['errors']), 0)
         self.assertNotIn('清理完成', fields['result'])
 
@@ -235,7 +235,7 @@ class CompatSafety(unittest.TestCase):
                 fixture = self.fixture(route, incomplete=True)
                 result, fields = self.execute(fixture)
                 self.assertTrue(fixture[2].exists(), result.stdout + result.stderr)
-                self.assertEqual(result.returncode, 8, result.stdout)
+                self.assertEqual(result.returncode, 10, result.stdout)
                 self.assertGreater(int(fields['errors']), 0)
 
     def test_cancelled_traversal_stays_cancelled_and_never_deletes(self):
@@ -278,7 +278,7 @@ class CompatSafety(unittest.TestCase):
                 result, fields = self.execute(fixture)
                 if self.denied:
                     self.denied.chmod(0o700); self.denied = None
-                self.assertEqual(result.returncode, 8 if action == 'unlink_denied' else 0, result.stdout)
+                self.assertEqual(result.returncode, 10 if action == 'unlink_denied' else 0, result.stdout)
                 self.assertEqual(fields['files'], '0')
                 self.assertEqual(fields['missing_files'], '1' if action == 'missing' else '0')
                 self.assertEqual((self.tmp / 'deleted.nul').read_bytes(), b'')
@@ -316,7 +316,7 @@ class CompatSafety(unittest.TestCase):
         self.assertIn(old, helper.read_text())
         helper.write_text(helper.read_text().replace(old, replacement))
         result, fields = self.execute(fixture)
-        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
         self.assertFalse(fixture[2].exists())
         self.assertTrue(second.exists())
         self.assertEqual(fields['files'], '1')
@@ -328,7 +328,7 @@ class CompatSafety(unittest.TestCase):
         fixture = self.fixture('apk')
         (fixture[0] / 'bin/x86_64/baize_compat_filter').unlink()
         result, fields = self.execute(fixture)
-        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
         self.assertTrue(fixture[2].exists())
         self.assertEqual(fields['files'], '0')
         self.assertGreater(int(fields['errors']), 0)

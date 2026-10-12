@@ -551,7 +551,7 @@ private fun RecordCard(record: HistoryUiItem) {
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
     val visibleApps = record.apps.filter { it.bytes > 0L }
     val visibleCategories = record.categories.filter { it.bytes > 0L }
-    val hasDetails = visibleCategories.isNotEmpty() || visibleApps.isNotEmpty()
+    val hasDetails = visibleCategories.isNotEmpty() || visibleApps.isNotEmpty() || record.failures.isNotEmpty()
     val title = sanitizeText(record.title).ifBlank { "历史任务" }
     val meta = listOf(sanitizeText(record.time), sanitizeText(record.trigger))
         .filter(String::isNotBlank)
@@ -574,9 +574,11 @@ private fun RecordCard(record: HistoryUiItem) {
         record.cleaned -> "已处理"
         else -> "扫描完成"
     }
-    val statusColor = if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.onSurfaceVariant
+    // Only real failures (items that should have been removed and were not) reach errors > 0.
+    val statusColor = if (record.errors > 0 && record.releaseState != "unknown") MaterialTheme.colorScheme.error
+        else if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.onSurfaceVariant
     val statusBackground = if (record.cleaned) {
-        BaiZeTokens.colors.success.copy(alpha = .12f)
+        statusColor.copy(alpha = .12f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .10f)
     }
@@ -692,6 +694,41 @@ private fun RecordCard(record: HistoryUiItem) {
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+                record.failures.forEach { failure ->
+                    Column(Modifier.fillMaxWidth().padding(start = 56.dp, top = 11.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "未清理 · ${sanitizeText(failure.category)}",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                "${failure.count} 项",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "原因：${sanitizeText(failure.reason)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (failure.samplePath.isNotBlank()) {
+                            Text(
+                                sanitizeText(failure.samplePath),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
                 visibleCategories.forEach { detail ->

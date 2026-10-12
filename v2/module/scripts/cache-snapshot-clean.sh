@@ -233,6 +233,8 @@ case "$code" in
     ;;
   8)
     result="缓存不可变快照清理未完成，失败 $errors 个文件，已清理 $(human_bytes "$deleted_bytes")；原快照已保留"
+    cache_failure_reason=$(summary_value failure_reason)
+    [ -z "$cache_failure_reason" ] || result="$result；原因：$cache_failure_reason"
     ;;
   *)
     result="缓存不可变快照清理失败（代码 $code），已清理 $(human_bytes "$deleted_bytes")"
@@ -314,9 +316,16 @@ mv -f "$latest_tmp" "$STATE_DIR/latest.env"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+# Column 13 (index 12): category|count|reason|sample for files that could not be removed.
+failure_details=
+if [ "$errors" -gt 0 ]; then
+  failure_reason=$(summary_value failure_reason | tr '\t\r\n|;' '     ')
+  failure_path=$(summary_value failure_path | tr '\t\r\n|;' '     ')
+  failure_details="应用缓存|$errors|${failure_reason:-系统拒绝删除}|$failure_path"
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "cache-clean" "$deleted_bytes" "$deleted_files" "0" "$errors" \
-  "$result" "$TRIGGER" "应用缓存|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
+  "$result" "$TRIGGER" "应用缓存|$deleted_bytes|$deleted_files" "$snapshot_id" "$failure_details" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 
 echo "$result"

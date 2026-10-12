@@ -202,7 +202,7 @@ filter_processed_list "$STATE_DIR/list"
                 # cross the same conservative collection fence as real data.
                 time.sleep(2.05)
                 result = run(['bash', str(module / 'cleaner.sh'), 'clean', 'app'], env=env)
-                self.assertEqual(result.returncode, 0 if native else 8, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0 if native else 10, result.stdout + result.stderr)
                 for name in deleted:
                     self.assertEqual((data / name).exists(), not native, name + '\n' + result.stderr)
                 for name in protected:

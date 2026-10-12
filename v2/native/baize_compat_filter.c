@@ -392,6 +392,11 @@ static int snapshot_main(int argc, char **argv) {
     parent_log = NULL;
     free(path); return 0;
 }
+static char first_error_path[4096];
+static char first_error_reason[128];
+static void sanitize_line(char *text) {
+    for (; *text; text++) if (*text == '\n' || *text == '\r' || *text == '\t') *text = ' ';
+}
 static int delete_main(int argc, char **argv) {
     if (argc != 6) return 2;
     stop_path = argv[5];
@@ -436,21 +441,23 @@ static int delete_main(int argc, char **argv) {
         if (!boundary_valid(&b)) { errors++; result = 8; break; }
         Item *item = &items[i]; Record *r = &item->r;
         int status = (int)r->disposition;
+        int fail_errno = 0;
         struct stat st;
         if (!status) {
             uint32_t n = r->parents;
             int fd = parent_fd(item->path, item->parents, &n, 1);
-            if (fd < 0) status = disposition(errno);
+            if (fd < 0) { fail_errno = errno; status = disposition(fail_errno); }
             else {
                 const char *name = strrchr(item->path, '/') + 1;
-                if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW)) status = disposition(errno);
+                if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW)) { fail_errno = errno; status = disposition(fail_errno); }
                 else if (!record_matches(r, &st)) status = 1;
                 if (!status) {
-                    if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW)) status = disposition(errno);
+                    if (fstatat(fd, name, &st, AT_SYMLINK_NOFOLLOW)) { fail_errno = errno; status = disposition(fail_errno); }
                     else if (!record_matches(r, &st)) status = 1;
                 }
                 if (!status && unlinkat(fd, name, r->kind == 2 ? AT_REMOVEDIR : 0)) {
                     int e = errno;
+                    fail_errno = e;
                     status = e == ENOENT ? 2 : (r->kind == 2 && (e == ENOTEMPTY || e == EEXIST)) ? 1 : -1;
                 }
                 close(fd);
@@ -459,7 +466,15 @@ static int delete_main(int argc, char **argv) {
         processed++;
         if (status == 1) changed++;
         else if (status == 2) missing++;
-        else if (status < 0) { errors++; result = 8; }
+        else if (status < 0) {
+            errors++; result = 8;
+            /* Keep the first real failure so the task record can say what failed and why. */
+            if (!first_error_path[0]) {
+                snprintf(first_error_path, sizeof(first_error_path), "%s", item->path);
+                snprintf(first_error_reason, sizeof(first_error_reason), "%s", strerror(fail_errno ? fail_errno : EIO));
+                sanitize_line(first_error_path); sanitize_line(first_error_reason);
+            }
+        }
         else {
             cleaned++;
             if (r->kind != 2 && r->identity.st_size > 0) released += (uint64_t)r->identity.st_size;
@@ -477,6 +492,8 @@ static int delete_main(int argc, char **argv) {
     if (fprintf(summary, "processed=%" PRIu64 "\ncleaned=%" PRIu64
         "\nbytes=%" PRIu64 "\nchanged=%" PRIu64 "\nmissing=%" PRIu64 "\nerrors=%" PRIu64 "\n",
         processed, cleaned, released, changed, missing, errors) < 0) return 5;
+    if (first_error_path[0] && fprintf(summary, "first_error_reason=%s\nfirst_error_path=%s\n",
+        first_error_reason, first_error_path) < 0) return 5;
     if (fclose(summary) || fclose(deleted)) return 5;
     for (size_t i = 0; i < count; i++) { free(items[i].path); free(items[i].parents); }
     free(items); return result;

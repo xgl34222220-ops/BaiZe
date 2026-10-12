@@ -124,7 +124,8 @@ internal class ModuleTaskController(
         val reportIsCurrent = latest.length() > 0 && latestReport.isFile && latestReport.lastModified() >= taskStartedAt
         val output = RootFileStore.tailText(log, 12_000)
         return JSONObject()
-            .put("success", code == 0)
+            .put("success", code == 0 || code == 10)
+            .put("partial", code == 10)
             .put("mode", mode)
             .put("exitCode", code)
             .put("cancelled", code == 9 || coordinator.cancelled.get())

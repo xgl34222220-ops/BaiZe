@@ -149,7 +149,8 @@ case "$TRIGGER" in
       completion_root=${BAIZE_ROOT_STATE_DIR:-$STATE_DIR}
       completion_state="$completion_root/scheduler-result-$completed_group.env"
       { echo "task_id=$TASK_ID"; echo "mode=$MODE"; echo "trigger=$TRIGGER"; echo "exit_code=$code"; echo "started=$started"; echo "ended=$ended"; } >"$completion_state.tmp.$$" && mv -f "$completion_state.tmp.$$" "$completion_state"
-      if [ "$code" -eq 0 ]; then
+      # 10 = finished with some items left in place; the cycle is complete either way.
+      if [ "$code" -eq 0 ] || [ "$code" -eq 10 ]; then
         printf '%s\n' "$ended" >"$completion_root/last_${completed_group}_run.epoch.tmp.$$" && mv -f "$completion_root/last_${completed_group}_run.epoch.tmp.$$" "$completion_root/last_${completed_group}_run.epoch"
         rm -f "$completion_root/scheduler-deferred-$completed_group.until" "$completion_root/scheduler-retry-$completed_group.count" "$completion_root/scheduler-retry-$completed_group.until"
         if [ "$TRIGGER" = scheduler:daily ] && [ -n "${BAIZE_SCHEDULE_CYCLE:-}" ]; then
