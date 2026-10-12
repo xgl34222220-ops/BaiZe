@@ -244,8 +244,8 @@ fi
 # Column 13 (index 12): category|count|reason|sample for items this run could not remove.
 failure_details=
 if [ "$run_errors" -gt 0 ]; then
-  failure_reason=$(summary_value "$SUMMARY_FILE" failure_reason | tr '\t\r\n|;' '     ')
-  failure_path=$(summary_value "$SUMMARY_FILE" failure_path | tr '\t\r\n|;' '     ')
+  failure_reason=$(summary_value "$SUMMARY_FILE" failure_reason | tr -d '\n' | tr '\t\r|;' '    ')
+  failure_path=$(summary_value "$SUMMARY_FILE" failure_path | tr -d '\n' | tr '\t\r|;' '    ')
   failure_details="深度清理|$run_errors|${failure_reason:-系统拒绝删除}|$failure_path"
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \

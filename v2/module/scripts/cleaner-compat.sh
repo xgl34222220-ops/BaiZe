@@ -512,6 +512,11 @@ compat_delete_list() {
 }
 
 compat_collection_failed() {
+  # $2 = collector exit code. 124 = traversal time budget: a slow-directory skip.
+  if [ "${2:-}" = 124 ]; then
+    skip_slow_directory "$CATEGORY" "$1"
+    return 0
+  fi
   ERRORS=$((ERRORS + 1))
   PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
   record_failure "$CATEGORY" 1 "扫描未完成，本次未删除" "$1"
@@ -1590,7 +1595,7 @@ scan_shared_empty_files() {
   collect_code=$?
   [ "$collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
   if [ "$collect_code" -ne 0 ]; then
-    compat_collection_failed /data/media
+    compat_collection_failed /data/media "$collect_code"
     rm -f "$list"
     return 0
   fi
@@ -1639,7 +1644,7 @@ scan_shared_empty_dirs() {
   collect_code=$?
   [ "$collect_code" -ne 9 ] || { rm -f "$list"; return 9; }
   if [ "$collect_code" -ne 0 ]; then
-    compat_collection_failed /data/media
+    compat_collection_failed /data/media "$collect_code"
     rm -f "$list"
     return 0
   fi
@@ -1743,7 +1748,7 @@ run_shared_root_shells() {
       shell_collect_code=$?
       [ "$shell_collect_code" -ne 9 ] || { rm -f "$shell_list"; return 9; }
       if [ "$shell_collect_code" -ne 0 ]; then
-        compat_collection_failed "$dir"
+        compat_collection_failed "$dir" "$shell_collect_code"
         rm -f "$shell_list"
         continue
       fi
@@ -1799,7 +1804,7 @@ run_hidden_junk() {
   hidden_collect_code=$?
   [ "$hidden_collect_code" -ne 9 ] || { rm -f "$list"; HIDDEN_CONTEXT=0; return 9; }
   if [ "$hidden_collect_code" -ne 0 ]; then
-    compat_collection_failed /data/media
+    compat_collection_failed /data/media "$hidden_collect_code"
     rm -f "$list"
     HIDDEN_CONTEXT=0
     return 0
@@ -1849,7 +1854,7 @@ run_hidden_junk() {
   hidden_collect_code=$?
   [ "$hidden_collect_code" -ne 9 ] || { rm -f "$list"; HIDDEN_CONTEXT=0; return 9; }
   if [ "$hidden_collect_code" -ne 0 ]; then
-    compat_collection_failed /data/media
+    compat_collection_failed /data/media "$hidden_collect_code"
     rm -f "$list"
     HIDDEN_CONTEXT=0
     return 0
@@ -1907,7 +1912,7 @@ run_fragment_cleanup() {
   done
 
   if [ "$fragment_collect_failed" -ne 0 ]; then
-    compat_collection_failed /data/media
+    compat_collection_failed /data/media "$fragment_collect_failed"
     rm -f "$list"
     return 0
   fi
@@ -1980,7 +1985,9 @@ run_apk_packages() {
   while IFS= read -r -d '' package; do
     should_stop && return 9
     apk_path_allowed "$package" || continue
-    metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || { apk_selection_failed=1; continue; }
+    # A package deleted between discovery and stat (installer cleanup, user) is gone,
+    # not a failed collection.
+    metadata=$(stat -c '%s %Y' "$package" 2>/dev/null) || { { [ -e "$package" ] || [ -L "$package" ]; } || continue; apk_selection_failed=1; continue; }
     size=${metadata%% *}; modified=${metadata##* }
     [ "$size" -le "$APK_PACKAGE_MAX_BYTES" ] || continue
     if [ "$APK_PACKAGE_DAYS" -gt 0 ] && [ "$modified" -ge "$cutoff" ]; then
@@ -1990,7 +1997,7 @@ run_apk_packages() {
     printf '%s\0' "$package" >>"$list"
   done <"$raw"
   if [ "$apk_selection_failed" -ne 0 ]; then
-    compat_collection_failed "安装包候选属性"
+    compat_collection_failed "安装包候选属性" "$apk_selection_failed"
     rm -f "$list"
     return 0
   fi

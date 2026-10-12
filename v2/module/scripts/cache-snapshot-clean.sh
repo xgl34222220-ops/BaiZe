@@ -319,8 +319,8 @@ cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
 # Column 13 (index 12): category|count|reason|sample for files that could not be removed.
 failure_details=
 if [ "$errors" -gt 0 ]; then
-  failure_reason=$(summary_value failure_reason | tr '\t\r\n|;' '     ')
-  failure_path=$(summary_value failure_path | tr '\t\r\n|;' '     ')
+  failure_reason=$(summary_value failure_reason | tr -d '\n' | tr '\t\r|;' '    ')
+  failure_path=$(summary_value failure_path | tr -d '\n' | tr '\t\r|;' '    ')
   failure_details="应用缓存|$errors|${failure_reason:-系统拒绝删除}|$failure_path"
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \

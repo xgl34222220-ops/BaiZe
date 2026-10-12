@@ -238,6 +238,37 @@ class CompatSafety(unittest.TestCase):
                 self.assertEqual(result.returncode, 10, result.stdout)
                 self.assertGreater(int(fields['errors']), 0)
 
+    # 3.3.4: a directory that hits the traversal time budget is a skip for this run,
+    # not a failed task; on 3.3.3 it produced 有异常 and an every-minute scheduler retry.
+    def test_traversal_timeout_is_skipped_not_failed(self):
+        for route in ('empty', 'hidden'):
+            with self.subTest(route=route):
+                self.tmp = Path(tempfile.mkdtemp(dir=self.base))
+                fixture = self.fixture(route, collect_exit=124)
+                result, fields = self.execute(fixture)
+                self.assertTrue(fixture[2].exists(), result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(fields['errors'], '0')
+                self.assertGreater(int(fields['skipped']), 0)
+                row = (fixture[1] / 'history.tsv').read_text().splitlines()[-1].split('\t')
+                self.assertEqual(row[5], '0')
+                self.assertEqual(row[12] if len(row) > 12 else '', '')
+
+    def test_real_failures_are_listed_with_reason_in_history(self):
+        fixture = self.fixture('apk', 'unlink_denied')
+        result, fields = self.execute(fixture)
+        if self.denied:
+            self.denied.chmod(0o700); self.denied = None
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
+        row = (fixture[1] / 'history.tsv').read_text().splitlines()[-1].split('\t')
+        self.assertEqual(13, len(row), row)
+        self.assertGreater(int(row[5]), 0)
+        category, count, reason, sample = row[12].split(';')[0].split('|', 3)
+        self.assertTrue(category)
+        self.assertGreater(int(count), 0)
+        self.assertNotEqual('', reason)
+        self.assertTrue(sample.endswith('old.apk'), row[12])
+
     def test_cancelled_traversal_stays_cancelled_and_never_deletes(self):
         for route in ('empty', 'rules', 'fragment', 'hidden', 'installer'):
             with self.subTest(route=route):
