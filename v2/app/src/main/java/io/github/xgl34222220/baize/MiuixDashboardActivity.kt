@@ -1733,7 +1733,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
             val success = response.getOrNull()?.optBoolean("success") == true
             schedulerState.value = if (success) config.copy(saving = false) else savedBeforeRequest
-            toast(if (success) "设置已保存，调度器会自动读取" else "保存失败：${response.exceptionOrNull()?.message ?: "未知错误"}")
+            toast(if (success) "设置已保存，调度器会自动读取"
+                else "保存失败：${RootFailureMessage.of(response.getOrNull(), response.exceptionOrNull())}")
             if (success) FileOrganizerWorker.ensureWatchdog(this@MiuixDashboardActivity)
             loadScheduler()
             refreshModuleState()
@@ -1784,7 +1785,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val success = json?.optBoolean("success") == true
             toast(
                 if (success) json?.optString("message").orEmpty().ifBlank { "性能基准已清除" }
-                else "重置失败：${json?.optString("error").orEmpty().ifBlank { response.exceptionOrNull()?.message ?: "未知错误" }}"
+                else "重置失败：${RootFailureMessage.of(json, response.exceptionOrNull())}"
             )
             refreshModuleState()
         }

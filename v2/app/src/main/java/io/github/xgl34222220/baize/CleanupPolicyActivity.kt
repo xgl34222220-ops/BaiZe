@@ -202,7 +202,7 @@ class CleanupPolicyActivity : ComponentActivity() {
                     )
                     loadPolicy()
                 } else {
-                    state = state.copy(loading = false, message = "应用失败：${json.optString("message", json.optString("error"))}")
+                    state = state.copy(loading = false, message = "应用失败：${RootFailureMessage.of(json, null)}")
                 }
             }.onFailure {
                 state = state.copy(loading = false, message = "应用失败：${it.message ?: it.javaClass.simpleName}")
