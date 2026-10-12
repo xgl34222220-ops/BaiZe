@@ -107,6 +107,21 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+
+def history_failure_tokens(state):
+    """history.tsv column 13 (~v2 format): failed groups, skipped reasons, detail link."""
+    row = (state / 'history.tsv').read_text().splitlines()[-1].split('\t')
+    tokens = row[12].split(';')
+    assert tokens[0] == '~v2', row[12]
+    failed = [t.split('|', 3) for t in tokens if not t.startswith('~')]
+    detail = [t.split('|', 1)[1] for t in tokens if t.startswith('~detail|')]
+    items = []
+    if detail:
+        lines = (state / 'run-details' / f'{detail[0]}.tsv').read_text().splitlines()
+        items = [line.split('\t') for line in lines if not line.startswith('#')]
+    return row, failed, items
+
+
 class NativeCleanOutcomes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -557,12 +572,18 @@ class NativeCleanOutcomes(unittest.TestCase):
         _, files = self.cache_fixture(('fault.bin', 'other.bin'))
         result = self.cache_clean(('unlinkat', 'fault.bin', errno.EACCES), wrapper=True)
         self.assertEqual(8, result.returncode, result.stdout + result.stderr)
-        row = (self.state / 'history.tsv').read_text().splitlines()[-1].split('\t')
+        row, failed, items = history_failure_tokens(self.state)
         self.assertEqual(13, len(row), row)
-        category, count, reason, sample = row[12].split('|', 3)
-        self.assertEqual(('应用缓存', '1'), (category, count))
+        self.assertEqual('1', row[5])
+        category, count, reason, sample = failed[0]
+        self.assertEqual(('1',), (count,))
         self.assertEqual(os.strerror(errno.EACCES), reason)
         self.assertTrue(sample.endswith('fault.bin'), sample)
+        # Per-item detail: the native engine listed the failed file with its errno text.
+        rows = [i for i in items if i[0] == 'failed']
+        self.assertEqual(1, len(rows), items)
+        self.assertTrue(rows[0][5].endswith('fault.bin'))
+        self.assertEqual(os.strerror(errno.EACCES), rows[0][6])
         self.assertIn('原因：' + os.strerror(errno.EACCES), env_file(self.state / 'latest.env')['result'])
 
     def test_rule_collection_skips_subdirectory_that_vanished_after_readdir(self):
@@ -596,11 +617,14 @@ class NativeCleanOutcomes(unittest.TestCase):
         _, path = self.deep_fixture()
         result = self.deep_clean(('unlinkat', 'fault.bin', errno.EPERM), wrapper=True)
         self.assertEqual(8, result.returncode, result.stdout + result.stderr)
-        row = (self.state / 'history.tsv').read_text().splitlines()[-1].split('\t')
+        row, failed, items = history_failure_tokens(self.state)
         self.assertEqual(13, len(row), row)
-        category, count, reason, sample = row[12].split('|', 3)
-        self.assertEqual(('深度清理', '1', os.strerror(errno.EPERM)), (category, count, reason))
+        category, count, reason, sample = failed[0]
+        self.assertEqual(('1', os.strerror(errno.EPERM)), (count, reason))
         self.assertEqual(str(path), sample)
+        rows = [i for i in items if i[0] == 'failed']
+        self.assertEqual([str(path)], [r[5] for r in rows], items)
+        self.assertEqual(os.strerror(errno.EPERM), rows[0][6])
         self.assertIn('原因：' + os.strerror(errno.EPERM), env_file(self.state / 'latest.env')['result'])
 
     def test_deep_failure_after_success_commits_only_successful_prefix(self):

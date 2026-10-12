@@ -119,18 +119,22 @@ baize_run_details_finalize() {
     }
     FILENAME == ARGV[1] { if ($1 != "") reason[$1]=$2; next }
     FILENAME == ARGV[2] {
-      if (FNR == 1 && $1 == "action") next
-      if (NF < 6 || $1 == "cleaned" || $1 == "candidate" || $1 == "quarantined" || $1 == "partial") next
-      count = ($4 ~ /^[0-9]+$/) ? $4 : 1; if (count == 0) count = 1
-      if ($1 == "failed") { note = ($6 in reason) ? reason[$6] : "系统拒绝删除"; seen[$6]=1
-        add("failed", "delete_failed", $3, count, $5, $6, note) }
-      else add("skipped", skip_code($1, $2, $3), $3, count, ($1 == "protected" && $3 ~ /大文件/) ? $5 : 0, $6, "")
+      # Rows added by the script itself. When it lists failed items here, they are the
+      # authoritative per-item failures and aggregate "failed" report rows are skipped.
+      if (NF < 6 || ($1 != "failed" && $1 != "skipped")) next
+      if ($1 == "failed") { extra_failed = 1; if ($6 != "") seen[$6] = 1 }
+      add($1, $2, $3, $4, $5, $6, $7)
       next
     }
     FILENAME == ARGV[3] {
-      if (NF < 6 || ($1 != "failed" && $1 != "skipped")) next
-      if ($1 == "failed" && $6 != "" && ($6 in seen)) next
-      add($1, $2, $3, $4, $5, $6, $7)
+      if (FNR == 1 && $1 == "action") next
+      if (NF < 6 || $1 == "cleaned" || $1 == "candidate" || $1 == "quarantined" || $1 == "partial") next
+      count = ($4 ~ /^[0-9]+$/) ? $4 : 1; if (count == 0) count = 1
+      if ($1 == "failed") {
+        if (extra_failed || ($6 in seen)) next
+        note = ($6 in reason) ? reason[$6] : "系统拒绝删除"
+        add("failed", "delete_failed", $3, count, $5, $6, note) }
+      else add("skipped", skip_code($1, $2, $3), $3, count, ($1 == "protected" && $3 ~ /大文件/) ? $5 : 0, $6, "")
       next
     }
     END {
@@ -149,7 +153,7 @@ baize_run_details_finalize() {
       for (i = 1; i <= sn && i <= 12; i++) printf ";~skip|%s|%d|%s", so[i], sc[so[i]], clean(ss[so[i]])
       printf ";~detail|%s", id
     }
-  ' "$_brdf_fail" "$_brdf_report" "$_brdf_extra" 2>/dev/null)
+  ' "$_brdf_fail" "$_brdf_extra" "$_brdf_report" 2>/dev/null)
   if [ -f "$_brdf_tmp" ]; then
     mv -f "$_brdf_tmp" "$_brdf_dir/$BAIZE_RUN_ID.tsv" 2>/dev/null || {
       rm -f "$_brdf_tmp"; _brdf_tokens=$(printf '%s' "$_brdf_tokens" | sed 's/;~detail|[^;]*//')
