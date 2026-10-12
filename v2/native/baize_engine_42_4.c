@@ -467,11 +467,34 @@ static void report_row(FILE *f, const char *a, const char *r, const char *c, uin
     sanitize(pp);
     fprintf(f, "%s\t%s\t%s\t%" PRIu64 "\t%" PRIu64 "\t%s\n", a, r, cc, items, bytes, pp);
 }
+/* Optional per-item failure list for the task detail page: BAIZE_FAILURE_ITEMS names a
+ * file that receives "path<TAB>reason" for each real deletion failure. Bounded by count
+ * (BAIZE_FAILURE_ITEMS_MAX, default 200) and size, so a broken volume cannot grow it. */
+static void append_failure_item(int error, const char *path) {
+    static long written = 0;
+    const char *target = getenv("BAIZE_FAILURE_ITEMS");
+    if (!target || !*target || !path) return;
+    const char *limit_text = getenv("BAIZE_FAILURE_ITEMS_MAX");
+    long limit = limit_text && *limit_text ? strtol(limit_text, NULL, 10) : 200;
+    if (limit <= 0 || limit > 1000) limit = 200;
+    if (written >= limit) return;
+    FILE *list = fopen(target, "a");
+    if (!list) return;
+    if (!fseek(list, 0, SEEK_END) && ftell(list) < 262144) {
+        char line[4096];
+        snprintf(line, sizeof(line), "%s", path);
+        for (char *c = line; *c; c++) if (*c == '\n' || *c == '\r' || *c == '\t') *c = ' ';
+        fprintf(list, "%s\t%s\n", line, strerror(error ? error : EIO));
+        written++;
+    }
+    fclose(list);
+}
 static char g_clean_failure_path[PATH_MAX];
 static char g_clean_failure_reason[128];
 static void sanitize(char *s);
 /* First real deletion failure of a snapshot clean, surfaced in the task record. */
 static void note_clean_failure(int error, const char *path) {
+    append_failure_item(error, path);
     if (g_clean_failure_path[0]) return;
     snprintf(g_clean_failure_path, sizeof(g_clean_failure_path), "%s", path ? path : "");
     snprintf(g_clean_failure_reason, sizeof(g_clean_failure_reason), "%s", strerror(error ? error : EIO));

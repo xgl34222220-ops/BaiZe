@@ -33,6 +33,8 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 # Capture a task's refresh identity once and keep records outside temporary lanes.
 [ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
 . "$SCRIPTDIR/cleanup-media-queue.sh"
+# Per-run item details (记录详情页). Optional so partial test fixtures keep working.
+[ ! -f "$SCRIPTDIR/run-details.sh" ] || . "$SCRIPTDIR/run-details.sh"
 baize_cleanup_media_init
 # 进程匹配用的模块目录名，v1 独立安装时为 safesweep。
 MODULE_TAG=${BAIZE_MODULE_TAG:-baize_v2}
@@ -206,6 +208,7 @@ REPORT_FILE="$REPORT_DIR/$STAMP-$REQUEST_MODE.tsv"
 RULE_SEEN_FILE="$TMP_DIR/rule-targets.seen"
 : >"$RULE_SEEN_FILE"
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
+! command -v baize_run_details_init >/dev/null 2>&1 || baize_run_details_init "$REQUEST_MODE"
 printf 'package\tcategory\tfiles\tbytes\n' >"$APP_DETAILS"
 printf 'package\tcategory\tfiles\tbytes\terrors\tsample_path\n' >"$APP_ITEMS"
 set_phase "准备扫描"
@@ -287,6 +290,17 @@ compose_failure_details() {
     { key=$1 "\t" $3; if (!(key in count)) { order[++n]=key; sample[key]=$4 } count[key]+=$2 }
     END { for (i=1; i<=n && i<=8; i++) { k=order[i]; split(k, part, "\t"); if (i>1) printf ";"; printf "%s|%d|%s|%s", part[1], count[k], part[2], sample[k] } }
   ' "$FAILURES_FILE" 2>/dev/null
+}
+run_detail_add() {
+  ! command -v baize_run_details_add >/dev/null 2>&1 || baize_run_details_add "$@"
+}
+# A directory BaiZe could not read completely: nothing in it was deleted, so this is a
+# skip (目录读取不完整), never a failed deletion.
+skip_unreadable_directory() {
+  SKIPPED=$((SKIPPED + 1))
+  PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
+  log_line "[目录读取不完整][$1] $2（${3:-部分子目录无法读取}，本次未处理）"
+  report_line skipped incomplete "$1" 1 0 "$2"
 }
 skip_slow_directory() {
   RULE_SLOW_DIRS=$((RULE_SLOW_DIRS + 1))
@@ -447,6 +461,8 @@ compat_delete_list() {
   # Consume before cleanup_lock; never infer success from missing paths.
   COMPAT_DELETED_NUL="$TMP_DIR/compat-deleted.$COMPAT_DELETE_SEQ.nul"
   compat_code=5
+  compat_fail_items="$TMP_DIR/compat-failed.$COMPAT_DELETE_SEQ.tsv"
+  rm -f "$compat_fail_items"
   if [ "$COMPAT_BOUNDARY_READY" = "1" ] && [ -n "$COMPAT_SAFE_ENGINE" ]; then
     run_limited_command 30 "$COMPAT_SAFE_ENGINE" --snapshot "$compat_list" "$compat_snapshot" \
       "$COMPAT_BOUNDARY" "$compat_kind" "$STATE_DIR/stop" "$compat_max_bytes"
@@ -461,9 +477,13 @@ compat_delete_list() {
       fi
     fi
     if [ "$compat_code" -eq 0 ]; then
+      # The engine lists each item it failed to unlink ("path<TAB>strerror") for the detail page.
+      compat_saved_fail_items=${BAIZE_FAILURE_ITEMS:-}
+      BAIZE_FAILURE_ITEMS="$compat_fail_items"; export BAIZE_FAILURE_ITEMS
       run_limited_command 30 "$COMPAT_SAFE_ENGINE" --delete "$compat_snapshot" "$compat_summary" \
         "$COMPAT_DELETED_NUL" "$STATE_DIR/stop"
       compat_code=$?
+      BAIZE_FAILURE_ITEMS=$compat_saved_fail_items
     fi
   fi
   case "$compat_code" in
@@ -502,6 +522,16 @@ compat_delete_list() {
     esac
     [ -n "$compat_sample" ] || compat_sample=$(first_nul_path "$compat_list" 2>/dev/null)
     record_failure "$CATEGORY" "$REMAINING_COUNT" "$compat_reason" "$compat_sample"
+    compat_listed=0
+    if [ -s "$compat_fail_items" ]; then
+      while IFS="$(printf '\t')" read -r compat_fail_path compat_fail_reason; do
+        [ -n "$compat_fail_path" ] || continue
+        compat_listed=$((compat_listed + 1))
+        run_detail_add failed delete_failed "$CATEGORY" 1 0 "$compat_fail_path" "${compat_fail_reason:-$compat_reason}"
+      done <"$compat_fail_items"
+    fi
+    [ "$compat_listed" -ge "$REMAINING_COUNT" ] ||
+      run_detail_add failed delete_failed "$CATEGORY" "$((REMAINING_COUNT - compat_listed))" 0 "$compat_sample" "$compat_reason"
     log_line "[清理未完成][$CATEGORY] 身份校验或删除失败（代码 $compat_code）：${compat_reason}${compat_sample:+ · $compat_sample}；未确认删除的路径已保留"
   fi
   if [ "$compat_code" -eq 9 ]; then
@@ -517,11 +547,7 @@ compat_collection_failed() {
     skip_slow_directory "$CATEGORY" "$1"
     return 0
   fi
-  ERRORS=$((ERRORS + 1))
-  PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-  record_failure "$CATEGORY" 1 "扫描未完成，本次未删除" "$1"
-  log_line "[扫描未完成][$CATEGORY] 未消费本次部分候选列表"
-  report_line protected incomplete "$CATEGORY" 1 0 "$1"
+  skip_unreadable_directory "$CATEGORY" "$1" "扫描未完成（代码 ${2:-1}），未消费本次部分候选列表"
 }
 
 filter_processed_list() {
@@ -1046,10 +1072,7 @@ clean_dir() {
         ;;
       *)
         # Never consume a partial traversal or silently report it as zero junk.
-        ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-        record_failure "$CATEGORY" 1 "目录无法完整读取（代码 $rule_collect_code）" "$dir"
-        log_line "[规则目录未完成] $dir（代码 $rule_collect_code，已保留该目录）"
-        report_line protected incomplete "$CATEGORY" 1 0 "$dir"
+        skip_unreadable_directory "$CATEGORY" "$dir" "代码 $rule_collect_code"
         rm -f "$list" "$rule_empty_list"
         return 0
         ;;
@@ -1067,9 +1090,7 @@ clean_dir() {
     return 0
   fi
   if [ "$rule_collect_code" -ne 0 ]; then
-    ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-    record_failure "$CATEGORY" 1 "目录无法完整读取（代码 $rule_collect_code）" "$dir"
-    report_line protected incomplete "$CATEGORY" 1 0 "$dir"
+    skip_unreadable_directory "$CATEGORY" "$dir" "代码 $rule_collect_code"
     rm -f "$list" "$rule_empty_list"
     return 0
   fi
@@ -1125,9 +1146,7 @@ clean_dir() {
       return 0
     fi
     if [ "$rule_collect_code" -ne 0 ]; then
-      ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-      record_failure "空文件:$CATEGORY" 1 "目录无法完整读取（代码 $rule_collect_code）" "$dir"
-      report_line protected incomplete "空文件:$CATEGORY" 1 0 "$dir"
+      skip_unreadable_directory "空文件:$CATEGORY" "$dir" "代码 $rule_collect_code"
       rm -f "$list" "$rule_empty_list"
       return 0
     fi
@@ -1175,11 +1194,8 @@ clean_dir() {
         return 0
         ;;
       *)
-        ERRORS=$((ERRORS + 1)); PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
         CACHE_TRUNCATED=1
-        record_failure "空目录:$CATEGORY" 1 "目录无法完整读取（代码 $rule_collect_code）" "$dir"
-        log_line "[空目录扫描未完成] $dir（代码 $rule_collect_code，部分清单已丢弃）"
-        report_line protected incomplete "空目录:$CATEGORY" 1 0 "$dir"
+        skip_unreadable_directory "空目录:$CATEGORY" "$dir" "代码 $rule_collect_code，部分清单已丢弃"
         rm -f "$list"
         return 0
         ;;
@@ -1294,10 +1310,11 @@ scan_cache_roots() {
     else
       [ "$code" -ne 9 ] || { rm -f "$packages" "$candidates"; return 9; }
       # A slow cache directory is skipped for this run (already reported as 慢目录跳过).
-      if [ "$code" -ne 124 ]; then ERRORS=$((ERRORS + 1)); record_failure "$category" 1 "缓存目录无法读取（代码 $code）" "$package"; fi
+      # 124 = slow cache directory; any other code = unreadable. Both are skips: nothing was deleted.
+      cache_skip_risk=timeout; [ "$code" -eq 124 ] || cache_skip_risk=incomplete
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-      report_line protected timeout "$category:$package" 1 0 "$package"
+      report_line protected "$cache_skip_risk" "$category:$package" 1 0 "$package"
       rm -f "$candidates"
     fi
     now=$(date +%s)
@@ -1347,10 +1364,10 @@ scan_external_cache() {
       process_cache_candidates "$candidates" "外部应用缓存" "$package" "$done_count" "$total" || { rm -f "$packages"; return 9; }
     else
       [ "$code" -ne 9 ] || { rm -f "$packages" "$candidates"; return 9; }
-      if [ "$code" -ne 124 ]; then ERRORS=$((ERRORS + 1)); record_failure "外部应用缓存" 1 "缓存目录无法读取（代码 $code）" "$package"; fi
+      cache_skip_risk=timeout; [ "$code" -eq 124 ] || cache_skip_risk=incomplete
       CACHE_SLOW_DIRS=$((CACHE_SLOW_DIRS + 1))
       PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-      report_line protected timeout "外部应用缓存:$package" 1 0 "$package"
+      report_line protected "$cache_skip_risk" "外部应用缓存:$package" 1 0 "$package"
       rm -f "$candidates"
     fi
     now=$(date +%s)
@@ -1699,11 +1716,11 @@ root_shell_effectively_empty() {
     -print -quit >"$probe" 2>/dev/null
   probe_code=$?
   if [ "$probe_code" -ne 0 ]; then
-    # Timeout = slow directory, kept as-is; any other code is a real read failure.
-    if [ "$probe_code" -ne 124 ]; then ERRORS=$((ERRORS + 1)); record_failure 根目录空壳 1 "目录无法读取（代码 $probe_code）" "$dir"; fi
+    # Timeout = slow directory, other codes = unreadable; either way the directory is kept (skip).
+    shell_skip_risk=slow; [ "$probe_code" -eq 124 ] || shell_skip_risk=incomplete
     PROTECTED_ITEMS=$((PROTECTED_ITEMS + 1))
-    log_line "[根目录保护:扫描超时或异常] $dir"
-    report_line protected slow 根目录空壳 1 0 "$dir"
+    log_line "[根目录保护:扫描超时或无法读取] $dir"
+    report_line protected "$shell_skip_risk" 根目录空壳 1 0 "$dir"
     rm -f "$probe"
     return 1
   fi
@@ -2446,7 +2463,12 @@ HISTORY_APPS=$(awk -F '\t' '
 ')
 HISTORY_CATEGORIES=$(sanitize_report_field "$HISTORY_CATEGORIES")
 # Column 13 (index 12): failed items as category|count|reason|sample;… (empty when none).
-HISTORY_FAILURES=$(sanitize_report_field "$(compose_failure_details)")
+if command -v baize_run_details_finalize >/dev/null 2>&1; then
+  # ~v2 marks rows whose errors column counts real failures only; skipped items are listed by reason.
+  HISTORY_FAILURES=$(sanitize_report_field "$(baize_run_details_finalize "$REPORT_FILE")")
+else
+  HISTORY_FAILURES=$(sanitize_report_field "$(compose_failure_details)")
+fi
 HISTORY_APPS=$(sanitize_report_field "$HISTORY_APPS")
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REQUEST_MODE" "$BYTES" "$TOTAL_FILES" "$EMPTY_DIRS" "$ERRORS" "$RESULT" "$TRIGGER" "$HISTORY_CATEGORIES" "$HISTORY_APPS" "$HISTORY_FAILURES" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"

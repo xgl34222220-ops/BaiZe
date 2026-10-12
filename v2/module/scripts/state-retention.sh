@@ -54,6 +54,8 @@ BAIZE_ORGANIZER_LOGS_KEEP=${BAIZE_ORGANIZER_LOGS_KEEP:-20}
 BAIZE_LOG_MAX_BYTES=${BAIZE_LOG_MAX_BYTES:-262144}
 BAIZE_LOG_KEEP_BYTES=${BAIZE_LOG_KEEP_BYTES:-65536}
 BAIZE_STATE_FILE_BUDGET=${BAIZE_STATE_FILE_BUDGET:-5000}
+# Per-run item details for the 记录 detail page (run-details.sh writes them at task end).
+BAIZE_RUN_DETAILS_KEEP=${BAIZE_RUN_DETAILS_KEEP:-30}
 
 # baize_rotate_log FILE: keep one file. When it grows past the limit, keep only its
 # tail in place (same inode, so `>>` writers keep appending) instead of adding .1/.2.
@@ -93,6 +95,9 @@ baize_enforce_state_budget() {
   baize_prune_newest "$_bes_dir/logs" 'organizer-*.log' "$BAIZE_ORGANIZER_LOGS_KEEP"
   baize_prune_task_logs "$_bes_dir/logs"
   baize_prune_task_results "$_bes_dir/task-results"
+  baize_prune_newest "$_bes_dir/run-details" '*.tsv' "$BAIZE_RUN_DETAILS_KEEP"
+  find "$_bes_dir/run-details" -maxdepth 1 -type f \( -name '.building-*' -o -name '.failures-*' -o -name '.tmp-*' \) \
+    -mmin +60 -exec rm -f {} + 2>/dev/null || true
   for _bes_log in "$_bes_dir"/logs/*.log "$_bes_dir"/logs/*.log.1; do
     [ -f "$_bes_log" ] || continue
     case "${_bes_log##*/}" in 20[0-9][0-9]-*|worker-*|organizer-*|cache-lane-*) continue ;; esac

@@ -13,6 +13,7 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 # Capture a task's refresh identity once and keep records outside temporary lanes.
 [ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
 . "$SCRIPTDIR/cleanup-media-queue.sh"
+[ ! -f "$SCRIPTDIR/run-details.sh" ] || . "$SCRIPTDIR/run-details.sh"
 baize_cleanup_media_init
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 DATA_ROOT=${BAIZE_DATA_ROOT:-/data}
@@ -107,6 +108,7 @@ mkdir -p "$TMP_DIR"
 START_EPOCH=$(date +%s)
 STAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 REPORT_FILE="$REPORT_DIR/$STAMP-cache-clean.tsv"
+! command -v baize_run_details_init >/dev/null 2>&1 || baize_run_details_init cache-clean
 SUMMARY_FILE="$TMP_DIR/$CACHE_PREFIX-clean-summary.env"
 LOG_FILE="$LOG_DIR/$STAMP-cache-clean.log"
 
@@ -322,6 +324,9 @@ if [ "$errors" -gt 0 ]; then
   failure_reason=$(summary_value failure_reason | tr -d '\n' | tr '\t\r|;' '    ')
   failure_path=$(summary_value failure_path | tr -d '\n' | tr '\t\r|;' '    ')
   failure_details="应用缓存|$errors|${failure_reason:-系统拒绝删除}|$failure_path"
+fi
+if command -v baize_run_details_finalize >/dev/null 2>&1; then
+  failure_details=$(baize_run_details_finalize "$REPORT_FILE" | tr '\t\r\n' '   ')
 fi
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "cache-clean" "$deleted_bytes" "$deleted_files" "0" "$errors" \

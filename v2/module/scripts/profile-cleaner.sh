@@ -328,6 +328,7 @@ fi
   echo "卸载残留清理组件缺失，请更新完整模块" >&2; exit 8;
 }
 . "$SCRIPTDIR/cleanup-media-queue.sh"
+[ ! -f "$SCRIPTDIR/run-details.sh" ] || . "$SCRIPTDIR/run-details.sh"
 summary_number() { value=$(sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1); case "$value" in ''|*[!0-9]*) value=0 ;; esac; echo "$value"; }
 
 total=$(wc -l <"$TARGETS_FILE" 2>/dev/null | tr -d ' ')
@@ -335,6 +336,7 @@ case "$total" in ''|*[!0-9]*) total=0 ;; esac
 [ "$total" -gt 0 ] || { echo "${TITLE}扫描快照为空，请重新扫描"; exit 6; }
 
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
+! command -v baize_run_details_init >/dev/null 2>&1 || baize_run_details_init "$MODE"
 set_phase "正在校验${TITLE}扫描快照" 0 "$total" "" 0
 current=0
 deleted_files=0
@@ -371,7 +373,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     package_installed "$user" "$package"
     installed_state=$?
     [ "$installed_state" -eq 0 ] && { skipped=$((skipped + 1)); printf 'protected\thigh\t应用已重新安装\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"; continue; }
-    [ "$installed_state" -eq 2 ] && { skipped=$((skipped + 1)); errors=$((errors + 1)); printf 'protected\thigh\t无法复核安装状态\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"; continue; }
+    [ "$installed_state" -eq 2 ] && { skipped=$((skipped + 1)); printf 'protected\thigh\t无法复核安装状态\t1\t0\t%s\n' "$target" >>"$REPORT_FILE"; continue; }
   fi
 
   path_conflicts_whitelist "$target" && { skipped=$((skipped + 1)); printf 'protected\t%s\t白名单保护\t1\t0\t%s\n' "$risk" "$target" >>"$REPORT_FILE"; continue; }
@@ -429,6 +431,10 @@ while IFS= read -r line || [ -n "$line" ]; do
     action=cleaned
     [ "$target_changed" -eq 0 ] && [ "$target_failed" -eq 0 ] || action=partial
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$action" "$risk" "$CATEGORY" "$target_files" "$target_bytes" "$target" >>"$REPORT_FILE"
+    if command -v baize_run_details_add >/dev/null 2>&1; then
+      [ "$target_failed" -eq 0 ] || baize_run_details_add failed delete_failed "$CATEGORY" "$target_failed" 0 "$target" "部分文件删除失败"
+      [ "$target_changed" -eq 0 ] || [ "$target_failed" -ne 0 ] || baize_run_details_add skipped changed "$CATEGORY" 1 0 "$target" "扫描后内容有变化，剩余部分未删除"
+    fi
   elif [ "$target_changed" -gt 0 ]; then
     printf 'protected\t%s\t扫描后已变化\t%s\t0\t%s\n' "$risk" "$target_changed" "$target" >>"$REPORT_FILE"
   elif [ "$target_failed" -gt 0 ]; then
@@ -469,9 +475,14 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "连续批次: $total_batches | 剩余目标: $remaining_targets | 跳过保护项: $skipped | 失败: $errors | 耗时: ${elapsed}s"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+# Column 13: ~v2 tokens (failed groups, skipped reasons, link to the per-run item details).
+history_details=
+if command -v baize_run_details_finalize >/dev/null 2>&1; then
+  history_details=$(baize_run_details_finalize "$REPORT_FILE" | tr '\t\r\n' '   ')
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "$MODE" "$deleted_bytes" "$deleted_files" "$deleted_dirs" "$errors" \
-  "$result" "$TRIGGER" "$TITLE|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
+  "$result" "$TRIGGER" "$TITLE|$deleted_bytes|$deleted_files" "$snapshot_id" "$history_details" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 
 echo "$result"

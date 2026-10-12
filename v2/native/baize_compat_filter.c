@@ -392,6 +392,28 @@ static int snapshot_main(int argc, char **argv) {
     parent_log = NULL;
     free(path); return 0;
 }
+/* Optional per-item failure list for the task detail page: BAIZE_FAILURE_ITEMS names a
+ * file that receives "path<TAB>reason" for each real deletion failure. Bounded by count
+ * (BAIZE_FAILURE_ITEMS_MAX, default 200) and size, so a broken volume cannot grow it. */
+static void append_failure_item(int error, const char *path) {
+    static long written = 0;
+    const char *target = getenv("BAIZE_FAILURE_ITEMS");
+    if (!target || !*target || !path) return;
+    const char *limit_text = getenv("BAIZE_FAILURE_ITEMS_MAX");
+    long limit = limit_text && *limit_text ? strtol(limit_text, NULL, 10) : 200;
+    if (limit <= 0 || limit > 1000) limit = 200;
+    if (written >= limit) return;
+    FILE *list = fopen(target, "a");
+    if (!list) return;
+    if (!fseek(list, 0, SEEK_END) && ftell(list) < 262144) {
+        char line[4096];
+        snprintf(line, sizeof(line), "%s", path);
+        for (char *c = line; *c; c++) if (*c == '\n' || *c == '\r' || *c == '\t') *c = ' ';
+        fprintf(list, "%s\t%s\n", line, strerror(error ? error : EIO));
+        written++;
+    }
+    fclose(list);
+}
 static char first_error_path[4096];
 static char first_error_reason[128];
 static void sanitize_line(char *text) {
@@ -468,6 +490,7 @@ static int delete_main(int argc, char **argv) {
         else if (status == 2) missing++;
         else if (status < 0) {
             errors++; result = 8;
+            append_failure_item(fail_errno, item->path);
             /* Keep the first real failure so the task record can say what failed and why. */
             if (!first_error_path[0]) {
                 snprintf(first_error_path, sizeof(first_error_path), "%s", item->path);

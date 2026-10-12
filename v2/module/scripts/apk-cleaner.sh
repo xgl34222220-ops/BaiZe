@@ -14,6 +14,7 @@ STATE_DIR=${BAIZE_STATE_DIR:-/data/adb/baize-v2}
 # Capture a task's refresh identity once and keep records outside temporary lanes.
 [ -f "$SCRIPTDIR/cleanup-media-queue.sh" ] || { echo "媒体刷新记录组件缺失，未开始删除" >&2; exit 8; }
 . "$SCRIPTDIR/cleanup-media-queue.sh"
+[ ! -f "$SCRIPTDIR/run-details.sh" ] || . "$SCRIPTDIR/run-details.sh"
 baize_cleanup_media_init
 MEDIA_ROOT=${BAIZE_MEDIA_ROOT:-/data/media}
 WHITELIST="$STATE_DIR/whitelist.conf"
@@ -238,6 +239,7 @@ case "$total" in ''|*[!0-9]*) total=0 ;; esac
 [ "$(count_nul "$IDENTITIES_FILE")" = "$total" ] || { echo "安装包身份快照不完整，请重新扫描"; exit 7; }
 
 printf 'action\trisk\tcategory\titems\tbytes\tpath\n' >"$REPORT_FILE"
+! command -v baize_run_details_init >/dev/null 2>&1 || baize_run_details_init apk-clean
 set_phase "正在校验安装包扫描快照" 0 "$total" ""
 APK_DELETE_ENGINE=${BAIZE_NATIVE_ENGINE:-}
 if [ -z "$APK_DELETE_ENGINE" ] && [ -f "$SCRIPTDIR/abi-resolve.sh" ]; then
@@ -349,9 +351,14 @@ cp -f "$REPORT_FILE" "$REPORT_DIR/latest.tsv"
   echo "跳过: $skipped | 失败: $errors | 耗时: ${elapsed}s"
 } >>"$LOG_FILE"
 cp -f "$LOG_FILE" "$LOG_DIR/latest.log"
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+# Column 13: ~v2 tokens (failed groups, skipped reasons, link to the per-run item details).
+history_details=
+if command -v baize_run_details_finalize >/dev/null 2>&1; then
+  history_details=$(baize_run_details_finalize "$REPORT_FILE" | tr '\t\r\n' '   ')
+fi
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\t\t%s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "apk-clean" "$deleted_bytes" "$deleted_files" 0 "$errors" \
-  "$result" "$TRIGGER" "APK安装包|$deleted_bytes|$deleted_files" "$snapshot_id" >>"$HISTORY_FILE"
+  "$result" "$TRIGGER" "APK安装包|$deleted_bytes|$deleted_files" "$snapshot_id" "$history_details" >>"$HISTORY_FILE"
 tail -n 100 "$HISTORY_FILE" >"$HISTORY_FILE.tmp.$$" 2>/dev/null && mv -f "$HISTORY_FILE.tmp.$$" "$HISTORY_FILE"
 
 echo "$result"
