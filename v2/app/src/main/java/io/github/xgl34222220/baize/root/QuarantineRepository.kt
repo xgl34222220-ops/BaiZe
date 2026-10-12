@@ -162,6 +162,48 @@ if (!moved || source.exists() || !destination.exists()) {
 return Result(true, id, stats.bytes, stats.files, stats.directories, "已安全隔离，可在 $retentionDays 天内恢复")
     }
 
+    /**
+     * 记录详情页：用户在任务记录里逐项确认删除的项目（文件或目录）移入隔离区，可在回收站恢复。
+     * 路径来自模块写下的逐项明细，由 [RunDetailRepository] 读取并再次核对，UI 不提供路径。
+     * 只做同文件系统原子移动；无法移动时原样保留并说明原因（needsPermanent），绝不静默删除。
+     */
+    @Synchronized
+    fun quarantineUserSelected(originalPath: String, category: String, label: String): Result {
+        purgeExpiredInternal(System.currentTimeMillis())
+        val source = File(originalPath)
+        val sourcePath = canonical(source)
+        if (sourcePath != originalPath.trimEnd('/') || !safeOriginalPath(sourcePath) || !source.exists() || isSymlink(source)) {
+            return Result(false, message = "目标已变化或超出回收站安全边界")
+        }
+        val stats = runCatching { measure(source, SystemClock.elapsedRealtime() + MEASURE_BUDGET_MS) }
+            .getOrElse { return Result(false, message = it.message ?: "无法核对目标") }
+        val existing = readEntries()
+        if (existing.size >= maxRecoverableEntries || existing.sumOf { it.bytes.coerceAtLeast(0L) } + stats.bytes > maxRecoverableBytes) {
+            return Result(false, message = "回收站已达上限（$maxRecoverableEntries 项 / ${maxRecoverableBytes / GIB} GB）")
+        }
+        val id = UUID.randomUUID().toString()
+        val destination = File(File(quarantineRootFor(sourcePath), "items"), "$id-${safeName(source.name)}")
+        val destinationPath = canonicalWithoutExistence(destination)
+        if (!isQuarantinePath(destinationPath) || destination.exists()) return Result(false, message = "无法创建安全回收位置")
+        destination.parentFile?.mkdirs()
+        if (isSymlink(destination.parentFile ?: destination)) return Result(false, message = "回收目录异常")
+        val now = System.currentTimeMillis()
+        val retentionDays = retentionDays()
+        val entry = Entry(id, sourcePath, destinationPath, "record", category.take(MAX_TEXT), label.take(MAX_TEXT), "medium",
+            "record-" + UUID.randomUUID().toString(), now, now + retentionDays * DAY_MS, stats.bytes, stats.files, stats.directories)
+        if (runCatching { writeEntry(entry) }.isFailure) return Result(false, message = "回收记录写入失败，原文件未移动")
+        val moved = runCatching { source.renameTo(destination) }.getOrDefault(false)
+        if (!moved || source.exists() || !destination.exists()) {
+            if (!destination.exists()) deleteMetadata(id)
+            return Result(false, id = if (destination.exists()) id else "",
+                message = if (destination.exists()) "移动状态异常，已保留恢复记录" else "无法在同一分区原子移动，原文件未删除")
+        }
+        return Result(true, id, stats.bytes, stats.files, stats.directories, "已移入回收站，$retentionDays 天内可恢复")
+    }
+
+    /** 与隔离区同一套边界：系统目录、模块目录、回收站内部都不允许从记录页处理。 */
+    fun allowedOriginalPath(path: String): Boolean = safeOriginalPath(path) && canonical(File(path)) == path.trimEnd('/')
+
     /** 一个由调用方核对过的可恢复文件：公开路径用于结果回传，Root 路径用于移动。 */
     data class RecoverableItem(val publicPath: String, val rootPath: String)
 

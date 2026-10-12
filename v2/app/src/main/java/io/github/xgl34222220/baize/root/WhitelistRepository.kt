@@ -88,6 +88,29 @@ internal class WhitelistRepository(
             .toString()
     }
 
+    /** 记录详情页：说明某个路径被哪条用户保护规则保留（路径保护取最长前缀，应用保护按包名）。 */
+    data class Protection(val kind: String, val rule: String)
+
+    fun protectionFor(path: String): Protection? = synchronized(LOCK) {
+        val identities = pathIdentities(path)
+        val manual = runCatching { readManualPaths() }.getOrDefault(emptySet())
+        manual.filter { rule -> pathIdentities(rule).any { r -> identities.any { it == r || it.startsWith("$r/") || r == "/" } } }
+            .maxByOrNull { it.length }?.let { return@synchronized Protection("path", it) }
+        val packages = runCatching { readPackages() }.getOrDefault(emptySet())
+        identities.firstNotNullOfOrNull { identity ->
+            PACKAGE_OWNER_PATTERNS.firstNotNullOfOrNull { it.find(identity)?.groupValues?.getOrNull(1) }
+        }?.takeIf { it in packages }?.let { Protection("app", it) }
+    }
+
+    private fun pathIdentities(path: String): Set<String> {
+        val value = path.trimEnd('/')
+        val result = linkedSetOf(value)
+        Regex("^/storage/emulated/(\\d+)(/.*)?$").find(value)?.let { result += "/data/media/${it.groupValues[1]}${it.groupValues[2]}" }
+        Regex("^/data/media/(\\d+)(/.*)?$").find(value)?.let { result += "/storage/emulated/${it.groupValues[1]}${it.groupValues[2]}" }
+        if (value == "/sdcard" || value.startsWith("/sdcard/")) result += "/data/media/0" + value.removePrefix("/sdcard")
+        return result
+    }
+
     private fun parsePackageDelta(raw: String): Set<String>? = runCatching {
         val array = JSONArray(raw)
         require(array.length() <= 500)
@@ -212,6 +235,11 @@ internal class WhitelistRepository(
         private const val APP_WHITELIST_BEGIN = "# BEGIN BAIZE APP WHITELIST"
         private const val APP_WHITELIST_END = "# END BAIZE APP WHITELIST"
         private const val MAX_MANUAL_PATHS = 500
+        private val PACKAGE_OWNER_PATTERNS = listOf(
+            Regex("""^/data/(?:user|user_de)/\d+/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)(?:/|$)"""),
+            Regex("""^/data/data/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)(?:/|$)"""),
+            Regex("""/Android/(?:data|obb|media)/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)(?:/|$)""")
+        )
         private val GENERATED_PATH_PATTERNS = listOf(
             Regex("""^/data/(?:user|user_de)/\d+/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)$"""),
             Regex("""^/data/media/\d+/Android/data/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)$""")

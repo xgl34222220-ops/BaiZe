@@ -23,6 +23,7 @@ class BaiZeProfileRootService : RootService() {
     private val apkFileEvidence by lazy { ApkFileEvidenceRepository(ownAppUid = { applicationInfo.uid }) }
     private val cacheSelectionRepository = CacheSelectionRepository()
     private val quarantineRepository = QuarantineRepository()
+    private val runDetailRepository by lazy { RunDetailRepository(quarantine = quarantineRepository, whitelist = whitelistRepository) }
     private val moduleTasks = ModuleTaskController(coordinator, schedulerRepository, diagnostics)
     private val profileEngine by lazy { NativeProfileEngine(this, coordinator.cancelled, quarantineRepository) }
     private val instantCacheEngine by lazy {
@@ -174,6 +175,24 @@ class BaiZeProfileRootService : RootService() {
                 getAuditTimelinePage(arguments.getInt(0), arguments.getInt(1))
             }
             "getScanCoverage" -> { require(arguments.length() == 0); getScanCoverage() }
+            // 记录详情页：读取某次任务的逐项明细（只读）。
+            "getRunDetail" -> {
+                require(arguments.length() == 1)
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid) { "caller_mismatch" }
+                runDetailRepository.readJson(arguments.getString(0))
+            }
+            // 记录详情页：删除用户逐项确认的项目（优先移入回收站）。参数：明细编号、行号 JSON、本次临时允许受保护项、永久删除。
+            "deleteRunDetailItems" -> {
+                require(arguments.length() == 4)
+                val caller = android.os.Binder.getCallingUid()
+                require(caller == 0 || caller == applicationInfo.uid) { "caller_mismatch" }
+                if (coordinator.isBusy()) coordinator.busy("record-detail-delete") else
+                    coordinator.runExclusive("record-detail-delete", "正在处理记录中的项目", "record_detail_delete_failed") {
+                        runDetailRepository.deleteJson(arguments.getString(0), arguments.getString(1),
+                            arguments.getBoolean(2), arguments.getBoolean(3))
+                    }
+            }
             // 根目录整理：规则文件只含白名单与“禁止重建”名单；自动开关在 config.conf（系统维护计划）。
             "readRootTidy" -> { require(arguments.length() == 0); RootTidyStore.read(File(RootPaths.STATE_DIR)) }
             "writeRootTidyRules" -> {

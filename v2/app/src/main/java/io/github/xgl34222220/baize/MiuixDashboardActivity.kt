@@ -268,7 +268,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() },
                     wechatUsage = { loadWechatUsage(it) },
-                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) }
+                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) },
+                    recordDetail = { record -> CleanerNavigation.open(this, RunDetailActivity.intent(this, record)) }
                 ),
                 navigationRequest = navigationRequest.value,
                 onNavigationHandled = { navigationRequest.value = null },
@@ -1412,6 +1413,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                                 .put("emptyDirs", emptyDirs)
                                 .put("fragments", fragments)
                                 .put("errors", failures)
+                                .put("detailItems", RunDetailItems.fromProtected(protectedItems))
                                 .put("elapsedSeconds", elapsed / 1000L)
                                 .put("result", resultLine)
                                 .put(
@@ -1902,7 +1904,11 @@ class MiuixDashboardActivity : ComponentActivity() {
                             recordId = item.optString("recordId"),
                             categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
                             apps = parseHistoryApps(item.optJSONArray("appDetails")),
-                            failures = parseHistoryFailures(item.optJSONArray("failureDetails"))
+                            failures = parseHistoryFailures(item.optJSONArray("failureDetails")),
+                            skipped = item.optLong("skipped", 0L).coerceAtLeast(0L),
+                            skipGroups = parseHistorySkips(item.optJSONArray("skipGroups")),
+                            detailId = item.optString("detailId"),
+                            mode = item.optString("mode")
                         )
                     )
                 }
@@ -1936,6 +1942,19 @@ class MiuixDashboardActivity : ComponentActivity() {
         }
     }
 
+    private fun parseHistorySkips(array: JSONArray?): List<HistorySkipUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(HistorySkipUiItem(
+                code = item.optString("code").trim(),
+                label = item.optString("label").trim().ifBlank { "已跳过" },
+                count = item.optLong("count", 0L).coerceAtLeast(0L),
+                samplePath = item.optString("samplePath").trim()
+            ))
+        }
+    }
+
     private fun parseHistoryFailures(array: JSONArray?): List<HistoryFailureUiItem> = buildList {
         if (array == null) return@buildList
         for (index in 0 until array.length()) {
@@ -1943,7 +1962,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             add(HistoryFailureUiItem(
                 category = item.optString("category").trim(),
                 count = item.optLong("count", 0L).coerceAtLeast(0L),
-                reason = item.optString("reason").trim(),
+                reason = item.optString("reasonText").trim().ifBlank { item.optString("reason").trim() },
                 samplePath = item.optString("samplePath").trim()
             ))
         }

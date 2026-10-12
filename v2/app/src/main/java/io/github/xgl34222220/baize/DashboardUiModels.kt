@@ -144,8 +144,26 @@ data class HistoryUiItem(
     val apps: List<HistoryAppUiItem> = emptyList(),
     val releaseState: String = "measured",
     val recordId: String = "",
-    val failures: List<HistoryFailureUiItem> = emptyList()
+    val failures: List<HistoryFailureUiItem> = emptyList(),
+    /** Items BaiZe left in place on purpose (protection list, changed, slow…). Never an error. */
+    val skipped: Long = 0L,
+    val skipGroups: List<HistorySkipUiItem> = emptyList(),
+    /** Per-run item detail file id (state/run-details/<id>.tsv); blank for old rows. */
+    val detailId: String = "",
+    /** Raw mode, used by the detail page title. */
+    val mode: String = ""
 ) {
+    /** Real failures only (errors column of 3.3.4 rows, re-classified for older rows). */
+    val failed: Long get() = errors.toLong().coerceAtLeast(0L)
+    val hasLeftovers: Boolean get() = failed > 0L || skipped > 0L
+
+    /** 角标：失败 N 项（错误色）只给真实失败；已跳过 N 项（中性）；干净的记录没有结果角标。 */
+    val outcomeBadge: HistoryOutcomeBadge? get() = when {
+        failed > 0L -> HistoryOutcomeBadge("失败 $failed 项", error = true)
+        skipped > 0L -> HistoryOutcomeBadge("已跳过 $skipped 项", error = false)
+        else -> null
+    }
+
     fun capacityText(format: (Long) -> String): String = when (releaseState) {
         "unknown" -> "无法测量"
         "partial" -> "已确认 ${format(bytes)} · 部分未知"
@@ -154,6 +172,17 @@ data class HistoryUiItem(
         else -> format(bytes)
     }
 }
+
+@Immutable
+data class HistoryOutcomeBadge(val text: String, val error: Boolean)
+
+@Immutable
+data class HistorySkipUiItem(
+    val code: String,
+    val label: String,
+    val count: Long,
+    val samplePath: String = ""
+)
 
 @Immutable
 data class HistoryFailureUiItem(
@@ -452,5 +481,7 @@ data class DashboardActions(
     /** 直接打开存储分析的某个视图（清理 Tab「专项清理」入口）。 */
     val storageView: (StorageToolMode) -> Unit = {},
     /** 清理审计（AuditActivity）。唯一入口在记录 Tab。 */
-    val cleanupAudit: () -> Unit = {}
+    val cleanupAudit: () -> Unit = {},
+    /** 记录详情（RunDetailActivity）：逐项列出某次任务失败与跳过的项目。 */
+    val recordDetail: (HistoryUiItem) -> Unit = {}
 )

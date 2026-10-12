@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FactCheck
 import androidx.compose.material.icons.rounded.RestoreFromTrash
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -120,7 +121,7 @@ fun HistoryScreenMiuix(state: HistoryUiState, actions: HistoryUiActions) {
                     items = records,
                     key = { index, record -> "${record.time}|${record.title}|${record.trigger}|$index" }, contentType = { _, _ -> "history-record" }
                 ) { _, record ->
-                    RecordCard(record)
+                    RecordCard(record, onOpenDetail = { actions.onOpenRecordDetail(record) })
                 }
             }
         }
@@ -546,7 +547,7 @@ private fun EmptyRecordsCard(hasLifetimeTotals: Boolean = false) {
 }
 
 @Composable
-private fun RecordCard(record: HistoryUiItem) {
+internal fun RecordCard(record: HistoryUiItem, onOpenDetail: () -> Unit = {}) {
     val context = LocalContext.current
     var expanded by rememberSaveable(record.time, record.title, record.trigger) { mutableStateOf(false) }
     val visibleApps = record.apps.filter { it.bytes > 0L }
@@ -567,25 +568,30 @@ private fun RecordCard(record: HistoryUiItem) {
             else -> record.result
         }
     ).ifBlank { if (record.cleaned) "清理任务已完成" else "扫描任务已完成" }
-    val statusText = when {
-        record.releaseState == "unknown" -> "容量未确认"
-        record.errors > 0 -> "有异常"
-        record.releaseState == "retained" -> "尚未释放"
-        record.cleaned -> "已处理"
-        else -> "扫描完成"
+    // 角标只说明结果：失败 N 项（错误色，仅真实删除失败）/ 已跳过 N 项（中性）；干净的记录不显示结果角标。
+    // 容量未确认、尚未释放属于容量状态，用中性样式提示。
+    val badge = record.outcomeBadge
+    val statusText: String? = badge?.text ?: when (record.releaseState) {
+        "unknown" -> "容量未确认"
+        "retained" -> "尚未释放"
+        else -> null
     }
-    // Only real failures (items that should have been removed and were not) reach errors > 0.
-    val statusColor = if (record.errors > 0 && record.releaseState != "unknown") MaterialTheme.colorScheme.error
+    val statusColor = if (badge?.error == true) MaterialTheme.colorScheme.error
         else if (record.cleaned) BaiZeTokens.colors.success else MaterialTheme.colorScheme.onSurfaceVariant
+    val badgeColor = if (badge?.error == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     val statusBackground = if (record.cleaned) {
         statusColor.copy(alpha = .12f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .10f)
     }
 
+    // 有失败或跳过的记录：点卡片打开记录详情页（逐项处理）；其余记录点卡片展开分类明细。
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .clickable(enabled = hasDetails) { expanded = !expanded },
+            .clickable(enabled = record.hasLeftovers || hasDetails,
+                onClickLabel = if (record.hasLeftovers) "查看未删除的项目" else "展开任务明细") {
+                if (record.hasLeftovers) onOpenDetail() else expanded = !expanded
+            },
         shape = RoundedCornerShape(16.dp),
         color = BaiZeTokens.colors.surfaceRaised
     ) {
@@ -623,15 +629,25 @@ private fun RecordCard(record: HistoryUiItem) {
                         )
                     }
                 }
-                Surface(shape = RoundedCornerShape(50), color = statusBackground) {
-                    Text(
-                        statusText,
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = statusColor
-                    )
+                if (statusText != null) {
+                    Surface(shape = RoundedCornerShape(50), color = badgeColor.copy(alpha = if (badge?.error == true) .12f else .10f)) {
+                        Text(
+                            statusText,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = badgeColor
+                        )
+                    }
                 }
-                if (hasDetails) {
+                if (record.hasLeftovers) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        Icons.Rounded.ChevronRight,
+                        contentDescription = "查看未删除的项目",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else if (hasDetails) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
